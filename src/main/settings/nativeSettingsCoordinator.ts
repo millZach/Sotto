@@ -1,9 +1,17 @@
-import type { HotkeyChangeResult, StartupState } from '../../shared/contracts'
+import type {
+  DictationShortcutsChange,
+  DictationShortcutsResult,
+  HotkeyChangeResult,
+  StartupState,
+} from '../../shared/contracts'
+import { chordNeedsListener, MAX_SHORTCUTS_PER_ROLE, type DictationShortcutSet } from '../../shared/dictationShortcuts'
+import type { SottoPlatform } from '../../shared/platform'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
   type SettingsPatch,
 } from '../../shared/settings'
+import { chordTokenSet } from '../hotkeys/dictationShortcutRouter'
 
 export interface NativeSettingsRepository {
   get(): Promise<AppSettings>
@@ -15,11 +23,20 @@ export interface NativeSettingsRepository {
 export interface NativeSettingsHotkeyService {
   current(): string | null | Promise<string | null>
   replace(accelerator: string): HotkeyChangeResult | Promise<HotkeyChangeResult>
+  /** Releases (true) or restores (false) the registered accelerator; replace also ends a release. */
+  suspend?(on: boolean): void
 }
 
 export interface NativeSettingsStartupService {
   get(): StartupState | Promise<StartupState>
   set(enabled: boolean): StartupState | Promise<StartupState>
+}
+
+/** Extra press and hold shortcuts (Owl `dictation-hold-shortcuts`); absent on Linux and with the feature off. */
+export interface NativeSettingsDictationShortcutService {
+  apply(set: DictationShortcutSet, mode: 'strict' | 'lenient'): DictationShortcutsResult
+  /** Releases (true) or re-registers (false) the applied extras; apply also ends a release. */
+  suspend(on: boolean): void
 }
 
 export interface NativeSettingsCoordinatorDependencies {
@@ -28,11 +45,14 @@ export interface NativeSettingsCoordinatorDependencies {
   readonly startup: NativeSettingsStartupService
   readonly onAutoPasteChanged: (enabled: boolean) => void | Promise<void>
   readonly onSettingsChanged: (settings: AppSettings) => void | Promise<void>
+  readonly dictationShortcuts?: NativeSettingsDictationShortcutService
   /**
    * Platform defaults; must be the same row the repository resets to, or the
    * reset transaction fails its own verification. Omitting them keeps Windows.
    */
   readonly defaults?: AppSettings
+  /** Chords compare by token set, with this platform's aliases. Omitting it keeps Windows. */
+  readonly platform?: SottoPlatform
 }
 
 export class NativeManagedSettingMutationError extends Error {
@@ -141,6 +161,68 @@ export class NativeSettingsCoordinator {
     })
   }
 
+  replaceDictationShortcuts(change: DictationShortcutsChange): Promise<DictationShortcutsResult> {
+    const router = this.dependencies.dictationShortcuts
+    if (router === undefined) return Promise.resolve({ ok: false, reason: 'unavailable' })
+    const press = change.press.map((chord) => chord.trim())
+    const hold = change.hold.map((chord) => chord.trim())
+    return this.enqueue(async (): Promise<DictationShortcutsResult> => {
+      const fits = (list: readonly string[], min: number): boolean =>
+        list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64)
+      if (!fits(press, 1) || !fits(hold, 0)) return { ok: false, reason: 'invalid' }
+      const previous = await this.dependencies.repository.get()
+      const primary = press[0]!
+      const platform = this.dependencies.platform ?? 'win32'
+      const primaryChanged = chordTokenSet(primary, platform) !== chordTokenSet(previous.hotkey, platform)
+      // The main shortcut must stay Electron-registerable; only an unchanged legacy value is taken as it is.
+      if (primaryChanged && chordNeedsListener(primary, 'press')) return { ok: false, reason: 'invalid', chord: primary }
+      const previousNative = (await this.dependencies.hotkeys.current()) ?? previous.hotkey
+      const previousSet = { press: [previous.hotkey, ...previous.pressShortcuts], hold: previous.holdShortcuts }
+      // A new primary (or a new spelling of it) may be an old extra (promotion, swap), and the OS refuses an
+      // accelerator already held, so every dictation accelerator is released before the primary registers.
+      const release = primary !== previous.hotkey
+
+      let routerApplied = false
+      try {
+        if (release) {
+          router.suspend(true)
+          this.dependencies.hotkeys.suspend?.(true)
+          const result = await this.dependencies.hotkeys.replace(primary)
+          if (!result.ok) {
+            // A refused replace keeps the prior primary; the old extras follow it.
+            router.suspend(false)
+            return { ok: false, reason: result.reason, chord: primary }
+          }
+        }
+        const applied = router.apply({ press, hold }, 'strict')
+        if (!applied.ok) {
+          // A refused apply releases its new extras and keeps the old ones released: old primary first, then them.
+          if (release) {
+            await this.restoreHotkey(previousNative)
+            router.suspend(false)
+          }
+          return applied
+        }
+        routerApplied = true
+        const updated = await this.dependencies.repository.update({
+          hotkey: primary,
+          pressShortcuts: press.slice(1),
+          holdShortcuts: hold,
+        })
+        await this.notifySettingsChanged(updated)
+        return { ok: true }
+      } catch {
+        // Release the new set, then register the old primary, then the old extras.
+        if (routerApplied) this.releaseDictationShortcuts(true)
+        if (release) await this.restoreHotkey(previousNative)
+        if (routerApplied) this.restoreDictationShortcuts(previousSet)
+        else if (release) this.releaseDictationShortcuts(false)
+        await this.restoreSettings(previous)
+        return { ok: false, reason: 'unavailable' }
+      }
+    })
+  }
+
   getStartup(): Promise<StartupState> {
     return this.enqueue(() => Promise.resolve(this.dependencies.startup.get()))
   }
@@ -179,6 +261,9 @@ export class NativeSettingsCoordinator {
       const previousStartup = await this.dependencies.startup.get()
 
       try {
+        // An old extra may equal the default hotkey: release every dictation accelerator before it registers.
+        this.releaseDictationShortcuts(true)
+        this.dependencies.hotkeys.suspend?.(true)
         const hotkeyResult = await this.dependencies.hotkeys.replace(defaults.hotkey)
         if (!hotkeyResult.ok) {
           throw new NativeSettingsTransactionError()
@@ -204,12 +289,14 @@ export class NativeSettingsCoordinator {
         ) {
           throw new NativeSettingsTransactionError()
         }
+        this.restoreDictationShortcuts({ press: [reset.hotkey, ...reset.pressShortcuts], hold: reset.holdShortcuts })
         await this.notifySettingsChanged(reset)
         return reset
       } catch {
         await this.restoreAutoPaste(previousSettings.autoPaste)
         await this.restoreStartup(previousStartup.enabled)
         await this.restoreHotkey(previousHotkey)
+        this.releaseDictationShortcuts(false)
         await this.restoreSettings(previousSettings)
         throw new NativeSettingsTransactionError()
       }
@@ -246,6 +333,22 @@ export class NativeSettingsCoordinator {
       await this.dependencies.hotkeys.replace(accelerator)
     } catch {
       // Best-effort rollback; the transaction still fails closed.
+    }
+  }
+
+  private restoreDictationShortcuts(set: DictationShortcutSet): void {
+    try {
+      this.dependencies.dictationShortcuts?.apply(set, 'lenient')
+    } catch {
+      // Best-effort rollback; the transaction still fails closed.
+    }
+  }
+
+  private releaseDictationShortcuts(on: boolean): void {
+    try {
+      this.dependencies.dictationShortcuts?.suspend(on)
+    } catch {
+      // Best-effort; the transaction still fails closed.
     }
   }
 

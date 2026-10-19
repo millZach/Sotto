@@ -92,6 +92,10 @@ import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
+import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
+import { createKeyListener } from './hotkeys/keyListener'
+import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
+import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
 import { parseDictationEdge } from './hotkeys/dictationCommand'
 import { LinuxDictationShell } from './hotkeys/linuxDictationShell'
 import { ShellWidgetMonitor } from './windows/shellWidgetMonitor'
@@ -156,6 +160,8 @@ import {
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
+  DICTATION_KEYS_HELD,
+  KEY_LISTENER_PERMISSION_CHANGED,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
   UPDATE_CHECK_REQUESTED,
@@ -262,7 +268,7 @@ if (e2eConfiguration === null) {
 // decision resolves through this profile.
 const platform = resolvePlatform(process.platform)
 const profile = platformProfile(platform)
-const platformDefaults = defaultSettings(profile.defaultHotkey)
+const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultHoldShortcuts)
 
 type NativeDiagnostic =
   | 'omarchy-theme-missing'
@@ -297,6 +303,7 @@ type NativeDiagnostic =
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
   | OsascriptPasteEvent
+  | DictationShortcutEvent
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -614,7 +621,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     platformDefaults,
     logOperational,
     watcherEnabled,
-    { workerRolesEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1231,13 +1238,56 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : createE2EGlobalShortcuts(e2eConfiguration.scenario)
   const hotkeys = new HotkeyManager(
     e2eShortcuts ?? globalShortcut,
-    toggleDictation,
+    () => {
+      // A hold in progress no longer owns the session the primary shortcut toggled.
+      dictationShortcuts?.pressToggled()
+      toggleDictation()
+    },
     () => {
     hotkeys.cancelListening()
     dispatchDictation({ type: 'cancel' })
     },
     platform,
+    logOperational,
   )
+  // The widget's latest status: a hold shortcut starts dictation only from idle.
+  let widgetStatus: WidgetSnapshot['status'] = 'idle'
+  // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
+  const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
+    ? createDictationShortcutRouter({
+        shortcuts: e2eShortcuts ?? globalShortcut,
+        createListener: handlers => createKeyListener({
+          platform,
+          // The Windows helper can take long to start cold.
+          readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
+          // An E2E run never spawns the helper, so it never asks for Input Monitoring.
+          spawnHelper: e2eConfiguration === null
+            ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
+            : () => null,
+          log: event => logOperational(event as DictationShortcutEvent),
+          ...handlers,
+        }),
+        isIdle: () => widgetStatus === 'idle',
+        dispatch: dispatchDictation,
+        showWidget,
+        pushHeld: tokens => { windows.sendToMain(DICTATION_KEYS_HELD, tokens) },
+        pushPermission: permission => { windows.sendToMain(KEY_LISTENER_PERMISSION_CHANGED, permission) },
+        openInputMonitoring: () => e2eConfiguration === null
+          ? createSystemSettingsOpener(platform, url => shell.openExternal(url))?.('input-monitoring')
+          : undefined,
+        log: logOperational,
+        platform,
+      })
+    : null
+  if (dictationShortcuts !== null) interruptOnLockAndSleep(powerMonitor, () => dictationShortcuts.interrupt())
+  // Settings recording stands every dictation shortcut down; stable has only the hotkey to suspend.
+  const shortcutLifecycle = createDictationShortcutLifecycle({
+    suspend: suspended => {
+      hotkeys.suspend(suspended)
+      dictationShortcuts?.suspend(suspended)
+    },
+    router: dictationShortcuts,
+  })
 
   const nativeTray = e2eConfiguration === null
     ? await createTrayResource({
@@ -1270,6 +1320,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const settingsCoordinator = new NativeSettingsCoordinator({
     repository: settings,
     hotkeys,
+    platform,
+    ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
     startup,
     defaults: platformDefaults,
     onAutoPasteChanged(enabled): void {
@@ -1341,12 +1393,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       currentTrayState = state
       trayController.update(state)
     },
-    syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
+    syncEscape: (state) => {
+      widgetStatus = state.status
+      syncEscapeForWidgetSnapshot(hotkeys, state)
+    },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     presentation: () => widgetPresentation,
     log: logOperational,
   })
-  handleRendererProcessGone = (kind) => dictationLifecycle.rendererProcessGone(kind)
+  handleRendererProcessGone = (kind) => {
+    dictationLifecycle.rendererProcessGone(kind)
+    // A crashed Settings can no longer end its recording, so the shortcuts come back now.
+    if (kind === 'main') shortcutLifecycle.rendererGone()
+  }
   const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
     await dictationLifecycle.publish(state)
   }
@@ -1399,6 +1458,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(linuxDictationShell === null ? {} : { dictationCommands: linuxDictationShell }),
     windows,
     hotkeys,
+    ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
     tray,
     startup,
     settings,
@@ -1538,6 +1598,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           current: () => settingsCoordinator.getHotkey(),
           replace: (accelerator) => settingsCoordinator.replaceHotkey(accelerator),
         },
+        dictationShortcuts: {
+          replace: change => settingsCoordinator.replaceDictationShortcuts(change),
+          suspend: shortcutLifecycle.suspend,
+          record: shortcutLifecycle.record,
+          cancelRecord: () => dictationShortcuts?.cancelRecord(),
+          permission: () => dictationShortcuts?.permission() ?? (platform === 'darwin' ? 'not-needed' : 'unsupported'),
+          requestPermission: async () => dictationShortcuts === null
+            ? (platform === 'darwin' ? 'not-needed' : 'unsupported')
+            : dictationShortcuts.requestPermission(),
+        },
         app: {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
@@ -1547,6 +1617,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           // kept recording, that no controller holds any more.
           reload: () => {
             dictationLifecycle.rendererProcessGone('main')
+            // A reloaded Settings can no longer end its recording, so the shortcuts come back now.
+            shortcutLifecycle.rendererGone()
             return windows.reloadMain()
           },
           toggleMaximize: () => windows.toggleMaximizeMain(),

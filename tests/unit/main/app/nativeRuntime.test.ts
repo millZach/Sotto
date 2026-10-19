@@ -625,3 +625,35 @@ describe('NativeRuntimeController', () => {
     },
   )
 })
+
+it('applies the saved extra and hold shortcuts leniently after the primary, and disposes them', async () => {
+  const order: string[] = []
+  const dictationShortcuts = {
+    apply: vi.fn(() => { order.push('extras') }),
+    dispose: vi.fn(() => { order.push('extras-dispose') }),
+  }
+  const runtime = new NativeRuntimeController({
+    windows: {
+      createWindows: vi.fn(async () => undefined),
+      showMain: vi.fn(async () => undefined),
+      showWidget: vi.fn(async () => undefined),
+      beginQuit: vi.fn(),
+      dispose: vi.fn(),
+    },
+    hotkeys: {
+      replace: vi.fn(() => { order.push('primary'); return { ok: true as const } }),
+      dispose: vi.fn(() => { order.push('primary-dispose') }),
+    },
+    dictationShortcuts,
+    tray: { update: vi.fn(), dispose: vi.fn() },
+    startup: { set: vi.fn() },
+    settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS, hotkey: 'Control+Shift+Space', pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn'] })) },
+    installPermissions: () => vi.fn(),
+    registerIpc: () => vi.fn(),
+    log: vi.fn(),
+  })
+  await runtime.start()
+  expect(dictationShortcuts.apply).toHaveBeenCalledWith({ press: ['Control+Shift+Space', 'Alt+Shift+D'], hold: ['Fn'] }, 'lenient')
+  runtime.dispose()
+  expect(order).toEqual(['primary', 'extras', 'extras-dispose', 'primary-dispose'])
+})
