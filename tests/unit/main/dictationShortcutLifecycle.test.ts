@@ -19,6 +19,36 @@ function setup(state = { focused: true }) {
 afterEach(() => { vi.useRealTimers() })
 
 describe('dictation shortcut lifecycle', () => {
+  it('lets the page record when Sotto is in front but a child view holds the keys, and lets it stand the shortcuts down', async () => {
+    const suspend = vi.fn<(suspended: boolean) => void>()
+    const router = { record: vi.fn(), cancelRecord: vi.fn() }
+    const lifecycle = createDictationShortcutLifecycle({ suspend, router, isFocused: () => false, windowFocused: () => true })
+    await expect(lifecycle.record()).resolves.toEqual({ kind: 'unavailable' })
+    expect(router.record).not.toHaveBeenCalled()
+    lifecycle.suspend(true)
+    expect(suspend).toHaveBeenLastCalledWith(true)
+  })
+
+  it('ignores a stand-down from a window behind another app', () => {
+    const suspend = vi.fn<(suspended: boolean) => void>()
+    const lifecycle = createDictationShortcutLifecycle({ suspend, router: null, isFocused: () => false, windowFocused: () => false })
+    lifecycle.suspend(true)
+    expect(suspend).not.toHaveBeenCalled()
+    lifecycle.suspend(false)
+    expect(suspend).toHaveBeenLastCalledWith(false)
+  })
+
+  it('stands the shortcuts back up and ends a recording when the screen locks or the computer sleeps', async () => {
+    const { resolvers, suspend, lifecycle } = setup()
+    const source = new EventEmitter() as unknown as LockAndSleepSource
+    interruptOnLockAndSleep(source, () => lifecycle.windowLostFocus())
+    const recorded = lifecycle.record()
+    ;(source as unknown as EventEmitter).emit('suspend')
+    await expect(recorded).resolves.toEqual({ kind: 'cancelled' })
+    expect(resolvers).toHaveLength(1)
+    expect(suspend).toHaveBeenLastCalledWith(false)
+  })
+
   it('refuses a recording while the window is unfocused without standing any shortcut down', async () => {
     const { suspend, router, lifecycle } = setup({ focused: false })
     await expect(lifecycle.record()).resolves.toEqual({ kind: 'cancelled' })

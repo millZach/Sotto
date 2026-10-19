@@ -22,11 +22,14 @@ export function createDictationShortcutLifecycle(deps: {
   /** The primary hotkey and the router together. */
   suspend: (suspended: boolean) => void
   router: Pick<DictationShortcutRouter, 'record' | 'cancelRecord'> | null
-  /** The main window is visible and focused. */
+  /** Sotto's own page holds the keyboard: its window is visible and focused, and no child view has the keys. */
   isFocused: () => boolean
+  /** Sotto's main window is visible and focused, whichever of its views has the keys; defaults to isFocused. */
+  windowFocused?: () => boolean
   limitMs?: number
 }): DictationShortcutLifecycle {
   let timer: ReturnType<typeof setTimeout> | undefined
+  const windowFocused = deps.windowFocused ?? deps.isFocused
   // Each record() and each forced resume takes a new generation; only the current recording may resume the shortcuts.
   let generation = 0
   const suspend = (suspended: boolean): void => {
@@ -41,11 +44,11 @@ export function createDictationShortcutLifecycle(deps: {
   }
   return {
     // A renderer may stand the shortcuts down only while its window has the focus; standing them up always works.
-    suspend: suspended => { if (!suspended || deps.isFocused()) suspend(suspended) },
+    suspend: suspended => { if (!suspended || windowFocused()) suspend(suspended) },
     async record() {
       if (deps.router === null) return { kind: 'unavailable' }
-      // Refused before anything stands down: the router would refuse an unfocused window anyway.
-      if (!deps.isFocused()) return { kind: 'cancelled' }
+      // Refused before anything stands down. With Sotto in front but a child view holding the keys, the page records instead.
+      if (!deps.isFocused()) return { kind: windowFocused() ? 'unavailable' : 'cancelled' }
       const mine = ++generation
       suspend(true)
       try { return await deps.router.record() } finally { if (mine === generation) suspend(false) }

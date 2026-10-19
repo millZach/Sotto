@@ -292,6 +292,21 @@ describe('dictation shortcut router record', () => {
     expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(11)
   })
 
+  it('caps record() attempts that never arm, so a renderer cannot churn the helper', async () => {
+    vi.useFakeTimers()
+    const h = createHarness({ ready: false })
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    for (let tried = 0; tried < 40; tried += 1) {
+      void h.router.record()
+      h.router.cancelRecord()
+    }
+    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(30)
+    await expect(h.router.record()).resolves.toEqual({ kind: 'unavailable' })
+    vi.advanceTimersByTime(60_000)
+    void h.router.record()
+    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(31)
+  })
+
   it('starts the next recording at once when the user switches rows, without a cooldown', async () => {
     const h = createHarness()
     h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')

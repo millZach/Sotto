@@ -1258,11 +1258,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let widgetState: { status: WidgetSnapshot['status']; kept: boolean } = { status: 'idle', kept: false }
   // Sotto's own page must hold the keyboard: a site in the in-app browser or the cloud iPhone sits in the same
   // window, and record mode must never hear what is typed there.
-  const mainWindowFocused = (): boolean => {
+  const mainWindowInFront = (): boolean => {
     const focused = BrowserWindow.getFocusedWindow()
     return focused !== null && focused.webContents === windows.getMainWebContents() && focused.isVisible()
-      && focused.webContents.isFocused()
   }
+  const mainWindowFocused = (): boolean => mainWindowInFront() && BrowserWindow.getFocusedWindow()?.webContents.isFocused() === true
   // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
     ? createDictationShortcutRouter({
@@ -1300,7 +1300,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     router: dictationShortcuts,
     isFocused: mainWindowFocused,
+    windowFocused: mainWindowInFront,
   })
+  // A lock or a sleep also ends a page recording's stand-down, not only the router's own recording.
+  interruptOnLockAndSleep(powerMonitor, () => shortcutLifecycle.windowLostFocus())
   // Record mode sees keys typed in other apps, so it ends the moment the main window loses the focus.
   const watchMainWindowFocus = (window: BrowserWindow): void => {
     const lost = (): void => { if (window.webContents === windows.getMainWebContents()) shortcutLifecycle.windowLostFocus() }

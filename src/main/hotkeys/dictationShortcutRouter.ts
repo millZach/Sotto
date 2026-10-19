@@ -79,6 +79,8 @@ const MAX_HELD_PUSHED = 8
 // past the cap the page records instead, which sees only Sotto's own window.
 const RECORD_WINDOW_MS = 60_000
 const RECORDS_PER_WINDOW = 10
+// Every record() that turns record mode on counts here too, armed or not, so a renderer cannot churn the helper.
+const RECORD_ATTEMPTS_PER_WINDOW = 30
 
 interface Recording {
   held: string[]
@@ -106,6 +108,7 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
   let suspendTimer: ReturnType<typeof setTimeout> | undefined
   let recording: Recording | null = null
   let recordStarts: number[] = []
+  let recordAttempts: number[] = []
   let disposed = false
 
   // A press toggle takes the session over, so a hold in progress ends silently.
@@ -333,9 +336,13 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
       if (disposed) return Promise.resolve({ kind: 'unavailable' })
       const now = Date.now()
       recordStarts = recordStarts.filter((at) => now - at < RECORD_WINDOW_MS)
+      recordAttempts = recordAttempts.filter((at) => now - at < RECORD_WINDOW_MS)
       finishRecord({ kind: 'cancelled' })
       if (!deps.isFocused()) return Promise.resolve({ kind: 'cancelled' })
-      if (recordStarts.length >= RECORDS_PER_WINDOW) return Promise.resolve({ kind: 'unavailable' })
+      if (recordStarts.length >= RECORDS_PER_WINDOW || recordAttempts.length >= RECORD_ATTEMPTS_PER_WINDOW) {
+        return Promise.resolve({ kind: 'unavailable' })
+      }
+      recordAttempts.push(now)
       return new Promise<KeyRecordResult>((resolve) => {
         recording = {
           held: [],
