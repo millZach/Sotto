@@ -1087,7 +1087,11 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
     expect(list.rows.map(row => row.target)).toContainEqual(started.target)
     expect(list.rows.map(row => row.target)).not.toContainEqual({ hostId, threadId: twin.id })
   }
-  if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
+  if (check === 'protection') {
+    // A slim row, the default (#1191), says protected only when it is.
+    const row = list.rows.find(item => item.target.hostId === started.target.hostId && item.target.threadId === twin.id)
+    expect(row).toBeDefined(); expect(row?.protected).toBeFalsy()
+  }
 })
 
 it.each([

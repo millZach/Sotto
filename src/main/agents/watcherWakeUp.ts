@@ -234,6 +234,8 @@ export class WatcherWakeUp {
     return [...new Map(this.workers().filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
       .map(({ participant }) => [targetKey(participant.target), participant.target])).values()]
   }
+  /** The threads Watcher watches, by target key, for its reads' watched-only filter and slim rows (#1191). */
+  watchedKeys(): Set<string> { return this.withPassReads(() => new Set(this.watchedTargets().map(targetKey))) }
   watchedThreadIds(hostId: string): string[] {
     return this.watchedTargets().filter(target => target.hostId === hostId).map(target => target.threadId)
   }

@@ -117,6 +117,7 @@ it('lists host-setup jobs as protected and readable while refusing their mutatio
   const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
   const unread = f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread
   expect(await f.call('list_threads', {})).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
+  expect(await f.call('list_threads', { detail: 'full' })).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
   expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok', messages: [{ text: 'Synthetic host setup progress' }] })
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   for (const name of ['send_to_thread', 'stop_thread', 'settle_thread'] as const) {
@@ -1177,10 +1178,10 @@ it('keeps the roster readable after more than one hundred requests address a wor
           ...(index === 99 ? { takeover: { reason: 'user-send', at: original.createdAt } } : {}) })) })
     }
   })
-  const result = await f.call('list_threads', { includeSettled: true })
+  const result = await f.call('list_threads', { includeSettled: true, detail: 'full' })
   expect(result.status).toBe('ok')
   if (result.status !== 'ok' || !('rows' in result)) throw new Error('roster refused')
-  const row = result.rows.find(item => item.target.threadId === first.target.threadId)!
+  const row = result.rows.find(item => item.target.threadId === first.target.threadId)! as Extract<(typeof result.rows)[number], { participation: unknown }>
   expect(row.participation).toHaveLength(100)
   expect(row.participation.at(-1)).toMatchObject({ requestId: latestRequestId, state: 'taken-over', takeover: { reason: 'user-send' } })
   expect(f.control.watcherRecord().requests).toHaveLength(101)

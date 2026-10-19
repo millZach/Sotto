@@ -390,3 +390,10 @@ desktop answer there, the same hold-back New thread uses (ADR-0074 decision 3, A
 limit from what the host says it may answer, so `list_projects`, `start_thread` and a send agree with the host before
 anything crosses the wire. A host's own default still applies to threads the host or a phone opens itself. No policy
 is written and nothing is answered.
+
+## October 19, 2026: slim tool results (#1191)
+
+Every `sotto_threads` result stays in Watcher's conversation and is read again on each of its calls. `list_threads` repeated every pull request fact on every row, `list_projects` repeated a computer's whole model list for every project, and `read_thread` returned up to a hundred evidence facts beside a one-message read. The three reads are now slim by default, and the full results are opt-in: `detail: "full"` on `list_threads`, `evidence: "full"` on `read_thread` and `includeModels: true` on `list_projects`. `list_threads` also takes `watchedOnly`, and `list_projects` takes `projectId` and `query`. A slim row and a read name each pull request by its number with its state and checks, approval and auto-merge only when on, and staleness only when true. [The measurements](../perf/2026-10-19-watcher-tool-results.md) show 93 to 99% less.
+
+The new keys are the desktop's alone. The tools still build their full results, the way a paired host answers them, and the desktop slims what Watcher is given as the last step. A paired host is never sent the keys, so hosts of every version answer unchanged and host protocol version 1 does not change. Its result schemas only widen: a slim row is a second shape of `list_threads` rows, `read_thread` gains an optional `pullRequests`, and `list_projects`' `workers` becomes optional.
+
