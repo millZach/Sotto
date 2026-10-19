@@ -618,28 +618,41 @@ it('sends to a full-access thread on a paired host when this computer\'s new-thr
   await remote.host.service.command({ type: 'create-thread', threadId, projectId: f.project.id, title: 'Synthetic full-access thread',
     titleSource: 'user', modelId: f.model.id, runtimeMode: 'full-access' }, desktopWindowClient())
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === threadId)?.runtimeMode).toBe('full-access')
-  const projects = await f.call('list_projects', {})
-  if (projects.status !== 'ok') throw new Error('list-refused')
-  const worker = projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)
-  expect(worker?.defaultPermission).toEqual({ kind: 'runtime', mode: 'full-access' })
+  // The aggregate list and one naming the host give the permission start and send hold to there.
+  const listed = async (input: { hostId?: string }) => {
+    const projects = await f.call('list_projects', input)
+    if (projects.status !== 'ok') throw new Error('list-refused')
+    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)?.defaultPermission
+  }
+  expect(await listed({})).toEqual({ kind: 'runtime', mode: 'full-access' })
+  expect(await listed({ hostId: f.pairing.hostId })).toEqual({ kind: 'runtime', mode: 'full-access' })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.pairing.hostId, threadId }, text: 'Synthetic full-access send', delivery: 'now' })
   expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
   expect(writes).toHaveBeenCalledOnce()
+  // A restarted host learns again from the desktop's next read whether it may answer, so restored operations are not held back.
+  const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  const answers = (owner as unknown as { remoteAnswers: Map<string, () => boolean> }).remoteAnswers
+  answers.clear()
+  expect(await f.call('read_thread', { target: { hostId: f.pairing.hostId, threadId } })).toMatchObject({ status: 'ok' })
+  expect(answers.get(f.pairing.clientId)?.()).toBe(true)
   // Where this computer may not answer, Watcher is held to Ask for approval there, and says so before it starts.
   await allowAnswers(f, false)
-  const held = await f.call('list_projects', {})
-  if (held.status !== 'ok') throw new Error('list-refused')
-  expect(held.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)?.defaultPermission)
-    .toEqual({ kind: 'runtime', mode: 'approval-required' })
-  // The host holds it back itself: with this computer's own check out of the way, the host refuses the send.
+  expect(await listed({})).toEqual({ kind: 'runtime', mode: 'approval-required' })
+  expect(await listed({ hostId: f.pairing.hostId })).toEqual({ kind: 'runtime', mode: 'approval-required' })
+  // The host holds it back itself: with this computer's own check out of the way, the host refuses the send and the start.
   vi.spyOn(f.watcher as unknown as { permissionLimits: () => object }, 'permissionLimits').mockReturnValue({})
   remote.native.event({ type: 'ready', threadId: (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic full-access thread')!.id, text: 'Synthetic completion' })
   await f.socket.command({ type: 'refresh', provider: 'codex' })
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === threadId)?.status).toBe('idle')
+  const held = { status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') }
   const refused = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.pairing.hostId, threadId }, text: 'Synthetic held send', delivery: 'now' })
-  expect(refused, JSON.stringify(refused)).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') })
-  expect(writes).toHaveBeenCalledTimes(2)
+  expect(refused, JSON.stringify(refused)).toMatchObject(held)
+  const threads = remote.host.service.state().host.threads.length
+  const start = await f.call('start_thread', { ...f.start(), permission: { kind: 'runtime', mode: 'full-access' } })
+  expect(start, JSON.stringify(start)).toMatchObject(held)
+  expect(writes).toHaveBeenCalledTimes(3)
+  expect(remote.host.service.state().host.threads).toHaveLength(threads)
 })
 
 it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {

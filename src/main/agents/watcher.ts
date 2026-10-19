@@ -308,7 +308,7 @@ export class WatcherService implements WatcherControlHooks {
     const mode = explicit?.mode ?? ceiling.runtimeMode
     if (!model?.runtimeModes?.includes(mode)) refuse('PERMISSION_NOT_COMPARABLE', 'This model does not offer that permission mode.')
     if (RUNTIME_MODE_ORDER.indexOf(mode) > RUNTIME_MODE_ORDER.indexOf(ceiling.runtimeMode)) refuse('PERMISSION_TOO_WIDE', ceiling.by === 'paired-host'
-      ? 'That host does not let this computer answer there, so Watcher can give a thread on it no more than Ask for approval.'
+      ? 'That host does not let this computer answer there, so Watcher can give a thread on it no more than Ask for approval. Nothing was sent or started. To give it more, let this computer answer on that host first.'
       : 'Watcher cannot give a thread more permission than your new-thread default.')
     return { kind: 'runtime' as const, mode }
   }
@@ -1367,7 +1367,8 @@ export class WatcherService implements WatcherControlHooks {
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
       const requestId = 'requestId' in parsed.data ? parsed.data.requestId : undefined
       if (hostId && hostId !== this.hostId() && requestId && input.target) await this.reconcileRemote(hostId)
-      if (hostId && hostId !== this.hostId() && ['list_threads', 'list_projects', 'list_working_copies', 'read_thread'].includes(name)) {
+      // A paired host's projects are listed here, from its snapshot, so their permission is the one start and send hold to.
+      if (hostId && hostId !== this.hostId() && ['list_threads', 'list_working_copies', 'read_thread'].includes(name)) {
         this.requireRemote(hostId, false)
         return await this.remote!.read(hostId, { master: this.record().current!, call: { name, input: parsed.data } } as WatcherHostRead)
       }
@@ -1601,7 +1602,8 @@ export class WatcherService implements WatcherControlHooks {
         const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
         const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
           origin.guard()
-          this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission, limits)
+          this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission,
+            this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId()))
           this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
         } }
         const created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
@@ -2164,7 +2166,9 @@ export class WatcherService implements WatcherControlHooks {
     })
     if (this.options.control.hasWatcherQueue(operations)) await this.options.control.cancelWatcherQueue(operations)
   }
-  async readRemote(raw: WatcherHostRead, clientId: string, guard?: () => void): Promise<unknown> {
+  async readRemote(raw: WatcherHostRead, clientId: string, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> {
+    // A read after a restart is what reconnects restored operations, so it carries the answer policy as admission does.
+    if (guard && mayAnswer) this.remoteAnswers.set(clientId, mayAnswer)
     try {
       if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Reopen Sotto before reading its threads.')
       const { master, call, stoppedRequests, standingWatches, outcomes } = watcherHostReadSchema.parse(raw)
@@ -2265,19 +2269,21 @@ export class WatcherService implements WatcherControlHooks {
       counts: Object.fromEntries(['Needs you', 'Ready for review', 'Working', 'Landing', 'Quiet', 'Idle'].map(group => [group, rows.filter(row => row.group === group).length])) }
   }
   private listProjects(input: WatcherToolInput<'list_projects'>) {
-    if (input.hostId && input.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher projects are not available yet.')
+    if (input.hostId && input.hostId !== this.hostId()) this.requireRemote(input.hostId, false)
     const state = this.options.control.shell()
     const snapshots = [state.host, ...this.remote?.hosts().flatMap(host => this.owningSnapshot(host.hostId) ?? []) ?? []]
+    // Read once per host: a paired host's limit reads its whole cached shell.
+    const limits = new Map(snapshots.map(snapshot => [snapshot, this.permissionLimits(undefined, snapshot.hostId ?? this.hostId())]))
     const rows = snapshots.filter(snapshot => !input.hostId || (snapshot.hostId ?? this.hostId()) === input.hostId).flatMap(snapshot => snapshot.projects.filter(item => !this.reservedProject(item.path)).map(project => ({
       target: { hostId: snapshot.hostId ?? this.hostId(), projectId: project.id }, title: project.title, displayRoot: project.path,
       workers: snapshot.models.filter(model => model.ready).slice(0, 100).map(model => {
         let defaultPermission: ReturnType<WatcherService['permission']> | null = null
-        try { defaultPermission = this.permission(model, undefined, this.permissionLimits(undefined, snapshot.hostId ?? this.hostId())) } catch { /* Explicitly incomparable. */ }
+        try { defaultPermission = this.permission(model, undefined, limits.get(snapshot)) } catch { /* Explicitly incomparable. */ }
         return { provider: model.providerId, modelId: model.id, reasoningEfforts: model.reasoningEfforts ?? [], defaultPermission, permissionComparable: defaultPermission !== null }
       }), controlAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.control),
       readsAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.reads),
       readOnlyProfileAvailable: true, freshness: snapshot.connected ? 'fresh' : 'stale' })))
-    const page = this.page('projects', rows, input.cursor, input.limit)
+    const page = this.page(`projects:${input.hostId ?? ''}`, rows, input.cursor, input.limit)
     return { status: 'ok', projects: page.rows, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }
   }
   /**

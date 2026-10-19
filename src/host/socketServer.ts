@@ -711,7 +711,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (request.op === 'watcher-control') return watcherFor(peer, await service.watcherControl!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false))
       if (request.request.standingWatches !== undefined && !offers(peer, 'watcher-standing-watch')) throw new Refusal('invalid_request')
       if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
-      const read = await service.watcherRead!(request.request, peer.client, guard)
+      const read = await service.watcherRead!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false)
       // A desktop that does not know a provider is sent no Watcher row of it (#1107).
       return watcherFor(peer, read)
     }
