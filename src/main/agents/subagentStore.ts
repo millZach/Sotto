@@ -58,7 +58,7 @@ export class SubagentStore {
       // `privacy` file of an ephemeral store keeps SQLite's default, FULL: it holds only erased identities.
       db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA secure_delete=ON;
         CREATE TABLE IF NOT EXISTS subagent_redactions (identity TEXT PRIMARY KEY);
-        CREATE TABLE IF NOT EXISTS subagent_flushes (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS subagent_flushes (key TEXT PRIMARY KEY, count INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS subagent_classifications (thread_id TEXT NOT NULL, activity_id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread_id, activity_id));
         CREATE TABLE IF NOT EXISTS subagent_threads (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS subagent_rows (thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, sequence INTEGER NOT NULL, status TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread_id, agent_id));
@@ -146,15 +146,16 @@ export class SubagentStore {
   }
   /**
    * Puts every commit so far on the disk, or throws. One small commit waits for the disk (`flushedCommits`), and that
-   * flushes the log with every commit ahead of it. A checkpoint would not do: one a reader holds back reports itself
-   * busy without failing, and need not flush anything.
+   * flushes the log with every commit ahead of it. It counts up, so it always changes the row: SQLite writes nothing,
+   * and flushes nothing, for a write that leaves a row as it was. A checkpoint would not do either: one a reader holds
+   * back reports itself busy without failing, and need not flush anything.
    */
   flushToDisk(): void {
     const db = this.requireOpen()
     flushedCommits(db, () => {
       db.exec('BEGIN IMMEDIATE')
       try {
-        db.prepare("INSERT INTO subagent_flushes VALUES ('roster', ?) ON CONFLICT(key) DO UPDATE SET at=excluded.at").run(Date.now())
+        db.prepare("INSERT INTO subagent_flushes VALUES ('roster', 1) ON CONFLICT(key) DO UPDATE SET count=count+1").run()
         db.exec('COMMIT')
       } catch (error) { db.exec('ROLLBACK'); throw error }
     })

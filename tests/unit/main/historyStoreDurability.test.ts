@@ -173,6 +173,20 @@ describe('usage history durability', () => {
 })
 
 describe('sub-agent history durability', () => {
+  it('changes its marker on every flush, so each one writes and waits for the disk, even in the same millisecond', async () => {
+    const store = new SubagentStore(join(await folder(), 'subagents.sqlite'))
+    store.open()
+    closers.push(() => store.close())
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+    const count = (): number => Number(connection(store).prepare("SELECT count FROM subagent_flushes WHERE key = 'roster'").get()?.count)
+    expect(committed(() => store.flushToDisk())).toEqual([FULL])
+    expect(count()).toBe(1)
+    // A roster save at NORMAL between two flushes is flushed by the second, which must therefore write something.
+    expect(committed(() => store.ingest('thread', [{ id: 'agent', assignmentId: 'first', title: 'Task', prompt: 'Private task', status: 'running', observedAt: at, startedAt: at }]))).toEqual([NORMAL])
+    expect(committed(() => store.flushToDisk())).toEqual([FULL])
+    expect(count()).toBe(2)
+  })
+
   const observation = { id: 'agent', assignmentId: 'first', title: 'Inspect the parser', prompt: 'Private task', status: 'running', observedAt: at, startedAt: at } as const
 
   it('saves at NORMAL and waits for the disk when Keep local history turns off', async () => {
