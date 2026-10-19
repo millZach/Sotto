@@ -116,11 +116,12 @@ export function verifyExternalDependencyInventories(
 
 // The Linux host currently needs only pure JavaScript zod. Adding a native module requires
 // an explicit platform build/ABI strategy; never copy the desktop's node-pty into this archive.
+// `node:zlib` compresses a desktop's socket messages (ADR-0025, October 18 amendment).
 // The host launches Git on a worker thread too (node:events, node:worker_threads), as the desktop does.
 export const HOST_EXTERNAL_IMPORTS = Object.freeze([
   'node:child_process', 'node:crypto', 'node:events', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',
   'node:os', 'node:path', 'node:sqlite', 'node:string_decoder', 'node:timers/promises',
-  'node:url', 'node:util', 'node:worker_threads', 'zod',
+  'node:url', 'node:util', 'node:worker_threads', 'node:zlib', 'zod',
 ])
 
 export function verifyHostExternalDependencies(inventory, packagedDependencies, availableBuiltinModules = builtinModules) {

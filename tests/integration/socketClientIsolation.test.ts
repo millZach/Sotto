@@ -378,14 +378,19 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
   let publish = (): void => undefined
   const huge = { threadId: 'huge', revision: 1, messages: [{ id: 'm', role: 'assistant' as const, text: 'x'.repeat(17 * 1024 * 1024), createdAt: new Date().toISOString() }] }
   let fits = false
+  // Each publish changes the shell, as a streaming thread's do: a push the client already has is not sent again (ADR-0025,
+  // October 18 amendment), so a burst of identical shells would have no trailing push to count.
+  let version = 0
+  const changed = (state: ReturnType<HostService['shell']>): ReturnType<HostService['shell']> => ({ ...state, host: { ...state.host,
+    threads: state.host.threads.map((thread, index) => index === 0 ? { ...thread, title: 'Burst ' + version } : thread) } })
   const service: HostService = {
-    shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(),
+    shell: () => changed(fixture.host.service.shell()), state: () => fixture.host.service.state(),
     threadDetail: id => id === 'huge' ? (fits ? { ...huge, revision: 2, messages: [] } : huge) : fixture.host.service.threadDetail(id),
     command: (command, identity) => fixture.host.service.command(command, identity),
     events: (afterSeq, threadId, limit) => threadId === 'huge'
       ? [{ seq: afterSeq + 1, threadId, event: { kind: 'message-text-appended' as const, at: new Date().toISOString(), messageId: 'm', appendText: 'x'.repeat(17 * 1024 * 1024) } }]
       : fixture.host.service.events(afterSeq, threadId, limit),
-    subscribe: listener => { publish = () => listener(fixture.host.service.shell()); return () => undefined },
+    subscribe: listener => { publish = () => { version++; listener(service.shell()) }; return () => undefined },
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Bursts')

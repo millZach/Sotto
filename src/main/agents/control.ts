@@ -841,6 +841,14 @@ export class AgentControl {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     return thread ? threadProviderOf(thread) : undefined
   }
+  /**
+   * One activity record of a thread as a window's pane would be sent it, read without copying any state, for a desktop
+   * that was sent the record with a cut body (`activity-body`). The caller only serializes it. Null when it is not there.
+   */
+  threadActivity(threadId: string, activityId: string): AgentActivity | null {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    return (thread && this.paneActivities(thread)?.find(record => record.id === activityId)) ?? null
+  }
   /** One project's provider as this coordinator holds it, or as its scoped ID names it, read without copying any state (#1107). */
   projectProvider(projectId: string): ProviderId | undefined {
     return this.state.host.projects.find(item => item.id === projectId)?.providerId ?? parsePublicProviderEntityId(projectId)?.provider
