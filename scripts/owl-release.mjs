@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 
 /** Resolve a local Owl build without rewriting the source package manifest. */
 export function resolveOwlVersion(stableVersion, date, buildNumber) {
@@ -15,6 +17,36 @@ export function resolveOwlVersion(stableVersion, date, buildNumber) {
     throw new Error('Choose a positive daily build number with --number (1, 2, and so on).')
   }
   return `${core[1]}.${core[2]}.${Number(core[3]) + 1}-owl.${date}.${buildNumber}`
+}
+
+/**
+ * The publisher electron-builder embeds in an Owl and names its update manifest after (owl.yml, owl-mac.yml).
+ * Both the Windows and the Mac Owl use it, so a change here changes both.
+ */
+export function owlPublishConfig() {
+  return { provider: 'github', owner: 'millZach', repo: 'Sotto-releases', channel: 'owl', releaseType: 'prerelease' }
+}
+
+const fullOwlVersion = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-owl\.([1-9]\d{7})\.[1-9]\d*$/u
+
+/**
+ * A full Owl version such as 0.1.38-owl.20261013.1, on a day that exists. `messages.form` and `messages.date` say,
+ * in the caller's words, what to supply when the shape or the day is wrong.
+ */
+export function checkedFullOwlVersion(version, messages) {
+  const match = typeof version === 'string' && fullOwlVersion.exec(version)
+  if (!match) throw new Error(messages.form)
+  const day = match[1], date = new Date(`${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}T00:00:00.000Z`)
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10).replaceAll('-', '') !== day) throw new Error(messages.date)
+  return version
+}
+
+/** Hash a file by streaming it, so a release file of any size is never held in memory; also counts what was hashed. */
+export async function digestFile(path, { algorithm = 'sha256', encoding = 'hex' } = {}) {
+  const hash = createHash(algorithm)
+  let size = 0
+  for await (const chunk of createReadStream(path)) { hash.update(chunk); size += chunk.length }
+  return { digest: hash.digest(encoding), size }
 }
 
 const USAGE = 'Usage: npm run package:owl -- --number 1 [--date YYYYMMDD], or npm run package:owl -- --version <full Owl version> --source <full SHA>'

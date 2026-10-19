@@ -1,5 +1,4 @@
 // npm run release:owl [-- --notes-file release/notes.md --host-archive <path> ... --mac-artifacts <folder>]; prints publishing commands only.
-import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 import process from 'node:process'
@@ -8,10 +7,12 @@ import { readAsarText } from './asar-entries.mjs'
 import { defaultOwlNotes, owlPublication } from './owl-publication.mjs'
 import { verifyOwlHostArtifact } from './owl-host-artifacts.mjs'
 import { verifyOwlMacArtifacts } from './owl-mac-artifacts.mjs'
+import { digestFile } from './owl-release.mjs'
 import { readBuildInputsRevision } from './release-provenance.mjs'
 import { releaseCheckout, RELEASE_REPOSITORY, SOURCE_REPOSITORY } from './stable-promotion.mjs'
 
 const root = resolve(import.meta.dirname, '..')
+const ATTESTATION_FAILED = 'The Mac Owl build attestation did not verify. Nothing was published.'
 export function owlPublicationArguments(args) {
   let notesFile, macArtifacts
   const hostArchives = []
@@ -67,7 +68,7 @@ export async function prepareOwlRelease({ rootDirectory = root, args = [], deskt
   if (new Set(files.map(path => basename(path))).size !== files.length) throw new Error('Each Owl release asset must have a unique filename')
   // Host and desktop build-input inventories differ. Their full source and packaged version must agree instead.
   const sums = await Promise.all(files.map(async path => {
-    const digest = createHash('sha256').update(await readFile(resolve(rootDirectory, path))).digest('hex')
+    const { digest } = await digestFile(resolve(rootDirectory, path))
     if (verifiedDigests.has(path) && verifiedDigests.get(path) !== digest) throw new Error('A host archive, sidecar or Mac Owl file changed after its release verification')
     return `${digest}  ${basename(path)}`
   }))
@@ -77,7 +78,8 @@ export async function prepareOwlRelease({ rootDirectory = root, args = [], deskt
   const quote = value => `'${value.replaceAll("'", "''")}'`
   const commands = [
     // The Mac files were built in GitHub Actions; their attestations prove which workflow run and commit made them.
-    ...attested.map(path => `gh attestation verify ${quote(path)} --repo ${SOURCE_REPOSITORY}`),
+    // Windows PowerShell carries on after a native command fails, so each check throws on its own line when it fails.
+    ...attested.map(path => `gh attestation verify ${quote(path)} --repo ${SOURCE_REPOSITORY}; if ($LASTEXITCODE -ne 0) { throw ${quote(ATTESTATION_FAILED)} }`),
     `gh release create ${quote(publication.tag)} ${files.map(quote).join(' ')} --repo ${RELEASE_REPOSITORY} --title ${quote(publication.title)} --prerelease --latest=false --notes-file 'release/owl-notes.md'`,
     `gh release upload ${quote(publication.tag)} 'release/SHA256SUMS.txt' --repo ${RELEASE_REPOSITORY}`,
     `gh release view ${quote(publication.tag)} --repo ${RELEASE_REPOSITORY} --json tagName,name,body,isPrerelease,assets`,

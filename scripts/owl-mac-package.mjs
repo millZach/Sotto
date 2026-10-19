@@ -1,18 +1,12 @@
 // The Mac half of npm run package:owl: names, the update manifest check, the zip check and the receipt.
 import { execFile } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
 import { lstat, mkdtemp, readdir, readlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { digestFile, owlPublishConfig } from './owl-release.mjs'
 
 const execFileAsync = promisify(execFile)
-
-/** The publisher electron-builder embeds in an Owl and names its update manifest after (owl.yml, owl-mac.yml). */
-export function owlPublishConfig() {
-  return { provider: 'github', owner: 'millZach', repo: 'Sotto-releases', channel: 'owl', releaseType: 'prerelease' }
-}
 
 /**
  * Every path and the electron-builder override for one Mac Owl. Names carry no spaces, so GitHub keeps them.
@@ -42,11 +36,7 @@ export function owlMacPackagePlan(root, version, { signing = {} } = {}) {
   }
 }
 
-async function hashFile(path, algorithm, encoding) {
-  const hash = createHash(algorithm)
-  for await (const chunk of createReadStream(path)) hash.update(chunk)
-  return hash.digest(encoding)
-}
+const hashFile = async (path, algorithm, encoding) => (await digestFile(path, { algorithm, encoding })).digest
 
 /** What an update manifest records about a file. */
 export async function updateFileInfo(path) {
@@ -115,8 +105,8 @@ export async function compareAppTrees(expectedRoot, actualRoot) {
  */
 export async function verifyOwlMacArchive(zip, unpacked, { extract = (archive, into) => execFileAsync('/usr/bin/ditto', ['-x', '-k', archive, into]) } = {}) {
   const temporary = await mkdtemp(join(tmpdir(), 'sotto-owl-mac-zip-'))
-  if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-mac-zip-')) throw new Error('Unexpected zip check directory.')
   try {
+    if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-mac-zip-')) throw new Error('Unexpected zip check directory.')
     await extract(zip, temporary)
     const top = (await readdir(temporary)).sort()
     if (top.length !== 1 || top[0] !== 'Sotto.app') throw new Error(`The Mac Owl zip must hold only Sotto.app, not ${top.join(', ') || 'nothing'}.`)

@@ -1,13 +1,12 @@
 // Verifies the Mac Owl files downloaded from the "Sotto Owl for Mac" workflow before release:owl attaches them.
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
 import { readAsarText } from './asar-entries.mjs'
-import { checkedOwlHostVersion } from './owl-host-artifacts.mjs'
-import { sha256 } from './verify-host-archive.mjs'
+import { checkedFullOwlVersion, digestFile } from './owl-release.mjs'
 
 const execFileAsync = promisify(execFile)
 export const OWL_MAC_RECEIPT = 'owl-mac-package.json'
@@ -75,7 +74,10 @@ async function regularFile(path, limit) {
  * held to the receipt's digest and to the build attestation the release lead verifies before publishing.
  */
 export async function verifyOwlMacArtifacts(directory, { version, sourceCommit } = {}, { extractAsar = extractMacAppAsar } = {}) {
-  checkedOwlHostVersion(version)
+  checkedFullOwlVersion(version, {
+    form: 'Supply the full Sotto Owl version the Mac files join, such as 0.1.38-owl.20261013.1',
+    date: 'Supply a Sotto Owl version whose build date is a real UTC day',
+  })
   if (!/^[a-f0-9]{40}$/u.test(sourceCommit ?? '')) throw new Error('Supply a full lower-case source commit')
   const folder = resolve(directory), info = await lstat(folder).catch(() => undefined)
   if (!info?.isDirectory()) throw new Error('Supply the folder downloaded from the Sotto Owl for Mac workflow run with --mac-artifacts.')
@@ -86,23 +88,24 @@ export async function verifyOwlMacArtifacts(directory, { version, sourceCommit }
   const present = (await readdir(folder)).sort()
   const expected = [OWL_MAC_RECEIPT, ...checked.files.map(file => file.filename)].sort()
   if (JSON.stringify(present) !== JSON.stringify(expected)) throw new Error('The Mac Owl folder must hold only the files its receipt lists. Download the artifact into an empty folder.')
-  const files = []
-  let zipBytes
-  for (const file of checked.files) {
-    const path = join(folder, file.filename), size = (await regularFile(path, OWL_MAC_FILE_LIMIT)).size
-    const bytes = await readFile(path), digest = sha256(bytes)
-    if (size !== file.size || bytes.length !== file.size || digest !== file.sha256) throw new Error(`${file.filename} does not match the Mac Owl receipt. Download the artifact again.`)
-    if (file.role === 'zip') zipBytes = bytes
-    // macOS's updater refuses an update that is not signed by the same developer as the running app, so the Mac
-    // update feed waits for Developer ID signing (Stage 2). Until then owl-mac.yml is checked but never attached.
-    files.push({ path, filename: file.filename, role: file.role, sha256: digest, attach: file.role !== 'updateManifest' })
-  }
   const temporary = await mkdtemp(join(tmpdir(), 'sotto-owl-mac-verify-'))
-  if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-mac-verify-')) throw new Error('Unexpected Mac Owl verification directory')
+  const files = []
   try {
-    // Read the exact zip bytes hashed above, so a replacement after hashing cannot change what is checked.
+    if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-mac-verify-')) throw new Error('Unexpected Mac Owl verification directory')
+    // The zip is copied into this owned folder before it is hashed, and the copy is what gets extracted, so a
+    // replacement in the downloaded folder after hashing cannot change what is checked. Every file is hashed by
+    // streaming, so a file near the size limit is never held in memory.
     const zip = join(temporary, 'sotto-owl-mac.zip'), unpacked = join(temporary, 'unpacked')
-    await writeFile(zip, zipBytes); await mkdir(unpacked)
+    for (const file of checked.files) {
+      const path = join(folder, file.filename), size = (await regularFile(path, OWL_MAC_FILE_LIMIT)).size
+      if (file.role === 'zip') await copyFile(path, zip)
+      const hashed = await digestFile(file.role === 'zip' ? zip : path)
+      if (size !== file.size || hashed.size !== file.size || hashed.digest !== file.sha256) throw new Error(`${file.filename} does not match the Mac Owl receipt. Download the artifact again.`)
+      // macOS's updater refuses an update that is not signed by the same developer as the running app, so the Mac
+      // update feed waits for Developer ID signing (Stage 2). Until then owl-mac.yml is checked but never attached.
+      files.push({ path, filename: file.filename, role: file.role, sha256: hashed.digest, attach: file.role !== 'updateManifest' })
+    }
+    await mkdir(unpacked)
     await extractAsar(zip, unpacked)
     const asar = join(unpacked, ...APP_ASAR.split('/'))
     await regularFile(asar, OWL_MAC_FILE_LIMIT)

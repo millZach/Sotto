@@ -11,11 +11,16 @@ import { releasePlatformProfile } from '../scripts/release-platform-profile.mjs'
 const root = resolve(import.meta.dirname, '..')
 const expectedVersion = process.argv[2]
 if (!expectedVersion) throw new Error('Supply the packaged Owl version.')
-const temporary = await mkdtemp(join(tmpdir(), 'sotto-owl-package-'))
-if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-package-')) throw new Error('Unexpected probe directory.')
 const profile = releasePlatformProfile()
+const temporary = await mkdtemp(join(tmpdir(), 'sotto-owl-package-'))
 let application
+// The app closes first and the profile goes even when the close fails.
+const cleanUp = async () => {
+  try { await application?.close() }
+  finally { await rm(temporary, { recursive: true, force: true }) }
+}
 try {
+  if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-package-')) throw new Error('Unexpected probe directory.')
   const userData = join(temporary, 'Chromium')
   await mkdir(userData)
   await writeFile(join(userData, 'settings.json'), JSON.stringify({ autoUpdateCheck: false }))
@@ -39,7 +44,9 @@ try {
   const result = { identity: { version: identity.version, name: identity.name, isolatedProfile: true }, status }
   await writeFile(resolve(root, 'release/owl-package-status.json'), JSON.stringify(result, null, 2) + '\n')
   process.stdout.write(JSON.stringify(result, null, 2) + '\n')
-} finally {
-  await application?.close()
-  await rm(temporary, { recursive: true, force: true })
+} catch (error) {
+  // What failed in the probe is the error to report, not a close that failed after it.
+  await cleanUp().catch(() => {})
+  throw error
 }
+await cleanUp()

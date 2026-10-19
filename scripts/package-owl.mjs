@@ -7,8 +7,8 @@ import { basename, resolve } from 'node:path'
 import process from 'node:process'
 import { Arch, build, Platform } from 'electron-builder'
 import { parse } from 'yaml'
-import { checkedOwlVersion, checkOwlSource, owlBuildArguments, owlCheckout } from './owl-release.mjs'
-import { checkOwlMacUpdateManifest, owlMacPackagePlan, owlMacReceipt, owlPublishConfig, updateFileInfo, verifyOwlMacArchive } from './owl-mac-package.mjs'
+import { checkedOwlVersion, checkOwlSource, owlBuildArguments, owlCheckout, owlPublishConfig } from './owl-release.mjs'
+import { checkOwlMacUpdateManifest, owlMacPackagePlan, owlMacReceipt, updateFileInfo, verifyOwlMacArchive } from './owl-mac-package.mjs'
 
 const mac = process.platform === 'darwin'
 if (!mac && process.platform !== 'win32') throw new Error('Sotto Owl packaging runs on Windows and Apple silicon macOS only.')

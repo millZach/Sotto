@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { Buffer } from 'node:buffer'
 import process from 'node:process'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -92,6 +92,32 @@ describe('Mac Owl files from the workflow run', () => {
     const { folder } = await macFolder()
     await expect(verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar: fakeExtract(options) })).rejects.toThrow(message)
   })
+  it('names the Owl version, not a host version, when the version it joins is not a full Owl version', async () => {
+    const { folder } = await macFolder()
+    for (const wrong of ['0.1.38', '0.1.38-owl.20260229.1']) {
+      const failure = await verifyOwlMacArtifacts(folder, { version: wrong, sourceCommit }, { extractAsar: fakeExtract() }).catch(error => error)
+      expect(failure.message).toMatch(/^Supply (the full|a) Sotto Owl version/u)
+      expect(failure.message).not.toContain('host')
+    }
+  })
+  it('hashes and extracts its own copy of the zip, in a folder it removes', async () => {
+    const { folder, names } = await macFolder()
+    let copy
+    const extractAsar = async (zip, into) => {
+      copy = zip
+      expect(dirname(dirname(zip))).toBe(resolve(tmpdir())); expect(basename(dirname(zip))).toMatch(/^sotto-owl-mac-verify-/u)
+      expect(await readFile(zip, 'utf8')).toBe('zip bytes')
+      // A replacement in the downloaded folder now cannot reach what is checked.
+      await writeFile(join(folder, names.zip), 'replaced during the check')
+      await appAsar(asarAt(into))
+    }
+    const result = await verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar })
+    expect(result.files.find(file => file.role === 'zip').sha256).toBe(sha256('zip bytes'))
+    await expect(lstat(dirname(copy))).rejects.toMatchObject({ code: 'ENOENT' })
+    const failing = await macFolder()
+    await expect(verifyOwlMacArtifacts(failing.folder, { version, sourceCommit }, { extractAsar: async zip => { copy = zip; throw new Error('tar failed') } })).rejects.toThrow('tar failed')
+    await expect(lstat(dirname(copy))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
   it('checks the receipt on its own terms', () => {
     const files = Object.fromEntries(['dmg', 'zip', 'updateManifest'].map(role => [role, { filename: owlMacFileNames(version)[role], size: 1, sha256: 'f'.repeat(64) }]))
     const receipt = { kind: 'sotto-owl-mac-package', schemaVersion: 1, version, track: 'owl', platform: 'darwin', arch: 'arm64', sourceCommit, buildInputsRevision: macInputs, files }
@@ -150,8 +176,10 @@ describe('Owl publication with the Mac files', () => {
     expect(result.files).toHaveLength(7); expect(result.sums).toHaveLength(7)
     expect(result.sums.some(line => line.endsWith('  owl-mac.yml'))).toBe(false)
     expect((await readFile(join(setup.root, 'release', 'SHA256SUMS.txt'), 'utf8')).trim().split('\n')).toEqual(result.sums)
-    expect(result.commands[0]).toBe(`gh attestation verify '${join(setup.folder, setup.names.dmg)}' --repo millZach/Sotto`)
-    expect(result.commands[1]).toBe(`gh attestation verify '${join(setup.folder, setup.names.zip)}' --repo millZach/Sotto`)
+    // Windows PowerShell carries on after a failed native command, so each check stops the pasted commands itself.
+    const stop = "; if ($LASTEXITCODE -ne 0) { throw 'The Mac Owl build attestation did not verify. Nothing was published.' }"
+    expect(result.commands[0]).toBe(`gh attestation verify '${join(setup.folder, setup.names.dmg)}' --repo millZach/Sotto${stop}`)
+    expect(result.commands[1]).toBe(`gh attestation verify '${join(setup.folder, setup.names.zip)}' --repo millZach/Sotto${stop}`)
     expect(result.commands[2]).toContain('gh release create'); expect(result.commands[2]).toContain('--prerelease --latest=false')
     expect(result.commands[2]).toContain(setup.names.dmg); expect(result.commands[2]).not.toContain('owl-mac.yml')
     const notes = await readFile(join(setup.root, 'release', 'owl-notes.md'), 'utf8')

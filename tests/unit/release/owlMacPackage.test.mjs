@@ -7,8 +7,9 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  checkOwlMacUpdateManifest, compareAppTrees, owlMacPackagePlan, owlMacReceipt, owlPublishConfig, updateFileInfo, verifyOwlMacArchive,
+  checkOwlMacUpdateManifest, compareAppTrees, owlMacPackagePlan, owlMacReceipt, updateFileInfo, verifyOwlMacArchive,
 } from '../../../scripts/owl-mac-package.mjs'
+import { owlPublishConfig } from '../../../scripts/owl-release.mjs'
 
 const version = '0.1.38-owl.20261013.1'
 let temporary
@@ -44,7 +45,8 @@ describe('Mac Owl package plan', () => {
       publish: { provider: 'github', owner: 'millZach', repo: 'Sotto-releases', channel: 'owl', releaseType: 'prerelease' },
       generateUpdatesFilesForAllChannels: false,
     })
-    expect(owlPublishConfig()).not.toBe(owlPublishConfig())
+    // The Mac plan takes the publisher the Windows Owl uses, not a copy of its own.
+    expect(plan.config.publish).toEqual(owlPublishConfig())
   })
   it('leaves the ad-hoc identity to electron-builder.yml until signing is supplied', () => {
     expect(owlMacPackagePlan(temporary, version).config.mac).not.toHaveProperty('identity')
@@ -118,6 +120,9 @@ describe('Mac Owl zip check', () => {
     await expect(verifyOwlMacArchive('owl.zip', unpacked, { extract: extra })).rejects.toThrow('only Sotto.app')
     const changed = async (archive, folder) => { await extract(archive, folder); await writeFile(join(folder, 'Sotto.app', 'Contents', 'MacOS', 'Sotto'), 'other') }
     await expect(verifyOwlMacArchive('owl.zip', unpacked, { extract: changed })).rejects.toThrow('differs Contents/MacOS/Sotto')
+    const failing = async (archive, folder) => { into = folder; throw new Error('ditto failed') }
+    await expect(verifyOwlMacArchive('owl.zip', unpacked, { extract: failing })).rejects.toThrow('ditto failed')
+    await expect(lstat(into)).rejects.toThrow('ENOENT')
   })
 })
 

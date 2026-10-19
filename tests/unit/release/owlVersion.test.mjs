@@ -1,6 +1,11 @@
 // @vitest-environment node
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { checkedOwlVersion, checkOwlSource, owlBuildArguments, resolveOwlVersion } from '../../../scripts/owl-release.mjs'
+import { checkedFullOwlVersion, checkedOwlVersion, checkOwlSource, digestFile, owlBuildArguments, owlPublishConfig, resolveOwlVersion } from '../../../scripts/owl-release.mjs'
 
 describe('Owl build version', () => {
   it('uses the next stable patch and an explicit daily number', () => {
@@ -67,5 +72,30 @@ describe('pinned Owl build', () => {
     expect(() => checkOwlSource(sha, { sourceCommit: sha, clean: false })).toThrow('clean checkout')
     expect(() => checkOwlSource(sha, { sourceCommit: 'b'.repeat(40), clean: true })).toThrow('not the requested Owl source')
     expect(() => checkOwlSource(undefined, { sourceCommit: 'b'.repeat(40), clean: false })).not.toThrow()
+  })
+})
+
+describe('What the Windows and Mac Owl share', () => {
+  it('publishes both on the Owl channel of the releases repository as a prerelease', () => {
+    expect(owlPublishConfig()).toEqual({ provider: 'github', owner: 'millZach', repo: 'Sotto-releases', channel: 'owl', releaseType: 'prerelease' })
+    // electron-builder merges into the object it is given, so each build gets its own.
+    expect(owlPublishConfig()).not.toBe(owlPublishConfig())
+  })
+  it("checks a full Owl version in the caller's words", () => {
+    const messages = { form: 'Supply the whole version', date: 'Supply a real day' }
+    expect(checkedFullOwlVersion('0.1.38-owl.20261013.1', messages)).toBe('0.1.38-owl.20261013.1')
+    for (const value of [undefined, '1.0.0', '0.1.38-beta.1', '0.1.38-owl.20261012.0', '0.1.38-owl.20261012.01', '../0.1.38-owl.20261013.1']) {
+      expect(() => checkedFullOwlVersion(value, messages)).toThrow('Supply the whole version')
+    }
+    expect(() => checkedFullOwlVersion('0.1.38-owl.20260229.1', messages)).toThrow('Supply a real day')
+  })
+  it('hashes a file by streaming it and counts the bytes it hashed', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-owl-digest-test-'))
+    try {
+      const path = join(folder, 'file.bin'), bytes = Buffer.alloc(3 * 1024 * 1024 + 7, 7)
+      await writeFile(path, bytes)
+      expect(await digestFile(path)).toEqual({ digest: createHash('sha256').update(bytes).digest('hex'), size: bytes.length })
+      expect(await digestFile(path, { algorithm: 'sha512', encoding: 'base64' })).toEqual({ digest: createHash('sha512').update(bytes).digest('base64'), size: bytes.length })
+    } finally { await rm(folder, { recursive: true, force: true }) }
   })
 })
