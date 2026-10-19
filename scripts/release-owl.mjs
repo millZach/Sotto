@@ -76,11 +76,12 @@ export async function prepareOwlRelease({ rootDirectory = root, args = [], deskt
   await writeFile(resolve(rootDirectory, 'release/owl-notes.md'), publication.body)
   await writeFile(resolve(rootDirectory, 'release/SHA256SUMS.txt'), sums.join('\n') + '\n')
   const quote = value => `'${value.replaceAll("'", "''")}'`
+  // The Mac files were built in GitHub Actions; their attestations prove which workflow run and commit made them.
+  // Windows PowerShell carries on after a native command fails, and a pasted block runs line by line, so the checks
+  // and the create command share one line: a failed check throws before anything is published.
+  const create = `gh release create ${quote(publication.tag)} ${files.map(quote).join(' ')} --repo ${RELEASE_REPOSITORY} --title ${quote(publication.title)} --prerelease --latest=false --notes-file 'release/owl-notes.md'`
   const commands = [
-    // The Mac files were built in GitHub Actions; their attestations prove which workflow run and commit made them.
-    // Windows PowerShell carries on after a native command fails, so each check throws on its own line when it fails.
-    ...attested.map(path => `gh attestation verify ${quote(path)} --repo ${SOURCE_REPOSITORY}; if ($LASTEXITCODE -ne 0) { throw ${quote(ATTESTATION_FAILED)} }`),
-    `gh release create ${quote(publication.tag)} ${files.map(quote).join(' ')} --repo ${RELEASE_REPOSITORY} --title ${quote(publication.title)} --prerelease --latest=false --notes-file 'release/owl-notes.md'`,
+    [...attested.map(path => `gh attestation verify ${quote(path)} --repo ${SOURCE_REPOSITORY}; if ($LASTEXITCODE -ne 0) { throw ${quote(ATTESTATION_FAILED)} }`), create].join('; '),
     `gh release upload ${quote(publication.tag)} 'release/SHA256SUMS.txt' --repo ${RELEASE_REPOSITORY}`,
     `gh release view ${quote(publication.tag)} --repo ${RELEASE_REPOSITORY} --json tagName,name,body,isPrerelease,assets`,
     `gh api repos/${RELEASE_REPOSITORY}/releases/latest --jq .tag_name`,

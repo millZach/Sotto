@@ -178,10 +178,12 @@ describe('Owl publication with the Mac files', () => {
     expect((await readFile(join(setup.root, 'release', 'SHA256SUMS.txt'), 'utf8')).trim().split('\n')).toEqual(result.sums)
     // Windows PowerShell carries on after a failed native command, so each check stops the pasted commands itself.
     const stop = "; if ($LASTEXITCODE -ne 0) { throw 'The Mac Owl build attestation did not verify. Nothing was published.' }"
-    expect(result.commands[0]).toBe(`gh attestation verify '${join(setup.folder, setup.names.dmg)}' --repo millZach/Sotto${stop}`)
-    expect(result.commands[1]).toBe(`gh attestation verify '${join(setup.folder, setup.names.zip)}' --repo millZach/Sotto${stop}`)
-    expect(result.commands[2]).toContain('gh release create'); expect(result.commands[2]).toContain('--prerelease --latest=false')
-    expect(result.commands[2]).toContain(setup.names.dmg); expect(result.commands[2]).not.toContain('owl-mac.yml')
+    // One line, so a pasted block cannot reach the create command after a failed check.
+    const [dmgCheck, zipCheck, create] = result.commands[0].split(`${stop}; `)
+    expect(`${dmgCheck}${stop}`).toBe(`gh attestation verify '${join(setup.folder, setup.names.dmg)}' --repo millZach/Sotto${stop}`)
+    expect(`${zipCheck}${stop}`).toBe(`gh attestation verify '${join(setup.folder, setup.names.zip)}' --repo millZach/Sotto${stop}`)
+    expect(create).toMatch(/^gh release create /u); expect(create).toContain('--prerelease --latest=false')
+    expect(create).toContain(setup.names.dmg); expect(create).not.toContain('owl-mac.yml')
     const notes = await readFile(join(setup.root, 'release', 'owl-notes.md'), 'utf8')
     expect(notes).toContain('Windows and Apple silicon Macs'); expect(notes).toContain('Open Anyway')
     expect(notes).toContain('xattr -dr com.apple.quarantine /Applications/Sotto.app'); expect(notes).toContain(`Source commit: ${sourceCommit}`)
