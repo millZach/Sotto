@@ -24,10 +24,10 @@ export function threadWaitingFor(thread: Pick<AgentThread, 'requests' | 'settled
 
 /**
  * Whether a delegated thread needs the user, as its sidebar row would say: a permission or a question waiting, or its
- * provider reporting an error (Needs attention). A closed thread needs nothing.
+ * provider reporting an error no client has shown yet (Needs attention, ADR-0092). A closed thread needs nothing.
  */
-export function threadNeedsYou(thread: Pick<AgentThread, 'requests' | 'status' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
-  return threadWaitingFor(thread) !== null || (thread.status === 'error' && !isThreadClosed(thread))
+export function threadNeedsYou(thread: Pick<AgentThread, 'requests' | 'status' | 'failureSeen' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
+  return threadWaitingFor(thread) !== null || (thread.status === 'error' && thread.failureSeen !== true && !isThreadClosed(thread))
 }
 
 /**

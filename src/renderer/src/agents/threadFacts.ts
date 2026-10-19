@@ -168,7 +168,8 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     state_ = 'done'
     stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
     sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
-  } else if (decision !== undefined || thread.status === 'error') {
+  } else if (decision !== undefined || failureUnseen(thread)) {
+    // A failed turn a client has shown, or the user dismissed, is no longer news: it reads Done below (ADR-0092).
     state_ = 'needs'
     // A permission holds the agent still until you allow or deny it, so it outranks a question here as it does in the composer.
     const kinds = [decision?.kind, ...thread.requests.map(request => request.kind)]
@@ -199,6 +200,7 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     state_ = 'done'
     stateLabel = 'Done'
     if (lastAssistant !== undefined) sentence = lastAssistant.text
+    else if (thread.status === 'error') sentence = 'The last turn failed. Open the thread to see why.'
     else if (lastUser !== undefined) { sentence = `Waiting to start on “${lastUser.text}”.`; sentenceFromUser = true }
     else sentence = 'Ready for your next prompt.'
   }
@@ -224,6 +226,20 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
     lastMessage,
   }
+}
+
+/**
+ * A thread whose last turn failed, that asks nothing, and that no client has shown since (ADR-0092): its row says Needs
+ * attention. Once a client shows it, or Dismiss all names it, the host marks it seen and the row reads Done, while the
+ * pane still says why the turn failed. A thread waiting on a permission or a question is never one of these.
+ */
+export function failureUnseen(thread: Pick<AgentThread, 'status' | 'requests' | 'failureSeen' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
+  return thread.status === 'error' && thread.requests.length === 0 && thread.failureSeen !== true && !isThreadClosed(thread)
+}
+
+/** The threads Dismiss all names: every one whose row says Needs attention for a failed turn, wherever it is listed. */
+export function unseenFailures(threads: readonly AgentThread[]): string[] {
+  return threads.filter(failureUnseen).map(thread => thread.id)
 }
 
 /**

@@ -1,13 +1,13 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
-import { isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
-import { rowStatus, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
+import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
@@ -238,6 +238,30 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   </div>
 })
 
+/**
+ * "3 need attention" with Dismiss all beside it, under the search, while any thread's failed turn has not been seen
+ * (ADR-0092, prototype variant A). It counts failed turns alone: a thread waiting on a permission or a question is the
+ * user's to answer and is never counted or dismissed. One press marks every counted thread seen, on every host that holds
+ * one; the search field just above takes the focus, since the line goes once the hosts say so.
+ */
+function NeedsAttentionLine({ threadIds, command }: { readonly threadIds: readonly string[]; readonly command: Command }): ReactNode {
+  const line = useRef<HTMLDivElement>(null)
+  const [dismissing, setDismissing] = useState(false)
+  if (!threadIds.length) return null
+  const count = threadIds.length
+  const dismiss = (): void => {
+    line.current?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input')?.focus()
+    setDismissing(true)
+    void command({ type: 'dismiss-failures', threadIds: threadIds.slice(0, AGENT_DISMISS_FAILURES_MAX) }).finally(() => setDismissing(false))
+  }
+  return <div ref={line} className="thread-nav__attention">
+    <i aria-hidden="true" />
+    <span className="thread-nav__attention-count">{count} {count === 1 ? 'needs' : 'need'} attention</span>
+    <button type="button" className="thread-nav__attention-dismiss tt-focusable" aria-label={`Dismiss Needs attention on ${plural(count, 'thread')}`}
+      disabled={dismissing} onClick={dismiss}>Dismiss all</button>
+  </div>
+}
+
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
 export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread,
   currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut }: PaneActions & {
@@ -279,6 +303,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
   }
   const { open, settled } = organization
+  const threads = state.host.threads
+  const failures = useMemo(() => unseenFailures(threads), [threads])
   const settledThreads = settled.reduce((count, folder) => count + folder.rows.length, 0)
   const settledWorking = settled.reduce((count, folder) => count + folder.working, 0)
   const settledNeeds = settled.reduce((count, folder) => count + folder.needs, 0)
@@ -289,6 +315,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread}
+    afterSearch={<NeedsAttentionLine threadIds={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
     </button>)}</nav>}>

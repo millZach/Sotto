@@ -37,6 +37,14 @@
 .threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--threads-field); font-size: 13px; font-weight: 400; }
 .threads-search .tt-input::-webkit-search-cancel-button { display: none; }
 .threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; translate: 0 -50%; }
+/* Needs attention: how many failed turns no client has shown, under the search, with Dismiss all beside it (ADR-0092).
+   The count gives way before the button does, so the line keeps one row at the narrowest sidebar. */
+.thread-nav__attention { display: flex; flex: none; align-items: center; gap: 8px; min-height: 32px; margin: 0 8px 8px; padding: 3px 3px 3px 10px; border-radius: 8px; background: var(--tt-warning-surface); color: var(--tt-warning-text); font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+.thread-nav__attention > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-attention); }
+.thread-nav__attention-count { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__attention-dismiss { flex: none; min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.thread-nav__attention-dismiss:hover:not(:disabled) { background: var(--tt-hover); }
+.thread-nav__attention-dismiss:disabled { cursor: default; opacity: .6; }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }

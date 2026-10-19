@@ -56,6 +56,9 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('success', [['bubble'], ['bubble', hover], ['canvas', hover]], 'Copied, on a message and in the bubble'),
   ...each('warning', [['sidebar'], ['sidebar', hover], ['surface-elevated'], ['canvas'], ['code-bg'], ['field'], [followups], [followups, hover]], 'warning text and code strings'),
   pair('warning-text', ['warning-surface'], 'warning card'),
+  // The sidebar's Needs attention line and its Dismiss all, and the pane's failed turn notice (ADR-0092).
+  ...each('text', [['warning-surface'], ['warning-surface', hover]], 'Dismiss all and the lead of the failed turn notice'),
+  pair('text-2', ['warning-surface'], 'failed turn notice'),
   ...each('warning-on-tint', [['selected'], ['bubble']], 'needs you or a branch problem on the current row, a failed send'),
   ...each('error-text', [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['sidebar'], ['error-surface'], ['terminal-background'], ...hovered.slice(0, 3), glass[0]], 'error text'),
   ...each('error-on-tint', [['selected'], ['bubble']], 'unavailable tab, selected; a link that would not open'),

@@ -14,6 +14,7 @@ import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
 import { ThreadComposer } from './ThreadComposer'
+import { FailedTurnNotice, failedTurnExplanation } from './FailedTurnNotice'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
@@ -197,6 +198,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const settings = usePendingSettings(thread.id)
   const settingsExplains = error !== null && (Object.values(settings.refusals).some(refusal => refusal?.error === error)
     || Object.values(settings.pending).some(pending => pending?.error === error))
+  // Why the last turn failed is said once (ADR-0092): by its line in the transcript when that carries the reason, so the
+  // banner stays down when it would say the same; otherwise by the notice above the composer.
+  const failure = failedTurnExplanation(thread, row.provider)
+  const turnExplains = error !== null && failure?.kind === 'transcript' && failure.reason === error
   /** A branch switched in a terminal leaves no activity behind, so a draft that begins re-reads the folder once. */
   const branchRead = useRef<string | null>(null)
   const worktreeReady = thread.worktree?.status === 'ready' || (!thread.worktree && thread.nativeSessionStarted !== false)
@@ -273,7 +278,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {settleDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
-    {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
+    {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
@@ -295,6 +300,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}
+      <FailedTurnNotice explanation={failure} />
       <div className="git-action-notice-slot" ref={setGitNoticeSlot} />
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       {/* Watcher keeps to its own folder; it switches no working copy (ADR-0073). */}
