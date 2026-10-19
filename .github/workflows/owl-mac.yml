@@ -1,0 +1,110 @@
+# Builds the Apple silicon Mac half of a Sotto Owl (ADR-0072, ADR-0092) from the same source commit and Owl version as the
+# Windows Owl the release lead packaged by hand. Runs only when started by hand; never on a push or a pull request.
+# It publishes nothing: it attests the disk image and zip and keeps them as a workflow artifact, which release:owl
+# verifies and attaches to the Owl prerelease. The build is ad-hoc signed until Developer ID signing arrives, and
+# it uses no secrets.
+name: Sotto Owl for Mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The Windows Owl's version, such as 0.1.38-owl.20261019.1
+        required: true
+        type: string
+      source:
+        description: The full source commit the Windows Owl was built from
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One build per Owl version at a time. A second start for the same version waits rather than cancelling the first.
+concurrency:
+  group: owl-mac-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package Sotto Owl (Apple silicon)
+    runs-on: macos-26
+    timeout-minutes: 60
+    # The attestation signs with this run's identity and records it on the public source repository.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CI: 'true'
+      # Inputs reach scripts only through the environment, and are checked before anything reads them.
+      VERSION: ${{ inputs.version }}
+      SOURCE: ${{ inputs.source }}
+    steps:
+      - name: Check the version and source commit
+        shell: bash
+        run: |
+          if ! [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The source must be the full 40-character lower-case commit the Windows Owl was built from."; exit 1
+          fi
+          # The same shape as src/shared/releaseTrack.ts: X.Y.Z-owl.YYYYMMDD.N.
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-owl\.[1-9][0-9]{7}\.[1-9][0-9]*$ ]]; then
+            echo "The version must be a full Owl version, such as 0.1.38-owl.20261019.1."; exit 1
+          fi
+          echo "Packaging Sotto Owl $VERSION from $SOURCE."
+
+      - name: Check out the source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Refuses unless the checkout is clean, HEAD is the source and the version is this manifest's next Owl.
+      - name: Package and verify the Mac Owl
+        run: npm run package:owl -- --version "$VERSION" --source "$SOURCE"
+
+      # The receipt names the files; this checks it describes this build and lists them for the next two steps.
+      - name: Name the files the receipt lists
+        id: files
+        shell: bash
+        run: |
+          node --input-type=module - <<'SCRIPT'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+          import process from 'node:process'
+          const receipt = JSON.parse(readFileSync('release/owl-mac-package.json', 'utf8'))
+          if (receipt.version !== process.env.VERSION || receipt.sourceCommit !== process.env.SOURCE || receipt.track !== 'owl') {
+            throw new Error('The packaging receipt does not describe this Owl.')
+          }
+          const files = Object.entries(receipt.files ?? {})
+          for (const [, file] of files) {
+            if (!/^[A-Za-z0-9._-]+$/u.test(file?.filename ?? '') || !existsSync(`release/${file.filename}`)) throw new Error('The receipt lists a file that is not in release/.')
+          }
+          const attest = files.filter(([role]) => role === 'dmg' || role === 'zip').map(([, file]) => `release/${file.filename}`)
+          if (attest.length !== 2) throw new Error('The receipt must list the disk image and the zip.')
+          const upload = [...files.map(([, file]) => `release/${file.filename}`), 'release/owl-mac-package.json']
+          appendFileSync(process.env.GITHUB_OUTPUT, `attest<<FILES\n${attest.join('\n')}\nFILES\nupload<<FILES\n${upload.join('\n')}\nFILES\n`)
+          SCRIPT
+
+      - name: Attest the disk image and zip
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.files.outputs.attest }}
+
+      # release:owl reads this artifact after `gh run download <run-id> --repo millZach/Sotto --name
+      # sotto-owl-mac-<version> --dir <folder>`. Every file sits in release/, so the folder holds them side by side.
+      - name: Retain the Mac Owl files
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-mac-${{ inputs.version }}
+          path: ${{ steps.files.outputs.upload }}
+          if-no-files-found: error
+          retention-days: 14
