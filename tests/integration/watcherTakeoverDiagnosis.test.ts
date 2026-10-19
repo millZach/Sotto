@@ -26,12 +26,10 @@ async function fixture() {
   let watcherEnabled = true
   // These cases are about which user request may send, not Watcher's news. Two seconds after a worker's turn ends,
   // news would start a hidden wake-up turn on Watcher's thread, and a user request sent behind it waits in the queue
-  // instead of starting a request. A slow runner reaches those two seconds between steps, so news is held back for
-  // every Watcher, including the one a restart makes before its first pass: every pass goes through one of these two.
-  for (const pass of ['observe', 'observeSoon'] as const) {
-    const held = vi.spyOn(WatcherWakeUp.prototype, pass).mockImplementation(() => undefined)
-    cleanups.push(async () => { held.mockRestore() })
-  }
+  // instead of starting a request. A slow runner reaches those two seconds between steps, so every case holds news
+  // back for every Watcher, including the one a restart makes before its first pass. Every pass goes through observe.
+  const held = vi.spyOn(WatcherWakeUp.prototype, 'observe').mockImplementation(() => undefined)
+  cleanups.push(async () => { held.mockRestore() })
   const createRuntime = () => createAgentRuntime({ directory, credentials, watcherEnabled, settings: () => settings,
     writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
     providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
