@@ -127,19 +127,20 @@ it('takes a watch with watch_thread only while answering the user’s own messag
  * The user's steer into Watcher's running turn, which the provider takes as the turn's newest user message. This fake has no
  * read that confirms a steer, so the coordinator may call it unconfirmed; it was dispatched all the same.
  */
-async function steerIn(f: Awaited<ReturnType<typeof fixture>>, draftId: string, text: string) {
+async function steerIn(f: Awaited<ReturnType<typeof fixture>>, draftId: string, text: string, shown = true) {
   const codex = f.workspace.adapters.codex
-  if (!vi.isMockFunction(codex.execute)) {
-    const execute = codex.execute.bind(codex)
-    vi.spyOn(codex, 'execute').mockImplementation(async command => {
-      if (command.type !== 'steer') return execute(command)
-      codex.commands.push(structuredClone(command))
+  if (vi.isMockFunction(codex.execute)) vi.mocked(codex.execute).mockRestore()
+  const execute = codex.execute.bind(codex)
+  vi.spyOn(codex, 'execute').mockImplementation(async command => {
+    if (command.type !== 'steer') return execute(command)
+    codex.commands.push(structuredClone(command))
+    if (shown) {
       const master = codex.state.threads.find(thread => thread.id === command.threadId)!
       master.messages.push({ id: command.messageId, commandId: command.commandId, role: 'user', text: command.text, createdAt: new Date().toISOString() }); master.lastUserMessageId = command.messageId
       codex.emit()
-      return { accepted: true }
-    })
-  }
+    }
+    return { accepted: true }
+  })
   const before = codex.commands.filter(command => command.type === 'steer').length
   await f.control.commandShell({ type: 'steer', threadId: f.watcherId(), draftId, text })
   const steers = codex.commands.filter(command => command.type === 'steer')
@@ -221,6 +222,33 @@ it('lets the user steer Watcher’s news turn, under a request of its own that W
   expect(second.text).toBe('Synthetic: and the release checks')
   expect(f.service.state().requests.find(item => item.id === request.id)!.userFollowups).toContainEqual({ draftId: secondDraft, messageId: second.messageId })
   expect(f.service.state().requests.filter(item => item.rootUserMessageId === second.messageId)).toEqual([])
+})
+
+it('lets Watcher act on a steer into a news turn it recovered, before the provider shows the steer (#1188)', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request(); await f.finish(f.watcherId())
+  await startNews(f)
+  // Sotto restarted while the news turn ran: this run has sent Watcher nothing.
+  Reflect.set(f.service, 'lastSend', undefined)
+  const steer = await steerIn(f, randomUUID(), 'Synthetic: watch that thread', false)
+  const request = f.service.state().requests.find(item => item.rootUserMessageId === steer.messageId)!
+  expect(request).toMatchObject({ state: 'active' })
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+})
+
+it('queues a message while Watcher reads news though the last request holds all the messages it can (#1188)', async () => {
+  const f = await fixture(), requestId = await f.request()
+  await f.finish(f.watcherId())
+  await f.control.updateWatcher(record => {
+    record.requests.find(item => item.id === requestId)!.userFollowups = Array.from({ length: 1_000 }, () => ({ draftId: randomUUID(), messageId: randomUUID() }))
+  })
+  await startNews(f)
+  const draftId = randomUUID(), text = 'Synthetic: one more thing'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId(), draftId, text })).error).toBeNull()
+  const sent = await deliverQueued(f, text)
+  const request = f.service.state().requests.find(item => item.rootUserMessageId === sent.messageId)!
+  expect(request).toMatchObject({ state: 'active' })
+  expect(request.id).not.toBe(requestId)
 })
 
 it('gives a message queued while Watcher reads news a request of its own, though the last request is still active (#1188)', async () => {
