@@ -82,7 +82,7 @@ export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected
   if (thread.status === 'unavailable' || !thread.connected) return 'Its computer or provider to connect again.'
   if (thread.paused) return 'The user’s own turn in it to end. Watcher sends it nothing until then.'
   if (thread.status === 'running') return 'Its turn to finish.'
-  if (thread.backgroundWorkCount > 0) return 'The background work its last turn left running to end.'
+  if (thread.backgroundWorkCount > 0) return 'The background work or sub-agents its last turn left running to end.'
   if (thread.status === 'error') return 'A look at its failed turn.'
   if (thread.settled) return 'Nothing. It is settled.'
   return 'Nothing. It is at rest.'

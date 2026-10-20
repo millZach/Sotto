@@ -19,7 +19,7 @@ import { clonePlainData } from './cloneHostSnapshot'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
-import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
+import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint } from './watcherWakeUp'
 import { WATCHER_COMPACTED_NOTE, watcherRequestNote } from './watcherRequestNote'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
 import { compactionPending } from '../../shared/compaction'
@@ -512,7 +512,15 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
   private watching(threads: WatcherRoomState['watchedThreads']) {
-    return threads.filter(thread => thread.watched !== false).map(thread => ({ target: thread.target, title: thread.title, waitsOn: watcherWaitsOn(thread) }))
+    // This computer's threads only: this runs on every room update, and a paired host's shell is not read again for it.
+    // A paired host's thread keeps the count its room input carries, which leaves its sub-agents out.
+    const local = this.options.control.watcherSnapshot(), hostId = this.hostId()
+    return threads.filter(thread => thread.watched !== false).map(thread => {
+      // The work its last turn left running, sub-agents working or left unknown included, as its news counts it.
+      const owned = thread.target.hostId === hostId ? local.threads.find(item => item.id === thread.target.threadId) : undefined
+      const work = owned ? watcherBackgroundWorkCount(owned) : thread.backgroundWorkCount
+      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work }) }
+    })
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }

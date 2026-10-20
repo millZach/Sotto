@@ -111,7 +111,7 @@ describe('the note after a compaction (#1189)', () => {
     const thread = { status: 'idle' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [] as { kind: 'question' | 'permission' }[], paused: false }
     expect(watcherWaitsOn(thread)).toBe('Nothing. It is at rest.')
     expect(watcherWaitsOn({ ...thread, status: 'running' })).toBe('Its turn to finish.')
-    expect(watcherWaitsOn({ ...thread, backgroundWorkCount: 2 })).toBe('The background work its last turn left running to end.')
+    expect(watcherWaitsOn({ ...thread, backgroundWorkCount: 2 })).toBe('The background work or sub-agents its last turn left running to end.')
     expect(watcherWaitsOn({ ...thread, waitsOn: [{ kind: 'permission' }] })).toBe('The user’s answer to its permission request.')
     expect(watcherWaitsOn({ ...thread, connected: false })).toBe('Its computer or provider to connect again.')
   })
