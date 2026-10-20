@@ -4,10 +4,12 @@
  * words: every text is a fixed placeholder. The real WatcherService and AgentControl run; only the coordinator's snapshot,
  * its send records and its host ID are supplied, as `watcherObservePerformance` does.
  */
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import type { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
-import { EMPTY_AGENT_HOST, type AgentHostSnapshot } from '../../src/shared/agents'
+import { EMPTY_AGENT_HOST, type AgentDelivery, type AgentFollowup, type AgentHostSnapshot } from '../../src/shared/agents'
 import type { WatcherRecord } from '../../src/shared/watcher'
 import { agentControlFixture } from './agentControlFixture'
 import { centerHostId, centerTime, watcherRecordFixture } from './watcher'
@@ -26,12 +28,24 @@ export interface ScaleShape {
   watches: number
 }
 
+export interface ScaleOptions {
+  /**
+   * Prompt turns nothing reads that the saved record holds when main loads it, besides the ones it reads, as a record
+   * saved before turns were let go of does. The settled record is saved, then a second control starts from the file, so
+   * what is loaded is what main reads at start, and the first pass after loading is the test's own.
+   */
+  savedPromptTurns?: number
+}
+
+/** Counts every read of a thread out of the snapshot's thread list while `on`: each loop step, search step and spread. */
+export interface ThreadVisits { on: boolean; count: number }
+
 /**
  * `observe()` is the pass main runs for every snapshot it accepts. `publish()` runs what main runs for Watcher on every
  * coordinator change, with a room listener attached so the room state is built, as the window's room bridge does.
  * `wakePass()` is the wake-up pass a publish runs at most every WATCHER_OBSERVE_MS.
  */
-export async function watcherAtScale(shape: ScaleShape) {
+export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = {}) {
   const workspace = await workspaceFixture(undefined, { history: false, watcherEnabled: true })
   const cleanups: (() => Promise<unknown> | void)[] = [workspace.remove, workspace.stop]
   try {
@@ -82,35 +96,70 @@ export async function watcherAtScale(shape: ScaleShape) {
     for (let index = 0; index < shape.watches; index++) record.operations.push({ ...source, id: uuid(60_000 + index), retryKey: uuid(70_000 + index),
       draftId: uuid(80_000 + index), requestId: record.requests.at(-1)!.id, target: target(index), deliveryState: 'accepted', messageId: head(index),
       outcome: 'unknown', turnMessageId: head(index), nativeTurnId: `turn-${index}` })
-    f.control.mutateWatcher(next => Object.assign(next, record))
-    const hostIdSpy = vi.spyOn(f.control, 'hostId').mockReturnValue(centerHostId)
-    const snapshotSpy = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue(snapshot)
-    const pendingSpy = vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
-    const deliveries: ReturnType<typeof f.control.watcherSendRecords>['deliveries'] = record.operations.map(operation => ({
-      threadId: operation.target.threadId, draftId: operation.draftId!, status: 'accepted', createdAt: centerTime, updatedAt: centerTime }))
-    const sendsSpy = vi.spyOn(f.control, 'watcherSendRecords').mockReturnValue({ followups: [], deliveries })
-    // The coordinator listener Watcher adds, kept so a test can run it as main does on every change.
-    let coordinatorChanged: (() => void) | undefined
-    const subscribeSpy = vi.spyOn(f.control, 'subscribe').mockImplementationOnce(listener => {
-      coordinatorChanged = () => listener(undefined as never)
-      return () => { coordinatorChanged = undefined }
-    })
-    cleanups.push(() => { subscribeSpy.mockRestore(); sendsSpy.mockRestore(); pendingSpy.mockRestore(); snapshotSpy.mockRestore(); hostIdSpy.mockRestore() })
-    const service = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control,
-      historyEnabled: () => false, streamingPublishCost: true, limit: () => 8 })
-    cleanups.push(() => service.close())
-    let rooms = 0
-    const unsubscribeRoom = service.subscribe(() => { rooms++ })
-    cleanups.push(() => { unsubscribeRoom() })
-    // Recovery starts the wake-ups and runs the first pass; setup stays outside what a test counts.
-    await service.recover()
-    const observe = () => service.observe(snapshot, new Set())
-    const publish = () => { if (!coordinatorChanged) throw new Error('Watcher did not subscribe to the coordinator'); coordinatorChanged() }
-    observe(); publish(); publish()
+    // Every read of a thread out of the snapshot's list, counted only while a test asks.
+    const threadVisits: ThreadVisits = { on: false, count: 0 }
+    snapshot.threads = new Proxy(snapshot.threads, { get(target, property, receiver) {
+      if (threadVisits.on && typeof property === 'string' && /^\d+$/u.test(property)) threadVisits.count++
+      return Reflect.get(target, property, receiver)
+    } })
+    // What main's queue and delivery records say, which a test may change before a pass.
+    const sends: { followups: AgentFollowup[]; deliveries: AgentDelivery[] } = {
+      followups: [], deliveries: record.operations.map(operation => ({
+        threadId: operation.target.threadId, draftId: operation.draftId!, status: 'accepted', createdAt: centerTime, updatedAt: centerTime })) }
+    /**
+     * Watcher on `control` as main runs it, recovered, with the first pass and publishes it makes on start behind it. A
+     * restart of a record Watcher has already recovered and settled leaves its first pass to the test.
+     */
+    const attach = async (control: typeof f.control, restarted = false) => {
+      const detach: (() => Promise<unknown> | void)[] = []
+      const hostIdSpy = vi.spyOn(control, 'hostId').mockReturnValue(centerHostId)
+      const snapshotSpy = vi.spyOn(control, 'watcherSnapshot').mockReturnValue(snapshot)
+      const pendingSpy = vi.spyOn(control, 'hasPendingThreadWork').mockReturnValue(false)
+      const sendsSpy = vi.spyOn(control, 'watcherSendRecords').mockImplementation(() => sends)
+      // The coordinator listener Watcher adds, kept so a test can run it as main does on every change.
+      let coordinatorChanged: (() => void) | undefined
+      const subscribeSpy = vi.spyOn(control, 'subscribe').mockImplementationOnce(listener => {
+        coordinatorChanged = () => listener(undefined as never)
+        return () => { coordinatorChanged = undefined }
+      })
+      detach.push(() => { subscribeSpy.mockRestore(); sendsSpy.mockRestore(); pendingSpy.mockRestore(); snapshotSpy.mockRestore(); hostIdSpy.mockRestore() })
+      const service = new WatcherService({ directory: workspace.root, host: workspace.host, control,
+        historyEnabled: () => false, streamingPublishCost: true, limit: () => 8 })
+      detach.push(() => service.close())
+      let rooms = 0
+      const unsubscribeRoom = service.subscribe(() => { rooms++ })
+      detach.push(() => { unsubscribeRoom() })
+      cleanups.push(...detach)
+      const observe = () => service.observe(snapshot, new Set())
+      const publish = () => { if (!coordinatorChanged) throw new Error('Watcher did not subscribe to the coordinator'); coordinatorChanged() }
+      // Recovery starts the wake-ups and runs the first pass; setup stays outside what a test counts.
+      if (!restarted) { await service.recover(); observe(); publish(); publish() }
+      return { service, observe, publish, rooms: () => rooms, detach: async () => { for (const step of detach.reverse()) { cleanups.splice(cleanups.indexOf(step), 1); await step() } } }
+    }
+    let control = f.control, loaded: Readonly<WatcherRecord> | undefined
+    if (options.savedPromptTurns !== undefined) await control.start()
+    control.mutateWatcher(next => Object.assign(next, record))
+    let attached = await attach(control)
+    if (options.savedPromptTurns !== undefined) {
+      // Saved once Watcher has settled it, so the restart has nothing to change but the prompt turns it loads.
+      await control.updateWatcher(() => undefined)
+      await attached.detach()
+      control.dispose()
+      const path = join(workspace.root, 'agents.json'), saved = JSON.parse(await readFile(path, 'utf8')) as { watcher: WatcherRecord }
+      // Older turns nothing reads any more, before the ones Watcher's operations still count against.
+      saved.watcher.promptTurns = [...Array.from({ length: options.savedPromptTurns }, (_, index) => ({ id: uuid(90_000 + index), watcher, createdAt: centerTime,
+        rootUserMessageId: `turn-root-${index}` })), ...saved.watcher.promptTurns ?? []]
+      await writeFile(path, JSON.stringify(saved), 'utf8')
+      control = f.create()
+      await control.start()
+      loaded = control.watcherRecordView()
+      attached = await attach(control, true)
+    }
+    const { service, observe, publish, rooms } = attached
     // The wake-up pass a publish runs at most every WATCHER_OBSERVE_MS, run now.
     const wakePass = () => (service as unknown as { wakes: WatcherWakeUp }).wakes.observe()
-    return { service, control: f.control, snapshot, observe, publish, wakePass, rooms: () => rooms,
-      state: (): Readonly<WatcherRecord> => f.control.watcherRecordView(),
+    return { service, control, snapshot, sends, threadVisits, loaded, observe, publish, wakePass, rooms,
+      state: (): Readonly<WatcherRecord> => control.watcherRecordView(),
       close: async () => { const failures: unknown[] = []; for (const cleanup of cleanups.splice(0).reverse()) { try { await cleanup() } catch (error) { failures.push(error) } }
         if (failures.length) throw new AggregateError(failures, 'Scale fixture cleanup failed') } }
   } catch (error) {

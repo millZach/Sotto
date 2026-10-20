@@ -17,7 +17,7 @@ import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcher
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import { clonePlainData } from './cloneHostSnapshot'
 import type { AgentHostCommand } from './host'
-import type { AgentControl } from './control'
+import type { AgentControl, WatcherDraft } from './control'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherHostInput, watcherSlimRead } from './watcherSlimReads'
@@ -73,6 +73,7 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
 type PromptTurn = NonNullable<WatcherRecord['promptTurns']>[number]
 type TakeoverDraft = NonNullable<NonNullable<WatcherRecord['localTakeovers']>[number]['userDrafts']>[number]
+type TakeoverReason = NonNullable<Participant['takeover']>['reason']
 export function watcherRefusal(code: WatcherRefusal['code'], message: string, retryable = false): WatcherRefusal {
   return { status: 'refused', code, message, retryable }
 }
@@ -1143,35 +1144,46 @@ export class WatcherService implements WatcherControlHooks {
     return sends.followups.some(item => item.threadId === threadId && !item.wakeUp && !machine.has(item.draftId))
       || sends.deliveries.some(item => item.threadId === threadId && !machine.has(item.draftId) && ['queued', 'submitting', 'uncertain'].includes(item.status))
   }
-  private takeover(threadId: string, reason: 'user-send' | 'native-user-send' | 'user-stop' | 'user-settle' | 'user-reconfigure', userMessageId?: string, userDraft?: TakeoverDraft): void {
+  private takeover(threadId: string, reason: TakeoverReason, userMessageId?: string, userDraft?: TakeoverDraft): void {
     const target = this.target(threadId)
-    const owned = this.record().watches?.some(watch => key(watch.target) === key(target))
-      || this.record().requests.some(request => request.participants.some(item => key(item.target) === key(target)))
-    if (!owned) return
-    const operations = new Set<string>()
+    if (!this.ownsThread(this.view(), target)) return
+    let operations = new Set<string>()
     // One send is one takeover, whichever requests it ends: every participant it fences shares its time (the takeover line).
     const at = now()
-    this.options.control.mutateWatcher(record => {
-      // A renewed watch also records a boundary, but only a takeover, Stop or Stop all is the user acting after the queue.
-      this.revokeQueuedFreshness(record)
-      this.recordLocalTakeover(record, target, at, userDraft)
-      // A standing watch lasts until the user stops it (ADR-0073): the user's own instruction fences what Watcher had
-      // already prepared and holds Watcher to steering while the turn runs, but the thread stays Watcher's to keep going.
-      const watch = record.watches?.find(item => key(item.target) === key(target))
-      if (watch) { alignGeneration(record, watch); watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }
-      for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(target) && participant.state === 'participating') {
-        if (!watch) participant.generation++
-        // Only a thread watched for a request alone, as on an older paired host, becomes the user's again, and so does a
-        // participation Watcher had already stopped, which the user's own command reviews: its held queue goes on.
-        if (!watch || participant.automationStopped) { participant.state = 'taken-over'; participant.takeover = { reason, at } }
-        for (const operation of record.operations.filter(item => item.requestId === request.id && key(item.target) === key(target))) {
-          operations.add(operation.id)
-          if (operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_TAKEN_OVER'; operation.updatedAt = now() }
-        }
+    this.options.control.mutateWatcher(record => { operations = this.takeoverChange(record, target, reason, at, userMessageId, userDraft) })
+    this.cancelTakenOver(operations)
+  }
+  /** Whether Watcher watches a thread, or ever had it take part in a request, so the user's act there is a takeover. */
+  private ownsThread(record: Readonly<WatcherRecord>, target: WatcherThreadTarget): boolean {
+    return record.watches?.some(watch => sameTarget(watch.target, target)) === true
+      || record.requests.some(request => request.participants.some(item => sameTarget(item.target, target)))
+  }
+  /** Records a takeover of a thread Watcher owns in `record`. Returns the operations whose queued sends it fences. */
+  private takeoverChange(record: WatcherRecord, target: WatcherThreadTarget, reason: TakeoverReason, at: string, userMessageId?: string, userDraft?: TakeoverDraft): Set<string> {
+    const operations = new Set<string>()
+    // A renewed watch also records a boundary, but only a takeover, Stop or Stop all is the user acting after the queue.
+    this.revokeQueuedFreshness(record)
+    this.recordLocalTakeover(record, target, at, userDraft)
+    // A standing watch lasts until the user stops it (ADR-0073): the user's own instruction fences what Watcher had
+    // already prepared and holds Watcher to steering while the turn runs, but the thread stays Watcher's to keep going.
+    const watch = record.watches?.find(item => key(item.target) === key(target))
+    if (watch) { alignGeneration(record, watch); watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }
+    for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(target) && participant.state === 'participating') {
+      if (!watch) participant.generation++
+      // Only a thread watched for a request alone, as on an older paired host, becomes the user's again, and so does a
+      // participation Watcher had already stopped, which the user's own command reviews: its held queue goes on.
+      if (!watch || participant.automationStopped) { participant.state = 'taken-over'; participant.takeover = { reason, at } }
+      for (const operation of record.operations.filter(item => item.requestId === request.id && key(item.target) === key(target))) {
+        operations.add(operation.id)
+        if (operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_TAKEN_OVER'; operation.updatedAt = now() }
       }
-      record.reservations = record.reservations.filter(item => key(item.target) !== key(target)
-        || record.operations.some(operation => key(operation.target) === key(item.target) && ['dispatching', 'uncertain'].includes(operation.deliveryState)))
-    })
+    }
+    record.reservations = record.reservations.filter(item => key(item.target) !== key(target)
+      || record.operations.some(operation => key(operation.target) === key(item.target) && ['dispatching', 'uncertain'].includes(operation.deliveryState)))
+    return operations
+  }
+  /** Takes a taken-over thread's fenced sends out of the queue, once the takeover is in the record. */
+  private cancelTakenOver(operations: ReadonlySet<string>): void {
     void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A taken-over thread’s queued Watcher message could not be removed. It is fenced and will not be sent.'; this.publish() })
   }
   preserveUserQueue(threadId: string): boolean {
@@ -1276,8 +1288,20 @@ export class WatcherService implements WatcherControlHooks {
     const master = masterId === undefined ? undefined : threads.get(masterId)
     if (master) for (const [commandId, candidate] of this.pendingPromptTurns) if (candidate.watcher.threadId === master.id && knownUserMessages.has(candidate.messageId)
       && (nativeHead(master) === candidate.messageId || master.messages.some(message => message.role === 'user' && message.id === candidate.messageId))) this.activatePromptTurn(commandId)
-    // What this pass changes, made together at its end. A takeover is the user's act, made as it is found.
+    // What this pass changes, made together at its end. A takeover is the user's act and is made as it is found, on a
+    // copy of the record (`draft`) that the rest of the pass reads and that the end of the pass changes and keeps.
     const changes: ((record: WatcherRecord) => void)[] = []
+    let draft: WatcherDraft | undefined
+    const fenced: ReadonlySet<string>[] = []
+    const read = (): Readonly<WatcherRecord> => draft?.record ?? this.view()
+    const takeover = (threadId: string, userMessageId?: string) => {
+      const target = this.target(threadId)
+      if (!this.ownsThread(read(), target)) return
+      draft ??= this.options.control.watcherDraft()
+      fenced.push(this.takeoverChange(draft.record, target, 'native-user-send', now(), userMessageId))
+      // The draft was changed in place, so what was worked out from it is worked out again.
+      if (this.indexed?.record === draft.record) this.indexed = undefined
+    }
     const current = this.view().current
     if (!this.options.workerHost && current?.target.hostId === this.hostId()
       && threads.has(current.target.threadId) && !this.promptTurnCurrent(this.view(), current.target)) changes.push(record => {
@@ -1293,23 +1317,23 @@ export class WatcherService implements WatcherControlHooks {
       const ownOperation = index.operations.get(thread.id)?.some(item => item.messageId === head) === true
       let sotto: boolean | undefined
       const machineHead = () => ownOperation || head !== null && (sotto ??= this.sottoMessage(thread, head))
-      // A takeover earlier in this pass replaces the record, so the watch is read from the record as it now stands.
-      const watch = this.recordIndex(this.view()).watches.get(thread.id)
+      // A takeover earlier in this pass changes the record, so the watch is read from the record as it now stands.
+      const watch = this.recordIndex(read()).watches.get(thread.id)
       if (watch && head && watch.lastUserMessageId !== undefined && head !== watch.lastUserMessageId && !machineHead()) {
         // Main bound this exact already-fenced user packet to its native message before dispatch. A known delivery
         // from stable, or an edited queued packet, has no matching proof and still takes over when Owl sees it.
         const ownHead = knownUserMessages.has(head) && record.localTakeovers?.find(item => sameTarget(item.target, watch.target))
           ?.userDrafts?.some(item => item.messageId === head)
-        if (!ownHead) this.takeover(thread.id, 'native-user-send', head)
+        if (!ownHead) takeover(thread.id, head)
       }
       if (head && !watch && participants.some(participant => {
         const durableHead = index.operations.get(thread.id)?.findLast(item => item.messageId)?.messageId
         const baseline = participant.lastUserMessageId !== undefined ? participant.lastUserMessageId : previous ?? durableHead
         return baseline !== undefined && head !== baseline && (participant.lastUserMessageId !== undefined || durableHead !== undefined || !knownUserMessages.has(head))
-      }) && !machineHead()) this.takeover(thread.id, 'native-user-send')
+      }) && !machineHead()) takeover(thread.id)
       if (watch && this.connected(thread)) {
-        // Takeover above can replace the record. Compare against that fresh view before changing it.
-        const observed = this.view(), live = observed.watches!.find(item => item.id === watch.id)!
+        // Takeover above can change the record. Compare against the record as it now stands before changing it.
+        const observed = read(), live = observed.watches!.find(item => item.id === watch.id)!
         let paused = live.pausedByUserMessageId
         if (this.humanTurnRunning(thread, observed)) paused = head ?? 'unobserved-user-turn'
         else if (!this.options.control.hasPendingThreadWork(thread.id)
@@ -1319,7 +1343,7 @@ export class WatcherService implements WatcherControlHooks {
           changed.lastUserMessageId = head; changed.pausedByUserMessageId = paused
         })
       }
-      if (participants.length && this.connected(thread) && this.recordIndex(this.view()).participating.get(thread.id)?.some(participant =>
+      if (participants.length && this.connected(thread) && this.recordIndex(read()).participating.get(thread.id)?.some(participant =>
         participant.lastUserMessageId !== head)) changes.push(next => {
         for (const request of next.requests) for (const participant of request.participants) if (participant.target.hostId === hostId && participant.target.threadId === thread.id && participant.state === 'participating') participant.lastUserMessageId = head
       })
@@ -1331,28 +1355,57 @@ export class WatcherService implements WatcherControlHooks {
     const delivery = (operation: Readonly<WatcherOperation>) => operation.draftId === undefined ? sends.deliveries.find(item => item.draftId === undefined && item.threadId === operation.target.threadId)
       : deliveries.get(`${operation.target.threadId}\n${operation.draftId}`)
     const passHost = this.options.control.hostId()
-    if (!changes.length && this.recordSettled(this.view(), snapshot, threads, delivery, failedDrafts, passHost)) { this.pruneRemoteGuards(); return }
+    // A record loaded with prompt turns nothing reads lets go of them on its first pass, as every pass once did.
+    if (!changes.length && !draft && !this.options.control.watcherNeedsPruning()
+      && this.recordSettled(this.view(), snapshot, threads, delivery, failedDrafts, passHost)) { this.pruneRemoteGuards(); return }
     this.options.control.mutateWatcher(next => {
       for (const change of changes) change(next)
       for (const operation of next.operations.filter(item => item.target.hostId === this.hostId())) {
-        const thread = threads.get(operation.target.threadId), sent = delivery(operation)
-        if (operation.action === 'stop' && operation.deliveryState === 'uncertain' && operation.commandId && !this.active.has(operation.id)
-          && !this.options.control.watcherCommandOutstanding(operation.commandId) && thread && this.connected(thread) && thread.status === 'idle') operation.deliveryState = 'accepted'
-        if (operation.creationUncertain && thread && this.connected(thread) && this.options.host.watcherCreationPhase(thread.id) !== 'starting') {
+        const thread = threads.get(operation.target.threadId), moves = this.deliveryChange(operation, thread, delivery(operation), failedDrafts)
+        if (moves.stopAccepted) operation.deliveryState = 'accepted'
+        if (moves.creationFailed) {
           operation.deliveryState = 'failed'; operation.refusalCode = 'PROVIDER_UNAVAILABLE'; delete operation.creationUncertain
           this.refundPrompt(next, operation, 'PROVIDER_UNAVAILABLE')
         }
-        if (sent?.status === 'accepted' || operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId)) this.recordAccepted(next, operation)
-        else if (sent?.status === 'uncertain' && !this.active.has(operation.id)) operation.deliveryState = 'uncertain'
-        else if (failedDrafts.has(operation.draftId!)) this.recordQueueFailure(next, operation)
+        if (moves.then === 'accepted') this.recordAccepted(next, operation)
+        else if (moves.then === 'uncertain') operation.deliveryState = 'uncertain'
+        else if (moves.then === 'queue-failure') this.recordQueueFailure(next, operation)
       }
       const watcherMessages = new Set(next.operations.flatMap(item => item.messageId ? [item.messageId] : []))
       for (const operation of next.operations) this.observeOutcome(operation, threads, id => watcherMessages.has(id), passHost)
       this.pruneReservations(next, snapshot)
       for (const request of this.answeredWithoutWorkers(next, snapshot)) { request.state = 'closed'; request.closedAt = now() }
       for (const request of next.requests) if (this.requestDone(request, next, snapshot, threads)) { request.state = 'closed'; request.closedAt = now() }
-    })
+    }, draft)
+    // A taken-over thread's fenced sends leave the queue once the takeover is in the record, in the order they were found.
+    for (const operations of fenced) this.cancelTakenOver(operations)
     this.pruneRemoteGuards()
+  }
+  /**
+   * What the end of an observe pass does to an operation's delivery, worked out without changing it: a Stop seen through
+   * accepted, a start that never began failed, then the delivery it is now seen to have. `changes` says whether doing so
+   * would change the operation; `recordSettled` asks only that, and the end of the pass does the rest.
+   */
+  private deliveryChange(operation: Readonly<WatcherOperation>, thread: AgentThread | undefined, sent: Readonly<AgentDelivery> | undefined, failedDrafts: ReadonlySet<string | undefined>) {
+    const stopAccepted = operation.action === 'stop' && operation.deliveryState === 'uncertain' && Boolean(operation.commandId && !this.active.has(operation.id)
+      && !this.options.control.watcherCommandOutstanding(operation.commandId) && thread && this.connected(thread) && thread.status === 'idle')
+    const creationFailed = Boolean(operation.creationUncertain && thread && this.connected(thread) && this.options.host.watcherCreationPhase(thread.id) !== 'starting')
+    // Its own message in the thread, looked for only when its delivery does not already say it was accepted.
+    const seen = () => Boolean(operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId))
+    const then = sent?.status === 'accepted' || seen() ? 'accepted' as const : sent?.status === 'uncertain' && !this.active.has(operation.id) ? 'uncertain' as const
+      : failedDrafts.has(operation.draftId) ? 'queue-failure' as const : undefined
+    const changes = stopAccepted || creationFailed || then === 'accepted' && operation.deliveryState !== 'accepted'
+      || then === 'uncertain' && operation.deliveryState !== 'uncertain' || then === 'queue-failure' && !this.queueFailureRecorded(operation)
+    return { stopAccepted, creationFailed, then, changes }
+  }
+  /**
+   * Whether recording a queued send's failure again would leave the operation as it is: it is already failed with its
+   * refusal, no refusal from its dispatch waits to replace that, and nothing it waits on could still make it uncertain.
+   */
+  private queueFailureRecorded(operation: Readonly<WatcherOperation>): boolean {
+    return operation.deliveryState === 'failed' && operation.refusalCode !== undefined && !operation.creationUncertain && !this.dispatchRefusals.has(operation.id)
+      && !(operation.action === 'start' && this.options.host.watcherCreationPhase(operation.target.threadId) === 'starting')
+      && !this.options.control.watcherCommandOutstanding(operation.commandId)
   }
   /**
    * Whether the end of an observe pass would leave `record` as it is: no operation's delivery or outcome moves, no
@@ -1362,20 +1415,8 @@ export class WatcherService implements WatcherControlHooks {
    */
   private recordSettled(record: Readonly<WatcherRecord>, snapshot: AgentHostSnapshot, threads: ReadonlyMap<string, AgentThread>,
     delivery: (operation: Readonly<WatcherOperation>) => Readonly<AgentDelivery> | undefined, failedDrafts: ReadonlySet<string | undefined>, passHost: string | undefined): boolean {
-    for (const operation of record.operations) {
-      if (operation.target.hostId !== passHost) continue
-      const thread = threads.get(operation.target.threadId), sent = delivery(operation)
-      if (operation.action === 'stop' && operation.deliveryState === 'uncertain' && operation.commandId && !this.active.has(operation.id)
-        && !this.options.control.watcherCommandOutstanding(operation.commandId) && thread && this.connected(thread) && thread.status === 'idle') return false
-      if (operation.creationUncertain && thread && this.connected(thread) && this.options.host.watcherCreationPhase(thread.id) !== 'starting') return false
-      const seen = () => Boolean(operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId))
-      const uncertain = sent?.status === 'uncertain' && !this.active.has(operation.id)
-      if (sent?.status === 'accepted') { if (operation.deliveryState !== 'accepted') return false; continue }
-      // Accepted already, it moves only to uncertain or a queue failure, and only while its own message is not seen.
-      if (operation.deliveryState === 'accepted') { if ((uncertain || failedDrafts.has(operation.draftId)) && !seen()) return false; continue }
-      if (seen() || failedDrafts.has(operation.draftId) && !uncertain) return false
-      if (uncertain && operation.deliveryState !== 'uncertain') return false
-    }
+    for (const operation of record.operations) if (operation.target.hostId === passHost
+      && this.deliveryChange(operation, threads.get(operation.target.threadId), delivery(operation), failedDrafts).changes) return false
     let watcherMessages: Set<string> | undefined
     const isWatcherMessage = (id: string) => (watcherMessages ??= new Set(record.operations.flatMap(item => item.messageId ? [item.messageId] : []))).has(id)
     if (record.operations.some(operation => this.outcomeChange(operation, threads, isWatcherMessage, passHost))) return false
