@@ -31,6 +31,7 @@ import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from '
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
+import { watcherAskPlacements } from './watcherAskPlacements'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
@@ -449,7 +450,7 @@ export class WatcherService implements WatcherControlHooks {
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
-      receiptReplies: watcherReceiptReplies(record, current) }
+      receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }

@@ -1,4 +1,5 @@
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
+import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { subagentSummarySchema } from './subagents'
@@ -335,6 +336,13 @@ export const agentMessageSchema = z.object({
    * shows the message as the user's.
    */
   wakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a Watcher wake-up whose news said watched threads waited on the user (ADR-0073, answering in Watcher's
+   * conversation): which thread's which request, text-free, from the host's own record of the send, put on as `wakeUp`
+   * is so it survives the history being read again and a restart. Watcher's pane shows each request's card from it. An
+   * older reader drops the field and shows no card.
+   */
+  watcherAsks: watcherAsksSchema.optional().catch(undefined),
   /**
    * Set on Watcher's first message after a provider change when the user chose to continue with a handover of the last
    * Watcher (ADR-0073): the message's text is then the user's words, and this is the handover that went ahead of them in
