@@ -37,7 +37,7 @@ function fixture(work: (thread: AgentThread) => void) {
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [thread], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
   const delivered: WatcherNews[] = []
   const create = () => {
-    const wakes = new WatcherWakeUp({ snapshot: () => snapshot, record: () => record, now: () => clock,
+    const wakes = new WatcherWakeUp({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, snapshot: () => snapshot, record: () => record, now: () => clock,
       schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
       canDeliver: () => true, deliver: async news => { delivered.push(structuredClone(news)) }, prune: async () => undefined,
       remember: async ids => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] } })
@@ -71,12 +71,16 @@ it.each([
 ] as const)('wakes once after twenty quiet minutes when the parent is idle with %s', async (_, work, count) => {
   const f = fixture(work)
   await f.advance(WATCHER_BATCH_MS)
-  expect(f.events().find(event => event.kind === 'turn-finished')?.backgroundWorkCount).toBe(count)
-  expect(f.events().some(event => event.kind === 'work-settled')).toBe(false)
+  // The finish waits for its work to settle, or for twenty minutes, before it needs Watcher (#1190).
+  expect(f.events()).toEqual([])
   await f.advance(WATCHER_QUIET_MS - WATCHER_BATCH_MS - 1)
-  expect(f.quiet()).toHaveLength(0)
+  expect(f.events()).toEqual([])
   await f.advance(1 + WATCHER_BATCH_MS)
   expect(f.quiet()).toEqual([expect.objectContaining({ target: centerTarget, turnId: 'turn-1' })])
+  // Quiet and the held finish go in one wake-up.
+  expect(f.delivered).toHaveLength(1)
+  expect(f.events().find(event => event.kind === 'turn-finished')?.backgroundWorkCount).toBe(count)
+  expect(f.events().some(event => event.kind === 'work-settled')).toBe(false)
   // An unchanged shell does not restart the episode or keep prompting forever.
   f.observe(); await f.advance(44 * 60_000)
   expect(f.quiet()).toHaveLength(1)

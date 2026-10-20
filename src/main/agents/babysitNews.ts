@@ -139,7 +139,7 @@ export interface BabysitFinding {
  * met only by a check of its name that GitHub also flags required, so another app's check of the same name cannot pass
  * it. Each is named by its context in every case, so a gate read without the rules and then with them is one gate.
  */
-function gateOf(checks: readonly BabysitCheck[], ruled: readonly string[]): { readonly names: readonly string[]; readonly required: boolean; readonly passed: boolean } {
+export function gateOf(checks: readonly BabysitCheck[], ruled: readonly string[]): { readonly names: readonly string[]; readonly required: boolean; readonly passed: boolean } {
   const flagged = checks.filter(check => check.required && !ruled.includes(check.context))
   if (!ruled.length && !flagged.length) return { names: [...new Set(checks.map(check => check.context))], required: false, passed: checks.length > 0 && checks.every(isPassed) }
   const ruledPassed = ruled.every(context => { const named = checks.filter(check => check.context === context && check.required); return named.length > 0 && named.every(isPassed) })

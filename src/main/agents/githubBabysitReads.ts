@@ -7,6 +7,7 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 
 /** Publish facts from an existing read. Neither comments nor check names/output cross this boundary. */
+const passedOnlyWhole = (summary: ReturnType<typeof summarizePullRequestChecks>, whole: boolean) => summary === 'passed' && !whole ? 'pending' : summary
 export function pullRequestObservation(fingerprint: PullRequestFingerprint, detail: DetailAnswer | null, observedAt: string,
   previous?: PullRequestObservation, checksRequested = true): PullRequestObservation {
   const matching = detail?.head === fingerprint.head && fingerprint.head !== null
@@ -14,7 +15,10 @@ export function pullRequestObservation(fingerprint: PullRequestFingerprint, deta
   const known = (!detail || matching && !checksRequested) && fingerprint.head !== null && previous?.head === fingerprint.head
     && pullRequestKey(previous.url) === pullRequestKey(fingerprint.url) && previous.availability === 'available' ? previous : undefined
   return { url: fingerprint.url, head: fingerprint.head, state: fingerprint.state, availability: 'available', observedAt,
-    checks: checks ? summarizePullRequestChecks(fingerprint.head, checks) : known?.checks ?? 'unknown',
+    // Watcher wakes on a conflict and on its comments or reviews moving (#1190); both are counts and states, never words.
+    ...(fingerprint.mergeable !== 'unknown' ? { conflicting: fingerprint.mergeable === 'conflicting' } : {}), remarks: fingerprint.remarks,
+    // A read that holds only some of a commit's checks can say one failed, never that all of them passed (#1190).
+    checks: checks ? passedOnlyWhole(summarizePullRequestChecks(fingerprint.head, checks), detail?.checksComplete !== false) : known?.checks ?? 'unknown',
     checksObservedAt: checks || !known ? observedAt : known.checksObservedAt ?? known.observedAt,
     ...(checks ? { checkCount: checks.length } : known?.checkCount !== undefined ? { checkCount: known.checkCount } : {}),
     // Historical review pages do not establish GitHub's current review decision.

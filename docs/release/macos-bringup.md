@@ -96,3 +96,9 @@ gh release upload v<version> Sotto-<version>-arm64.dmg Sotto-<version>-arm64.dmg
 ```
 
 Release notes must carry: "Apple silicon (arm64) only", "not signed or notarized", the Gatekeeper instructions from the README, and the DMG's SHA-256. See `releasing.md` for the two-machine ritual.
+
+## Sotto Owl on the Mac
+
+This checklist covers stable, built by hand. The Mac Owl is not built on a Mac: the **Sotto Owl for Mac** workflow builds it on GitHub's Apple silicon runner from the Windows Owl's commit and version (`releasing.md`, "Cutting a Sotto Owl build"; ADR-0093). Steps 2, 3 and 6 above still apply to a downloaded Owl disk image when a change touches the Mac. Its app is `Sotto.app` with bundle ID `com.sotto.desktop`, like stable, so testing one replaces the other in Applications.
+
+Until Developer ID signing lands, step 2 reads the same for Owl: `Signature=adhoc`, `spctl` rejected. Once it lands, an Owl app shows `Authority=Developer ID Application: …`, `spctl -a -vvv` says `accepted` with `source=Notarized Developer ID`, and `xcrun stapler validate` passes on the app. The credentials Zach sets up for that are in `macos-owl-signing.md`.
