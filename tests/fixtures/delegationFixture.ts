@@ -2,6 +2,7 @@
 // delegation running on them as the app runs it.
 import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
+import type { AgentControl } from '../../src/main/agents/control'
 import { DelegationService } from '../../src/main/agents/delegation'
 import { DelegationToolServer } from '../../src/main/agents/delegationTools'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
@@ -16,24 +17,30 @@ export type DelegationRefused = { status: 'refused'; code: string; message: stri
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
 export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { limit?: number; otherStarts?: number; history?: boolean; titles?: boolean } = {}) {
   const history = options.history ?? true
-  const workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
+  let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
   // Codex offers every mode, so only the ceiling can refuse a wider one.
   workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
-  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
+  const root = workspace.root
+  const controlFor = async (): Promise<AgentControl> => (await agentControlFixture({ directory: root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: false,
       // Sotto's own naming, as the app runs it: the first message's opening words, then a generated name after the first reply.
-      ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })
-  const make = () => new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => history,
+      ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })).control
+  let control = await controlFor()
+  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history,
     limit: () => options.limit ?? 4, otherStartsInFlight: () => options.otherStarts ?? 0 })
   let service = make()
   let tools = new DelegationToolServer(service)
   workspace.host.useThreadTools([tools])
-  cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
-  await f.control.start()
-  for (const provider of ['claude', 'codex', 'grok'] as const) await f.control.commandShell({ type: 'connect', provider })
-  await service.recover()
-  const model = (provider: ProviderId) => f.control.shell().host.models.find(item => item.providerId === provider)!
+  // Whatever is running when the test ends is closed, after a restart the ones it started.
+  cleanups.push(async () => { service.close(); await tools.close(); control.dispose(); await control.closed(); await workspace.stop() })
+  const start = async () => {
+    await control.start()
+    for (const provider of ['claude', 'codex', 'grok'] as const) await control.commandShell({ type: 'connect', provider })
+    await service.recover()
+  }
+  await start()
+  const model = (provider: ProviderId) => control.shell().host.models.find(item => item.providerId === provider)!
   const native = (threadId: string): AgentThread => {
     const binding = workspace.registry.byThread(threadId)!
     return workspace.adapters[binding.provider as keyof typeof workspace.adapters].state.threads.find(item => item.id === binding.sessionId)!
@@ -42,7 +49,7 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
   const emit = async (threadId: string) => {
     const binding = workspace.registry.byThread(threadId)!
     workspace.adapters[binding.provider as keyof typeof workspace.adapters].emit()
-    await f.control.commandShell({ type: 'refresh', provider: binding.provider as ProviderId })
+    await control.commandShell({ type: 'refresh', provider: binding.provider as ProviderId })
   }
   /** The provider ends the running turn, naming it by the user message it began with. */
   const endTurn = async (threadId: string, reply: string, status: 'completed' | 'interrupted' | 'failed' = 'completed') => {
@@ -54,10 +61,10 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
   }
   /** A thread the user opened on `provider` and sent a message, as the user's own. */
   const userThread = async (provider: ProviderId) => {
-    const project = f.control.shell().host.projects.find(item => item.providerId === provider) ?? f.control.shell().host.projects[0]!
+    const project = control.shell().host.projects.find(item => item.providerId === provider) ?? control.shell().host.projects[0]!
     const threadId = randomUUID()
-    expect((await f.control.commandShell({ type: 'create-thread', threadId, projectId: project.id, title: `Synthetic ${provider} thread`, modelId: model(provider).id })).error).toBeNull()
-    expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user request' })).error).toBeNull()
+    expect((await control.commandShell({ type: 'create-thread', threadId, projectId: project.id, title: `Synthetic ${provider} thread`, modelId: model(provider).id })).error).toBeNull()
+    expect((await control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user request' })).error).toBeNull()
     return threadId
   }
   // A new thread names its effort and permission, as delegate requires; a send to a delegated thread names neither.
@@ -65,12 +72,30 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
     ...input.thread === undefined ? { effort: 'low', permission: 'approval-required' } : {}, ...input }) as DelegationResult | DelegationRefused
   const read = async (threadId: string, delegation: string) => await service.read(threadId, { delegation }) as DelegationResult
   const ok = (result: DelegationResult | DelegationRefused): DelegationResult => { if (result.status !== 'ok') throw new Error(`refused ${result.code}: ${result.message}`); return result }
-  /** Delegation stops and starts again over the same record, as it does when Sotto restarts. */
+  /** Delegation alone stops and starts again over the same record. */
   const restart = async () => {
     service.close(); await tools.close()
     service = make(); tools = new DelegationToolServer(service)
     workspace.host.useThreadTools([tools])
     await service.recover()
   }
-  return { ...f, workspace, model, native, adapterOf, emit, endTurn, userThread, delegate, read, ok, restart, get service() { return service }, get tools() { return tools } }
+  /**
+   * Sotto stops and starts again whole over the same folder: the workspace, the coordinator with its queue and outbox,
+   * and delegation, each recovering from what it saved. The fake providers keep their threads, as real ones do.
+   */
+  const restartAll = async () => {
+    service.close(); await tools.close(); control.dispose(); await control.closed(); await workspace.stop()
+    workspace = await workspaceFixture(root, { history, watcherEnabled: false, adapters: workspace.adapters })
+    control = await controlFor()
+    service = make(); tools = new DelegationToolServer(service)
+    workspace.host.useThreadTools([tools])
+    await control.start()
+    for (const provider of ['claude', 'codex', 'grok'] as const) await control.commandShell({ type: 'connect', provider })
+    // A real provider names a thread's newest user message without its history; a fake one does not, so every thread's
+    // history is read before anything is sent, as a window open on each would have it.
+    await control.command({ type: 'observe-threads', threadIds: control.shell().host.threads.map(thread => thread.id) })
+    await service.recover()
+  }
+  return { root, model, native, adapterOf, emit, endTurn, userThread, delegate, read, ok, restart, restartAll,
+    get control() { return control }, get workspace() { return workspace }, get service() { return service }, get tools() { return tools } }
 }

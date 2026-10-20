@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
@@ -32,8 +32,22 @@ class Host implements AgentHost {
   state!: AgentHostSnapshot
   listeners = new Set<(s: AgentHostSnapshot) => void>()
   attempts: AgentHostCommand[] = []
+  /** The next send fails surely, or comes back unconfirmed. */
+  failNext = false; uncertainNext = false
+  /** A thread read before a send never answers while set, as when Sotto stops mid-read. */
+  stallReads = false
+  /** The thread's preparation before the native writer, held while set. */
+  preparation: Promise<void> | undefined
   async connect() { this.state ??= await new E2EAgentHost().connect(); this.state.connected = true; return this.snapshot() }
   async snapshot() { return structuredClone(this.state) }
+  refreshThread(): Promise<AgentHostSnapshot> { return this.stallReads ? new Promise(() => undefined) : this.snapshot() }
+  preparing = 0
+  async executeFromWatcher(c: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
+    this.preparing++
+    await this.preparation
+    guard()
+    return await this.execute(c)
+  }
   subscribe(fn: (s: AgentHostSnapshot) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
   disconnect() { this.state.connected = false }
   observeThreads() { /* Every thread is in the snapshot. */ }
@@ -41,6 +55,8 @@ class Host implements AgentHost {
   emit() { for (const fn of this.listeners) fn(structuredClone(this.state)) }
   async execute(c: AgentHostCommand): Promise<AgentHostResult> {
     this.attempts.push(c)
+    if (c.type === 'send' && this.failNext) { this.failNext = false; throw new Error('Synthetic provider refusal.') }
+    if (c.type === 'send' && this.uncertainNext) { this.uncertainNext = false; return { accepted: false, uncertain: true } }
     if (c.type === 'send') {
       const thread = this.state.threads.find(t => t.id === c.threadId)!
       if (c.wakeUp) thread.wakeUpMessageIds = [...thread.wakeUpMessageIds ?? [], c.messageId]
@@ -52,27 +68,29 @@ class Host implements AgentHost {
     return { accepted: true }
   }
 }
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'sotto-delegation-hidden-')); roots.push(root)
-  const host = new Host()
-  const credentials = await testCredentials(root, { mode: 'unavailable' })
+/** A coordinator over `root`, as Sotto starts one: it reads what the last one saved, its queue among it. */
+async function boot(root: string, host: Host, credentials: Awaited<ReturnType<typeof testCredentials>>, running = true) {
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
   await control.start(); await control.command({ type: 'connect' })
-  host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+  if (running) host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
   let fenced = false
   control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
     guardOperation: () => undefined, preserveUserQueue: () => fenced })
   // Delegation words the news as it goes, from its own record: here, a line that says so.
   control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [], messageIdFor: () => undefined,
     guardFor: () => undefined, newsText: (_threadId, news) => `Synthetic news as sent: ${news.flatMap(part => part.items.map(item => item.outcome)).join(', ')}` })
-  return { host, control, fence: (on: boolean) => { fenced = on } }
+  return { root, host, credentials, control, fence: (on: boolean) => { fenced = on } }
+}
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-delegation-hidden-')); roots.push(root)
+  return await boot(root, new Host(), await testCredentials(root, { mode: 'unavailable' }))
 }
 const delegation = (): DelegationNews => ({ source: 'delegation', items: [{ delegationId: randomUUID(), threadId: 'delegated', outcome: 'answered' }] })
 const pullRequest = (number: number): BabysitNews => ({ pullRequest: { url: `https://github.com/o/r/pull/${number}`, number, title: `Pull ${number}` },
   startedBy: 'agent', head: 'head-1', changes: [{ kind: 'checks-failed', checks: [{ name: `build-${number}`, status: 'failure', url: null }] }], ended: null })
 const end = (host: Host, status: 'completed' | 'interrupted' = 'completed') => host.update('workshop', { status: 'idle', lastTurn: { id: randomUUID(), status } })
 const sends = (host: Host) => host.attempts.filter((c): c is Extract<AgentHostCommand, { type: 'send' }> => c.type === 'send')
-type Stored = { items: readonly { id: string; threadId: string; wakeUp?: true; status: string; text: string }[] }
+type Stored = { items: readonly { id: string; threadId: string; wakeUp?: true; status: string; text: string; messageId?: string }[] }
 const stored = (control: AgentControl) => (control as unknown as { followupStore: { peek(): Stored } }).followupStore.peek().items
 const queueUser = async (control: AgentControl, text: string) => {
   expect((await control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text })).error ?? null).toBeNull()
@@ -188,4 +206,60 @@ it('never folds into a visible wake-up, and is set apart from one an earlier bui
   end(f.host)
   await expect.poll(() => sends(f.host).length).toBe(2)
   expect(sends(f.host)[1]!.text).toBe('Synthetic news as sent: answered, answered')
+})
+
+it('waits for the user\'s prompt a crash left unresolved between the queue\'s claim and its send, across a real restart', async () => {
+  const f = await fixture()
+  end(f.host)
+  // The queue claims the user's prompt and saves it as dispatching; the read before its send never answers, so the send
+  // never saves its outbox entry. Sotto stops there.
+  f.host.stallReads = true
+  await queueUser(f.control, 'Synthetic prompt')
+  await expect.poll(() => stored(f.control).map(item => item.status)).toEqual(['dispatching'])
+  const messageId = stored(f.control)[0]!.messageId!
+  f.control.dispose()
+  // A new coordinator starts over the same folder: the prompt comes back unresolved, and nothing in the outbox says so.
+  const host = new Host(); host.state = structuredClone(f.host.state)
+  const g = await boot(f.root, host, f.credentials, false)
+  expect(stored(g.control).map(item => [item.text, item.status])).toEqual([['Synthetic prompt', 'uncertain']])
+  await g.control.deliverWakeUp('workshop', delegation(), { tool: false })
+  await new Promise(resolve => setTimeout(resolve, 100))
+  expect(sends(host)).toHaveLength(0)
+  // The provider shows the prompt landed and its turn ended: the prompt is settled, and the news goes after it.
+  host.state.threads.find(thread => thread.id === 'workshop')!.messages.push({ id: messageId, role: 'user', text: 'Synthetic prompt', createdAt: new Date().toISOString() })
+  end(host)
+  await expect.poll(() => sends(host).length).toBe(1)
+  expect(sends(host)[0]!.hiddenWakeUp).toBe(true)
+})
+
+it('tries a send that surely did not go again ten seconds later, and only then', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  try {
+    const f = await fixture()
+    f.host.failNext = true
+    end(f.host)
+    await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
+    await vi.waitFor(() => expect(sends(f.host)).toHaveLength(1))
+    await vi.waitFor(() => expect(stored(f.control).map(item => item.status)).toEqual(['failed']))
+    await vi.advanceTimersByTimeAsync(9_000)
+    expect(sends(f.host)).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1_500)
+    await vi.waitFor(() => expect(sends(f.host)).toHaveLength(2))
+    expect(sends(f.host)[1]!.hiddenWakeUp).toBe(true)
+    await vi.waitFor(() => expect(stored(f.control)).toEqual([]))
+  } finally { vi.useRealTimers() }
+})
+
+it('never sends again news whose send may have gone', async () => {
+  const f = await fixture()
+  f.host.uncertainNext = true
+  end(f.host)
+  await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
+  await expect.poll(() => sends(f.host).length).toBe(1)
+  await expect.poll(() => stored(f.control).map(item => item.status)).toEqual(['uncertain'])
+  // The thread moves on and is read again many times: the news is never sent again.
+  for (let pass = 0; pass < 5; pass++) { end(f.host); await f.control.command({ type: 'refresh' }) }
+  await new Promise(resolve => setTimeout(resolve, 100))
+  expect(sends(f.host)).toHaveLength(1)
+  expect(f.control.shell().followups).toEqual([])
 })

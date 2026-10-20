@@ -3003,7 +3003,11 @@ export class AgentControl {
       && !thread.requests.length && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
       && !this.pendingSetAsideDeliveries.has(threadId)
-      && !this.outbox.some(item => item.threadId === threadId && item.id !== followup.commandId && this.blocksExplicitPrompt(item, undefined, false)))
+      && !this.outbox.some(item => item.threadId === threadId && item.id !== followup.commandId && this.blocksExplicitPrompt(item, undefined, false))
+      // A prompt whose send is unresolved may have started a turn, as one a crash left between the queue's claim and its
+      // outbox entry has, with nothing in the outbox to say so: the news waits until it is settled. A set-aside one does not hold it.
+      && !this.followupStore.peek().items.some(item => item.threadId === threadId && item.id !== followup.id && (item.status === 'uncertain' || item.status === 'dispatching'))
+      && !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status)))
   }
   /** When each thread's hidden delegation news may be tried again after a send that surely did not go. */
   private readonly delegationNewsRetryAt = new Map<string, number>()

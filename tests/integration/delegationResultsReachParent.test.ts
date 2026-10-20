@@ -79,18 +79,38 @@ it('tells an idle thread once that a brief open when Sotto restarted is unknown,
   const child = result.delegation.thread
   const briefs = () => f.adapterOf(child).commands.filter(command => command.type === 'send').length
   const before = briefs()
-  // The parent goes on and finishes its turn: it is idle, waiting for the outcome.
+  // The parent goes on and finishes its turn: it is idle, waiting for the outcome. Then Sotto restarts whole.
   await f.endTurn(parent, 'Synthetic parent reply')
-  await f.restart()
+  await f.restartAll()
   await vi.waitFor(() => expect(newsOf(f, parent, result.delegation.id)).toHaveLength(1))
   expect(newsOf(f, parent, result.delegation.id)[0]!.text).toContain('cannot be proved either way')
   expect(accepted(f.service.views(parent).made[0])).toMatchObject({ outcome: 'unknown', unknownWhy: 'restarted', told: true })
+  // The news went as a wake-up no one is shown, by the restarted workspace's record.
+  expect(f.control.shell().host.threads.find(thread => thread.id === parent)!.hiddenWakeUpMessageIds).toContain(newsOf(f, parent, result.delegation.id)[0]!.id)
   await f.endTurn(parent, 'Synthetic second parent reply')
   // A second restart tells nothing again, and the brief is never resent.
-  await f.restart()
+  await f.restartAll()
   await settled(f)
+  await new Promise(resolve => setTimeout(resolve, 200))
   expect(newsOf(f, parent, result.delegation.id)).toHaveLength(1)
   expect(briefs()).toBe(before)
+})
+
+it('keeps news waiting for a busy thread across a restart of the whole app, and sends it once that thread is free', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  await f.endTurn(result.delegation.thread, 'Synthetic later reply')
+  await vi.waitFor(() => expect(accepted(f.service.views(parent).made[0])).toMatchObject({ outcome: 'answered', told: true }))
+  // The parent is still working when Sotto restarts: the queue keeps the news, hidden, and delegation does not tell it twice.
+  await f.restartAll()
+  expect(f.control.shell().followups?.some(item => item.threadId === parent)).toBeFalsy()
+  expect(newsOf(f, parent, result.delegation.id)).toHaveLength(0)
+  await f.endTurn(parent, 'Synthetic parent reply')
+  await vi.waitFor(() => expect(newsOf(f, parent, result.delegation.id)).toHaveLength(1))
+  // The reply was read again from the delegated thread, which Keep local history kept.
+  expect(newsOf(f, parent, result.delegation.id)[0]!.text).toContain('Synthetic later reply')
+  await settled(f)
+  expect(newsOf(f, parent, result.delegation.id)).toHaveLength(1)
 })
 
 it('takes no wake-up in a delegated thread for the user\'s message: a brief waits for its turn, then goes', async () => {
