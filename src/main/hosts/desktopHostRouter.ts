@@ -1,16 +1,16 @@
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
-import { catalogWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
+import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
-import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
+import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import { agentCommandSchema, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
-import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
+import { clientAgentState, clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -353,13 +353,20 @@ export class DesktopHostRouter {
   preservesDormantThread(threadId: string): boolean | undefined {
     const key = parseHostEntityKey(threadId)
     if (!key) return false
-    const thread = this.hosts.get(key.hostId)?.connection.service.shell().host.threads.find(thread => thread.id === key.id)
+    // Read in place: the answer store asks this for owners it has not classified yet, and a copy of the host's shell
+    // for each was a whole-state copy per answered question (#1230).
+    const connection = this.hosts.get(key.hostId)?.connection
+    const thread = connection ? readView(connection.service).host.threads.find(thread => thread.id === key.id) : undefined
     return thread ? thread.providerId !== undefined && this.held.has(thread.providerId) || this.options.watcherEnabled !== true && (thread.kind === 'watcher' || thread.kind === 'watcher-history') : undefined
   }
   private rememberDormantProviderThreads(state: AgentState, hostId: string): Map<string, DormantProviderThread> {
     const hidden = rememberDormantProviderThreads(this.dormantProviderIds.get(hostId) ?? new Map<string, DormantProviderThread>(), state.host, this.held)
     this.dormantProviderIds.set(hostId, hidden)
     return hidden
+  }
+  /** A host's default provider as the window is given it: one held to Owl gives way to the first that is not. */
+  private visibleProvider(provider: ProviderId): ProviderId {
+    return this.held.has(provider) ? providerIdSchema.options.find(item => !this.held.has(item)) ?? 'codex' : provider
   }
   private visibleState(state: AgentState, hostId: string): AgentState {
     const watched = visibleWatcherState(state, this.options.watcherEnabled === true)
@@ -368,8 +375,7 @@ export class DesktopHostRouter {
     const hidden = this.rememberDormantProviderThreads(state, hostId)
     const visible = withoutThreads(watched, new Set(hidden.keys()))
     const heldModel = (id: string): boolean => { const provider = parsePublicProviderEntityId(id)?.provider; return provider !== undefined && held.has(provider) }
-    return { ...visible, configuration: { ...visible.configuration,
-      provider: held.has(visible.configuration.provider) ? providerIdSchema.options.find(provider => !held.has(provider)) ?? 'codex' : visible.configuration.provider,
+    return { ...visible, configuration: { ...visible.configuration, provider: this.visibleProvider(visible.configuration.provider),
       ...(visible.configuration.enabledProviders ? { enabledProviders: visible.configuration.enabledProviders.filter(provider => !held.has(provider)) } : {}),
       defaultModelId: heldModel(visible.configuration.defaultModelId) ? '' : visible.configuration.defaultModelId,
       newThreadModelId: heldModel(visible.configuration.newThreadModelId) ? '' : visible.configuration.newThreadModelId },
@@ -524,11 +530,10 @@ export class DesktopHostRouter {
     const base = selected?.connection.kind === 'remote' ? withoutClientUpdates(named) : named
     const multiple = entries.length > 1
     const threads = entries.flatMap(({ connection, original, state }) => state.host.threads.map((thread, index) => {
-      const available = connection.available?.() !== false
       return {
         ...thread, hostId: connection.hostId, hostLabel: multiple ? connection.name : undefined, remoteHost: connection.kind === 'remote',
-        clientConnected: available && isThreadProviderConnected(original.host, original.host.threads[index]!),
-        ...(!available && this.reconnecting.has(connection.hostId) ? { clientReconnecting: true } : {}),
+        clientConnected: windowConnected(connection, original.host, original.host.threads[index]!),
+        ...(connection.available?.() === false && this.reconnecting.has(connection.hostId) ? { clientReconnecting: true } : {}),
       }
     }))
     return {
@@ -609,16 +614,61 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(threadId)
     return connection.service.requestAnswerRecovery?.(id!, providerId) ?? { uncertainRequestIds: [], completed: [] }
   }
+  /**
+   * One thread the window is given, found on its own host's view in place: the thread as that host sent it, whether the
+   * window shows it connected and whether the host counts it busy, each as `shell()` would give them. The answer store
+   * looked up its threads in every host's state built afresh, once for every answered question on every save, and that
+   * was half of main's time with a few hundred answered (#1230).
+   */
+  private windowThread(connection: DesktopHostConnection, ownerId: string): { thread: AgentThread | undefined; clientConnected: boolean | undefined; busy: boolean } {
+    const state = readView(connection.service)
+    const own = state.hostId ?? state.host.hostId
+    const busy = state.busyThreadIds?.some(id => clientThreadId(own, id) === ownerId) === true
+    const thread = state.host.threads.find(item => clientThreadId(own, item.id, item.hostId) === ownerId)
+    // What `visibleState` leaves out of the window: Watcher while it is off, and a provider held to Owl.
+    if (!thread || !watcherThreadVisible(thread, this.options.watcherEnabled === true)
+      || this.held.size && this.rememberDormantProviderThreads(state, connection.hostId).has(thread.id)) return { thread: undefined, clientConnected: undefined, busy }
+    return { thread, clientConnected: windowConnected(connection, state.host, thread), busy }
+  }
+  /**
+   * The provider the window gives a thread that names none: from the selected host's catalog and default, as `shell()`
+   * has them, read on that one host in place. A recovery pass asks this for every held answer of such a thread.
+   */
+  private windowProvider(thread: AgentThread): ProviderId {
+    const connection = this.selectedHostId === undefined ? undefined : this.hosts.get(this.selectedHostId)?.connection
+    if (!connection) { const empty = this.empty(); return requestDraftProvider(empty.host, thread, empty.configuration.provider) }
+    const state = readView(connection.service)
+    return requestDraftProvider({ models: modelsWithoutHeld(state.host.models, this.held) }, thread, this.visibleProvider(state.configuration.provider))
+  }
+  /**
+   * Every remote thread the answer store could keep as Watcher or dormant, under each ID a saved owner of it may carry:
+   * a Watcher thread, or one of a provider held to Owl. Read in place on each host.
+   */
+  requestDraftWatcherOwnerIds(): string[] {
+    const ids: string[] = []
+    for (const { connection } of this.hosts.values()) {
+      if (connection.kind === 'local') continue
+      const state = readView(connection.service), own = state.hostId ?? state.host.hostId
+      for (const thread of state.host.threads) {
+        if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && !(thread.providerId !== undefined && this.held.has(thread.providerId))) continue
+        const stored = hostEntityKey(connection.hostId, thread.id), shown = clientThreadId(own, thread.id, thread.hostId)
+        ids.push(stored)
+        if (shown !== stored) ids.push(shown)
+      }
+    }
+    return ids
+  }
   /** The same owning-host projection is used for remote draft saves and recovery. */
   requestDraftState(owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
     const key = parseHostEntityKey(owner.ownerId)
-    if (!key || !this.hosts.has(key.hostId) || !this.watcherAvailable(this.hosts.get(key.hostId)!.connection, key.id)) return undefined
-    const state = this.shell()
+    const connection = key ? this.hosts.get(key.hostId)?.connection : undefined
+    if (!key || !connection || !this.watcherAvailable(connection, key.id)) return undefined
     const recovery = this.requestAnswerRecovery(owner.ownerId, owner.providerId)
-    const thread = state.host.threads.find(item => item.id === owner.ownerId
-      && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    return thread ? { connected: isThreadProviderConnected(state.host, thread),
-      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests,
+    const found = this.windowThread(connection, owner.ownerId)
+    const thread = found.thread && (found.thread.providerId ?? this.windowProvider(found.thread)) === owner.providerId ? found.thread : undefined
+    // Only the requests handed back are copied, as they are for this computer's own threads.
+    return thread ? { connected: found.clientConnected === true,
+      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: structuredClone(thread.requests),
       ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery }
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
@@ -654,7 +704,6 @@ export class DesktopHostRouter {
   private async issueRequestDraftChecks(drafts: RequestDraftRecovery): Promise<Promise<void>[]> {
     // Already-known local, personal and remote acceptance must not wait for a socket read.
     await drafts.reconcile()
-    let state: AgentState | undefined
     const pending: Promise<void>[] = []
     for (const draft of await drafts.heldThreadAnswers()) {
       const owner = draft.target
@@ -673,15 +722,13 @@ export class DesktopHostRouter {
       const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
       if (completed?.some(item => item.decisionId === decisionId && item.requestId === owner.requestId
         && item.questionsDigest === questionsDigest)) continue
-      // Every host's threads, built once a held answer still needs its receipt and not before.
-      state ??= this.shell()
-      const thread = state.host.threads.find(item => item.id === owner.ownerId)
-      const request = thread?.requests.find(item => item.id === owner.requestId)
+      // The held answer's own thread, read on its host in place, once it still needs its receipt and not before.
+      const found = this.windowThread(connection, owner.ownerId)
+      const request = found.thread?.requests.find(item => item.id === owner.requestId)
       // A negative receipt is checked again when its provider reconnects or the original request
       // changes delivery/liveness or its answer lane finishes. Unrelated streaming updates keep the same read.
       const key = JSON.stringify([owner.ownerId, owner.providerId, owner.requestId, questionsDigest, decisionId,
-        thread?.clientConnected, thread?.historyStatus, request?.id ?? null, request?.delivery ?? null,
-        state.busyThreadIds?.includes(owner.ownerId) ?? false])
+        found.clientConnected, found.thread?.historyStatus, request?.id ?? null, request?.delivery ?? null, found.busy])
       let check = checks.get(key)
       if (!check) {
         // Keep both negative memo entries and queued reads bounded. Never evict an in-flight
@@ -1145,3 +1192,7 @@ export class DesktopHostRouter {
 
 /** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */
 function readView(service: Pick<HostService, 'shell' | 'view'>): AgentState { return service.view?.() ?? service.shell() }
+/** Whether the window shows a thread's provider connected: the host's connection is up and the host says its provider is. */
+function windowConnected(connection: DesktopHostConnection, host: AgentState['host'], thread: AgentThread): boolean {
+  return connection.available?.() !== false && isThreadProviderConnected(host, thread)
+}
