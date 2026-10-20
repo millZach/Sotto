@@ -280,3 +280,44 @@ it('never sends again news whose send may have gone', async () => {
   expect(sends(f.host)).toHaveLength(1)
   expect(f.control.shell().followups).toEqual([])
 })
+
+/** The thread after its hidden news went and its turn ended with a reply, for the window and the coordinator to read. */
+async function answeredNews() {
+  const f = await fixture()
+  end(f.host)
+  await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
+  await expect.poll(() => sends(f.host).length).toBe(1)
+  const thread = f.host.state.threads.find(item => item.id === 'workshop')!
+  f.host.update('workshop', { status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' },
+    messages: [...thread.messages, { id: 'synthetic-reply', role: 'assistant', text: 'Synthetic reply', createdAt: new Date().toISOString() }] })
+  await expect.poll(() => f.control.threadDetail('workshop')!.messages.some(message => message.id === 'synthetic-reply')).toBe(true)
+  const kept = (f.control as unknown as { hiddenShown: Map<string, { shown: readonly { id: string; text: string }[] }> }).hiddenShown
+  return { ...f, kept }
+}
+
+it('keeps a thread\'s history without its hidden news only while a window shows it, and drops it on a privacy change', async () => {
+  const f = await answeredNews()
+  // The window's selected thread is another one, so only the pane that opens this one shows it.
+  await f.control.command({ type: 'select-thread', threadId: 'docs' })
+  await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+  f.control.threadDetail('workshop')
+  expect(f.kept.has('workshop')).toBe(true)
+  // The window stops showing it: the projection goes, as its detail snapshot does.
+  await f.control.command({ type: 'observe-threads', threadIds: [] })
+  expect(f.kept.has('workshop')).toBe(false)
+  // A read of a thread no window shows keeps nothing.
+  expect(f.control.threadDetail('workshop')!.messages.map(message => message.id)).toContain('synthetic-reply')
+  expect(f.kept.has('workshop')).toBe(false)
+  // Shown again, then Keep local history goes off: privacy cleanup drops it.
+  await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+  f.control.threadDetail('workshop')
+  const before = f.kept.get('workshop')
+  expect(before).toBeDefined()
+  // Cleanup drops what was kept; the pane still showing it is projected afresh at the next publish, if at all.
+  let dropped = false
+  const clear = f.kept.clear.bind(f.kept)
+  f.kept.clear = () => { dropped ||= f.kept.has('workshop'); clear() }
+  await f.control.privacyChanged()
+  expect(dropped).toBe(true)
+  expect(f.kept.get('workshop')).not.toBe(before)
+})

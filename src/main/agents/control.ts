@@ -1052,7 +1052,7 @@ export class AgentControl {
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') {
       const shown = thread.continuedFrom?.handover !== undefined && this.continuationDisplay ? this.continuationDisplay(thread) : thread.messages
-      return thread.hiddenWakeUpMessageIds?.length ? this.hiddenWakeUpsLeftOut(thread.id, shown) : shown
+      return thread.hiddenWakeUpMessageIds?.length ? this.hiddenWakeUpsLeftOut(thread, shown) : shown
     }
     // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it. Only
     // a history a window holds is kept: an offscreen read keeps no text, as the display itself keeps none (ADR-0073).
@@ -1074,17 +1074,30 @@ export class AgentControl {
    * thread a new array of the same messages, so the projection is checked message by message, without a copy, and the
    * last one shown is handed out again, so neither it nor what reads it is rebuilt for another thread's update.
    */
-  private hiddenWakeUpsLeftOut(threadId: string, messages: readonly AgentMessage[]): readonly AgentMessage[] {
-    const held = this.hiddenShown.get(threadId)
+  private hiddenWakeUpsLeftOut(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
+    // Kept only for a thread a window or phone is shown, as its detail snapshot is: a history read once is not held.
+    if (!this.hiddenShownTargets.has(thread.id)) { this.hiddenShown.delete(thread.id); return withoutHiddenWakeUps(messages) }
+    const held = this.hiddenShown.get(thread.id)
     // A publish carries every message as a new copy of the same one, so a message is the same when it is equal to the one
     // the last projection was made from, compared without copying: that projection is then exactly what this one would be.
-    if (held && held.length === messages.length && (held.source === messages || messages.every((message, index) => samePlainValue(message, held.source[index])))) return held.shown
+    if (held && held.epoch === thread.historyEpoch && held.length === messages.length
+      && (held.source === messages || messages.every((message, index) => samePlainValue(message, held.source[index])))) return held.shown
     const shown = withoutHiddenWakeUps(messages)
-    this.hiddenShown.set(threadId, { source: messages, length: messages.length, shown })
+    this.hiddenShown.set(thread.id, { epoch: thread.historyEpoch, source: messages, length: messages.length, shown })
     return shown
   }
-  /** Each shown thread's history without its hidden wake-ups, by thread, and the history it was made from. */
-  private readonly hiddenShown = new Map<string, { source: readonly AgentMessage[]; length: number; shown: readonly AgentMessage[] }>()
+  /**
+   * Each shown thread's history without its hidden wake-ups, by thread, and the history it was made from. An entry goes
+   * when its thread stops being shown or is gone, at the next broadcast, and all of them on a privacy change and dispose.
+   */
+  private readonly hiddenShown = new Map<string, { epoch: string | undefined; source: readonly AgentMessage[]; length: number; shown: readonly AgentMessage[] }>()
+  /** The threads whose projections may be kept: the detail targets as the last broadcast found them. */
+  private hiddenShownTargets: ReadonlySet<string> = new Set()
+  /** Keeps projections only for the threads shown now, dropping the rest, as inactive detail snapshots are dropped. */
+  private retainHiddenShown(targets: readonly string[]): void {
+    this.hiddenShownTargets = new Set(targets)
+    for (const threadId of this.hiddenShown.keys()) if (!this.hiddenShownTargets.has(threadId)) this.hiddenShown.delete(threadId)
+  }
   /** Each Watcher history's presented messages, by the history they were made from, and what they were made from. */
   private presentedCache = new WeakMap<readonly AgentMessage[], { revision: number; hostId: string | undefined; messages: readonly AgentMessage[];
     from: readonly { message: AgentMessage; text: string; wakeUp: true | undefined }[] }>()
@@ -1444,6 +1457,7 @@ export class AgentControl {
     // Forget what every window holds: the next broadcast sends whole details, without the markers.
     this.publishedDetail.clear()
     this.detailSnapshots.clear()
+    this.hiddenShown.clear()
     if (this.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear() }
     // A failed store must not prevent the remaining stores from honoring the
     // privacy change. Preserve the failure for the caller after every cleanup runs.
@@ -1601,8 +1615,14 @@ export class AgentControl {
    * window is diffed once, at the end, because the diff is taken here rather than as each event lands.
    */
   private broadcastDetail(): void {
-    if (!this.detailListeners.size && !this.watcherMessageDisplay && this.dependencies.streamingPublishCost !== true) return
+    // Which threads' hidden-news projections may be kept follows what is shown, even when no window listens for detail.
+    const shownHidden = this.state.host.threads.some(thread => thread.hiddenWakeUpMessageIds?.length)
+    if (!this.detailListeners.size && !this.watcherMessageDisplay && this.dependencies.streamingPublishCost !== true) {
+      if (shownHidden || this.hiddenShown.size) this.retainHiddenShown(this.detailTargets())
+      return
+    }
     const targets = this.detailTargets()
+    if (shownHidden || this.hiddenShown.size) this.retainHiddenShown(targets)
     if (this.watcherMessageDisplay?.retain(this.state.host.hostId, targets)) this.presentedCache = new WeakMap()
     if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
@@ -4645,6 +4665,7 @@ export class AgentControl {
     this.listeners.clear()
     this.detailListeners.clear()
     this.detailSnapshots.clear()
+    this.hiddenShown.clear(); this.hiddenShownTargets = new Set()
     if (this.watcherMessageDisplay?.retain(undefined, [])) this.presentedCache = new WeakMap()
     this.certifiedDetailRevisions.clear()
     this.certifiedDetailCounters.clear()
