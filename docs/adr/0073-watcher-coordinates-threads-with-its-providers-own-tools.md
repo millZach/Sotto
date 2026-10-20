@@ -101,7 +101,7 @@ How the handover is offered (October 15, 2026, #1026). The change is made from W
 
 ## October 11, 2026: local tool and room boundary
 
-Ticket 5 adds the optional host-v1 `watcher-control` and `watcher-reads` paths. A headless host offers them independently of its release track, while stable desktops use neither. Both listeners require the paired desktop's SSH-written client record; phone and general socket pairings cannot claim machine origin, even with Can answer. The local tool bearer remains local. Request attribution binds the authenticated desktop to the master's creation identity, root user-message reference and ceiling; operations retain the exact master-minted target, retry, digest and receipt identities. The owning host imports these into the established Watcher service rather than duplicating adapter enforcement. Its own new-thread default and the master's default both apply. No policy is written and no request is answered.
+Ticket 5 adds the optional host-v1 `watcher-control` and `watcher-reads` paths. A headless host offers them independently of its release track, while stable desktops use neither. Both listeners require the paired desktop's SSH-written client record; phone and general socket pairings cannot claim machine origin, even with Can answer. The local tool bearer remains local. Request attribution binds the authenticated desktop to the master's creation identity, root user-message reference and ceiling; operations retain the exact master-minted target, retry, digest and receipt identities. The owning host imports these into the established Watcher service rather than duplicating adapter enforcement. The master's default applies, held to Ask for approval where the host does not let that desktop answer (amended October 19, 2026, below). No policy is written and no request is answered.
 
 The master persists and reserves capacity before sending. The host never creates master requests or extra global slots. A lost acknowledgement holds uncertainty until the owning receipt proves what happened; reconnection and host restart do not replay mutations. Host native or phone input fences ownership before the next machine writer. Scoped text-free projection pushes carry receipts, participation and sourced evidence, bounded at a thousand records of each kind, with separate exact operation reads. Thread reads use the owning store's positional cursor and epoch; no detail revision becomes a message position or event cursor. Older hosts keep ordinary summaries and refuse automation before the wire. No phone filter is introduced; Watcher's phone surface remains ticket 8 after its prototype.
 
@@ -305,6 +305,58 @@ watched starts from its facts as they are, so what it had before is not told as 
 still told. Quiet in `list_threads` therefore applies only to watched threads: an unwatched thread has no observed
 history of its progress, so a silent one lists as Working. Watched threads' news, Quiet included, is unchanged.
 
+## October 19, 2026: answering in Watcher's conversation
+
+When a watched thread asked a question or a permission, Watcher's room said so in the needs-you line and in Watcher's
+reply, and the user had to open the thread to answer. Zach picked variant B of the answering prototype, kept as the tag
+`prototype/watcher-answer-in-conversation`, on October 19, 2026. It is the desktop's version of the phone's choice 4B above:
+
+- **Inline in Watcher's conversation.** The thread's own request card sits under the reply in which Watcher told the user
+  about it, and scrolls with the conversation. It is the same card the thread's pane shows (`AgentRequestCard`), with the
+  thread's name, its provider and computer, whether it is a question or a permission, and **Open**, which opens the thread
+  beside Watcher. The pinned dock (A), the card in both places (C) and the needs-you line expanding into cards (D) were not
+  picked.
+- **Questions and permissions both.**
+- **The thread's last reply is folded** under **Show what it said**, so the user can answer without opening the thread.
+  Escape folds it again. When the window holds only the row's excerpt of a long reply, the fold says it was shortened.
+  The toggle's accessible name names the thread, since several cards can wait at once.
+- **Once answered, one line.** When the request leaves the thread, answered here, in the thread's pane or on the phone, or
+  withdrawn by its provider, the card gives way to one line with **Open**. When this window sent the answer, the line says
+  what was chosen in the card's own words, "You answered Fix login on staging: Use the staging key.", whether it was
+  sent from this card, the thread's own card or its composer, or that the user answered in their own words, never
+  repeating them. Only an answer seen leaving this window counts, never a delivery state restored after a reload.
+  Otherwise the line says only what Sotto knows: "Fix login on staging no longer waits on you." The chosen words are
+  kept in the window's memory alone, and only where Watcher is on; no answer record is saved. The window follows each
+  answered request's life as it reads its threads, whether or not Watcher is on screen, so a request that waits again
+  under an ID its provider used before is forgotten there, and an earlier choice is never told of it.
+- **The needs-you line goes to the card.** A name whose request has its card in the loaded conversation scrolls to that
+  card and focuses it, at once when motion is reduced. Otherwise it opens the thread beside Watcher at its request, as
+  before.
+
+Watcher still answers nothing. The card is the user's own control: its answer is the ordinary user `answer` command for
+the watched thread's request, from this window, the one the thread's pane sends, and it shares that pane's answer state
+in the window, so a press in either shows as sending in both. No tool was added, the wake-up's news still tells Watcher
+that only the user answers, and a wake-up's turn still cannot answer a permission (`guardAuthority`).
+
+Which card goes under which reply comes from the host's own record, never from anyone's words. When the coordinator sends
+a wake-up holding Watcher's news, it passes the requests that news said wait on the user, as identities alone (host,
+thread, request and kind), and the workspace records them with the wake-up: in the thread store's `wake_ups` row
+(migration 8, `watcher_asks`) and on the thread's record in `workspace.json` (`wakeUpAsks`, the newest 200), as the
+wake-up's own ID is kept, so they survive the history being read again and a restart with Keep local history on or off.
+No adapter hears them. The workspace marks the wake-up message with them (`watcherAsks`), and the room's projection
+places each (`asks`) under the reply of the turn that wake-up began, since a wake-up holding only news is shown nowhere.
+Turns are bounded as receipt cards bound them: a wake-up, or a message the record ties to a turn, begins one, and a
+message the user wrote into the running turn does not, so a reply that came after it is still that turn's. While the
+turn still runs with no reply, the card waits for it rather than showing somewhere it would leave, losing the user's
+place, when the reply comes; a request that turn's wake-up names again, because it changed, leaves its older reply too
+until then. A turn that ended with none puts the card under the wake-up when it is shown, else under
+the message before it. Placement is read again only when Watcher's history, its turns or whether it runs changed. The card itself is drawn from the thread's live
+request alone: nothing keeps a copy of a request to draw a card from, so a request answered anywhere leaves every card at
+once. A request two wake-ups named, because it changed between them, has its card only under the newer. A thread on a
+paired host is found and answered through its own row, as its pane does, and a card that cannot be answered now says why
+in the pane's own words, such as "Reconnect Codex to answer." A thread the window does not hold at all, such as one on a
+host still joining, draws nothing there; the needs-you line still names it.
+
 ## October 19, 2026: Watcher's replies to news in place
 
 Hiding the news wake-up (October 15) left each news turn's work naming a message the conversation does not have. The
@@ -325,3 +377,56 @@ In Watcher's conversation an unshown turn is a news turn, and Zach picked varian
 `docs/prototypes/watcher-news-turns-prototype.html`: the work has no line of its own. The first reply's header says **After news · 7.1s** (or how the turn failed or stopped) and opens the work, and every
 reply stays in view. A finished news turn that wrote no reply shows nothing; one that failed or stopped keeps its line. How
 often Watcher hears news is unchanged.
+
+## October 19, 2026: a paired host holds Watcher to the desktop's default
+
+Watcher could not send to a Full access thread on forge although the user's new-thread default was Full access, and
+`list_projects` said Full access was allowed there. The owning host held Watcher to the narrower of the master's
+default and its own, as ticket 5 decided, but since [ADR-0074](0074-a-computers-new-thread-defaults-apply-on-every-host.md)
+Settings saves the default on the desktop only, so a host's own default is one the user never set and stays "Ask for
+approval". Zach's call: the desktop's default is the one that applies, on every host. A host now holds a request a
+paired desktop sent to that desktop's default and no wider, and to Ask for approval unless its own policy lets that
+desktop answer there, the same hold-back New thread uses (ADR-0074 decision 3, ADR-0004). The desktop reads the same
+limit from what the host says it may answer, so `list_projects`, `start_thread` and a send agree with the host before
+anything crosses the wire. A host's own default still applies to threads the host or a phone opens itself. No policy
+is written and nothing is answered.
+
+## October 19, 2026: an idle thread takes Watcher's send (#1203)
+
+Watcher could not reach threads that read idle with background work running. A send now was refused as busy, a steer
+was refused because no turn ran, and a queued prompt waited, on three of Zach's threads for hours. Background work was
+not what held them. Each was a thread Watcher had started, and Stop all had stopped the request that started it. Since
+ticket 3 a machine Stop keeps the user's queue for their review, and the check that did so held the thread's whole
+queue, including the prompts a later request queued after the user asked Watcher again. A held prompt then refused
+every send now, since a send never goes ahead of a thread's queue.
+
+Decided, at Zach's word that an idle thread should just take the message:
+
+- Only the thread's foreground turn and its own queue hold Watcher's send, never background work, sub-agents or
+  monitoring. A thread whose turn is over takes a send now and starts a new turn, and a queued prompt goes as soon as
+  the turn is free. Steer still needs a running turn; background work is not one.
+- A machine Stop, Watcher's stop or Stop all, still holds the user's saved prompts and Sotto's news on that thread until
+  the user reviews them, as before. It no longer holds Watcher's own prompts: each answers to its own request's checks
+  at admission and again at the writer, which refuse it once that request is stopped. A later request's prompt goes.
+- A refusal says what the thread waits on: its running turn, a queued prompt that goes first, a queue paused or failed
+  for the user's review, a user prompt a machine Stop holds, or an earlier send Sotto has not confirmed. A refused steer
+  says no turn is running and that background work does not hold a send.
+- The user's own running turn still holds Watcher's sends, and the queue's order is unchanged. The owning host applies
+  the same rule to a paired desktop's prompts, since its queue is the same code.
+
+## October 19, 2026: quieter news (#1190)
+
+A Watcher session on October 19 cost about $28 over about 300 calls, and only about a third of some 110 wake-ups needed Watcher. Every wake-up rereads the whole conversation, so each costs more as it grows. This amends "what wakes Watcher" (October 14) and "work settled under the wake rule" (October 15). Zach chose the batch timing, and how delegated threads reach Watcher, the same day.
+
+- **Ordinary news waits for more.** A question, a permission request, a failed turn, checks that newly fail, a takeover and a send that failed keep the two-second batch, capped at five seconds, and take whatever waits with them. Other news, turn ends, work settled, pull requests and quiet, goes twenty seconds after the last of it and never later than a minute after the first. A Git-backed turn end that comes just before the minute keeps its own five-second wait for its Git read; the rest goes at the minute.
+- **A busy finish waits for its work.** A finish with background work still running needs Watcher only after twenty minutes. Until then it rides with that turn's work-settled news, a question or a failure, and a wake-up that holds both says the turn finished once; other ordinary news going does not take it along. If its thread begins another turn first, the finish is told then, since it happened, counted as new news, and is owed no work-settled news; its note says none will follow, as read_operation's note for a brief left in background does once the thread's newest turn is another, a steer read into the brief's turn not counting and a turn Claude Code starts by itself counting. A steer read into such a turn of the provider's own may still be placed on the brief's turn, as outcomes placed steers before this change. A wake-up that misses without it leaves it its retry, within the same bound on tries. Ripening counts as news that needs Watcher once, so a wake-up that missed before it cannot hold it back, and work that never settles still reaches Watcher.
+- **Pull requests wake Watcher for what matters.** Checks failed or all passed on a commit, the checks the base branch requires passed on it, merged, closed, approved or asked for changes, a conflict with the base, and comments or reviews moving after Sotto first read them. A pending check, a check count, a new commit, auto-merge or a new link rides with the next news that needs Watcher. Conflicts come from the Pull request surface's and babysitting's reads, a review asking for changes from the Pull request surface's, and required checks and remarks from babysitting's, its remarks as their text-free fingerprint; any new review moves that fingerprint. They are kept in memory beside evidence, not added to its schema, which paired hosts share, and a read older than the one kept changes none of them. So a paired host's threads wake Watcher for checks, merging or closing and approval only: their conflicts, comments and required-only passes need an addition to host protocol version 1, left for a later change. A read that holds only some of a commit's checks can say one failed, never that all passed. Queued news of a pull request is checked again against what its pull requests say beside the evidence, so news of a conflict that has since cleared does not go. Evidence news of a pull request needs Watcher while its pull requests say something Watcher was not told in a wake-up it acknowledged: checks that fail and go back to running before the news goes say nothing new. A fact that ends and comes back, as checks that fail again on the same commit after running again, is news again. Required checks pass only on a read that holds all of a commit's checks, and only for the commit the pull request is on now. A pull request Sotto has not read, as after a restart, is unknown, so news restored from the queue still needs Watcher.
+- **Told once.** A thread in several active requests is told under its standing watch, else the newest request, so one finish is one event. Turn ends, work settled, quiet and request cards have IDs without the request, so one told under one request is not told again under a newer one, after a restart too, since the saved IDs say so. One that stops being due before it goes, as when its request stops, was never told, and is told again under another request while it is still true. Work-settled news is owed per thread and turn, so a thread that moves to a standing watch keeps it. The first restart after this change may tell each watched thread's last finish once more, since the IDs saved before it named the request. A receipt that a tool's answer carried, a refusal included, is no news until it changes.
+- **Delegated threads are their delegating thread's.** Watcher watches the thread that delegated. A thread it delegated to (ADR-0081), or one that thread delegated to in turn, makes no news while a thread above it is watched, even if it is watched itself, and news it made before then is withdrawn. Its question or permission request comes at once as news of the topmost watched thread above it, naming the delegated thread to open, while the delegated thread is connected, whether or not the watched thread is. That thread's `waitsOn` in `list_threads` lists its direct delegated threads' cards. The delegating thread's own model is not woken for it.
+- **The reply rides with the news.** As a wake-up is sent, Sotto adds the first 500 characters of a finished turn's reply, labelled as the worker's words, and its own words for what a pull request says that Watcher has not been told. Both are read from the thread at that moment and go only into the note the send carries. The reply is the newest turn's own, by the rule outcomes use, or none. The queue and the control record keep identities only. The provider's own history keeps what it was sent, as it keeps `read_operation`'s replies; for a Grok Build Watcher the note is a line of its message, which Sotto's history keeps too while Keep local history is on, and which its conversation never shows. The detail gives way before any event when a note would exceed its 16 KiB.
+
+## October 19, 2026: slim tool results (#1191)
+
+Every `sotto_threads` result stays in Watcher's conversation and is read again on each of its calls. `list_threads` repeated every pull request fact on every row, `list_projects` repeated a computer's whole model list for every project, and `read_thread` returned up to a hundred evidence facts beside a one-message read. The three reads are now slim by default, and the full results are opt-in: `detail: "full"` on `list_threads`, `evidence: "full"` on `read_thread` and `includeModels: true` on `list_projects`. `list_threads` also takes `watchedOnly`, and `list_projects` takes `projectId` and `query`. A slim row names each pull request by its number, and by its address too when two of the thread's share a number; a read always gives the address, since it sees only the evidence's newest facts. Each comes with its state and checks, approval and auto-merge only when on, and staleness only when true. [The measurements](../perf/2026-10-19-watcher-tool-results.md) show 86 to 99% less. A slim read keeps the thread's own facts, such as a failed turn or a takeover, and a slim row says when its turn failed, it was taken over or its automation stopped, so Watcher sees why a thread needs the user without asking for more.
+
+The new keys are the desktop's alone. The tools still build their full results, the way a paired host answers them, and the desktop slims what Watcher is given as the last step. A paired host is never sent the keys, so hosts of every version answer unchanged and host protocol version 1 does not change. Its result schemas only widen: a slim row is a second shape of `list_threads` rows, `read_thread` gains an optional `pullRequests`, and `list_projects`' `workers` becomes optional.

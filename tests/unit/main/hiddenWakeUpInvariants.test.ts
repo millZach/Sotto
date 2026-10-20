@@ -90,7 +90,7 @@ async function load(w: World): Promise<void> {
   const ids = new Set(dropped.map(event => event.id))
   w.record.wakeEventIds = (w.record.wakeEventIds ?? []).filter(id => !ids.has(id))
   w.uncertain.clear(); w.reconciling.clear(); w.settlements = new HiddenWakeUpSettlements()
-  w.wakes = new WatcherWakeUp({ now: () => w.clock, snapshot: () => w.snapshot, record: () => w.record, canDeliver: () => true,
+  w.wakes = new WatcherWakeUp({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, now: () => w.clock, snapshot: () => w.snapshot, record: () => w.record, canDeliver: () => true,
     schedule: (callback, delay) => { const timer = { at: w.clock + delay, callback }; w.timers.add(timer); return () => { w.timers.delete(timer) } },
     restoredEvents: () => [], wakeUpQueued: () => hidden(w).length > 0, prune: async () => undefined,
     remember: async ids => {

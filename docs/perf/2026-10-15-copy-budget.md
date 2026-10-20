@@ -29,7 +29,10 @@ Two checks run in every CI run. They count calls; they never time anything.
   `cloneActivitySnapshot` call, which of them copy the whole state, and which copy Watcher's record. Since October 19 it
   also counts the objects every copier makes, per thread per update, and how often an update reads a provider out of a
   public ID. It fails when one
-  update copies more with 200 threads than with 20, or when an update passes its budget.
+  update copies more with 200 threads than with 20, or when an update passes its budget. Also since October 19, a thread
+  the window shows has a wake-up of delegation news no one is shown (ADR-0081), and the guard fails when an update of
+  another thread makes that thread's history again without it (`withoutHiddenWakeUps`): it is made again only when its
+  own history changes.
 - `tests/unit/main/copySites.test.ts` counts every copy call site in `src/main` and `src/host` (`structuredClone(`,
   `.shell()`, `watcherRecord()`, `cloneHostSnapshot(`, `clonePlainData(`, `cloneActivitySnapshot(`, `copyUnshared(` and JSON round trips) per file, and
   fails when the count differs from `tests/fixtures/copySites.json`. A new copy shows up in review that way.
