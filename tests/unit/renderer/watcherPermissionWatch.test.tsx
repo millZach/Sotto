@@ -394,7 +394,7 @@ describe('watching a thread', () => {
   it('says a paused watch waits for the user’s own turn', async () => {
     renderThreads(roomState({ watchedThreads: [row('footer-links', 'Footer links', { paused: true })] }))
     const pane = await screen.findByRole('region', { name: 'Footer links' })
-    expect(await within(pane).findByText('Watched by Watcher. It waits while your own turn here runs, then keeps this thread going.')).toBeInTheDocument()
+    expect(await within(pane).findByText('Watched by Watcher. While your own turn here runs, it can only steer that turn.')).toBeInTheDocument()
   })
 
   it('puts the owl among each sidebar row’s actions, pressed while watched', async () => {
@@ -484,7 +484,7 @@ describe('watching a thread', () => {
   it('says how long a watch has run with nothing sent, or that the user’s turn holds it', () => {
     const state = roomState()
     expect(watchedDoing(row('footer-links', 'Footer links'), state)).toMatch(/^Watching since .+\. Nothing sent yet\.$/u)
-    expect(watchedDoing(row('footer-links', 'Footer links', { paused: true }), state)).toBe('You sent here yourself. Watcher waits until that turn ends.')
+    expect(watchedDoing(row('footer-links', 'Footer links', { paused: true }), state)).toBe('You sent here yourself. Until that turn ends, Watcher can only steer it.')
     expect(watchedDoing(row('weekly-note', 'Weekly note'), state)).toBeNull()
   })
 

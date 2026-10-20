@@ -28,6 +28,8 @@ export interface DelegationControlHooks {
   observedThreadIds(): readonly string[]
   /** The message ID a delegation gave its brief, so the brief's turn is known by it from the first echo. */
   messageIdFor(draftId: string): string | undefined
+  /** Whether a message is one of delegation's briefs, so a thread's watcher never takes it for the user's own. */
+  ownsMessage?(messageId: string): boolean
   /** The guard a delegated brief carries to the provider's writer, asked again after the thread's preparation. */
   guardFor(draftId: string): (() => void) | undefined
   /**
@@ -290,6 +292,7 @@ export class DelegationService {
       observe: snapshot => this.observe(snapshot),
       observedThreadIds: () => this.observedThreadIds(),
       messageIdFor: draftId => this.records.findLast(record => record.draftId === draftId && this.open(record))?.messageId,
+      ownsMessage: messageId => this.records.some(record => record.messageId === messageId),
       guardFor: draftId => {
         const record = this.records.findLast(item => item.draftId === draftId && this.open(item))
         return record ? () => this.guardSend(record.id) : undefined
