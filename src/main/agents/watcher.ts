@@ -135,6 +135,20 @@ const LATE: unique symbol = Symbol('late')
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
+/**
+ * The user's newest request to this Watcher thread, by when it began rather than by its place in the record: a request a
+ * queued message started after its own had ended takes that request's place among takeovers (#1184), so it can sit
+ * before it. Of two that began at the same moment, the active one.
+ */
+function newestUserRequest(record: Readonly<WatcherRecord>, threadId: string): WatcherRequest | undefined {
+  let newest: WatcherRequest | undefined
+  for (const request of record.requests) {
+    if (request.watcher.threadId !== threadId || request.standingWatchId) continue
+    if (!newest || request.createdAt > newest.createdAt || request.createdAt === newest.createdAt && (request.state === 'active' || newest.state !== 'active')) newest = request
+  }
+  return newest
+}
+
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
@@ -1015,11 +1029,11 @@ export class WatcherService implements WatcherControlHooks {
     if (!threadId || answersQuestion) return
     if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
     if (threadId === this.record().current?.target.threadId && command.type === 'queue-followup' && command.draftId) {
-      const latest = this.record().requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)
+      const latest = newestUserRequest(this.record(), threadId)
       if (!latest) refuse('REQUEST_NOT_ACTIVE', 'Send an instruction to Watcher before queuing a continuation.')
       if ((latest.userFollowups?.length ?? 0) >= 1_000) refuse('REQUEST_NOT_ACTIVE', 'This request has too many queued continuations. Send a new instruction instead.')
       this.options.control.mutateWatcher(record => {
-        const request = record.requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)
+        const request = newestUserRequest(record, threadId)
         if (request && (request.userFollowups?.length ?? 0) < 1_000) {
           request.userFollowups ??= []
           if (!request.userFollowups.some(item => item.draftId === command.draftId)) request.userFollowups.push({ draftId: command.draftId!,
@@ -1129,7 +1143,9 @@ export class WatcherService implements WatcherControlHooks {
     // that fenced the old request fences it too. One the user queued after a takeover fenced its request, with no
     // takeover since, is their fresh word instead, ordered after that takeover. A retry keeps the request its first
     // delivery made.
-    const queued = request?.userFollowups?.find(item => item.draftId === _draftId && item.messageId === undefined)
+    // A continuation whose recorded message is not this one never reached Watcher: a queued message goes again only as a
+    // new message, after a definite failure. An older build kept that failed message on it, so it is matched this way.
+    const queued = request?.userFollowups?.find(item => item.draftId === _draftId && item.messageId !== command.messageId)
     const fresh = request !== undefined && request.rootUserMessageId !== command.messageId && queued !== undefined
       && (queued.afterTakeover === true || request.state !== 'active')
     const inPlace = fresh && queued?.afterTakeover !== true

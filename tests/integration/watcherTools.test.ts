@@ -495,6 +495,59 @@ it('gives a continuation whose tries never reached the provider a request of its
   expect(await f.call('start_thread', { ...f.start(), requestId: fresh[0]!.id })).toMatchObject({ status: 'ok' })
 })
 
+it('queues the next message under the request a resumed one started, though it sits before the stopped request (#1184)', async () => {
+  const f = await fixture(), first = 'Synthetic continuation after a stop', second = 'Synthetic message while the new request works'
+  expect((await f.call('start_thread', f.start())).status).toBe('ok')
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: first })).error).toBeNull()
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok' })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith(first))).toBe(true))
+  const fresh = f.service.state().requests.find(item => item.id !== f.requestId)!
+  // It took the stopped request's place among takeovers, so it comes first in the record.
+  const ids = f.service.state().requests.map(item => item.id)
+  expect(ids.indexOf(fresh.id)).toBeLessThan(ids.indexOf(f.requestId))
+  expect(await f.call('start_thread', { ...f.start(), requestId: fresh.id })).toMatchObject({ status: 'ok' })
+  // While Watcher answers it, the user queues another message: it continues the newer request, not the stopped one.
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId, text: second })).error).toBeNull()
+  expect(f.service.state().requests.find(item => item.id === fresh.id)!.userFollowups).toContainEqual(expect.objectContaining({ draftId }))
+  expect(f.service.state().requests.find(item => item.id === f.requestId)!.userFollowups ?? []).not.toContainEqual(expect.objectContaining({ draftId }))
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith(second))).toBe(true))
+  const sent = f.workspace.adapters.codex.commands.find(item => item.type === 'send' && item.text.startsWith(second))
+  expect(sent).toMatchObject({ watcherRequestNote: expect.stringContaining(fresh.id) })
+  expect(f.service.state().requests).toHaveLength(2)
+})
+
+it('gives a continuation an older build left holding its refused message a request of its own after a Stop (#1184)', async () => {
+  const f = await fixture(), text = 'Synthetic continuation an older build refused'
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  let refusals = 1
+  vi.spyOn(codex, 'execute').mockImplementation(async command => command.type === 'send' && command.text.startsWith(text) && refusals-- > 0
+    ? { accepted: false, error: 'Synthetic definite refusal.' } : execute(command))
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId, text })).error).toBeNull()
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.control.shell().followups!.find(item => item.text === text)?.status).toBe('failed'), { timeout: 30_000 })
+  // A build from before #1184 kept the refused message on the continuation; this one clears it, so it is put back.
+  const refused = randomUUID()
+  await f.control.updateWatcher(record => { record.requests.find(item => item.id === f.requestId)!.userFollowups!.find(item => item.draftId === draftId)!.messageId = refused })
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  expect(f.service.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+  expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(codex.commands.some(command => command.type === 'send' && command.text.startsWith(text))).toBe(true), { timeout: 30_000 })
+  const sent = codex.commands.find(command => command.type === 'send' && command.text.startsWith(text))
+  if (sent?.type !== 'send') throw new Error('The message was not sent')
+  expect(sent.messageId).not.toBe(refused)
+  const fresh = f.service.state().requests.find(item => item.rootUserMessageId === sent.messageId)!
+  expect(fresh).toMatchObject({ state: 'active' })
+  expect(fresh.id).not.toBe(f.requestId)
+  expect(sent).toMatchObject({ watcherRequestNote: expect.stringContaining(fresh.id) })
+  expect(f.service.state().requests.find(item => item.id === f.requestId)!.userFollowups ?? []).not.toContainEqual(expect.objectContaining({ draftId }))
+})
+
 it('keeps a refused delivery’s request that a takeover took as its boundary meanwhile, so later requests are not fenced (#1184)', async () => {
   const f = await fixture(), text = 'Synthetic refused after a takeover'
   const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
