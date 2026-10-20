@@ -81,8 +81,8 @@ describe('platformProfile', () => {
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
-      defaultHotkey: 'CommandOrControl+Shift+Space',
-      defaultHoldShortcuts: [],
+      defaultHotkey: 'Super+CommandOrControl+X',
+      defaultHoldShortcuts: ['F9'],
     })
     if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
     expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)

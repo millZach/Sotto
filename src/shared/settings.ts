@@ -486,8 +486,12 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
+/** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0094). */
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
+  // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
+  // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys.
+  const linuxBeforeRecorder = allowOmarchy && persisted.holdShortcuts === undefined
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.
@@ -520,10 +524,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
-    hotkey: parseField(persisted, 'hotkey', defaults),
-    pressShortcuts: parseShortcutList(persisted.pressShortcuts, 3),
+    hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
+    pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
     // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
-    holdShortcuts: persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
+    // Linux is the exception above: its existing profiles already held F9.
+    holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),

@@ -281,3 +281,36 @@ describe('validateChord, bug bot round', () => {
     expect(validateChord(' + ', { role: 'press', index: 1 }, { press: ['F9', ''], hold: [] }, 'win32', owl)).toEqual(needsKey)
   })
 })
+
+describe('Linux chords', () => {
+  const linuxSet: DictationShortcutSet = { press: ['Super+CommandOrControl+X'], hold: ['F9'] }
+
+  it('orders and names keys the way Omarchy writes them, with Super rather than Win or Command', () => {
+    expect(canonicalChord(['CommandOrControl', 'Super', 'X'], 'linux')).toBe('Super+CommandOrControl+X')
+    expect(chordInline('Super+CommandOrControl+X', 'linux')).toBe('Super + Ctrl + X')
+    expect(chordWords('Super+CommandOrControl+X', 'linux')).toBe('Super Ctrl X')
+    expect(keyTokenFromCode('MetaLeft', 'Meta', 'linux')).toBe('Super')
+    expect(keyTokenFromCode('ControlRight', 'Control', 'linux')).toBe('CommandOrControl')
+    // Windows and macOS keep their own words.
+    expect(chordInline('CommandOrControl+Super', 'win32')).toBe('Ctrl + Win')
+    expect(canonicalChord(['Super', 'CommandOrControl', 'X'], 'win32')).toBe('CommandOrControl+Super+X')
+  })
+
+  it('lets Hyprland hold any chord with a key, without a key listener', () => {
+    expect(validateChord('F10', adding('hold'), linuxSet, 'linux', stable)).toEqual({ ok: true })
+    expect(validateChord('Super+Alt+D', { role: 'press', index: 0 }, linuxSet, 'linux', stable)).toEqual({ ok: true })
+  })
+
+  it('refuses a chord without a key, saying Hyprland may have kept it', () => {
+    const refusal = validateChord('Super+CommandOrControl', { role: 'press', index: 0 }, linuxSet, 'linux', stable)
+    expect(refusal).toMatchObject({ ok: false, code: 'needs-key' })
+    expect(refusal.ok ? '' : refusal.message).toContain('Hyprland already uses it')
+    expect(validateChord('Super', adding('hold'), linuxSet, 'linux', owl)).toMatchObject({ ok: false, code: 'needs-key' })
+    expect(validateChord('Fn', adding('hold'), linuxSet, 'linux', owl)).toMatchObject({ ok: false, code: 'needs-key' })
+  })
+
+  it('suggests Super for a plain key, and finds duplicates across rows', () => {
+    expect(validateChord('D', { role: 'press', index: 0 }, linuxSet, 'linux', stable)).toMatchObject({ ok: false, code: 'plain-key', message: 'D on its own would start dictation while you type. Add a modifier such as Super.' })
+    expect(validateChord('F9', { role: 'press', index: 0 }, linuxSet, 'linux', stable)).toEqual({ ok: false, code: 'duplicate', message: 'Hold to dictate already uses F9.' })
+  })
+})

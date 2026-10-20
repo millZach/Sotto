@@ -16,6 +16,8 @@ type ChordValidation = { ok: true } | { ok: false; code: ChordRefusal; message: 
 
 const darwinModifierOrder = ['Fn', 'Control', 'Alt', 'Shift', 'CommandOrControl'] as const
 const win32ModifierOrder = ['CommandOrControl', 'Alt', 'Shift', 'Super'] as const
+// Hyprland and Omarchy write Super first: Super+Ctrl+X.
+const linuxModifierOrder = ['Super', 'CommandOrControl', 'Alt', 'Shift'] as const
 const modifierTokens = new Set<string>([...darwinModifierOrder, ...win32ModifierOrder])
 
 const keyTokens = new Set<string>([
@@ -74,8 +76,11 @@ export function chordNeedsListener(chord: string, role: ShortcutRole): boolean {
 }
 
 function modifierOrder(platform: SottoPlatform): readonly string[] {
-  return platform === 'darwin' ? darwinModifierOrder : win32ModifierOrder
+  return platform === 'darwin' ? darwinModifierOrder : platform === 'linux' ? linuxModifierOrder : win32ModifierOrder
 }
+
+/** Who already uses a chord, in each platform's own words. */
+const systemName: Readonly<Record<SottoPlatform, string>> = Object.freeze({ darwin: 'macOS', win32: 'Windows', linux: 'Hyprland' })
 
 export function canonicalChord(tokens: readonly string[], platform: SottoPlatform): string | null {
   const unique = [...new Set(tokens)]
@@ -154,17 +159,22 @@ export function validateChord(
   options: { listener: boolean },
 ): ChordValidation {
   const darwin = platform === 'darwin'
+  const linux = platform === 'linux'
   const tokens = normalTokens(chord, platform)
   const keys = chordInline(chord, platform)
   const row = set[target.role]
   const needsKey = 'Your main start-and-stop shortcut needs a key besides Fn and modifiers, so it works everywhere.'
-  if (tokens.size === 0) return refuse('needs-key', needsKey)
+  // Hyprland binds every Linux shortcut, held or pressed, and each needs a key. A key Hyprland already binds never
+  // reaches Sotto's window, so a recording of it ends with only the modifiers.
+  const linuxNeedsKey = 'A shortcut needs a key besides Super, Ctrl, Alt and Shift. If you pressed one, Hyprland already uses it for one of its own shortcuts. Pick another key.'
+  if (tokens.size === 0) return refuse('needs-key', linux ? linuxNeedsKey : needsKey)
   if (tokens.has('escape')) return refuse('escape', 'Esc cancels a recording, so it can’t start one. Pick other keys.')
   if (target.index === null && row.length >= MAX_SHORTCUTS_PER_ROLE) {
     return refuse('too-many', `Each row holds up to ${MAX_SHORTCUTS_PER_ROLE} shortcuts.`)
   }
+  if (linux && !chordHasKey(chord)) return refuse('needs-key', linuxNeedsKey)
   const mainSlot = target.role === 'press' && (target.index ?? row.length) === 0
-  if (chordNeedsListener(chord, target.role) && (mainSlot || !options.listener)) {
+  if (!linux && chordNeedsListener(chord, target.role) && (mainSlot || !options.listener)) {
     const owl = options.listener ? ' Add this one with + Add instead.' : ''
     return refuse('needs-key', `${needsKey}${owl}`)
   }
@@ -174,10 +184,10 @@ export function validateChord(
     && plainKeys.every((token) => !/^f(?:[1-9]|1[0-9]|2[0-4])$/u.test(token))
     && [...tokens].every((token) => !isModifierWord(token) || token === 'shift')
   if (plain) {
-    return refuse('plain-key', `${keys} on its own would start dictation while you type. Add a modifier such as ${darwin ? '⌃ Control' : 'Ctrl'}.`)
+    return refuse('plain-key', `${keys} on its own would start dictation while you type. Add a modifier such as ${darwin ? '⌃ Control' : linux ? 'Super' : 'Ctrl'}.`)
   }
   const reserved = reservedChords[platform].find(([reservedChord]) => sameTokens(tokens, normalTokens(reservedChord, platform)))
-  if (reserved) return refuse('reserved', `${darwin ? 'macOS' : 'Windows'} uses ${keys} for ${reserved[1]}. Pick other keys.`)
+  if (reserved) return refuse('reserved', `${systemName[platform]} uses ${keys} for ${reserved[1]}. Pick other keys.`)
   // After reserved, so Win alone keeps its more useful "opening Start" answer.
   // The normalised set, so Shift+Shift or Control+Ctrl is still one modifier.
   const only = [...tokens]
