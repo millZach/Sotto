@@ -25,20 +25,21 @@ import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto 
  * sidebar and a few streaming, found main's JavaScript thread busy about 82% of the time over 5.5 minutes, with
  * 1,032 stretches of 100 ms or more without going idle (longest 1.5 s), from whole-state deep copies on every
  * streamed update. This reproduces the shape in the built app at the owner's scale (#1232): Sotto Owl with about 230
- * threads beyond the fixture's two, each with a provider session, Watcher's record at the owner's size, with 5 standing watches
- * (`tests/fixtures/ownerScale.ts`), the owner's answer retirements, and a connected remote host with 40 threads of
- * its own. 1, then 3, of the threads stream a reply at a realistic rate while it measures main's event-loop delay and
+ * threads beyond the fixture's two, each with a provider session, a current Watcher with the owner's record and 5 standing
+ * watches on the threads that stream (`tests/fixtures/ownerScale.ts`), the owner's answer retirements, and a connected
+ * remote host with 40 threads of its own. 1, then 3, of the threads stream a reply at a realistic rate while it measures main's event-loop delay and
  * keystroke-to-screen latency in an idle thread's composer. It runs only when asked:
  *
  *   PowerShell:  $env:SOTTO_PERF_BENCH = '1'; npm run build; npx playwright test tests/e2e/main-freeze.spec.ts
  *   sh:          SOTTO_PERF_BENCH=1 npm run build && npx playwright test tests/e2e/main-freeze.spec.ts
  *
- * With `SOTTO_PERF_LIMITS=1` as well, it fails when main stalls past `FREEZE_LIMITS`; the nightly Main freeze workflow
- * runs it that way. Each case also reports what the window did: frames drawn, state broadcasts main sent it, time spent
- * handling each key and in long tasks. `SOTTO_FREEZE_PROFILE` names a folder to write a CPU profile of the window per
- * case into. The window must stay on screen: one minimized, covered or behind a locked screen draws about one frame a
- * second, and every keystroke then reads as half a second (October 20, 2026), so a case that drew too few frames fails. `SOTTO_FREEZE_THREADS` sets the padding, and scales the rest of the history with it, for a quick
- * check of the setup. `docs/perf/2026-10-15-main-freeze.md` has what the numbers mean and where to record a run's results.
+ * With `SOTTO_PERF_ASSERT=1` as well, the switch every stopwatch budget takes, it fails when main stalls past
+ * `FREEZE_LIMITS`; the nightly Main freeze workflow runs it that way. Each case also reports what the window did: frames
+ * drawn, state broadcasts main sent it, time spent handling each key and in long tasks. `SOTTO_FREEZE_PROFILE` names a
+ * folder to write a CPU profile of the window per case into. The window must stay on screen: one minimized, covered or
+ * behind a locked screen draws about one frame a second, and every keystroke then reads as half a second (October 20,
+ * 2026). A case that drew too few frames is marked invalid in what it prints, and with `SOTTO_PERF_ASSERT=1` it fails.
+ * `SOTTO_FREEZE_THREADS` sets the padding, and scales the rest of the history with it, for a quick check of the setup. `docs/perf/2026-10-15-main-freeze.md` has what the numbers mean and where to record a run's results.
  */
 const PROJECT_ID = 'project'
 const MODEL_ID = 'claude:test'
@@ -46,7 +47,8 @@ const MODEL_ID = 'claude:test'
 const PADDING_THREADS = Number(process.env.SOTTO_FREEZE_THREADS ?? 230)
 /** The owner's history beyond this computer's threads, scaled with the padding. */
 const history = (count: number): number => Math.max(1, Math.round(count * PADDING_THREADS / 230))
-const PERF_LIMITS = process.env.SOTTO_PERF_LIMITS === '1'
+/** Stopwatch limits are opt-in through the switch every stopwatch budget takes (`docs/ci.md`, `tests/fixtures/perfBudget.ts`). */
+const PERF_ASSERT = process.env.SOTTO_PERF_ASSERT === '1'
 /**
  * The most main may stall in a case, by how many threads stream, before the nightly run fails on a GitHub-hosted Windows
  * runner: the longest stretch without going idle, and how many stretches of 100 ms or more in its 15 seconds. First set
@@ -83,6 +85,9 @@ interface CaseResult {
   /** Keydown to the composer's input event: the window's own handling of a key, without the wait for the next frame. */
   readonly keyHandlingMs: Distribution
   readonly window: WindowSample
+  /** Whether the window was on screen, so its keystroke times measure Sotto; when not, `invalid` says why. */
+  readonly valid: boolean
+  readonly invalid?: string
 }
 interface WindowSample { framesPerSecond: number; stateBroadcastsPerSecond: number; longTasks: number; longTaskMs: number }
 
@@ -159,18 +164,21 @@ async function remoteHost(profile: string) {
 
 /**
  * The rest of the owner's history, written into the closed profile in the app's own files: Watcher's record in
- * `agents.json`, with standing watches on `watched` and its past requests and operations on `others` and the remote
- * host's threads, and the answer retirements and Watcher owners in `request-drafts.json`. The fixture's provider has no
- * Watcher model, so the record is one an earlier Watcher left: Watcher's pass and room read it as they read the owner's.
+ * `agents.json`, with `watcher` as the current Watcher, standing watches on `watched` and its past requests and
+ * operations on `others` and the remote host's threads, and the answer retirements and Watcher owners in
+ * `request-drafts.json`. The fixture's provider has no Watcher model, so Watcher cannot be opened from the window; the
+ * record names one of the padding threads as the current Watcher instead, as if it had been, so main's wake-up pass reads
+ * the standing watches and gathers their evidence on every update, as it does for the owner (`watcherWakeUp.ts`).
  */
-async function writeHistory(profile: string, localHostId: string, watched: readonly string[], others: readonly string[],
+async function writeHistory(profile: string, localHostId: string, watcher: string, watched: readonly string[], others: readonly string[],
   remote: { hostId: string; threadIds: readonly string[] }): Promise<void> {
   const file = join(profile, 'agents.json')
   const saved = JSON.parse(await readFile(file, 'utf8')) as { watcher: WatcherRecord }
   const at = new Date().toISOString()
+  saved.watcher.current = { target: { hostId: localHostId, threadId: watcher }, projectId: PROJECT_ID, provider: 'claude', creationOperationId: randomUUID(), createdAt: at }
   saved.watcher.watches = watched.map(threadId => ({ id: randomUUID(), target: { hostId: localHostId, threadId }, createdAt: at, generation: 0 }))
   addWatcherHistory(saved.watcher, [...others.map(threadId => ({ hostId: localHostId, threadId })), ...remote.threadIds.map(threadId => ({ hostId: remote.hostId, threadId }))],
-    { requests: history(OWNER_SCALE.requests), operations: history(OWNER_SCALE.operations) }, { hostId: localHostId, threadId: 'earlier-watcher' })
+    { requests: history(OWNER_SCALE.requests), operations: history(OWNER_SCALE.operations) })
   await writeFile(file, JSON.stringify(saved), 'utf8')
   await writeFile(join(profile, 'request-drafts.json'), ownerRequestDrafts(others, remote, { retirements: history(OWNER_SCALE.retirements),
     remoteRetirements: history(OWNER_SCALE.remoteRetirements), watcherOwners: history(OWNER_SCALE.watcherOwners) }), 'utf8')
@@ -314,7 +322,7 @@ async function streamReplies(page: Page, bareThreadIds: readonly string[], durat
 }
 
 /** Streams `bareStreamIds` (if any) while typing a synthetic string into `composer`, then reads both measurements back. */
-async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds: readonly string[], name: string): Promise<{ chunksEmitted: number[]; freeze: FreezeSample; typingSamples: number[]; keyHandling: number[]; window: WindowSample }> {
+async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds: readonly string[], name: string): Promise<{ chunksEmitted: number[]; freeze: FreezeSample; typingSamples: number[]; keyHandling: number[]; window: WindowSample; invalid?: string }> {
   await resetTyping(launched.page)
   const probe = await beginWindowProbe(launched)
   await beginFreezeMonitor(launched)
@@ -325,9 +333,11 @@ async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds
   ])
   const freeze = await endFreezeMonitor(launched)
   const window = await endWindowProbe(launched, probe, name)
-  if (window.framesPerSecond < MIN_FRAMES_PER_SECOND) {
-    throw new Error(`The window drew ${window.framesPerSecond} frames a second in "${name}", so it was minimized, covered or behind a locked screen, where Chromium draws about once a second: its keystroke times would measure that, not Sotto. Keep the window on screen and run the spec again.`)
-  }
+  // A validity guard, not a limit: an off-screen window's keystroke times measure Chromium's throttling, not Sotto.
+  const invalid = window.framesPerSecond < MIN_FRAMES_PER_SECOND
+    ? `The window drew ${window.framesPerSecond} frames a second in "${name}", so it was minimized, covered or behind a locked screen, where Chromium draws about once a second: its keystroke times measure that, not Sotto. Keep the window on screen and run the spec again.`
+    : undefined
+  if (invalid && PERF_ASSERT) throw new Error(invalid)
   // A busy renderer queues the typing samples' requestAnimationFrame callbacks behind its backlog; give it a
   // moment to drain before reading them, or the last several keystrokes of a heavily loaded case read as missing.
   await setTimeout(2_000)
@@ -336,7 +346,7 @@ async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds
   // pick up; backspacing what was actually typed, key by key, is what this composer already answers to.
   for (let remaining = SYNTHETIC_TEXT.length; remaining > 0; remaining--) await composer.press('Backspace')
   await expectPromptText(composer, '')
-  return { chunksEmitted, freeze, typingSamples, keyHandling, window }
+  return { chunksEmitted, freeze, typingSamples, keyHandling, window, ...invalid ? { invalid } : {} }
 }
 
 test('main stays responsive while threads stream with the owner\'s history', async () => {
@@ -353,6 +363,7 @@ test('main stays responsive while threads stream with the owner\'s history', asy
     await onReleaseTrack('owl', async () => {
       // First the threads, then the rest of the history in the app's own files while the app is closed.
       let paddingThreadIds: string[]
+      let watcherThread: string
       const first = await launchSotto('success', profile)
       try {
         const { page } = first
@@ -366,22 +377,26 @@ test('main stays responsive while threads stream with the owner\'s history', asy
         const bare = paddingThreadIds.map(id => bareEntityId(id)!)
         const localHostId = parseHostEntityKey(paddingThreadIds[0]!)!.hostId
         await closeSotto(first)
-        // The first threads stream in the cases below and are watched; Watcher's past work names the others.
+        // The first threads stream in the cases below and are watched, the last is Watcher's own, and Watcher's past work
+        // names the others.
         const watches = history(OWNER_SCALE.watches)
-        await writeHistory(profile, localHostId, bare.slice(0, watches), bare.slice(watches), { hostId: joined.connection.hostId, threadIds: joined.threadIds })
+        watcherThread = bare.at(-1)!
+        await writeHistory(profile, localHostId, watcherThread, bare.slice(0, watches), bare.slice(watches, -1), { hostId: joined.connection.hostId, threadIds: joined.threadIds })
       } catch (error) { await closeSotto(first); throw error }
 
       const launched = await launchSotto('success', profile)
       const { page } = launched
       try {
-        // The fixture's provider keeps its sessions only while the app runs, so each thread starts one now.
-        await registerThreads(page, paddingThreadIds)
+        // The fixture's provider keeps its sessions only while the app runs, so each thread starts one now. Watcher's own
+        // takes no message from the window: main refuses a send to it without the launch profile a real Watcher has.
+        await registerThreads(page, paddingThreadIds.filter(id => bareEntityId(id) !== watcherThread))
         await launched.app.evaluate(async (_, input) => { await globalThis.sottoRemoteHostE2E!.connect(input) }, joined.connection)
         await expect.poll(async () => (await agentState(page)).host.threads.length).toBeGreaterThanOrEqual(PADDING_THREADS + 2 + joined.threadIds.length)
-        // Main read Watcher's record whole from the file written for it.
+        // Main read Watcher's record whole from the file written for it, with the current Watcher and its standing watches.
         const room = await page.evaluate(async () => window.sotto!.watcher!.get())
-        expect(room.status === 'ok' ? { watches: room.state.standingWatches?.length ?? 0, requests: room.state.requests.length, operations: room.state.receipts.length } : room)
-          .toEqual({ watches: history(OWNER_SCALE.watches), requests: history(OWNER_SCALE.requests), operations: history(OWNER_SCALE.operations) })
+        expect(room.status === 'ok' ? { current: room.state.current?.target.threadId, watches: room.state.standingWatches?.length ?? 0,
+          requests: room.state.requests.length, operations: room.state.receipts.length } : room)
+          .toEqual({ current: watcherThread, watches: history(OWNER_SCALE.watches), requests: history(OWNER_SCALE.requests), operations: history(OWNER_SCALE.operations) })
         await openThreads(page)
         const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
         // Opened from the keyboard: on Owl the row's Open beside action sits over the middle of the row and takes a click.
@@ -401,9 +416,9 @@ test('main stays responsive while threads stream with the owner\'s history', asy
           { name: '3 threads streaming', streamIds: bareStreamIds.slice(0, 3) },
         ]
         for (const { name, streamIds } of runCases) {
-          const { chunksEmitted, freeze, typingSamples, keyHandling, window } = await runCase(launched, composer, streamIds, name)
+          const { chunksEmitted, freeze, typingSamples, keyHandling, window, invalid } = await runCase(launched, composer, streamIds, name)
           const result: CaseResult = { name, streamingThreads: streamIds.length, chunksEmitted, eventLoopDelay: freeze,
-            keystrokeLatencyMs: distribution(typingSamples), keyHandlingMs: distribution(keyHandling), window }
+            keystrokeLatencyMs: distribution(typingSamples), keyHandlingMs: distribution(keyHandling), window, valid: invalid === undefined, ...invalid ? { invalid } : {} }
           results.push(result)
           console.log(`main freeze: ${JSON.stringify(result)}`)
         }
@@ -415,8 +430,13 @@ test('main stays responsive while threads stream with the owner\'s history', asy
         }
         expect(results[1]!.chunksEmitted).toHaveLength(1)
         expect(results[2]!.chunksEmitted).toHaveLength(3)
+        // Watcher's wake-up pass ran through the cases: it still watches the threads that streamed, and observed them again.
+        const after = await page.evaluate(async () => window.sotto!.watcher!.get())
+        if (room.status !== 'ok' || after.status !== 'ok') throw new Error(`Watcher's room could not be read: ${JSON.stringify(after)}`)
+        expect(after.state.watchedThreads.filter(thread => thread.watched !== false).length).toBeGreaterThanOrEqual(history(OWNER_SCALE.watches))
+        expect(Date.parse(after.state.observedAt)).toBeGreaterThan(Date.parse(room.state.observedAt))
         // Limits only when asked, as the nightly run asks: a stopwatch is never a pull request's gate.
-        if (PERF_LIMITS) {
+        if (PERF_ASSERT) {
           const over = results.flatMap(result => {
             const limit = FREEZE_LIMITS[result.streamingThreads]!
             return [
