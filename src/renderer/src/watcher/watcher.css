@@ -413,6 +413,37 @@
 .sotto-line p { flex: 1 1 auto; min-width: 0; margin: 0; }
 .sotto-line time { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
+/* ---------- Answering in Watcher's conversation (Zach's pick on October 19, 2026, variant B) ---------- */
+/* Under the reply that told of it, each request a wake-up said waited on the user: whose it is, its provider, computer
+   and kind, Open, the thread's last reply folded, then the thread's own request card. Once answered anywhere, one quiet
+   line takes its place. Up into the reply's own margin, as the receipt cards are. */
+.watcher-asks { display: grid; gap: 14px; margin: -20px 0 28px; }
+.watcher-ask { display: grid; gap: 6px; min-width: 0; border-radius: var(--tt-radius-lg); scroll-margin: 24px; }
+.watcher-ask:focus { outline: none; }
+.watcher-ask:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 4px; }
+.watcher-ask__top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 14px; }
+.watcher-ask__top > .watcher-row__ring { flex: none; width: 8px; height: 8px; }
+.watcher-ask__title { min-width: 0; max-width: 100%; overflow: hidden; color: var(--tt-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-ask__meta { display: inline-flex; flex-wrap: wrap; align-items: center; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.watcher-ask__meta > :not(:first-child)::before { margin: 0 7px; content: '·'; }
+.watcher-ask__provider, .watcher-ask__machine { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.watcher-ask__provider .thread-nav__mark { width: 12px; height: 12px; }
+.watcher-ask__machine[data-kind='remote'] > svg { color: var(--tt-accent-text); }
+.watcher-ask__kind { color: var(--watcher-needs-ink); }
+.watcher-ask__open { display: inline-flex; flex: none; align-items: center; min-height: 24px; margin-left: auto; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.watcher-ask__open:hover { border-color: var(--tt-border); color: var(--tt-text); }
+.watcher-ask__said { padding-left: 16px; }
+.watcher-ask__toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-ask__toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.watcher-ask__said-body { margin: 6px 0 0; padding: 2px 0 2px 14px; border-left: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
+.watcher-ask__said-body > :first-child { margin-top: 0; }
+.watcher-ask__said-body > :last-child { margin-bottom: 0; }
+.watcher-ask__said-cut { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.watcher-ask > .agent-request { margin-top: 2px; }
+.watcher-ask-receipt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.watcher-ask-receipt__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.watcher-ask-receipt > .watcher-ask__open { margin-left: 0; }
+
 /* ---------- Stop all ---------- */
 /* In Watcher's header beside More Watcher actions, only while threads Watcher started are running: a quiet pill like
    Watch, whose stop square takes the error ink only on hover, since a press asks first. Narrow panes keep the square. */

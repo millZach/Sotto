@@ -153,3 +153,11 @@ it('keeps fifty PRs quiet on identical reads while bounding the projection and s
   expect(store.read(centerTarget).find(item => item.url === read(1).url && item.fact === 'checks-failed')).toBeDefined()
   expect(store.read(centerTarget)).toHaveLength(100)
 })
+
+it('never reads all checks as passed from a read that holds only some of them, though one failing still counts', () => {
+  const check = (status: 'success' | 'failure') => ({ name: 'check', context: 'check', status, required: false, url: null })
+  const partial = (status: 'success' | 'failure') => pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null, requiredChecks: null,
+    checksComplete: false, checks: [check(status)], remarks: [] }, centerTime)
+  expect(partial('success').checks).toBe('pending')
+  expect(partial('failure').checks).toBe('failed')
+})

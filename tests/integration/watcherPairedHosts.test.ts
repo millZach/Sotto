@@ -35,6 +35,9 @@ import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import type { AgentState } from '../../src/shared/agents'
 
+/** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
+const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
+
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { try { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() } finally { vi.restoreAllMocks() } })
@@ -60,7 +63,7 @@ async function master(native?: CodexAppServerHost, usage = false) {
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource()
-  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
+  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
     machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads) })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
@@ -552,7 +555,8 @@ it('settles a refused paired queue send even when the takeover clears the queue 
     finishing.release()
     await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
-    expect(f.watcher.state().inFlight).toBe(0)
+    // The in-flight count can follow the failed receipt by an update (it failed CI twice when read at once), so it is waited for too.
+    await vi.waitFor(() => expect(f.watcher.state().inFlight).toBe(0))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); finishing.release() }
@@ -988,7 +992,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => true, watcherEnabled: true } })
   let control = f.control
-  let worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  let worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
   cleanups.push(async () => { worker.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-master-project', provider: 'codex' as const,
@@ -1011,7 +1015,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   expect(await worker.admitRemote(queued, clientId, () => undefined)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   worker.close(); control.dispose(); await control.closed()
   control = f.create()
-  worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const code = (id: string) => { try { worker.guardOperation(id); return undefined } catch (error) { return (error as { result?: { code: string } }).result?.code } }
   expect(control.watcherRecord().operations.find(item => item.id === queued.operation.id)?.deliveryState).toBe('queued')
@@ -1263,3 +1267,37 @@ it('reads a paired worker\'s outcome and reply through exact host reads, and an 
   const projection = await f.socket.watcherRead({ master: f.watcher.state().current! }) as WatcherHostProjection
   expect(projection.operations.every(item => item.outcome === undefined && item.replyMessageId === undefined)).toBe(true)
 })
+
+it('delivers a later request’s queued prompt to a paired thread Stop all held, as soon as its turn is free (#1203)', async () => {
+  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const turn = () => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.lastTurn?.status
+  await vi.waitFor(() => expect(turn()).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  await vi.waitFor(() => expect(turn()).toBe('completed'))
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok' })
+  // The user asks Watcher again. Its new request reaches the thread Stop all stopped: now while the turn is free, then a
+  // queued prompt while the turn it started runs, which the owning host sends once that turn ends.
+  const binding = f.workspace.registry.byThread(f.id)!, watcher = f.workspace.adapters.codex.state.threads.find(item => item.id === binding.sessionId)!
+  watcher.status = 'idle'; watcher.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic second master request' })).error).toBeNull()
+  // The user's own request: a stop receipt read back late may fence a standing scope for this Watcher turn after it.
+  const requestId = f.watcher.state().requests.filter(request => !request.standingWatchId).at(-1)!.id
+  expect(requestId).not.toBe(f.requestId)
+  const send = (delivery: 'now' | 'queue', text: string) => f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: first.target, delivery, text })
+  const now = await send('now', 'Synthetic paired now')
+  expect(now, JSON.stringify(now)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  await vi.waitFor(() => expect(turn()).toBe('running'))
+  expect(await send('queue', 'Synthetic paired note')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const starts = async () => (await native.driver.requests()).filter(item => item.method === 'turn/start').length
+  expect(await starts()).toBe(2)
+  await native.driver.completeTurn(nativeId, 'Synthetic second completion')
+  await vi.waitFor(async () => expect(await starts()).toBe(3), { timeout: 10_000 })
+}, 60_000)

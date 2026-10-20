@@ -35,6 +35,11 @@ export interface WatcherControlHooks {
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void
+  /**
+   * What Sotto adds to a wake-up's news as it goes (#1190): the start of a finished turn's reply and what a pull request
+   * now says, read once for the whole note from the threads as they stand. Never saved with the news.
+   */
+  newsDetail?(): (event: WatcherEvent) => string | undefined
   /** What a wake-up's note adds after Watcher's conversation was compacted, until Watcher reads its state back (#1189). */
   stateNote?(): string | undefined
   /** Keep local history changed: Watcher's kept words follow it at once (#1189). */
