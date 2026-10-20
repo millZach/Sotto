@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
@@ -123,6 +123,51 @@ describe('resuming threads after a restart', () => {
     await expect.poll(() => saved(f.root)).toEqual([])
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(sends(f.host)).toEqual([])
+  })
+
+  it('takes a resume note its provider refused out of the queue, so the user’s next message goes at once (#1187)', async () => {
+    // As Muse refused every send after a restart until it confirmed the thread's model (#1174).
+    class RefusingHost extends Host {
+      override async execute(c: AgentHostCommand): Promise<AgentHostResult> {
+        if (c.type === 'send' && c.wakeUp) { this.attempts.push(c); return { accepted: false, error: 'Muse has not confirmed this thread’s model settings. Reconnect to check before sending.' } }
+        return super.execute(c)
+      }
+    }
+    const host = new RefusingHost()
+    await host.connect()
+    host.update('workshop', { status: 'idle', lastTurn: { id: 't1', status: 'interrupted' } })
+    const f = await fixture({ saved: [stopped()], host })
+    await expect.poll(() => host.attempts.filter(c => c.type === 'send' && c.wakeUp).length).toBe(1)
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+    await expect.poll(() => saved(f.root)).toEqual([])
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Carry on with the tests.' })
+    await expect.poll(() => sends(host).some(c => c.text === 'Carry on with the tests.')).toBe(true)
+    expect(f.control.get().followups ?? []).toEqual([])
+  })
+
+  it('leaves a note that failed before its provider was handed it, as when its save failed, for Resume queue (#1187)', async () => {
+    const host = new Host()
+    await host.connect()
+    host.update('workshop', { status: 'idle', lastTurn: { id: 't1', status: 'interrupted' } })
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: [stopped()] }))
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
+    // The save that makes the note's send durable fails once, so the provider is never handed it.
+    const internal = control as unknown as { persist(): Promise<void>; outbox: { wakeUp?: true }[] }
+    const persist = internal.persist.bind(control)
+    let failOnce = true
+    vi.spyOn(internal, 'persist').mockImplementation(async () => {
+      if (failOnce && internal.outbox.some(item => item.wakeUp)) { failOnce = false; throw new Error('Synthetic disk failure.') }
+      return persist()
+    })
+    const resume = new RestartResume({ directory: root, control, enabled: () => true, tool: () => false }); resumes.push(resume)
+    control.useRestartResume({ due: () => true, sending: id => resume.noteSending(id), unsent: id => resume.noteUnsent(id) })
+    await resume.start()
+    await control.start(); await control.command({ type: 'connect' })
+    await expect.poll(() => control.get().followups?.[0]?.status).toBe('failed')
+    expect(control.get().followups).toEqual([expect.objectContaining({ wakeUp: true, status: 'failed' })])
+    expect(sends(host)).toEqual([])
   })
 
   it('sends nothing to a thread archived while Sotto was closed', async () => {
@@ -281,6 +326,35 @@ describe('a thread whose history is read only after Sotto restarts', () => {
     await expect.poll(() => host.reads).toBeGreaterThan(0)
     await expect.poll(() => control.get().followups?.[0]?.status).toBe('failed')
     expect(sends(host)).toEqual([])
+  })
+
+  it('leaves a note that could not be offered, because the thread could not be read, for Resume queue as before (#1187)', async () => {
+    class UnreadableHost extends UnreadHost {
+      override async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
+        if (threadId === 'workshop') throw new Error('The thread could not be read.')
+        return super.refreshThread(threadId)
+      }
+    }
+    const host = new UnreadableHost({ id: 't1', status: 'interrupted' })
+    const f = await fixture({ saved: [stopped()], host })
+    await expect.poll(() => f.control.get().followups?.[0]?.status).toBe('failed')
+    expect(f.control.get().followups).toEqual([expect.objectContaining({ wakeUp: true, status: 'failed' })])
+    expect(sends(host)).toEqual([])
+  })
+
+  it('keeps other news folded with a resume note that could not go, failed as before, and takes only the note out (#1187)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    const store = new FollowupStore(root); await store.load()
+    const word = (items: Parameters<typeof queuedWakeUpText>[0]) => queuedWakeUpText(items, { tool: false })
+    await store.queueWakeUp('workshop', babysitNews, word, 'unknown'); await queueRestartNote(store)
+    await store.enqueue({ threadId: 'workshop', draftId: randomUUID(), text: 'Then add the tests.', attachments: [] })
+    const item = store.peek().items[0]!
+    expect(item.news).toHaveLength(2)
+    await store.claim(item.id)
+    await store.dropFailedResume(item.id, word, 'Refused.')
+    // What stays goes behind the user's own follow-up, so it holds nothing back.
+    expect(store.peek().items).toEqual([expect.objectContaining({ text: 'Then add the tests.', status: 'queued' }),
+      expect.objectContaining({ id: item.id, status: 'failed', error: 'Refused.', news: [babysitNews], text: word([babysitNews]) })])
   })
 
   it('does not take a turn the read finds still running for the user’s review when they resume the queue (Sotto Bug Bot)', async () => {
