@@ -13,7 +13,7 @@ const servers: PullRequestToolServer[] = []
 afterEach(async () => { for (const server of servers.splice(0)) await server.close() })
 const url = (number: number) => `https://github.com/o/r/pull/${number}`
 
-function harness(options: { branch?: string; linked?: string[]; admits?: boolean; link?: (reference: string) => Promise<{ link: { url: string } }> } = {}) {
+function harness(options: { branch?: string; linked?: string[]; admits?: boolean; watcherEnabled?: boolean; link?: (reference: string) => Promise<{ link: { url: string } }> } = {}) {
   let enabled = true
   const records: BabysitListing[] = []
   const linked = [...options.linked ?? []]
@@ -37,7 +37,7 @@ function harness(options: { branch?: string; linked?: string[]; admits?: boolean
     },
     list: () => [...records],
   }
-  const server = new PullRequestToolServer({ enabled: () => enabled, babysitter, host: {
+  const server = new PullRequestToolServer({ enabled: () => enabled, babysitter, watcherEnabled: options.watcherEnabled ?? false, host: {
     admitsBabysitting: () => options.admits ?? true,
     threadPullRequests: () => ({ branch: options.branch, linked }),
     linkThreadPullRequest: async (_threadId, reference) => {
@@ -89,6 +89,15 @@ describe('the pull request tools', () => {
     expect((await h.call('stop_babysitting')).text).toBe('This thread babysits no pull requests. Nothing was stopped.')
     expect((await h.call('list_babysitting')).text).toBe('This thread babysits no pull requests.')
     expect(h.calls.filter(call => call.startsWith('stop'))).toEqual([`stop ${url(3)} agent`, 'stop all agent', 'stop all agent'])
+  })
+
+  it('tells the agent in a Watcher build that a stop is babysitting, not Watcher\'s Watch', async () => {
+    const h = harness({ linked: [url(3), url(4), url(5)], watcherEnabled: true })
+    for (const number of [3, 4, 5]) await h.call('babysit_pull_request', { pull_request: `#${number}` })
+    const notWatcher = ' When you tell the user, call it babysitting, not watching: Watcher\'s Watch is separate, and this did not change it.'
+    expect((await h.call('stop_babysitting', { pull_request: '#3' })).text).toBe(`Sotto stopped babysitting pull request #3. It sends no more wake-ups about it.${notWatcher}`)
+    expect((await h.call('stop_babysitting')).text).toBe(`Sotto stopped babysitting all 2 pull requests for this thread. It sends no more wake-ups about them.${notWatcher}`)
+    expect((await h.call('stop_babysitting')).text).toBe('This thread babysits no pull requests. Nothing was stopped.')
   })
 
   it('refuses every call while the switch is off, offers new launches nothing, and ends only what agents started', async () => {
