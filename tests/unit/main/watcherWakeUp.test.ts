@@ -1864,3 +1864,20 @@ it('records a delegated thread’s card for Watcher’s pane on the delegated th
   const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0, events: [event(), event('delegated')] }
   expect(watcherNewsAsks([news]).map(ask => ask.target)).toEqual([centerTarget, { hostId: centerTarget.hostId, threadId: 'delegated' }])
 })
+
+it('tells a held busy finish whose thread moved on even after a wake-up before it missed', async () => {
+  const f = fixture()
+  f.thread.requests.push(question()); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  f.thread.requests = []
+  f.wakes.settled(f.delivered[0]!.events, 'failed'); await f.wakes.drained()
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered.at(-1)!.events.find(event => event.kind === 'turn-finished')?.turnId).toBe('turn-1')
+})
+
+it('says a busy finish waits for work-settled news only unless its thread begins another turn', () => {
+  const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0, events: [{ id: 'finish', kind: 'turn-finished',
+    requestId: randomUUID(), target: centerTarget, generation: 0, observedAt: centerTime, turnId: 'turn-1', backgroundWorkCount: 1 }] }
+  expect(watcherNewsText(news)).toContain('Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.')
+})

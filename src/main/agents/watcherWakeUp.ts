@@ -542,8 +542,9 @@ export class WatcherWakeUp {
       return
     }
     this.cancelRipen?.(); this.cancelRipen = undefined
-    for (const event of this.pending) if (busyFinish(event) && this.ripe(event) && !this.ripened.has(event.id)) {
-      this.ripened.add(event.id); this.retries++
+    // A held busy finish that ripens, or whose thread moves on, becomes news that needs Watcher: counted once, as new news.
+    for (const event of this.pending) if (busyFinish(event) && (this.ripe(event) || this.movedOn(event)) && !this.ripened.has(event.id)) {
+      this.ripened.add(event.id); this.retries++; this.lastNewsAt = this.now()
       while (this.ripened.size > 2_000) this.ripened.delete(this.ripened.values().next().value!)
     }
     // News waits in memory while it may not make a wake-up: a thread's own facts with nothing that needs Watcher beside

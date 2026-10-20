@@ -273,6 +273,9 @@ export class WatcherService implements WatcherControlHooks {
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread)
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
+      // A finish held for its work whose thread began another turn first: its work-settled news will not come.
+      if (event.kind !== 'work-settled' && event.backgroundWorkCount && thread.lastTurn && thread.lastTurn.id !== event.turnId)
+        return 'Its thread has begun another turn since, so no work-settled news for this turn will follow.'
       return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread))
     }
   }

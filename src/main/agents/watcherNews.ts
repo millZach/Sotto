@@ -61,7 +61,7 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail): 
   const shown = news.events.filter(event => !(event.kind === 'turn-finished' && settled.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))))
   const details = shown.map(event => detail?.(event))
   const line = (event: WatcherEvent, extra: string | undefined) => `${JSON.stringify(event.target)}: ${kindWords(event)}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
-    ? ` Background work or monitoring is still running (${event.backgroundWorkCount}), so the turn is not done until Sotto sends work-settled news for it.` : ''}${event.operationId && event.kind !== 'delivery-changed'
+    ? ` Background work or monitoring was still running when it ended (${event.backgroundWorkCount}), so the turn is not done: Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.` : ''}${event.operationId && event.kind !== 'delivery-changed'
     ? ` This turn answers operation ${event.operationId}; read_operation gives its outcome and reply.` : ''}${extra ? ` ${extra}` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`
   const compose = (count: number, detailed: number) => {
     const lines = shown.slice(0, count).map((event, index) => line(event, index < detailed ? details[index] : undefined))
