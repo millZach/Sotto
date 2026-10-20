@@ -17,7 +17,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { copyBudgetPipeline } from '../fixtures/copyBudgetPipeline'
 
 const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, watcherRecord: 0, kinds: new Map<string, number>(),
-  record: undefined as (() => unknown) | undefined, measuring: false, objects: 0, objectKinds: new Map<string, number>(), parses: 0 }))
+  record: undefined as (() => unknown) | undefined, measuring: false, objects: 0, objectKinds: new Map<string, number>(), parses: 0, hiddenProjections: 0 }))
 function count(kind: string, value: unknown): void {
   counter.calls++
   // Watcher's whole record, which grows with every prompt Watcher is sent and every wake-up it has had.
@@ -49,6 +49,12 @@ vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
     copyUnshared: <T>(value: T, shared: (value: object) => boolean, seal?: (copy: object) => void): T => {
       const copy = original.copyUnshared(value, shared, seal); made(seal ? 'certified copy' : 'activity snapshot', copy, value); return copy
     } }
+})
+// A shown thread's history without its hidden delegation news (ADR-0081): made again only when that history changed, never
+// for another thread's update. Each one is a new array of every message, so each is counted.
+vi.mock('../../src/main/agents/hiddenWakeUpDisplay', async importOriginal => {
+  const original = await importOriginal<typeof import('../../src/main/agents/hiddenWakeUpDisplay')>()
+  return { ...original, withoutHiddenWakeUps: (messages: Parameters<typeof original.withoutHiddenWakeUps>[0]) => { if (counter.measuring) counter.hiddenProjections++; return original.withoutHiddenWakeUps(messages) } }
 })
 vi.mock('../../src/main/agents/activitySnapshots', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/activitySnapshots')>()
@@ -82,7 +88,10 @@ async function measure(threads: number, owl: boolean) {
     globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => { count('structuredClone', value); const copy = native(value, options); made('structuredClone', copy, undefined); return copy }) as typeof structuredClone
     counter.record = owl ? () => pipeline.control.watcherRecordView() : undefined
     counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.watcherRecord = 0; counter.kinds.clear(); pipeline.resetCounts()
-    counter.objects = 0; counter.objectKinds.clear(); counter.parses = 0; counter.measuring = true
+    counter.objects = 0; counter.objectKinds.clear(); counter.parses = 0; counter.hiddenProjections = 0; counter.measuring = true
+    // The thread that delegated is shown without its hidden news, before the stream and while it runs.
+    const parentShown = pipeline.control.threadDetail(pipeline.parentId)!.messages.map(message => message.id)
+    if (!parentShown.includes('parent-reply') || parentShown.includes('parent-news')) throw new Error(`The delegating thread is not shown as its window would show it: ${JSON.stringify(parentShown)}`)
     for (let chunk = 0; chunk < CHUNKS; chunk++) {
       pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
       pipeline.adapter.publish(true)
@@ -92,7 +101,7 @@ async function measure(threads: number, owl: boolean) {
     counter.measuring = false
     const broadcasts = Math.max(1, pipeline.broadcasts())
     const per = (total: number, by: number) => Math.round(total / by * 100) / 100
-    return { broadcasts, objectsPerFrame: per(counter.objects, CHUNKS), objectsPerThreadPerUpdate: per(counter.objects, broadcasts * threads),
+    return { broadcasts, hiddenProjectionsPerUpdate: per(counter.hiddenProjections, broadcasts), objectsPerFrame: per(counter.objects, CHUNKS), objectsPerThreadPerUpdate: per(counter.objects, broadcasts * threads),
       objectsByKind: Object.fromEntries([...counter.objectKinds].map(([kind, n]) => [kind, per(n, CHUNKS)])), parsesPerUpdate: per(counter.parses, broadcasts), copiesPerUpdate: counter.calls / broadcasts, wholeStateCopiesPerUpdate: counter.whole / broadcasts, watcherRecordCopiesPerUpdate: counter.watcherRecord / broadcasts, wholeByKind: Object.fromEntries([...counter.kinds].map(([kind, n]) => [kind, Math.round(n / broadcasts * 100) / 100])) }
   } finally {
     globalThis.structuredClone = native
@@ -150,5 +159,7 @@ describe.each([['Owl', true], ['stable', false]] as const)('what one streaming u
       .toBeLessThanOrEqual(few.parsesPerUpdate * 1.2 + 1)
     expect(many.parsesPerUpdate, `an update reads a provider out of public IDs more often than its budget: ${seen}`)
       .toBeLessThanOrEqual(BUDGET[track].parsesPerUpdate)
+    // October 19, 2026: a shown thread with hidden delegation news is projected again only when its own history changes.
+    expect(many.hiddenProjectionsPerUpdate, `another thread's update made the delegating thread's history again without its hidden news: ${seen}`).toBe(0)
   }, 120_000)
 })

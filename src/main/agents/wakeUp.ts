@@ -69,6 +69,7 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
   const delegations = earlier.filter(isDelegationNews)
   if (isRestartNews(later)) return [later, ...prs, ...workers, ...delegations]
   if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later), ...delegations]
+  // Kept for queues an earlier build saved: delegation news now waits in a wake-up of its own (`isDelegationOnlyWakeUp`).
   if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later)]
   return [...restart, ...foldNews(prs, later), ...workers, ...delegations]
 }
@@ -79,7 +80,7 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
   const restart = news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
-  const delegation = news.filter(isDelegationNews).map(delegationNewsText).join('\n\n')
+  const delegation = news.filter(isDelegationNews).map(item => delegationNewsText(item)).join('\n\n')
   if (!restart && !prs.length && !delegation) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''
   const room = AGENT_TEXT_MAX - [restart, delegation].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
   return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...delegation ? [delegation] : []].join('\n\n')
@@ -102,6 +103,16 @@ export function watcherNewsAsks(news: readonly WakeUpNews[]): WatcherAsk[] {
 /** A wake-up holding nothing but Watcher's news: Sotto's own background action, shown nowhere. */
 export const isWatcherOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
   item.wakeUp === true && !!item.news?.length && item.news.every(isWatcherNews)
+/**
+ * A wake-up holding nothing but news of the thread's delegations (ADR-0081, October 19, 2026): handed to the delegating
+ * thread's agent as its next turn, privately. No queue panel, transcript or phone shows it, so no one edits, reorders or
+ * resumes it; only that thread's own running turn, a request on it, or a thread that cannot be sent to holds it.
+ */
+export const isDelegationOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
+  item.wakeUp === true && !!item.news?.length && item.news.every(isDelegationNews)
+/** A wake-up no one is shown: Watcher's news or a delegation's (`isWatcherOnlyWakeUp`, `isDelegationOnlyWakeUp`). */
+export const isHiddenWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
+  isWatcherOnlyWakeUp(item) || isDelegationOnlyWakeUp(item)
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
 type Change<Kind extends BabysitChange['kind']> = Extract<BabysitChange, { kind: Kind }>
