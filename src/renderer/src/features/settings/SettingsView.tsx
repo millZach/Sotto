@@ -1,6 +1,7 @@
 import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
+import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
@@ -40,7 +41,6 @@ import { Toggle } from '../../components/Toggle'
 import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { SPEECH_MODEL, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
-import { OmarchySetupPanel } from '../omarchy/OmarchySetup'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
@@ -485,7 +485,7 @@ export function SettingsView({
                     </div>
                   </Field>
                   {platform === 'linux'
-                    ? <div className="settings-input-action"><OmarchySetupPanel visible={activeSection === 'settings-capture'} /></div>
+                    ? <LinuxDictationShortcuts settings={settings} visible={activeSection === 'settings-capture'} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />
                     : <DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />}
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>
                   <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="A short sound when recording starts and stops." />

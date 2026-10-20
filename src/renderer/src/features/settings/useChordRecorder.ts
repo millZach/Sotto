@@ -5,12 +5,18 @@ import type { SottoPlatform } from '../../../../shared/platform'
 
 
 const NEVER_IN_CHORD: ReadonlySet<string> = new Set(['Fn', 'FnLock', 'CapsLock', 'NumLock', 'ScrollLock'])
+
+/**
+ * A recording's end: the canonical chord, null when cancelled, `unsupported-key` for a key no shortcut can use, or on
+ * Linux `taken-press` / `taken-hold` when Hyprland ran one of Sotto's own bindings instead of passing the keys on.
+ */
+export type RecordedChord = string | null | 'unsupported-key' | 'taken-press' | 'taken-hold'
+
 export interface ChordRecorder {
   /** The keys down right now while recording; empty before the first press. */
   readonly held: readonly string[]
   readonly recording: boolean
-  /** Resolves with the canonical chord, null when the recording was cancelled, or `unsupported-key` when a key no shortcut can use was pressed. */
-  record(): Promise<string | null | 'unsupported-key'>
+  record(): Promise<RecordedChord>
   cancel(): void
 }
 
@@ -27,15 +33,15 @@ export function useChordRecorder(platform: SottoPlatform, listener: boolean): Ch
   const cancel = useCallback(() => cancelRef.current?.(), [])
   useEffect(() => cancel, [cancel])
 
-  const record = useCallback((): Promise<string | null | 'unsupported-key'> => {
+  const record = useCallback((): Promise<RecordedChord> => {
     cancelRef.current?.()
     const bridge = window.sotto
     setHeld([])
     setRecording(true)
-    return new Promise<string | null | 'unsupported-key'>((resolve) => {
+    return new Promise<RecordedChord>((resolve) => {
       const teardown: (() => void)[] = []
       let finished = false
-      const finish = (chord: string | null | 'unsupported-key'): void => {
+      const finish = (chord: RecordedChord): void => {
         if (finished) return
         finished = true
         cancelRef.current = null
@@ -84,6 +90,8 @@ export function useChordRecorder(platform: SottoPlatform, listener: boolean): Ch
         })
         // Capturing on window also hears every element's blur; only the window losing focus cancels.
         listen('blur', (event) => { if (!(event.target instanceof Node)) finish(null) })
+        // Linux: Hyprland keeps a bound chord from the page. When it was one of Sotto's own, main says whose.
+        teardown.push(bridge?.onDictationKeysTaken?.((role) => finish(role === 'press' ? 'taken-press' : 'taken-hold')) ?? (() => undefined))
       }
 
       cancelRef.current = () => finish(null)

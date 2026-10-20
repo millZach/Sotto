@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { setupBridgeFixture } from '../../../../fixtures/renderer/omarchySetup'
 import { UPDATE_CHECK_PRIVACY_NOTICE } from '../../../../../src/shared/contracts'
-import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
+import { DEFAULT_SETTINGS, defaultSettings } from '../../../../../src/shared/settings'
+import { defaultHoldShortcuts, defaultHotkey } from '../../../../../src/shared/platform'
 
 const SHELL_PILL_DESCRIPTION = 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.'
 const WIDGET_DESCRIPTION = 'Keep the small dictation sliver on screen between sessions. Click it to dictate.'
@@ -76,7 +77,7 @@ describe('Settings on Linux', () => {
   it('offers the three Omarchy pieces and asks main to set them up only on a press', async () => {
     const f = setupBridgeFixture()
     vi.stubGlobal('sotto', { omarchySetup: f.bridge })
-    render(<SettingsView {...baseProps({ platform: 'linux' })} />)
+    render(<SettingsView {...baseProps({ platform: 'linux', settings: { ...defaultSettings(defaultHotkey('linux'), defaultHoldShortcuts('linux')), onboardingComplete: true } })} />)
 
     expect(await screen.findByRole('button', { name: 'Set up all three' })).toBeVisible()
     expect(screen.getByText('F9 and Super+Ctrl+X')).toBeVisible()

@@ -31,6 +31,8 @@ export interface DictationShortcutsProps {
   readonly platform: SottoPlatform
   readonly onReplaceHotkey: (accelerator: string) => Promise<HotkeyChangeResult>
   readonly onReplaceDictationShortcuts?: ((change: DictationShortcutsChange) => Promise<DictationShortcutsResult>) | undefined
+  /** Linux: why Sotto's Hyprland keys can't change right now, and what to do about it. The rows only show their keys meanwhile. */
+  readonly locked?: { readonly message: string; readonly action?: ReactNode } | null | undefined
 }
 
 interface Slot { readonly role: ShortcutRole; readonly index: number | null }
@@ -38,6 +40,11 @@ interface RowMessage { readonly role: ShortcutRole; readonly text: string; reado
 
 const UNAVAILABLE = { ok: false, reason: 'unavailable' } as const
 const UNSUPPORTED_KEY = 'That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key.'
+// Linux: Hyprland ran one of Sotto's own bindings, so the recording never saw the keys.
+const TAKEN = {
+  'taken-press': 'Sotto’s start-and-stop shortcut already uses those keys. Pick other keys.',
+  'taken-hold': 'Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys.',
+} as const
 
 const rowCopy: Readonly<Record<ShortcutRole, { label: string; one: (keys: string) => string; several: string; none: string }>> = {
   hold: {
@@ -54,14 +61,17 @@ const rowCopy: Readonly<Record<ShortcutRole, { label: string; one: (keys: string
   },
 }
 
-export function DictationShortcuts({ settings, platform, onReplaceHotkey, onReplaceDictationShortcuts }: DictationShortcutsProps): ReactNode {
+export function DictationShortcuts({ settings, platform, onReplaceHotkey, onReplaceDictationShortcuts, locked }: DictationShortcutsProps): ReactNode {
   const owl = useOwlFeature('dictation-hold-shortcuts')
   const darwin = platform === 'darwin'
-  // Stable shows only the main shortcut and leaves the saved extras and holds alone.
+  const linux = platform === 'linux'
+  // Stable shows only the main shortcut and leaves the saved extras and holds alone. Linux's hold shortcuts stay bound
+  // in Hyprland, F9 by default, so the press shortcut is checked against them though their row is not shown.
   const set: DictationShortcutSet = owl
     ? { press: [settings.hotkey, ...settings.pressShortcuts], hold: settings.holdShortcuts }
-    : { press: [settings.hotkey], hold: [] }
-  const recorder = useChordRecorder(platform, owl)
+    : { press: [settings.hotkey], hold: linux ? settings.holdShortcuts : [] }
+  // Linux has no key listener: Wayland gives keys only to the focused window, so the page records.
+  const recorder = useChordRecorder(platform, owl && !linux)
   const [target, setTarget] = useState<Slot | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)
   const [menuRole, setMenuRole] = useState<ShortcutRole | null>(null)
@@ -109,7 +119,10 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     // A newer save answers for the row; this slower, older answer must not overwrite it.
     if (mine !== saveRef.current) return result.ok
     if (result.ok) show(role, 'Shortcut saved.', false)
-    else if (result.reason === 'conflict') {
+    else if (result.message !== undefined) {
+      // Linux says why in Hyprland's terms; a refused chord leaves the previous one bound.
+      show(role, result.reason === 'unavailable' ? result.message : `${result.message} ${inline(previous)} still works.`, true)
+    } else if (result.reason === 'conflict') {
       const refused = 'chord' in result && result.chord !== undefined ? result.chord : chord
       show(role, `Another app already uses ${inline(refused)}. ${inline(previous)} still works. Pick other keys, or free that shortcut in the other app.`, true)
     } else show(role, `The shortcut could not be changed. ${inline(previous)} still works.`, true)
@@ -145,7 +158,8 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     if (generation !== generationRef.current) return
     setTarget(null)
     if (chord === 'unsupported-key') show(slot.role, UNSUPPORTED_KEY, true)
-    const saved = chord !== null && chord !== 'unsupported-key' && await commit(slot, chord)
+    else if (chord === 'taken-press' || chord === 'taken-hold') show(slot.role, TAKEN[chord], true)
+    const saved = chord !== null && chord !== 'unsupported-key' && chord !== 'taken-press' && chord !== 'taken-hold' && await commit(slot, chord)
     const self = `${slot.role}-${slot.index ?? 'add'}`
     setFocusKeys(slot.index === null && saved ? [`${slot.role}-${set[slot.role].length}`, self, `${slot.role}-0`] : [self, `${slot.role}-0`])
   }
@@ -159,7 +173,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
 
   const promotable = (index: number): boolean => index > 0 && !chordNeedsListener(set.press[index] ?? '', 'press')
   const removable = (role: ShortcutRole, index: number): boolean =>
-    owl && all.length > 1 && (role === 'hold' || index > 0 || set.press.some((_, other) => promotable(other)))
+    owl && !locked && all.length > 1 && (role === 'hold' || index > 0 || set.press.some((_, other) => promotable(other)))
 
   const remove = async (role: ShortcutRole, index: number): Promise<void> => {
     const chord = set[role][index] ?? ''
@@ -206,7 +220,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
 
   const addLabel = (role: ShortcutRole): string => role === 'hold' ? 'Add a hold shortcut' : 'Add a start-and-stop shortcut'
   const addControl = (role: ShortcutRole): ReactNode => {
-    if (!owl || set[role].length >= MAX_SHORTCUTS_PER_ROLE) return null
+    if (!owl || locked || set[role].length >= MAX_SHORTCUTS_PER_ROLE) return null
     if (target?.role === role && target.index === null) return recordingBox(role)
     if (!darwin) {
       return <button type="button" className="dictation-shortcuts__add tt-focusable" aria-label={addLabel(role)} data-focus-key={`${role}-add`} onClick={() => void record({ role, index: null })}>+ Add</button>
@@ -276,6 +290,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
                   className="dictation-shortcuts__chip tt-focusable"
                   aria-label={`Change shortcut, ${words}`}
                   data-focus-key={`${role}-${index}`}
+                  disabled={!!locked}
                   onClick={() => void record({ role, index })}
                 >
                   <ShortcutKey accelerator={chord} platform={platform} />
@@ -310,7 +325,15 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
         {darwin && all.some((chord) => chordTokens(chord).includes('Fn'))
           ? <p>If Fn opens emoji or Apple’s dictation, set System Settings › Keyboard › “Press 🌐 key to” to Do Nothing.</p>
           : null}
-        <p>Press Esc in any app to cancel a recording. Nothing is transcribed.</p>
+        {locked ? (
+          <div className="dictation-shortcuts__permission" role="status">
+            <p>{locked.message}</p>
+            {locked.action}
+          </div>
+        ) : null}
+        {linux
+          ? <p>These shortcuts are Hyprland bindings, so keys Hyprland already uses can’t be one of them. Press Cancel on the widget to stop without transcribing.</p>
+          : <p>Press Esc in any app to cancel a recording. Nothing is transcribed.</p>}
       </div>
     </div>
   )

@@ -450,7 +450,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
+        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
         view = <DictateRoom
