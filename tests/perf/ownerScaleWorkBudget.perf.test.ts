@@ -33,26 +33,28 @@ import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } fro
 import type { OwnerScale } from '../fixtures/ownerScale'
 
 /** The kinds of work counted. Each is per update while streaming, and per action for the user's actions. */
-const KINDS = ['wholeStateCopies', 'wholeCopyThreads', 'wholeCopyObjects', 'routerShellBuilds', 'coordinatorShellBuilds', 'threadVisits',
-  'watcherRecordCopies', 'watcherRecordObjects', 'watcherRecordComparisons', 'ownerLookups', 'stringifies', 'providerIdParses', 'schemaErrors'] as const
+const KINDS = ['copies', 'copiedObjects', 'wholeStateCopies', 'wholeCopyThreads', 'wholeCopyObjects', 'unsharedPublications', 'routerShellBuilds',
+  'coordinatorShellBuilds', 'threadVisits', 'watcherRecordCopies', 'watcherRecordObjects', 'watcherRecordComparisons', 'ownerLookups', 'stringifies',
+  'providerIdParses', 'schemaErrors'] as const
 type Kind = typeof KINDS[number]
 type Counts = Record<Kind, number>
 
 const counter = vi.hoisted(() => ({ measuring: false, wholeThreads: Number.POSITIVE_INFINITY, record: undefined as (() => unknown) | undefined,
   tally: {} as Record<string, number>, sites: {} as Record<string, Record<string, number>> }))
 /**
- * With `SOTTO_WORK_SITES=1`, where each serialization and each thread visit came from: the nearest frame in `src/`. It is
- * slow, and is for finding what grew; a failure then names the places whose counts grew most.
+ * With `SOTTO_WORK_SITES=1`, where each serialization, each thread visit and each copied object came from: the nearest
+ * frame in `src/`. It is slow, and is for finding what grew; a failure then names the places whose counts grew most.
  */
 const SITES = vi.hoisted(() => process.env.SOTTO_WORK_SITES === '1')
+const SITED = vi.hoisted(() => new Set<string>(['stringifies', 'threadVisits', 'copiedObjects']))
 const site = vi.hoisted(() => (): string => {
   const frame = new Error().stack?.split('\n').find(line => /[\\/]src[\\/]/u.test(line))
-  return frame?.trim().replace(/^at /u, '').replace(/\(.*?[\\/]src[\\/]/u, '(src/').replace(/\\/gu, '/') ?? 'outside src/'
+  return frame?.trim().replace(/^at /u, '').replace(/(^|\()[^()]*?[\\/]src[\\/]/u, '$1src/').replace(/\\/gu, '/') ?? 'outside src/'
 })
 const bump = vi.hoisted(() => (kind: string, by = 1): void => {
   if (!counter.measuring) return
   counter.tally[kind] = (counter.tally[kind] ?? 0) + by
-  if (SITES && (kind === 'stringifies' || kind === 'threadVisits')) { const at = site(), sites = counter.sites[kind] ??= {}; sites[at] = (sites[at] ?? 0) + by }
+  if (SITES && SITED.has(kind)) { const at = site(), sites = counter.sites[kind] ??= {}; sites[at] = (sites[at] ?? 0) + by }
 })
 const { fresh } = await vi.hoisted(() => import('./support/copyAccounting'))
 const visits = await vi.hoisted(() => import('../fixtures/threadVisits'))
@@ -63,28 +65,42 @@ const wholeThreads = vi.hoisted(() => (value: unknown): number | undefined => {
   return threads !== undefined && threads.length >= counter.wholeThreads ? threads.length : undefined
 })
 /**
- * Every copier, counted where it copies, so a copy made inside another is counted once. A whole copy is counted three
- * ways: once, by the threads it carried, and by the objects it made. Sizing a copy reads its source, which is no visit.
+ * Every copy, counted where it is made: by `structuredClone` or by one of the three copiers in `cloneHostSnapshot.ts`,
+ * which every other copier calls (`cloneActivitySnapshot`, an activity subscription's copy for its subscribers, the
+ * certifying of activity and models), so a copy made inside another is counted once. Each copy is counted once and by
+ * the objects it made; a whole copy also by the threads it carried; a copy of Watcher's record by its objects too.
+ * Sizing a copy reads its source, which is no visit.
  */
 const copied = vi.hoisted(() => (value: unknown, copy: unknown): void => {
   if (!counter.measuring) return
   const on = visits.threadVisits.on
   visits.threadVisits.on = false
   try {
+    const made = fresh(copy, value)
+    bump('copies'); bump('copiedObjects', made)
     const threads = wholeThreads(value)
-    if (threads !== undefined) { bump('wholeStateCopies'); bump('wholeCopyThreads', threads); bump('wholeCopyObjects', fresh(copy, value)) }
-    if (counter.record && value === counter.record()) { bump('watcherRecordCopies'); bump('watcherRecordObjects', fresh(copy, value)) }
+    if (threads !== undefined) { bump('wholeStateCopies'); bump('wholeCopyThreads', threads); bump('wholeCopyObjects', made) }
+    if (counter.record && value === counter.record()) { bump('watcherRecordCopies'); bump('watcherRecordObjects', made) }
   } finally { visits.threadVisits.on = on }
 })
 vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/cloneHostSnapshot')>()
   return { ...original,
     cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { const copy = original.cloneHostSnapshot(snapshot); copied(snapshot, copy); return copy },
-    clonePlainData: <T>(value: T): T => { const copy = original.clonePlainData(value); copied(value, copy); return copy } }
+    clonePlainData: <T>(value: T): T => { const copy = original.clonePlainData(value); copied(value, copy); return copy },
+    copyUnshared: <T>(value: T, shared: (value: object) => boolean, seal?: (copy: object) => void): T => {
+      const copy = original.copyUnshared(value, shared, seal); copied(value, copy); return copy
+    } }
 })
+// The provider switch keeps an activity subscription's publication as it is and copies anything else: a snapshot that
+// comes without the publication's mark is copied once more on every update.
 vi.mock('../../src/main/agents/activitySnapshots', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/activitySnapshots')>()
-  return { ...original, cloneActivitySnapshot: (snapshot: Parameters<typeof original.cloneActivitySnapshot>[0]) => { const copy = original.cloneActivitySnapshot(snapshot); copied(snapshot, copy); return copy } }
+  return { ...original, isActivityPublication: (snapshot: Parameters<typeof original.isActivityPublication>[0]) => {
+    const published = original.isActivityPublication(snapshot)
+    if (!published) bump('unsharedPublications')
+    return published
+  } }
 })
 // Comparing Watcher's whole record with the copy just made of it, which costs more than the copy.
 vi.mock('node:util', async importOriginal => {
@@ -237,9 +253,12 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
 }
 
 const NAMES: Record<Kind, string> = {
-  wholeStateCopies: 'copies of a host\'s whole state (structuredClone, clonePlainData, cloneHostSnapshot or cloneActivitySnapshot of every thread)',
+  copies: 'copies of any size (structuredClone, clonePlainData, cloneHostSnapshot or copyUnshared)',
+  copiedObjects: 'objects those copies made',
+  wholeStateCopies: 'copies of a host\'s whole state (a copy of every thread)',
   wholeCopyThreads: 'threads carried by those whole copies',
   wholeCopyObjects: 'objects those whole copies made',
+  unsharedPublications: 'activity snapshots the provider switch copied because they came without the publication mark',
   routerShellBuilds: 'router shell builds (every host\'s threads built again)',
   coordinatorShellBuilds: 'coordinator shell builds',
   threadVisits: 'reads of a thread out of a snapshot\'s or a shell\'s thread list',
@@ -267,24 +286,27 @@ type Scenario = keyof typeof SCENARIOS
  * thread reads, copies and serializes each one; every other count is held flat there too.
  */
 const SLACK = { ratio: 1.1, plus: 2 } as const
-const PER_THREAD: ReadonlySet<Kind> = new Set(['wholeCopyThreads', 'wholeCopyObjects', 'threadVisits', 'stringifies'])
+const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'wholeCopyThreads', 'wholeCopyObjects', 'threadVisits', 'stringifies'])
 
 /**
- * Work that still grows with the history today (#1248): allowed to grow along the history only as far as it does now, and
- * held to its budget at today's count, so it can only shrink. The pull request that fixes one removes its entry and lowers
- * its budget.
+ * Work that still grows with the history today (#1248), each with what it grows by along the history today, to a
+ * thousandth. It may grow that far and no further, with none of the usual slack, and its budget is today's count
+ * exactly, so one more fails and the failure names #1248. The pull request that fixes one removes its entry and lowers
+ * its budget to the new count.
  */
-const KNOWN_HISTORY_GROWTH: readonly { readonly track: OwnerScaleTrack; readonly scenarios: readonly Scenario[]; readonly kind: Kind; readonly growth: number; readonly why: string }[] = [
-  { track: 'owl', scenarios: ['1 streaming', '3 streaming', 'saveAnswerDraft', 'typeInComposer', 'openThread', 'send'], kind: 'threadVisits', growth: 1.39,
+const KNOWN_HISTORY_GROWTH: readonly { readonly track: OwnerScaleTrack; readonly kind: Kind; readonly growth: Partial<Record<Scenario, number>>; readonly why: string }[] = [
+  { track: 'owl', kind: 'threadVisits', growth: { '1 streaming': 1.28, '3 streaming': 1.282, saveAnswerDraft: 1.212, typeInComposer: 1.32, openThread: 1.249, send: 1.223 },
     why: "Watcher's room reading every thread once for each watched thread, on every room update" },
-  { track: 'owl', scenarios: ['saveAnswerDraft'], kind: 'stringifies', growth: 2.76, why: 'the answer-draft store building a key for every retirement on every save' },
-  { track: 'stable', scenarios: ['saveAnswerDraft'], kind: 'stringifies', growth: 3.59, why: 'the answer-draft store building a key for every retirement on every save' },
-  { track: 'stable', scenarios: ['typeInComposer', 'openThread'], kind: 'stringifies', growth: 1.64, why: 'the answer-recovery pass building a key for every remote retirement' },
-  { track: 'owl', scenarios: ['send'], kind: 'stringifies', growth: 1.42, why: "each save of agents.json checking Watcher's whole record" },
-  { track: 'stable', scenarios: ['send'], kind: 'stringifies', growth: 1.52, why: "each save of agents.json checking Watcher's whole record" },
-  { track: 'owl', scenarios: ['typeInComposer', 'openThread', 'send'], kind: 'watcherRecordObjects', growth: 3.89, why: "a command copying Watcher's whole record" },
+  { track: 'owl', kind: 'copiedObjects', growth: { '1 streaming': 1.578, '3 streaming': 1.422, saveAnswerDraft: 1.297, typeInComposer: 1.427, openThread: 1.249, send: 1.257 },
+    why: "Watcher's room copying its requests, operations and watches for every publish, and a command copying Watcher's whole record" },
+  { track: 'owl', kind: 'stringifies', growth: { saveAnswerDraft: 2.752 }, why: 'the answer-draft store building a key for every retirement on every save' },
+  { track: 'stable', kind: 'stringifies', growth: { saveAnswerDraft: 3.583 }, why: 'the answer-draft store building a key for every retirement on every save' },
+  { track: 'stable', kind: 'stringifies', growth: { typeInComposer: 1.429, openThread: 1.632 }, why: 'the answer-recovery pass building a key for every remote retirement' },
+  { track: 'owl', kind: 'stringifies', growth: { send: 1.415 }, why: "each save of agents.json checking Watcher's whole record" },
+  { track: 'stable', kind: 'stringifies', growth: { send: 1.517 }, why: "each save of agents.json checking Watcher's whole record" },
+  { track: 'owl', kind: 'watcherRecordObjects', growth: { typeInComposer: 3.885, openThread: 3.885, send: 3.885 }, why: "a command copying Watcher's whole record" },
 ]
-const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_HISTORY_GROWTH.find(entry => entry.track === track && entry.kind === kind && entry.scenarios.includes(scenario))
+const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_HISTORY_GROWTH.find(entry => entry.track === track && entry.kind === kind && entry.growth[scenario] !== undefined)
 
 /**
  * The budgets at the owner's scale, per update or per action: what main does with #1230 and #1231 fixed, with a tenth more
@@ -294,20 +316,20 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  */
 const BUDGET: Record<OwnerScaleTrack, Record<Scenario, Counts>> = {
   owl: {
-    '1 streaming': { wholeStateCopies: 2.04, wholeCopyThreads: 508.8, wholeCopyObjects: 4410.25, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4917.77, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 489, providerIdParses: 0, schemaErrors: 0 },
-    '3 streaming': { wholeStateCopies: 3, wholeCopyThreads: 553.81, wholeCopyObjects: 5494.42, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4943.54, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 511.25, providerIdParses: 0, schemaErrors: 0 },
-    saveAnswerDraft: { wholeStateCopies: 9, wholeCopyThreads: 2227, wholeCopyObjects: 32_763, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 12_827, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 5, stringifies: 831, providerIdParses: 0, schemaErrors: 0 },
-    typeInComposer: { wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 13_188, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 8543, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, ownerLookups: 2, stringifies: 47, providerIdParses: 0, schemaErrors: 0 },
-    openThread: { wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 29_806, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 11_174, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 70, providerIdParses: 0, schemaErrors: 0 },
-    send: { wholeStateCopies: 28, wholeCopyThreads: 6706, wholeCopyObjects: 98_576, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 30_268, watcherRecordCopies: 6, watcherRecordObjects: 7245, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 3365, providerIdParses: 0, schemaErrors: 0 },
+    '1 streaming': { copies: 13, copiedObjects: 8094.54, wholeStateCopies: 2.04, wholeCopyThreads: 508.8, wholeCopyObjects: 4410.25, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 5499.77, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 489, providerIdParses: 0, schemaErrors: 0 },
+    '3 streaming': { copies: 16.16, copiedObjects: 9990.23, wholeStateCopies: 2.04, wholeCopyThreads: 511, wholeCopyObjects: 4864.71, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 5529.54, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 511.25, providerIdParses: 0, schemaErrors: 0 },
+    saveAnswerDraft: { copies: 21, copiedObjects: 25_896, wholeStateCopies: 5, wholeCopyThreads: 1114, wholeCopyObjects: 16_382, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 13_999, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 5, stringifies: 831, providerIdParses: 0, schemaErrors: 0 },
+    typeInComposer: { copies: 26, copiedObjects: 27_316, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 13_188, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 10_594, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, ownerLookups: 2, stringifies: 47, providerIdParses: 0, schemaErrors: 0 },
+    openThread: { copies: 40, copiedObjects: 42_436, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 29_806, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 12_936, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 70, providerIdParses: 0, schemaErrors: 0 },
+    send: { copies: 156, copiedObjects: 104_510, wholeStateCopies: 21, wholeCopyThreads: 5040, wholeCopyObjects: 72_429, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 34_077, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 3365, providerIdParses: 0, schemaErrors: 0 },
   },
   stable: {
-    '1 streaming': { wholeStateCopies: 2.12, wholeCopyThreads: 527.09, wholeCopyObjects: 4556.48, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3212.09, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 515.17, providerIdParses: 5, schemaErrors: 0 },
-    '3 streaming': { wholeStateCopies: 3, wholeCopyThreads: 552.55, wholeCopyObjects: 5482.06, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3207.86, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 486.12, providerIdParses: 5, schemaErrors: 0 },
-    saveAnswerDraft: { wholeStateCopies: 9, wholeCopyThreads: 2218, wholeCopyObjects: 32_684, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 7980, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0 },
-    typeInComposer: { wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 16_968, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 8082, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0 },
-    openThread: { wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 33_545, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 12_048, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0 },
-    send: { wholeStateCopies: 29, wholeCopyThreads: 6964, wholeCopyObjects: 102_203, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 21_934, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 2876, providerIdParses: 31, schemaErrors: 0 },
+    '1 streaming': { copies: 10.64, copiedObjects: 4903.17, wholeStateCopies: 2.12, wholeCopyThreads: 527.09, wholeCopyObjects: 4556.48, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3850.09, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 515.17, providerIdParses: 5, schemaErrors: 0 },
+    '3 streaming': { copies: 14.05, copiedObjects: 6808.59, wholeStateCopies: 2.04, wholeCopyThreads: 509.9, wholeCopyObjects: 4853.89, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3850.26, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 486.12, providerIdParses: 5, schemaErrors: 0 },
+    saveAnswerDraft: { copies: 21, copiedObjects: 33_657, wholeStateCopies: 5, wholeCopyThreads: 1109, wholeCopyObjects: 16_342, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 9265, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0 },
+    typeInComposer: { copies: 21, copiedObjects: 21_754, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 16_968, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 10_331, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0 },
+    openThread: { copies: 36, copiedObjects: 38_345, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 33_545, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_979, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0 },
+    send: { copies: 143, copiedObjects: 97_440, wholeStateCopies: 22, wholeCopyThreads: 5302, wholeCopyObjects: 76_106, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 26_110, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 2876, providerIdParses: 31, schemaErrors: 0 },
   },
 }
 
@@ -323,7 +345,7 @@ const measured = {} as Record<OwnerScaleTrack, Record<keyof typeof SHAPES, Measu
 
 const nativeClone = globalThis.structuredClone, nativeStringify = JSON.stringify
 const proto = { control: AgentControl.prototype as unknown as { shellOf(shareThreads: boolean): AgentState; shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot },
-  router: DesktopHostRouter.prototype as unknown as { build(...args: unknown[]): unknown } }
+  router: DesktopHostRouter.prototype as unknown as { build(...args: unknown[]): AgentState } }
 const native = { shellOf: proto.control.shellOf, shownSnapshot: proto.control.shownSnapshot, build: proto.router.build }
 let schemaError: ((issue: never) => unknown) | undefined
 
@@ -343,7 +365,14 @@ beforeAll(async () => {
     return { ...shown, threads: visits.countedThreads(shown.threads) }
   }
   if (SITES) visits.threadVisits.visited = () => { const at = site(), sites = counter.sites.threadVisits ??= {}; sites[at] = (sites[at] ?? 0) + 1 }
-  proto.router.build = function (this: unknown, ...args: unknown[]) { bump('routerShellBuilds'); return native.build.apply(this, args) }
+  // What the router publishes carries a counted thread list too: the broadcaster, the busy checks and the answer-recovery
+  // pass read it.
+  proto.router.build = function (this: unknown, ...args: unknown[]) {
+    bump('routerShellBuilds')
+    const state = native.build.apply(this, args)
+    state.host.threads = visits.countedThreads(state.host.threads)
+    return state
+  }
   schemaError = z.config().customError as typeof schemaError
   z.config({ customError: issue => { bump('schemaErrors'); return schemaError?.(issue as never) as string | undefined } })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] })
@@ -366,12 +395,12 @@ afterAll(async () => {
 const show = (counts: Counts): string => nativeStringify(counts)
 /** With `SOTTO_WORK_SITES=1`, the places whose count of `kind` grew most between two measurements. */
 function grewAt(kind: Kind, small: Sites | undefined, large: Sites | undefined): string {
-  if (!SITES || (kind !== 'stringifies' && kind !== 'threadVisits')) return ''
+  if (!SITES || !SITED.has(kind)) return ''
   const before = small?.[kind] ?? {}, after = large?.[kind] ?? {}
   const most = Object.entries(after).map(([at, n]) => [at, n - (before[at] ?? 0)] as const).filter(([, more]) => more > 0).sort((a, b) => b[1] - a[1]).slice(0, 3)
   return most.length ? ` (most at ${most.map(([at, more]) => `${at} +${Math.round(more)}`).join(', ')})` : ''
 }
-const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations and thread visits that grew are made.'
+const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations, thread visits and copied objects that grew come from.'
 
 describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
   it('builds the owner\'s world', () => {
@@ -384,9 +413,9 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     const few = quarterHistory.scenarios[scenario], all = owner.scenarios[scenario], fewThreads = quarterThreads.scenarios[scenario]
     const what = `On ${track}, ${SCENARIOS[scenario]}`
     const history = KINDS.flatMap(kind => {
-      const allowed = known(track, scenario, kind)
-      if (all[kind] <= few[kind] * (allowed?.growth ?? SLACK.ratio) + SLACK.plus) return []
-      return [`${NAMES[kind]} grew from ${few[kind]} to ${all[kind]}${allowed ? `, more than the ${allowed.growth} times allowed for ${allowed.why} (#1248)` : ''}${grewAt(kind, quarterHistory.sites[scenario], owner.sites[scenario])}`]
+      const held = known(track, scenario, kind), growth = held?.growth[scenario]
+      if (all[kind] <= (growth === undefined ? few[kind] * SLACK.ratio + SLACK.plus : few[kind] * growth)) return []
+      return [`${NAMES[kind]} grew from ${few[kind]} to ${all[kind]}${held ? `, more than the ${growth} times #1248 holds it to for ${held.why}` : ''}${grewAt(kind, quarterHistory.sites[scenario], owner.sites[scenario])}`]
     })
     expect(history, `${what}, the work grew with the history (the owner's ${owner.threads} threads on this computer held, a quarter of their history ${show(few)}, all of it ${show(all)}): ${history.join('; ')}. Do work bounded by what changed, and read state without copying it.${WHERE}`).toEqual([])
     const ratio = owner.threads / quarterThreads.threads
@@ -397,7 +426,10 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     })
     expect(threads, `${what}, the work grew faster than the threads (the owner's history held, ${quarterThreads.threads} threads ${show(fewThreads)}, ${owner.threads} threads ${show(all)}): ${threads.join('; ')}. Work per thread must not depend on how many threads there are.${WHERE}`).toEqual([])
     const budget = BUDGET[track]?.[scenario]
-    const over = budget ? KINDS.filter(kind => all[kind] > budget[kind]).map(kind => `${NAMES[kind]}: ${all[kind]}, budget ${budget[kind]}`) : ['no budget']
+    const over = budget ? KINDS.filter(kind => all[kind] > budget[kind]).map(kind => {
+      const held = known(track, scenario, kind)
+      return `${NAMES[kind]}: ${all[kind]}, budget ${budget[kind]}${held ? ` (today's count, held there until #1248 stops ${held.why})` : ''}`
+    }) : ['no budget']
     expect(over, `${what}, at the owner's scale the work is over its budget (${show(all)}): ${over.join('; ')}.`).toEqual([])
   })
 })

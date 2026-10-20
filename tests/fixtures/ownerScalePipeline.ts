@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { asActivityPublication } from '../../src/main/agents/activitySnapshots'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
 import { HeldProviderHost } from '../../src/main/agents/heldProviderGate'
@@ -40,14 +41,15 @@ const QUESTIONS: NonNullable<AgentRequest['questions']> = [{ id: 'choice', quest
 
 /**
  * The streaming adapter, taking a send into its log as Claude's adapter records the user's message. Every thread list it
- * publishes is counted (`threadVisits.ts`).
+ * publishes is counted (`threadVisits.ts`). A publication of its activity subscription stays one, so the provider switch
+ * keeps it without a copy, as it keeps the real adapter's; the counted snapshot is marked from the one it wraps.
  */
 class SendingAdapter extends StreamingAdapter {
   override subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
     return super.subscribe(snapshot => listener({ ...snapshot, threads: countedThreads(snapshot.threads) }))
   }
   override subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
-    return super.subscribeActivitySnapshots(snapshot => listener({ ...snapshot, threads: countedThreads(snapshot.threads) }), options)
+    return super.subscribeActivitySnapshots(snapshot => listener(asActivityPublication({ ...snapshot, threads: countedThreads(snapshot.threads) }, snapshot)), options)
   }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type !== 'send') return super.execute(command)
