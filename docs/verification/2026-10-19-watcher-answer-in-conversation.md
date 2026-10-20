@@ -56,6 +56,16 @@ After `main` was merged in, a review on GPT-6.1-Sol read the whole branch, ran t
 
 It found nothing wrong in the placement of cards under news-turn replies or in the merge's conflict resolutions.
 
+## Bug bot
+
+Sotto's bug bot reviewed the pull request and found two likely bugs and two nits, fixed in one commit with tests:
+
+- **Check again** kept its thread observed for good, so a later finish or failure on it could leave Needs attention without the user opening it. It now reads the thread once and hands main back what is on screen (`watcherAsks.test.tsx`).
+- A request a running wake-up names again, because it changed, showed its live card under the older reply and then moved. Its older placements now wait with it (`watcherAskPlacements.test.ts`).
+- The needs-you line offered to go to a card for a settled thread, which draws none; it no longer does. Tests now pin that a settled thread's request draws no card and that an ask answers only the thread its host and ID name.
+
+It asked whether a card stays answerable after Stop watching. It does, on purpose: the card is the user's own control for that thread's request, and stopping a watch withdraws nothing the user can answer.
+
 ## Not checked
 
 - An installed Owl build against a live Watcher on a provider account, and a thread on the real forge. The journeys above run main's real Watcher, wake-up, workspace record, socket and router with stand-in providers; nothing here installs the branch over the running Sotto.

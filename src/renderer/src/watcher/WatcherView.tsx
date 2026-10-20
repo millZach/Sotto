@@ -22,6 +22,7 @@ import { describeThreads, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
+import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext } from '../tools/webLinks'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherTakeovers } from '../../../shared/watcherRoom'
@@ -436,9 +437,10 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   // The room reads Watcher's history and the thread beside it while they are on screen, as Threads does for its
   // panes, and lets them go after. An empty list goes too: closing the only pane before Watcher exists leaves the
   // room mounted, and main would otherwise go on counting the closed thread as seen.
-  // A card's Check again in Watcher's conversation reads its thread too, until another is checked.
-  const [checked, setChecked] = useState<string | null>(null)
-  const observed = JSON.stringify([...new Set([watcherId, besideRow?.thread.id ?? null, checked].filter(Boolean))])
+  const observed = JSON.stringify([watcherId, besideRow?.thread.id ?? null].filter(Boolean))
+  // What is on screen now, for a card's Check again to hand back once its one read is done.
+  const onScreen = useRef<readonly string[]>([])
+  onScreen.current = JSON.parse(observed) as string[]
   useEffect(() => {
     void command({ type: 'observe-threads', threadIds: JSON.parse(observed) as string[] })
   }, [command, observed])
@@ -528,7 +530,6 @@ export function WatcherView({ now: fixedNow, updateControl }: {
 
   // Answering in Watcher's conversation (ADR-0073): the watched thread's own card, found by its owning host's address
   // and answered as its own pane answers it, with this window's command.
-  const besideId = besideRow?.thread.id ?? null
   const rowFor = useCallback((target: WatcherThreadTarget): ThreadRow | undefined => {
     const thread = threadForTarget(state, target)
     return thread === undefined ? undefined : rowsById.get(thread.id)
@@ -536,12 +537,14 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const answering = useMemo<WatcherAskAnswering | null>(() => state === null ? null : {
     state, command, rowFor,
     openAtRequest: (threadId, from) => openThread(threadId, { atRequest: true, from }),
+    // A card's Check again reads its thread once, alongside what is on screen, and then lets it go again: a thread kept
+    // observed would count as seen, and its later finish or failure would leave Needs attention unopened (#1193).
     check: async threadId => {
-      setChecked(threadId)
-      const result = await command({ type: 'observe-threads', threadIds: [...new Set([watcherId, besideId, threadId].filter((id): id is string => id !== null))] })
+      const result = await command({ type: 'observe-threads', threadIds: [...new Set([...onScreen.current, threadId])] })
+      await command({ type: 'observe-threads', threadIds: [...onScreen.current] })
       return result !== null && result.error === null
     },
-  }, [state, command, rowFor, openThread, watcherId, besideId])
+  }, [state, command, rowFor, openThread])
   // The threads whose waiting request has its card in the conversation now, which the needs-you line goes to instead.
   const placements = useStablePlacements(room?.state?.asks)
   const placed = useMemo(() => placeAsks(placements), [placements])
@@ -553,7 +556,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     const found = new Set<string>()
     for (const list of placed.values()) for (const ask of list) {
       const row = ids.has(ask.messageId) ? rowFor(ask.target) : undefined
-      if (row !== undefined && row.thread.requests.some(request => request.id === ask.requestCardId)) found.add(row.thread.id)
+      if (row !== undefined && !isThreadClosed(row.thread) && row.thread.requests.some(request => request.id === ask.requestCardId)) found.add(row.thread.id)
     }
     return found
   }, [placed, shownIds, view.tab, rowFor])

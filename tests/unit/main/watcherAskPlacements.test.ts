@@ -51,6 +51,13 @@ describe('where a waiting request’s card shows in Watcher’s conversation', (
     expect(watcherAskPlacements({ messages, status: 'idle' }).map(item => item.messageId)).toEqual(['r1'])
   })
 
+  it('holds a request back everywhere while a running wake-up names it again, so it never shows under the older reply first', () => {
+    const messages = [user('u1'), reply('r0'), wakeUp('w1', [ask('card-1'), ask('card-2')]), reply('r1'), wakeUp('w2', [ask('card-1')])]
+    expect(watcherAskPlacements({ messages, status: 'running' }).map(item => [item.requestCardId, item.messageId])).toEqual([['card-2', 'r1']])
+    expect(watcherAskPlacements({ messages: [...messages, reply('r2')], status: 'idle' }).map(item => [item.requestCardId, item.messageId]))
+      .toEqual([['card-1', 'r1'], ['card-2', 'r1'], ['card-1', 'r2']])
+  })
+
   it('reads an unchanged history once, one with no asks included, on however many publishes', () => {
     for (const messages of [[user('u1'), reply('r1')], [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), reply('r2')]]) {
       const watcher = { messages, status: 'idle' as const }

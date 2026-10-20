@@ -348,7 +348,8 @@ places each (`asks`) under the reply of the turn that wake-up began, since a wak
 Turns are bounded as receipt cards bound them: a wake-up, or a message the record ties to a turn, begins one, and a
 message the user wrote into the running turn does not, so a reply that came after it is still that turn's. While the
 turn still runs with no reply, the card waits for it rather than showing somewhere it would leave, losing the user's
-place, when the reply comes. A turn that ended with none puts the card under the wake-up when it is shown, else under
+place, when the reply comes; a request that turn's wake-up names again, because it changed, leaves its older reply too
+until then. A turn that ended with none puts the card under the wake-up when it is shown, else under
 the message before it. Placement is read again only when Watcher's history, its turns or whether it runs changed. The card itself is drawn from the thread's live
 request alone: nothing keeps a copy of a request to draw a card from, so a request answered anywhere leaves every card at
 once. A request two wake-ups named, because it changed between them, has its card only under the newer. A thread on a

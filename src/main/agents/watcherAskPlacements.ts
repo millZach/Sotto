@@ -1,5 +1,5 @@
 import type { AgentMessage, AgentThread } from '../../shared/agents'
-import type { WatcherAsk } from '../../shared/watcherAsks'
+import { watcherAskKey, type WatcherAsk } from '../../shared/watcherAsks'
 import type { WatcherRecord } from '../../shared/watcher'
 import { isShownReply } from '../../shared/watcherRoom'
 import { watcherWakeUpShown } from './watcherNews'
@@ -52,6 +52,8 @@ export function watcherAskPlacements(watcher: Watcher | undefined, record?: Turn
   }
   for (const message of messages) if (message.role === 'user' && message.wakeUp === true) turnStarts.add(message.id)
   const placed: WatcherAskPlacement[] = []
+  // Requests the running turn's wake-up names again: their card waits for that reply, never under an older one.
+  const waiting = new Set<string>()
   for (const [at, wakeUp] of messages.entries()) {
     if (wakeUp.role !== 'user' || !wakeUp.watcherAsks?.length) continue
     let anchor: string | undefined
@@ -65,12 +67,13 @@ export function watcherAskPlacements(watcher: Watcher | undefined, record?: Turn
       else if (isShownReply(message)) anchor = message.id
     }
     // The turn is still Watcher's current one and has not replied: the card waits for the reply.
-    if (anchor === undefined && running && !ended) continue
+    if (anchor === undefined && running && !ended) { for (const ask of wakeUp.watcherAsks) waiting.add(watcherAskKey(ask)); continue }
     if (anchor === undefined && shown(wakeUp)) anchor = wakeUp.id
     for (let before = at - 1; anchor === undefined && before >= 0; before--) if (shown(messages[before]!)) anchor = messages[before]!.id
     if (anchor === undefined) continue
     for (const ask of wakeUp.watcherAsks) placed.push({ ...ask, messageId: anchor, wakeUpMessageId: wakeUp.id })
   }
-  placedFor.set(messages, { turns: record?.promptTurns, running, placed })
-  return placed
+  const told = waiting.size === 0 ? placed : placed.filter(item => !waiting.has(watcherAskKey(item)))
+  placedFor.set(messages, { turns: record?.promptTurns, running, placed: told })
+  return told
 }

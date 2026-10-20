@@ -260,6 +260,40 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
     expect(await within(card).findByText('Shortened here. Open the thread for the rest.')).toBeInTheDocument()
   })
 
+  it('reads a thread once for Check again, then lets it go, so it is not kept as seen', async () => {
+    const id = `ask-${sequence}`
+    const view = renderRoom(roomState([place(id)]), agentState([{ ...question(id), delivery: 'uncertain' }]))
+    const card = await askCard('Question from Footer links')
+    fireEvent.click(within(card).getByRole('button', { name: 'Check again' }))
+    const observed = () => view.command.mock.calls.flatMap(([request]) => request.type === 'observe-threads' ? [request.threadIds] : [])
+    await waitFor(() => expect(observed()).toContainEqual(['watcher', 'footer-links']))
+    await waitFor(() => expect(observed().at(-1)).toEqual(['watcher']))
+  })
+
+  it('draws no card for a request of a thread that is settled, and the needs-you line does not offer one', async () => {
+    const id = `ask-${sequence}`
+    const state = agentState([question(id)])
+    const footer = state.host.threads.find(thread => thread.id === 'footer-links')!
+    footer.settledAt = at
+    renderRoom(roomState([place(id)]), state)
+    await paneReady()
+    await waitFor(() => expect(document.querySelector('[data-message-id="watcher-2"]')).not.toBeNull())
+    expect(screen.queryByRole('region', { name: 'Question from Footer links' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Go to the question from Footer links/ })).toBeNull()
+  })
+
+  it('answers only the thread the ask names, by its host as well as its ID', async () => {
+    const id = `ask-${sequence}`
+    // Footer links lives on this computer, which the window knows by its host ID; an ask for the same thread ID on
+    // another host is not its request.
+    const state = agentState([question(id)])
+    state.hostId = HOST
+    renderRoom(roomState([place(id, 'watcher-2', { target: target('footer-links', REMOTE) })]), state)
+    await paneReady()
+    await waitFor(() => expect(document.querySelector('[data-message-id="watcher-2"]')).not.toBeNull())
+    expect(screen.queryByRole('region', { name: 'Question from Footer links' })).toBeNull()
+  })
+
   it('draws nothing outside Watcher’s own pane', () => {
     const { container } = render(<WatcherAfterMessage message={watcherThread().messages[1]!} />)
     expect(container).toBeEmptyDOMElement()
