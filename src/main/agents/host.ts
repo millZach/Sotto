@@ -4,6 +4,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
+import type { WatcherAsk } from '../../shared/watcherAsks'
 import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
@@ -66,7 +67,13 @@ export type AgentHostCommand =
      * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
      * one is shown. Every other thread ignores it.
      */
-    readonly watcherNews?: string }
+    readonly watcherNews?: string
+    /**
+     * The requests that wake-up's news said waited on the user, text-free (ADR-0073, answering in Watcher's
+     * conversation), set only by the coordinator beside `watcherNews`. The workspace records them with the wake-up, and
+     * no adapter hears them.
+     */
+    readonly watcherAsks?: readonly WatcherAsk[] }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }

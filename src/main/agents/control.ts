@@ -28,6 +28,7 @@ import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWak
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
+import { watcherAsksOf } from '../../shared/watcherAsks'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -3091,8 +3092,12 @@ export class AgentControl {
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
           const watcherNews = item.wakeUp && item.news ? watcherWakeUpNote(item.news) : undefined
+          // The requests that news said wait on the user go with the wake-up as identities alone, for the workspace to
+          // record, so Watcher's pane can show their cards under it (ADR-0073). They answer nothing.
+          const watcherAsks = watcherNews && item.news ? watcherAsksOf(item.news.flatMap(news => isWatcherNews(news) ? news.events : [])) : []
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
-            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
+            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}),
+            ...(watcherAsks.length ? { watcherAsks } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
           sent = true
           if (isWatcherOnlyWakeUp(item)) await this.settleWatcherWakeUp(item, 'told')
