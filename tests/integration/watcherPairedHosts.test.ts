@@ -1284,10 +1284,12 @@ it('delivers a later request’s queued prompt to a paired thread Stop all held,
   watcher.status = 'idle'; watcher.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic second master request' })).error).toBeNull()
-  const requestId = f.watcher.state().requests.at(-1)!.id
+  // The user's own request: a stop receipt read back late may fence a standing scope for this Watcher turn after it.
+  const requestId = f.watcher.state().requests.filter(request => !request.standingWatchId).at(-1)!.id
   expect(requestId).not.toBe(f.requestId)
   const send = (delivery: 'now' | 'queue', text: string) => f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: first.target, delivery, text })
-  expect(await send('now', 'Synthetic paired now')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  const now = await send('now', 'Synthetic paired now')
+  expect(now, JSON.stringify(now)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   await vi.waitFor(() => expect(turn()).toBe('running'))
   expect(await send('queue', 'Synthetic paired note')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   const starts = async () => (await native.driver.requests()).filter(item => item.method === 'turn/start').length
