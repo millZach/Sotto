@@ -57,6 +57,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   powerMonitor,
   protocol,
   screen,
@@ -73,7 +74,7 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
@@ -171,6 +172,7 @@ import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
+import { dockPainter, readDockCoverage } from './dock/dockIcon'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
@@ -297,6 +299,8 @@ type NativeDiagnostic =
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
   | OsascriptPasteEvent
+  | 'dock-icon-unavailable'
+  | 'dock-icon-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -647,6 +651,27 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Main owns the widget's presentation: every snapshot is stamped with the
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
+  // The Dock icon wears the saved theme's mark, as the main window's mark does, repainted when the theme or the
+  // system's scheme changes. Without its coverage file the Dock keeps the bundle's icon, and a failed paint gives
+  // the bundle's icon back rather than leaving an earlier theme's.
+  const dockCoverage = platform === 'darwin' && app.dock !== undefined
+    ? await readFile(join(resourceRoot, 'dock', 'mark-coverage.bin')).then(readDockCoverage, () => null)
+    : null
+  if (platform === 'darwin' && dockCoverage === null) logOperational('dock-icon-unavailable')
+  let dockSettings = await settings.get()
+  const paintDockFor = dockCoverage === null ? undefined : dockPainter(dockCoverage, {
+    setIcon: png => {
+      const image = nativeImage.createFromBuffer(png)
+      if (image.isEmpty()) throw new Error('Unreadable Dock icon')
+      app.dock?.setIcon(image)
+    },
+    // Electron hands macOS an empty image for null, which restores the bundle's icon; its types leave null out.
+    restoreBundleIcon: () => app.dock?.setIcon(null as unknown as Electron.NativeImage),
+    log: logOperational,
+  })
+  const paintDock = (): void => paintDockFor?.(dockSettings, nativeTheme.shouldUseDarkColors)
+  paintDock()
+  if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
   const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
@@ -873,7 +898,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
   // already ended what agents started, before its first pass.
   const pullRequestTools = new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
-    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined })
+    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined, watcherEnabled })
   quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
@@ -1295,6 +1320,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings)
+        dockSettings = settings
+        paintDock()
         if (!dictationLifecycle.isIdle()) {
           await dictationLifecycle.repaint()
         } else if (settings.onboardingComplete) {

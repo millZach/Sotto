@@ -323,6 +323,9 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
   watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
+  // The threads the user stopped watching and has not handed back. Watcher's own watch_thread needs a newer user message
+  // to Watcher than `watcherHead`, the newest one when the user stopped it; Watch hands one back at once.
+  userUnwatches: z.array(z.object({ target: watcherThreadTargetSchema, watcherHead: id.nullable(), at: time }).strict()).max(10_000).optional(),
   // This host's latest takeover or renewed assignment: the last local user request already present at that boundary.
   // Private to this record, never a paired-host grant. Request insertion order, not wall-clock time, fences old work.
   localTakeovers: z.array(z.object({ target: watcherThreadTargetSchema, at: time, lastRequestId: z.uuid().nullable(),
