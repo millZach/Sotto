@@ -1,0 +1,21 @@
+/* PROTOTYPE option B (throwaway, never committed): one 44px row in a narrow macOS Watcher pane. Applied only under
+   .proto-b, on top of the branch's CSS; 520-664px is the branch's own compact row, shared with option A. */
+@container thread-pane (width < 520px) {
+  /* Undo option A's second row. */
+  .threads-view.threads-view--mac.proto-b .thread-pane .watcher-head:has(.watcher-tabs) {
+    display: flex; height: 44px; padding-bottom: 0; padding-left: calc(14px + var(--owl-sky-inset));
+  }
+  .threads-view--mac.proto-b .watcher-head:has(.watcher-tabs) > .thread-workspace__title { display: flex; }
+  .threads-view--mac.proto-b .watcher-head:has(.watcher-tabs) .watcher-head__tile { margin: 0 6px 0 0; }
+  /* The name goes first, as it does below 450 off macOS: the heading stays for assistive technology. */
+  .threads-view--mac.proto-b .watcher-head:has(.watcher-tabs) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* Then the Owl tile. */
+@container thread-pane (width < 470px) {
+  .threads-view--mac.proto-b .watcher-head:has(.watcher-tabs) .watcher-head__tile { display: none; }
+}
+/* Then All threads' chevron, and the gap before the tabs tightens. */
+@container thread-pane (width < 430px) {
+  .threads-view--mac.proto-b .watcher-head:has(.watcher-tabs) .watcher-head__list > svg:last-child { display: none; }
+  .threads-view--mac.proto-b .watcher-head:has(.watcher-tabs) > .thread-workspace__title { gap: 6px; }
+}

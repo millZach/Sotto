@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway): Watcher's header beside the macOS traffic lights</title>
+<style>
+@font-face { font-family: 'Figtree'; src: url('figtree-latin.woff2') format('woff2'); font-weight: 300 900; font-display: swap; }
+:root {
+  --bg: #0b0d10; --surface: #14171c; --raised: #1c2027; --hairline: #2a2f37; --text: #e9ebee; --text-2: #b9bec6; --muted: #959ba4;
+  --accent: #5fcfb4; --accent-ink: #062a22; --warn: #f0b85a; --shadow: rgba(0,0,0,.45);
+}
+:root[data-theme='light'] {
+  --bg: #f6f4ef; --surface: #fffdf9; --raised: #ffffff; --hairline: #ddd8ce; --text: #1d1c1a; --text-2: #45423d; --muted: #66625b;
+  --accent: #0b6b57; --accent-ink: #ffffff; --warn: #8a5a00; --shadow: rgba(40,30,10,.16);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Figtree', ui-sans-serif, system-ui, sans-serif; }
+body { padding: 28px 32px 120px; }
+.banner { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--warn); border-radius: 999px; color: var(--warn); font-size: 12px; font-weight: 600; letter-spacing: .4px; }
+h1 { margin: 12px 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -.3px; }
+.lede { max-width: 900px; margin: 0 0 22px; color: var(--text-2); font-size: 14.5px; line-height: 1.5; }
+.lede code, .note code { font-size: 13px; }
+.view-name { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+.cols { display: grid; gap: 24px; }
+.cols[data-n='2'] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.card { min-width: 0; padding: 18px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.card h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.card h2 .tag { padding: 2px 8px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 14px; font-size: 13.5px; line-height: 1.45; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; color: var(--text-2); }
+.label { margin: 14px 0 6px; color: var(--muted); font-size: 12px; }
+.zoom { border: 1px solid var(--hairline); border-radius: 8px; background-repeat: no-repeat; image-rendering: pixelated; }
+.full { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 8px; }
+.full img { display: block; }
+.cols[data-n='2'] .full img { width: 100%; height: auto; }
+.note { max-width: 900px; margin: 28px 0 0; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+.note h2 { margin: 0 0 6px; color: var(--text); font-size: 15px; font-weight: 600; }
+.note ul { margin: 0; padding-left: 20px; }
+.note li { margin: 3px 0; }
+.bar { position: fixed; left: 50%; bottom: 18px; z-index: 10; display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--hairline); border-radius: 14px;
+  background: var(--raised); box-shadow: 0 12px 36px var(--shadow); transform: translateX(-50%); }
+.seg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--hairline); border-radius: 10px; }
+.seg + .seg { margin-left: 4px; }
+.seg button { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; }
+.seg button:hover { color: var(--text); }
+.seg button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .seg button { transition: background-color .12s, color .12s; } }
+</style>
+</head>
+<body>
+<span class="banner">PROTOTYPE: throwaway, not part of the app</span>
+<h1>Watcher's header beside the macOS traffic lights, in a narrow pane</h1>
+<p class="lede">Pull request #1214. On macOS the header starts 88 pixels in, past the traffic lights, and at a 400-pixel pane one row is about 46 pixels short.
+Pick A or B. These are captures of the real built app (Sotto Owl, on Windows with the room's macOS class on and the traffic lights drawn where macOS puts them),
+in a 1280x800 window with Visual gate flake open beside Watcher and Stop all showing.</p>
+
+<main id="view" aria-live="polite"></main>
+
+<section class="note">
+  <h2>Worth knowing before you pick</h2>
+  <ul>
+    <li>A keeps everything, including Watcher's name, and moves the tabs and actions to a second row from the pane's edge. Watcher's header is then 90 pixels tall while the thread beside it keeps 44, so the two panes' first lines no longer line up.</li>
+    <li>B keeps one 44-pixel row, but it takes more than the Owl tile. Below 520 pixels Watcher's name goes first (screen readers still hear it). Below 470 the tile goes, so nothing in the room's corner says it is Watcher's except the lit owl in the floating switch. Below 430, All threads loses its chevron and the gap before the tabs tightens.</li>
+    <li>B is tight at 400 pixels: about 11 pixels to spare between the tabs and Stop all. Two-digit counts (10 or more threads, 10 or more watched) take about 16, so B would also have to drop All threads' count there, or more. A has more than 100 pixels to spare on each row.</li>
+    <li>At 520 to 664 pixels both options are the same: one row, All threads and Stop all keep their icons and counts, and the tabs tighten. The 600 captures show it.</li>
+  </ul>
+</section>
+
+<nav class="bar" aria-label="Prototype controls">
+  <div class="seg" role="group" aria-label="Option">
+    <button type="button" data-variant="A">A: two rows</button>
+    <button type="button" data-variant="B">B: one row</button>
+    <button type="button" data-variant="compare">Compare</button>
+  </div>
+  <div class="seg" role="group" aria-label="Appearance">
+    <button type="button" data-theme="dark">Dark</button>
+    <button type="button" data-theme="light">Light</button>
+  </div>
+  <div class="seg" role="group" aria-label="Watcher pane width">
+    <button type="button" data-width="400">400</button>
+    <button type="button" data-width="480">480</button>
+    <button type="button" data-width="600">600</button>
+  </div>
+</nav>
+
+<script>
+const SHARED = { height: '44 pixels, one row', hidden: 'All threads’ and Stop all’s labels (icons and counts stay)', moves: 'Nothing. The tabs tighten. This is the same in A and B.' }
+const CAPTIONS = {
+  A: {
+    400: { height: '90 pixels, two rows', hidden: 'All threads’ and Stop all’s labels', moves: 'Conversation | Watched, Stop all and More Watcher actions go to a second row, starting at the pane’s edge. The tile, Watcher’s name and All threads stay beside the lights.' },
+    480: { height: '90 pixels, two rows', hidden: 'All threads’ and Stop all’s labels', moves: 'The same as 400: tabs and actions on the second row, with more room between them.' },
+    600: SHARED,
+  },
+  B: {
+    400: { height: '44 pixels, one row', hidden: 'The Owl tile, Watcher’s name (still read out), All threads’ chevron, and the labels', moves: 'Nothing. The gap before the tabs tightens. About 11 pixels to spare before Stop all.' },
+    480: { height: '44 pixels, one row', hidden: 'Watcher’s name (still read out), and the labels. The Owl tile stays.', moves: 'Nothing. About 28 pixels to spare before Stop all.' },
+    600: SHARED,
+  },
+}
+const NAMES = { A: 'Two rows', B: 'One row, tile hidden' }
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: ['A', 'B', 'compare'].includes(params.get('variant')) ? params.get('variant') : 'A',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  width: ['400', '480', '600'].includes(params.get('width')) ? params.get('width') : '400',
+}
+const src = variant => `captures/${variant}-${state.theme}-${state.width}.png`
+
+function card(variant, columns) {
+  const caption = CAPTIONS[variant][state.width]
+  const cropW = Number(state.width) + 80, cropH = 140
+  const el = document.createElement('article')
+  el.className = 'card'
+  el.innerHTML = `<h2><span class="tag">${variant}</span>${NAMES[variant]} <span style="color:var(--muted);font-weight:400;font-size:13px">at a ${state.width}-pixel pane, ${state.theme}</span></h2>
+    <dl class="facts"><dt>Header</dt><dd>${caption.height}</dd><dt>Hidden</dt><dd>${caption.hidden}</dd><dt>Moves</dt><dd>${caption.moves}</dd></dl>
+    <p class="label">The header's corner, enlarged</p><div class="zoom" role="img" aria-label="Watcher's header, option ${variant}, enlarged"></div>
+    <p class="label">${columns === 1 ? 'The whole window at 1:1' : 'The whole window'}</p><div class="full"><img alt="Sotto's Watcher room, option ${variant}, ${state.width}-pixel pane, ${state.theme}" src="${src(variant)}" width="1280" height="800"></div>`
+  const zoom = el.querySelector('.zoom')
+  zoom.dataset.cropW = cropW; zoom.dataset.cropH = cropH
+  zoom.style.backgroundImage = `url('${src(variant)}')`
+  return el
+}
+
+function fitZooms() {
+  for (const zoom of document.querySelectorAll('.zoom')) {
+    const cropW = Number(zoom.dataset.cropW), cropH = Number(zoom.dataset.cropH)
+    const room = zoom.parentElement.clientWidth - 2
+    const scale = Math.max(1, Math.min(2, Math.floor(room / cropW * 4) / 4))
+    zoom.style.width = `${cropW * scale + 2}px`; zoom.style.height = `${cropH * scale + 2}px`
+    zoom.style.backgroundSize = `${1280 * scale}px ${800 * scale}px`
+    zoom.setAttribute('title', `${scale}x`)
+  }
+}
+
+function render() {
+  document.documentElement.dataset.theme = state.theme
+  const view = document.getElementById('view')
+  view.replaceChildren()
+  const variants = state.variant === 'compare' ? ['A', 'B'] : [state.variant]
+  const cols = document.createElement('div')
+  cols.className = 'cols'; cols.dataset.n = variants.length
+  for (const variant of variants) cols.appendChild(card(variant, variants.length))
+  view.appendChild(cols)
+  for (const button of document.querySelectorAll('.bar button')) {
+    const [key] = Object.keys(button.dataset)
+    button.setAttribute('aria-pressed', String(state[key] === button.dataset[key]))
+  }
+  history.replaceState(null, '', `?variant=${state.variant}&theme=${state.theme}&width=${state.width}`)
+  fitZooms()
+}
+
+document.querySelector('.bar').addEventListener('click', event => {
+  const button = event.target.closest('button')
+  if (!button) return
+  const [key] = Object.keys(button.dataset)
+  state[key] = button.dataset[key]
+  render()
+})
+addEventListener('resize', fitZooms)
+render()
+</script>
+</body>
+</html>

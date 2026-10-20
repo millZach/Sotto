@@ -1,0 +1,986 @@
+{
+  "A-dark-400": {
+    "got": 399.984375,
+    "pane": 400,
+    "head": {
+      "left": 0,
+      "right": 400,
+      "top": 0,
+      "bottom": 90,
+      "width": 400,
+      "innerRight": 393.984375,
+      "padL": "14px",
+      "padR": "6px",
+      "height": 90,
+      "display": "grid"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 14,
+        "right": 194.2,
+        "top": 48,
+        "bottom": 84,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 17,
+        "right": 108.6,
+        "top": 51,
+        "bottom": 81,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 110.6,
+        "right": 191.2,
+        "top": 51,
+        "bottom": 81,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 333,
+        "right": 362,
+        "top": 51,
+        "bottom": 81,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 364,
+        "right": 394,
+        "top": 51,
+        "bottom": 81,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "A-dark-480": {
+    "got": 480,
+    "pane": 480,
+    "head": {
+      "left": 0,
+      "right": 480,
+      "top": 0,
+      "bottom": 90,
+      "width": 480,
+      "innerRight": 474,
+      "padL": "14px",
+      "padR": "6px",
+      "height": 90,
+      "display": "grid"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 14,
+        "right": 194.2,
+        "top": 48,
+        "bottom": 84,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 17,
+        "right": 108.6,
+        "top": 51,
+        "bottom": 81,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 110.6,
+        "right": 191.2,
+        "top": 51,
+        "bottom": 81,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 413,
+        "right": 442,
+        "top": 51,
+        "bottom": 81,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 444,
+        "right": 474,
+        "top": 51,
+        "bottom": 81,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "A-dark-600": {
+    "got": 600,
+    "pane": 600,
+    "head": {
+      "left": 0,
+      "right": 600,
+      "top": 0,
+      "bottom": 44,
+      "width": 600,
+      "innerRight": 594,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 265,
+        "right": 445.2,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 268,
+        "right": 359.6,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 361.6,
+        "right": 442.2,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 533,
+        "right": 562,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 564,
+        "right": 594,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "B-dark-400": {
+    "got": 399.984375,
+    "pane": 400,
+    "head": {
+      "left": 0,
+      "right": 400,
+      "top": 0,
+      "bottom": 44,
+      "width": 400,
+      "innerRight": 393.984375,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 88,
+        "right": 136.1,
+        "top": 7,
+        "bottom": 37,
+        "width": 48.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 142.1,
+        "right": 322.3,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 145.1,
+        "right": 236.7,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 238.7,
+        "right": 319.3,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 333,
+        "right": 362,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 364,
+        "right": 394,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "B-dark-480": {
+    "got": 480,
+    "pane": 480,
+    "head": {
+      "left": 0,
+      "right": 480,
+      "top": 0,
+      "bottom": 44,
+      "width": 480,
+      "innerRight": 474,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 128,
+        "right": 195.1,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 205.1,
+        "right": 385.3,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 208.1,
+        "right": 299.7,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 301.7,
+        "right": 382.3,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 413,
+        "right": 442,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 444,
+        "right": 474,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "B-dark-600": {
+    "got": 600,
+    "pane": 600,
+    "head": {
+      "left": 0,
+      "right": 600,
+      "top": 0,
+      "bottom": 44,
+      "width": 600,
+      "innerRight": 594,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 265,
+        "right": 445.2,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 268,
+        "right": 359.6,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 361.6,
+        "right": 442.2,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 533,
+        "right": 562,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 564,
+        "right": 594,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "A-light-400": {
+    "got": 399.984375,
+    "pane": 400,
+    "head": {
+      "left": 0,
+      "right": 400,
+      "top": 0,
+      "bottom": 90,
+      "width": 400,
+      "innerRight": 393.984375,
+      "padL": "14px",
+      "padR": "6px",
+      "height": 90,
+      "display": "grid"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 14,
+        "right": 194.2,
+        "top": 48,
+        "bottom": 84,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 17,
+        "right": 108.6,
+        "top": 51,
+        "bottom": 81,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 110.6,
+        "right": 191.2,
+        "top": 51,
+        "bottom": 81,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 333,
+        "right": 362,
+        "top": 51,
+        "bottom": 81,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 364,
+        "right": 394,
+        "top": 51,
+        "bottom": 81,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "A-light-480": {
+    "got": 480,
+    "pane": 480,
+    "head": {
+      "left": 0,
+      "right": 480,
+      "top": 0,
+      "bottom": 90,
+      "width": 480,
+      "innerRight": 474,
+      "padL": "14px",
+      "padR": "6px",
+      "height": 90,
+      "display": "grid"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 14,
+        "right": 194.2,
+        "top": 48,
+        "bottom": 84,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 17,
+        "right": 108.6,
+        "top": 51,
+        "bottom": 81,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 110.6,
+        "right": 191.2,
+        "top": 51,
+        "bottom": 81,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 413,
+        "right": 442,
+        "top": 51,
+        "bottom": 81,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 444,
+        "right": 474,
+        "top": 51,
+        "bottom": 81,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "A-light-600": {
+    "got": 600,
+    "pane": 600,
+    "head": {
+      "left": 0,
+      "right": 600,
+      "top": 0,
+      "bottom": 44,
+      "width": 600,
+      "innerRight": 594,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 265,
+        "right": 445.2,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 268,
+        "right": 359.6,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 361.6,
+        "right": 442.2,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 533,
+        "right": 562,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 564,
+        "right": 594,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "B-light-400": {
+    "got": 399.984375,
+    "pane": 400,
+    "head": {
+      "left": 0,
+      "right": 400,
+      "top": 0,
+      "bottom": 44,
+      "width": 400,
+      "innerRight": 393.984375,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 88,
+        "right": 136.1,
+        "top": 7,
+        "bottom": 37,
+        "width": 48.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 142.1,
+        "right": 322.3,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 145.1,
+        "right": 236.7,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 238.7,
+        "right": 319.3,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 333,
+        "right": 362,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 364,
+        "right": 394,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "B-light-480": {
+    "got": 480,
+    "pane": 480,
+    "head": {
+      "left": 0,
+      "right": 480,
+      "top": 0,
+      "bottom": 44,
+      "width": 480,
+      "innerRight": 474,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 128,
+        "right": 195.1,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 205.1,
+        "right": 385.3,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 208.1,
+        "right": 299.7,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 301.7,
+        "right": 382.3,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 413,
+        "right": 442,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 444,
+        "right": 474,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  },
+  "B-light-600": {
+    "got": 600,
+    "pane": 600,
+    "head": {
+      "left": 0,
+      "right": 600,
+      "top": 0,
+      "bottom": 44,
+      "width": 600,
+      "innerRight": 594,
+      "padL": "88px",
+      "padR": "6px",
+      "height": 44,
+      "display": "flex"
+    },
+    "parts": [
+      {
+        "name": "Sotto Owl",
+        "left": 88,
+        "right": 112,
+        "top": 10,
+        "bottom": 34,
+        "width": 24
+      },
+      {
+        "name": "Watcher",
+        "left": 122,
+        "right": 177.9,
+        "top": 11,
+        "bottom": 33,
+        "width": 55.9
+      },
+      {
+        "name": "All threads, 8. Show the list",
+        "left": 187.9,
+        "right": 255,
+        "top": 7,
+        "bottom": 37,
+        "width": 67.1
+      },
+      {
+        "name": "Watcher’s view",
+        "left": 265,
+        "right": 445.2,
+        "top": 4,
+        "bottom": 40,
+        "width": 180.2
+      },
+      {
+        "name": "Conversation",
+        "left": 268,
+        "right": 359.6,
+        "top": 7,
+        "bottom": 37,
+        "width": 91.6
+      },
+      {
+        "name": "Watched, 2 threads",
+        "left": 361.6,
+        "right": 442.2,
+        "top": 7,
+        "bottom": 37,
+        "width": 80.6
+      },
+      {
+        "name": "Stop all threads Watcher started, 2 thre",
+        "left": 533,
+        "right": 562,
+        "top": 7,
+        "bottom": 37,
+        "width": 29
+      },
+      {
+        "name": "More Watcher actions",
+        "left": 564,
+        "right": 594,
+        "top": 7,
+        "bottom": 37,
+        "width": 30
+      }
+    ],
+    "clipped": [],
+    "overlaps": [],
+    "outside": [],
+    "inLights": []
+  }
+}
