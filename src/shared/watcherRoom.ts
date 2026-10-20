@@ -4,7 +4,7 @@ import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
-import { watcherOwnChangeSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
+import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -57,6 +57,15 @@ export const watcherRoomStateSchema = z.object({
    * there: its turn is not in the conversation the window holds.
    */
   receiptReplies: z.array(z.object({ operationId: z.uuid(), messageId: z.string() }).strict()).optional(),
+  /**
+   * Watcher's conversation against the point where Sotto compacts it (#1189): its context in tokens as its provider last
+   * reported it, null when unreported, whether its provider can compact it, and whether a compaction is under way.
+   */
+  context: z.object({ tokens: z.number().int().nonnegative().nullable(), compactAt: z.number().int().positive(),
+    canCompact: z.boolean(), compacting: z.boolean() }).strict().nullable().optional(),
+  /** Watcher's state, kept through compaction (#1189): what each watched thread waits on, and what Watcher kept. */
+  // `unread` while a saved state could not be read: the lists are not what is kept, and the panel says so.
+  state: z.object({ watching: z.array(watcherStateThreadSchema), kept: watcherKeptStateSchema, unread: z.literal(true).optional() }).strict().optional(),
   /**
    * The requests the current Watcher's wake-ups said waited on the user, oldest first, each with the message of its
    * conversation the request's card goes under (ADR-0073, answering in Watcher's conversation): the reply of the turn

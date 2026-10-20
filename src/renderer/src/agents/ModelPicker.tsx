@@ -92,8 +92,10 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * it clears the search, then leaves the source with focus on its row, then closes the menu. The chip names the source
  * before the model, and the source gives way first in a narrow composer.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
+  /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
+  readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
   readonly note?: string | undefined
   readonly unavailable?: readonly UnavailablePickerProvider[] | undefined
   readonly continueOn?: PickerContinuation | undefined
@@ -253,7 +255,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      title={spoken} data-source={current?.source} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setStep(null); setSourceStop(undefined); wheelTurn.current = restingWheel(); setOpen(true) }}>
+      title={spoken} data-source={current?.source} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setStep(null); setSourceStop(undefined); wheelTurn.current = restingWheel(); setOpen(true) }}>
+      {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
       <ChevronDown size={12} aria-hidden="true" />
