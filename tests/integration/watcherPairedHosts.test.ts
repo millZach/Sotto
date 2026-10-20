@@ -35,6 +35,9 @@ import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import type { AgentState } from '../../src/shared/agents'
 
+/** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
+const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
+
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { try { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() } finally { vi.restoreAllMocks() } })
@@ -60,7 +63,7 @@ async function master(native?: CodexAppServerHost, usage = false) {
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource()
-  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
+  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
     machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads) })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
@@ -552,7 +555,8 @@ it('settles a refused paired queue send even when the takeover clears the queue 
     finishing.release()
     await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
-    expect(f.watcher.state().inFlight).toBe(0)
+    // The in-flight count can follow the failed receipt by an update (it failed CI twice when read at once), so it is waited for too.
+    await vi.waitFor(() => expect(f.watcher.state().inFlight).toBe(0))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); finishing.release() }
@@ -989,7 +993,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => true, watcherEnabled: true } })
   let control = f.control
-  let worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  let worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
   cleanups.push(async () => { worker.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-master-project', provider: 'codex' as const,
@@ -1012,7 +1016,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   expect(await worker.admitRemote(queued, clientId, () => undefined)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   worker.close(); control.dispose(); await control.closed()
   control = f.create()
-  worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const code = (id: string) => { try { worker.guardOperation(id); return undefined } catch (error) { return (error as { result?: { code: string } }).result?.code } }
   expect(control.watcherRecord().operations.find(item => item.id === queued.operation.id)?.deliveryState).toBe('queued')
