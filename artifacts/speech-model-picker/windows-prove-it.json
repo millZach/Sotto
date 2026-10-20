@@ -1,0 +1,212 @@
+{
+  "note": "docs/verification/2026-10-19-speech-model-picker.md, section Windows",
+  "firstLaunch": {
+    "before": {
+      "status": {
+        "state": "missing"
+      },
+      "options": [
+        "Choose a model",
+        "Parakeet v3 (download, 670 MB)",
+        "Parakeet Ultra (download, 671 MB)",
+        "Parakeet v2 (download, 661 MB)"
+      ],
+      "settingsChoice": null
+    },
+    "afterTwoArrowDowns": {
+      "status": {
+        "state": "missing"
+      },
+      "shown": "parakeet-ultra-int8",
+      "settingsChoice": null,
+      "hint": "Press Enter to download Parakeet Ultra, 671 MB, and switch dictation to it."
+    },
+    "afterEnter": {
+      "state": "downloading",
+      "receivedBytes": 17963136,
+      "totalBytes": 670576818
+    }
+  },
+  "secondLaunch": {
+    "atOpen": {
+      "state": "downloading",
+      "receivedBytes": 45930823,
+      "totalBytes": 670576818
+    },
+    "then": "ready",
+    "transcriptsThroughTranscriptionIpc": [
+      {
+        "clip": "cv-en-0.wav",
+        "result": {
+          "ok": true,
+          "text": "Joe Keaton disapproved of films and Buster also had reservations about the medium."
+        }
+      },
+      {
+        "clip": "mls-de-0.wav",
+        "result": {
+          "ok": true,
+          "text": "Denken Sie, soeben walten meine Gedanken bei Ihnen in Adelaide, und ich wünschte mir, Sie, Herr Sauben, zu können. Nun. Der Saube ist gelungen, lachte Münchhausen. Da bin ich, und was mich herführt?"
+        }
+      },
+      {
+        "clip": "mls-fr-0.wav",
+        "result": {
+          "ok": true,
+          "text": "Pendant le second siècle, je fis serment d'ouvrir tous les trésors de la terre, à quiconque me mettrait en liberté, mais je ne fus pas plus heureux. Dans le troisième je promis de faire puissant monarque mon libérateur, d'être toujours près de lui en esprit,"
+        }
+      }
+    ]
+  },
+  "thirdLaunch": {
+    "firstRun": false,
+    "resumedFrom": {
+      "state": "loading"
+    },
+    "ready": {
+      "status": {
+        "state": "ready"
+      },
+      "settingsChoice": "parakeet-ultra-int8",
+      "options": [
+        "Parakeet Ultra",
+        "Parakeet v3, 670 MB",
+        "Parakeet v2, 661 MB"
+      ],
+      "shown": "parakeet-ultra-int8"
+    },
+    "transcripts": [
+      {
+        "clip": "cv-en-0.wav",
+        "result": {
+          "ok": true,
+          "text": "Joe Keaton disapproved of films and Buster also had reservations about the medium."
+        }
+      }
+    ],
+    "minimum": {
+      "viewport": [
+        820,
+        560
+      ],
+      "selectWidth": 210,
+      "selectText": "Parakeet Ultra",
+      "overflowing": [
+        "tt-visually-hidden",
+        "tt-visually-hidden",
+        "tt-visually-hidden"
+      ]
+    }
+  },
+  "freshProfileArrowsDark": {
+    "1280x800": {
+      "status": {
+        "state": "missing"
+      },
+      "choice": null,
+      "shown": "parakeet-ultra-int8",
+      "groups": [
+        [
+          "Download",
+          [
+            "Parakeet v3, 670 MB",
+            "Parakeet Ultra, 671 MB",
+            "Parakeet v2, 661 MB"
+          ]
+        ]
+      ],
+      "labelFits": {
+        "text": 141,
+        "room": 201
+      }
+    },
+    "820x560": {
+      "status": {
+        "state": "missing"
+      },
+      "choice": null,
+      "shown": "parakeet-ultra-int8",
+      "groups": [
+        [
+          "Download",
+          [
+            "Parakeet v3, 670 MB",
+            "Parakeet Ultra, 671 MB",
+            "Parakeet v2, 661 MB"
+          ]
+        ]
+      ],
+      "labelFits": {
+        "text": 141,
+        "room": 171
+      }
+    },
+    "speechModelsFolder": []
+  },
+  "freshProfileArrowsLight": {
+    "1280x800": {
+      "status": {
+        "state": "missing"
+      },
+      "choice": null,
+      "shown": "parakeet-ultra-int8",
+      "groups": [
+        [
+          "Download",
+          [
+            "Parakeet v3, 670 MB",
+            "Parakeet Ultra, 671 MB",
+            "Parakeet v2, 661 MB"
+          ]
+        ]
+      ],
+      "labelFits": {
+        "text": 141,
+        "room": 201
+      }
+    },
+    "820x560": {
+      "status": {
+        "state": "missing"
+      },
+      "choice": null,
+      "shown": "parakeet-ultra-int8",
+      "groups": [
+        [
+          "Download",
+          [
+            "Parakeet v3, 670 MB",
+            "Parakeet Ultra, 671 MB",
+            "Parakeet v2, 661 MB"
+          ]
+        ]
+      ],
+      "labelFits": {
+        "text": 141,
+        "room": 171
+      }
+    },
+    "speechModelsFolder": []
+  },
+  "freshProfileSetup": {
+    "buttons": [
+      "Download Parakeet v3",
+      "Download Parakeet Ultra",
+      "Download Parakeet v2"
+    ],
+    "cardScrolls": [
+      {
+        "cls": "tt-card onboarding-card",
+        "scrolls": false
+      },
+      {
+        "cls": "onboarding-card__body",
+        "scrolls": false
+      }
+    ],
+    "status": {
+      "state": "missing"
+    },
+    "speechModelsFolder": []
+  }
+}

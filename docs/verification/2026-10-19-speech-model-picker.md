@@ -16,6 +16,26 @@ The helper was also run on its own and through `src/main/asr/coreMlEngine.ts`, o
 
 `npm run package:dir:mac` passed end to end: the app carries `Contents/Resources/coreml-asr/sotto-coreml-asr`, ad-hoc signed, and the packaged-resources check ran it with `--version`.
 
+## Windows, with Sotto's three downloads (October 20)
+
+Proved on the Windows laptop (Windows 11) on October 20, 2026, with this branch's second change on top: Parakeet Ultra and Parakeet v2 as downloads on every platform, and the Settings picker's keyboard fix (ADR-0094, decisions 5 to 7). It was the built app (`npm run build`, then Playwright driving `out/main/index.js`) with no E2E switch set, so the download came from the published release assets and the speech engine was the real one. Each run used a throwaway profile, `--user-data-dir` under the Temp folder rather than `%APPDATA%`, so that the legacy-profile migration could not touch the real one. No microphone was used: the clips went through `window.sotto.transcribe`, the same IPC every dictation segment goes through, as 16 kHz WAVs in the recorder's 44-byte layout. The answers are in `artifacts/speech-model-picker/windows-prove-it.json`.
+
+- `windows-setup-1280x800-dark.png`, `windows-setup-820x560-dark.png`: on a fresh profile, **Choose a speech model** offers **Download Parakeet v3** (25 European languages, 670 MB), **Download Parakeet Ultra** (25 European languages, 671 MB) and **Download Parakeet v2** (English only, 661 MB), all from GitHub. Nothing scrolls at 820x560, and entering the step created no `speech-models` folder.
+- `windows-settings-arrowed-to-ultra-1280x800-dark.png`, `-820x560-dark.png` and `-1280x800-light.png`: on a fresh profile with nothing chosen, two presses of the down arrow in the closed **Speech model** list move it to **Parakeet Ultra, 671 MB**. The line above it then reads "Press Enter to download Parakeet Ultra, 671 MB, and switch dictation to it." After a second and a half the status was still missing, the setting was still empty and no `speech-models` folder existed, at both sizes and in both modes. The list groups its rows as **Already on this computer** and **Download**.
+- `windows-settings-downloading-ultra-1280x800-dark.png`: Enter then chose it. The setting became `parakeet-ultra-int8` and the download started from `speech-model-parakeet-ultra-int8-1` ("Downloading · 18 of 671 MB"). Sotto was quit while it ran.
+- `windows-settings-resumed-download-1280x800-dark.png`: the next start picked the download up at 45.9 MB, from the partial file, and reached **Ready** about three minutes later. The four files on disk match their pins.
+  - These two were taken before the download rows were shortened. They show the label this change replaced: "Parakeet Ultra (download, 671 MB)", cut off in the closed list.
+- **Transcripts, with Parakeet Ultra ready:**
+  - Common Voice English: "Joe Keaton disapproved of films and Buster also had reservations about the medium."
+  - German, from Multilingual LibriSpeech: "Denken Sie, soeben walten meine Gedanken bei Ihnen in Adelaide, und ich wünschte mir, Sie, Herr Sauben, zu können. Nun. Der Saube ist gelungen, lachte Münchhausen. Da bin ich, und was mich herführt?"
+  - French, from Multilingual LibriSpeech: "Pendant le second siècle, je fis serment d'ouvrir tous les trésors de la terre, à quiconque me mettrait en liberté, mais je ne fus pas plus heureux. Dans le troisième je promis de faire puissant monarque mon libérateur, d'être toujours près de lui en esprit,"
+- `windows-settings-ultra-after-restart-1280x800-dark.png`, `windows-settings-ultra-ready-820x560-dark.png`: on a third start, Parakeet Ultra was ready at once, with nothing downloaded. Settings shows "Speech recognition by Moondream, on this computer. 25 European languages.", **Ready.** and "671 MB on this computer.". The list shows Parakeet Ultra under Already on this computer, and Parakeet v3, 670 MB and Parakeet v2, 661 MB under Download.
+
+How the models were made and checked before publishing is in [2026-10-20-sotto-speech-models.md](2026-10-20-sotto-speech-models.md).
+
 ## Not checked here
 
-Windows and Linux in the running app; there the picker offers only Parakeet v3, which the unit tests cover. The committed design-capture baselines for the speech model step and Settings → Transcription change on purpose and were not regenerated on this Mac, whose renders already differ from them on `main`.
+- Linux in the running app. The unit tests cover its listing and its keyboard rule; on forge it needs a run like the Windows one.
+- Parakeet v2 downloaded in the app. Its published files were checked against their pins, and it transcribed through `sherpa-onnx-node` on Windows, but it was not downloaded through the picker.
+- On a Mac, Sotto's three downloads beside FluidAudio's models, and the rule that leaves out a download of a model FluidAudio already keeps. Unit tests cover both.
+- The design-capture baselines for the speech model step and Settings → Transcription change on purpose, and were not regenerated: the Mac's renders already differed from them on `main`, and this change moved the rows again.
