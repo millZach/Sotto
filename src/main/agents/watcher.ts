@@ -21,7 +21,7 @@ import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherHostInput, watcherSlimRead } from './watcherSlimReads'
-import { watcherRequestNote } from './watcherRequestNote'
+import { watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
 import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { followupDigest } from './followups'
@@ -135,6 +135,12 @@ const LATE: unique symbol = Symbol('late')
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
+/** A message the user queued, now steered in, leaves whichever request it joined when it was queued, other than `keep`. */
+function withdrawQueuedDraft(record: WatcherRecord, draftId: string, messageId: string, keep?: string): void {
+  for (const request of record.requests) if (request.id !== keep && request.userFollowups?.some(item => item.draftId === draftId && item.messageId !== messageId)) {
+    request.userFollowups = request.userFollowups.filter(item => item.draftId !== draftId)
+  }
+}
 /**
  * The user's newest request to this Watcher thread, by when it began rather than by its place in the record: a request a
  * queued message started after its own had ended takes that request's place among takeovers (#1184), so it can sit
@@ -172,6 +178,12 @@ export class WatcherService implements WatcherControlHooks {
   /** Whether each paired desktop may answer on this host, as its latest admission's socket says (ADR-0004). */
   private readonly remoteAnswers = new Map<string, () => boolean>()
   private readonly pendingPromptTurns = new Map<string, { watcher: WatcherThreadTarget; messageId: string }>()
+  /**
+   * What this run last sent Watcher's thread, Sotto's wake-up or the user's message: whose turn runs, before every provider
+   * has echoed it, and the request a steer into that turn opened, if one did (#1188). `headAtSend` is the thread's newest
+   * user message when it was sent, so a newer one, from anywhere, is seen to have taken its place.
+   */
+  private lastSend: { readonly threadId: string; readonly wakeUp: boolean; readonly messageId: string; readonly headAtSend: string | null; steeredRequestId?: string } | undefined
   /** Operations this run saw answered. With history off, a reply from before a restart is not Sotto's to show. */
   private readonly answeredThisRun = new Set<string>()
   /**
@@ -1032,7 +1044,8 @@ export class WatcherService implements WatcherControlHooks {
       const latest = newestUserRequest(this.record(), threadId)
       if (!latest) refuse('REQUEST_NOT_ACTIVE', 'Send an instruction to Watcher before queuing a continuation.')
       if ((latest.userFollowups?.length ?? 0) >= 1_000) refuse('REQUEST_NOT_ACTIVE', 'This request has too many queued continuations. Send a new instruction instead.')
-      this.options.control.mutateWatcher(record => {
+      // A message queued while Watcher reads news joins no request: it goes as its own turn, under a request of its own (#1188).
+      if (!this.options.control.watcherWakeUpTurn(threadId)) this.options.control.mutateWatcher(record => {
         const request = newestUserRequest(record, threadId)
         if (request && (request.userFollowups?.length ?? 0) < 1_000) {
           request.userFollowups ??= []
@@ -1132,6 +1145,41 @@ export class WatcherService implements WatcherControlHooks {
       })
       return command
     }
+    // The user may steer Watcher whatever it is doing, and every steer reaches it under an active request of the user's
+    // (#1188). One into a turn that answers such a request is part of that request, so Watcher may act on it as on the
+    // turn's own message.
+    if (command.type === 'steer' && _draftId && command.threadId === this.record().current?.target.threadId) {
+      // A try of the same message again keeps what its first try recorded.
+      const opened = this.record().requests.find(item => item.rootUserMessageId === command.messageId)
+      if (opened) return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(opened.id, this.hostId())) }
+      const answered = this.turnRequest(command.threadId)
+      if (answered) {
+        // A request that has recorded a thousand of the user's messages takes no more: the steer is refused rather than
+        // reach Watcher under a request that does not hold it.
+        if (!answered.userFollowups?.some(item => item.draftId === _draftId) && (answered.userFollowups?.length ?? 0) >= 1_000) {
+          refuse('REQUEST_NOT_ACTIVE', 'This request has too many messages. Send a new instruction instead.')
+        }
+        this.options.control.mutateWatcher(record => {
+          // A queued message steered in may have joined another request when it was queued; it is this turn's now.
+          withdrawQueuedDraft(record, _draftId, command.messageId, answered.id)
+          const request = record.requests.find(item => item.id === answered.id)!
+          request.userFollowups ??= []
+          const followup = request.userFollowups.find(item => item.draftId === _draftId)
+          if (followup) followup.messageId = command.messageId
+          else request.userFollowups.push({ draftId: _draftId, messageId: command.messageId })
+        })
+        return command
+      }
+      // A turn that answers none, as one Sotto's news started, gets the steer as the user's fresh word: it opens a request
+      // of its own, rooted in its own message, as a Send to an idle Watcher does. A steer has no context channel, so its
+      // note goes as one bracketed line after the user's words, as a Grok Build send's does, and every copy of the message
+      // is shown without it (watcherRequestNote.ts). Later steers into the same turn join that request.
+      const created: WatcherRequest = { id: randomUUID(), watcher: this.target(command.threadId), rootUserMessageId: command.messageId,
+        state: 'active', createdAt: now(), closedAt: null, participants: [], ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
+      this.options.control.mutateWatcher(record => { withdrawQueuedDraft(record, _draftId, command.messageId); record.requests.push(created) })
+      if (this.lastSend?.threadId === command.threadId) this.lastSend.steeredRequestId = created.id
+      return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(created.id, this.hostId())) }
+    }
     if (command.type !== 'send' || command.wakeUp || command.threadId !== this.record().current?.target.threadId) return command
     const record = this.record()
     let request = record.requests.find(item => item.rootUserMessageId === command.messageId
@@ -1199,9 +1247,11 @@ export class WatcherService implements WatcherControlHooks {
   }
   dispatched(command: AgentHostCommand): void {
     this.activatePromptTurn(command.commandId)
+    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) this.lastSend = { threadId: command.threadId, wakeUp: command.wakeUp === true, messageId: command.messageId, headAtSend: this.headOf(command.threadId) }
     // The provider has the handover, or may have: it is never offered again.
     if (this.handoverOffer?.sendingCommandId === command.commandId) { this.handoverOffer = null; this.publish() }
   }
+  lastSendWasWakeUp(threadId: string): boolean | undefined { return this.currentSend(threadId)?.wakeUp }
   dispatchAborted(command: AgentHostCommand): void {
     this.pendingPromptTurns.delete(command.commandId)
     if (this.handoverOffer?.sendingCommandId === command.commandId) delete this.handoverOffer.sendingCommandId
@@ -1476,12 +1526,42 @@ export class WatcherService implements WatcherControlHooks {
     const head = master ? nativeHead(master) : null
     return !request.standingWatchId && head !== null && (request.rootUserMessageId === head || request.userFollowups?.some(item => item.messageId === head) === true)
   }
-  private checkUserAskedWatch(): void {
-    const record = this.record(), current = record.current!
-    const head = nativeHead(this.thread(current.target))
-    if (!head || !record.requests.some(request => request.state === 'active' && !request.standingWatchId && !request.remoteOrigin
+  /** The user's active request whose root or recorded continuation is the current Watcher's newest user message, if any. */
+  private requestAnsweredByHead(): WatcherRequest | undefined {
+    const record = this.record(), current = record.current
+    const head = current && nativeHead(this.thread(current.target))
+    return head ? record.requests.findLast(request => request.state === 'active' && !request.standingWatchId && !request.remoteOrigin
       && key(request.watcher) === key(current.target)
-      && (request.rootUserMessageId === head || request.userFollowups?.some(followup => followup.messageId === head)))) {
+      && (request.rootUserMessageId === head || request.userFollowups?.some(followup => followup.messageId === head))) : undefined
+  }
+  /**
+   * The user's active request the running Watcher turn answers: the one whose message this run last sent Watcher, or the
+   * one a steer into a news turn opened, while that message is the thread's newest or the provider has yet to show it.
+   * Otherwise, the one the newest message started or continued, unless that turn is Sotto's own.
+   */
+  private turnRequest(threadId: string): WatcherRequest | undefined {
+    const record = this.record(), head = this.headOf(threadId)
+    const sent = this.currentSend(threadId, head)
+    const active = (match: (request: WatcherRequest) => boolean): WatcherRequest | undefined => record.requests.findLast(request =>
+      request.state === 'active' && !request.standingWatchId && !request.remoteOrigin && match(request))
+    const steered = sent?.steeredRequestId ? active(request => request.id === sent.steeredRequestId) : undefined
+    if (steered) return steered
+    if (sent) return sent.wakeUp ? undefined : active(request => request.rootUserMessageId === sent.messageId || request.userFollowups?.some(item => item.messageId === sent.messageId) === true)
+    // A message of Sotto's starts and continues no request, so the newest message answers for news as well.
+    return this.requestAnsweredByHead()
+  }
+  /** The last send this run made to Watcher's thread, while it is still the newest message or the provider has yet to show it. */
+  private currentSend(threadId: string, head = this.headOf(threadId)): typeof this.lastSend {
+    const sent = this.lastSend
+    return sent?.threadId === threadId && (head === sent.messageId || head === sent.headAtSend) ? sent : undefined
+  }
+  private headOf(threadId: string): string | null {
+    const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === threadId)
+    return thread ? nativeHead(thread) : null
+  }
+  private checkUserAskedWatch(): void {
+    const current = this.record().current
+    if (!(current && this.turnRequest(current.target.threadId)) && !this.requestAnsweredByHead()) {
       refuse('REQUEST_NOT_ACTIVE', 'Only the user gives Watcher a thread to watch, with Watch or by asking in a message to Watcher. Nothing was watched.')
     }
   }
