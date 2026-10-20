@@ -43,10 +43,14 @@ function summariesByKey(evidence: readonly WatcherEvidence[]): Map<string, Watch
     return [key, summary]
   }))
 }
+/**
+ * A read's pull request summaries, each with its address as well as its number: a read sees only the evidence's newest
+ * facts, so another of the thread's pull requests with the same number may not be among them to tell it apart from.
+ */
 export function watcherPullRequestSummaries(evidence: readonly WatcherEvidence[]): WatcherPullRequestSummary[] {
   const urls = new Map<string, string>()
   for (const item of evidence) if (item.source === 'github' && item.url && !urls.has(prKey(item.url))) urls.set(prKey(item.url), item.url)
-  return addressShared([...summariesByKey(evidence)].map(([key, summary]) => ({ url: urls.get(key) ?? key, summary })))
+  return [...summariesByKey(evidence)].map(([key, summary]) => summary.url === undefined ? { ...summary, url: urls.get(key) ?? key } : summary)
 }
 /**
  * Pull requests of one thread that share a number, as `api#42` and `ui#42` can, keep their addresses as well, so Watcher

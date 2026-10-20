@@ -47,8 +47,8 @@ it('never sends a paired host the keys only the desktop reads', () => {
 it('sums up each pull request from its facts, leaving out what was never read', () => {
   const facts = [...prFacts('a', 7, 'failed'), { ...prFacts('a', 8)[0]!, freshness: 'stale' as const }]
   expect(watcherPullRequestSummaries(facts)).toEqual([
-    { number: 7, state: 'open', checks: 'failed' },
-    { number: 8, stale: true }])
+    { number: 7, url: prUrl(7), state: 'open', checks: 'failed' },
+    { number: 8, url: prUrl(8), stale: true }])
 })
 
 it('gives a slim roster by default, a full one when asked, and only the watched threads when asked', () => {
@@ -108,8 +108,9 @@ it('measures what the slim reads save on a roster the size of the October 19 ses
 it('keeps the address of pull requests that share a number, so Watcher can tell them apart', () => {
   const api = 'https://github.com/synthetic/api/pull/42', ui = 'https://github.com/synthetic/ui/pull/42'
   const facts = (url: string, checks: 'passed' | 'failed') => prFacts('a', 42, checks).map(fact => ({ ...fact, url }))
-  expect(watcherPullRequestSummaries([...facts(api, 'failed'), ...facts(ui, 'passed'), ...prFacts('a', 7)])).toEqual([
-    { number: 42, url: api, state: 'open', checks: 'failed' }, { number: 42, url: ui, state: 'open', checks: 'passed' }, { number: 7, state: 'open', checks: 'passed' }])
+  // A read keeps every address, since the other #42 may be past the facts it sees.
+  expect(watcherPullRequestSummaries([...facts(api, 'failed'), ...prFacts('a', 7)])).toEqual([
+    { number: 42, url: api, state: 'open', checks: 'failed' }, { number: 7, url: prUrl(7), state: 'open', checks: 'passed' }])
   const full = roster(1, 0), row = full.rows[0] as Extract<FullRows[number], { evidence: unknown }>
   row.pullRequests = [{ number: 42, url: api, title: 'API', state: 'open', draft: false }, { number: 42, url: ui, title: 'UI', state: 'open', draft: false }]
   row.evidence = [...facts(api, 'failed'), ...facts(ui, 'passed')]
