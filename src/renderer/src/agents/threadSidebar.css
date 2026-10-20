@@ -16,10 +16,12 @@
 .thread-nav--mac:not([data-mode]) { padding-top: 0; }
 .thread-nav--mac:not([data-mode]) > .thread-nav__top { margin-left: calc(-1 * var(--thread-nav-inset, 10px)); }
 /* Near the sidebar's 260px minimum the lights' room leaves the row 13px short. The tile gives 4px of its gap to the
-   lights and the mode switch tightens, so the actions keep their width and the stars their corners. */
+   lights, the mode switch tightens and the row's end padding gives a pixel, so the actions keep their width and the
+   stars their corners. */
 @container thread-sidebar (width < 276px) {
   .thread-nav--mac :is(.thread-nav__top, .thread-nav__sky) { --mac-lights-room: 84px; }
-  .thread-nav--mac .thread-nav__top .thread-nav__seg button { padding-inline: 6px; }
+  .thread-nav--mac .thread-nav__top { padding-right: 5px; }
+  .thread-nav--mac .thread-nav__top .thread-nav__seg button { padding-inline: 4px; }
 }
 /* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
    down). On macOS the traffic lights take the left end of the row, and the narrowest expanded width does not hold
