@@ -1263,7 +1263,9 @@ export class WatcherService implements WatcherControlHooks {
   }
   private activatePromptTurn(commandId: string): void {
     const candidate = this.pendingPromptTurns.get(commandId)
-    if (candidate && this.record().current && key(candidate.watcher) === key(this.record().current!.target)) this.options.control.mutateWatcher(record => {
+    // Read without copying: this runs once per Watcher send, and the change below makes the one copy it needs.
+    const current = this.view().current
+    if (candidate && current && key(candidate.watcher) === key(current.target)) this.options.control.mutateWatcher(record => {
       this.beginPromptTurn(record, candidate.watcher, candidate.messageId)
     })
     this.pendingPromptTurns.delete(commandId)
