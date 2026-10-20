@@ -18,11 +18,23 @@ export class WatcherStateStore {
   private kept = nothingKept()
   private readonly store: AtomicJsonStore<WatcherKeptState>
   private tail: Promise<unknown> = Promise.resolve()
-  readonly loaded: Promise<void>
+  /** Whether the saved state could not be read at start: it is read again before anything is read or kept. */
+  private unread = false
   constructor(private readonly directory: string, private readonly historyEnabled: () => boolean) {
     this.store = new AtomicJsonStore(join(directory, FILE), input => watcherKeptStateSchema.parse(input), nothingKept)
-    this.loaded = this.inTurn(async () => { if (this.historyEnabled()) this.kept = await this.store.read(); else await this.removeSaved() }).catch(() => undefined)
+    void this.inTurn(async () => { if (this.historyEnabled()) this.kept = await this.store.read(); else await this.removeSaved() }).catch(() => { this.unread = true })
   }
+  /**
+   * The saved state once it has been read. A read that failed at start, as on a passing permission or disk error, is tried
+   * again here, and fails again rather than give empty lists, which a later keep_state would save over what was kept.
+   */
+  private async ensureRead(): Promise<void> {
+    if (!this.unread) return
+    if (this.historyEnabled()) this.kept = await this.store.read()
+    this.unread = false
+  }
+  /** What is kept, read from disk first if the start could not. */
+  current(): Promise<WatcherKeptState> { return this.inTurn(async () => { await this.ensureRead(); return this.kept }) }
   private inTurn<T>(work: () => Promise<T>): Promise<T> {
     const next = this.tail.catch(() => undefined).then(work)
     this.tail = next
@@ -43,6 +55,7 @@ export class WatcherStateStore {
   /** Replaces each list given and keeps the rest. */
   keep(input: WatcherToolInput<'keep_state'>, now: string): Promise<WatcherKeptState> {
     return this.inTurn(async () => {
+      await this.ensureRead()
       const next = { decisions: input.decisions ?? this.kept.decisions, rules: input.rules ?? this.kept.rules, issues: input.issues ?? this.kept.issues, updatedAt: now }
       if (this.historyEnabled()) await this.store.write(next)
       else await this.removeSaved()

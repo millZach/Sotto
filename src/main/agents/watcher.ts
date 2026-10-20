@@ -1433,13 +1433,19 @@ export class WatcherService implements WatcherControlHooks {
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
       if (name === 'list_machines') return await this.listMachines()
-      if (name === 'keep_state') return { status: 'ok', kept: await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now()) }
+      if (name === 'keep_state') {
+        const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
+          .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now, so nothing was kept and nothing kept was lost. Try again.', true))
+        return { status: 'ok', kept }
+      }
       if (name === 'read_state') {
-        await this.kept.loaded
+        const kept = await this.kept.current()
+          .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
+        // Read: the reminder has done its work.
         this.stateOwed = false
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
         const input = parsed.data as WatcherToolInput<'read_state'>, page = this.page('state', this.watching(this.state().watchedThreads), input.cursor, 100)
-        return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept: this.kept.read(),
+        return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, expect, it } from 'vitest'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WatcherStateStore } from '../../../src/main/agents/watcherState'
@@ -42,7 +42,18 @@ it('starts with history off by removing what an earlier run saved', async () => 
   const directory = await folder()
   await writeFile(join(directory, 'watcher-state.json'), JSON.stringify({ decisions: [], rules: ['synthetic_private_rule_3b9c'], issues: [], updatedAt: null }))
   const store = new WatcherStateStore(directory, () => false)
-  await store.loaded
+  expect((await store.current()).rules).toEqual([])
   expect(await readdir(directory)).toEqual([])
-  expect(store.read().rules).toEqual([])
+})
+
+it('refuses rather than keep over saved lists it could not read at start, and reads them once it can', async () => {
+  const directory = await folder(), file = join(directory, 'watcher-state.json')
+  // A path that cannot be read as the state file, standing in for a passing permission or disk error.
+  await mkdir(file)
+  const store = new WatcherStateStore(directory, () => true)
+  await expect(store.keep({ issues: ['#1189'] }, '2026-10-19T10:00:00.000Z')).rejects.toThrow()
+  await expect(store.current()).rejects.toThrow()
+  await rm(file, { recursive: true })
+  await writeFile(file, JSON.stringify({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: [], updatedAt: null }))
+  expect(await store.keep({ issues: ['#1189'] }, '2026-10-19T10:00:00.000Z')).toMatchObject({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: ['#1189'] })
 })
