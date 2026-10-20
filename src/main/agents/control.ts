@@ -2978,8 +2978,9 @@ export class AgentControl {
     const reviewed = thread && this.followupStore.peek().items.find(item => item.id === followup.id)?.resumeAfterTurnId === (thread.lastTurn?.id ?? UNKNOWN_TURN)
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
       && thread.lastTurn?.status !== 'running'
-      // A machine Stop holds saved user prompts even when native completion arrives before its interrupt.
-      && !this.watcherHooks?.preserveUserQueue(threadId)
+      // A machine Stop holds saved user prompts and Sotto's news even when native completion arrives before its interrupt.
+      // Watcher's own prompt answers to its request's guard instead: a later request's goes once the turn is free (#1203).
+      && (followup.watcherOperationId !== undefined || !this.watcherHooks?.preserveUserQueue(threadId))
       && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !thread.requests.length
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
