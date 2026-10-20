@@ -30,7 +30,11 @@ const COMMAND_UNCONFIRMED = 'The action could not be confirmed. Your draft is re
 /** Main's own sentence for a command that failed, such as which host is disconnected, or the unconfirmed sentence. */
 export function commandFailure(error: unknown): string {
   const said = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u, '').trim() : ''
-  return /^[^\s[{].*\s.*[.!?]$/su.test(said) ? said : COMMAND_UNCONFIRMED
+  return /^\S.*\s.*[.!?]$/su.test(said) && !isJson(said) ? said : COMMAND_UNCONFIRMED
+}
+/** A schema failure's message is its issues as JSON; a host's name may still open a sentence with a bracket. */
+function isJson(text: string): boolean {
+  try { JSON.parse(text); return true } catch { return false }
 }
 
 export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnection {

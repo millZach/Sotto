@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
@@ -92,8 +92,17 @@ function ThreadRequests({ row, state, command, blocked, onAnswer, kind }: {
       draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
       onWriteAnswer={onAnswer}
       onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}
-      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => result !== null && result.error === null)} />
+      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => checkedOnConnectedHost(result, thread.id))} />
   })}</div>
+}
+
+/**
+ * Whether Check again read the thread afresh. Main lets a dropped connection pass an observation quietly, so the reply
+ * counts only while the thread's host is still connected.
+ */
+export function checkedOnConnectedHost(result: AgentState | null, threadId: string): boolean {
+  const checked = result?.host.threads.find(item => item.id === threadId)
+  return result !== null && result.error === null && checked !== undefined && hostForThread(result.host, checked).connected
 }
 
 export interface ThreadPaneProps {
