@@ -1584,6 +1584,22 @@ it('keeps the decisions, rules and issues Watcher gives, list by list, and reads
   expect(await readFile(join(f.root, 'watcher-state.json'), 'utf8')).toContain('Full test suites run in CI')
 })
 
+it('says a watched thread waits on the card of a thread it delegated to, as list_threads does', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real(), parent = snapshot.threads.find(thread => thread.id === started.target.threadId)!
+    return { ...snapshot, threads: [...snapshot.threads, { ...structuredClone(parent), id: 'synthetic-delegated', title: 'Delegated', delegatedBy: parent.id, status: 'idle',
+      requests: [{ id: 'card', kind: 'permission', text: 'synthetic private command', options: [] }] }] }
+  })
+  const read = await f.call('read_state', {})
+  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: 'The user’s answer to a permission request in a thread it delegated to.' }))
+  expect(JSON.stringify(read)).not.toContain('synthetic private command')
+})
+
 it('saves none of Watcher’s kept words with Keep local history off', async () => {
   const f = await fixture(false)
   await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })
@@ -1646,4 +1662,9 @@ it('asks Watcher to read its state after any Compact context for its conversatio
   expect(f.service.stateNote()).toBeUndefined()
   f.service.userCommand({ type: 'compact-thread', threadId: f.id }, f.id, false)
   expect(f.service.stateNote()).toContain('call read_state')
+  // A refused read, as for an expired cursor, has not read the state back, so the reminder stays.
+  expect(await f.call('read_state', { cursor: `${randomUUID()}:100` })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED' })
+  expect(f.service.stateNote()).toContain('call read_state')
+  await f.call('read_state', {})
+  expect(f.service.stateNote()).toBeUndefined()
 })

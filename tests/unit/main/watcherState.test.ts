@@ -3,7 +3,7 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { WatcherStateStore } from '../../../src/main/agents/watcherState'
+import { WatcherStateStore, watcherWaitsOn } from '../../../src/main/agents/watcherState'
 
 const folders: string[] = []
 afterEach(async () => { for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true }) })
@@ -72,4 +72,12 @@ it('writes nothing over saved lists it could not read when a settings save runs 
   await store.privacyChanged()
   expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'] })
   expect(store.readable()).toBe(true)
+})
+
+it('says a thread waits on its own card first, then on the card of a thread it delegated to', () => {
+  const thread = { status: 'idle' as const, connected: true, settled: false, backgroundWorkCount: 0, paused: false, waitsOn: [] }
+  expect(watcherWaitsOn({ ...thread, delegatedWaitsOn: [{ kind: 'question' }] })).toBe('The user’s answer to a question in a thread it delegated to.')
+  expect(watcherWaitsOn({ ...thread, delegatedWaitsOn: [{ kind: 'question' }, { kind: 'permission' }] })).toBe('The user’s answer to a permission request in a thread it delegated to.')
+  expect(watcherWaitsOn({ ...thread, waitsOn: [{ kind: 'question' }], delegatedWaitsOn: [{ kind: 'permission' }] })).toBe('The user’s answer to its question.')
+  expect(watcherWaitsOn(thread)).toBe('Nothing. It is at rest.')
 })

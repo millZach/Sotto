@@ -548,7 +548,9 @@ export class WatcherService implements WatcherControlHooks {
       // The work its last turn left running, sub-agents working or left unknown included, as its news counts it.
       const owned = thread.target.hostId === hostId ? local.threads.find(item => item.id === thread.target.threadId) : undefined
       const work = owned ? watcherBackgroundWorkCount(owned) : thread.backgroundWorkCount
-      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work }) }
+      // The cards of the threads it delegated to, as list_threads gives them; a paired host's are left out, as above.
+      const delegatedWaitsOn = owned ? local.threads.filter(child => child.delegatedBy === owned.id).flatMap(child => child.requests) : []
+      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn }) }
     })
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
@@ -1490,10 +1492,10 @@ export class WatcherService implements WatcherControlHooks {
       if (name === 'read_state') {
         const kept = await this.kept.current()
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
-        // Read: the reminder has done its work.
-        this.stateOwed = false
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
         const input = parsed.data as WatcherToolInput<'read_state'>, page = this.page('state', this.watching(this.state().watchedThreads), input.cursor, 100)
+        // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder.
+        this.stateOwed = false
         return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
