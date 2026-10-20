@@ -243,7 +243,7 @@ describe('SpeechModelStore', () => {
 
   it('fetches each of Sotto\'s models from its own release tag, into its own folder', async () => {
     for (const model of [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2]) {
-      const fetchFn = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(null, { status: 404 }))
+      const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 404 }))
       const statuses: SpeechModelStatus[] = []
       const store = new SpeechModelStore({ directory, model, fetchFn, loadEngine: vi.fn(async () => engine), onStatus: (status) => statuses.push(status) })
       await store.ensure()
