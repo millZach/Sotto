@@ -310,10 +310,27 @@ function savedWakeUpAsks(input: unknown): Map<string, Map<string, readonly Watch
  * workspace's record, not the adapter's business.
  */
 function withoutWakeUp<C extends Extract<AgentHostCommand, { type: 'send' }>>(command: C): C {
-  if (command.wakeUp === undefined && command.watcherAsks === undefined) return command
-  const { wakeUp, watcherAsks, ...rest } = command
-  void wakeUp; void watcherAsks
+  if (command.wakeUp === undefined && command.watcherAsks === undefined && command.hiddenWakeUp === undefined) return command
+  const { wakeUp, watcherAsks, hiddenWakeUp, ...rest } = command
+  void wakeUp; void watcherAsks; void hiddenWakeUp
   return rest as C
+}
+/**
+ * Each thread's kept hidden wake-up IDs as `workspace.json` holds them, `hiddenWakeUps` on the thread's record: the
+ * wake-ups that carried only delegation news (ADR-0081, October 19, 2026). IDs only, kept whatever Keep local history
+ * says, as `wakeUps` are, so a restart or a history read again keeps them hidden. Read before the thread schema drops it.
+ */
+function savedHiddenWakeUps(input: unknown): Map<string, string[]> {
+  const kept = new Map<string, string[]>()
+  const threads = (input as { snapshot?: { threads?: unknown } } | null)?.snapshot?.threads
+  if (!Array.isArray(threads)) return kept
+  for (const thread of threads as unknown[]) {
+    const { id, hiddenWakeUps } = (thread ?? {}) as { id?: unknown; hiddenWakeUps?: unknown }
+    if (typeof id !== 'string' || !Array.isArray(hiddenWakeUps)) continue
+    const ids = [...new Set((hiddenWakeUps as unknown[]).filter((item): item is string => typeof item === 'string' && item.length > 0 && item.length <= 512))].slice(-WAKE_UP_IDS_KEPT)
+    if (ids.length) kept.set(id, ids)
+  }
+  return kept
 }
 
 /** How long a burst of provider snapshots is gathered into one publish. The coordinator's own
@@ -661,6 +678,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * thread's record in `workspace.json` as `wakeUps`; the thread publishes only the newest fifty, `wakeUpMessageIds`.
    */
   private wakeUpRecords = new Map<string, string[]>()
+  /**
+   * Which of each thread's wake-ups carried only delegation news, up to WAKE_UP_IDS_KEPT, by thread (ADR-0081, October 19,
+   * 2026). Saved on the thread's record as `hiddenWakeUps`; the thread publishes the newest fifty, `hiddenWakeUpMessageIds`,
+   * and each such message carries `hiddenWakeUp`.
+   */
+  private hiddenWakeUpRecords = new Map<string, string[]>()
   /**
    * The requests each of a thread's newest Watcher wake-ups said waited on the user, by thread and then by the wake-up's
    * message ID, up to WAKE_UP_ASKS_KEPT a thread (ADR-0073). Saved on the thread's record in `workspace.json` as
@@ -1649,9 +1672,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private withWakeUps(threadId: string, messages: AgentMessage[]): AgentMessage[] {
     const recorded = this.wakeUpRecords.get(threadId) ?? []
+    const recordedHidden = this.hiddenWakeUpRecords.get(threadId) ?? []
     let stored: ReadonlySet<string> = new Set()
+    let storedHidden: ReadonlySet<string> = new Set()
     let storedAsks = NO_ASKS
-    if (!this.storeUnavailable) try { stored = this.threadStore.wakeUps(threadId); storedAsks = this.threadStore.wakeUpAsks(threadId) } catch { /* The record still answers. */ }
+    if (!this.storeUnavailable) try { stored = this.threadStore.wakeUps(threadId); storedAsks = this.threadStore.wakeUpAsks(threadId); storedHidden = this.threadStore.hiddenWakeUps(threadId) } catch { /* The record still answers. */ }
+    // A wake-up of delegation news alone stays hidden past the record's newest thousand: the thread store keeps every mark.
+    const hidden: ReadonlySet<string> = recordedHidden.length ? new Set([...storedHidden, ...recordedHidden]) : storedHidden
     if (!recorded.length && !stored.size) return messages
     const kept = new Set(recorded)
     // A Watcher wake-up also carries the requests its news said waited on the user, from the same records (ADR-0073).
@@ -1659,8 +1686,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return messages.map(message => {
       if (message.role !== 'user') return message
       const wakeUp = !message.wakeUp && (kept.has(message.id) || stored.has(message.id))
+      // A wake-up of delegation news alone is marked from the record too, so no window or phone shows it (ADR-0081).
+      const hiddenWakeUp = !message.hiddenWakeUp && hidden.has(message.id)
       const asks = message.watcherAsks === undefined ? keptAsks.get(message.id) ?? storedAsks.get(message.id) : undefined
-      return wakeUp || asks ? { ...message, ...(wakeUp ? { wakeUp: true as const } : {}), ...(asks ? { watcherAsks: [...asks] } : {}) } : message
+      return wakeUp || hiddenWakeUp || asks ? { ...message, ...(wakeUp ? { wakeUp: true as const } : {}), ...(hiddenWakeUp ? { wakeUp: true as const, hiddenWakeUp: true as const } : {}),
+        ...(asks ? { watcherAsks: [...asks] } : {}) } : message
     })
   }
   /**
@@ -1673,7 +1703,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.storeUnavailable || this.threadStore.ephemeral) return
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const ids = this.wakeUpRecords.get(thread.id)
-      if (ids?.length) try { this.threadStore.addWakeUps(thread.id, ids, this.wakeUpAskRecords.get(thread.id)) } catch { /* The record still marks its own. */ }
+      if (ids?.length) try { this.threadStore.addWakeUps(thread.id, ids, this.wakeUpAskRecords.get(thread.id), this.hiddenWakeUpRecords.get(thread.id)) } catch { /* The record still marks its own. */ }
     }
   }
   /**
@@ -1681,12 +1711,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * prompt, so the message is Sotto's from its first echo, after a restart and after its history is read again
    * (ADR-0061 decision 8). A store that refuses it costs only the mark on a wake-up older than the record's newest thousand.
    */
-  private async recordWakeUp(threadId: string, messageId: string, asks: readonly WatcherAsk[] = []): Promise<void> {
+  private async recordWakeUp(threadId: string, messageId: string, asks: readonly WatcherAsk[] = [], hidden = false): Promise<void> {
     const thread = this.thread(threadId)
+    const hiddenRecord = this.hiddenWakeUpRecords.get(threadId) ?? []
+    if (hidden && !hiddenRecord.includes(messageId)) {
+      const next = [...hiddenRecord, messageId].slice(-WAKE_UP_IDS_KEPT)
+      this.hiddenWakeUpRecords.set(threadId, next)
+      thread.hiddenWakeUpMessageIds = next.slice(-WAKE_UP_MESSAGE_IDS_MAX)
+      this.dirty = true
+    }
     // Only a Watcher wake-up whose news said threads waited on the user has asks, and only their identities are kept.
     const parsed = watcherAsksSchema.safeParse(asks)
     const kept = parsed.success && parsed.data.length ? parsed.data : undefined
-    if (!this.storeUnavailable) try { this.threadStore.addWakeUp(threadId, messageId, kept) } catch { /* The record below still names it. */ }
+    if (!this.storeUnavailable) try { this.threadStore.addWakeUp(threadId, messageId, kept, hidden) } catch { /* The record below still names it. */ }
     const recorded = this.wakeUpRecords.get(threadId) ?? []
     const askRecord = this.wakeUpAskRecords.get(threadId)
     if (recorded.includes(messageId) && (kept === undefined || askRecord?.has(messageId))) return
@@ -1734,7 +1771,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const preserveThread = watcherEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
-    const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
+    const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.hiddenWakeUpRecords = savedHiddenWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
       // Whichever track wrote the file, every model reads back with its provider's modes on it.
       expandProviderModes(parsed.snapshot.models)
       if (!this.watcherEnabled || this.held.size) {
@@ -1798,6 +1835,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (records?.length) thread.babysitting = babysittingSummary(records); else delete thread.babysitting
         const wakeUps = this.wakeUpRecords.get(thread.id)
         if (wakeUps?.length) thread.wakeUpMessageIds = wakeUps.slice(-WAKE_UP_MESSAGE_IDS_MAX); else delete thread.wakeUpMessageIds
+        const hidden = this.hiddenWakeUpRecords.get(thread.id)
+        if (hidden?.length) thread.hiddenWakeUpMessageIds = hidden.slice(-WAKE_UP_MESSAGE_IDS_MAX); else delete thread.hiddenWakeUpMessageIds
       }
       this.seedWakeUps()
       snapshot.connected = false
@@ -2875,6 +2914,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
         ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
         ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
+        ...(old?.hiddenWakeUpMessageIds ? { hiddenWakeUpMessageIds: old.hiddenWakeUpMessageIds } : {}),
         messages: [],
         ...(activities ? { activities } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
@@ -3757,7 +3797,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ? await this.checkoutMutations.acquire(dispatchFolder, 'send', this.checkoutThreadHolder(thread.id, 'send')) : undefined
     try {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
-      if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks)
+      if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
       const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
@@ -3909,8 +3949,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     else delete thread.babysitting
     const wakeUps = this.wakeUpRecords.get(thread.id)
     const asks = this.wakeUpAskRecords.get(thread.id)
+    const hidden = this.hiddenWakeUpRecords.get(thread.id)
     return wakeUps?.length ? Object.assign(thread, { wakeUps },
-      asks?.size ? { wakeUpAsks: [...asks].map(([messageId, kept]) => ({ messageId, asks: kept })) } : {}) : thread
+      asks?.size ? { wakeUpAsks: [...asks].map(([messageId, kept]) => ({ messageId, asks: kept })) } : {}, hidden?.length ? { hiddenWakeUps: hidden } : {}) : thread
   }
   private babysitView(thread: AgentThread): BabysitThread {
     const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)

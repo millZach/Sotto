@@ -114,6 +114,11 @@ const migrations = [{
   // conversation shows their cards under it after a messages-reset and a restart (ADR-0073). Null for every other wake-up.
   version: 8,
   sql: 'ALTER TABLE wake_ups ADD COLUMN watcher_asks TEXT;',
+}, {
+  // A wake-up that carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026): the mark
+  // alone, never its words, so it stays hidden however many come after and through a messages-reset. Null for every other.
+  version: 9,
+  sql: 'ALTER TABLE wake_ups ADD COLUMN hidden INTEGER;',
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
@@ -230,6 +235,7 @@ export class ThreadStore {
   private readonly wakeUpCache = new Map<string, ReadonlySet<string>>()
   /** Each thread's Watcher wake-up asks, by wake-up message ID, as last read or written. */
   private readonly wakeUpAskCache = new Map<string, ReadonlyMap<string, readonly WatcherAsk[]>>()
+  private readonly hiddenWakeUpCache = new Map<string, ReadonlySet<string>>()
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
   constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean) {}
@@ -304,6 +310,7 @@ export class ThreadStore {
     this.visualCache.clear()
     this.wakeUpCache.clear()
     this.wakeUpAskCache.clear()
+    this.hiddenWakeUpCache.clear()
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -812,6 +819,7 @@ export class ThreadStore {
     this.visualCache.delete(threadId)
     this.wakeUpCache.delete(threadId)
     this.wakeUpAskCache.delete(threadId)
+    this.hiddenWakeUpCache.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
@@ -902,11 +910,31 @@ export class ThreadStore {
     return asks
   }
 
+  /** The IDs of this thread's wake-ups that carried only delegation news, which no window or phone shows (ADR-0081). */
+  hiddenWakeUps(threadId: string): ReadonlySet<string> {
+    const held = this.hiddenWakeUpCache.get(threadId)
+    if (held) return held
+    const ids = new Set(this.statement('SELECT message_id FROM wake_ups WHERE thread_id = ? AND hidden = 1').all(threadId).map(row => String(row.message_id)))
+    this.hiddenWakeUpCache.set(threadId, ids)
+    return ids
+  }
+  /** Marks these of a thread's wake-ups as ones no one is shown, keeping each as a wake-up too. Throws when the store refuses them. */
+  private markHidden(threadId: string, messageIds: readonly string[]): void {
+    const before = this.hiddenWakeUps(threadId)
+    const added = [...new Set(messageIds)].filter(id => !before.has(id))
+    if (!added.length) return
+    for (const id of added) this.statement('INSERT INTO wake_ups (thread_id, message_id, hidden) VALUES (?, ?, 1) ON CONFLICT (thread_id, message_id) DO UPDATE SET hidden = 1').run(threadId, id)
+    this.hiddenWakeUpCache.set(threadId, new Set([...before, ...added]))
+    const wakeUps = this.wakeUps(threadId)
+    if (added.some(id => !wakeUps.has(id))) this.wakeUpCache.set(threadId, new Set([...wakeUps, ...added]))
+  }
+
   /**
    * Keeps a wake-up's message ID with its thread, and, for a Watcher wake-up, the requests its news said waited on the
-   * user. Throws when the store refuses it.
+   * user; `hidden` marks one that carried only delegation news. Throws when the store refuses it.
    */
-  addWakeUp(threadId: string, messageId: string, asks?: readonly WatcherAsk[]): void {
+  addWakeUp(threadId: string, messageId: string, asks?: readonly WatcherAsk[], hidden = false): void {
+    if (hidden) this.markHidden(threadId, [messageId])
     const before = this.wakeUps(threadId)
     const beforeAsks = asks?.length ? this.wakeUpAsks(threadId) : undefined
     if (before.has(messageId) && (beforeAsks === undefined || beforeAsks.has(messageId))) return
@@ -921,7 +949,8 @@ export class ThreadStore {
    * Keeps every one of these wake-up message IDs with its thread, with the asks of those that have them, in one
    * transaction. Throws when the store refuses them.
    */
-  addWakeUps(threadId: string, messageIds: readonly string[], asks?: ReadonlyMap<string, readonly WatcherAsk[]>): void {
+  addWakeUps(threadId: string, messageIds: readonly string[], asks?: ReadonlyMap<string, readonly WatcherAsk[]>, hidden: readonly string[] = []): void {
+    if (hidden.length) this.markHidden(threadId, hidden)
     const before = this.wakeUps(threadId)
     const beforeAsks = asks?.size ? this.wakeUpAsks(threadId) : new Map<string, readonly WatcherAsk[]>()
     const added = [...new Set(messageIds)].filter(id => !before.has(id) || asks?.has(id) && !beforeAsks.has(id))
