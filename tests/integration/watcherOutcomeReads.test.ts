@@ -193,3 +193,16 @@ it('keeps a stop and a settle without an outcome', async () => {
   expect(read.outcome).toBeUndefined()
   expect(read.reference).toBeUndefined()
 })
+
+it('says no work-settled news will follow a background brief once its thread begins another turn', async () => {
+  const f = await fixture(), started = await f.start()
+  f.native(started.target.threadId).backgroundWork = [{ id: randomUUID(), label: 'Synthetic agent', type: 'subagent' }]
+  await f.endTurn(started.target.threadId, 'Synthetic reply, agent still running')
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background', outcomeNote: expect.stringContaining('Sotto sends work-settled news when that work ends') })
+  // The work is still running, and a second brief begins another turn in the thread.
+  const next = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target, text: 'Synthetic second brief', delivery: 'now' })
+  if (next.status !== 'ok') throw new Error('send refused')
+  await vi.waitFor(() => expect(f.native(started.target.threadId).messages.some(message => message.text === 'Synthetic second brief')).toBe(true))
+  await vi.waitFor(async () => expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background',
+    outcomeNote: expect.stringContaining('no work-settled news for that turn will follow') }))
+})

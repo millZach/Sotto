@@ -1881,3 +1881,19 @@ it('says a busy finish waits for work-settled news only unless its thread begins
     requestId: randomUUID(), target: centerTarget, generation: 0, observedAt: centerTime, turnId: 'turn-1', backgroundWorkCount: 1 }] }
   expect(watcherNewsText(news)).toContain('Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.')
 })
+
+it('lets a held finish earn its retry again when a wake-up that went without it missed', async () => {
+  const f = fixture(), second = secondWorker(f)
+  gitFixture(f)
+  // A busy finish waits for its thread's Git read, and its thread begins another turn: it now needs Watcher.
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe()
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
+  // A question elsewhere goes first, without the finish still held for its Git read, and that wake-up misses.
+  second.requests.push(question('other')); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  const first = f.delivered.at(-1)!
+  expect(first.events.some(event => event.kind === 'turn-finished')).toBe(false)
+  second.requests = []
+  f.wakes.settled(first.events, 'failed'); await f.wakes.drained()
+  f.wakes.observe(); await f.advance(10_000)
+  expect(f.delivered.at(-1)!.events.find(event => event.kind === 'turn-finished')?.turnId).toBe('turn-1')
+})

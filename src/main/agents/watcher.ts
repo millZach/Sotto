@@ -80,6 +80,13 @@ const OUTCOME_NOTES: Record<WatcherOutcome, string> = {
   paused: 'The user’s own turn in this thread holds it. Read the thread before sending again.',
   unknown: 'Sotto cannot prove what happened to it, as after a restart mid-turn. Read the thread, and do not assume it answered.',
 }
+/** Whether a user message came after `messageId` in the thread, as a later turn begins with. */
+const laterUserMessage = (thread: AgentThread, messageId: string): boolean => {
+  const at = thread.messages.findIndex(message => message.id === messageId)
+  return at >= 0 && thread.messages.slice(at + 1).some(message => message.role === 'user')
+}
+/** A background outcome whose thread has begun another turn since: its work-settled news will not come (#1190). */
+const BACKGROUND_MOVED_ON = 'Its turn ended with background work or monitoring still running, and the thread has begun another turn since, so no work-settled news for that turn will follow. Read the thread to see where the work stands.'
 /** The text cut to at most this many UTF-8 bytes, never inside a character. */
 function cutUtf8(text: string, bytes: number): string {
   const encoded = new TextEncoder().encode(text)
@@ -1236,7 +1243,10 @@ export class WatcherService implements WatcherControlHooks {
       .filter(item => item.turnId !== undefined && turnIds.has(item.turnId)).slice(-20) : []
     const read: OutcomeRead = { outcome, reference: { target: operation.target, ...(operation.turnMessageId ? { turnMessageId: operation.turnMessageId } : {}),
       ...(operation.nativeTurnId ? { nativeTurnId: operation.nativeTurnId } : {}), ...(operation.replyMessageId ? { replyMessageId: operation.replyMessageId } : {}) },
-    outcomeNote: OUTCOME_NOTES[outcome], ...(evidence.length ? { evidence } : {}) }
+    // A message after the one that began this brief's turn, which has ended, began another turn in the thread.
+    outcomeNote: outcome === 'background' && thread && operation.turnMessageId !== undefined && laterUserMessage(thread, operation.turnMessageId)
+      ? BACKGROUND_MOVED_ON : OUTCOME_NOTES[outcome],
+    ...(evidence.length ? { evidence } : {}) }
     if (outcome !== 'answered' || !operation.replyMessageId) return read
     if (!this.options.historyEnabled() && !this.answeredThisRun.has(operation.id)) return { ...read, replyUnavailable: { reason: 'history-off',
       message: 'Keep local history is off, so Sotto did not keep this reply after it restarted. Read the thread for what the worker said.' } }

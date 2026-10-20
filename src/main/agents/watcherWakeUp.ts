@@ -381,6 +381,12 @@ export class WatcherWakeUp {
       this.toldAttention.delete(targetKey(event.target)); this.toldAttention.set(targetKey(event.target), carried)
       while (this.toldAttention.size > 2_000) this.toldAttention.delete(this.toldAttention.keys().next().value!)
     }
+    // A held busy finish that earned its retry by ripening or by its thread moving on was not in this wake-up; one that
+    // missed used that retry up, so the finish earns it again, within the same bound on tries (#1190).
+    if (outcome !== 'told' && this.misses + 1 < WAKE_UP_TRIES) {
+      const carried = new Set(events.map(event => event.id))
+      for (const event of this.pending) if (busyFinish(event) && !carried.has(event.id)) this.ripened.delete(event.id)
+    }
     // An unconsumed retry already says news that needs Watcher came since that one was made, which is news it did not carry.
     if (outcome === 'told') this.misses = 0
     else if (outcome === 'withdrawn') this.retries++
