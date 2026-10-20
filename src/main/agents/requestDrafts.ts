@@ -15,12 +15,22 @@ const retirementSchema = z.object({ owner: requestDraftOwnerSchema, requestId: r
 type Retirement = z.infer<typeof retirementSchema>
 const retirementKey = (item: Pick<Retirement, 'owner' | 'requestId' | 'questionsDigest'>): string =>
   JSON.stringify([requestDraftOwnerKey(item.owner), item.requestId, item.questionsDigest])
-const savedSchema = z.object({ version: z.literal(2), drafts: z.array(requestDraftSchema),
+const { retirements: ledgerField, ...unledgeredFields } = { version: z.literal(2), drafts: z.array(requestDraftSchema),
   retirements: z.array(retirementSchema).max(1536), watcherOwners: z.array(requestDraftOwnerSchema).optional(),
-  unclassifiedOwners: z.array(requestDraftOwnerSchema).optional() }).strict()
-  .refine(saved => new Set(saved.drafts.map(draft => requestDraftKey(draft.target))).size === saved.drafts.length, 'Draft identities must be unique.')
+  unclassifiedOwners: z.array(requestDraftOwnerSchema).optional() }
+const uniqueDrafts = (saved: { drafts: readonly RequestDraft[] }): boolean => new Set(saved.drafts.map(draft => requestDraftKey(draft.target))).size === saved.drafts.length
+const savedSchema = z.object({ ...unledgeredFields, retirements: ledgerField }).strict()
+  .refine(uniqueDrafts, 'Draft identities must be unique.')
   .refine(saved => new Set(saved.retirements.map(retirementKey)).size === saved.retirements.length, 'Retirement identities must be unique.')
+/** Everything but the ledger, for a commit that keeps the ledger it was already checked with. */
+const unledgeredSchema = z.object(unledgeredFields).strict().refine(uniqueDrafts, 'Draft identities must be unique.')
 type Saved = z.infer<typeof savedSchema>
+/** The ledger looked up by identity: each retirement by its key, and each owner it names by owner ID with its first place. */
+interface LedgerIndex {
+  readonly retirements: readonly Retirement[]
+  readonly byKey: ReadonlyMap<string, Retirement>
+  readonly owners: ReadonlyMap<string, readonly { readonly key: string; readonly owner: RequestDraftOwner; readonly first: number }[]>
+}
 const loadedSchema = z.union([savedSchema, z.object({ version: z.literal(1), drafts: savedSchema.shape.drafts,
   // The unshipped v1 extension is read strictly too, so its accepted records survive this migration.
   retirements: savedSchema.shape.retirements.max(512).default([]), watcherOwners: savedSchema.shape.watcherOwners, unclassifiedOwners: savedSchema.shape.unclassifiedOwners }).strict()])
@@ -38,8 +48,6 @@ export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: 
 export interface RequestDraftOwnerState {
   /** Main classifies the saved owner; a renderer cannot supply this evidence. */
   readonly watcher?: boolean
-  /** The owner's thread is on its host's list now, rather than known from answer receipts alone. */
-  readonly listed?: boolean
   readonly connected: boolean
   readonly ready: boolean
   readonly requests: readonly AgentRequest[]
@@ -57,19 +65,19 @@ export class RequestDraftService {
   private storageError: string | null = null
   private writing: Promise<unknown> = Promise.resolve()
   private readonly listeners = new Set<(owner: RequestDraftOwner) => void>()
-  /**
-   * Retirement owners a saved commit found listed as ordinary threads. A thread's kind and provider are fixed when it
-   * starts, and this run's held providers and Watcher switch are read once at start, so looking one up again cannot
-   * change what is saved.
-   * Every save looked up every retirement's thread, and with a few hundred answered questions that was half of main's
-   * time (#1230). Drafts and unclassified owners are still looked up on every commit.
-   */
-  private readonly ordinaryOwners = new Set<string>()
+  /** Built from the saved ledger when it changes, and replaced with it: it holds no owner the ledger does not name. */
+  private ledgerIndex: LedgerIndex | undefined
 
+  /**
+   * `watcherOwnerIds` names every owner ID whose thread `lookup` could find to be Watcher, or `preserveOwner` could keep,
+   * now. Naming more costs a lookup each; naming fewer would lose a Watcher owner. Without it every commit looks up every
+   * retirement's thread, which with a few hundred answered questions was half of main's time (#1230).
+   */
   constructor(directory: string, private readonly lookup: (owner: RequestDraftOwner) => RequestDraftOwnerState | undefined,
     private readonly refresh: (target: RequestDraftTarget, decisionId?: string) => Promise<void>,
     store?: Pick<AtomicJsonStore<Saved>, 'write'>,
-    private readonly preserveOwner?: (owner: RequestDraftOwner) => boolean | undefined) {
+    private readonly preserveOwner?: (owner: RequestDraftOwner) => boolean | undefined,
+    private readonly watcherOwnerIds?: () => Iterable<string>) {
     this.path = join(directory, 'request-drafts.json')
     this.store = store ?? new AtomicJsonStore(this.path, parseSaved, () => ({ version: 2, drafts: [], retirements: [] }))
   }
@@ -141,33 +149,66 @@ export class RequestDraftService {
     return () => this.listeners.delete(listener)
   }
 
+  private ledger(retirements: readonly Retirement[] = this.saved.retirements): LedgerIndex {
+    if (this.ledgerIndex?.retirements === retirements) return this.ledgerIndex
+    const byKey = new Map<string, Retirement>()
+    const owners = new Map<string, { key: string; owner: RequestDraftOwner; first: number }[]>()
+    retirements.forEach((item, first) => {
+      byKey.set(retirementKey(item), item)
+      const key = requestDraftOwnerKey(item.owner), named = owners.get(item.owner.ownerId)
+      if (!named) owners.set(item.owner.ownerId, [{ key, owner: item.owner, first }])
+      else if (!named.some(entry => entry.key === key)) named.push({ key, owner: item.owner, first })
+    })
+    return this.ledgerIndex = { retirements, byKey, owners }
+  }
+
+  /**
+   * The retirement owners a commit looks up, in ledger order. Once a commit has classified the ledger, looking up an
+   * ordinary owner again can change what is saved only if its thread is Watcher or dormant now, or it is still
+   * unclassified; an owner already kept as Watcher stays kept. Every other lookup would change nothing.
+   */
+  private retirementOwners(retirements: readonly Retirement[], watchers: ReadonlyMap<string, unknown>, unclassified: ReadonlyMap<string, RequestDraftOwner>): RequestDraftOwner[] {
+    if (!this.watcherOwnerIds || this.saved.watcherOwners === undefined) return retirements.map(item => item.owner)
+    const { owners } = this.ledger(retirements)
+    const found = new Map<string, { owner: RequestDraftOwner; first: number }>()
+    for (const id of this.watcherOwnerIds()) {
+      for (const entry of owners.get(id) ?? []) if (!watchers.has(entry.key)) found.set(entry.key, entry)
+    }
+    for (const [key, owner] of unclassified) {
+      const entry = owners.get(owner.ownerId)?.find(item => item.key === key)
+      if (entry) found.set(key, entry)
+    }
+    return [...found.values()].sort((a, b) => a.first - b.first).map(entry => entry.owner)
+  }
+
   private async commit(drafts: RequestDraft[], retirements = this.saved.retirements): Promise<void> {
     // Remote hosts reconnect in the background. Remember known Watcher owners with their
     // forms so offline startup and ordinary ledger trimming cannot lose their identity.
     const watchers = new Map((this.saved.watcherOwners ?? []).map(owner => [requestDraftOwnerKey(owner), owner]))
     const unclassified = new Map((this.saved.unclassifiedOwners ?? []).map(owner => [requestDraftOwnerKey(owner), owner]))
-    const drafted = new Set(drafts.map(draft => requestDraftOwnerKey(draft.target)))
-    const looked = new Set<string>(), ordinary: string[] = []
-    const owners = [...drafts.map(draft => draft.target), ...retirements.map(item => item.owner), ...unclassified.values()]
-    for (const owner of owners) {
+    // Each owner once, in the order the drafts, the ledger and the unclassified owners name them.
+    const owners = new Map<string, RequestDraftOwner>()
+    for (const owner of [...drafts.map(draft => draft.target), ...this.retirementOwners(retirements, watchers, unclassified), ...unclassified.values()]) {
       if (owner.kind !== 'thread') continue
       const key = requestDraftOwnerKey(owner)
-      // Each owner once per commit. A retirement's owner already kept as Watcher, or already found ordinary, cannot
-      // change what this writes; an owner that is still unclassified, or has a draft, is always looked up.
-      if (looked.has(key)) continue
-      looked.add(key)
-      if (!drafted.has(key) && !unclassified.has(key) && (watchers.has(key) || this.ordinaryOwners.has(key))) continue
+      if (!owners.has(key)) owners.set(key, owner)
+    }
+    for (const [key, owner] of owners) {
       const state = this.lookup(owner), classification = this.preserveOwner?.(owner)
       const identity = { kind: owner.kind, ownerId: owner.ownerId, providerId: owner.providerId }
       if (state?.watcher === true || classification === true) { watchers.set(key, identity); unclassified.delete(key) }
-      else if (state || classification === false) {
-        unclassified.delete(key)
-        if (state?.listed === true) ordinary.push(key)
-      }
+      else if (state || classification === false) unclassified.delete(key)
       else if (this.saved.watcherOwners === undefined && classification === undefined) unclassified.set(key, identity)
     }
-    const next = savedSchema.parse({ version: 2, drafts, retirements, watcherOwners: [...watchers.values()],
-      ...(unclassified.size ? { unclassifiedOwners: [...unclassified.values()] } : {}) })
+    const fields = { version: 2, drafts, watcherOwners: [...watchers.values()], ...(unclassified.size ? { unclassifiedOwners: [...unclassified.values()] } : {}) }
+    // A save, discard or hold keeps the ledger it was saved and checked with, so only the rest is checked again.
+    const kept = retirements === this.saved.retirements
+    let next: Saved
+    if (kept) {
+      const rest = unledgeredSchema.parse(fields)
+      next = { version: rest.version, drafts: rest.drafts, retirements: this.saved.retirements, watcherOwners: rest.watcherOwners,
+        ...(rest.unclassifiedOwners ? { unclassifiedOwners: rest.unclassifiedOwners } : {}) }
+    } else next = savedSchema.parse({ ...fields, retirements })
     const before = new Map(this.saved.drafts.map(draft => [requestDraftKey(draft.target), JSON.stringify(draft)]))
     const after = new Map(next.drafts.map(draft => [requestDraftKey(draft.target), JSON.stringify(draft)]))
     const changed = new Map<string, RequestDraftOwner>()
@@ -178,8 +219,8 @@ export class RequestDraftService {
       const owner = { kind, ownerId, providerId }
       changed.set(requestDraftOwnerKey(owner), owner)
     }
-    // A save, discard or hold leaves the ledger as it was, and its owners with it.
-    if (retirements !== this.saved.retirements) {
+    // A kept ledger leaves its owners as they were.
+    if (!kept) {
       const beforeRetirements = new Map(this.saved.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
       const afterRetirements = new Map(next.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
       for (const item of [...this.saved.retirements, ...next.retirements]) {
@@ -189,7 +230,6 @@ export class RequestDraftService {
     }
     try { await this.store.write(next) } catch { throw new Error(saveFailed) }
     this.saved = next
-    for (const key of ordinary) this.ordinaryOwners.add(key)
     for (const owner of changed.values()) for (const listener of this.listeners) {
       // A failed window notification cannot turn a successful durable write into a failed save.
       try { listener(owner) } catch { /* the window lists again when it mounts */ }
@@ -201,8 +241,7 @@ export class RequestDraftService {
   }
 
   private retirement(target: RequestDraftTarget): Retirement | undefined {
-    const key = retirementKey({ owner: target, requestId: target.requestId, questionsDigest: requestQuestionsDigest(target.questions) })
-    return this.saved.retirements.find(item => retirementKey(item) === key)
+    return this.ledger().byKey.get(retirementKey({ owner: target, requestId: target.requestId, questionsDigest: requestQuestionsDigest(target.questions) }))
   }
 
   private reoffered(target: RequestDraftTarget): boolean {
