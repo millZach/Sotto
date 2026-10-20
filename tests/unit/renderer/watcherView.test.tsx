@@ -276,6 +276,17 @@ describe("Watcher's room", () => {
     return next
   }
 
+  it.each(['news', 'watcher-1'])('offers Steer now while Watcher works, on Sotto’s news as on the user’s message (#1188), head %s', async head => {
+    const state = stateWithWatcher()
+    state.host.capabilities = { ...state.host.capabilities, steer: true }
+    Object.assign(state.host.threads.find(thread => thread.id === 'watcher')!, { status: 'running', lastUserMessageId: head, wakeUpMessageIds: ['news'] })
+    state.followups = [{ id: 'queued', threadId: 'watcher', draftId: 'draft', text: 'Watch them again', attachments: [], status: 'queued', createdAt: at, updatedAt: at }]
+    renderRoom(state, roomState())
+    const pane = await screen.findByRole('region', { name: 'Watcher' })
+    expect(within(within(pane).getByRole('region', { name: 'Queued messages' })).getAllByText('Watch them again').length).toBeGreaterThan(0)
+    expect(within(pane).getAllByRole('button', { name: 'Steer now' }).length).toBeGreaterThan(0)
+  })
+
   it('keeps Watcher’s reading position, and a beside thread’s, for a trip to another room', async () => {
     layOutTranscripts()
     try {
