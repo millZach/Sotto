@@ -61,7 +61,7 @@ export function WatchedNote({ threadId, title }: { readonly threadId: string; re
   if (!watched) return null
   return <p className="watched-note">
     <WatcherOwl size={13} />
-    <span>{!standing ? WATCHED_FOR_A_REQUEST : paused ? `${WATCHED_BY_WATCHER}. It waits while your own turn here runs, then keeps this thread going.`
+    <span>{!standing ? WATCHED_FOR_A_REQUEST : paused ? `${WATCHED_BY_WATCHER}. While your own turn here runs, it can only steer that turn.`
       : `${WATCHED_BY_WATCHER}. It keeps this thread going and brings you its questions and permissions.`}</span>
     {actions === null ? null : <button type="button" className="watched-note__stop tt-focusable" aria-label={`Stop watching ${title}`}
       onClick={event => { landing.from(event.currentTarget); void actions.setThread(threadId, false) }}>Stop watching</button>}

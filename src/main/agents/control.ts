@@ -348,6 +348,8 @@ export class AgentControl {
     return { deliveries: (this.state.deliveries ?? []).filter(item => this.threadAvailable(item.threadId)),
       followups: (this.state.followups ?? []).filter(item => this.threadAvailable(item.threadId)) }
   }
+  /** Whether a message is a brief delegation sent, so Watcher never takes it for the user's own message. */
+  delegationMessage(messageId: string): boolean { return this.delegationHooks?.ownsMessage?.(messageId) === true }
   updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
     if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
     this.mutateWatcher(update)

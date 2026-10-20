@@ -346,14 +346,14 @@ it('refuses start before the wire when the owning-host path is missing', async (
   expect(await f.call('list_projects', {})).toMatchObject({ status: 'ok', projects: expect.arrayContaining([expect.objectContaining({ target: { hostId: f.pairing.hostId, projectId: f.project.id }, controlAvailable: false })]) })
 })
 
-it('publishes host user takeover and fences queued automated prompts before another writer', async () => {
+it('publishes the host user’s turn and holds automated prompts behind it before another writer', async () => {
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   const confirmation = f.watcher.prepareStopAll()
   if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
   await f.socket.command({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic phone instruction' })
-  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.state).toBe('taken-over'))
-  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic refused', delivery: 'queue' })).toMatchObject({ code: 'THREAD_TAKEN_OVER' })
+  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]).toMatchObject({ watched: true, paused: true, participation: [{ state: 'participating' }] }))
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic refused', delivery: 'queue' })).toMatchObject({ code: 'THREAD_BUSY' })
   expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ code: 'TARGET_CHANGED' })
 })
 
@@ -462,9 +462,9 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic fenced queue' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   await native.driver.typeInProvider(nativeId, 'Synthetic native instruction')
-  // The background poll can finish before it discovers this rollout. Establish takeover before releasing the queue.
+  // The background poll can finish before it discovers this rollout. Establish the user's turn before releasing the queue.
   await native.adapter.refreshThread(nativeId)
-  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.paused).toBe(true))
   await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === (queued.status === 'ok' ? queued.receipt.operationId : ''))?.deliveryState).toBe('failed'))
   const written = await native.driver.requests()
@@ -495,10 +495,13 @@ it('fences native input arriving at a prepared paired queue writer before anothe
   try {
     await native.driver.completeTurn(nativeId, 'Synthetic completion before late input')
     await gate.entered
+    // The user's input moves the owning host's watch to a new generation, which fences the prepared send.
+    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    const generation = () => owner.state().standingWatches?.find(item => item.target.threadId === target.threadId)?.generation ?? -1
+    const before = generation()
     await native.typeUnseen(nativeId, 'Synthetic native input after preparation')
     gate.release()
-    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
-    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(generation()).toBeGreaterThan(before))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
@@ -547,10 +550,13 @@ it('settles a refused paired queue send even when the takeover clears the queue 
   try {
     await native.driver.completeTurn(nativeId, 'Synthetic completion before refused input')
     await gate.entered
+    // The user's input moves the owning host's watch to a new generation, which fences the prepared send.
+    const generation = () => owner.state().standingWatches?.find(item => item.target.threadId === target.threadId)?.generation ?? -1
+    const before = generation()
     await native.typeUnseen(nativeId, 'Synthetic native input before the refused send')
     gate.release()
     await finishing.entered
-    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(generation()).toBeGreaterThan(before))
     await vi.waitFor(() => expect(queueItem()).toBeUndefined())
     finishing.release()
     await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))

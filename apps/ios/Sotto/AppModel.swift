@@ -718,7 +718,7 @@ extension AppModel {
     /// Whether a Watch or Stop watching press for this thread is on its way.
     func changingWatch(_ ref: ThreadRef) -> Bool { watcherManaging.contains(Self.watchKey(ref)) }
     /// What a watched thread's reply box says, or nil for one Watcher doesn't watch: under a standing watch, which lasts
-    /// until the user stops it, that Watcher keeps it going, or waits while the user's own turn runs; watched only for a
+    /// until the user stops it, that Watcher keeps it going, or only steers while the user's own turn runs; watched only for a
     /// Watcher request, or on a computer that keeps no standing watches, that a send there takes it over, as before.
     func watchedLine(_ ref: ThreadRef) -> String? {
         guard let host = computers.first(where: { watcherSummary($0.hostID)?.watched.contains(ref.id) == true })?.hostID,
