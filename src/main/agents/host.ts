@@ -57,6 +57,11 @@ export type AgentHostCommand =
     /** A wake-up babysitting sends (ADR-0061 decision 8): the workspace records the message as Sotto's before the provider hears it. */
     readonly wakeUp?: true
     /**
+     * Set beside `wakeUp` on a wake-up that carries only delegation news (ADR-0081, October 19, 2026): the workspace
+     * records the message as one no window or phone shows. No adapter hears it; the provider gets the text as any send's.
+     */
+    readonly hiddenWakeUp?: true
+    /**
      * Main's request note for a user Send to the current Watcher (ADR-0073), set only by its Watcher service. A Watcher
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.

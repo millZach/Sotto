@@ -337,6 +337,12 @@ export const agentMessageSchema = z.object({
    */
   wakeUp: z.literal(true).optional().catch(undefined),
   /**
+   * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
+   * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
+   * shows the wake-up as Sotto's.
+   */
+  hiddenWakeUp: z.literal(true).optional().catch(undefined),
+  /**
    * Set on a Watcher wake-up whose news said watched threads waited on the user (ADR-0073, answering in Watcher's
    * conversation): which thread's which request, text-free, from the host's own record of the send, put on as `wakeUp`
    * is so it survives the history being read again and a restart. Watcher's pane shows each request's card from it. An
@@ -468,6 +474,9 @@ export const agentThreadSchema = z.object({
   /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
    * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
   wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
+  /** Which of those wake-ups carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026),
+   * from the same record. A row never quotes one. Absent when there are none, and from older hosts. */
+  hiddenWakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
