@@ -321,3 +321,18 @@ it('keeps a thread\'s history without its hidden news only while a window shows 
   expect(dropped).toBe(true)
   expect(f.kept.get('workshop')).not.toBe(before)
 })
+
+it('hands get() a copy its caller may change, apart from what is kept and from the next get()', async () => {
+  const f = await answeredNews()
+  await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+  f.control.threadDetail('workshop')
+  expect(f.kept.get('workshop')?.shown.some(message => message.id === 'synthetic-reply')).toBe(true)
+  const reply = (state: ReturnType<AgentControl['get']>) => state.host.threads.find(thread => thread.id === 'workshop')!.messages.find(message => message.id === 'synthetic-reply')!
+  const first = f.control.get()
+  // Shown without its hidden news, as the window is.
+  expect(first.host.threads.find(thread => thread.id === 'workshop')!.messages.some(message => message.hiddenWakeUp)).toBe(false)
+  reply(first).text = 'Changed by the caller'
+  expect(reply(f.control.get()).text).toBe('Synthetic reply')
+  expect(f.kept.get('workshop')!.shown.find(message => message.id === 'synthetic-reply')!.text).toBe('Synthetic reply')
+  expect(f.control.threadDetail('workshop')!.messages.find(message => message.id === 'synthetic-reply')!.text).toBe('Synthetic reply')
+})

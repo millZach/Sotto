@@ -890,7 +890,8 @@ export class AgentControl {
     if (this.migrationSaveFailure) state.error = this.migrationSaveFailure
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
     state.host.threads = state.host.threads.map(thread => {
-      const presented = this.presentedMessages(thread), summary = thread.summary && this.presentedSummary(thread)
+      // Projected from this copy's own messages, never handed the kept projection: what `get()` returns is the caller's to change.
+      const presented = this.presentedMessages(thread, true), summary = thread.summary && this.presentedSummary(thread)
       return this.failuresSeen.publish(this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
         : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) }))
     })
@@ -1049,10 +1050,11 @@ export class AgentControl {
    * thread's first message the user's words beside its handover (ADR-0089). Read for a thread a window or phone is
    * reading, never for every thread on every publish.
    */
-  private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
+  private presentedMessages(thread: AgentThread, detached = false): readonly AgentMessage[] {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') {
       const shown = thread.continuedFrom?.handover !== undefined && this.continuationDisplay ? this.continuationDisplay(thread) : thread.messages
-      return thread.hiddenWakeUpMessageIds?.length ? this.hiddenWakeUpsLeftOut(thread, shown) : shown
+      // A detached read, of a copy its caller may change, neither takes the kept projection nor keeps its own.
+      return !thread.hiddenWakeUpMessageIds?.length ? shown : detached ? withoutHiddenWakeUps(shown) : this.hiddenWakeUpsLeftOut(thread, shown)
     }
     // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it. Only
     // a history a window holds is kept: an offscreen read keeps no text, as the display itself keeps none (ADR-0073).
