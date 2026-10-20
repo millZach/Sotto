@@ -12,6 +12,7 @@ import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
 import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
+import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -244,11 +245,11 @@ export function AppShell({
               ))}
             </div>
           ) : <span />}
-          {platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : <span />}
+          <div className="app-strip__end"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div>
         </header>
       )}
       {beside ? sidebar : null}
-      {beside ? <div className="app-room__top">{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
+      {beside ? <div className="app-room__top"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
       <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content">{children}</main>
       {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
       {!page && !beside && management ? (

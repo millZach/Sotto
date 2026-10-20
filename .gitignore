@@ -714,3 +714,27 @@ artifacts/macos-traffic-light-room/*
 !artifacts/macos-traffic-light-room/mac-header-dark-559px-1600x1000.png
 !artifacts/macos-traffic-light-room/mac-header-light-718px-1600x1000.png
 !artifacts/macos-traffic-light-room/readings.json
+# Main freeze notice (#1233); commit only the captures docs/verification/main-freeze-notice.md cites.
+artifacts/main-freeze-notice/*
+!artifacts/main-freeze-notice/pill-1280x800-dark.png
+!artifacts/main-freeze-notice/pill-1280x800-light.png
+!artifacts/main-freeze-notice/pill-820x560-dark.png
+!artifacts/main-freeze-notice/pill-820x560-light.png
+!artifacts/main-freeze-notice/popover-1280x800-dark.png
+!artifacts/main-freeze-notice/popover-1280x800-light.png
+!artifacts/main-freeze-notice/popover-820x560-dark.png
+!artifacts/main-freeze-notice/popover-820x560-light.png
+!artifacts/main-freeze-notice/settings-1280x800-dark.png
+!artifacts/main-freeze-notice/settings-1280x800-light.png
+!artifacts/main-freeze-notice/settings-820x560-dark.png
+!artifacts/main-freeze-notice/settings-820x560-light.png
+!artifacts/main-freeze-notice/saved-1280x800-dark.png
+!artifacts/main-freeze-notice/saved-1280x800-light.png
+!artifacts/main-freeze-notice/saved-820x560-dark.png
+!artifacts/main-freeze-notice/saved-820x560-light.png
+!artifacts/main-freeze-notice/popover-1600x1000-dark.png
+!artifacts/main-freeze-notice/popover-1600x1000-light.png
+!artifacts/main-freeze-notice/settings-1600x1000-dark.png
+!artifacts/main-freeze-notice/settings-1600x1000-light.png
+!artifacts/main-freeze-notice/popover-1280x800-dark-reduced-motion.png
+!artifacts/main-freeze-notice/attached-1280x800-dark.png
