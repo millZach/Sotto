@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
@@ -87,6 +88,18 @@ it('reads every record once on a profile whose store has not said subagent words
   expect(workshop(second).activities).toBeUndefined()
 })
 
+it('puts the roster on the disk before it marks subagent words moved, so a power cut cannot lose their only copy', async () => {
+  const f = await stored([record('a', 0)])
+  const db = new DatabaseSync(join(f.directory, 'threads.sqlite'))
+  try { db.prepare("DELETE FROM meta WHERE key = 'subagentWordsMoved'").run() } finally { db.close() }
+  const flushed = vi.spyOn(SubagentStore.prototype, 'flushToDisk'), marked = vi.spyOn(ThreadStore.prototype, 'markSubagentWordsMoved')
+  const host = await f.open()
+  await f.close(host)
+  expect(marked).toHaveBeenCalled()
+  expect(flushed).toHaveBeenCalled()
+  expect(flushed.mock.invocationCallOrder[0]).toBeLessThan(marked.mock.invocationCallOrder[0]!)
+})
+
 // The start that moved every thread's subagent words to the roster reads only the threads it shows, so a Watcher thread
 // hidden then still has its words in its rows when it is first read back.
 it('moves subagent words still in a thread\'s rows to the roster when it reads them back, before saving them away', async () => {
@@ -98,11 +111,62 @@ it('moves subagent words still in a thread\'s rows to the roster when it reads t
   try { store.syncActivities(THREAD, [record('a', 0), spawn]) } finally { store.close() }
   const host = await f.open()
   await host.connect()
+  const flushed = vi.spyOn(SubagentStore.prototype, 'flushToDisk')
   host.observeThreads([THREAD])
   expect((await host.subagentAssignments({ threadId: THREAD, agentId: 'child' })).assignments[0]).toMatchObject({ prompt: 'Private moved task', result: 'Private moved result' })
   await f.close(host)
+  // The roster held the words' only copy once the save stripped them, so it reached the disk first.
+  expect(flushed).toHaveBeenCalled()
   expect(f.disk().find(item => item.id === 'spawn')).toMatchObject({ title: 'Subagent' })
   expect(JSON.stringify(f.disk())).not.toContain('Private')
+})
+
+const DOCS = 'session-docs'
+const privateSpawn = (): AgentActivity => ({ id: 'spawn', turnId: 'turn', sequence: 1, kind: 'subagent', status: 'completed', title: 'Private task title',
+  agents: [{ id: 'child', assignmentId: 'task', status: 'completed', title: 'Private task title', prompt: 'Private moved task', message: 'Private moved result' }] })
+function seed(directory: string, threadId: string, activities: AgentActivity[]) {
+  const store = new ThreadStore(join(directory, 'threads.sqlite'))
+  store.open()
+  try { store.syncActivities(threadId, activities) } finally { store.close() }
+}
+function diskOf(directory: string, threadId: string) {
+  const store = new ThreadStore(join(directory, 'threads.sqlite'))
+  store.open()
+  try { return store.readActivities(threadId) } finally { store.close() }
+}
+
+// A save that cannot put the roster on the disk still saves every held list, words and all, so a thread let go after
+// it is in the store as this run showed it.
+it('saves a changed thread before letting it go while the roster cannot reach the disk', async () => {
+  const f = await stored([record('a', 0)])
+  seed(f.directory, DOCS, [privateSpawn()])
+  const host = await f.open()
+  await host.connect()
+  vi.spyOn(SubagentStore.prototype, 'flushToDisk').mockImplementation(() => { throw new Error('Synthetic roster flush failure') })
+  host.observeThreads([THREAD, DOCS])
+  f.provider.state.threads[0]!.activities = [record('a', 0, { output: 'Changed output' })]
+  await host.snapshot()
+  host.observeThreads([DOCS])
+  await host.snapshot()
+  await f.close(host)
+  expect(f.disk().map(item => item.output)).toEqual(['Changed output'])
+  // The roster may lack the words, so the record keeps them.
+  expect(diskOf(f.directory, DOCS).find(item => item.id === 'spawn')).toMatchObject({ title: 'Private task title' })
+})
+
+it('keeps saving activity, words and all, and keeps the warning, once the roster cannot take moved task words', async () => {
+  const f = await stored([record('a', 0)])
+  seed(f.directory, THREAD, [record('a', 0), privateSpawn()])
+  const host = await f.open()
+  await host.connect()
+  vi.spyOn(SubagentStore.prototype, 'ingest').mockImplementation(() => { throw new Error('Synthetic roster write failure') })
+  host.observeThreads([THREAD])
+  f.provider.state.threads[0]!.activities = [record('c', 2)]
+  await host.snapshot()
+  expect(host.workspaceSnapshot().error).toBe('Agent history could not be saved. Thread activity keeps its task words, so nothing was lost. Restore access to local storage and restart Sotto.')
+  await f.close(host)
+  expect(f.disk().map(item => item.id)).toEqual(['a', 'spawn', 'c'])
+  expect(f.disk().find(item => item.id === 'spawn')).toMatchObject({ title: 'Private task title' })
 })
 
 it('says it holds nothing once a read of the store fails, and says why', async () => {
