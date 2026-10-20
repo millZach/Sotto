@@ -9,7 +9,7 @@ import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwne
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
-import { watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
+import { watcherLatestTurnMessageId, watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
@@ -1896,4 +1896,13 @@ it('lets a held finish earn its retry again when a wake-up that went without it 
   f.wakes.settled(first.events, 'failed'); await f.wakes.drained()
   f.wakes.observe(); await f.advance(10_000)
   expect(f.delivered.at(-1)!.events.find(event => event.kind === 'turn-finished')?.turnId).toBe('turn-1')
+})
+
+it('keeps a brief’s turn the newest when a steer is read into it, so the brief has not moved on', () => {
+  const thread = { id: 'worker', providerId: 'codex', projectId: 'project', modelId: 'model', title: 'Worker', status: 'idle', requests: [],
+    lastTurn: { id: 'native-turn', status: 'completed', messageId: 'brief' },
+    activities: [{ id: 'turn', turnId: 'brief', sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }],
+    messages: [{ id: 'brief', role: 'user', text: 'Do it', createdAt: centerTime }, { id: 'steer', role: 'user', text: 'Also this', createdAt: centerTime },
+      { id: 'reply', role: 'assistant', text: 'Done.', createdAt: centerTime }] } as unknown as AgentThread
+  expect(watcherLatestTurnMessageId(thread)).toBe('brief')
 })

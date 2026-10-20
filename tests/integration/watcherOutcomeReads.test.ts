@@ -203,6 +203,12 @@ it('says no work-settled news will follow a background brief once its thread beg
   const next = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target, text: 'Synthetic second brief', delivery: 'now' })
   if (next.status !== 'ok') throw new Error('send refused')
   await vi.waitFor(() => expect(f.native(started.target.threadId).messages.some(message => message.text === 'Synthetic second brief')).toBe(true))
+  // The provider reports the turn that brief began, as a real one does; a steer would keep the turn it was read into.
+  const native = f.native(started.target.threadId), second = native.messages.find(message => message.text === 'Synthetic second brief')!
+  const brief = native.messages.find(message => message.role === 'user')!
+  native.activities = [{ id: 'first-turn', turnId: brief.id, sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }]
+  native.status = 'running'; native.lastTurn = { id: second.id, status: 'running', messageId: second.id }
+  await f.emit(started.target.threadId)
   await vi.waitFor(async () => expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background',
     outcomeNote: expect.stringContaining('no work-settled news for that turn will follow') }))
 })
