@@ -12,7 +12,7 @@ export function createStorageRepositories(
   defaults: AppSettings = DEFAULT_SETTINGS,
   log?: (event: 'history-temp-cleanup-failed') => void,
   watcherEnabled = true,
-  options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled'> = {},
+  options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled' | 'dictationHoldShortcutsEnabled'> = {},
 ): Readonly<{
   settings: SettingsRepository
   history: HistoryRepository

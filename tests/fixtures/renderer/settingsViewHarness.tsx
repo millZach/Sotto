@@ -39,6 +39,7 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
     mediaDevices: createMediaDevices([device('default', 'Studio microphone')]),
     onUpdateSettings: vi.fn(async () => true),
     onReplaceHotkey: vi.fn(async () => ({ ok: true } as const)),
+    onReplaceDictationShortcuts: vi.fn(async () => ({ ok: true } as const)),
     onSetStartup: vi.fn(async (enabled) => ({ enabled })),
     onResetSettings: vi.fn(async () => true),
     onClearHistory: vi.fn(async () => true),

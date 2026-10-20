@@ -50,6 +50,10 @@ extraResources:
 win:
   executableName: Sotto
   icon: build/icon.ico
+  # The key listener's C#, compiled by PowerShell's Add-Type when hold shortcuts need it (ADR-0097).
+  extraResources:
+    - from: native/key-listener/win32.cs
+      to: native/win32.cs
   target:
     - target: nsis
       arch:
@@ -108,6 +112,9 @@ mac:
       to: LICENSES.chromium.html
     - from: resources/tray
       to: tray
+    # The key listener helper, compiled by scripts/build-key-listener.mjs before packaging (ADR-0097).
+    - from: native/key-listener/build
+      to: native
     - from: resources/dock
       to: dock
 

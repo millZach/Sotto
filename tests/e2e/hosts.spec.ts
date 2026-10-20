@@ -154,7 +154,7 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
     await capture('hosts-tailscale-missing', false)
 
     await page.getByRole('tab', { name: 'Dictation', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Global shortcut' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Press to start and stop' })).toBeVisible()
     await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
     await page.getByRole('switch', { name: 'Run the local host' }).click()
     await expect(page.getByRole('button', { name: 'Restart Sotto' })).toBeVisible()

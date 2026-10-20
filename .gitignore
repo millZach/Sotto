@@ -694,6 +694,9 @@ artifacts/watcher-news-turns/*
 !artifacts/watcher-news-turns/news-folded-dark-1280x800.png
 !artifacts/watcher-news-turns/news-open-dark-820x560.png
 !artifacts/watcher-news-turns/news-open-light-1280x800.png
+
+# macOS key listener helper, built by scripts/build-key-listener.mjs
+native/key-listener/build/
 artifacts/macos-traffic-light-room/*
 !artifacts/macos-traffic-light-room/mac-header-before-dark-400px-820x560.png
 !artifacts/macos-traffic-light-room/mac-header-dark-400px-820x560.png

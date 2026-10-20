@@ -37,8 +37,8 @@ describe('defaultHotkey', () => {
     expect(defaultHotkey('darwin')).toBe('Control+Shift+Space')
   })
 
-  it('uses the Control shortcut on Linux', () => {
-    expect(defaultHotkey('linux')).toBe('CommandOrControl+Shift+Space')
+  it('uses Super+Ctrl+X on Linux, the key its Hyprland binding has always had', () => {
+    expect(defaultHotkey('linux')).toBe('Super+CommandOrControl+X')
   })
 })
 

@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
 import {
-  E2E_CONFLICTING_HOTKEY,
   type E2ESnapshot,
   type SottoE2EBridge,
 } from '../../src/shared/e2e'
@@ -239,12 +238,19 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
   try {
     await completeOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'Settings' }).click()
-    const shortcut = launched.page.getByLabel('Global shortcut')
-    const previous = await shortcut.inputValue()
-    await shortcut.fill(E2E_CONFLICTING_HOTKEY)
-    await launched.page.getByLabel('Global shortcut').press('Tab')
-    await expect(launched.page.getByRole('alert')).toContainText(/another application is already using/i)
-    await expect(shortcut).toHaveValue(previous)
+    // E2E_CONFLICTING_HOTKEY is Ctrl+Alt+9 in Windows terms; CommandOrControl is Command on macOS.
+    const control = process.platform === 'darwin' ? 'Meta' : 'Control'
+    const pressRow = launched.page.getByRole('group', { name: 'Press to start and stop' })
+    const shortcut = pressRow.getByRole('button', { name: /^Change shortcut/u })
+    const previous = await shortcut.getAttribute('aria-label')
+    await shortcut.click()
+    await launched.page.keyboard.down(control)
+    await launched.page.keyboard.down('Alt')
+    await launched.page.keyboard.press('9')
+    await launched.page.keyboard.up('Alt')
+    await launched.page.keyboard.up(control)
+    await expect(pressRow.getByRole('alert')).toContainText('Another app already uses')
+    await expect(pressRow.getByRole('button', { name: /^Change shortcut/u })).toHaveAttribute('aria-label', previous ?? '')
 
     await triggerShortcut(launched.page)
     const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
