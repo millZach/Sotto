@@ -109,7 +109,7 @@ describe('SettingsView', () => {
     })} />)
     await selectCategory('Application')
 
-    expect(screen.getByText('Update checks run only in the installed Windows app.')).toBeVisible()
+    expect(screen.getByText('Update checks run in the installed Windows app and in Sotto Owl on a Mac.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled()
   })
 })

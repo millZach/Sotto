@@ -6,7 +6,8 @@ export type UpdateAction = 'check' | 'download' | 'install' | 'none'
 /** The glyph the control wears; `checking` and `downloading` also animate. */
 export type UpdateIconState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'
 
-export const UPDATES_UNSUPPORTED_MESSAGE = 'Update checks run only in the installed Windows app.'
+/** Where updates do run, for a build that cannot update itself (ADR-0093). */
+export const UPDATES_UNSUPPORTED_MESSAGE = 'Update checks run in the installed Windows app and in Sotto Owl on a Mac.'
 
 /**
  * One button, one meaning at a time. A failed download keeps the offer and a

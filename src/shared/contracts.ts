@@ -259,8 +259,8 @@ const updateProblemSchema = z.string().min(1).max(240)
 
 /**
  * One observable step of the update lifecycle. `unsupported` is the honest
- * answer for a development run, an E2E run, and the macOS build, none of which
- * ship an update feed. `failed` is a check that could not be completed; a
+ * answer for a development run, an E2E run, stable on a Mac and Linux, none of
+ * which has an update feed it can take. `failed` is a check that could not be completed; a
  * download or install that fails keeps its phase and carries the failure as
  * `problem`, so the offer (or the installer already on disk) is never lost and
  * the same control simply offers to try again.
