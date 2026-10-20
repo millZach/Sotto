@@ -898,7 +898,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
   // already ended what agents started, before its first pass.
   const pullRequestTools = new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
-    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined })
+    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined, watcherEnabled })
   quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
