@@ -1,5 +1,6 @@
 import { lstat, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3 } from '../../shared/speechModel'
 import type { CoreMlModelVersion } from './coreMlEngine'
 
 /**
@@ -18,6 +19,8 @@ export interface FluidAudioModel {
   readonly maker: string
   readonly languages: string
   readonly bytes: number
+  /** The id of Sotto's download of the same model, which the picker then leaves off. */
+  readonly sameModelAs: string
 }
 
 interface KnownFolder {
@@ -26,6 +29,7 @@ interface KnownFolder {
   readonly name: string
   readonly maker: string
   readonly languages: string
+  readonly sameModelAs: string
   readonly joint: string
   readonly vocab: string
 }
@@ -33,9 +37,9 @@ interface KnownFolder {
 const V3_FILES = { joint: 'JointDecisionv3.mlmodelc', vocab: 'parakeet_v3_vocab.json' }
 
 const KNOWN: readonly KnownFolder[] = [
-  { folder: 'parakeet-ultra', version: 'ultra', name: 'Parakeet Ultra', maker: 'Moondream', languages: '25 European languages', ...V3_FILES },
-  { folder: 'parakeet-tdt-0.6b-v3', version: 'v3', name: 'Parakeet v3 (Core ML)', maker: 'NVIDIA', languages: '25 European languages', ...V3_FILES },
-  { folder: 'parakeet-tdt-0.6b-v2', version: 'v2', name: 'Parakeet v2', maker: 'NVIDIA', languages: 'English only', joint: 'JointDecision.mlmodelc', vocab: 'parakeet_vocab.json' },
+  { folder: 'parakeet-ultra', version: 'ultra', name: 'Parakeet Ultra (Core ML)', maker: 'Moondream', languages: '25 European languages', sameModelAs: PARAKEET_ULTRA.id, ...V3_FILES },
+  { folder: 'parakeet-tdt-0.6b-v3', version: 'v3', name: 'Parakeet v3 (Core ML)', maker: 'NVIDIA', languages: '25 European languages', sameModelAs: PARAKEET_V3.id, ...V3_FILES },
+  { folder: 'parakeet-tdt-0.6b-v2', version: 'v2', name: 'Parakeet v2 (Core ML)', maker: 'NVIDIA', languages: 'English only', sameModelAs: PARAKEET_V2.id, joint: 'JointDecision.mlmodelc', vocab: 'parakeet_vocab.json' },
 ]
 
 const SHARED_PARTS = ['Preprocessor.mlmodelc', 'Encoder.mlmodelc', 'Decoder.mlmodelc']
@@ -70,8 +74,8 @@ export async function findFluidAudioModels(modelsRoot: string): Promise<FluidAud
       const parts = [...SHARED_PARTS, known.joint, known.vocab]
       const present = await Promise.all(parts.map((part) => exists(join(directory, part))))
       if (!present.every(Boolean)) return null
-      const { folder, version, name, maker, languages } = known
-      return { id: `fluidaudio:${folder}`, folder, directory, version, name, maker, languages, bytes: await sizeOf(directory) }
+      const { folder, version, name, maker, languages, sameModelAs } = known
+      return { id: `fluidaudio:${folder}`, folder, directory, version, name, maker, languages, sameModelAs, bytes: await sizeOf(directory) }
     }),
   )
   return found.filter((model): model is FluidAudioModel => model !== null)

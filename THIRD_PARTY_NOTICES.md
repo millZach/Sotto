@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Sotto transcribes dictated audio on the computer with NVIDIA's Parakeet speech model through sherpa-onnx, and on Apple silicon Macs it can also run the Core ML speech models already on the computer through a bundled helper built on FluidAudio. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
+Sotto transcribes dictated audio on the computer with the Parakeet speech model the user chooses (NVIDIA's Parakeet v3 or v2, or Moondream's Parakeet Ultra) through sherpa-onnx, and on Apple silicon Macs it can also run the Core ML speech models already on the computer through a bundled helper built on FluidAudio. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
 
 Electron additionally ships its exact upstream `LICENSE.electron.txt` and comprehensive `LICENSES.chromium.html` beside `Sotto.exe` in the Windows installation, and inside `Sotto.app/Contents/Resources` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -58,6 +58,8 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `flate2` (inside NemoTextProcessing) | `as linked by text-processing-rs 0.3.1` | MIT OR Apache-2.0 | Alex Crichton and the flate2 contributors |
 | `fastcluster` (inside FluidAudio) | `as vendored in FluidAudio 0.17.7` | BSD-2-Clause | Daniel Müllner; Google Inc. |
 | `Parakeet TDT 0.6B v3` (speech model, 8-bit; downloaded when chosen, not in the installer) | `sherpa-onnx int8 export` | CC-BY-4.0 | NVIDIA Corporation |
+| `Parakeet Ultra` (speech model, 8-bit; converted by Sotto; downloaded when chosen, not in the installer) | `Sotto int8 export, speech-model-parakeet-ultra-int8-1` | CC-BY-4.0 | Moondream; NVIDIA Corporation |
+| `Parakeet TDT 0.6B v2` (speech model, 8-bit; downloaded when chosen, not in the installer) | `sherpa-onnx int8 export` | CC-BY-4.0 | NVIDIA Corporation |
 | `electron-updater` | `6.8.9` | MIT | Loopline Systems and electron-builder contributors |
 | `builder-util-runtime` | `9.7.0` | MIT | Loopline Systems and electron-builder contributors |
 | `fs-extra` | `10.1.0` | MIT | JP Richardson |
@@ -1307,12 +1309,27 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Parakeet TDT 0.6B v3 (Creative Commons Attribution 4.0 International)
-The speech model Sotto downloads when it is chosen is NVIDIA's Parakeet TDT 0.6B v3,
-by NVIDIA Corporation, licensed under CC BY 4.0
-(https://creativecommons.org/licenses/by/4.0/). Sotto uses the 8-bit ONNX export
+Speech models (Creative Commons Attribution 4.0 International)
+Sotto downloads one of these speech models when the user chooses it. None is in the
+installer. Each is licensed under CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/).
+
+Parakeet TDT 0.6B v3, by NVIDIA Corporation. Sotto uses the 8-bit ONNX export
 published by the sherpa-onnx project, unmodified.
 https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+Parakeet Ultra, by Moondream, a post-training of Parakeet TDT 0.6B v3 by NVIDIA
+Corporation. Sotto changed its format and nothing else: it mapped Moondream's
+weights onto NVIDIA's NeMo model of Parakeet TDT 0.6B v3 by renaming keys, left
+out the six vad_head tensors that model does not have, cast float16 weights to
+float32, and exported and quantized it to 8-bit ONNX with the sherpa-onnx
+project's export script for v3. Its tokens are v3's.
+https://huggingface.co/moondream/parakeet-ultra
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+Parakeet TDT 0.6B v2, by NVIDIA Corporation. Sotto uses the 8-bit ONNX export
+published by the sherpa-onnx project, unmodified.
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
 ```
 
 ## Core ML speech helper licenses

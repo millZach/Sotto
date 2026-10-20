@@ -121,10 +121,11 @@ After publication, the user can choose the matching host update from the desktop
 
 ## Speech model
 
-The speech model is not in any installer (ADR-0071). Its four files are release assets on `millZach/Sotto-releases` under their own tag, `speech-model-parakeet-tdt-0.6b-v3-int8-1`, and every Sotto downloads them on first run. Publish that release once, and again only when the model changes:
+No speech model is in any installer (ADR-0071, ADR-0094). Each of Sotto's three is four files published as release assets on `millZach/Sotto-releases` under its own tag, and Sotto downloads the one the user chooses: `speech-model-parakeet-tdt-0.6b-v3-int8-1` (Parakeet v3), `speech-model-parakeet-ultra-int8-1` (Parakeet Ultra) and `speech-model-parakeet-tdt-0.6b-v2-int8-1` (Parakeet v2). Publish each release once, and again only when its model changes:
 
 - Create it as a **pre-release** and never mark it Latest. The updater reads only the release marked Latest, so an app release stays Latest and update checks are unaffected.
-- Upload `encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx` and `tokens.txt` exactly as sherpa-onnx publishes them in its `asr-models` release (`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`). Their sizes and SHA-256 sums must match `SPEECH_MODEL` in `src/shared/speechModel.ts`, or every download is refused.
+- Upload `encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx` and `tokens.txt`. For v3 and v2 they are exactly as sherpa-onnx publishes them (`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`, `sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`). Parakeet Ultra is Sotto's own conversion: `scripts/speech-models/map-hf-to-nemo.py` maps Moondream's weights onto NVIDIA's v3 `.nemo`, then sherpa-onnx's `scripts/nemo/parakeet-tdt-0.6b-v3/export_onnx.py` exports it, with the encoder's `url` metadata naming Ultra. Its release description credits NVIDIA and Moondream under CC-BY-4.0 and lists the changes. Their sizes and SHA-256 sums must match the model's entry in `SOTTO_SPEECH_MODELS` in `src/shared/speechModel.ts`, or every download is refused.
+- Before publishing, load each folder with `scripts/asr-bench/verify-speech-models.mjs` and compare its transcripts with v3's.
 - A new model version gets a new tag and new pins in the same change; never replace the assets under an existing tag, because installed copies would refuse them.
 
 ## Linux desktop package

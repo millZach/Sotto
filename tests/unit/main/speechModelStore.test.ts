@@ -7,14 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SpeechModelStore } from '../../../src/main/asr/speechModelStore'
 import type { SpeechEngine } from '../../../src/main/asr/speechEngine'
-import type { SpeechModelManifest, SpeechModelStatus } from '../../../src/shared/speechModel'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, speechModelBytes, speechModelFileUrl, type SottoSpeechModel, type SpeechModelStatus } from '../../../src/shared/speechModel'
 
 const bytes = (seed: number, length: number): Buffer => Buffer.from(Array.from({ length }, (_, index) => (seed * 31 + index * 7) % 256))
 const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex')
 
 const FILES = { 'encoder.int8.onnx': bytes(1, 4_000), 'decoder.int8.onnx': bytes(2, 1_200), 'tokens.txt': bytes(3, 300) } as const
-const MODEL: SpeechModelManifest = {
+const MODEL: SottoSpeechModel = {
   id: 'test-model',
+  name: 'Test model',
+  maker: 'Sotto',
+  languages: 'English only',
+  releaseTag: 'speech-model-test',
   files: Object.entries(FILES).map(([name, data]) => ({ name, bytes: data.length, sha256: sha256(data) })),
 }
 const TOTAL = MODEL.files.reduce((total, file) => total + file.bytes, 0)
@@ -235,5 +239,18 @@ describe('SpeechModelStore', () => {
     expect(store.get()).toEqual({ state: 'missing' })
     expect(statuses.at(-1)).toEqual({ state: 'missing' })
     expect(subscribed).toEqual(statuses)
+  })
+
+  it('fetches each of Sotto\'s models from its own release tag, into its own folder', async () => {
+    for (const model of [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2]) {
+      const fetchFn = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(null, { status: 404 }))
+      const statuses: SpeechModelStatus[] = []
+      const store = new SpeechModelStore({ directory, model, fetchFn, loadEngine: vi.fn(async () => engine), onStatus: (status) => statuses.push(status) })
+      await store.ensure()
+      expect(String(fetchFn.mock.calls[0]![0])).toBe(`https://github.com/millZach/Sotto-releases/releases/download/${model.releaseTag}/encoder.int8.onnx`)
+      expect(String(fetchFn.mock.calls[0]![0])).toBe(speechModelFileUrl(model, model.files[0]!))
+      expect(statuses.at(-1)).toEqual({ state: 'failed', reason: 'network', receivedBytes: 0, totalBytes: speechModelBytes(model) })
+      expect(await readdir(directory)).toContain(model.id)
+    }
   })
 })

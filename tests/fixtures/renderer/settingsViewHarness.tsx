@@ -7,7 +7,7 @@ import { type SettingsViewProps } from '../../../src/renderer/src/features/setti
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { SOTTO_SPEECH_MODEL_ID, SPEECH_MODEL_BYTES, type SpeechModelOption } from '../../../src/shared/speechModel'
+import { PARAKEET_V3, speechModelBytes, type SpeechModelOption } from '../../../src/shared/speechModel'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(),
@@ -33,12 +33,12 @@ function device(deviceId: string, label: string): MediaDeviceInfo {
   return { deviceId, groupId: 'group', kind: 'audioinput', label, toJSON: () => ({}) }
 }
 
-const SOTTO_MODEL: SpeechModelOption = { id: SOTTO_SPEECH_MODEL_ID, name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', source: 'sotto', installed: true, bytes: SPEECH_MODEL_BYTES }
+const SOTTO_MODEL: SpeechModelOption = { id: PARAKEET_V3.id, name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', source: 'sotto', installed: true, bytes: speechModelBytes(PARAKEET_V3) }
 const ULTRA_MODEL: SpeechModelOption = { id: 'fluidaudio:parakeet-ultra', name: 'Parakeet Ultra', maker: 'Moondream', languages: '25 European languages', source: 'fluidaudio', installed: true, bytes: 2_400_000_000 }
 
 function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProps {
   return {
-    settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: SOTTO_SPEECH_MODEL_ID },
+    settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: PARAKEET_V3.id },
     platform: 'win32',
     mediaDevices: createMediaDevices([device('default', 'Studio microphone')]),
     onUpdateSettings: vi.fn(async () => true),

@@ -153,7 +153,7 @@ export interface AppActions {
   /** Starts the speech model download, or retries one that failed. */
   downloadSpeechModel(): Promise<void>
   /**
-   * Switches dictation to a model from `speechModels`; Sotto's Parakeet v3 downloads if it is not here
+   * Switches dictation to a model from `speechModels`; one of Sotto's downloads if it is not here
    * yet. False when main refused it (the model is no longer here); the list is then read again.
    */
   chooseSpeechModel(id: string): Promise<boolean>

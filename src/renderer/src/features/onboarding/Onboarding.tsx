@@ -7,14 +7,14 @@ import React, {
   type RefObject,
 } from 'react'
 
-import { SPEECH_MODEL, SPEECH_MODEL_SIZE, type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from '../../../../shared/speechModel'
 import type { HostsBridge } from '../../../../shared/hosts'
 import type { PhonesBridge } from '../../../../shared/phones'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useAudioInputDevices, type MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
-import { SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView, speechModelSummary } from '../../components/SpeechModelStatus'
+import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView, speechModelSummary } from '../../components/SpeechModelStatus'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -43,7 +43,7 @@ export interface OnboardingProps {
   readonly speechModelChoice: string | null
   /** Where the chosen speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
-  /** Chooses a model for dictation; choosing Sotto's Parakeet v3 downloads it. */
+  /** Chooses a model for dictation; choosing one of Sotto's models not here yet downloads it. */
   readonly onChooseSpeechModel: (id: string) => void
   /** True when the last choice was refused because that model is no longer on this computer. */
   readonly speechModelRefused?: boolean
@@ -146,9 +146,9 @@ export function Onboarding({
   const omarchy = useOmarchySetup(platform === 'linux' && step.id === 'omarchy')
   const keysSet = omarchy.state && ['done', 'manual'].includes(omarchy.state.pieces.keys.status)
 
-  // Nothing downloads until the user picks Sotto's model; models already on this computer come first.
+  // Nothing downloads until the user picks one of Sotto's models; models already on this computer come first.
   const installedSpeechModels = speechModels?.filter(model => model.installed) ?? []
-  const sottoSpeechModel = speechModels?.find(model => model.source === 'sotto' && !model.installed) ?? null
+  const downloadableSpeechModels = speechModels?.filter(model => !model.installed) ?? []
   const chosenSpeechModel = speechModels?.find(model => model.id === speechModelChoice) ?? null
   const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
   const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
@@ -342,7 +342,7 @@ export function Onboarding({
                 ? 'Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
                 : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
               <div className="onboarding-assurances">
-                <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by {SPEECH_MODEL.name}</p>
+                <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by the speech model you choose</p>
                 <p><Check aria-hidden="true" size={18} /> Your audio never leaves this computer</p>
                 <p><Check aria-hidden="true" size={18} /> Your threads go only to each agent's own provider</p>
                 <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
@@ -423,7 +423,7 @@ export function Onboarding({
                 <>
                   {installedSpeechModels.length > 0 ? <p className="onboarding-speech-models__intro">Already on this computer:</p> : null}
                   <ul className="onboarding-speech-models">
-                    {[...installedSpeechModels, ...(sottoSpeechModel ? [sottoSpeechModel] : [])].map((model, position) => {
+                    {[...installedSpeechModels, ...downloadableSpeechModels].map((model, position) => {
                       const chosen = model.id === speechModelChoice
                       return (
                         <li key={model.id} className="onboarding-speech-model" data-chosen={chosen || undefined}>
@@ -432,7 +432,7 @@ export function Onboarding({
                             <p className="tt-field__description" {...(chosen ? { role: 'status' } : {})}>
                               {chosen && speechModel !== null && speechModel.state !== 'failed' && speechModel.state !== 'missing'
                                 ? speechModel.state === 'ready' ? `${model.languages}. Ready.` : `${speechModelSummary(speechModel, model.name)}.`
-                                : `${model.languages}.${model.installed ? '' : ` ${SPEECH_MODEL_SIZE}, from GitHub.`}`}
+                                : `${model.languages}.${model.installed ? '' : ` ${formatModelSize(model.bytes)}, from GitHub.`}`}
                             </p>
                           </div>
                           {/* The button stays once chosen (pressed) so keyboard focus is not lost. */}

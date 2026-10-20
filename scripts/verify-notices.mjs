@@ -53,7 +53,10 @@ export const NOTICE_COMPONENTS = Object.freeze([
   Object.freeze({ name: 'rustfst', nameSuffix: ' (inside NemoTextProcessing)', version: 'as linked by text-processing-rs 0.3.1', license: 'MIT OR Apache-2.0', attribution: 'Alexandre Caulier and the rustfst contributors' }),
   Object.freeze({ name: 'flate2', nameSuffix: ' (inside NemoTextProcessing)', version: 'as linked by text-processing-rs 0.3.1', license: 'MIT OR Apache-2.0', attribution: 'Alex Crichton and the flate2 contributors' }),
   Object.freeze({ name: 'fastcluster', nameSuffix: ' (inside FluidAudio)', version: 'as vendored in FluidAudio 0.17.7', license: 'BSD-2-Clause', attribution: 'Daniel Müllner; Google Inc.' }),
+  // Sotto's downloadable speech models (ADR-0071, ADR-0094): none is in the installer.
   Object.freeze({ name: 'Parakeet TDT 0.6B v3', nameSuffix: ' (speech model, 8-bit; downloaded when chosen, not in the installer)', version: 'sherpa-onnx int8 export', license: 'CC-BY-4.0', attribution: 'NVIDIA Corporation' }),
+  Object.freeze({ name: 'Parakeet Ultra', nameSuffix: ' (speech model, 8-bit; converted by Sotto; downloaded when chosen, not in the installer)', version: 'Sotto int8 export, speech-model-parakeet-ultra-int8-1', license: 'CC-BY-4.0', attribution: 'Moondream; NVIDIA Corporation' }),
+  Object.freeze({ name: 'Parakeet TDT 0.6B v2', nameSuffix: ' (speech model, 8-bit; downloaded when chosen, not in the installer)', version: 'sherpa-onnx int8 export', license: 'CC-BY-4.0', attribution: 'NVIDIA Corporation' }),
   // Compiled into the main-process bundle, so their code ships inside app.asar
   // even though npm records them as development dependencies.
   packageComponent('electron-updater', '6.8.9', 'MIT', 'Loopline Systems and electron-builder contributors'),

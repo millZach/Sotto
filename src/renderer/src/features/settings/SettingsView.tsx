@@ -695,14 +695,19 @@ export function SettingsView({
   )
 }
 
-/** What the picker calls a model: its name, and for one not on this computer yet, that choosing it downloads it. */
+/**
+ * What the picker calls a model: its name, and for one not on this computer yet its size. The list's
+ * Download group says that choosing it downloads it, which keeps every name short enough to read in
+ * the closed list.
+ */
 function speechModelLabel(model: SpeechModelOption): string {
-  return model.installed ? model.name : `${model.name} (download, ${formatModelSize(model.bytes)})`
+  return model.installed ? model.name : `${model.name}, ${formatModelSize(model.bytes)}`
 }
 
 /**
- * Settings → Transcription's speech model: a list of the models Sotto can run
- * on this computer, then the chosen one's statement and where it stands.
+ * Settings → Transcription's speech model: a list of the models already on
+ * this computer, then Sotto's models to download, then the chosen one's
+ * statement and where it stands.
  */
 function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry }: {
   readonly models: readonly SpeechModelOption[] | null
@@ -713,11 +718,14 @@ function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry 
   readonly onRetry: () => void
 }): ReactNode {
   const chosen = models?.find(model => model.id === choice) ?? null
+  const here = models?.filter(model => model.installed) ?? []
+  const downloads = models?.filter(model => !model.installed) ?? []
   return <>
     <Field label="Speech model" description="The model that turns your speech into text. Choosing one switches dictation to it." {...(refused ? { error: SPEECH_MODEL_REFUSED } : {})}>
       <Select value={chosen?.id ?? ''} disabled={models === null || onChoose === undefined} onChange={event => { const id = event.currentTarget.value; if (id !== '') onChoose?.(id) }}>
         {chosen === null ? <option value="" disabled>{models === null ? 'Looking for models…' : 'Choose a model'}</option> : null}
-        {(models ?? []).map(model => <option key={model.id} value={model.id}>{speechModelLabel(model)}</option>)}
+        {here.length > 0 ? <optgroup label="Already on this computer">{here.map(model => <option key={model.id} value={model.id}>{speechModelLabel(model)}</option>)}</optgroup> : null}
+        {downloads.length > 0 ? <optgroup label="Download">{downloads.map(model => <option key={model.id} value={model.id}>{speechModelLabel(model)}</option>)}</optgroup> : null}
       </Select>
     </Field>
     <div className="settings-model-statement">

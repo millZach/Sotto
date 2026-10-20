@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { findFluidAudioModels, fluidAudioModelsRoot } from '../../../src/main/asr/fluidAudioModels'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3 } from '../../../src/shared/speechModel'
 
 let root: string
 
@@ -38,10 +39,10 @@ describe('findFluidAudioModels', () => {
     await makeModel('parakeet-tdt-0.6b-v3', V3)
     await makeModel('parakeet-ultra', V3)
     const models = await findFluidAudioModels(root)
-    expect(models.map((m) => [m.id, m.version, m.name, m.maker, m.languages])).toEqual([
-      ['fluidaudio:parakeet-ultra', 'ultra', 'Parakeet Ultra', 'Moondream', '25 European languages'],
-      ['fluidaudio:parakeet-tdt-0.6b-v3', 'v3', 'Parakeet v3 (Core ML)', 'NVIDIA', '25 European languages'],
-      ['fluidaudio:parakeet-tdt-0.6b-v2', 'v2', 'Parakeet v2', 'NVIDIA', 'English only'],
+    expect(models.map((m) => [m.id, m.version, m.name, m.maker, m.languages, m.sameModelAs])).toEqual([
+      ['fluidaudio:parakeet-ultra', 'ultra', 'Parakeet Ultra (Core ML)', 'Moondream', '25 European languages', PARAKEET_ULTRA.id],
+      ['fluidaudio:parakeet-tdt-0.6b-v3', 'v3', 'Parakeet v3 (Core ML)', 'NVIDIA', '25 European languages', PARAKEET_V3.id],
+      ['fluidaudio:parakeet-tdt-0.6b-v2', 'v2', 'Parakeet v2 (Core ML)', 'NVIDIA', 'English only', PARAKEET_V2.id],
     ])
     expect(models[0]?.directory).toBe(join(root, 'parakeet-ultra'))
     expect(models[0]?.folder).toBe('parakeet-ultra')

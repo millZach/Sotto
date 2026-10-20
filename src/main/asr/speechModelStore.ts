@@ -6,11 +6,11 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 import {
-  SPEECH_MODEL,
+  speechModelBytes,
   speechModelFileUrl,
+  type SottoSpeechModel,
   type SpeechModelFailure,
   type SpeechModelFile,
-  type SpeechModelManifest,
   type SpeechModelStatus,
 } from '../../shared/speechModel'
 import type { SpeechEngine, SpeechEngineLoader } from './speechEngine'
@@ -41,13 +41,14 @@ export interface SpeechModelStoreDependencies {
   readonly onStatus: (status: SpeechModelStatus) => void
   readonly fetchFn?: typeof fetch
   readonly now?: () => number
-  /** The model to fetch; Parakeet unless a test passes a small one. */
-  readonly model?: SpeechModelManifest
+  /** The model this store downloads and runs; a test passes a small one. */
+  readonly model: SottoSpeechModel
   readonly fileUrl?: (file: SpeechModelFile) => string
 }
 
 /**
- * Owns the speech model on disk and the engine running it (ADR-0071). `ensure()` makes the model
+ * Owns one of Sotto's speech models on disk and the engine running it (ADR-0071); there is one store
+ * per model Sotto downloads, each in its own folder (ADR-0094). `ensure()` makes the model
  * ready: files already verified load at once; missing or partial files download, resuming where a
  * stopped download left off, and must match their pinned size and SHA-256 before the engine starts.
  * Only one `ensure()` runs at a time; calling it again while it runs returns the same attempt.
@@ -66,7 +67,7 @@ export class SpeechModelStore {
   private readonly fetchFn: typeof fetch
   private readonly now: () => number
   private readonly modelDirectory: string
-  private readonly model: SpeechModelManifest
+  readonly model: SottoSpeechModel
   private readonly fileUrl: (file: SpeechModelFile) => string
   private readonly totalBytes: number
   private disposed = false
@@ -74,9 +75,9 @@ export class SpeechModelStore {
   constructor(private readonly dependencies: SpeechModelStoreDependencies) {
     this.fetchFn = dependencies.fetchFn ?? globalThis.fetch.bind(globalThis)
     this.now = dependencies.now ?? Date.now
-    this.model = dependencies.model ?? SPEECH_MODEL
-    this.fileUrl = dependencies.fileUrl ?? speechModelFileUrl
-    this.totalBytes = this.model.files.reduce((total, file) => total + file.bytes, 0)
+    this.model = dependencies.model
+    this.fileUrl = dependencies.fileUrl ?? ((file) => speechModelFileUrl(this.model, file))
+    this.totalBytes = speechModelBytes(this.model)
     this.modelDirectory = join(dependencies.directory, this.model.id)
   }
 

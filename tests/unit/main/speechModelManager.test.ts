@@ -10,19 +10,24 @@ import type { FluidAudioModel } from '../../../src/main/asr/fluidAudioModels'
 import type { SpeechEngine } from '../../../src/main/asr/speechEngine'
 import { SpeechModelManager } from '../../../src/main/asr/speechModelManager'
 import { SpeechModelStore } from '../../../src/main/asr/speechModelStore'
-import { SOTTO_SPEECH_MODEL_ID, SPEECH_MODEL_BYTES, type SpeechModelManifest, type SpeechModelStatus } from '../../../src/shared/speechModel'
+import { type SottoSpeechModel, type SpeechModelStatus } from '../../../src/shared/speechModel'
 
 const DATA = Buffer.from('tokens of a small test model')
-const MODEL: SpeechModelManifest = {
-  id: 'test-model',
+const sottoModel = (id: string, name: string, languages = '25 European languages'): SottoSpeechModel => ({
+  id, name, maker: 'NVIDIA', languages, releaseTag: `speech-model-${id}-1`,
   files: [{ name: 'tokens.txt', bytes: DATA.length, sha256: createHash('sha256').update(DATA).digest('hex') }],
-}
-
-const fluid = (folder: string, version: CoreMlModelVersion, name: string): FluidAudioModel => ({
-  id: `fluidaudio:${folder}`, folder, directory: `/models/${folder}`, version, name, maker: 'NVIDIA', languages: 'English only', bytes: 1_000,
 })
-const ULTRA = fluid('parakeet-ultra', 'ultra', 'Parakeet Ultra')
-const V2 = fluid('parakeet-tdt-0.6b-v2', 'v2', 'Parakeet v2')
+/** Stand-ins for Sotto's three downloads, each one small file. */
+const MODEL = sottoModel('test-v3', 'Parakeet v3')
+const SOTTO_ULTRA = sottoModel('test-ultra', 'Parakeet Ultra')
+const SOTTO_V2 = sottoModel('test-v2', 'Parakeet v2', 'English only')
+const MODEL_BYTES = DATA.length
+
+const fluid = (folder: string, version: CoreMlModelVersion, name: string, sameModelAs: string): FluidAudioModel => ({
+  id: `fluidaudio:${folder}`, folder, directory: `/models/${folder}`, version, name, maker: 'NVIDIA', languages: 'English only', bytes: 1_000, sameModelAs,
+})
+const ULTRA = fluid('parakeet-ultra', 'ultra', 'Parakeet Ultra (Core ML)', SOTTO_ULTRA.id)
+const V2 = fluid('parakeet-tdt-0.6b-v2', 'v2', 'Parakeet v2 (Core ML)', SOTTO_V2.id)
 
 const engineNamed = (name: string) => ({ name, transcribe: vi.fn(async () => name), dispose: vi.fn() })
 
@@ -34,10 +39,12 @@ describe('SpeechModelManager', () => {
   function setup(options: { choice?: string | null; models?: FluidAudioModel[]; saveFails?: boolean } = {}) {
     const fetchFn = vi.fn(async () => new Response(new Uint8Array(DATA), { status: 200, headers: { 'content-length': String(DATA.length) } }))
     const sottoEngine = engineNamed('sotto')
-    const store = new SpeechModelStore({
-      directory, model: MODEL, fetchFn, loadEngine: vi.fn(async () => sottoEngine), onStatus: () => undefined,
+    const loadEngine = vi.fn(async (modelDirectory: string) => modelDirectory.endsWith(MODEL.id) ? sottoEngine : engineNamed(modelDirectory))
+    const stores = [MODEL, SOTTO_ULTRA, SOTTO_V2].map((model) => new SpeechModelStore({
+      directory, model, fetchFn, loadEngine, onStatus: () => undefined,
       fileUrl: () => 'https://release-assets.githubusercontent.com/assets/tokens.txt',
-    })
+    }))
+    const store = stores[0]!
     let models = options.models ?? []
     let choice = options.choice ?? null
     const pending: { version: CoreMlModelVersion; directory: string; resolve: (engine: SpeechEngine) => void; reject: (error: Error) => void }[] = []
@@ -50,7 +57,7 @@ describe('SpeechModelManager', () => {
       choice = id
     })
     const manager = new SpeechModelManager({
-      store,
+      stores,
       findFluidAudio: async () => models,
       coreMlLoader,
       readChoice: () => choice,
@@ -58,7 +65,7 @@ describe('SpeechModelManager', () => {
       onStatus: (status) => statuses.push(status),
     })
     return {
-      manager, store, fetchFn, sottoEngine, coreMlLoader, pending, statuses, saveChoice,
+      manager, store, stores, fetchFn, loadEngine, sottoEngine, coreMlLoader, pending, statuses, saveChoice,
       setModels: (next: FluidAudioModel[]) => { models = next },
       choice: () => choice,
       setChoice: (next: string | null) => { choice = next },
@@ -82,7 +89,7 @@ describe('SpeechModelManager', () => {
     await downloadSottoModel()
     const { manager, fetchFn, sottoEngine, statuses, choice } = setup()
     await manager.start()
-    expect(choice()).toBe(SOTTO_SPEECH_MODEL_ID)
+    expect(choice()).toBe(MODEL.id)
     expect(manager.status()).toEqual({ state: 'ready' })
     expect(manager.currentEngine()).toBe(sottoEngine)
     expect(statuses).toEqual([{ state: 'loading' }, { state: 'ready' }])
@@ -98,7 +105,7 @@ describe('SpeechModelManager', () => {
   })
 
   it('picks up the download of Sotto\'s chosen model at start when it stopped before finishing', async () => {
-    const { manager, fetchFn } = setup({ choice: SOTTO_SPEECH_MODEL_ID })
+    const { manager, fetchFn } = setup({ choice: MODEL.id })
     await manager.start()
     expect(fetchFn).toHaveBeenCalled()
   })
@@ -158,8 +165,8 @@ describe('SpeechModelManager', () => {
   it('downloads Sotto\'s model when the user chooses it', async () => {
     const { manager, fetchFn, sottoEngine, choice } = setup()
     await manager.start()
-    expect(await manager.choose(SOTTO_SPEECH_MODEL_ID)).toBe(true)
-    expect(choice()).toBe(SOTTO_SPEECH_MODEL_ID)
+    expect(await manager.choose(MODEL.id)).toBe(true)
+    expect(choice()).toBe(MODEL.id)
     await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
     expect(fetchFn).toHaveBeenCalled()
     expect(manager.currentEngine()).toBe(sottoEngine)
@@ -218,20 +225,71 @@ describe('SpeechModelManager', () => {
     expect(manager.status()).toEqual({ state: 'missing' })
   })
 
-  it('lists Sotto\'s model first, then the FluidAudio models found', async () => {
+  it('lists Sotto\'s three models as downloads where there is no FluidAudio folder (Windows, Linux)', async () => {
+    const { manager } = setup()
+    const options = await manager.list()
+    expect(options.map((option) => [option.id, option.source, option.installed])).toEqual([
+      [MODEL.id, 'sotto', false],
+      [SOTTO_ULTRA.id, 'sotto', false],
+      [SOTTO_V2.id, 'sotto', false],
+    ])
+    expect(options[0]).toMatchObject({ name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', bytes: MODEL_BYTES })
+    expect(options[2]).toMatchObject({ name: 'Parakeet v2', languages: 'English only' })
+  })
+
+  it('lists what is on this computer first, and no download of a model FluidAudio already keeps here', async () => {
     const { manager, setModels } = setup({ models: [ULTRA, V2] })
-    const before = await manager.list()
-    expect(before.map((option) => [option.id, option.source, option.installed])).toEqual([
-      [SOTTO_SPEECH_MODEL_ID, 'sotto', false],
+    expect((await manager.list()).map((option) => [option.id, option.source, option.installed])).toEqual([
       [ULTRA.id, 'fluidaudio', true],
       [V2.id, 'fluidaudio', true],
+      [MODEL.id, 'sotto', false],
     ])
-    expect(before[0]).toMatchObject({ name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', bytes: SPEECH_MODEL_BYTES })
-    expect(before[1]).toMatchObject({ name: 'Parakeet Ultra', bytes: 1_000 })
 
     await downloadSottoModel()
+    expect((await manager.list()).map((option) => [option.id, option.installed])).toEqual([
+      [MODEL.id, true], [ULTRA.id, true], [V2.id, true],
+    ])
     setModels([])
-    expect((await manager.list()).map((option) => [option.id, option.installed])).toEqual([[SOTTO_SPEECH_MODEL_ID, true]])
+    expect((await manager.list()).map((option) => [option.id, option.installed])).toEqual([
+      [MODEL.id, true], [SOTTO_ULTRA.id, false], [SOTTO_V2.id, false],
+    ])
+  })
+
+  it('keeps listing Sotto\'s download of a model FluidAudio also has while it is the choice', async () => {
+    const { manager } = setup({ choice: SOTTO_ULTRA.id, models: [ULTRA] })
+    await manager.start()
+    await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
+    expect((await manager.list()).map((option) => [option.id, option.installed])).toEqual([
+      [SOTTO_ULTRA.id, true], [ULTRA.id, true], [MODEL.id, false], [SOTTO_V2.id, false],
+    ])
+  })
+
+  it('downloads each of Sotto\'s models into its own folder when chosen, and lets go of the one before', async () => {
+    const { manager, stores, loadEngine, fetchFn } = setup()
+    await manager.start()
+    expect(await manager.choose(SOTTO_ULTRA.id)).toBe(true)
+    await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
+    expect(loadEngine).toHaveBeenLastCalledWith(join(directory, SOTTO_ULTRA.id))
+    const ultra = manager.currentEngine()
+    expect(ultra).not.toBeNull()
+
+    expect(await manager.choose(SOTTO_V2.id)).toBe(true)
+    expect(stores[1]!.get()).toEqual({ state: 'missing' })
+    await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
+    expect(loadEngine).toHaveBeenLastCalledWith(join(directory, SOTTO_V2.id))
+    expect(manager.currentEngine()).not.toBe(ultra)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(await stores[1]!.isDownloaded()).toBe(true)
+    expect(await stores[0]!.isDownloaded()).toBe(false)
+  })
+
+  it('keeps whichever of Sotto\'s models is already downloaded when nothing is chosen', async () => {
+    await setup().stores[2]!.ensure()
+    const { manager, choice, fetchFn } = setup()
+    await manager.start()
+    expect(choice()).toBe(SOTTO_V2.id)
+    expect(manager.status()).toEqual({ state: 'ready' })
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 
   it('reports a helper that stopped by itself, and Try again starts it again', async () => {
@@ -273,7 +331,7 @@ describe('SpeechModelManager', () => {
     await manager.start()
     expect(choice()).toBeNull()
     expect(fetchFn).not.toHaveBeenCalled()
-    await manager.choose(SOTTO_SPEECH_MODEL_ID)
+    await manager.choose(MODEL.id)
     await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
     expect(fetchFn).toHaveBeenCalled()
   })

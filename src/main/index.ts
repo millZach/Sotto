@@ -122,7 +122,7 @@ import { SpeechModelManager } from './asr/speechModelManager'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
-import { SOTTO_SPEECH_MODEL_ID, SPEECH_MODEL, SPEECH_MODEL_BYTES, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
+import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
@@ -1179,11 +1179,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let saveSpeechModelChoice: (id: string | null) => Promise<void> = () => Promise.reject(new Error('Settings are not ready yet'))
   const speechModelManager = e2eConfiguration === null
     ? new SpeechModelManager({
-      store: new SpeechModelStore({
+      // One folder per model under speech-models; Parakeet v3's is where ADR-0071 put it.
+      stores: SOTTO_SPEECH_MODELS.map((model) => new SpeechModelStore({
         directory: join(userDataPath, 'speech-models'),
+        model,
         loadEngine: loadParakeetEngine,
         onStatus: () => undefined,
-      }),
+      })),
       findFluidAudio: () => coreMlHelperAvailable(coreMlHelperPath)
         ? findFluidAudioModels(fluidAudioModelsRoot(app.getPath('appData')))
         : Promise.resolve([]),
@@ -1196,14 +1198,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const speechModel = {
     status: (): SpeechModelStatus => speechModelManager?.status() ?? { state: 'ready' },
     download: (): void => { speechModelManager?.download() },
-    // E2E runs offer Sotto's own model as already here, so setup and Settings show a real row.
-    list: (): Promise<SpeechModelOption[]> => speechModelManager?.list() ?? Promise.resolve([{
-      id: SOTTO_SPEECH_MODEL_ID, name: SPEECH_MODEL.name, maker: SPEECH_MODEL.maker, languages: `${SPEECH_MODEL.languages} European languages`,
-      source: 'sotto', installed: true, bytes: SPEECH_MODEL_BYTES,
-    }]),
+    // E2E runs offer Parakeet v3 as already here and Sotto's other models as downloads, so setup and
+    // Settings show real rows; choosing one only saves the choice, since an E2E model is always ready.
+    list: (): Promise<SpeechModelOption[]> => speechModelManager?.list() ?? Promise.resolve(
+      SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
+    ),
     choose: async (id: string): Promise<boolean> => {
       if (speechModelManager !== null) return speechModelManager.choose(id)
-      if (id !== SOTTO_SPEECH_MODEL_ID) return false
+      if (sottoSpeechModel(id) === undefined) return false
       await saveSpeechModelChoice(id)
       return true
     },

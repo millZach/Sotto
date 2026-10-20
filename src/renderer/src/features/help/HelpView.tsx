@@ -49,7 +49,7 @@ export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' 
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
       : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
-    { title: 'Transcription', body: <p>A speech model transcribes your speech on this computer. Choose it in Settings → Transcription: Parakeet v3, by NVIDIA, downloads once (670 MB), and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</p> },
+    { title: 'Transcription', body: <p>A speech model transcribes your speech on this computer. Choose it in Settings → Transcription: Parakeet v3 or v2, by NVIDIA, or Parakeet Ultra, by Moondream, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</p> },
   ]
   const privacy: Topic[] = [
     { title: 'Privacy', body: <p>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. History stays on this computer.</p> },

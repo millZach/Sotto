@@ -3,8 +3,8 @@ import React, { type ReactNode } from 'react'
 import { Button } from './Button'
 import {
   describeSpeechModelProgress,
-  SPEECH_MODEL,
-  SPEECH_MODEL_BYTES,
+  PARAKEET_V3,
+  speechModelBytes,
   type SpeechModelFailure,
   type SpeechModelOption,
   type SpeechModelStatus,
@@ -40,7 +40,7 @@ export function formatModelSize(bytes: number): string {
 export const SPEECH_MODEL_REFUSED = 'Sotto could not switch to that model, so nothing changed. It may no longer be on this computer; choose it again or another one.'
 
 /** One line of where the model stands, for the footer, the dictate room and the widget. */
-export function speechModelSummary(status: SpeechModelStatus | null, modelName: string = SPEECH_MODEL.name): string {
+export function speechModelSummary(status: SpeechModelStatus | null, modelName: string = PARAKEET_V3.name): string {
   if (status === null) return 'Checking the speech model'
   switch (status.state) {
     case 'missing': return 'No speech model chosen'
@@ -54,7 +54,7 @@ export function speechModelSummary(status: SpeechModelStatus | null, modelName: 
 export interface SpeechModelStatusProps {
   readonly status: SpeechModelStatus | null
   readonly onRetry: () => void
-  /** The chosen model, for its size and where it came from; Sotto's Parakeet v3 when left out. */
+  /** The chosen model, for its size and where it came from; Parakeet v3 when left out. */
   readonly model?: SpeechModelOption | null
 }
 
@@ -67,7 +67,7 @@ export function SpeechModelStatus({ status, onRetry, model = null }: SpeechModel
   const downloaded = model === null || model.source === 'sotto'
   if (status === null) return <p className="tt-field__description speech-model-status">Checking the speech model…</p>
   if (status.state === 'ready') {
-    return <p className="tt-field__description speech-model-status"><strong className="speech-model-status__ready">Ready.</strong> {formatModelSize(model?.bytes ?? SPEECH_MODEL_BYTES)} on this computer.</p>
+    return <p className="tt-field__description speech-model-status"><strong className="speech-model-status__ready">Ready.</strong> {formatModelSize(model?.bytes ?? speechModelBytes(PARAKEET_V3))} on this computer.</p>
   }
   if (status.state === 'loading') {
     return <p className="tt-field__description speech-model-status" role="status">{downloaded ? 'Downloaded. ' : ''}Starting the speech model…</p>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
-import { SOTTO_SPEECH_MODEL_ID, SPEECH_MODEL, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
+import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
@@ -115,7 +115,8 @@ export function applyDocumentPreferences(
 function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choice: string | null): string {
   const chosen = models?.find((model) => model.id === choice)
   if (chosen !== undefined) return chosen.name
-  return choice === null || choice === SOTTO_SPEECH_MODEL_ID ? SPEECH_MODEL.name : 'The speech model'
+  if (choice === null) return PARAKEET_V3.name
+  return sottoSpeechModel(choice)?.name ?? 'The speech model'
 }
 
 function FooterStatus({ navigation, settings, historyKept, speechModel, speechModelName }: {

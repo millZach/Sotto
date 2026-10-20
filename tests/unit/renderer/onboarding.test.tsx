@@ -7,9 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { SOTTO_SPEECH_MODEL_ID, SPEECH_MODEL_BYTES, type SpeechModelOption } from '../../../src/shared/speechModel'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, sottoSpeechModelOption, speechModelBytes, type SpeechModelOption } from '../../../src/shared/speechModel'
 
-const SOTTO_OPTION: SpeechModelOption = { id: SOTTO_SPEECH_MODEL_ID, name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', source: 'sotto', installed: false, bytes: SPEECH_MODEL_BYTES }
+const V3_BYTES = speechModelBytes(PARAKEET_V3)
+const DOWNLOADS = [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2].map(model => sottoSpeechModelOption(model, false))
+
+const SOTTO_OPTION: SpeechModelOption = { id: PARAKEET_V3.id, name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', source: 'sotto', installed: false, bytes: V3_BYTES }
 const ULTRA_OPTION: SpeechModelOption = { id: 'fluidaudio:parakeet-ultra', name: 'Parakeet Ultra', maker: 'Moondream', languages: '25 European languages', source: 'fluidaudio', installed: true, bytes: 1_000 }
 const V2_OPTION: SpeechModelOption = { id: 'fluidaudio:parakeet-tdt-0.6b-v2', name: 'Parakeet v2', maker: 'NVIDIA', languages: 'English only', source: 'fluidaudio', installed: true, bytes: 1_000 }
 
@@ -19,7 +22,7 @@ const onboardingProps = {
   settings: DEFAULT_SETTINGS,
   onUpdateSettings: vi.fn(async () => true),
   speechModels: [SOTTO_OPTION],
-  speechModelChoice: SOTTO_SPEECH_MODEL_ID as string | null,
+  speechModelChoice: PARAKEET_V3.id as string | null,
   speechModel: { state: 'ready' as const },
   onChooseSpeechModel: vi.fn(),
   onRetrySpeechModel: vi.fn(),
@@ -33,6 +36,15 @@ async function goToStep(user: ReturnType<typeof userEvent.setup>, step: number):
       ? screen.getByRole('button', { name: 'Get started' })
       : screen.getByRole('button', { name: /^(continue|skip for now)$/i })
     await user.click(button)
+  }
+}
+
+/** Steps forward until the step headed `name` is on screen, whatever steps this platform has before it. */
+async function goToHeading(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+  for (let step = 0; screen.queryByRole('heading', { name }) === null; step += 1) {
+    if (step > 12) throw new Error(`no step headed ${name}`)
+    const start = screen.queryByRole('button', { name: 'Get started' })
+    await user.click(start ?? screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
   }
 }
 
@@ -87,7 +99,7 @@ describe('first-run onboarding', () => {
       />,
     )
 
-    expect(screen.getByText(/Transcribed on this computer by Parakeet v3/i)).toBeVisible()
+    expect(screen.getByText(/Transcribed on this computer by the speech model you choose/i)).toBeVisible()
     expect(screen.getByText(/Your audio never leaves this computer/i)).toBeVisible()
     expect(screen.getByText(/no Sotto account/i)).toBeVisible()
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
@@ -476,7 +488,36 @@ describe('first-run onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Use Parakeet Ultra' }))
     expect(onChooseSpeechModel).toHaveBeenLastCalledWith('fluidaudio:parakeet-ultra')
     await user.click(screen.getByRole('button', { name: 'Download Parakeet v3' }))
-    expect(onChooseSpeechModel).toHaveBeenLastCalledWith(SOTTO_SPEECH_MODEL_ID)
+    expect(onChooseSpeechModel).toHaveBeenLastCalledWith(PARAKEET_V3.id)
+  })
+
+  it.each(['win32', 'linux'] as const)('offers Sotto\'s three models as downloads, with their sizes and languages, on %s', async (platform) => {
+    const user = userEvent.setup()
+    const onChooseSpeechModel = vi.fn()
+    render(<Onboarding {...onboardingProps} speechModels={DOWNLOADS} speechModelChoice={null} speechModel={{ state: 'missing' }}
+      onChooseSpeechModel={onChooseSpeechModel}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform={platform} onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToHeading(user, 'Choose a speech model')
+    expect(screen.queryByText('Already on this computer:')).toBeNull()
+    const choices = screen.getAllByRole('button', { name: /^(use|download) /i }).map(button => button.textContent)
+    expect(choices).toEqual(['Download Parakeet v3', 'Download Parakeet Ultra', 'Download Parakeet v2'])
+    expect(screen.getByText('25 European languages. 670 MB, from GitHub.')).toBeVisible()
+    expect(screen.getByText('25 European languages. 671 MB, from GitHub.')).toBeVisible()
+    expect(screen.getByText('English only. 661 MB, from GitHub.')).toBeVisible()
+    expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Download Parakeet Ultra' }))
+    expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
+  })
+
+  it('offers a Mac what it already has first, then downloads of the models it does not have', async () => {
+    const user = userEvent.setup()
+    const coreMlUltra = { ...ULTRA_OPTION, name: 'Parakeet Ultra (Core ML)' }
+    render(<Onboarding {...onboardingProps} speechModels={[coreMlUltra, DOWNLOADS[0]!, DOWNLOADS[2]!]} speechModelChoice={null} speechModel={{ state: 'missing' }}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="darwin" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToHeading(user, 'Choose a speech model')
+    expect(screen.getByText('Already on this computer:')).toBeVisible()
+    const choices = screen.getAllByRole('button', { name: /^(use|download) /i }).map(button => button.textContent)
+    expect(choices).toEqual(['Use Parakeet Ultra (Core ML)', 'Download Parakeet v3', 'Download Parakeet v2'])
   })
 
   it('keeps keyboard focus on the Use button once its model is chosen', async () => {
