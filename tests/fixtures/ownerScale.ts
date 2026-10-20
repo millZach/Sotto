@@ -14,9 +14,17 @@ export const OWNER_SCALE = { threads: 250, remoteThreads: 40, retirements: 256, 
   operations: 150, requests: 160, watches: 5 } as const
 export type OwnerScaleCounts = { -readonly [K in keyof typeof OWNER_SCALE]: number }
 
-/** The owner's counts times `scale`, at least one of each. */
-export function ownerScaleCounts(scale: number): OwnerScaleCounts {
-  return Object.fromEntries(Object.entries(OWNER_SCALE).map(([name, count]) => [name, Math.max(1, Math.round(count * scale))])) as OwnerScaleCounts
+/**
+ * How much of the owner's world to build: `threads` scales this computer's threads, and `history` scales everything the
+ * owner accumulated besides them: the remote host's answered threads, the answer retirements and Watcher owners, and
+ * Watcher's requests, operations and watches. The work budget grows each on its own, so a failure can say which grew.
+ */
+export interface OwnerScale { readonly threads: number; readonly history: number }
+
+/** The owner's counts at `scale`, at least one of each. A number scales both the threads and the history. */
+export function ownerScaleCounts(scale: number | OwnerScale): OwnerScaleCounts {
+  const { threads, history } = typeof scale === 'number' ? { threads: scale, history: scale } : scale
+  return Object.fromEntries(Object.entries(OWNER_SCALE).map(([name, count]) => [name, Math.max(1, Math.round(count * (name === 'threads' ? threads : history)))])) as OwnerScaleCounts
 }
 
 const AT = '2026-10-20T12:00:00.000Z'
