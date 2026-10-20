@@ -6,7 +6,7 @@ Accepted by Zach on October 19, 2026. **Number provisional until merge:** 0092 i
 
 Amended October 20, 2026: [ADR-0096](0096-stable-mac-builds-in-github-actions.md) builds stable Mac in GitHub Actions too. Below, "built by hand on a Mac" now describes only the fallback; stable Mac is otherwise unchanged.
 
-The decision lands in two stages. Stage 1 needs no Apple credentials and is built. Stage 2 needs a Developer ID certificate and a notarization key in GitHub's secrets, and is built when Zach has added them.
+The decision lands in two stages. Stage 1 needs no Apple credentials and is built. Stage 2 needs a Developer ID certificate and a notarization key in GitHub's secrets. Zach added them to the `owl-mac` environment on October 20, 2026, and Stage 2 is built; the first signed run shows its `codesign` and `spctl` results before a signed Owl ships.
 
 ## Context
 
@@ -43,6 +43,14 @@ When Zach has added the credentials (`docs/release/macos-owl-signing.md`):
 - The receipt says the build is signed and notarized. `release:owl` checks that it is, and attaches `owl-mac.yml` beside `owl.yml`. electron-updater on a Mac with the `owl` channel reads `owl-mac.yml`, and the Owl GitHub provider validates it the way it validates `owl.yml`.
 - The in-app updater turns on for Owl on a Mac. Whether a platform updates in the app becomes a question of platform and track: Windows on both tracks, a Mac on Owl only, Linux on neither. The update control, its progress and its restart question are the ones Windows shows. The Mac app menu's **Check for Updates…**, already written and left out on the Mac, appears in Owl. Automatic download and install on quit stay off. Consent, check cadence and privacy settings are unchanged.
 - Stable Mac's update message says where updates do run: in the installed Windows app and in Sotto Owl on a Mac.
+
+What building Stage 2 settled, October 20:
+
+- The workflow makes its keychain after `npm ci` and Electron's download, so no install script runs while the certificate is on the runner. It finds the keychain's one Developer ID Application identity and hands electron-builder its SHA-1, the keychain (`CSC_KEYCHAIN`) and the key file (`APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, which electron-builder 26 reads for notarization). A step that always runs deletes both as soon as packaging ends.
+- `package:owl` on a Mac refuses to build without those five names, and forces code signing, so electron-builder fails rather than leaving the app unsigned when it cannot find the identity. There is no unsigned Mac Owl any more, from the workflow or by hand.
+- electron-builder notarizes and staples the app; the disk image around it is not notarized on its own. Gatekeeper judges the app when it opens, and the app carries its ticket.
+- The receipt moved to schema 2 and records the signer's team, the hardened runtime, notarization and the stapled ticket. `release:owl` refuses any receipt that does not, which includes every Stage 1 receipt.
+- The tray keeps **Check for Updates…** only on Windows, where it is the one menu. A Mac Owl has it in the app menu, as the decision says, and the tray menu on a Mac is unchanged.
 
 ## Consequences
 
