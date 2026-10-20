@@ -22,14 +22,13 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { samePlainValue, withoutHiddenWakeUps } from './hiddenWakeUpDisplay'
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { watcherAsksOf } from '../../shared/watcherAsks'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -3218,10 +3217,11 @@ export class AgentControl {
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
-          const watcherNews = item.wakeUp && item.news ? watcherWakeUpNote(item.news) : undefined
+          const watcherNews = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.()) : undefined
           // The requests that news said wait on the user go with the wake-up as identities alone, for the workspace to
-          // record, so Watcher's pane can show their cards under it (ADR-0073). They answer nothing.
-          const watcherAsks = watcherNews && item.news ? watcherAsksOf(item.news.flatMap(news => isWatcherNews(news) ? news.events : [])) : []
+          // record, so Watcher's pane can show their cards under it (ADR-0073). They answer nothing. A delegated thread's
+          // card, told as news of the watched thread above it (#1190), is the delegated thread's: it is recorded there.
+          const watcherAsks = watcherNews && item.news ? watcherNewsAsks(item.news) : []
           // A delegation's news is worded as it goes, from delegation's own record: an answered one carries its reply,
           // labelled as the delegated thread's words, which the queue never holds (decision 3 of October 19, 2026).
           const delegationNews = hiddenNews ? item.news!.flatMap(news => isDelegationNews(news) ? [news] : []) : []

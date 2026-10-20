@@ -350,7 +350,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const checks = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown)
     this.watcherPrObserver({ url: view.url, head: view.headId ?? null, observedAt: view.observedAt ?? new Date().toISOString(),
       state: view.state, availability: 'available', checks, ...(checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
-      reviewApproved: view.reviewDecision === 'approved', autoMerge: view.autoMerge !== null })
+      reviewApproved: view.reviewDecision === 'approved', changesRequested: view.reviewDecision === 'changes_requested', autoMerge: view.autoMerge !== null,
+      ...(view.mergeable !== 'unknown' ? { conflicting: view.mergeable === 'conflicting' } : {}) })
   }
   private readonly launchProfiles: WatcherLaunchProfiles
   /** The providers held to Owl on this run, read once at start. */

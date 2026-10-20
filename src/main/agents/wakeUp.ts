@@ -5,9 +5,10 @@ import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews,
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
 import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
-import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT } from './watcherNews'
+import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT, type WatcherNewsDetail } from './watcherNews'
 import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
 import { delegationNewsText, foldDelegationNews } from './delegationNews'
+import { watcherAsksOf, type WatcherAsk } from '../../shared/watcherAsks'
 
 /**
  * The wake-up (ADR-0061 decision 7): the one message babysitting sends a thread, worded by Sotto from the reader's
@@ -88,8 +89,16 @@ export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOpt
  * Watcher's news in a wake-up, as the note its send carries (ADR-0073): the provider's own per-turn context channel,
  * as the request note goes, so the conversation, the queue and the phone show none of it.
  */
-export function watcherWakeUpNote(news: readonly WakeUpNews[]): string | undefined {
-  return news.filter(isWatcherNews).map(watcherNewsText).join('\n\n') || undefined
+export function watcherWakeUpNote(news: readonly WakeUpNews[], detail?: WatcherNewsDetail): string | undefined {
+  return news.filter(isWatcherNews).map(item => watcherNewsText(item, detail)).join('\n\n') || undefined
+}
+/**
+ * The request cards a wake-up's Watcher news says wait on the user, as identities for Watcher's pane (ADR-0073). A delegated
+ * thread's card, told as news of the watched thread above it (#1190), stands on the delegated thread, and is that thread's.
+ */
+export function watcherNewsAsks(news: readonly WakeUpNews[]): WatcherAsk[] {
+  return watcherAsksOf(news.flatMap(item => isWatcherNews(item)
+    ? item.events.map(event => event.delegatedThreadId ? { ...event, target: { hostId: event.target.hostId, threadId: event.delegatedThreadId } } : event) : []))
 }
 /** A wake-up holding nothing but Watcher's news: Sotto's own background action, shown nowhere. */
 export const isWatcherOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
