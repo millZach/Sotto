@@ -337,6 +337,8 @@ export interface SottoBridge {
   readonly continueThread?: import('./continueThread').ContinueBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
+  /** Main's watch on itself and Record a minute (ADR-0097), present only while the `main-freeze` Owl feature is on. */
+  readonly mainActivity?: import('./mainActivity').MainActivityBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
   readonly watcher?: import('./watcherRoom').WatcherBridge

@@ -27,7 +27,7 @@ import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
 import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
-import { takeNewThreadIntent } from './threadIntent'
+import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
@@ -229,8 +229,14 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     return Promise.resolve()
   }, [state, createThreadIn])
   const openNewThread = useCallback((projectId?: string): void => { void startNewThread(projectId) }, [startNewThread])
-  // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads.
-  useEffect(() => { const intent = takeNewThreadIntent(); if (intent !== null) openNewThread(intent.projectId) }, [openNewThread])
+  // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads; one asked
+  // for while this page is already open (an activity recording's Attach to a thread) lands at once. A carried draft opens
+  // in the new thread's composer, unsent.
+  useEffect(() => {
+    const take = (): void => { const intent = takeNewThreadIntent(); if (intent !== null) void startNewThread(intent.projectId, intent.carried) }
+    take()
+    return onNewThreadIntent(take)
+  }, [startNewThread])
   // Ctrl+Shift+N (Cmd+Shift+N on a Mac): a new thread in the focused thread's project, or the chooser when none
   // is focused. Checked against the dictation hotkey like every other chord; an open dialog or a terminal keeps
   // its keys.

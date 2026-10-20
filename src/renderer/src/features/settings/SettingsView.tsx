@@ -2,7 +2,7 @@ import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { useRevisionDraft } from './useRevisionDraft'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
+import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, Gauge, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -49,6 +49,7 @@ import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
@@ -104,6 +105,8 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-appearance', label: 'Appearance', icon: Palette },
   { id: 'settings-privacy', label: 'Application', icon: Settings2 },
   { id: 'settings-git', label: 'Git', icon: GitBranch },
+  // Main's watch on itself (#1233), an Owl feature: shown only while the Owl list turns `main-freeze` on.
+  { id: 'settings-performance', label: 'Performance', icon: Gauge },
 ] as const
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
@@ -373,7 +376,8 @@ export function SettingsView({
   // Settings, under Watcher, exists only while the Owl list turns on both Watcher and its worker roles.
   const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
   const workerRoles = watcherOn && workerRolesOn
-  const sections = SETTINGS_SECTIONS.filter(section => section.id !== 'settings-watcher' || workerRoles)
+  const performanceOn = useOwlFeature('main-freeze')
+  const sections = SETTINGS_SECTIONS.filter(section => (section.id !== 'settings-watcher' || workerRoles) && (section.id !== 'settings-performance' || performanceOn))
   // Panels stay mounted so account, key and theme drafts survive category changes.
   // Each visit starts at the heading; the sidebar keeps its own scroll position.
   useLayoutEffect(() => {
@@ -670,6 +674,11 @@ export function SettingsView({
                 <div className="settings-section__heading"><h2>Git</h2><p>Commits, pull requests, Changes & fetching</p></div>
                 <GitSettings settings={settings} onSave={save} />
               </Card>
+
+              {performanceOn ? <Card className="settings-section" id="settings-performance" {...panelProps('settings-performance')}>
+                <div className="settings-section__heading"><h2>Performance</h2><p>How quickly Sotto's main process answers, on this computer</p></div>
+                <PerformanceSettings visible={activeSection === 'settings-performance'} settings={settings} onUpdateSettings={save} />
+              </Card> : null}
             </div>
           </div>
         </div>

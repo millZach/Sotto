@@ -235,6 +235,12 @@ export interface AppSettings {
   commitMessages: boolean
   autoUpdateCheck: boolean
   /**
+   * The notice beside the window controls while Sotto's main process is frozen (#1233, ADR-0097). Part of the
+   * `main-freeze` Owl feature: stable never shows it, whatever this says. Off hides only the notice; Settings >
+   * Performance keeps the numbers and Record a minute.
+   */
+  mainFreezeNotice: boolean
+  /**
    * Whether the agent runtime runs on this computer at all. Read once at
    * startup; off starts no local host after the next restart. Remote hosts
    * still work, dictation is unaffected and no saved data is removed.
@@ -346,6 +352,7 @@ const fieldSchemas = {
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
+  mainFreezeNotice: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
@@ -435,6 +442,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
+  // On by default in Owl, the only place it shows: a freeze is worth hearing about until the owner says otherwise.
+  mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
   localHostEnabled: true,
@@ -545,6 +554,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
+    mainFreezeNotice: parseField(persisted, 'mainFreezeNotice', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),

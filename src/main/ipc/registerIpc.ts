@@ -135,6 +135,7 @@ const settingKeys = [
   'commitMessages',
   'pullRequestText',
   'autoUpdateCheck',
+  'mainFreezeNotice',
   'webLinkDestination',
   'responseStreaming',
   'localHostEnabled',
