@@ -299,18 +299,19 @@ it('keeps a thread\'s history without its hidden news only while a window shows 
   const f = await answeredNews()
   // The window's selected thread is another one, so only the pane that opens this one shows it.
   await f.control.command({ type: 'select-thread', threadId: 'docs' })
+  // What a window shows is what the last broadcast sent, which follows the command on its own schedule.
+  const shownAndKept = () => { f.control.threadDetail('workshop'); return f.kept.has('workshop') }
   await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
-  f.control.threadDetail('workshop')
-  expect(f.kept.has('workshop')).toBe(true)
+  await expect.poll(shownAndKept).toBe(true)
   // The window stops showing it: the projection goes, as its detail snapshot does.
   await f.control.command({ type: 'observe-threads', threadIds: [] })
-  expect(f.kept.has('workshop')).toBe(false)
+  await expect.poll(() => f.kept.has('workshop')).toBe(false)
   // A read of a thread no window shows keeps nothing.
   expect(f.control.threadDetail('workshop')!.messages.map(message => message.id)).toContain('synthetic-reply')
   expect(f.kept.has('workshop')).toBe(false)
   // Shown again, then Keep local history goes off: privacy cleanup drops it.
   await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
-  f.control.threadDetail('workshop')
+  await expect.poll(shownAndKept).toBe(true)
   const before = f.kept.get('workshop')
   expect(before).toBeDefined()
   // Cleanup drops what was kept; the pane still showing it is projected afresh at the next publish, if at all.
@@ -325,8 +326,7 @@ it('keeps a thread\'s history without its hidden news only while a window shows 
 it('hands get() a copy its caller may change, apart from what is kept and from the next get()', async () => {
   const f = await answeredNews()
   await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
-  f.control.threadDetail('workshop')
-  expect(f.kept.get('workshop')?.shown.some(message => message.id === 'synthetic-reply')).toBe(true)
+  await expect.poll(() => { f.control.threadDetail('workshop'); return f.kept.get('workshop')?.shown.some(message => message.id === 'synthetic-reply') }).toBe(true)
   const reply = (state: ReturnType<AgentControl['get']>) => state.host.threads.find(thread => thread.id === 'workshop')!.messages.find(message => message.id === 'synthetic-reply')!
   const first = f.control.get()
   // Shown without its hidden news, as the window is.
