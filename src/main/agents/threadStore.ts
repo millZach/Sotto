@@ -12,6 +12,7 @@ import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
+import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -348,11 +349,14 @@ export class ThreadStore {
       this.durableRedactions.rememberActivityRedactions(added)
     } else {
       const db = this.requireOpen()
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
-        db.exec('COMMIT')
-      } catch (error) { db.exec('ROLLBACK'); throw error }
+      // A redaction a power cut undid would let a provider replay bring the record back.
+      flushedCommits(db, () => {
+        db.exec('BEGIN IMMEDIATE')
+        try {
+          for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
+          db.exec('COMMIT')
+        } catch (error) { db.exec('ROLLBACK'); throw error }
+      })
     }
     for (const hash of added) this.activityRedactions.add(hash)
     this.redactionRevision++
@@ -621,7 +625,11 @@ export class ThreadStore {
   }
 
   /** The same for a run of events, so a publish costs one transaction. Returns the last sequence written. */
+  /** A reset waits for the disk: whatever it took out, a rewind's turns among them, a power cut must not bring back. */
   appendMany(threadId: string, events: readonly ThreadEvent[]): number {
+    return resets(events) ? flushedCommits(this.requireOpen(), () => this.appendManyNow(threadId, events)) : this.appendManyNow(threadId, events)
+  }
+  private appendManyNow(threadId: string, events: readonly ThreadEvent[]): number {
     const db = this.requireOpen()
     if (events.length === 0) return this.latestSeq()
     db.exec('BEGIN IMMEDIATE')
@@ -641,7 +649,11 @@ export class ThreadStore {
    * appendMany gave one batch: a thread whose batch fails rolls back alone and is named in `failed`,
    * while the others commit. A failure of the commit itself throws, with nothing written.
    */
+  /** A window that carries a reset commits waiting for the disk, as `appendMany` does. */
   appendBatches(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
+    return [...batches.values()].some(resets) ? flushedCommits(this.requireOpen(), () => this.appendBatchesNow(batches)) : this.appendBatchesNow(batches)
+  }
+  private appendBatchesNow(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
     const db = this.requireOpen()
     const due = [...batches].filter(([, events]) => events.length > 0)
     const failed = new Set<string>()
@@ -798,6 +810,10 @@ export class ThreadStore {
 
   /** Drops one thread's projection and takes the words out of its log, leaving only that it happened. */
   forget(threadId: string): void {
+    flushedCommits(this.requireOpen(), () => this.forgetFlushed(threadId))
+  }
+
+  private forgetFlushed(threadId: string): void {
     const db = this.requireOpen()
     const hashes = this.activityIdentityHashes(threadId)
     db.exec('BEGIN IMMEDIATE')
@@ -828,6 +844,10 @@ export class ThreadStore {
 
   /** The same for every thread: what Keep local history turning off asks of the file. */
   redactAll(): void {
+    flushedCommits(this.requireOpen(), () => this.redactAllFlushed())
+  }
+
+  private redactAllFlushed(): void {
     const db = this.requireOpen()
     // A release gate can keep dormant threads outside this runtime's privacy ownership.
     const threadIds = this.preserveThread ? this.statement('SELECT thread_id FROM events UNION SELECT thread_id FROM messages UNION SELECT thread_id FROM activities UNION SELECT thread_id FROM activity_epochs UNION SELECT thread_id FROM visuals').all().map(row => String(row.thread_id)) : undefined
@@ -986,11 +1006,13 @@ export class ThreadStore {
     const removed = before.filter(stored => stored.anchorUserMessageId !== null && doomed.has(stored.anchorUserMessageId))
     if (removed.length === 0) return 0
     const db = this.requireOpen()
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
-      db.exec('COMMIT')
-    } catch (error) { db.exec('ROLLBACK'); throw error }
+    flushedCommits(db, () => {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
+        db.exec('COMMIT')
+      } catch (error) { db.exec('ROLLBACK'); throw error }
+    })
     this.visualCache.set(threadId, before.filter(stored => !removed.includes(stored)))
     return removed.length
   }
@@ -998,7 +1020,7 @@ export class ThreadStore {
   /**
    * This thread's history is now exactly these messages: a rewind the provider confirmed, or the
    * one-time move of a thread out of `workspace.json`. One transaction, so a failure leaves the
-   * thread as it was.
+   * thread as it was. Its reset waits for the disk (`appendMany`), so a power cut cannot bring back what it replaced.
    */
   replaceThreadMessages(threadId: string, messages: readonly AgentMessage[], historyEpoch?: string): void {
     const at = new Date().toISOString()
@@ -1007,6 +1029,9 @@ export class ThreadStore {
       ...messages.map(message => ({ kind: 'message-added' as const, at: message.createdAt || at, message })),
     ])
   }
+
+  /** Runs `work` with its commits waiting for the disk (`flushedCommits`), for a caller outside the store. */
+  flushed<T>(work: () => T): T { return flushedCommits(this.requireOpen(), work) }
 
   /** Rebuilds every projection from the log; the log is the record, the projection only reads faster. */
   rebuild(): void { rebuildProjection(this.requireOpen()) }
@@ -1134,11 +1159,14 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
 }
 
+/** Whether a batch resets a thread's messages, which takes out what came before. */
+function resets(events: readonly ThreadEvent[]): boolean { return events.some(event => event.kind === 'messages-reset') }
+
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
 export function prepareThreadDatabase(db: DatabaseSync): void {
-  // Provider cursors are saved independently: history cannot rely on replay after a lost commit.
+  // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); what the user takes out does (`flushedCommits`).
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
+  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;`)
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
   for (const migration of migrations) {
     db.exec('BEGIN IMMEDIATE')

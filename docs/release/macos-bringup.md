@@ -17,6 +17,7 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 git clone https://github.com/millZach/Sotto.git && cd Sotto
 git checkout <branch-or-tag>
 npm ci
+node node_modules/electron/install.js   # Electron 43 no longer downloads itself during npm ci
 npm run assets:verify
 npm run lint && npm run typecheck && npm test
 npm run package:dir:mac
@@ -99,6 +100,6 @@ Release notes must carry: "Apple silicon (arm64) only", "not signed or notarized
 
 ## Sotto Owl on the Mac
 
-This checklist covers stable, built by hand. The Mac Owl is not built on a Mac: the **Sotto Owl for Mac** workflow builds it on GitHub's Apple silicon runner from the Windows Owl's commit and version (`releasing.md`, "Cutting a Sotto Owl build"; ADR-0093). Steps 2, 3 and 6 above still apply to a downloaded Owl disk image when a change touches the Mac. Its app is `Sotto.app` with bundle ID `com.sotto.desktop`, like stable, so testing one replaces the other in Applications.
+This checklist covers a stable build made by hand on a Mac, which is now the fallback: stable is built by the **Sotto stable for Mac** workflow (`releasing.md`, "Cutting stable from main"; ADR-0096), and steps 2, 3 and 6 apply to its downloaded disk image the same way. The Mac Owl is not built on a Mac either: the **Sotto Owl for Mac** workflow builds it on GitHub's Apple silicon runner from the Windows Owl's commit and version (`releasing.md`, "Cutting a Sotto Owl build"; ADR-0093). Steps 2, 3 and 6 above still apply to a downloaded Owl disk image when a change touches the Mac. Its app is `Sotto.app` with bundle ID `com.sotto.desktop`, like stable, so testing one replaces the other in Applications.
 
 Until Developer ID signing lands, step 2 reads the same for Owl: `Signature=adhoc`, `spctl` rejected. Once it lands, an Owl app shows `Authority=Developer ID Application: …`, `spctl -a -vvv` says `accepted` with `source=Notarized Developer ID`, and `xcrun stapler validate` passes on the app. The credentials Zach sets up for that are in `macos-owl-signing.md`.
