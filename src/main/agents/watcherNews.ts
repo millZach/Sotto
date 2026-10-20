@@ -34,7 +34,7 @@ const words: Record<WatcherEvent['kind'], string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
-  'needs-user': 'Open this thread to answer its request. Only the user can answer.',
+  'needs-user': 'This thread waits on the user to answer its request, which they do on its card in your conversation or in the thread. Only the user can answer it.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
   'taken-over': 'You took over this thread. Watcher stopped sending to it.',
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',

@@ -22,7 +22,7 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isDelegationNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isDelegationNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import type { UsagePromptRecorder } from './usageService'
@@ -3090,8 +3090,13 @@ export class AgentControl {
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
           const watcherNews = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.()) : undefined
+          // The requests that news said wait on the user go with the wake-up as identities alone, for the workspace to
+          // record, so Watcher's pane can show their cards under it (ADR-0073). They answer nothing. A delegated thread's
+          // card, told as news of the watched thread above it (#1190), is the delegated thread's: it is recorded there.
+          const watcherAsks = watcherNews && item.news ? watcherNewsAsks(item.news) : []
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
-            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
+            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}),
+            ...(watcherAsks.length ? { watcherAsks } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
           sent = true
           if (isWatcherOnlyWakeUp(item)) await this.settleWatcherWakeUp(item, 'told')

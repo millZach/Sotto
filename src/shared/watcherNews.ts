@@ -19,7 +19,8 @@ export const WATCHER_NEWS_BYTES_MAX = 16 * 1_024
 export const WATCHER_NEWS_TARGETS_MAX = 50
 
 /**
- * Text-free observed identities. A request reference opens its owning thread, never an answer card here.
+ * Text-free observed identities. A request reference is the thread's own request: the user answers it on that thread's
+ * card, which Watcher's pane shows under the wake-up's reply as well (ADR-0073), and never through Watcher.
  * `work-settled` comes once per turn that finished with background work or monitoring still running, when that reaches zero.
  * `delegatedThreadId` names the thread a watched thread delegated to whose request card this is: Watcher watches the
  * delegating thread, and hears of the card as that thread's news (#1190).

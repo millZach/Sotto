@@ -10,7 +10,7 @@ import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agent
 import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
 import { watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
-import { queuedWakeUpText, wakeUpText, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
+import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
 
@@ -1856,4 +1856,11 @@ it('finds the topmost watched thread of a long delegation chain', () => {
   const owners = watcherDelegationOwners({ hostId: centerTarget.hostId, threads }, new Set([key('t0'), key('t5')]))
   expect(owners.get(key('t9'))).toBe(key('t0'))
   expect(owners.get(key('t5'))).toBe(key('t0'))
+})
+
+it('records a delegated thread’s card for Watcher’s pane on the delegated thread, where it stands', () => {
+  const event = (delegatedThreadId?: string) => ({ id: randomUUID(), kind: 'needs-user' as const, requestId: randomUUID(), target: centerTarget, generation: 0,
+    observedAt: centerTime, requestCardId: 'rpc:1', requestCardKind: 'question' as const, ...delegatedThreadId ? { delegatedThreadId } : {} })
+  const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0, events: [event(), event('delegated')] }
+  expect(watcherNewsAsks([news]).map(ask => ask.target)).toEqual([centerTarget, { hostId: centerTarget.hostId, threadId: 'delegated' }])
 })

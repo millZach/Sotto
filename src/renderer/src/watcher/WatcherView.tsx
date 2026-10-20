@@ -22,6 +22,7 @@ import { describeThreads, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
+import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext } from '../tools/webLinks'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherTakeovers } from '../../../shared/watcherRoom'
@@ -38,6 +39,8 @@ import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from '.
 import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
+import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
+import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { unlistedStatus, WatcherWatchedView, watchedCount } from './WatcherWatched'
 import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
@@ -265,13 +268,15 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
  * The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header
  * and the needs-you line. The first entry's message reaches it from the room provider (`useFirstMessageDelivery`).
  */
-function WatcherPane({ state, row, header, watched, error, focused, now, describe, press }: {
+function WatcherPane({ state, row, header, watched, error, focused, now, describe, press, answering }: {
   readonly state: AgentState
   readonly row: ThreadRow
   readonly header: ReactNode
   /** What a receipt card or a takeover line says of a thread, and what a press on its name does. */
   readonly describe: WatcherConversation['describe']
   readonly press: WatcherConversation['press']
+  /** What a watched thread's request card under a wake-up answers with (answering in Watcher's conversation). */
+  readonly answering: WatcherAskAnswering | null
   /** The Watched view, when it stands in the conversation's place. */
   readonly watched: ReactNode
   readonly error: string | null
@@ -316,15 +321,22 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   const takeovers = useMemo(() => requests === undefined ? [] : watcherTakeovers({ current, requests }), [current, requests])
   const messages = row.thread.messages
   const lines = useMemo(() => placeTakeovers(messages, takeovers), [messages, takeovers])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press }), [byMessage, lines, describe, press])
+  // Each request a wake-up said waited on the user has its thread's own card under the reply that told of it, where
+  // main's record places it, and only under the newest wake-up that named it (Zach's pick on October 19, 2026).
+  // The placements keep their identity until they change, so the conversation context does not change with every update;
+  // the cards' answering, which does, goes in a context of its own that only the cards read.
+  const placements = useStablePlacements(room?.state?.asks)
+  const asks = useMemo(() => placeAsks(placements), [placements])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks }),
+    [byMessage, lines, describe, press, asks])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
-    <WatcherConversationContext.Provider value={conversation}>
+    <WatcherConversationContext.Provider value={conversation}><WatcherAskAnsweringContext.Provider value={answering}>
       <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
         error={error} now={now} watcherHeader={header} watcherBody={watched}
         notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
-    </WatcherConversationContext.Provider>
+    </WatcherAskAnsweringContext.Provider></WatcherConversationContext.Provider>
   </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
 }
 
@@ -361,6 +373,23 @@ function focusFailure(pane: HTMLElement): boolean {
   const line = failure === undefined ? transcript : failure.querySelector<HTMLElement>(':scope > button') ?? failure
   if (!line.hasAttribute('tabindex')) line.setAttribute('tabindex', '-1')
   line.focus({ preventScroll: true })
+  return true
+}
+
+/**
+ * Brings a waiting request's card in Watcher's conversation into view and focuses it: the card for that request when
+ * there is one, else the first live card for the thread. False when the conversation holds none, so the caller opens the
+ * thread instead. The scroll is instant when motion is reduced.
+ */
+function focusInlineAsk(threadId: string, requestId: string | undefined): boolean {
+  const pane = document.getElementById(WATCHER_PANE_ID)
+  const cards = [...pane?.querySelectorAll<HTMLElement>('.watcher-ask[data-ask-thread]') ?? []].filter(card => card.dataset.askThread === threadId)
+  const card = cards.find(item => item.dataset.askRequest === requestId) ?? cards[0]
+  if (card === undefined) return false
+  card.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  card.focus({ preventScroll: true })
+  // The transcript learns at once whether its reader is still at the end.
+  card.closest('.thread-workspace__transcript')?.dispatchEvent(new Event('scroll'))
   return true
 }
 
@@ -409,6 +438,9 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   // panes, and lets them go after. An empty list goes too: closing the only pane before Watcher exists leaves the
   // room mounted, and main would otherwise go on counting the closed thread as seen.
   const observed = JSON.stringify([watcherId, besideRow?.thread.id ?? null].filter(Boolean))
+  // What is on screen now, for a card's Check again to hand back once its one read is done.
+  const onScreen = useRef<readonly string[]>([])
+  onScreen.current = JSON.parse(observed) as string[]
   useEffect(() => {
     void command({ type: 'observe-threads', threadIds: JSON.parse(observed) as string[] })
   }, [command, observed])
@@ -496,6 +528,40 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   }, [state, rowsById, entries, roomRows])
   const press = useCallback((threadId: string) => threadPress(openThread, threadId, false), [openThread])
 
+  // Answering in Watcher's conversation (ADR-0073): the watched thread's own card, found by its owning host's address
+  // and answered as its own pane answers it, with this window's command.
+  const rowFor = useCallback((target: WatcherThreadTarget): ThreadRow | undefined => {
+    const thread = threadForTarget(state, target)
+    return thread === undefined ? undefined : rowsById.get(thread.id)
+  }, [state, rowsById])
+  const answering = useMemo<WatcherAskAnswering | null>(() => state === null ? null : {
+    state, command, rowFor,
+    openAtRequest: (threadId, from) => openThread(threadId, { atRequest: true, from }),
+    // A card's Check again reads its thread once, alongside what is on screen, and then lets it go again: a thread kept
+    // observed would count as seen, and its later finish or failure would leave Needs attention unopened (#1193).
+    check: async threadId => {
+      const result = await command({ type: 'observe-threads', threadIds: [...new Set([...onScreen.current, threadId])] })
+      await command({ type: 'observe-threads', threadIds: [...onScreen.current] })
+      return result !== null && result.error === null
+    },
+  }, [state, command, rowFor, openThread])
+  // The threads whose waiting request has its card in the conversation now, which the needs-you line goes to instead.
+  const placements = useStablePlacements(room?.state?.asks)
+  const placed = useMemo(() => placeAsks(placements), [placements])
+  const shownMessages = watcherRow?.thread.messages
+  const shownIds = useMemo(() => new Set(shownMessages?.map(message => message.id) ?? []), [shownMessages])
+  const inline = useMemo<ReadonlySet<string>>(() => {
+    if (placed.size === 0 || view.tab !== 'conversation') return new Set()
+    const ids = shownIds
+    const found = new Set<string>()
+    for (const list of placed.values()) for (const ask of list) {
+      const row = ids.has(ask.messageId) ? rowFor(ask.target) : undefined
+      if (row !== undefined && !isThreadClosed(row.thread) && row.thread.requests.some(request => request.id === ask.requestCardId)) found.add(row.thread.id)
+    }
+    return found
+  }, [placed, shownIds, view.tab, rowFor])
+  const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
+
   const error = state?.error ?? agents.error ?? null
   const limit = room?.state?.inFlightLimit ?? app?.settings?.watcherInFlightLimit ?? 4
   const tab = current === null ? 'conversation' : view.tab
@@ -504,7 +570,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const header = <>
     <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} />
-    <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} />
+    <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>
@@ -513,7 +579,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
   else if (watcherRow === undefined) watcherContent = status('Opening Watcher…')
-  else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} describe={describe} press={press} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
+  else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} describe={describe} press={press} answering={answering} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
     watched={tab === 'watched' ? <WatcherWatchedView room={room} state={state} groups={groups} id={watchedPanel} labelledBy={watchedTab} onOpen={openThread}
       onShowAll={from => toggleList(from, true)} /> : null}
     focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
