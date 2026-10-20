@@ -335,9 +335,17 @@ test.describe('Sotto Owl night sky on the built app', () => {
         const reading = await readSky(launched.page)
         expectClear(reading, shown)
         const tile = reading.obstacles.find(obstacle => obstacle.name === 'Sotto Owl tile')!
-        expect(Math.round(tile.x)).toBe(78)
-        // Nothing sits where the traffic lights are drawn, 16 to 68 pixels in.
-        for (const star of reading.stars.filter(candidate => candidate.shown)) expect(star.x, `a star at ${star.x},${star.y}`).toBeGreaterThan(70)
+        // The tile gives 4px of its gap to the lights at the 260px minimum, where the row is short.
+        expect(Math.round(tile.x)).toBe(width < 276 ? 84 : 88)
+        // Nothing sits where the traffic lights are drawn, 16 to about 76 pixels in (macOS 26 and later).
+        for (const star of reading.stars.filter(candidate => candidate.shown)) expect(star.x, `a star at ${star.x},${star.y}`).toBeGreaterThan(78)
+        // Even at the narrowest sidebar the row holds every action at one width, inside the sidebar.
+        const row = await launched.page.locator('aside.thread-nav[data-mode] .thread-nav__top').evaluate(node => ({
+          right: node.getBoundingClientRect().right - parseFloat(getComputedStyle(node).paddingRight),
+          buttons: [...node.querySelectorAll('.tt-button')].map(button => button.getBoundingClientRect()).map(box => ({ width: box.width, right: box.right })),
+        }))
+        expect(new Set(row.buttons.map(button => Math.round(button.width))).size).toBe(1)
+        expect(Math.max(...row.buttons.map(button => button.right))).toBeLessThanOrEqual(row.right + 0.5)
         expectOnScreen(await starsOnScreen(launched.page))
         result[`sidebar-${width}`] = { stars: reading.stars.filter(star => star.shown).length, tileX: Math.round(tile.x) }
         await holdOwlSky(launched.page)

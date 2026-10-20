@@ -48,7 +48,8 @@ function inOpenSky({ at }: OwlSkyStar): boolean {
 }
 
 function place({ at, top, size }: OwlSkyStar): CSSProperties {
-  const across: CSSProperties = 'left' in at ? { left: `calc(var(--owl-sky-inset) + ${at.left}px)` }
+  // A star in the open sky past the tile keeps its share of that sky when the sky narrows (macOS, owlSky.css).
+  const across: CSSProperties = 'left' in at ? { left: at.left >= 40 ? `calc(var(--owl-sky-inset) + 40px + ${at.left - 40}px * var(--owl-open-sky-scale, 1))` : `calc(var(--owl-sky-inset) + ${at.left}px)` }
     : 'right' in at ? { right: `${at.right}px` }
     : { left: `calc(var(--owl-sky-inset) + 40px + (100% - 198px - var(--owl-sky-inset)) * ${at.between})` }
   return { ...across, top: `${top}px`, ...{ '--owl-star-size': `${size}px` } as CSSProperties }

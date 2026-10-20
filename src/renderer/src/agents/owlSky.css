@@ -12,7 +12,9 @@
 /* macOS: the tile sits right of the traffic lights' room, and the sky moves with it. On a sidebar
    narrower than 319 pixels (318 inside its 1-pixel border, which is what the query measures) the open sky between
    the tile and the toolbar closes, so the stars in it go. */
-.thread-nav--mac .thread-nav__sky { --owl-sky-inset: calc(var(--mac-lights-room) - 14px); }
+/* The wider room leaves 10px less open sky between the tile and the toolbar at the default 320px sidebar, so the
+   stars past the tile close up to four fifths of their spread and the brightest stays clear of the mode switch. */
+.thread-nav--mac .thread-nav__sky { --owl-sky-inset: calc(var(--mac-lights-room) - 14px); --owl-open-sky-scale: .8; }
 @container thread-sidebar (width < 318px) { .thread-nav--mac .thread-nav__star[data-open-sky] { display: none; } }
 
 .thread-nav__star { position: absolute; display: block; width: calc(var(--owl-star-size) * var(--tt-owl-star-scale)); height: calc(var(--owl-star-size) * var(--tt-owl-star-scale)); border-radius: 50%; background: var(--tt-owl-star); opacity: var(--owl-star-strength); }
