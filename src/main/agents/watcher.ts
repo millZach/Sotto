@@ -2291,9 +2291,13 @@ export class WatcherService implements WatcherControlHooks {
           const remoteOrigin = { clientId, masterHostId: master.target.hostId, masterCreationOperationId: master.creationOperationId, masterCreatedAt: master.createdAt }
           if (previous) { previous.remoteOrigin = remoteOrigin; continue }
           const thread = this.thread(watch.target), head = nativeHead(thread)
-          ;(next.watches ??= []).push({ ...watch, lastUserMessageId: head,
+          const installed: WatcherStandingWatch = { ...watch, lastUserMessageId: head,
             pausedByUserMessageId: this.humanTurnRunning(thread, next) ? head ?? 'unobserved-user-turn' : null,
-            remoteOrigin })
+            remoteOrigin }
+          ;(next.watches ??= []).push(installed)
+          // A user send that reached this host before the watch did took the participation as if watched for a request
+          // alone. The watch the desktop had already given decides, as recovery does, and the desktop takes the revival.
+          if (next.requests.some(request => request.participants.some(item => keptByWatch(item, installed.target) && item.state === 'taken-over'))) alignGeneration(next, installed)
         }
       })
     })
