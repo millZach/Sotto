@@ -30,13 +30,11 @@ jobs:
     name: Package Sotto stable (Apple silicon)
     runs-on: macos-26
     timeout-minutes: 60
-    # checks: read lets release:check read the source commit's check runs with the job token. The attestation signs
-    # with this run's identity and records it on the public source repository.
+    # checks: read lets release:check read the source commit's check runs with the job token. This job's token can
+    # write nothing; attesting, which needs write scopes, is the next job's alone.
     permissions:
       contents: read
       checks: read
-      id-token: write
-      attestations: write
     env:
       CI: 'true'
       # Inputs reach scripts only through the environment, and are checked before anything reads them.
@@ -90,7 +88,7 @@ jobs:
           SOTTO_RELEASE_CHECK_TOKEN: ${{ github.token }}
         run: npm run package:mac -- --version "$VERSION"
 
-      # The receipt names the files; this checks it describes this build and lists them for the next two steps.
+      # The receipt names the files; this checks it describes this build and lists them for the upload and the attestation.
       - name: Name the files the receipt lists
         id: files
         shell: bash
@@ -120,11 +118,6 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT, `attest<<FILES\n${attest.join('\n')}\nFILES\nupload<<FILES\n${[...attest, ...evidence].join('\n')}\nFILES\n`)
           SCRIPT
 
-      - name: Attest the disk image and blockmap
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-path: ${{ steps.files.outputs.attest }}
-
       # The release lead reads this artifact after `gh run download <run-id> --repo millZach/Sotto --name
       # sotto-stable-mac-<version> --dir release/stable-mac`. Every file sits in release/, so the folder holds them side by side.
       - name: Retain the Mac stable files
@@ -134,3 +127,41 @@ jobs:
           path: ${{ steps.files.outputs.upload }}
           if-no-files-found: error
           retention-days: 14
+
+  # Attesting needs write scopes, so it runs apart from packaging and from the release check's token. It signs the files
+  # the package job kept, with this run's identity, and records the attestation on the public source repository.
+  attest:
+    name: Attest the disk image and blockmap
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the Mac stable files
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-stable-mac-${{ inputs.version }}
+          path: stable-mac
+
+      - name: Name the files to attest
+        id: files
+        shell: bash
+        run: |
+          node --input-type=module - <<'SCRIPT'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+          import process from 'node:process'
+          const receipt = JSON.parse(readFileSync('stable-mac/mac-desktop-package.json', 'utf8'))
+          const attest = Object.values(receipt.files ?? {}).map(file => {
+            if (!/^[A-Za-z0-9._-]+$/u.test(file?.filename ?? '') || !existsSync(`stable-mac/${file.filename}`)) throw new Error('The receipt lists a file that was not kept.')
+            return `stable-mac/${file.filename}`
+          })
+          appendFileSync(process.env.GITHUB_OUTPUT, `attest<<FILES\n${attest.join('\n')}\nFILES\n`)
+          SCRIPT
+
+      - name: Attest the disk image and blockmap
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.files.outputs.attest }}
