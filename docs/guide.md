@@ -47,7 +47,7 @@ A new thread's model follows **New threads start with** in Settings → Agents u
 
 Claude Code model, effort and permission changes reach the thread's running session and wait for Claude Code to confirm them, so the session keeps going. When no session is running, when Claude Code refuses a change, or when the thread enters or leaves full access, Sotto starts the session again with the new settings instead. Choosing a model without a level uses that model's own default level. If Claude Code does not answer, Sotto stops that session and says the change is unconfirmed; the next start carries it, and nothing is sent twice. Stopping the session ends any background agents or commands it was running, so the message names them and the thread shows an error; ask Claude to start them again if you still need them.
 
-Codex model, effort and permission changes use its native settings update and wait for confirmation. An interrupted change does not disconnect the provider. If Codex cannot confirm it, the affected thread asks you to choose its settings again before sending. Other threads remain available; reconnecting does not replay the settings change.
+Codex model, effort and permission changes use its native settings update and wait for confirmation. An interrupted change does not disconnect the provider. If Codex cannot confirm a permission change, the affected thread asks you to choose its settings again before sending. A model or effort change it cannot confirm holds nothing back: the thread still sends and takes another change, and its chip shows the change as unconfirmed until Codex reports it. Other threads remain available; reconnecting does not replay the settings change.
 
 After you type directly in the Claude CLI, the next message from Sotto restarts its client to load the updated native history, even while background work runs. Any work stopped by the restart is named in the notice.
 
@@ -992,6 +992,14 @@ A thread on a paired host continues its agents on that host, once the host's Sot
 In an Owl build, the newest reply of each finished turn offers **Fork from here** under it, beside the copy button. Its card opens in the transcript under that reply, and everything below it is marked **Not carried: this stays in** the thread's name. The card has the model (for Codex and Claude Code), **Same folder** or **New worktree from** the thread's branch, and where the thread runs; **Fork** makes a new thread titled "Fork of" the thread's title and opens it, and **Cancel** or Escape puts the card away and returns to the press. The thread you forked from stays as it is. While a turn is running, the press waits for it to finish, since a fork carries finished turns.
 
 Codex and Claude Code make their own copy of the conversation up to that reply, and the new thread shows it with Sotto's note under the last reply it copied: **Forked from** the thread and at whose reply. Files aren't rewound: the new thread sees the folder as it is now. A Claude Code fork starts in its thread's own folder, so it offers no new worktree. Grok Build, Devin and Muse have no fork of their own, so their new thread starts from a handover of the conversation up to the reply, shown as Sotto's before your first message and sent with it, the way a continued Claude Code agent's thin handover is. Making a fork asks the model nothing; your next message is the first turn. On a paired host, the fork is made on that host.
+
+### Watcher's context and state
+
+Every message Watcher reads or sends reads its whole conversation again, so a long Watcher session costs more with each turn. In Owl, Sotto compacts Watcher's conversation once it passes 400k tokens, between turns: never while Watcher is working, answering a card, or has news or your messages waiting. Claude Code, Codex and Muse can compact; Grok Build can't, so a Grok Watcher keeps all of it.
+
+Watcher keeps what it must not lose through compaction: your pending decisions, the standing rules you gave it and the issues it filed. Sotto adds the threads Watcher watches and what each waits on. After a compaction, Watcher reads all of that back before anything else. With Keep local history off, Watcher's kept words stay in memory only.
+
+Press the owl in Watcher's header to see its context against the 400k point, **Compact context** to compact it now, and Watcher's state as it stands. The thin bar under the owl fills toward the point, and a dot shows when it is close. Escape closes the panel.
 
 ### Watcher permissions and standing watching
 

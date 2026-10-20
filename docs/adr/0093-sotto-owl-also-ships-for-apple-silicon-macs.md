@@ -4,6 +4,8 @@
 
 Accepted by Zach on October 19, 2026. **Number provisional until merge:** 0092 is free on `origin/main` at the time of writing, where 0091 is worker roles; recheck before merging (docs/agents/domain.md). It amends [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), whose track was Windows only, and [ADR-0001](0001-macos-unsigned-arm64-distribution.md), whose Mac build had no CI, no zip, no update feed and no signing identity. Stable on the Mac keeps every part of ADR-0001.
 
+Amended October 20, 2026: [ADR-0096](0096-stable-mac-builds-in-github-actions.md) builds stable Mac in GitHub Actions too. Below, "built by hand on a Mac" now describes only the fallback; stable Mac is otherwise unchanged.
+
 The decision lands in two stages. Stage 1 needs no Apple credentials and is built. Stage 2 needs a Developer ID certificate and a notarization key in GitHub's secrets, and is built when Zach has added them.
 
 ## Context
