@@ -434,7 +434,7 @@ export function SettingsView({
     <div className="management-view settings-view">
       <div className="settings-layout">
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
-        <aside className="settings-sidebar thread-nav">
+        <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'}>
           <SidebarTop />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}>Settings</h1>

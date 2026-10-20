@@ -72,8 +72,10 @@ it('watches without sending, survives request closure and process-state restart,
   const watch = f.service.state().standingWatches![0]!
   await f.restart()
   expect(f.service.state().standingWatches).toEqual([watch])
-  const roster = await f.call('list_threads', {})
-  expect(roster.status === 'ok' && roster.rows.find(row => row.target.threadId === target.threadId)?.standingWatch?.id).toBe(watch.id)
+  const roster = await f.call('list_threads', { detail: 'full' })
+  expect(roster.status === 'ok' && (roster.rows.find(row => row.target.threadId === target.threadId) as { standingWatch?: { id: string } } | undefined)?.standingWatch?.id).toBe(watch.id)
+  // The slim roster, its default, names the watch too (#1191).
+  expect(await f.call('list_threads', {})).toMatchObject({ rows: expect.arrayContaining([expect.objectContaining({ target, watched: true, standingWatchId: watch.id })]) })
   // Real adapters publish the native head even when the master has no open message window.
   const master = f.native(f.watcherId())
   master.lastUserMessageId = master.messages.findLast(message => message.role === 'user')?.id
@@ -574,7 +576,7 @@ it('enforces the same mixed-origin turn budget at the owning host before a fifth
   expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic owning mixed budget')).toHaveLength(4)
 })
 
-it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn and blocks now, queue and steer through restart', async origin => {
+it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn and holds sends that are not steers through restart', async origin => {
   const f = await fixture(), target = await f.create()
   await f.service.watchThread({ target })
   const watch = f.service.state().standingWatches![0]!
@@ -591,8 +593,8 @@ it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn a
   await f.restart()
   expect(f.service.state().standingWatches).toHaveLength(1)
   expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)).toMatchObject({ watched: true, paused: true })
-  for (const delivery of ['now', 'queue', 'steer']) expect(await f.call('send_to_thread', { ...automatic, retryKey: randomUUID(), delivery, expectedTurnId: f.native(target.threadId).lastTurn?.id }))
-    .toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  for (const delivery of ['now', 'queue']) expect(await f.call('send_to_thread', { ...automatic, retryKey: randomUUID(), delivery, expectedTurnId: f.native(target.threadId).lastTurn?.id }))
+    .toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   const machineDrafts = new Set(f.control.watcherRecord().operations.filter(operation => operation.target.threadId === target.threadId).map(operation => operation.draftId))
   expect(f.control.shell().followups?.some(item => machineDrafts.has(item.draftId) && item.threadId === target.threadId)).toBe(false)
   await f.finish(target.threadId)
@@ -751,8 +753,8 @@ it('syncs watches to the owning host, persists takeover there and refuses withdr
   expect((await worker.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic owning-host user prompt' })).error).toBeNull()
   await worker.restart()
   expect(worker.control.watcherRecord().watches![0]!.pausedByUserMessageId).toBeTruthy()
-  for (const delivery of ['now', 'queue', 'steer']) expect(await master.call('send_to_thread', { ...input, retryKey: randomUUID(), delivery }))
-    .toMatchObject({ code: 'THREAD_TAKEN_OVER' })
+  for (const delivery of ['now', 'queue']) expect(await master.call('send_to_thread', { ...input, retryKey: randomUUID(), delivery }))
+    .toMatchObject({ code: 'THREAD_BUSY' })
   await worker.finish(target.threadId)
   await expect.poll(() => worker.native(target.threadId).messages.at(-1)?.text).toBe('Synthetic owning-host user prompt')
   await worker.finish(target.threadId)
@@ -822,4 +824,198 @@ it('rechecks connection guards at management mutations and lets unwatch beat an 
   expect(await assigning).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
   expect(worker.control.watcherRecord().watches).toEqual([])
   expect(master.service.state().standingWatches?.some(watch => watch.target.hostId === pairedTarget.hostId)).toBe(false)
+})
+
+it('keeps a watched thread Watcher’s after the user sends there, under the user’s own request as under the watch', async () => {
+  const f = await fixture(), target = await f.create(), requestId = await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  const watch = f.service.state().standingWatches![0]!
+  const row = () => f.service.state().watchedThreads.find(item => item.target.threadId === target.threadId)
+  expect(await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic first brief', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  await f.finish(target.threadId)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user prompt' })).error).toBeNull()
+  // While the user's turn runs, Watcher can steer it and nothing else, and the thread is still watched.
+  expect(row()).toMatchObject({ watched: true, paused: true })
+  expect(f.control.watcherRecord().requests.flatMap(request => request.participants).every(participant => participant.state === 'participating')).toBe(true)
+  for (const delivery of ['now', 'queue']) expect(await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic held prompt', delivery }))
+    .toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  await f.finish(target.threadId)
+  await expect.poll(() => f.control.hasPendingThreadWork(target.threadId)).toBe(false)
+  await expect.poll(() => row()?.paused).toBe(false)
+  // Once it ends, Watcher sends again under the user's request and under the watch.
+  expect(await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic brief after the user', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  await f.finish(target.threadId)
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic watched brief after the user', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  expect(row()).toMatchObject({ watched: true, paused: false })
+})
+
+it('steers the user’s own running turn in a watched thread', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user prompt' })).error).toBeNull()
+  const native = f.native(target.threadId)
+  native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)).toMatchObject({ watched: true, paused: true })
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic steer', delivery: 'steer', expectedTurnId: native.lastTurn.id }))
+    .toMatchObject({ status: 'ok' })
+  expect(f.workspace.adapters.codex.commands.some(command => command.type === 'steer' && command.text === 'Synthetic steer')).toBe(true)
+})
+
+it('never stops the user’s own running turn in a watched thread', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user prompt' })).error).toBeNull()
+  const native = f.native(target.threadId)
+  native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const interrupts = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+  const before = interrupts()
+  expect(await f.call('stop_thread', { requestId: watch.id, retryKey: randomUUID(), target })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(interrupts()).toBe(before)
+  // Nor under the user's earlier request, from a Watcher turn that answers something else, such as news.
+  const requestId = await f.request()
+  const master = f.native(f.watcherId())
+  master.messages.push({ id: randomUUID(), role: 'user', text: 'Synthetic Sotto news', createdAt: new Date().toISOString() })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await f.call('stop_thread', { requestId, retryKey: randomUUID(), target })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(interrupts()).toBe(before)
+  // Nothing was fenced for the stops that did not go: the thread is still Watcher's to keep going.
+  expect(f.control.watcherRecord().requests.flatMap(request => request.participants).some(participant => participant.automationStopped)).toBe(false)
+})
+
+it('gives back a participation an older build took from a thread that is still watched', async () => {
+  const f = await fixture(), target = await f.create(), requestId = await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  expect(await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic first brief', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  await f.finish(target.threadId)
+  // What the Vacancy thread's record held: the user's send took the participation away for good.
+  // Every participation taken closes the user's request, so the next brief goes under a new one.
+  const takeAway = () => f.control.updateWatcher(record => {
+    for (const participant of record.requests.flatMap(request => request.participants)) if (participant.target.threadId === target.threadId) {
+      participant.state = 'taken-over'; participant.generation += 1; participant.takeover = { reason: 'user-send', at: new Date().toISOString() }
+    }
+  })
+  const states = () => f.control.watcherRecord().requests.flatMap(request => request.participants).filter(participant => participant.target.threadId === target.threadId)
+    .map(participant => participant.state)
+  await takeAway()
+  await f.restart()
+  expect(states()).toEqual(states().map(() => 'participating'))
+  await f.finish(f.watcherId())
+  const next = await f.request()
+  const after = await f.call('send_to_thread', { requestId: next, retryKey: randomUUID(), target, text: 'Synthetic brief after restart', delivery: 'now' })
+  expect(after, JSON.stringify(after)).toMatchObject({ status: 'ok' })
+})
+
+it('keeps a thread the user stopped watching from Watcher until the user hands it back', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  // Watcher's own unwatch leaves it free to watch the thread again while it answers the user.
+  expect(await f.call('unwatch_thread', { target })).toMatchObject({ status: 'ok', watched: false })
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  // The user's Stop watching does not: the same turn, and its continuations, cannot undo it.
+  expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.service.state().standingWatches ?? []).toEqual([])
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.watched).not.toBe(true)
+  // A message the user sends Watcher afterwards hands it back.
+  await f.finish(f.watcherId())
+  await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  expect(f.control.watcherRecord().userUnwatches).toBeUndefined()
+  // So does Watch, at once.
+  expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(await f.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  expect(f.control.watcherRecord().userUnwatches).toBeUndefined()
+  // And the record survives a restart.
+  expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  await f.restart()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('takes the newest user message Watcher’s requests know when its thread is out of view at Stop watching', async () => {
+  const f = await fixture(), target = await f.create(), requestId = await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  const root = f.control.watcherRecord().requests.find(request => request.id === requestId)!.rootUserMessageId
+  // Watcher's provider is between snapshots, so its thread is not listed when the user stops watching.
+  const snapshot = f.control.watcherSnapshot.bind(f.control), watcherId = f.watcherId()
+  const hidden = vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const shown = snapshot()
+    return { ...shown, threads: shown.threads.filter(thread => thread.id !== watcherId) }
+  })
+  expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  hidden.mockRestore()
+  expect(f.control.watcherRecord().userUnwatches).toMatchObject([{ target, watcherHead: root }])
+  // The turn answering the message from before Stop watching cannot take the thread back.
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it.each([['a pull request wake-up', 'a standing watch'], ['a pull request wake-up', 'a request alone'], ['a delegated brief', 'a request alone']] as const)(
+  'never takes %s Sotto sent for the user in a thread watched by %s', async (message, kind) => {
+    const f = await fixture(), requestId = await f.request()
+    const started = await f.call('start_thread', { requestId, retryKey: randomUUID(), project: { hostId: f.control.hostId()!, projectId: f.project.id },
+      modelId: f.model.id, title: 'Synthetic worker', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic worker turn' })
+    if (started.status !== 'ok') throw new Error('Synthetic start refused')
+    const target = started.target
+    await f.finish(target.threadId)
+    // An older paired host's participation has no standing watch.
+    if (kind === 'a request alone') await f.control.updateWatcher(record => { record.watches = [] })
+    if (message === 'a pull request wake-up') {
+      await f.control.deliverWakeUp(target.threadId, { pullRequest: { url: 'https://github.com/o/r/pull/1', number: 1, title: 'Synthetic pull request' },
+        startedBy: 'agent', head: 'head-1', changes: [{ kind: 'checks-failed', checks: [{ name: 'build', status: 'failure', url: null }] }], ended: null }, { tool: false })
+      await expect.poll(() => f.native(target.threadId).messages.findLast(item => item.role === 'user')?.text).not.toBe('Synthetic worker turn')
+    } else {
+      // A delegation's brief is known by the message ID delegation gave it, which its hook on the coordinator answers.
+      const brief = randomUUID()
+      f.control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [],
+        messageIdFor: () => undefined, guardFor: () => undefined, ownsMessage: messageId => messageId === brief })
+      f.native(target.threadId).messages.push({ id: brief, role: 'user', text: 'Synthetic delegated brief', createdAt: new Date().toISOString() })
+    }
+    const native = f.native(target.threadId); native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+    f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    const participants = f.control.watcherRecord().requests.flatMap(request => request.participants).filter(item => item.target.threadId === target.threadId)
+    expect(participants.map(item => item.state)).toEqual(participants.map(() => 'participating'))
+    expect(f.control.watcherRecord().watches?.[0]?.pausedByUserMessageId ?? null).toBeNull()
+    await f.finish(target.threadId)
+    const sent = await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic brief after Sotto’s message', delivery: 'now' })
+    expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
+  })
+
+it('gives a paired thread back to Watcher when its watch reaches the owning host after the user sent there', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create()
+  const clientId = randomUUID()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => worker.service.admitRemote(request, clientId, () => undefined),
+    subscribe: listener => worker.control.subscribe(() => listener(target.hostId)),
+  }
+  master.service.useRemoteHosts(remote)
+  expect(await master.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const watch = master.service.state().standingWatches![0]!, identity = master.service.state().current!
+  const requestId = await master.request()
+  expect(await master.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic paired brief', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  await worker.finish(target.threadId)
+  // The host holds the participation but, as before the desktop's watch reached it, no watch: the user's send there
+  // takes the participation as if the thread were watched for a request alone.
+  await worker.control.updateWatcher(record => { record.watches = [] })
+  expect((await worker.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic owning-host user prompt' })).error).toBeNull()
+  const states = () => worker.control.watcherRecord().requests.flatMap(request => request.participants).filter(item => item.target.threadId === target.threadId).map(item => item.state)
+  expect(states()).toContain('taken-over')
+  await worker.finish(target.threadId)
+  await expect.poll(() => worker.control.hasPendingThreadWork(target.threadId)).toBe(false)
+  // The watch arrives, and with it the thread is Watcher's again, on the host and then on the desktop.
+  expect(await worker.service.readRemote({ master: identity, standingWatches: [watch] }, clientId, () => undefined)).toMatchObject({ hostId: target.hostId })
+  expect(states()).toEqual(states().map(() => 'participating'))
+  // The user's request closed once its only participation was taken; the watch carries Watcher's next brief.
+  await master.finish(master.watcherId())
+  const sent = await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic paired brief after the user', delivery: 'now' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
+  expect(master.service.state().requests.find(request => request.id === requestId)!.participants
+    .find(item => item.target.threadId === target.threadId)).toMatchObject({ state: 'participating' })
 })

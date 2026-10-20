@@ -48,7 +48,9 @@ it.each([1, 6])('copies at most one Watcher record for unchanged observations wi
     const afterMachine = observeWork()
 
     // This is an actual newer native human head, unlike the separate stale-head classification regression.
-    // It must still fence earlier participation and refresh the authoritative head/pause despite the optimization.
+    // It must still fence earlier Watcher work and refresh the authoritative head/pause despite the optimization.
+    // Under a standing watch the user's message pauses the watch rather than taking participation (ADR-0073, October 19).
+    const generations = f.state().watches!.map(watch => watch.generation)
     for (const [index, thread] of f.snapshot.threads.entries()) {
       const head = `native-human-${index}`
       thread.messages.push({ id: head, role: 'user', text: 'Synthetic direct human instruction', createdAt: centerTime })
@@ -58,18 +60,20 @@ it.each([1, 6])('copies at most one Watcher record for unchanged observations wi
     const changedHuman = observeWork()
     for (let index = 0; index < watches; index++) {
       expect(f.state().watches![index]).toMatchObject({ lastUserMessageId: `native-human-${index}`, pausedByUserMessageId: `native-human-${index}` })
-      expect(f.state().requests[0]!.participants[index]).toMatchObject({ state: 'taken-over', takeover: { reason: 'native-user-send' } })
+      expect(f.state().watches![index]!.generation).toBeGreaterThan(generations[index]!)
+      expect(f.state().requests[0]!.participants[index]).toMatchObject({ state: 'participating', generation: f.state().watches![index]!.generation })
+      expect(f.state().requests[0]!.participants[index]!.takeover).toBeUndefined()
     }
     const afterHuman = observeWork()
     for (let index = 0; index < watches; index++) expect(f.state().watches![index]).toMatchObject({
       lastUserMessageId: `native-human-${index}`, pausedByUserMessageId: `native-human-${index}`,
     })
-    const takenOver = structuredClone(f.state().requests[0]!.participants)
+    const paused = structuredClone(f.state().requests[0]!.participants)
     // A completed idle native turn with no pending user work releases its standing pause as before.
     for (const thread of f.snapshot.threads) { thread.status = 'idle'; thread.lastTurn!.status = 'completed' }
     const completedHuman = observeWork()
     expect(f.state().watches!.every(watch => watch.pausedByUserMessageId === null)).toBe(true)
-    expect(f.state().requests[0]!.participants).toEqual(takenOver)
+    expect(f.state().requests[0]!.participants).toEqual(paused)
     expect(f.state().requests[1]!.participants).toEqual(historical)
     const afterCompleted = observeWork()
     // Collect both steady passes and prove changed-head behavior before the expected initial RED assertion.

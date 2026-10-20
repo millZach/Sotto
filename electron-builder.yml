@@ -112,6 +112,8 @@ mac:
     # builds it before packaging; it ships only in the Mac app.
     - from: native/coreml-asr/.build/sotto-coreml-asr
       to: coreml-asr/sotto-coreml-asr
+    - from: resources/dock
+      to: dock
 
 # Default layout already gives the app plus an /Applications link.
 dmg:

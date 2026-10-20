@@ -69,6 +69,13 @@ const brief = (patch: Record<string, unknown>) => ({ id: randomUUID(), delegatin
   rootUserMessageId: 'root', inputDigest: 'a'.repeat(64), draftId: randomUUID(), messageId: randomUUID(), expectedLastUserMessageId: null,
   deliveryState: 'accepted', outcome: 'working', told: 'working', charged: true, createdAt: at, updatedAt: at, ...patch })
 
+it('owns the message IDs of its own briefs, so a watcher never takes one for the user', async () => {
+  const sent = brief({})
+  const f = await service([sent], [thread('parent'), thread('child')])
+  expect(f.hooks.ownsMessage?.(sent.messageId)).toBe(true)
+  expect(f.hooks.ownsMessage?.(randomUUID())).toBe(false)
+})
+
 it('fences a brief already on its way to the writer when the user stops the thread that delegated it', async () => {
   const sending = brief({ deliveryState: 'dispatching', outcome: undefined, told: undefined })
   const f = await service([sending], [thread('parent', { status: 'running' }), thread('child')])

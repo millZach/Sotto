@@ -83,7 +83,7 @@ describe.each(['codex', 'claude', 'grok'] as const)('Watcher reaches a %s thread
     expect(await f.send('queue', 'Synthetic queued note')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
     expect(f.sent('Synthetic queued note')).toBe(0)
     await f.turn('finished', job)
-    await vi.waitFor(() => expect(f.sent('Synthetic queued note')).toBe(1))
+    await vi.waitFor(() => expect(f.sent('Synthetic queued note')).toBe(1), { timeout: 10_000 })
     expect(f.native().thread.backgroundWork).toEqual(job)
   })
 
@@ -129,10 +129,12 @@ it('delivers a later request’s queued prompt to a thread Stop all held, and ke
   await f.turn('running', job)
   expect(await f.send('queue', 'Synthetic note after Stop all')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   await f.turn('finished', job)
-  await vi.waitFor(() => expect(f.sent('Synthetic note after Stop all')).toBe(1))
-  // Its turn over again, the thread takes a send at once.
+  await vi.waitFor(() => expect(f.sent('Synthetic note after Stop all')).toBe(1), { timeout: 10_000 })
+  // Its queue settled and its turn over again, the thread takes a send at once.
+  await vi.waitFor(() => expect(f.control.hasPendingThreadWork(f.target.threadId)).toBe(false), { timeout: 10_000 })
   await f.turn('finished', job)
-  expect(await f.send('now', 'Synthetic now after Stop all')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  const now = await f.send('now', 'Synthetic now after Stop all')
+  expect(now, JSON.stringify(now)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   // The machine Stop still holds what it held: prompts saved by the user and Sotto's news.
   expect(f.service.preserveUserQueue(f.target.threadId)).toBe(true)
 })

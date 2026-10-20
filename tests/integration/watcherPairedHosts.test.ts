@@ -35,6 +35,9 @@ import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import type { AgentState } from '../../src/shared/agents'
 
+/** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
+const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
+
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { try { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() } finally { vi.restoreAllMocks() } })
@@ -60,7 +63,7 @@ async function master(native?: CodexAppServerHost, usage = false) {
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource()
-  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
+  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
     machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads) })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
@@ -343,14 +346,14 @@ it('refuses start before the wire when the owning-host path is missing', async (
   expect(await f.call('list_projects', {})).toMatchObject({ status: 'ok', projects: expect.arrayContaining([expect.objectContaining({ target: { hostId: f.pairing.hostId, projectId: f.project.id }, controlAvailable: false })]) })
 })
 
-it('publishes host user takeover and fences queued automated prompts before another writer', async () => {
+it('publishes the host user’s turn and holds automated prompts behind it before another writer', async () => {
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   const confirmation = f.watcher.prepareStopAll()
   if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
   await f.socket.command({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic phone instruction' })
-  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.state).toBe('taken-over'))
-  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic refused', delivery: 'queue' })).toMatchObject({ code: 'THREAD_TAKEN_OVER' })
+  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]).toMatchObject({ watched: true, paused: true, participation: [{ state: 'participating' }] }))
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic refused', delivery: 'queue' })).toMatchObject({ code: 'THREAD_BUSY' })
   expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ code: 'TARGET_CHANGED' })
 })
 
@@ -459,9 +462,9 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic fenced queue' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   await native.driver.typeInProvider(nativeId, 'Synthetic native instruction')
-  // The background poll can finish before it discovers this rollout. Establish takeover before releasing the queue.
+  // The background poll can finish before it discovers this rollout. Establish the user's turn before releasing the queue.
   await native.adapter.refreshThread(nativeId)
-  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+  await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.paused).toBe(true))
   await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === (queued.status === 'ok' ? queued.receipt.operationId : ''))?.deliveryState).toBe('failed'))
   const written = await native.driver.requests()
@@ -492,10 +495,13 @@ it('fences native input arriving at a prepared paired queue writer before anothe
   try {
     await native.driver.completeTurn(nativeId, 'Synthetic completion before late input')
     await gate.entered
+    // The user's input moves the owning host's watch to a new generation, which fences the prepared send.
+    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    const generation = () => owner.state().standingWatches?.find(item => item.target.threadId === target.threadId)?.generation ?? -1
+    const before = generation()
     await native.typeUnseen(nativeId, 'Synthetic native input after preparation')
     gate.release()
-    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
-    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(generation()).toBeGreaterThan(before))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
@@ -544,15 +550,19 @@ it('settles a refused paired queue send even when the takeover clears the queue 
   try {
     await native.driver.completeTurn(nativeId, 'Synthetic completion before refused input')
     await gate.entered
+    // The user's input moves the owning host's watch to a new generation, which fences the prepared send.
+    const generation = () => owner.state().standingWatches?.find(item => item.target.threadId === target.threadId)?.generation ?? -1
+    const before = generation()
     await native.typeUnseen(nativeId, 'Synthetic native input before the refused send')
     gate.release()
     await finishing.entered
-    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(generation()).toBeGreaterThan(before))
     await vi.waitFor(() => expect(queueItem()).toBeUndefined())
     finishing.release()
     await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
-    expect(f.watcher.state().inFlight).toBe(0)
+    // The in-flight count can follow the failed receipt by an update (it failed CI twice when read at once), so it is waited for too.
+    await vi.waitFor(() => expect(f.watcher.state().inFlight).toBe(0))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); finishing.release() }
@@ -624,9 +634,10 @@ it('sends to a full-access thread on a paired host when this computer\'s new-thr
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === threadId)?.runtimeMode).toBe('full-access')
   // The aggregate list and one naming the host give the permission start and send hold to there.
   const listed = async (input: { hostId?: string }) => {
-    const projects = await f.call('list_projects', input)
+    // Models come only when asked for (#1191).
+    const projects = await f.call('list_projects', { ...input, includeModels: true })
     if (projects.status !== 'ok') throw new Error('list-refused')
-    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)?.defaultPermission
+    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers?.find(item => item.modelId === f.model.id)?.defaultPermission
   }
   expect(await listed({})).toEqual({ kind: 'runtime', mode: 'full-access' })
   expect(await listed({ hostId: f.pairing.hostId })).toEqual({ kind: 'runtime', mode: 'full-access' })
@@ -670,9 +681,9 @@ it('refuses a model without an asking mode on a host where this computer may not
       return { ...state, host: { ...state.host, models: state.host.models.map(model => model.id === f.model.id ? { ...model, runtimeModes: ['auto', 'full-access'] as const } : model) } }
     })
   }
-  const projects = await f.call('list_projects', { hostId: f.pairing.hostId })
+  const projects = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true })
   if (projects.status !== 'ok') throw new Error('list-refused')
-  expect(projects.projects[0]?.workers.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
+  expect(projects.projects[0]?.workers?.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') })
   expect(writes).not.toHaveBeenCalled()
@@ -988,7 +999,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => true, watcherEnabled: true } })
   let control = f.control
-  let worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  let worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
   cleanups.push(async () => { worker.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-master-project', provider: 'codex' as const,
@@ -1011,7 +1022,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   expect(await worker.admitRemote(queued, clientId, () => undefined)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   worker.close(); control.dispose(); await control.closed()
   control = f.create()
-  worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const code = (id: string) => { try { worker.guardOperation(id); return undefined } catch (error) { return (error as { result?: { code: string } }).result?.code } }
   expect(control.watcherRecord().operations.find(item => item.id === queued.operation.id)?.deliveryState).toBe('queued')
@@ -1087,7 +1098,11 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
     expect(list.rows.map(row => row.target)).toContainEqual(started.target)
     expect(list.rows.map(row => row.target)).not.toContainEqual({ hostId, threadId: twin.id })
   }
-  if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
+  if (check === 'protection') {
+    // A slim row, the default (#1191), says protected only when it is.
+    const row = list.rows.find(item => item.target.hostId === started.target.hostId && item.target.threadId === twin.id)
+    expect(row).toBeDefined(); expect(row?.protected).toBeFalsy()
+  }
 })
 
 it.each([

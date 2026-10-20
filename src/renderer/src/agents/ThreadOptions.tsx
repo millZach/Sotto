@@ -170,8 +170,10 @@ export function settingRefusalText(provider: string, wanted: string, inForce: st
  * session, and what stopped with it) already names the provider and says what happened, so it is shown alone; main's
  * general one is put in plain words.
  */
-export function unconfirmedSettingText(provider: string, wanted: string, error: string | null): string {
+export function unconfirmedSettingText(provider: string, wanted: string, error: string | null, inForce?: string): string {
   if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED) {
+    // A model or effort with no result holds nothing back, so a turn can run on the one before it meanwhile (#1192).
+    if (inForce !== undefined && inForce !== wanted) return `${provider} has not confirmed ${wanted}. Until it does, a turn can still run on ${inForce}.`
     return `${provider} has not confirmed ${wanted}. The thread starts on ${wanted} the next time it is used, and Sotto checks it then.`
   }
   return error
@@ -305,7 +307,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const bar = useRef<HTMLDivElement>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
-  const unconfirmedId = useId()
+  const unconfirmedId = useId(), unconfirmedModelId = useId(), unconfirmedEffortId = useId()
   const { models: own, locked } = threadModelChoices(state, thread, watcher)
   // Watcher keeps its provider; another provider's model is a new Watcher, which main makes and which offers the last
   // one's handover (ADR-0073). Only where the room can open one.
@@ -340,11 +342,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /**
    * The chips are fixed by what a provider actually refuses: a turn under way, an unanswered request, an archived
    * thread, a provider that is gone, and a prompt still on its way, which a change would run behind once its turn has
-   * started. Also while main keeps a change with no result, since it takes no other action on the thread until it
-   * knows. They do not read the coordinator's busy mark, which covers the very save a press starts and outlives its
+   * started. Also while main keeps a permission change with no result, since it takes no other action on the thread
+   * until it knows; a model or effort change with no result holds nothing back, so another choice can replace it
+   * (#1192), and its chip keeps its mark until the provider reports it. They do not read the coordinator's busy mark, which covers the very save a press starts and outlives its
    * reply: a save in flight fixes nothing, and main's thread lane runs the saves and any prompt in order.
    */
-  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id) || unconfirmed.size > 0
+  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
   const unconfirmedKey = [...unconfirmed].join(',')
   useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, unconfirmedKey])
@@ -429,8 +432,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     {kinds.map(kind => {
       const pending = settings.pending[kind]
       if (pending?.awaiting !== 'unconfirmed') return null
-      return <p key={`unconfirmed-${kind}`} id={kind === 'permissions' ? unconfirmedId : undefined} className="thread-options__notice" role="alert">
-        <span>{unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error)}</span></p>
+      return <p key={`unconfirmed-${kind}`} id={kind === 'permissions' ? unconfirmedId : kind === 'model' ? unconfirmedModelId : unconfirmedEffortId} className="thread-options__notice" role="alert">
+        <span>{unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
     })}
     {kinds.map(kind => {
       const refusal = settings.refusals[kind]
@@ -444,6 +447,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
+        pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId}
         unavailable={continueUnavailable} continueOn={continueOn} onChange={pressed => {
         if (continuing && continuations.some(model => model.id === pressed)) { continuing.onContinue(pressed); return }
         const picked = others.find(model => model.id === pressed)
@@ -456,7 +460,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models)
       }} />
       {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={fixed || modelDisabled} onChange={reasoningEffort => {
+        disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models)
         }}
