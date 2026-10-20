@@ -1,11 +1,12 @@
 import { baseProps, selectCategory, SOTTO_MODEL, ULTRA_MODEL } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, sottoSpeechModelOption } from '../../../../../src/shared/speechModel'
+import type { SottoPlatform } from '../../../../../src/shared/platform'
 
 const picker = (): HTMLSelectElement => screen.getByRole('combobox', { name: 'Speech model' })
 const DOWNLOADS = [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2].map((model) => sottoSpeechModelOption(model, false))
@@ -68,5 +69,71 @@ describe('Settings → Transcription speech model', () => {
     expect(groups()).toEqual(['Already on this computer', 'Download'])
   })
 
+  describe.each(['win32', 'linux'] as const)('from the keyboard on %s', (platform: SottoPlatform) => {
+    const renderPicker = async (onChooseSpeechModel = vi.fn()) => {
+      render(<SettingsView {...baseProps({ platform, speechModel: { state: 'missing' }, speechModels: DOWNLOADS, onChooseSpeechModel, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: null } })} />)
+      await selectCategory('Transcription')
+      picker().focus()
+      return onChooseSpeechModel
+    }
 
+    it('moves through the closed list with the arrow keys without starting a download', async () => {
+      const onChooseSpeechModel = await renderPicker()
+      // The key's own change is stopped, so the list never fires a change of its own.
+      expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_V3.id)
+      expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
+      expect(fireEvent.keyDown(picker(), { key: 'End' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_V2.id)
+      expect(fireEvent.keyDown(picker(), { key: 'ArrowUp' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
+      expect(screen.getByText('Press Enter to download Parakeet Ultra, 671 MB, and switch dictation to it.')).toBeVisible()
+      expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    })
+
+    it('chooses the model moved to on Enter', async () => {
+      const onChooseSpeechModel = await renderPicker()
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(false)
+      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
+    })
+
+    it('goes back to the chosen model on Escape or on leaving the list', async () => {
+      const onChooseSpeechModel = await renderPicker()
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      expect(fireEvent.keyDown(picker(), { key: 'Escape' })).toBe(false)
+      expect(picker()).toHaveValue('')
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      fireEvent.blur(picker())
+      expect(picker()).toHaveValue('')
+      expect(screen.getByText('The model that turns your speech into text. Choosing one switches dictation to it.')).toBeVisible()
+      expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    })
+
+    it('goes to a model by its first letter without choosing it', async () => {
+      const onChooseSpeechModel = await renderPicker()
+      expect(fireEvent.keyDown(picker(), { key: 'p' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_V3.id)
+      fireEvent.keyDown(picker(), { key: 'p' })
+      expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
+      expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    })
+
+    it('still chooses with a click in the open list', async () => {
+      const onChooseSpeechModel = await renderPicker()
+      await userEvent.selectOptions(picker(), 'Parakeet v2, 661 MB')
+      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_V2.id)
+    })
+  })
+
+  it('leaves the keys to the menu macOS opens, where only Enter or a click chooses', async () => {
+    const onChooseSpeechModel = vi.fn()
+    render(<SettingsView {...baseProps({ platform: 'darwin', speechModels: DOWNLOADS, onChooseSpeechModel, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: null } })} />)
+    await selectCategory('Transcription')
+    expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(true)
+    expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(true)
+    expect(onChooseSpeechModel).not.toHaveBeenCalled()
+  })
 })
