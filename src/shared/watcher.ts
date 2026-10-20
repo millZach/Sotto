@@ -112,7 +112,27 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   group: watcherGroupSchema, waitsOn: z.array(pending).max(100), branch: z.string().max(512).nullable(),
   workingCopy: workingCopy.nullable(), pullRequests: z.array(pr).max(50), evidence: z.array(watcherEvidenceSchema).max(100),
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
-  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean() }).strict()
+  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean(),
+  // The desktop's alone (#1191): whether Watcher watches the thread, as a slim row says. A paired host never sends it.
+  watched: z.boolean().optional() }).strict()
+/**
+ * A pull request as a slim read gives it (#1191): its number, or its address when that has none, and what it says now,
+ * instead of every evidence fact. A fact GitHub has not been read for is left out rather than guessed, and approval,
+ * auto-merge and staleness are said only when true.
+ */
+export const watcherPullRequestSummarySchema = z.object({ number: z.number().int().positive().optional(), url: z.string().max(2_048).optional(),
+  state: z.enum(['open', 'closed', 'merged']).optional(), checks: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(),
+  approved: z.literal(true).optional(), autoMerge: z.literal(true).optional(), stale: z.literal(true).optional() }).strict()
+export type WatcherPullRequestSummary = z.infer<typeof watcherPullRequestSummarySchema>
+/** A roster row in list_threads' slim detail, its default (#1191): who it is, where it stands and what it waits on. */
+const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId, status: z.enum(['idle', 'running', 'error']),
+  group: watcherGroupSchema, waitsOn: z.array(pending).max(100), watched: z.boolean(), standingWatchId: z.uuid().optional(), connected: z.boolean(),
+  // Why it needs the user or is not watched, said only when true: its newest turn failed, its user took it over, or its
+  // automation was stopped.
+  turnFailed: z.literal(true).optional(), takenOver: z.literal(true).optional(), automationStopped: z.literal(true).optional(),
+  protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
+/** How much list_threads and read_thread say of each thread's evidence (#1191). */
+export const watcherDetailSchema = z.enum(['slim', 'full'])
 const staleHost = z.object({ hostId: z.uuid(), observedAt: time.nullable() }).strict()
 const counts = z.object(Object.fromEntries(WATCHER_GROUPS.map(group => [group, counter])) as Record<typeof WATCHER_GROUPS[number], typeof counter>).strict()
 const paging = { cursor: cursor.optional(), limit: z.number().int().min(1).max(WATCHER_ROSTER_MAX).default(WATCHER_ROSTER_MAX) }
@@ -166,18 +186,22 @@ export const watcherToolSchemas = {
     output: result({ target: watcherThreadTargetSchema, watched: z.literal(false) }),
   },
   list_threads: {
+    // `detail` and `watchedOnly` are the desktop's alone (#1191): a paired host is never sent them and answers in full.
     input: z.object({ hostId: z.uuid().optional(), project: watcherProjectTargetSchema.optional(), group: watcherGroupSchema.optional(),
-      includeSettled: z.boolean().default(true), ...paging }).strict(),
-    output: result({ rows: z.array(row).max(100), snapshotRevision: cursor, counts, ...page }),
+      includeSettled: z.boolean().default(true), watchedOnly: z.boolean().optional(), detail: watcherDetailSchema.optional(), ...paging }).strict(),
+    output: result({ rows: z.union([z.array(row).max(100), z.array(slimRow).max(100)]), snapshotRevision: cursor, counts, ...page }),
   },
   read_thread: {
+    // `evidence` is the desktop's alone (#1191): slim, its default, gives each pull request's summary instead of every fact.
     input: z.object({ target: watcherThreadTargetSchema, position: watcherPositionSchema.optional(),
-      limit: z.number().int().min(1).max(WATCHER_MESSAGES_MAX).default(WATCHER_MESSAGES_MAX), includeActivities: z.boolean().default(false) }).strict(),
+      limit: z.number().int().min(1).max(WATCHER_MESSAGES_MAX).default(WATCHER_MESSAGES_MAX), includeActivities: z.boolean().default(false),
+      evidence: watcherDetailSchema.optional() }).strict(),
     output: boundedRead(result({ target: watcherThreadTargetSchema, messages: z.array(z.object({ id, position: counter, role: z.enum(['user', 'assistant']),
       text: utf8(WATCHER_READ_BYTES_MAX), createdAt: time }).strict()).max(WATCHER_MESSAGES_MAX), waitsOn: z.array(pending).max(100),
       activities: z.array(z.object({ id, kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status', 'compaction']),
         status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']), title: shortText, startedAt: time.optional(), completedAt: time.optional() }).strict()).max(100),
-      evidence: z.array(watcherEvidenceSchema).max(100), historyEpoch: id, firstPosition: counter.nullable(), lastPosition: counter.nullable(),
+      evidence: z.array(watcherEvidenceSchema).max(100), pullRequests: z.array(watcherPullRequestSummarySchema).max(50).optional(),
+      historyEpoch: id, firstPosition: counter.nullable(), lastPosition: counter.nullable(),
       nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time })),
   },
   start_thread: {
@@ -203,10 +227,13 @@ export const watcherToolSchemas = {
     output: result({ ...receiptResult, state: operationState }),
   },
   list_projects: {
-    input: z.object({ hostId: z.uuid().optional(), ...paging }).strict(),
+    // `projectId`, `query` and `includeModels` are the desktop's alone (#1191): a paired host is never sent them.
+    input: z.object({ hostId: z.uuid().optional(), projectId: entityId.optional(), query: z.string().min(1).max(200).optional(),
+      includeModels: z.boolean().optional(), ...paging }).strict(),
     output: result({ projects: z.array(z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096),
+      // Left out unless includeModels: every project on a computer offers the same models.
       workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
-        defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100),
+        defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100).optional(),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
   },
   keep_state: {
