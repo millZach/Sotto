@@ -124,6 +124,21 @@ export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | unde
   return messages.findLast((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest)
 }
 
+/**
+ * Whether the turn a brief began, by its Sotto anchor, is still the thread's newest (#1190): the newest turn Sotto placed,
+ * and the provider's newest turn is that same turn, by its ID, its native ID or its anchor. A turn the provider started by
+ * itself, as Claude Code does to report background work, has no anchor and is not the brief's. A steer read into the
+ * brief's turn begins none of its own. A brief whose turn cannot be placed reads as newest, so nothing is claimed of it.
+ */
+export function watcherBriefTurnIsNewest(thread: AgentThread, turnMessageId: string): boolean {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), brief = turns.find(turn => turn.messageId === turnMessageId)
+  if (!brief) return true
+  if (turns.at(-1) !== brief) return false
+  const last = thread.lastTurn
+  return !last || last.id === brief.turnId || last.id === brief.nativeTurnId || last.messageId === turnMessageId
+}
+
 /** The newest turn's Sotto anchor, for naming the delegation a turn's news answers. */
 export function watcherLatestTurnMessageId(thread: AgentThread): string | undefined {
   const messages = thread.messages.filter(message => !isVisualMessage(message))

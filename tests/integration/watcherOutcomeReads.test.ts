@@ -212,3 +212,17 @@ it('says no work-settled news will follow a background brief once its thread beg
   await vi.waitFor(async () => expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background',
     outcomeNote: expect.stringContaining('no work-settled news for that turn will follow') }))
 })
+
+it('says no work-settled news will follow a background brief once its provider starts a turn of its own', async () => {
+  const f = await fixture(), started = await f.start()
+  f.native(started.target.threadId).backgroundWork = [{ id: randomUUID(), label: 'Synthetic agent', type: 'subagent' }]
+  await f.endTurn(started.target.threadId, 'Synthetic reply, agent still running')
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background', outcomeNote: expect.stringContaining('Sotto sends work-settled news when that work ends') })
+  // A background task reports, and the provider starts a turn of its own for it, with no user message behind it. The
+  // provider keeps a record of the brief's turn, as a real one does.
+  const native = f.native(started.target.threadId), brief = native.messages.find(message => message.role === 'user')!
+  native.activities = [{ id: 'first-turn', turnId: brief.id, sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }]
+  native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+  await f.emit(started.target.threadId)
+  await vi.waitFor(async () => expect(await f.read(started.receipt.operationId)).toMatchObject({ outcomeNote: expect.stringContaining('no work-settled news for that turn will follow') }))
+})

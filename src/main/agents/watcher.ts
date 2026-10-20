@@ -33,7 +33,7 @@ import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { watcherAskPlacements } from './watcherAskPlacements'
-import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
+import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
@@ -1238,10 +1238,8 @@ export class WatcherService implements WatcherControlHooks {
       .filter(item => item.turnId !== undefined && turnIds.has(item.turnId)).slice(-20) : []
     const read: OutcomeRead = { outcome, reference: { target: operation.target, ...(operation.turnMessageId ? { turnMessageId: operation.turnMessageId } : {}),
       ...(operation.nativeTurnId ? { nativeTurnId: operation.nativeTurnId } : {}), ...(operation.replyMessageId ? { replyMessageId: operation.replyMessageId } : {}) },
-    // The thread's newest turn, by the message it began with, is another than this brief's: a steer read into the same
-    // turn begins none of its own, so it never counts.
-    outcomeNote: outcome === 'background' && thread && operation.turnMessageId !== undefined
-      && (watcherLatestTurnMessageId(thread) ?? operation.turnMessageId) !== operation.turnMessageId ? BACKGROUND_MOVED_ON : OUTCOME_NOTES[outcome],
+    outcomeNote: outcome === 'background' && thread && operation.turnMessageId !== undefined && !watcherBriefTurnIsNewest(thread, operation.turnMessageId)
+      ? BACKGROUND_MOVED_ON : OUTCOME_NOTES[outcome],
     ...(evidence.length ? { evidence } : {}) }
     if (outcome !== 'answered' || !operation.replyMessageId) return read
     if (!this.options.historyEnabled() && !this.answeredThisRun.has(operation.id)) return { ...read, replyUnavailable: { reason: 'history-off',

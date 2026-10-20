@@ -9,7 +9,7 @@ import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwne
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
-import { watcherLatestTurnMessageId, watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
+import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
@@ -1905,4 +1905,15 @@ it('keeps a brief’s turn the newest when a steer is read into it, so the brief
     messages: [{ id: 'brief', role: 'user', text: 'Do it', createdAt: centerTime }, { id: 'steer', role: 'user', text: 'Also this', createdAt: centerTime },
       { id: 'reply', role: 'assistant', text: 'Done.', createdAt: centerTime }] } as unknown as AgentThread
   expect(watcherLatestTurnMessageId(thread)).toBe('brief')
+})
+
+it('knows a brief’s turn is no longer newest once its provider starts one of its own, but not for a steer', () => {
+  const base = { id: 'worker', providerId: 'claude', projectId: 'project', modelId: 'model', title: 'Worker', status: 'idle', requests: [],
+    activities: [{ id: 'turn', turnId: 'brief', sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }],
+    messages: [{ id: 'brief', role: 'user', text: 'Do it', createdAt: centerTime }, { id: 'steer', role: 'user', text: 'Also this', createdAt: centerTime },
+      { id: 'reply', role: 'assistant', text: 'Done.', createdAt: centerTime }] }
+  const thread = (lastTurn: AgentThread['lastTurn']) => ({ ...base, lastTurn }) as unknown as AgentThread
+  expect(watcherBriefTurnIsNewest(thread({ id: 'brief', status: 'completed', messageId: 'brief' }), 'brief')).toBe(true)
+  // Claude Code reporting background work in a turn of its own, with no user message behind it.
+  expect(watcherBriefTurnIsNewest(thread({ id: 'self-turn', status: 'running' }), 'brief')).toBe(false)
 })
