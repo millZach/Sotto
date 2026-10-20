@@ -1,8 +1,10 @@
 // @vitest-environment node
-import { readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { URL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { assertPackagedFeatureStatus } from '../../../scripts/verify-owl-features-package.mjs'
+import { assertOwnedProfile, assertPackagedFeatureStatus } from '../../../scripts/verify-owl-features-package.mjs'
 import { OWL_FEATURES } from '../../../src/shared/owlFeatures'
 
 const features = [
@@ -50,5 +52,41 @@ describe('packaged Owl feature protection', () => {
     expect(owl).toContain("[plan.unpacked, 'owl']")
     const { scripts } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
     for (const name of ['package:dir', 'package:dir:mac', 'package:linux']) expect(scripts[name]).not.toMatch(/verify-owl-features/u)
+  })
+})
+
+describe("the package probe's own profile", () => {
+  const identity = (userData, overrides = {}) => ({ packaged: true, name: 'Sotto', version: '0.1.38-owl.20261020.1', userData, ...overrides })
+  const status = { currentVersion: '0.1.38-owl.20261020.1' }
+
+  it('accepts the profile it made, also when the app reports it through a link', async () => {
+    // Everything here is empty folders, so removing the parent is harmless even where a link is followed.
+    const parent = await mkdtemp(join(tmpdir(), 'sotto-probe-profile-'))
+    const real = join(parent, 'real')
+    const linked = join(parent, 'linked')
+    try {
+      await mkdir(real)
+      // A junction needs no privilege on Windows; elsewhere Node makes an ordinary directory link, as /var is on macOS.
+      await symlink(real, linked, 'junction')
+      await expect(assertOwnedProfile(identity(real), status, real)).resolves.toBeUndefined()
+      await expect(assertOwnedProfile(identity(real), status, linked)).resolves.toBeUndefined()
+      await expect(assertOwnedProfile(identity(linked), status, real)).resolves.toBeUndefined()
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('names each way the app is not the packaged one on its own profile', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-probe-profile-'))
+    const other = await mkdtemp(join(tmpdir(), 'sotto-probe-profile-'))
+    try {
+      await expect(assertOwnedProfile(identity(other), status, root)).rejects.toThrow(`it used the profile ${other}`)
+      await expect(assertOwnedProfile(identity(root, { packaged: false }), status, root)).rejects.toThrow('the app is not packaged')
+      await expect(assertOwnedProfile(identity(root, { name: 'Electron' }), status, root)).rejects.toThrow('the app is named Electron')
+      await expect(assertOwnedProfile(identity(root), { currentVersion: '0.1.37' }, root)).rejects.toThrow('reported version 0.1.37')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(other, { recursive: true, force: true })
+    }
   })
 })
