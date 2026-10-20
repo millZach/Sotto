@@ -1,5 +1,5 @@
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import type { WatcherEvidence, WatcherPullRequestSummary, WatcherThreadTarget, WatcherToolInput, WatcherToolName, WatcherToolOutput } from '../../shared/watcher'
+import { WATCHER_READ_BYTES_MAX, type WatcherEvidence, WatcherPullRequestSummary, WatcherThreadTarget, WatcherToolInput, WatcherToolName, WatcherToolOutput } from '../../shared/watcher'
 
 /**
  * Watcher's read tools, slim by default (#1191). Every result stays in Watcher's conversation and is read again on each of
@@ -73,7 +73,10 @@ export function watcherSlimRow(row: FullRow, watched: boolean) {
   const open = addressShared(row.pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
     .map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
   // Why it needs the user or is not watched: its newest turn's failure, and its newest participation's takeover or stop.
-  const turnFailed = row.evidence.some(fact => fact.source === 'native-turn' && fact.fact === 'turn-failed'), latest = row.participation.at(-1)
+  // A paired host's turn fact sits beside the desktop's own, so only the newest one says how the thread's last turn ended.
+  const turn = row.evidence.filter(fact => fact.source === 'native-turn').reduce<WatcherEvidence | undefined>((newest, fact) =>
+    !newest || Date.parse(fact.observedAt) > Date.parse(newest.observedAt) ? fact : newest, undefined)
+  const turnFailed = turn?.fact === 'turn-failed', latest = row.participation.at(-1)
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
@@ -99,7 +102,11 @@ export function watcherSlimRead(name: WatcherToolName, input: unknown, result: u
   if (name === 'read_thread') {
     const asked = input as WatcherToolInput<'read_thread'>, evidence = result.evidence as WatcherEvidence[]
     // Only the pull request facts are summed up; the thread's own facts, a failed turn, a takeover or a receipt, are few and stay.
-    return asked.evidence === 'full' ? result : { ...result, evidence: evidence.filter(fact => fact.source !== 'github'), pullRequests: watcherPullRequestSummaries(evidence) }
+    if (asked.evidence === 'full') return result
+    const pullRequests = watcherPullRequestSummaries(evidence)
+    const slim = { ...result, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {} }
+    // The full read was cut to the read bound. A slim one is almost always smaller; one that is not is given in full.
+    return Buffer.byteLength(JSON.stringify(slim)) > WATCHER_READ_BYTES_MAX ? result : slim
   }
   if (name === 'list_projects') {
     const asked = input as WatcherToolInput<'list_projects'>, query = asked.query?.toLowerCase()

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { watcherToolSchemas, type WatcherEvidence, type WatcherToolOutput } from '../../../src/shared/watcher'
+import { WATCHER_READ_BYTES_MAX, watcherToolSchemas, type WatcherEvidence, type WatcherToolOutput } from '../../../src/shared/watcher'
 import { watcherHostInput, watcherPullRequestSummaries, watcherSlimRead } from '../../../src/main/agents/watcherSlimReads'
 
 const hostId = randomUUID(), at = '2026-10-19T10:00:00.000Z'
@@ -151,4 +151,25 @@ it('keeps a read’s own facts, a failed turn or a takeover, and sums up only it
   const read = { status: 'ok', target: target('a'), messages: [], waitsOn: [], activities: [], evidence: [...prFacts('a', 7, 'failed'), failure], historyEpoch: 'epoch',
     firstPosition: null, lastPosition: null, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at }
   expect(watcherSlimRead('read_thread', {}, read, () => false)).toMatchObject({ evidence: [failure], pullRequests: [{ number: 7, checks: 'failed' }] })
+})
+
+it('reads a slim row’s failure from its newest turn fact, as a paired host’s older one sits beside the desktop’s', () => {
+  const full = roster(1, 0), row = full.rows[0] as Extract<FullRows[number], { evidence: unknown }>
+  const turn = { target: row.target, source: 'native-turn' as const, freshness: 'fresh' as const, availability: 'available' as const }
+  row.evidence.push({ ...turn, id: randomUUID(), observedAt: '2026-10-19T09:00:00.000Z', turnId: 'turn-1', fact: 'turn-failed', failureCategory: 'provider-turn-failed' },
+    { ...turn, id: randomUUID(), observedAt: '2026-10-19T09:05:00.000Z', turnId: 'turn-2', fact: 'turn-finished' })
+  expect((watcherSlimRead('list_threads', {}, full, () => true) as typeof full).rows[0]).not.toHaveProperty('turnFailed')
+  row.evidence.reverse()
+  expect((watcherSlimRead('list_threads', {}, full, () => true) as typeof full).rows[0]).not.toHaveProperty('turnFailed')
+})
+
+it('adds nothing to a read with no pull requests, so a read that fit its bound still does', () => {
+  const failure = { id: randomUUID(), target: target('a'), source: 'native-turn' as const, observedAt: at, freshness: 'fresh' as const, availability: 'available' as const,
+    turnId: 'turn-1', fact: 'turn-failed' as const, failureCategory: 'provider-turn-failed' as const }
+  const read = { status: 'ok', target: target('a'), messages: [{ id: 'm', position: 0, role: 'assistant', text: 'x'.repeat(WATCHER_READ_BYTES_MAX - 1_000), createdAt: at }],
+    waitsOn: [], activities: [], evidence: [failure], historyEpoch: 'epoch', firstPosition: 0, lastPosition: 0, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at }
+  const slim = watcherSlimRead('read_thread', {}, read, () => false)
+  expect(slim).not.toHaveProperty('pullRequests')
+  expect(bytes(slim)).toBe(bytes(read))
+  expect(watcherToolSchemas.read_thread.output.parse(slim)).toBeTruthy()
 })
