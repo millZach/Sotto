@@ -682,6 +682,16 @@ artifacts/watcher-room-polish/*
 !artifacts/watcher-room-polish/polish-stop-ask-dark-820x560.png
 !artifacts/watcher-room-polish/polish-stop-done-light-820x560.png
 !artifacts/watcher-room-polish/readings.json
+artifacts/watcher-header-overlap/*
+!artifacts/watcher-header-overlap/header-before-stop-all-dark-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-before-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-dark-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-no-stop-all-dark-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-no-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-counts-100-dark-570px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-counts-100-light-570px-1280x800.png
+!artifacts/watcher-header-overlap/readings.json
 artifacts/watcher-answer/*
 !artifacts/watcher-answer/answer-main-card-dark-1280x800.png
 !artifacts/watcher-answer/answer-main-line-dark-1280x800.png
