@@ -14,17 +14,17 @@ afterEach(async () => { for (const folder of folders.splice(0)) await rm(folder,
 
 const profile: RawCpuProfile = { nodes: [{ id: 1, callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 }, hitCount: 1, children: [] }], startTime: 0, endTime: 10, samples: [1], timeDeltas: [10] }
 
-function profiler(options: { failStart?: boolean; failStop?: boolean; stopped?: Promise<void> } = {}): ProfilerTarget & { started: boolean; cancelled: boolean } {
+function profiler(options: { failStart?: boolean; failStop?: boolean; stopped?: Promise<void>; starting?: Promise<void> } = {}): ProfilerTarget & { started: boolean; cancelled: boolean } {
   const target = {
     started: false, cancelled: false,
-    start: vi.fn(async () => { if (options.failStart) throw new Error('attach refused'); target.started = true }),
+    start: vi.fn(async () => { await options.starting; if (options.failStart) throw new Error('attach refused'); target.started = true }),
     stop: vi.fn(async () => { await options.stopped; if (options.failStop) throw new Error('gone'); return profile }),
     cancel: vi.fn(async () => { target.cancelled = true }),
   }
   return target
 }
 
-async function harness(options: { main?: ProfilerTarget; files?: RecordingFileSystem; before?: (directory: string) => Promise<void> } = {}) {
+async function harness(options: { main?: ProfilerTarget; mainProfiler?: () => ProfilerTarget; files?: RecordingFileSystem; before?: (directory: string) => Promise<void> } = {}) {
   const directory = join(await mkdtemp(join(tmpdir(), 'sotto-main-activity-')), 'performance-recordings')
   folders.push(join(directory, '..'))
   await options.before?.(directory)
@@ -35,7 +35,7 @@ async function harness(options: { main?: ProfilerTarget; files?: RecordingFileSy
   const revealed: string[] = []
   const service = new MainActivityService({
     directory, clock, wallClock: () => Date.UTC(2026, 9, 20, 14, 32, 5), windowSeconds: 4, durationMs: 60_000,
-    mainProfiler: () => options.main ?? profiler(), appRoots: [process.cwd()], sottoVersion: '0.1.38-owl.20261020.1', platform: 'win32',
+    mainProfiler: options.mainProfiler ?? (() => options.main ?? profiler()), appRoots: [process.cwd()], sottoVersion: '0.1.38-owl.20261020.1', platform: 'win32',
     revealFile: path => revealed.push(path), log: event => events.push(event),
     setTimeout: callback => { timers.push(callback); return timers.length }, clearTimeout: () => { timers.length = 0 },
     ...(options.files ? { files: options.files } : {}),
@@ -57,6 +57,47 @@ async function harness(options: { main?: ProfilerTarget; files?: RecordingFileSy
 }
 
 describe('MainActivityService', () => {
+  it('starts one recording when Record a minute arrives twice while the profilers start', async () => {
+    let release!: () => void
+    const starting = new Promise<void>(resolve => { release = resolve })
+    const mains: ReturnType<typeof profiler>[] = []
+    const { service, finish } = await harness({ mainProfiler: () => { const main = profiler({ starting }); mains.push(main); return main } })
+    const firstWindow = profiler({ starting }), secondWindow = profiler({ starting })
+    // Two presses queued behind a frozen main reach the service back to back, before either start resolves.
+    const first = service.command({ type: 'record' }, () => firstWindow)
+    const second = service.command({ type: 'record' }, () => secondWindow)
+    release()
+    await Promise.all([first, second])
+    expect(mains).toHaveLength(1)
+    expect(secondWindow.start).not.toHaveBeenCalled()
+    expect(service.state().recording).toMatchObject({ phase: 'recording' })
+    await finish()
+    // Every profiler that started was stopped: none is left running on main or holding the window's debugger.
+    expect(mains[0]!.stop).toHaveBeenCalledTimes(1)
+    expect(firstWindow.stop).toHaveBeenCalledTimes(1)
+    expect(service.state().recording).toMatchObject({ phase: 'saved' })
+  })
+
+  it('Stop without saving while the profilers start stops them once started and keeps nothing', async () => {
+    let release!: () => void
+    const starting = new Promise<void>(resolve => { release = resolve })
+    const main = profiler({ starting }), window = profiler({ starting })
+    const { service, directory, events } = await harness({ main })
+    const recording = service.command({ type: 'record' }, () => window)
+    await service.command({ type: 'discard' })
+    release()
+    await recording
+    await service.settled()
+    expect(main.cancelled).toBe(true)
+    expect(main.stop).not.toHaveBeenCalled()
+    expect(window.started && !window.cancelled).toBe(false)
+    expect(service.state().recording).toEqual({ phase: 'idle' })
+    expect(await readdir(directory).catch(() => [])).toEqual([])
+    expect(events).toEqual([])
+    // The slot is free again: the next press records.
+    expect((await service.command({ type: 'record' }, () => profiler())).recording).toMatchObject({ phase: 'recording' })
+  })
+
   it('tells the window when main freezes and recovers', async () => {
     const { service, states, freeze, recover } = await harness()
     freeze()

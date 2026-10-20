@@ -69,6 +69,12 @@ export class MainActivityService {
   private noticeHidden = false
   /** The recording running or being saved. Stop without saving marks it discarded, which wins until it is published. */
   private active: ActiveRecording | null = null
+  /**
+   * A recording whose profilers are still starting. It is claimed before the first wait, so a second Record a minute
+   * (a double press, or two presses queued behind a frozen main) starts nothing, and Stop without saving or closing
+   * Sotto marks it cancelled, so it stops as soon as its start resolves.
+   */
+  private starting: { cancelled: boolean } | null = null
   /** The start sweep and the end of the latest recording (its save, or the throw-away after Stop without saving). */
   private sweeping: Promise<unknown> = Promise.resolve()
   private finishing: Promise<void> = Promise.resolve()
@@ -100,6 +106,7 @@ export class MainActivityService {
     const active = this.active
     this.active = null
     if (active) { active.discarded = true; this.clearTimer(active.timer); void active.main.cancel(); void active.window?.cancel() }
+    if (this.starting) this.starting.cancelled = true
     this.listeners.clear()
   }
 
@@ -151,16 +158,23 @@ export class MainActivityService {
   }
 
   private async record(window: ProfilerTarget | null): Promise<void> {
-    if (this.recording.phase === 'recording') return
+    if (this.recording.phase === 'recording' || this.starting || this.active) return
+    const starting = { cancelled: false }
+    this.starting = starting
+    try { await this.begin(window, starting) } finally { if (this.starting === starting) this.starting = null }
+  }
+
+  private async begin(window: ProfilerTarget | null, starting: { readonly cancelled: boolean }): Promise<void> {
     const durationMs = this.options.durationMs ?? ACTIVITY_RECORDING_MS
     const main = this.options.mainProfiler()
     try {
       await main.start()
     } catch {
       await main.cancel()
-      this.fail(START_FAILED)
+      if (!starting.cancelled) this.fail(START_FAILED)
       return
     }
+    if (starting.cancelled) { await main.cancel(); return }
     let windowTarget = window
     if (windowTarget) {
       try { await windowTarget.start() } catch {
@@ -169,6 +183,7 @@ export class MainActivityService {
         this.options.log('activity-recording-window-unavailable')
       }
     }
+    if (starting.cancelled) { await Promise.all([main.cancel(), windowTarget?.cancel()]); return }
     const startedAt = this.wallNow()
     const active: ActiveRecording = { main, window: windowTarget, startedAt, before: this.monitor.reading(), timer: null, discarded: false }
     active.timer = this.setTimer(() => { this.finishing = this.finish(active) }, durationMs)
@@ -178,6 +193,8 @@ export class MainActivityService {
   }
 
   private async discard(): Promise<void> {
+    // Pressed while the profilers are still starting: they stop as soon as they have started, and nothing is kept.
+    if (this.starting) this.starting.cancelled = true
     const active = this.active
     if (!active) return
     this.active = null
