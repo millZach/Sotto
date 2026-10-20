@@ -130,6 +130,28 @@
 @container thread-pane (width < 450px) {
   .watcher-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+/* macOS: Watcher's pane is always the room's left pane, so its header starts past the traffic lights' room, 88 pixels
+   in rather than 14, and gives way 74 pixels sooner (a container query cannot read --mac-lights-room, so these widths
+   follow its 88 pixels, with a few to spare for longer counts). Below 664 pixels All threads and Stop all keep their
+   icons and counts, and the tabs tighten. Below 520 pixels one row no longer holds the name, the tabs and the actions
+   beside the lights, so the tabs and the actions take a second row under them, starting at the pane's edge, and the
+   name stays. Focus still runs as the eye reads: the tile's row, then the tabs and the actions. */
+@container thread-pane (width < 664px) {
+  .threads-view--mac .watcher-head__list-text, .threads-view--mac .watcher-stop-all__text { display: none; }
+  .threads-view--mac .watcher-tabs { margin-left: 0; }
+  .threads-view--mac .watcher-tabs__tab, .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
+}
+@container thread-pane (width < 520px) {
+  .threads-view.threads-view--mac .thread-pane .watcher-head:has(.watcher-tabs) {
+    display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
+    column-gap: 10px; height: auto; padding-bottom: 6px; padding-left: 14px;
+  }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__title { display: contents; }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) .watcher-head__tile { margin: 0 0 0 var(--owl-sky-inset); }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) h1 { position: static; width: auto; height: auto; clip-path: none; }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) .watcher-tabs { grid-row: 2; grid-column: 1 / 5; justify-self: start; }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
+}
 
 .watcher-actions { position: relative; display: flex; }
 .watcher-actions__panel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(300px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); }
