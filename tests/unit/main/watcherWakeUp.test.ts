@@ -5,7 +5,7 @@ import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../.
 import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
 import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, type WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
-import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
@@ -1071,15 +1071,16 @@ it('counts background work and the roster\'s working sub-agents once where they 
   expect(f.wakes.news().find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(3)
 })
 
-it('owes nothing for a turn that a new turn replaced', async () => {
+it('tells a held busy finish once a new turn begins, and owes it no work-settled news', async () => {
   const f = fixture()
   f.thread.backgroundWork = [backgroundTask(1)]; finish(f.thread); f.wakes.observe(); await f.advance(2_000)
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.thread.backgroundWork = []; f.wakes.observe()
   await f.advance(2_000)
   expect(turnKinds(f.delivered)).not.toContain('work-settled')
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe(); await f.advance(2_000)
-  // The first finish waited on its work, and the next turn replaced it before that settled: only the second is told.
-  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind !== 'evidence-changed').map(event => [event.kind, event.turnId])).toEqual([['turn-finished', 'turn-2']])
+  // The first finish waited on its work; once the next turn began it is told all the same, never dropped (#1190).
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind !== 'evidence-changed').map(event => [event.kind, event.turnId]))
+    .toEqual([['turn-finished', 'turn-1'], ['turn-finished', 'turn-2']])
 })
 
 function restarted(f: ReturnType<typeof fixture>, restoredEvents?: WatcherWakeOptions['restoredEvents']) {
@@ -1535,7 +1536,11 @@ it('never holds ordinary news longer than a minute after the first of it, howeve
   const f = fixture(true, undefined, realBatch)
   finish(f.thread); f.wakes.observe()
   // Pull request news every fifteen seconds keeps the trailing wait from ending by itself.
-  for (const state of ['failed', 'passed', 'failed'] as const) { await f.advance(15_000); f.checks(state) }
+  // Comments moving every fifteen seconds: ordinary news, which keeps the trailing wait from ending by itself.
+  f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  const remarks = (n: number) => f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', remarks: `comments:${n}` })
+  remarks(0)
+  for (const n of [1, 2, 3]) { await f.advance(15_000); remarks(n) }
   await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS - 45_000 - 1)
   expect(f.delivered).toEqual([])
   await f.advance(1)
@@ -1744,7 +1749,8 @@ it('sends ordinary news at its minute cap while a late Git-backed finish waits f
   const f = fixture(true, undefined, realBatch), second = secondWorker(f)
   gitFixture(f)
   second.status = 'idle'; second.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
-  for (const state of ['failed', 'passed', 'failed'] as const) { await f.advance(15_000); f.checks(state) }
+  // Passing checks: ordinary news. Checks that newly fail go in the short batch, as a failure does.
+  for (const state of ['passed', 'pending', 'passed'] as const) { await f.advance(15_000); f.checks(state) }
   await f.advance(14_000)
   finish(f.thread); f.wakes.observe()
   await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS - 59_000)
@@ -1824,4 +1830,30 @@ it('lets queued news of a conflict go no more once the conflict has cleared', as
   expect(f.wakes.dueAll(queued)).toEqual([true])
   f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now() + 2).toISOString(), availability: 'available', checks: 'pending', conflicting: false })
   expect(f.wakes.dueAll(queued)).toEqual([false])
+})
+
+it('sends news of checks that newly fail within seconds, as it sends a failed turn', async () => {
+  const f = fixture(true, undefined, realBatch)
+  f.checks('failed'); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered.map(kinds)).toEqual([['evidence-changed']])
+})
+
+it('carries words only for what a pull request says that Watcher has not been told', async () => {
+  const f = fixture()
+  f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  const read = (said: Partial<Parameters<WatcherWakeUp['pullRequest']>[0]>, at: number) =>
+    f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now() + at).toISOString(), availability: 'available', ...said })
+  read({ remarks: 'comments:1' }, 0); read({ remarks: 'comments:2' }, 1); await f.advance(WATCHER_BATCH_MS)
+  expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
+  f.wakes.settled(f.delivered.at(-1)!.events, 'told'); await f.wakes.drained()
+  // Told: a later turn's end does not tell it again.
+  expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toBeUndefined()
+})
+
+it('finds the topmost watched thread of a long delegation chain', () => {
+  const threads = Array.from({ length: 10 }, (_, n) => ({ id: `t${n}`, ...n ? { delegatedBy: `t${n - 1}` } : {} }) as AgentThread)
+  const key = (id: string) => JSON.stringify([centerTarget.hostId, id])
+  const owners = watcherDelegationOwners({ hostId: centerTarget.hostId, threads }, new Set([key('t0'), key('t5')]))
+  expect(owners.get(key('t9'))).toBe(key('t0'))
+  expect(owners.get(key('t5'))).toBe(key('t0'))
 })

@@ -269,7 +269,8 @@ export class WatcherService implements WatcherControlHooks {
       snapshot ??= this.snapshot()
       const thread = snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
       if (!thread) return undefined
-      if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.evidence.attentionByPullRequest(event.target), thread)
+      // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
+      if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread)
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
       return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread))
     }

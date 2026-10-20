@@ -6,7 +6,7 @@ import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation } from './watcherEvidence'
+import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 
@@ -87,7 +87,7 @@ export function watcherDelegationOwners(snapshot: Pick<AgentHostSnapshot, 'hostI
   if (!parentOf.size) return owners
   for (const child of parentOf.keys()) {
     let owner: string | undefined, up = parentOf.get(child)
-    for (let depth = 0; up !== undefined && depth < 8; depth++) { if (watched.has(up)) owner = up; up = parentOf.get(up) }
+    for (const seen = new Set<string>(); up !== undefined && !seen.has(up); up = parentOf.get(up)) { seen.add(up); if (watched.has(up)) owner = up }
     if (owner) owners.set(child, owner)
   }
   return owners
@@ -309,9 +309,26 @@ export class WatcherWakeUp {
    */
   private attends(event: WatcherEvent): boolean {
     if (event.kind === 'evidence-changed') return this.waking.has(event.id) && (this.attentionUntold(event.target) || this.restoredNews(event))
-    return !busyFinish(event) || this.ripe(event)
+    return !busyFinish(event) || this.ripe(event) || this.movedOn(event)
   }
   private ripe(event: WatcherEvent): boolean { return this.now() - Date.parse(event.observedAt) >= WATCHER_QUIET_MS }
+  /** Whether a finish's thread has begun another turn since: a held busy finish is told then, never dropped. */
+  private movedOn(event: WatcherEvent): boolean {
+    const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot.hostId) === event.target.hostId)
+    return !!thread?.lastTurn && thread.lastTurn.id !== event.turnId
+  }
+  /** Whether this is news of checks that newly failed: a failure, which goes in the short batch as a failed turn does. */
+  private failedChecks(event: WatcherEvent): boolean {
+    if (event.kind !== 'evidence-changed' || !this.waking.has(event.id)) return false
+    const told = this.toldAttention.get(targetKey(event.target))
+    return this.evidence.attentionFacts(event.target).some(fact => fact.kind === 'checks-failed' && !told?.has(fact.key))
+  }
+  /** What a thread's pull requests say that Watcher has not been told, for the words its news carries. */
+  untoldAttention(target: WatcherThreadTarget): Map<string, Set<WatcherAttentionKind>> {
+    const told = this.toldAttention.get(targetKey(target)), byPr = new Map<string, Set<WatcherAttentionKind>>()
+    for (const fact of this.evidence.attentionFacts(target)) if (!told?.has(fact.key)) byPr.set(fact.pr, (byPr.get(fact.pr) ?? new Set()).add(fact.kind))
+    return byPr
+  }
   /**
    * Whether a thread's pull requests say something Watcher has not been told (#1190). Checks that failed and then went back
    * to running before the news went say nothing new, so the news no longer needs Watcher by itself.
@@ -548,7 +565,7 @@ export class WatcherWakeUp {
     const now = this.now(), gitRead = held.size ? Math.min(...held.values()) - now : 0
     // A question, a permission request or a failure goes within seconds, and takes what waits with it. Ordinary news waits
     // for more to come close behind it (#1190), and still for its thread's Git read.
-    const urgent = this.pending.some(event => WATCHER_URGENT_KINDS.has(event.kind))
+    const urgent = this.pending.some(event => WATCHER_URGENT_KINDS.has(event.kind) || this.failedChecks(event))
     const delay = this.retryAt ? this.retryAt - now
       : urgent ? free || !held.size ? Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - now) : gitRead
         : Math.max(Math.min(Math.max(this.lastNewsAt, this.firstPending) + this.ordinary.quietMs, this.firstPending + this.ordinary.maxMs) - now,
@@ -582,7 +599,7 @@ export class WatcherWakeUp {
     const { held, due, watcher } = this.withPassReads(() => ({ held: this.heldForGitRead(), due: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
     // A finish still waiting on its work goes with that work's news, a question or a failure, or once ripe; other
     // ordinary news going now does not take it along.
-    const urgent = due.some(event => WATCHER_URGENT_KINDS.has(event.kind))
+    const urgent = due.some(event => WATCHER_URGENT_KINDS.has(event.kind) || this.failedChecks(event))
     const settling = new Set(due.filter(event => event.kind === 'work-settled').map(event => JSON.stringify([targetKey(event.target), event.turnId ?? null])))
     const stays = (event: WatcherEvent) => this.waitsForGitRead(event, held)
       || !urgent && busyFinish(event) && !this.attends(event) && !settling.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))
@@ -789,7 +806,8 @@ export class WatcherWakeUp {
       }, Math.max(0, Math.max(progress.progressAt, progress.connectedAt) + WATCHER_QUIET_MS - this.now()))
     }
     // A delegated thread's card is news of the watched thread that answers for it as soon as the card is there, whether or
-    // not that thread is connected now: the card is the delegated thread's, and that thread is the one to open.
+    // not that watched thread is connected now. The card stands on the delegated thread, which must be connected, and
+    // that is the thread to open.
     if (muted.size) for (const child of snapshot.threads) {
       const childKey = targetKey({ hostId: child.hostId ?? snapshot.hostId ?? '', threadId: child.id }), owner = muted.get(childKey)
       if (!owner || !child.requests.length || !this.connected(snapshot, child)) continue
@@ -973,6 +991,8 @@ export class WatcherWakeUp {
     if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.active(thread) && !thread.requests.length
     // Work that started again withdraws it; stillDue keeps the turn owed it.
     if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId && this.workSettled(thread, event.target.hostId)
+    // A busy finish held for its work whose thread has begun another turn happened all the same, and is told (#1190).
+    if (busyFinish(event) && thread.lastTurn && thread.lastTurn.id !== event.turnId) return true
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
   close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
