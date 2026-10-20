@@ -49,8 +49,21 @@ The macOS e2e conflict spec failed on the first review. It was fixed by comparin
 - **The Input Monitoring note and the dimmed hold chips were not produced.** Without the built Mac key-listener helper, the listener never reports a permission. The router reads that `unknown` as `not-needed`, so the renderer never sees `denied`.
 - **Fn and hold on a real keyboard with Input Monitoring granted.** Playwright cannot send Fn, and no physical key was pressed.
 - **The packaged Mac helper** (`native/key-listener/darwin.swift`), built and signed in a package.
-- **A real keypress through the Windows hook** (`keyListenerWin32`). Windows CI compiled the C# with PowerShell 5.1, installed the hook and checked the protocol (`tests/integration/keyListenerWin32.test.ts`), but no real key has gone through it, and Windows was not captured.
+- **A physical keypress through the Windows hook** (`keyListenerWin32`). Windows CI compiled the C# with PowerShell 5.1, installed the hook and checked the protocol (`tests/integration/keyListenerWin32.test.ts`). On October 20, 2026 the opt-in test (`SOTTO_KEY_LISTENER_LIVE=1`) passed on the Windows development PC: an F13 sent with `WScript.Shell.SendKeys`, which goes through SendInput, came back as `down F13` and `up F13` in 8.9 s. That key is synthetic and the helper ran in its accept-synthetic test mode, so no physical key has gone through the hook, and Windows was not captured.
 - **Microsoft Defender's reaction to the Windows hook.**
 - Focus rings on ×, + Add and the menu items. Only the chip button was focused from the keyboard.
 - Measured contrast ratios. Contrast was judged from the screenshots by eye.
 - The conflict and unavailable messages and "Shortcut saved.".
+
+## Linux, October 20, 2026
+
+Linux now has the same rows, and a save rewrites Sotto's Hyprland snippet (ADR-0094, decision 9). What was checked, on the Windows development PC only:
+
+- Unit tests over real files with scripted `hyprctl`, `luac` and shell replies: `tests/unit/main/omarchyKeys.test.ts` (the snippet for the defaults is the bundled `apps/omarchy/bindings.lua` byte for byte; press lines bind `toggle`, hold lines bind `start` and a release `stop`; only the bound chords are unbound), `tests/unit/main/omarchyShortcuts.test.ts` (nothing written before setup or over keys set up by hand; only the snippet changes and the setup backup stays the original; a chord Hyprland uses is refused with what it runs; a new Hyprland error and a failed save both put the previous snippet back; stable binds only the main press shortcut and the holds), `tests/unit/main/nativeSettingsCoordinatorLinux.test.ts`, `tests/unit/renderer/features/settings/linuxDictationShortcuts.test.tsx` and the Linux cases in `tests/unit/shared/`.
+
+Not run, because forge's Tailscale SSH asked for a browser check that only Zach can pass:
+
+- The built app on forge under Omarchy: recording a new press shortcut in Settings › Dictation, seeing `~/.config/hypr/sotto-bindings.lua` change while `bindings.lua` and its `bindings.lua.bak.<epoch>` stay, `hyprctl configerrors` staying clean and `hyprctl binds -j` showing the new binding, and the new key starting dictation.
+- Whether Electron on Wayland reports Super as `MetaLeft`, and whether Hyprland hands the page the modifiers of a chord it keeps.
+- A hold shortcut other than F9 on a real keyboard, and the Linux e2e specs (`linux-dictation-command`, `linux-platform-profile`, `omarchy-setup`).
+- Screenshots of the Linux rows.
