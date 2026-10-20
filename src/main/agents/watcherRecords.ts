@@ -28,11 +28,11 @@ export function watcherRecordForDisk(record: WatcherRecord): WatcherRecord {
 
 /**
  * Puts back the reservations `watcherRecordForDisk` left off: one for each thread a start of an active request's
- * participating thread still names, unless it failed. Only a record saved at the cap can have lost any. Says whether it
- * put any back, for the caller to prune what its threads no longer need, as it does after every snapshot.
+ * participating thread still names, unless it failed. It runs on every recovery, not only on a record saved at the cap:
+ * the threads Sotto observes before Watcher recovers can already have pruned one that was. Says whether it put any back,
+ * for the caller to prune what its threads no longer need, as it does after every snapshot.
  */
 export function rebuildReservations(record: WatcherRecord): boolean {
-  if (record.reservations.length < WATCHER_SAVED_RESERVATIONS_MAX) return false
   const before = record.reservations.length
   const reserved = new Set(record.reservations.map(item => targetKey(item.target)))
   const requests = new Map(record.requests.map(request => [request.id, request]))

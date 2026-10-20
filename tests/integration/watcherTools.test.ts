@@ -201,6 +201,23 @@ it('saves at most eight reservations, so a build from before #1183 still reads t
   expect(service.startsInFlight()).toBe(11)
 }, 40_000)
 
+it('rebuilds the reservations the file left off even when a saved one is pruned before Watcher recovers (#1183)', async () => {
+  const f = await fixture()
+  for (let started = 1; started <= 11; started++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: { reservations: { target: { threadId: string } }[] } }
+  expect(saved.watcher.reservations).toHaveLength(8)
+  // While Sotto is closed, one thread the file kept finishes: the threads observed at start prune its reservation before
+  // Watcher recovers, leaving seven in the record.
+  const finished = f.workspace.registry.byThread(saved.watcher.reservations[0]!.target.threadId)!
+  const native = f.workspace.adapters.codex.state.threads.find(item => item.id === finished.sessionId)!
+  native.status = 'idle'; native.lastTurn = { id: native.lastTurn?.id ?? randomUUID(), status: 'completed' }
+  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(service.startsInFlight()).toBe(10)
+}, 40_000)
+
 it('opens an unchanged busy Watcher and keeps a queued user follow-up in its original request with a new turn budget', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')

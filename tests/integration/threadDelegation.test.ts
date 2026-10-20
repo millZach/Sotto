@@ -168,6 +168,19 @@ it('starts past the old Threads in flight limit, and warns once more than ten th
   expect(f.ok(await f.delegate(parent, { thread: tenth.delegation.thread, brief: 'Synthetic second brief', wait_seconds: 0 })).warning).toBeUndefined()
 })
 
+it('does not count a delegated thread whose first brief failed as working (#1183)', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const working = () => countWorkingThreads(f.control.shell().host.threads)
+  while (working() < 10) await f.userThread('claude')
+  // The provider refuses the new thread's first brief: the thread is made, but nothing works in it.
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  vi.spyOn(codex, 'execute').mockImplementation(async command => command.type === 'send' ? { accepted: false, error: 'Synthetic refusal.' } : execute(command))
+  const failed = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  expect(failed.delegation.outcome).toBe('failed')
+  expect(working()).toBe(10)
+  expect(failed.warning).toBeUndefined()
+})
+
 it('gives each delegated thread four briefs per turn of the delegating thread, renewed by the user\'s next message alone', async () => {
   const f = await fixture(), parent = await f.userThread('claude')
   const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))

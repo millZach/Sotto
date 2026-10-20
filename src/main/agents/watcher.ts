@@ -1200,7 +1200,7 @@ export class WatcherService implements WatcherControlHooks {
         for (const request of record.requests) if (stopped.has(request.id)) { request.state = 'stopped'; request.closedAt = now() }
         for (const operation of record.operations) if (operations.has(operation.id) && operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'REQUEST_NOT_ACTIVE' }
       })
-      void this.reconcileRemote().catch(() => { this.recoveryNotice = 'The host has not confirmed this stopped request. Its pending slots remain held.'; this.publish() })
+      void this.reconcileRemote().catch(() => { this.recoveryNotice = 'The host has not confirmed this stopped request. Its unconfirmed starts and sends are kept until it does.'; this.publish() })
       void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A stopped request has a queued message that could not be removed. It is fenced and will not be sent.'; this.publish() })
     }
   }
@@ -2216,7 +2216,7 @@ export class WatcherService implements WatcherControlHooks {
 
   private requireRemote(hostId: string, mutation: boolean): void {
     const host = this.remote?.hosts().find(item => item.hostId === hostId)
-    if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its pending slots remain held. Reconnect it to continue.', true)
+    if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its unconfirmed starts and sends are kept. Reconnect it to continue.', true)
     if (!host.reads || mutation && !host.control) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher directs its threads. Nothing was sent.')
     if (!this.takesMaster(host)) refuse('HOST_FEATURE_UNAVAILABLE', 'Update Sotto on this host before Watcher on Muse reads or directs its threads. Nothing was sent.')
   }
@@ -2281,7 +2281,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!;
         if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') saved.deliveryState = 'uncertain' })
-      return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation. Its slot remains held. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
+      return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
     }
   }
   private recordRemoteRefusal(record: WatcherRecord, operationId: string, code: WatcherRefusal['code']): void {
@@ -2340,7 +2340,7 @@ export class WatcherService implements WatcherControlHooks {
           this.remotePending.delete(id)
           await this.reconcileRemote(id, force)
         }
-      })().catch(() => { this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held.' })
+      })().catch(() => { this.recoveryNotice = 'A paired host could not be reconciled. Its unconfirmed starts and sends are kept until it is.' })
         .finally(() => { this.remoteFlushing = false; this.armRemote() })
     }, Math.max(0, due - time))
     this.remoteTimer.unref?.()
@@ -2383,7 +2383,7 @@ export class WatcherService implements WatcherControlHooks {
             if (result.status === 'refused' && result.code === 'OPERATION_NOT_RECORDED') exact.set(operation.id, null)
             else if (result.status === 'ok' && result.receipt.operationId === operation.id && result.receipt.requestId === operation.requestId
               && key(result.receipt.target) === key(operation.target)) exact.set(operation.id, result.receipt)
-          } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. Its pending slot remains held.' }
+          } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. That start or send stays unconfirmed.' }
         }
         if (this.closed || JSON.stringify(this.record().current) !== JSON.stringify(master)) return
         const apply = (record: WatcherRecord) => {
@@ -2454,7 +2454,7 @@ export class WatcherService implements WatcherControlHooks {
         else this.remoteFailures.delete(host.hostId)
       } catch {
         this.retryRemote(host.hostId)
-        this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held. Other hosts continue to refresh.'
+        this.recoveryNotice = 'A paired host could not be reconciled. Its unconfirmed starts and sends are kept until it is. Other hosts continue to refresh.'
       }
     }
     const beforeObservation = digest(this.record())
@@ -2646,7 +2646,7 @@ export class WatcherService implements WatcherControlHooks {
           if (operation && !request) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
           if (operation) return operation
           if (!record.remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
-            if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot retain another absence fence. The pending slot remains held.')
+            if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot keep track of another missing thread. That start or send stays unconfirmed.')
             await this.options.control.updateWatcher(next => { (next.remoteAbsences ??= []).push({ operationId: call.input.operationId, master, clientId, observedAt: now() }) })
           }
           guard?.()

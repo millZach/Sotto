@@ -334,8 +334,13 @@ export class DelegationService {
     this.calling.add(record.id)
     try {
       await this.execute(record, input.brief, admitted.start)
-      // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so.
-      const warning = admitted.start ? workingThreadsWarning(countWorkingThreads(this.snapshot().threads, record.delegatedThreadId)) : undefined
+      // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so. The
+      // new thread counts as working while its first brief is on its way or its turn has not ended, whatever its status
+      // says yet; one whose brief failed, or whose turn already ended, counts only if it is working.
+      const started = this.record(record.id)
+      const pending = started !== undefined && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
+        || started.deliveryState === 'uncertain' || started.deliveryState === 'accepted' && started.outcomeAt === undefined)
+      const warning = admitted.start ? workingThreadsWarning(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!)) {
