@@ -1,6 +1,6 @@
 # Signing the Mac Owl (Stage 2 credentials)
 
-The Mac Owl is signed with Sotto's Developer ID and notarized by Apple in GitHub Actions (ADR-0092). Only Zach can do the steps below: they need the Apple Developer account's Account Holder, and they put secrets into GitHub. Stage 2's code waits for them. Everything here works from the Windows PC in Git Bash; no Mac is needed.
+The Mac Owl is signed with Sotto's Developer ID and notarized by Apple in GitHub Actions (ADR-0093). Only Zach can do the steps below: they need the Apple Developer account's Account Holder, and they put secrets into GitHub. Stage 2's code waits for them. Everything here works from the Windows PC in Git Bash; no Mac is needed.
 
 Stable on the Mac is not signed and does not use any of this.
 
