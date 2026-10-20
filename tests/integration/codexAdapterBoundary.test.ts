@@ -170,10 +170,35 @@ describe('Codex App Server provider adapter', () => {
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'no-event', threadId, reasoningEffort: 'high' })).toEqual({ accepted: false, uncertain: true })
     const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
     expect(aliases[threadId].pendingSettings).toMatchObject({ reasoningEffort: 'high' })
-    await expect(f.host.execute({ type: 'send', commandId: 'blocked-no-event', threadId, messageId: 'blocked-no-event', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
+    // An effort with no result holds nothing back: the thread still sends (#1192).
+    expect(await f.host.execute({ type: 'send', commandId: 'past-no-event', threadId, messageId: 'past-no-event', text: 'Sent past it' })).toEqual({ accepted: true })
     expect(await f.host.execute({ type: 'send', commandId: 'other-no-event', threadId: other.threadId, messageId: 'other-no-event', text: 'Other thread' })).toEqual({ accepted: true })
     expect((await f.host.snapshot()).connected).toBe(true)
     expect((await f.driver.requests()).filter(request => request.method === 'thread/settings/update')).toHaveLength(1)
+  })
+  it('keeps a thread readable and sending when Codex reports the old settings for an unconfirmed effort change', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    f.host.disconnect(); await f.adapter.closed()
+    const path = join(f.root, 'codex-threads.json')
+    const aliases = JSON.parse(await readFile(path, 'utf8'))
+    // Codex never took this effort, and the permission mode is the one it confirmed.
+    const effort = aliases[threadId].reasoningEffort === 'low' ? 'high' : 'low'
+    aliases[threadId].pendingSettings = { modelId: aliases[threadId].modelId, reasoningEffort: effort, runtimeMode: aliases[threadId].runtimeMode ?? 'auto-accept-edits' }
+    await writeFile(path, JSON.stringify(aliases))
+    f.adapter.observeThreads([threadId])
+    expect((await f.host.connect()).connected).toBe(true)
+    await f.host.refreshThread?.(threadId)
+    const thread = (await f.host.snapshot()).threads.find(item => item.id === threadId)
+    // Nothing marks its history, so its queued follow-ups run as on any thread.
+    expect(thread?.historyStatus).not.toBe('error')
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toMatchObject({ reasoningEffort: effort })
+    expect(await f.host.execute({ type: 'send', commandId: 'past-old-settings', threadId, messageId: 'past-old-settings', text: 'Sent past it' })).toEqual({ accepted: true })
+  })
+  it('still holds a send behind a permission change Codex did not confirm', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ dropSettingsNotification: true })
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'mode-no-event', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
+    await expect(f.host.execute({ type: 'send', commandId: 'held-no-event', threadId, messageId: 'held-no-event', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
   })
   it.each([false, true])('keeps Codex connected when saved settings are not confirmed (watched: %s)', async watched => {
     const f = await fixture(); const { threadId } = await create(f)
