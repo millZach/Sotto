@@ -208,5 +208,96 @@
       "state": "missing"
     },
     "speechModelsFolder": []
+  },
+  "v2": {
+    "afterTwoArrowDowns": {
+      "shown": "parakeet-tdt-0.6b-v2-int8",
+      "choice": "parakeet-ultra-int8"
+    },
+    "afterClickingTheList": {
+      "shown": "parakeet-ultra-int8",
+      "choice": "parakeet-ultra-int8"
+    },
+    "afterChoosingV2": {
+      "choice": "parakeet-tdt-0.6b-v2-int8",
+      "status": {
+        "state": "downloading",
+        "receivedBytes": 0,
+        "totalBytes": 661190513
+      }
+    },
+    "nextLaunch": {
+      "atOpen": {
+        "choice": "parakeet-tdt-0.6b-v2-int8",
+        "status": {
+          "state": "downloading",
+          "receivedBytes": 37165184,
+          "totalBytes": 661190513
+        }
+      },
+      "downloadSeconds": 183,
+      "ready": {
+        "choice": "parakeet-tdt-0.6b-v2-int8",
+        "status": {
+          "state": "ready"
+        },
+        "options": [
+          "Parakeet Ultra",
+          "Parakeet v2",
+          "Parakeet v3, 670 MB"
+        ]
+      },
+      "transcript": {
+        "ok": true,
+        "text": "Joe Keaton disapproved of films and Buster also had reservations about the medium."
+      }
+    },
+    "launchAfter": {
+      "firstRun": false,
+      "resumedFrom": {
+        "state": "loading"
+      },
+      "ready": {
+        "status": {
+          "state": "ready"
+        },
+        "settingsChoice": "parakeet-tdt-0.6b-v2-int8",
+        "options": [
+          "Parakeet Ultra",
+          "Parakeet v2",
+          "Parakeet v3, 670 MB"
+        ],
+        "shown": "parakeet-tdt-0.6b-v2-int8"
+      },
+      "transcripts": [
+        {
+          "clip": "cv-en-0.wav",
+          "result": {
+            "ok": true,
+            "text": "Joe Keaton disapproved of films and Buster also had reservations about the medium."
+          }
+        },
+        {
+          "clip": "mls-de-0.wav",
+          "result": {
+            "ok": true,
+            "text": "Tankenzie, so Eben Walten Meinigedanken by Inen in Adelaide, Un ich Wunstemir, see Herzauben so Kernen? None Derzaube is Galungen, Lachten Munchausen. Darbinich Un was mich Herrfurt?"
+          }
+        }
+      ],
+      "minimum": {
+        "viewport": [
+          820,
+          560
+        ],
+        "selectWidth": 210,
+        "selectText": "Parakeet v2",
+        "overflowing": [
+          "tt-visually-hidden",
+          "tt-visually-hidden",
+          "tt-visually-hidden"
+        ]
+      }
+    }
   }
 }

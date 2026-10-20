@@ -31,11 +31,15 @@ Proved on the Windows laptop (Windows 11) on October 20, 2026, with this branch'
   - French, from Multilingual LibriSpeech: "Pendant le second siècle, je fis serment d'ouvrir tous les trésors de la terre, à quiconque me mettrait en liberté, mais je ne fus pas plus heureux. Dans le troisième je promis de faire puissant monarque mon libérateur, d'être toujours près de lui en esprit,"
 - `windows-settings-ultra-after-restart-1280x800-dark.png`, `windows-settings-ultra-ready-820x560-dark.png`: on a third start, Parakeet Ultra was ready at once, with nothing downloaded. Settings shows "Speech recognition by Moondream, on this computer. 25 European languages.", **Ready.** and "671 MB on this computer.". The list shows Parakeet Ultra under Already on this computer, and Parakeet v3, 670 MB and Parakeet v2, 661 MB under Download.
 
+- **Choosing from the open list after arrowing.** The same profile, with Parakeet Ultra ready, was checked after the review fix. Two down arrows moved the list to Parakeet v2, but nothing was chosen. Clicking the list then put it back on Parakeet Ultra as it opened, so that choosing Parakeet v2 in it was a change. Choosing Parakeet v2 saved the choice, let go of Ultra and started v2's download from `speech-model-parakeet-tdt-0.6b-v2-int8-1` (661,190,513 bytes).
+- `windows-settings-v2-ready-1280x800-dark.png`, `windows-settings-v2-ready-820x560-dark.png`: after Sotto was quit while v2 downloaded, the next start resumed it at 37.2 MB and reached **Ready** 183 seconds later. Its four files match their pins.
+  - The list reads Parakeet Ultra and Parakeet v2 under Already on this computer, then Parakeet v3, 670 MB under Download.
+  - v2 wrote the English clip as Ultra did. The German clip came out as English-sounding words ("Tankenzie, so Eben Walten…"), as an English-only model does.
+
 How the models were made and checked before publishing is in [2026-10-20-sotto-speech-models.md](2026-10-20-sotto-speech-models.md).
 
 ## Not checked here
 
 - Linux in the running app. The unit tests cover its listing and its keyboard rule; on forge it needs a run like the Windows one.
-- Parakeet v2 downloaded in the app. Its published files were checked against their pins, and it transcribed through `sherpa-onnx-node` on Windows, but it was not downloaded through the picker.
 - On a Mac, Sotto's three downloads beside FluidAudio's models, and the rule that leaves out a download of a model FluidAudio already keeps. Unit tests cover both.
 - The design-capture baselines for the speech model step and Settings → Transcription change on purpose, and were not regenerated: the Mac's renders already differed from them on `main`, and this change moved the rows again.

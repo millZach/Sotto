@@ -1,6 +1,6 @@
 import { lstat, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3 } from '../../shared/speechModel'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, type SottoSpeechModel } from '../../shared/speechModel'
 import type { CoreMlModelVersion } from './coreMlEngine'
 
 /**
@@ -36,10 +36,15 @@ interface KnownFolder {
 
 const V3_FILES = { joint: 'JointDecisionv3.mlmodelc', vocab: 'parakeet_v3_vocab.json' }
 
+/** FluidAudio's copy of one of Sotto's models: its maker and languages, and its name marked Core ML. */
+const coreMlCopyOf = (model: SottoSpeechModel): Pick<KnownFolder, 'name' | 'maker' | 'languages' | 'sameModelAs'> => ({
+  name: `${model.name} (Core ML)`, maker: model.maker, languages: model.languages, sameModelAs: model.id,
+})
+
 const KNOWN: readonly KnownFolder[] = [
-  { folder: 'parakeet-ultra', version: 'ultra', name: 'Parakeet Ultra (Core ML)', maker: 'Moondream', languages: '25 European languages', sameModelAs: PARAKEET_ULTRA.id, ...V3_FILES },
-  { folder: 'parakeet-tdt-0.6b-v3', version: 'v3', name: 'Parakeet v3 (Core ML)', maker: 'NVIDIA', languages: '25 European languages', sameModelAs: PARAKEET_V3.id, ...V3_FILES },
-  { folder: 'parakeet-tdt-0.6b-v2', version: 'v2', name: 'Parakeet v2 (Core ML)', maker: 'NVIDIA', languages: 'English only', sameModelAs: PARAKEET_V2.id, joint: 'JointDecision.mlmodelc', vocab: 'parakeet_vocab.json' },
+  { folder: 'parakeet-ultra', version: 'ultra', ...coreMlCopyOf(PARAKEET_ULTRA), ...V3_FILES },
+  { folder: 'parakeet-tdt-0.6b-v3', version: 'v3', ...coreMlCopyOf(PARAKEET_V3), ...V3_FILES },
+  { folder: 'parakeet-tdt-0.6b-v2', version: 'v2', ...coreMlCopyOf(PARAKEET_V2), joint: 'JointDecision.mlmodelc', vocab: 'parakeet_vocab.json' },
 ]
 
 const SHARED_PARTS = ['Preprocessor.mlmodelc', 'Encoder.mlmodelc', 'Decoder.mlmodelc']
