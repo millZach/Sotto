@@ -371,6 +371,10 @@ export class WatcherService implements WatcherControlHooks {
     this.remoteOff = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
     void this.reconcileRemote().catch(() => undefined)
   }
+  /** The thread as its owning host last published it, or undefined while that host or thread is out of view. */
+  private knownThread(target: WatcherThreadTarget): AgentThread | undefined {
+    return this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
+  }
   private thread(target: WatcherThreadTarget): AgentThread {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
@@ -566,7 +570,10 @@ export class WatcherService implements WatcherControlHooks {
   private promptTurnCurrent(record: Readonly<WatcherRecord>, watcher: WatcherThreadTarget): boolean {
     const latest = record.promptTurns?.findLast(turn => key(turn.watcher) === key(watcher))
     if (!latest) return false
-    const nativeTurnId = this.thread(watcher).lastTurn?.id
+    // A Watcher thread out of its host's view for the moment has nothing to record; the next update asks again.
+    const thread = this.knownThread(watcher)
+    if (!thread) return true
+    const nativeTurnId = thread.lastTurn?.id
     return !nativeTurnId || nativeTurnId === latest.previousNativeTurnId || nativeTurnId === latest.nativeTurnId
   }
   private beginPromptTurn(record: WatcherRecord, watcher: WatcherThreadTarget, messageId: string): void {
@@ -1447,7 +1454,7 @@ export class WatcherService implements WatcherControlHooks {
     const current = this.view().current
     if (!this.options.workerHost && current?.target.hostId === this.hostId()
       && threads.has(current.target.threadId) && !this.promptTurnCurrent(this.view(), current.target)) changes.push(record => {
-      this.promptTurn(record, record.current!.target)
+      if (this.knownThread(record.current!.target)) this.promptTurn(record, record.current!.target)
     })
     const record = this.view(), index = this.recordIndex(record), hostId = index.hostId
     for (const thread of snapshot.threads) {
