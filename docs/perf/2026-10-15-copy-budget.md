@@ -26,10 +26,15 @@ Two checks run in every CI run. They count calls; they never time anything.
   router, the window's publisher and broadcaster, the Watcher room's publisher, and the host-update busy check with one
   saved host on an older Sotto. On Owl, Watcher is open and watching the streaming thread. It streams one reply with
   20 threads and with 200, and counts every `structuredClone`, `cloneHostSnapshot`, `clonePlainData` and
-  `cloneActivitySnapshot` call, which of them copy the whole state, and which copy Watcher's record. It fails when one
-  update copies more with 200 threads than with 20, or when an update passes its budget.
+  `cloneActivitySnapshot` call, which of them copy the whole state, and which copy Watcher's record. Since October 19 it
+  also counts the objects every copier makes, per thread per update, and how often an update reads a provider out of a
+  public ID. It fails when one
+  update copies more with 200 threads than with 20, or when an update passes its budget. Also since October 19, a thread
+  the window shows has a wake-up of delegation news no one is shown (ADR-0081), and the guard fails when an update of
+  another thread makes that thread's history again without it (`withoutHiddenWakeUps`): it is made again only when its
+  own history changes.
 - `tests/unit/main/copySites.test.ts` counts every copy call site in `src/main` and `src/host` (`structuredClone(`,
-  `.shell()`, `watcherRecord()`, `cloneHostSnapshot(`, `clonePlainData(`, `cloneActivitySnapshot(` and JSON round trips) per file, and
+  `.shell()`, `watcherRecord()`, `cloneHostSnapshot(`, `clonePlainData(`, `cloneActivitySnapshot(`, `copyUnshared(` and JSON round trips) per file, and
   fails when the count differs from `tests/fixtures/copySites.json`. A new copy shows up in review that way.
 
 `tests/e2e/main-freeze.spec.ts` is the timing side, opt-in like the other benchmarks: it measures main's freezes and the
@@ -132,6 +137,56 @@ record each time and would have run the pass on every update. Its time now chang
 
 The shell is copied as plain data, as the record is. The activity snapshots and the window's check are left for a later
 change.
+
+### October 19: one copy per publication
+
+The owner's Owl build still lagged now and then while several Claude Code threads worked. A 40-second profile of the
+installed build had main about 60% busy. What it spent on each update:
+
+| Work on each update | Main's time in 40 s |
+| --- | ---: |
+| Activity snapshots copied, `cloneActivitySnapshot` | about 4.4 s |
+| The coordinator's shell for the broadcast | about 1.8 s |
+| `structuredClone` of each remote host's state | about 1.2 s |
+| The usage ledger serialized whole | about 1 s |
+| Reading a provider out of a public ID, for every thread | about 0.9 s |
+
+The guard above missed most of it, because it counted calls. An adapter's subscribers each took a copy of every thread
+inside the module that made it, where no call was seen. The provider switch copied what it had just been handed, and
+the workspace made one copy for each of its subscribers. So the guard now also counts the objects each copier makes,
+wherever it is called from, and how often an update reads a provider out of a public ID.
+
+What changed:
+
+- A publication is copied once for all its subscribers, who only read it (ADR-0016, October 19 amendment). The switch
+  keeps an adapter's publication and hands on its aggregate as they are, and the workspace copies once per publish.
+- The shell a broadcast carries shares the coordinator's thread data rather than copying it. A Watcher change is handed
+  on with that shell, where it used to make a whole copy.
+- A remote host's state is read in place for the router's publication, the host-update check and Watcher's reads, where
+  each made a structured clone of it.
+- Which held provider a public ID names is read once per ID. It was read for every thread and every catalog model on
+  every publish, on Owl too whenever a provider is held there.
+- The usage ledger is written with each thread's part kept from the last write unless that thread changed. The file
+  reads exactly as before.
+- The Watcher room's copy of its state is a plain-data copy rather than a structured clone.
+
+Per coordinator update while one thread streams, with 200 threads:
+
+| | Objects copied per frame | Per thread per update | Copier calls | Whole-state copies | ID reads |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Owl before | 4,592 | 40 | 12.4 | 2.9 | 2,383 |
+| Owl after | 2,138 | 17 | 11.5 | 1 | 2 |
+| Stable before | 5,380 | 43 | 9.9 | 3.0 | 2,452 |
+| Stable after | 2,183 | 19 | 8.9 | 1 | 2 |
+
+The "before" numbers were taken with the copier moved where the guard counts it, and nothing else changed. Two runs
+after the change gave the same counts within 5%. The new budgets are 21 objects per thread per update and 5 ID reads,
+on both tracks. The call budgets fall to 12.5 on Owl and 9.5 on stable, and the whole-state budget to 1.5.
+
+Two copies of every thread are left on each update: the adapter's, where its own records become a publication, and the
+workspace's. Sharing a thread that has not changed through those layers as well is #925's. This was measured on the
+copy guard's pipeline, not on the owner's machine; the next profile of an Owl build will say what the change is worth
+there.
 
 ## When a guard goes red
 

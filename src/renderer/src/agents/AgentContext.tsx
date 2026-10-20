@@ -10,6 +10,7 @@ import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
+import { answeredChoices } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { visibleWatcherState, watcherThreadVisible } from './watcherVisibility'
 
@@ -100,8 +101,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const receiveState = useCallback((next: AgentState, options: { urgent?: boolean } = {}): void => {
     if (next.stale !== true) {
       const owners = new Set(next.host.threads.map(thread => thread.id))
-      for (const owner of session.requestOwners) if (!owners.has(owner)) requestAnswerStore.prune(owner, [])
-      for (const thread of next.host.threads) requestAnswerStore.prune(thread.id, thread.requests)
+      for (const owner of session.requestOwners) if (!owners.has(owner)) { requestAnswerStore.prune(owner, []); answeredChoices.observe(owner, []) }
+      for (const thread of next.host.threads) {
+        requestAnswerStore.prune(thread.id, thread.requests)
+        // What this window answered follows each request's life, for Watcher's lines; only answered threads are read.
+        if (answeredChoices.has(thread.id)) answeredChoices.observe(thread.id, thread.requests)
+      }
       session.requestOwners = owners
     }
     arrived.current = performance.now()
@@ -196,6 +201,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
     if ('threadId' in request && typeof request.threadId === 'string' && !visible(request.threadId)) return Promise.resolve(null)
     if (request.type === 'observe-threads') request = { ...request, threadIds: request.threadIds.filter(visible) }
+    if (request.type === 'dismiss-failures') {
+      const failures = request.failures.filter(item => visible(item.threadId))
+      if (!failures.length) return Promise.resolve(null)
+      request = { ...request, failures }
+    }
     // Telling main which panes are open is also this window's own record of whose history it needs.
     if (request.type === 'observe-threads') {
       detail.viewed = new Set(request.threadIds)
@@ -234,7 +244,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // waits for the reply before it. Composer saves and Send reach main at once in invocation order;
     // their execution still shares main's global lane, so older saves cannot land after a Send.
     const threadCommand = THREAD_SCOPED_COMMAND_TYPES.has(request.type) || LANELESS_THREAD_COMMAND_TYPES.has(request.type)
-    if (threadCommand || composerOperation || request.type === 'observe-threads' || providerOperation) return run()
+    // Dismiss all is the window's record of what the user has seen, as telling main which panes are open is.
+    if (threadCommand || composerOperation || request.type === 'observe-threads' || request.type === 'dismiss-failures' || providerOperation) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation

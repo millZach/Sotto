@@ -11,6 +11,8 @@ export interface WatcherCommandOrigin {
   readonly operationId?: string
   /** The user's explicit phone card answer; its private writer guard is not automation. */
   readonly userAnswer?: true
+  /** Setup the user asked for in Watcher's room, such as its model or permissions; it is not automation either. */
+  readonly userSetup?: true
   readonly guard: () => void
 }
 export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'queue-followup' | 'steer' | 'interrupt' | 'settle-thread' }>
@@ -33,6 +35,11 @@ export interface WatcherControlHooks {
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void
+  /**
+   * What Sotto adds to a wake-up's news as it goes (#1190): the start of a finished turn's reply and what a pull request
+   * now says, read once for the whole note from the threads as they stand. Never saved with the news.
+   */
+  newsDetail?(): (event: WatcherEvent) => string | undefined
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void
 }

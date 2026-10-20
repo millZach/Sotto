@@ -47,6 +47,7 @@ describe('packaged Owl feature protection', () => {
     const owl = await readFile(new URL('../../../scripts/package-owl.mjs', import.meta.url), 'utf8')
     expect(stable).toContain("[resolve(root, plan.unpacked), 'stable']")
     expect(owl).toContain("[resolve(root, 'release/win-unpacked'), 'owl']")
+    expect(owl).toContain("[plan.unpacked, 'owl']")
     const { scripts } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
     for (const name of ['package:dir', 'package:dir:mac', 'package:linux']) expect(scripts[name]).not.toMatch(/verify-owl-features/u)
   })
