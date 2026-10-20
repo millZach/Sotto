@@ -70,6 +70,7 @@ import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from '
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
+import { isResumeNoteText } from '../../shared/restartResume'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -314,6 +315,8 @@ export class AgentControl {
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
+  /** Wake-ups the provider was handed, by command, so a failed one can tell a refusal from a stop before it (#1187). The pump takes each back. */
+  private readonly wakeUpsOffered = new Set<string>()
   /**
    * Threads with a prompt of their own — a manual send or a steer — admitted and not yet finished.
    * Send admission and the follow-up pump read this rather than the lane, so a thread action that is
@@ -3199,7 +3202,7 @@ export class AgentControl {
       let requeued = false
       void (async () => {
         if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
-        let claimed = false, sent = false
+        let claimed = false, sent = false, sentCommandId: string | undefined
         const turn = this.beginTurn(first.wakeUp ? { source: 'wake-up', commandType: 'wake-up', text: first.text } : { source: 'command', commandType: 'manual-send', text: first.text })
         // A queued follow-up is timed from the moment the queue takes it, not from when it was queued.
         if (turn) turn.receivedAt = performance.now()
@@ -3211,6 +3214,7 @@ export class AgentControl {
           await this.followupStore.claim(first.id, 'send', isDelegationOnlyWakeUp(first) ? candidate => candidate.id !== first.id : held); claimed = true
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
+          sentCommandId = item.commandId
           // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
           // and naming the send lets the adapter take this read for its own.
           const readStartedAt = performance.now()
@@ -3293,14 +3297,23 @@ export class AgentControl {
           else if (claimed || first.watcherOperationId) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)
-            await this.followupStore.settle(first.id, accepted ? 'accepted' : this.outbox.some(o => o.id === item?.commandId) ? 'uncertain' : 'failed', failure)
+            const outcome = accepted ? 'accepted' : this.outbox.some(o => o.id === item?.commandId) ? 'uncertain' : 'failed'
+            const offered = sentCommandId !== undefined && this.wakeUpsOffered.has(sentCommandId)
+            // A resume note its provider refused leaves the queue, so the thread's own messages never wait behind it (#1187).
+            // One that failed before it was offered, as when the thread could not be read, waits for Resume queue as before.
+            if (outcome === 'failed' && offered && first.news?.some(isRestartNews) && isResumeNoteText(first.text)) {
+              await this.followupStore.dropFailedResume(first.id, kept => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false }), failure)
+            } else await this.followupStore.settle(first.id, outcome, failure)
             // A Watcher send's outcome is read from its queue item, and a takeover's queue cancel removes a failed item.
             // The native input that refused this send also takes the thread over, so Watcher records the outcome now,
             // before that cancel can run; read later, the operation would stay dispatching with nothing left to settle it.
             // The store makes its changes one after another, so a cancel asked meanwhile has not started yet.
             if (first.watcherOperationId) { this.syncFollowups(); this.observeWatcher(this.state.host) }
           }
-        } finally { await this.finishTurn(turn, failure) }
+        } finally {
+          if (sentCommandId) this.wakeUpsOffered.delete(sentCommandId)
+          await this.finishTurn(turn, failure)
+        }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
         .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId && !held(i))?.id !== first.id) this.pumpFollowups() })
     }
@@ -4173,6 +4186,7 @@ export class AgentControl {
             kind: wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
           catch { /* A usage failure cannot refuse or resend the user's message. */ }
         }
+        if (wakeUp) this.wakeUpsOffered.add(command.commandId)
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
