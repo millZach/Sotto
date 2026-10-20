@@ -433,6 +433,8 @@ describe('settings', () => {
     const before = parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: ['Alt+D'], theme: 'dark' }, linuxDefaults, true)
     expect(before).toMatchObject({ hotkey: 'Super+CommandOrControl+X', pressShortcuts: [], holdShortcuts: ['F9'], theme: 'dark' })
     expect(parseSettings({}, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // An unreleased recorder build saved the old unused default with nothing held; Linux's rows can't make that pair.
+    expect(parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: [], holdShortcuts: [] }, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
     // Once saved by this version, the Linux shortcuts are the user's, an empty hold row included.
     const chosen = parseSettings({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] }, linuxDefaults, true)
     expect(chosen).toMatchObject({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] })

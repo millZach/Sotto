@@ -1296,11 +1296,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Linux: while Settings records keys, Sotto's own Hyprland bindings start nothing. Hyprland keeps a bound key from the
   // page, so the recording is told whose it was instead.
   let compositorKeysSuspended = false
+  // The latest recording's span, in the epoch nanoseconds bindings stamp their key events with. A binding's command can
+  // arrive after the recording ends, since the launcher boots first, so a key pressed during it is still Sotto's.
+  let recordingSpan: { from: bigint; to: bigint | null } | null = null
+  const epochNanoseconds = (): bigint => BigInt(Date.now()) * 1_000_000n
   // Settings recording stands every dictation shortcut down; stable has only the hotkey to suspend.
   const shortcutLifecycle = createDictationShortcutLifecycle({
     suspend: suspended => {
       hotkeys.suspend(suspended)
       dictationShortcuts?.suspend(suspended)
+      if (platform === 'linux' && suspended !== compositorKeysSuspended) {
+        recordingSpan = suspended ? { from: epochNanoseconds(), to: null } : recordingSpan && { ...recordingSpan, to: epochNanoseconds() }
+      }
       compositorKeysSuspended = platform === 'linux' && suspended
     },
     router: dictationShortcuts,
@@ -1473,7 +1480,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           void settingsCoordinator.republish().catch(() => logOperational('shell-pill-refresh-failed'))
         },
       ),
-      async command => {
+      async (command, at) => {
         if (command.startsWith('place ')) {
           const edge = parseDictationEdge(command.slice(6))
           if (edge === null) return false
@@ -1483,8 +1490,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           await windows.setWidgetPlacement({ edge })
           return true
         }
-        if (compositorKeysSuspended && (command === 'start' || command === 'toggle')) {
-          windows.sendToMain(DICTATION_KEYS_TAKEN, command === 'toggle' ? 'press' : 'hold')
+        const pressedWhileRecording = at !== undefined && recordingSpan !== null && at >= recordingSpan.from && (recordingSpan.to === null || at <= recordingSpan.to)
+        if ((compositorKeysSuspended || pressedWhileRecording) && (command === 'start' || command === 'toggle')) {
+          if (compositorKeysSuspended) windows.sendToMain(DICTATION_KEYS_TAKEN, command === 'toggle' ? 'press' : 'hold')
           return true
         }
         return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })

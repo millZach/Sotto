@@ -490,8 +490,12 @@ function parseField<Key extends keyof AppSettings>(
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
   // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
-  // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys.
-  const linuxBeforeRecorder = allowOmarchy && persisted.holdShortcuts === undefined
+  // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys, and so
+  // does one an unreleased build of the recorder saved with the old, unused default and nothing held: Linux's rows
+  // can't produce that pair, since only Owl removes the hold and Linux has no Owl build.
+  const untouchedLinux = Array.isArray(persisted.holdShortcuts) && persisted.holdShortcuts.length === 0 &&
+    persisted.hotkey === 'CommandOrControl+Shift+Space' && (persisted.pressShortcuts === undefined || Array.isArray(persisted.pressShortcuts) && persisted.pressShortcuts.length === 0)
+  const linuxBeforeRecorder = allowOmarchy && (persisted.holdShortcuts === undefined || untouchedLinux)
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.

@@ -65,11 +65,11 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const owl = useOwlFeature('dictation-hold-shortcuts')
   const darwin = platform === 'darwin'
   const linux = platform === 'linux'
-  // Stable shows only the main shortcut and leaves the saved extras and holds alone. Linux's hold shortcuts stay bound
-  // in Hyprland, F9 by default, so the press shortcut is checked against them though their row is not shown.
+  // Stable shows only the main shortcut and leaves the saved extras and holds alone. Linux's first hold shortcut stays bound
+  // in Hyprland, F9 by default, so the press shortcut is checked against it though its row is not shown.
   const set: DictationShortcutSet = owl
     ? { press: [settings.hotkey, ...settings.pressShortcuts], hold: settings.holdShortcuts }
-    : { press: [settings.hotkey], hold: linux ? settings.holdShortcuts : [] }
+    : { press: [settings.hotkey], hold: linux ? settings.holdShortcuts.slice(0, 1) : [] }
   // Linux has no key listener: Wayland gives keys only to the focused window, so the page records.
   const recorder = useChordRecorder(platform, owl && !linux)
   const [target, setTarget] = useState<Slot | null>(null)

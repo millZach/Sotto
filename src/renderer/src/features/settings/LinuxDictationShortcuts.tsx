@@ -35,7 +35,9 @@ export function LinuxDictationShortcuts({ settings, visible, onReplaceHotkey, on
       ? <Button variant="secondary" disabled={omarchy.busy} onClick={() => void omarchy.command({ type: 'setup', pieces: ['keys'], keys: 'unconfirmed' })}>Set up the keys</Button>
       : undefined,
   }
-  const bound: DictationShortcutSet = { press: owl ? [settings.hotkey, ...settings.pressShortcuts] : [settings.hotkey], hold: settings.holdShortcuts }
+  const bound: DictationShortcutSet = owl
+    ? { press: [settings.hotkey, ...settings.pressShortcuts], hold: settings.holdShortcuts }
+    : { press: [settings.hotkey], hold: settings.holdShortcuts.slice(0, 1) }
   return (
     <>
       <DictationShortcuts settings={settings} platform="linux" onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} locked={locked} />

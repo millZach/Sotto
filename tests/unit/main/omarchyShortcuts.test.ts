@@ -57,6 +57,8 @@ describe('Changing Sotto’s Hyprland keys from Settings', () => {
     expect(snippet).toContain('o.bind("SUPER + ALT + D", "Toggle Sotto dictation", dictation("toggle"))')
     expect(snippet).toContain('o.bind("F9", "Stop Sotto dictation (push-to-talk)", dictation("stop"), { release = true })')
     expect(snippet).not.toContain('SUPER + CTRL + X')
+    // Backup first: the snippet it replaced sits beside it.
+    expect(await readFile(join(f.home, '.config/hypr/sotto-bindings.lua.bak'), 'utf8')).toBe(await readFile(join(f.resources, 'bindings.lua'), 'utf8'))
     // bindings.lua keeps its single require; the backup made at setup is still the original.
     expect(await readFile(f.bindings, 'utf8')).toBe(bindingsAfterSetup)
     expect((await readdir(join(f.home, '.config/hypr'))).filter(name => name.startsWith('bindings.lua.bak.'))).toEqual(backups)
@@ -69,6 +71,35 @@ describe('Changing Sotto’s Hyprland keys from Settings', () => {
     expect((await setup.get()).pieces.keys).toMatchObject({ status: 'done', owned: true })
     // Super+Ctrl+X goes back to Voxtype, which Sotto no longer unbinds.
     expect(f.desktop.binds.some(bind => bind.key === 'X' && bind.modmask === 68 && bind.arg.startsWith('voxtype'))).toBe(true)
+  })
+
+  it('never writes bindings.lua for a shortcut change, so an edit made meanwhile stays, even through a rollback', async () => {
+    let editing = false
+    const setup = await setUpKeys(f.make(async (command, args) => {
+      // The user saves bindings.lua while Sotto checks the new snippet.
+      if (editing && command === 'luac') await f.write(f.bindings, `${await readFile(f.bindings, 'utf8')}-- edited meanwhile\n`)
+      return f.run(command, args)
+    }, { shortcuts: async () => saved, commitShortcuts: commit, holdShortcutsEnabled: true }))
+    editing = true
+    commit.mockRejectedValueOnce(new Error('disk full'))
+    const reloads = f.calls.filter(call => call === 'hyprctl reload').length
+    await setup.replaceShortcuts({ press: ['Super+Alt+D'], hold: ['F9'] })
+    expect(await readFile(f.bindings, 'utf8')).toContain('-- edited meanwhile')
+    // The keys were written, then put back after the failed save.
+    expect(f.calls.filter(call => call === 'hyprctl reload').length).toBe(reloads + 2)
+  })
+
+  it('takes the snippet backup away with the keys', async () => {
+    const setup = await setUpKeys()
+    await setup.replaceShortcuts({ press: ['Super+Alt+D'], hold: ['F9'] })
+    await setup.command({ type: 'remove', pieces: ['keys'] })
+    expect(await readFile(join(f.home, '.config/hypr/sotto-bindings.lua.bak'), 'utf8').catch(() => null)).toBeNull()
+  })
+
+  it('refuses a Linux hold shortcut with a modifier, whose release Hyprland can miss', async () => {
+    const setup = await setUpKeys()
+    expect(await setup.replaceShortcuts({ press: ['Super+CommandOrControl+X'], hold: ['Super+Alt+D'] })).toMatchObject({ ok: false, reason: 'invalid', message: expect.stringContaining('one F key on its own') })
+    expect(commit).not.toHaveBeenCalled()
   })
 
   it('binds a hold shortcut to start on press and stop on release', async () => {
@@ -135,15 +166,16 @@ describe('Changing Sotto’s Hyprland keys from Settings', () => {
     expect(commit).not.toHaveBeenCalled()
   })
 
-  it('binds only the main press shortcut and the hold shortcuts in stable, and saves the extras whole', async () => {
+  it('binds only the main press shortcut and the first hold shortcut in stable, and saves the extras whole', async () => {
     const setup = await setUpKeys(engine(false))
-    const result = await setup.replaceShortcuts({ press: ['Super+Alt+D', 'Super+Alt+E'], hold: ['F9'] })
+    const result = await setup.replaceShortcuts({ press: ['Super+Alt+D', 'Super+Alt+E'], hold: ['F9', 'F10'] })
     expect(result).toEqual({ ok: true })
     const snippet = await readFile(f.snippet, 'utf8')
     expect(snippet).toContain('SUPER + ALT + D')
     expect(snippet).not.toContain('SUPER + ALT + E')
     expect(snippet).toContain('o.bind("F9", "Start Sotto dictation (push-to-talk)"')
-    expect(commit).toHaveBeenCalledWith({ press: ['Super+Alt+D', 'Super+Alt+E'], hold: ['F9'] })
+    expect(snippet).not.toContain('"F10"')
+    expect(commit).toHaveBeenCalledWith({ press: ['Super+Alt+D', 'Super+Alt+E'], hold: ['F9', 'F10'] })
   })
 
   it('sets up the saved shortcuts, not the defaults, and refreshes keys whose saved shortcuts changed at start', async () => {

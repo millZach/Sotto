@@ -309,6 +309,20 @@ describe('Linux chords', () => {
     expect(validateChord('Fn', adding('hold'), linuxSet, 'linux', owl)).toMatchObject({ ok: false, code: 'needs-key' })
   })
 
+  it('holds only an F key on its own, since Hyprland can miss a release when a modifier goes up first', () => {
+    expect(validateChord('Super+Alt+D', adding('hold'), linuxSet, 'linux', owl)).toMatchObject({ ok: false, code: 'hold-modifier' })
+    expect(validateChord('F10', adding('hold'), linuxSet, 'linux', owl)).toEqual({ ok: true })
+    // Windows keeps its modifier holds.
+    expect(validateChord('CommandOrControl+Super', adding('hold'), { press: ['CommandOrControl+Shift+Space'], hold: [] }, 'win32', owl)).toEqual({ ok: true })
+  })
+
+  it('records the letter a Linux key types, as Hyprland binds it, rather than its US place', () => {
+    expect(keyTokenFromCode('KeyQ', 'a', 'linux')).toBe('A')
+    expect(keyTokenFromCode('KeyQ', 'Q', 'linux')).toBe('Q')
+    expect(keyTokenFromCode('KeyQ', 'й', 'linux')).toBe('Q')
+    expect(keyTokenFromCode('KeyQ', 'a', 'win32')).toBe('Q')
+  })
+
   it('suggests Super for a plain key, and finds duplicates across rows', () => {
     expect(validateChord('D', { role: 'press', index: 0 }, linuxSet, 'linux', stable)).toMatchObject({ ok: false, code: 'plain-key', message: 'D on its own would start dictation while you type. Add a modifier such as Super.' })
     expect(validateChord('F9', { role: 'press', index: 0 }, linuxSet, 'linux', stable)).toEqual({ ok: false, code: 'duplicate', message: 'Hold to dictate already uses F9.' })

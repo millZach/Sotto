@@ -83,6 +83,11 @@ class NativeSettingsTransactionError extends Error {
   }
 }
 
+/** A row's chords fit: between `min` and four, each a non-empty chord of at most 64 characters. */
+function shortcutsFit(list: readonly string[], min: number): boolean {
+  return list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
+}
+
 export class NativeSettingsCoordinator {
   private mutationTail: Promise<void> = Promise.resolve()
 
@@ -184,17 +189,13 @@ export class NativeSettingsCoordinator {
     const hold = change.hold.map((chord) => chord.trim())
     const keys = this.dependencies.compositorKeys
     if (keys !== undefined) {
-      const fits = (list: readonly string[], min: number): boolean =>
-        list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
-      if (!fits(press, 1) || !fits(hold, 0)) return Promise.resolve({ ok: false, reason: 'invalid' })
+      if (!shortcutsFit(press, 1) || !shortcutsFit(hold, 0)) return Promise.resolve({ ok: false, reason: 'invalid' })
       return keys.replace({ press, hold }).catch(() => ({ ok: false, reason: 'unavailable' }))
     }
     const router = this.dependencies.dictationShortcuts
     if (router === undefined) return Promise.resolve({ ok: false, reason: 'unavailable' })
     return this.enqueue(async (): Promise<DictationShortcutsResult> => {
-      const fits = (list: readonly string[], min: number): boolean =>
-        list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
-      if (!fits(press, 1) || !fits(hold, 0)) return { ok: false, reason: 'invalid' }
+      if (!shortcutsFit(press, 1) || !shortcutsFit(hold, 0)) return { ok: false, reason: 'invalid' }
       const previous = await this.dependencies.repository.get()
       const primary = press[0]!
       const platform = this.dependencies.platform ?? 'win32'

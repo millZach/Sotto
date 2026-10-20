@@ -125,6 +125,7 @@ export class OmarchySetup {
   private readonly hypr: string
   private readonly bindings: string
   private readonly snippet: string
+  private readonly snippetBackup: string
   private readonly plugin: string
   private readonly template: string
   private readonly rendered: string
@@ -136,6 +137,8 @@ export class OmarchySetup {
     this.hypr = join(options.home, '.config/hypr')
     this.bindings = join(this.hypr, 'bindings.lua')
     this.snippet = join(this.hypr, 'sotto-bindings.lua')
+    // The snippet as it was before the latest shortcut change; bindings.lua's own backup is made once, at setup.
+    this.snippetBackup = join(this.hypr, 'sotto-bindings.lua.bak')
     this.plugin = join(options.home, '.config/omarchy/plugins', ID)
     this.template = join(options.home, '.config/omarchy/themed/sotto.json.tpl')
     this.rendered = join(options.home, '.local/state/omarchy/current/theme/sotto.json')
@@ -190,8 +193,9 @@ export class OmarchySetup {
     return this.bound(await (this.options.shortcuts?.() ?? Promise.resolve(DEFAULT_OMARCHY_SHORTCUTS)))
   }
   private bound(set: DictationShortcutSet): DictationShortcutSet {
-    // Stable keeps the hold shortcuts bound, F9 unless an Owl run changed it, as Linux always has (ADR-0094).
-    return { press: this.options.holdShortcutsEnabled ? [...set.press] : set.press.slice(0, 1), hold: [...set.hold] }
+    // Stable keeps the first hold shortcut bound, F9 unless an Owl run changed it, as Linux always has (ADR-0094).
+    // Extra holds, like extra press shortcuts, are the Owl feature's: stable binds the first and keeps the rest saved.
+    return this.options.holdShortcutsEnabled ? { press: [...set.press], hold: [...set.hold] } : { press: set.press.slice(0, 1), hold: set.hold.slice(0, 1) }
   }
   /** The bundled snippet, rebound to these shortcuts. */
   private async renderKeys(set: DictationShortcutSet): Promise<string> {
@@ -382,6 +386,9 @@ export class OmarchySetup {
         return { ok: false, reason: 'invalid', ...(unbindable === undefined ? {} : { chord: unbindable }),
           message: 'Hyprland can’t bind those keys. Use a letter, a number, an F key, Space or an arrow key, with modifiers.' }
       }
+      if (next.hold.some(chord => hyprlandChord(chord)!.modmask !== 0)) {
+        return { ok: false, reason: 'invalid', message: 'On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening.' }
+      }
       if (boundChords(next).length !== next.press.length + next.hold.length) {
         return { ok: false, reason: 'invalid', message: 'Each shortcut can be in only one row, once. Pick other keys.' }
       }
@@ -450,15 +457,19 @@ export class OmarchySetup {
     const without = (original ?? '').replace(REQUIRE, '')
     // A shortcut change rewrites only Sotto's own snippet; bindings.lua keeps its require where it is.
     const next = removing ? without : change && original?.includes(REQUIRE) ? original : `${without}${without.endsWith('\n') || !without ? '' : '\n'}${REQUIRE}`
+    // A shortcut change leaves bindings.lua untouched, neither written nor restored, so an edit made meanwhile stays.
+    const keepBindings = !removing && change !== undefined && original !== null && original.includes(REQUIRE)
     // Removal needs no snippet, so an install missing its keys can still take them out.
     const bundled = removing ? '' : await this.renderKeys(shortcuts)
     await mkdir(this.hypr, { recursive: true })
     await mkdir(this.options.data, { recursive: true })
     const check = join(this.options.data, `.sotto-keys-${randomUUID()}.lua`)
     try {
-      await writeFile(check, next, { flag: 'wx', mode: 0o600 })
-      await this.checked('luac', ['-p', check], 'Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.')
-      await rm(check)
+      if (!keepBindings) {
+        await writeFile(check, next, { flag: 'wx', mode: 0o600 })
+        await this.checked('luac', ['-p', check], 'Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.')
+        await rm(check)
+      }
       if (!removing) {
         await writeFile(check, bundled, { flag: 'wx', mode: 0o600 })
         await this.checked('luac', ['-p', check], 'Sotto’s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again.')
@@ -474,6 +485,8 @@ export class OmarchySetup {
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
       }
     }
+    // Backup first: a shortcut change keeps the snippet it replaces beside it.
+    if (keepBindings && snippet !== null) await atomicWrite(this.snippetBackup, snippet, 0o600)
     const nextReceipt = { hash: removing ? ours!.hash : digest(bundled), ...(backup ? { backup } : {}), originalMissing: ours?.originalMissing ?? original === null }
     await this.savePending('keys', nextReceipt, snippet === null ? null : digest(snippet), removing, {
       bindingsBeforeHash: original === null ? null : digest(original), bindingsAfterHash: removing && ours?.originalMissing && next === '' ? null : digest(next),
@@ -482,9 +495,10 @@ export class OmarchySetup {
       if (removing) {
         if (ours?.originalMissing && next === '') await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, next)
         await rm(this.snippet, { force: true })
+        await rm(this.snippetBackup, { force: true })
       } else {
         await atomicWrite(this.snippet, bundled)
-        await atomicWrite(this.bindings, next)
+        if (!keepBindings) await atomicWrite(this.bindings, next)
       }
       await this.reload(before)
       if (!removing) {
@@ -494,7 +508,7 @@ export class OmarchySetup {
       await this.save('keys', removing ? undefined : nextReceipt)
     } catch (error) {
       try {
-        if (original === null) await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, original)
+        if (keepBindings) { /* bindings.lua was never written */ } else if (original === null) await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, original)
         if (snippet === null) await rm(this.snippet, { force: true }); else await atomicWrite(this.snippet, snippet)
         await this.reload(before)
         await this.save('keys', ours)

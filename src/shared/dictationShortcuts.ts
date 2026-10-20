@@ -10,7 +10,7 @@ export interface DictationShortcutSet {
 
 export const MAX_SHORTCUTS_PER_ROLE = 4
 
-export type ChordRefusal = 'escape' | 'plain-key' | 'needs-key' | 'lone-modifier' | 'reserved' | 'duplicate' | 'overlap' | 'too-many'
+export type ChordRefusal = 'escape' | 'plain-key' | 'needs-key' | 'lone-modifier' | 'reserved' | 'duplicate' | 'overlap' | 'too-many' | 'hold-modifier'
 
 type ChordValidation = { ok: true } | { ok: false; code: ChordRefusal; message: string }
 
@@ -96,6 +96,9 @@ export function keyTokenFromCode(code: string, key: string, platform: SottoPlatf
   if (code === 'ControlLeft' || code === 'ControlRight') return darwin ? 'Control' : 'CommandOrControl'
   if (/^(?:Meta|OS)(?:Left|Right)$/u.test(code)) return darwin ? 'CommandOrControl' : 'Super'
   const letterOrDigit = /^(?:Key([A-Z])|Digit([0-9]))$/u.exec(code)
+  // Hyprland binds the symbol a key types in the first layout, not its place on a US keyboard, so on Linux a
+  // letter or digit is the one the key types (A on the AZERTY key a US keyboard calls Q), or its place when it types neither.
+  if (letterOrDigit && platform === 'linux' && /^[a-z0-9]$/iu.test(key)) return key.toUpperCase()
   if (letterOrDigit) return letterOrDigit[1] ?? letterOrDigit[2]!
   if (/^F(?:[1-9]|1[0-9]|2[0-4])$/u.test(code)) return code
   return codeKeys.get(code) ?? null
@@ -173,6 +176,10 @@ export function validateChord(
     return refuse('too-many', `Each row holds up to ${MAX_SHORTCUTS_PER_ROLE} shortcuts.`)
   }
   if (linux && !chordHasKey(chord)) return refuse('needs-key', linuxNeedsKey)
+  // Hyprland matches a release against the modifiers still down, so letting go of one first would never stop the hold.
+  if (linux && target.role === 'hold' && chordTokens(chord).some(isModifierWord)) {
+    return refuse('hold-modifier', 'On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening.')
+  }
   const mainSlot = target.role === 'press' && (target.index ?? row.length) === 0
   if (!linux && chordNeedsListener(chord, target.role) && (mainSlot || !options.listener)) {
     const owl = options.listener ? ' Add this one with + Add instead.' : ''
