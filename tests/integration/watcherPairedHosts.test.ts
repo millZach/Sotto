@@ -634,9 +634,10 @@ it('sends to a full-access thread on a paired host when this computer\'s new-thr
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === threadId)?.runtimeMode).toBe('full-access')
   // The aggregate list and one naming the host give the permission start and send hold to there.
   const listed = async (input: { hostId?: string }) => {
-    const projects = await f.call('list_projects', input)
+    // Models come only when asked for (#1191).
+    const projects = await f.call('list_projects', { ...input, includeModels: true })
     if (projects.status !== 'ok') throw new Error('list-refused')
-    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)?.defaultPermission
+    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers?.find(item => item.modelId === f.model.id)?.defaultPermission
   }
   expect(await listed({})).toEqual({ kind: 'runtime', mode: 'full-access' })
   expect(await listed({ hostId: f.pairing.hostId })).toEqual({ kind: 'runtime', mode: 'full-access' })
@@ -680,9 +681,9 @@ it('refuses a model without an asking mode on a host where this computer may not
       return { ...state, host: { ...state.host, models: state.host.models.map(model => model.id === f.model.id ? { ...model, runtimeModes: ['auto', 'full-access'] as const } : model) } }
     })
   }
-  const projects = await f.call('list_projects', { hostId: f.pairing.hostId })
+  const projects = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true })
   if (projects.status !== 'ok') throw new Error('list-refused')
-  expect(projects.projects[0]?.workers.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
+  expect(projects.projects[0]?.workers?.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') })
   expect(writes).not.toHaveBeenCalled()
@@ -1097,7 +1098,11 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
     expect(list.rows.map(row => row.target)).toContainEqual(started.target)
     expect(list.rows.map(row => row.target)).not.toContainEqual({ hostId, threadId: twin.id })
   }
-  if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
+  if (check === 'protection') {
+    // A slim row, the default (#1191), says protected only when it is.
+    const row = list.rows.find(item => item.target.hostId === started.target.hostId && item.target.threadId === twin.id)
+    expect(row).toBeDefined(); expect(row?.protected).toBeFalsy()
+  }
 })
 
 it.each([

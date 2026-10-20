@@ -72,8 +72,10 @@ it('watches without sending, survives request closure and process-state restart,
   const watch = f.service.state().standingWatches![0]!
   await f.restart()
   expect(f.service.state().standingWatches).toEqual([watch])
-  const roster = await f.call('list_threads', {})
-  expect(roster.status === 'ok' && roster.rows.find(row => row.target.threadId === target.threadId)?.standingWatch?.id).toBe(watch.id)
+  const roster = await f.call('list_threads', { detail: 'full' })
+  expect(roster.status === 'ok' && (roster.rows.find(row => row.target.threadId === target.threadId) as { standingWatch?: { id: string } } | undefined)?.standingWatch?.id).toBe(watch.id)
+  // The slim roster, its default, names the watch too (#1191).
+  expect(await f.call('list_threads', {})).toMatchObject({ rows: expect.arrayContaining([expect.objectContaining({ target, watched: true, standingWatchId: watch.id })]) })
   // Real adapters publish the native head even when the master has no open message window.
   const master = f.native(f.watcherId())
   master.lastUserMessageId = master.messages.findLast(message => message.role === 'user')?.id
