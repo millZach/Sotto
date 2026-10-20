@@ -228,10 +228,19 @@ function expandProviderModes(models: AgentModel[]): void {
   }
 }
 
-function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
+/** A migration that cannot hand a thread's task words to the roster, durably, stops before it strips them. */
+const ROSTER_LACKS_WORDS_ERROR = 'Agent history could not be saved. Thread activity keeps its task words, so nothing was lost. Restore access to local storage and restart Sotto.'
+class RosterLacksWords extends Error { constructor() { super('The agent roster could not keep this thread\u2019s task words.') } }
+
+/**
+ * The thread as workspace.json keeps it. `keepActivities` keeps its records there, as the fallback when the store
+ * cannot take them, text-free for subagents, unless `keepTaskWords`: the roster, the words' only other copy, lacks
+ * them or is not on the disk, so the file keeps them as it had them.
+ */
+function organizationOnly(thread: AgentThread, keepActivities = false, keepTaskWords = false): AgentThread {
   const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, sottoToolsGiven, ...rest } = thread
   void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld; void sottoToolsGiven
-  return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
+  return { ...rest, messages: [], ...(keepActivities && activities ? { activities: keepTaskWords ? activities : retainedActivities(activities) } : {}) }
 }
 
 const workspaceSchema = z.object({
@@ -732,6 +741,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly storedActivity = new Set<string>()
   /** Whether this start read every record because the store had not yet said the roster holds their words. */
   private subagentWordsPending = false
+  /** Set when legacy activity was moved into the roster, which the next save puts on the disk before anything drops it. */
+  private rosterFlushPending = false
+  /**
+   * Set when the roster could not take moved task words, so every save until a restart keeps records whole, words and
+   * all, and the warning stays up; the next start moves the words again from the records read back.
+   */
+  private rosterLacksWords = false
   /** The certified list a stored thread's provider last published, so publishing it again reads nothing back. */
   private readonly storedInputs = new Map<string, AgentActivity[]>()
   /** Stored lists read back during the accept now running, as the base a Git refresh compares new records with. */
@@ -1935,9 +1951,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             thread.messages = []
             messageGeneration = this.threadStore.readMessageEpoch(thread.id)
           }
-          // Retain legacy child tasks before the activity migration removes their payload.
-          this.trackSubagents(thread, false)
-          this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
+          // Retain legacy child tasks before the activity migration removes their payload. The commit below saves the
+          // records without their task words, so the roster's copy of the words reaches the disk first; if it cannot,
+          // this fails as a failed migration does, and workspace.json keeps the records.
+          if (!this.trackSubagents(thread, false)) throw new RosterLacksWords()
+          try { this.subagentStore.flushToDisk() } catch { throw new RosterLacksWords() }
+          // The flush after this drops the records from workspace.json, so they wait for the disk here first.
+          this.threadStore.flushed(() => this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities!), thread.historyEpoch))
         }
         if (this.threadStore.hasActivities(thread.id)) {
           const activityEpoch = this.threadStore.readActivityEpoch(thread.id)
@@ -1961,8 +1981,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           }
         }
       }
-    } catch {
+    } catch (error) {
       this.activityStoreUnavailable = true
+      // workspace.json then keeps the records, and their task words with them while the roster lacks them.
+      if (error instanceof RosterLacksWords) this.rosterLacksWords = true
       this.saveError = 'Thread activity could not be saved. Saved activity remains available. Restore local storage and restart Sotto.'
     }
   }
@@ -1970,11 +1992,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return !this.storeUnavailable && (this.threadStore.ephemeral
       || (this.historyEnabled() && !this.pendingEventsPrivate && !this.historyRedactionPending))
   }
-  private saveActivities(): void {
+  /** `keepTaskWords` saves the records as this run holds them, task words included, for when the roster may lack them. */
+  private saveActivities(keepTaskWords = false): void {
     if (!this.historyWritable() || this.activityStoreUnavailable) return
     // Every thread's records in one transaction: a save with several busy threads pays one disk flush, not one each.
     this.threadStore.syncActivitiesMany(this.state.snapshot.threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
-      .map(thread => ({ threadId: thread.id, activities: retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
+      .map(thread => ({ threadId: thread.id, activities: keepTaskWords ? thread.activities! : retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
+  }
+  /**
+   * Whether a save may strip moved task words from their records now: none are being moved, or the roster, their only
+   * other copy, took them and is on the disk. When not, the caller saves the records with their words (`saveActivities(true)`),
+   * so nothing is lost and a record let go afterwards is in the store as this run held it; a later save asks again.
+   */
+  private rosterOnDisk(): boolean {
+    if (this.rosterLacksWords) return false
+    if (!this.subagentWordsPending && !this.rosterFlushPending) return true
+    if (this.subagentUnavailable) return false
+    try { this.subagentStore.flushToDisk() } catch { this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.'; return false }
+    this.rosterFlushPending = false
+    return true
   }
   /** Once the records a start read whole are saved back without their words, later starts need not read them (#918). */
   private noteSubagentWordsMoved(): void {
@@ -2008,11 +2044,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private moveSubagentWords(thread: AgentThread, activities: readonly AgentActivity[]): void {
     const unmoved = activities.filter(activity => (activity.kind === 'subagent' || activity.agents?.length || activity.taskUpdatesExcluded !== undefined)
       && !isDeepStrictEqual(subagentActivityClassification(activity), activity))
-    if (!unmoved.length || this.subagentUnavailable) return
+    if (!unmoved.length) return
+    // With no roster to take them, the words stay in their records.
+    if (this.subagentUnavailable) { this.rosterLacksWords = true; return }
     // Read back from the store, an agent marked working there is history, not a live one.
     const observations = unmoved.flatMap(activity => activity.agents ?? []).map(agent => observedSubagentStatus(agent.status) === 'running' ? { ...agent, status: 'unknown' as const } : agent)
-    try { this.subagentsChanged(this.subagentStore.ingest(thread.id, observations, thread.historyEpoch, unmoved)) }
-    catch { this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.' }
+    try {
+      this.subagentsChanged(this.subagentStore.ingest(thread.id, observations, thread.historyEpoch, unmoved))
+      // The next save strips these records, so the roster's copy of the words reaches the disk first.
+      this.rosterFlushPending = true
+    } catch {
+      // The words stay in their records: nothing strips them while the roster lacks them.
+      this.rosterLacksWords = true
+      this.saveError = ROSTER_LACKS_WORDS_ERROR
+    }
   }
   /**
    * Once a save has put every held list in the store, a thread nobody is looking at and nothing is running in lets its
@@ -2612,7 +2657,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const { timer } of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
     if (this.gitStatusTimer) { clearInterval(this.gitStatusTimer); this.gitStatusTimer = undefined }
-    try { if (this.ready) { this.writeEvents(true); this.saveActivities() } }
+    // A roster that cannot reach the disk leaves the records unstripped, as the flush does.
+    try { if (this.ready) { this.writeEvents(true); this.saveActivities(!this.rosterOnDisk()) } }
     catch { this.saveError = 'Thread activity could not be saved. Restore local storage and restart Sotto.' }
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
@@ -2652,8 +2698,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.subagentTimer.unref?.()
   }
   /** Only changed native observations enter the indexed roster; its archive never enters a host snapshot. */
-  private trackSubagents(thread: AgentThread, connected: boolean): void {
-    if (this.subagentUnavailable) return
+  /** Whether the roster took the thread's records; false when it is unavailable or its write failed. */
+  private trackSubagents(thread: AgentThread, connected: boolean): boolean {
+    if (this.subagentUnavailable) return false
     try {
       let input = this.subagentInputs.get(thread.id)
       if (!input || input.epoch !== thread.historyEpoch) {
@@ -2690,8 +2737,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     } catch {
       // An unchanged provider snapshot still needs retrying when its store transaction failed.
       this.subagentInputs.delete(thread.id)
-      this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.'
+      // Words still being moved stay in their records: nothing strips them while the roster lacks them.
+      if (this.subagentWordsPending || this.rosterFlushPending) this.rosterLacksWords = true
+      this.saveError = this.rosterLacksWords ? ROSTER_LACKS_WORDS_ERROR : 'Agent history could not be saved. Restore access to local storage and refresh.'
+      return false
     }
+    return true
   }
 
   async listThreadSkills(threadId: string, forceReload = false) {
@@ -3095,17 +3146,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         while (this.dirty && this.flushWanted) {
           this.flushWanted = false
           this.dirty = false
+          let rosterSafe = true
           // Messages live in the thread store, never here: `workspace.json` keeps organization alone,
           // so what it costs to write follows the number of threads rather than what they said (#119).
           try {
-            this.saveActivities(); this.noteSubagentWordsMoved()
+            // Task words moved into the roster from records this save strips (#918), or from workspace.json's legacy
+            // activity, are the roster's only copy once the strip or the JSON write lands, so the roster reaches the disk
+            // first; a power cut between them would otherwise lose the words.
+            // Otherwise the records keep their words, so every held list still reaches the store before any is let go.
+            rosterSafe = this.rosterOnDisk()
+            this.saveActivities(!rosterSafe)
+            if (rosterSafe) this.noteSubagentWordsMoved()
             // The coordinator holds the lists it was last handed, so a release is published for it to let them go too.
             if (this.releaseIdleActivities()) this.publishSoon()
           } catch (error) { this.dirty = true; throw error }
           const built: Workspace = { ...this.state,
             snapshot: { ...this.state.snapshot,
               ...(this.streamingPublishCostEnabled ? { models: CATALOG_PLACEHOLDER as unknown as AgentModel[] } : {}),
-              threads: this.state.snapshot.threads.map(thread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } }
+              threads: this.state.snapshot.threads.map(thread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable), !rosterSafe))) } }
           const scrub = (saved: Workspace): void => {
             if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
               thread.requests = []
@@ -3134,7 +3192,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
                 this.savedOrganization = saved
               }
             }
-            if (!this.storeUnavailable && !this.subagentUnavailable && !this.activityStoreUnavailable) this.saveError = undefined
+            if (!this.storeUnavailable && !this.subagentUnavailable && !this.activityStoreUnavailable && !this.rosterLacksWords) this.saveError = undefined
           }
           catch (error) { this.dirty = true; throw error }
         }
@@ -3225,7 +3283,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             this.activityStoreUnavailable = false
           }
           if (wanted) {
-            this.saveActivities()
+            this.saveActivities(!this.rosterOnDisk())
             this.threadStore.becomeDurable()
             this.seedWakeUps()
           }

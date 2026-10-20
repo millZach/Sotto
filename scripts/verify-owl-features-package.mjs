@@ -1,5 +1,5 @@
 // node scripts/verify-owl-features-package.mjs release/win-unpacked stable (or release/mac-arm64 stable).
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { stripTypeScriptTypes } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -26,6 +26,17 @@ export function assertPackagedFeatureStatus(status, track, features = OWL_FEATUR
   if (status.watcherEnabled !== status.owlFeatures?.watcher) throw new Error('The Watcher compatibility answer differs from the Owl feature list.')
 }
 
+// Paths are compared after resolving links: on macOS the temporary folder sits under /var, a link to /private/var,
+// and the app may report either form of the same profile.
+export async function assertOwnedProfile(identity, status, userData) {
+  const problems = []
+  if (!identity.packaged) problems.push('the app is not packaged')
+  if (identity.name.toLowerCase() !== 'sotto') problems.push(`the app is named ${identity.name}`)
+  if (await realpath(identity.userData).catch(() => identity.userData) !== await realpath(userData)) problems.push(`it used the profile ${identity.userData}, not ${userData}`)
+  if (status.currentVersion !== identity.version) problems.push(`it reported version ${status.currentVersion} for app version ${identity.version}`)
+  if (problems.length) throw new Error(`The package probe did not read the packaged app on its owned profile: ${problems.join('; ')}.`)
+}
+
 export async function verifyOwlFeaturesPackage(target, track) {
   if (track !== 'stable' && track !== 'owl') throw new Error('Supply the expected release track: stable or owl.')
   const temporary = await mkdtemp(join(tmpdir(), 'sotto-owl-features-package-'))
@@ -50,9 +61,7 @@ export async function verifyOwlFeaturesPackage(target, track) {
     await page.waitForLoadState('domcontentloaded')
     await page.getByRole('button', { name: 'Get started', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
     const status = await page.evaluate(() => globalThis.sotto.getUpdateStatus())
-    if (!identity.packaged || identity.userData !== userData || identity.name.toLowerCase() !== 'sotto' || status.currentVersion !== identity.version) {
-      throw new Error('The package probe did not read the packaged app on its owned profile.')
-    }
+    await assertOwnedProfile(identity, status, userData)
     assertPackagedFeatureStatus(status, track)
     const output = resolve(root, 'release')
     await mkdir(output, { recursive: true })
