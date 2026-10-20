@@ -1703,7 +1703,16 @@ export class MuseMspHost implements AgentHost {
           if (!alias.museSessionId) throw new MuseUncertain('Muse has not confirmed this thread’s session.')
           const entry = await this.threadProcess(command.threadId)
           watcherGuard?.()
+          const before = this.thread(command.threadId).usage
           await entry.rpc.request('session/compact', { commandId: museCommandId(), sessionId: alias.museSessionId })
+          // Muse's new size comes only with its next session/contextUsage, so the figure from before the compaction would
+          // outlive it: cleared, with a new time, unless a reading came in while it ran (ADR-0095).
+          const thread = this.thread(command.threadId), usage = thread.usage
+          if (usage?.contextUsed !== undefined && usage.contextUsed === before?.contextUsed && usage.contextUpdatedAt === before.contextUpdatedAt) {
+            const { contextUsed: _compacted, ...rest } = usage
+            void _compacted
+            thread.usage = { ...rest, updatedAt: new Date().toISOString(), contextUpdatedAt: new Date().toISOString() }
+          }
         }
       }
       this.emit()

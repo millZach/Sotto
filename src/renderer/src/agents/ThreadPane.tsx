@@ -27,7 +27,7 @@ import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { ornamentPose } from './threadActivityView'
-import { compactionBusy, compactionOffered, holdCompactionRecommendation, ThreadCompaction } from './ThreadCompaction'
+import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
@@ -254,7 +254,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   ]
   // Compaction is offered where it can run: the banner under the composer only ever recommends it.
   const context: PaneMenuItem[] = compactionOffered(capabilities, thread) && rowConnected && !closed && !compactionBusy(thread, threadBusy)
-    ? [{ id: 'compact', label: 'Compact context', icon: <Shrink size={15} aria-hidden="true" />, run: () => void Promise.resolve(command({ type: 'compact-thread', threadId: thread.id })).then(() => holdCompactionRecommendation(thread)) }] : []
+    ? [{ id: 'compact', label: 'Compact context', icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
   const shelf: PaneMenuItem[] = row.settledBy === null
     ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'

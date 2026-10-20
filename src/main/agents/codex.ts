@@ -199,6 +199,8 @@ export class CodexAppServerHost implements AgentHost {
   private quota: UsageQuotaRead | undefined
   private quotaReading: Promise<UsageQuotaRead> | undefined
   private readonly usageTurnStarts = new Map<string, string>()
+  /** When each thread's context was last reported as its compaction started, so the end can tell whether a reading came since. */
+  private readonly compactionReadings = new Map<string, string>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
@@ -1218,6 +1220,15 @@ export class CodexAppServerHost implements AgentHost {
     // Codex names a compaction but reports no sizes with it, so the ledger's latest reading opens the bracket.
     if (item.type === 'contextCompaction' && turnId && lifecycle.phase !== 'history' && thread.usage?.contextUsed !== undefined) {
       thread.activities = bracketCompaction(thread.activities, { before: thread.usage.contextUsed })
+    }
+    // Nor does it report the size after one, so the figure from before it would outlive it: cleared at the end, with a new
+    // time, unless a reading came in while it ran. The next reading restores it, and the compaction recommendation does
+    // not ask again for a context just compacted, wherever the compaction started (ADR-0095).
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'started') this.compactionReadings.set(id, JSON.stringify([thread.usage?.contextUsed, thread.usage?.contextUpdatedAt]))
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'completed') {
+      const readSince = this.compactionReadings.has(id) && this.compactionReadings.get(id) !== JSON.stringify([thread.usage?.contextUsed, thread.usage?.contextUpdatedAt])
+      this.compactionReadings.delete(id)
+      if (thread.usage?.contextUsed !== undefined && !readSince) { this.usage.compacted(id, undefined); thread.usage = this.usage.get(id) }
     }
     if (item.type === 'fileChange') {
       this.fileSummaries.set(turnKey(id, item.id), (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))

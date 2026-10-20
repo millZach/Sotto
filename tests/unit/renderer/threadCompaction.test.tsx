@@ -1,7 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { compactionBusy, compactionOffered, holdCompactionRecommendation, ThreadCompaction } from '../../../src/renderer/src/agents/ThreadCompaction'
+import { compactionBusy, compactionOffered, ThreadCompaction } from '../../../src/renderer/src/agents/ThreadCompaction'
 import type { AgentThread } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear() })
@@ -113,32 +113,4 @@ it('never offers compaction for Grok Build, Devin, OpenCode or a thread that nam
     expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
     view.unmount()
   }
-})
-it('does not recommend again a context whose compaction started, until the provider reports usage again', async () => {
-  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T12:00:00Z'))
-  const command = vi.fn(async () => undefined)
-  // Codex names a compaction without its new size, so the old figure and its time outlive the compaction.
-  const owner = { ...thread, id: 'codex-compacted', providerId: 'codex' as const }
-  const view = render(<ThreadCompaction thread={owner} supported connected command={command} />)
-  await act(async () => { fireEvent.click(screen.getByText('Compact')) })
-  expect(command).toHaveBeenCalledWith({ type: 'compact-thread', threadId: owner.id })
-  view.rerender(<ThreadCompaction thread={{ ...owner, compaction: { commandId: 'c', status: 'completed' } }} supported connected command={command} />)
-  expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
-  // Usage reported after it is a new context, judged by the usual rules.
-  view.rerender(<ThreadCompaction thread={{ ...owner, usage: { ...owner.usage!, contextUpdatedAt: '2026-09-13T10:30:00Z' } }} supported connected command={command} />)
-  expect(screen.getByText('Keep full history')).toBeInTheDocument()
-  view.unmount()
-  // The pane menu's Compact context holds it the same way.
-  const menu = { ...thread, id: 'muse-compacted', providerId: 'muse' as const }
-  holdCompactionRecommendation(menu)
-  render(<ThreadCompaction thread={menu} supported connected command={command} />)
-  expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
-})
-it('keeps recommending a context whose compaction could not start', async () => {
-  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T12:00:00Z'))
-  const command = vi.fn(async () => { throw new Error('Codex is not connected.') })
-  render(<ThreadCompaction thread={{ ...thread, id: 'codex-refused', providerId: 'codex' }} supported connected command={command} />)
-  await act(async () => { fireEvent.click(screen.getByText('Compact')) })
-  expect(screen.getByRole('alert')).toHaveTextContent('Codex is not connected.')
-  expect(screen.getByText('Keep full history')).toBeInTheDocument()
 })
