@@ -1,10 +1,24 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Keyboard, LoaderCircle, Palette } from 'lucide-react'
 import { OMARCHY_PIECES, type OmarchyPiece, type OmarchySetupBridge, type OmarchySetupCommand, type OmarchySetupState } from '../../../../shared/omarchySetup'
+import { formatAccelerator } from '../../../../shared/accelerator'
+import type { DictationShortcutSet } from '../../../../shared/dictationShortcuts'
+import { defaultHoldShortcuts, defaultHotkey } from '../../../../shared/platform'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { SottoGlyph } from '../../components/SottoMark'
 import './omarchySetup.css'
+
+const DEFAULT_SHORTCUTS: DictationShortcutSet = { press: [defaultHotkey('linux')], hold: defaultHoldShortcuts('linux') }
+
+/** The keys piece in the words of the shortcuts it binds: F9 and Super+Ctrl+X until they are changed. */
+function keysCopy(shortcuts: DictationShortcutSet): { title: string; what: string; done: string } {
+  const words = (chord: string): string => formatAccelerator(chord, 'linux', 'editing')
+  const hold = shortcuts.hold[0], press = shortcuts.press[0]
+  const title = [hold, press].filter((chord): chord is string => chord !== undefined).map(words).join(' and ')
+  if (hold === undefined) return { title, what: `Press ${words(press ?? '')} to start and stop.`, done: `Press ${words(press ?? '')} anywhere to talk.` }
+  return { title, what: press === undefined ? `Hold ${words(hold)} to talk.` : `Hold ${words(hold)} to talk, or press ${words(press)} to start and stop.`, done: `Hold ${words(hold)} anywhere to talk.` }
+}
 
 const PIECES = {
   keys: { title: 'F9 and Super+Ctrl+X', short: 'the keys', what: 'Hold F9 to talk, or press Super+Ctrl+X to start and stop.',
@@ -61,12 +75,15 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
 }
 export type OmarchySetupController = ReturnType<typeof useOmarchySetup>
 
-export function OmarchySetupPanel({ surface = 'settings', visible = true, controller, bridge }: {
+export function OmarchySetupPanel({ surface = 'settings', visible = true, controller, bridge, shortcuts = DEFAULT_SHORTCUTS }: {
   readonly surface?: 'settings' | 'first-run'
   readonly visible?: boolean
   readonly controller?: OmarchySetupController
   readonly bridge?: OmarchySetupBridge
+  /** What Sotto's keys bind, so the keys piece names them. */
+  readonly shortcuts?: DictationShortcutSet
 }): ReactNode {
+  const keys = keysCopy(shortcuts)
   const local = useOmarchySetup(!controller && visible, bridge ?? window.sotto?.omarchySetup)
   const setup = controller ?? local
   const { state, busy } = setup
@@ -115,7 +132,7 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
       {setup.available ? <Button variant="secondary" onClick={() => void act({ type: 'inspect' })}>Try again</Button> : null}</p> : null}
     <ul className="omarchy-setup__pieces">
       {OMARCHY_PIECES.map(piece => {
-        const current = state?.pieces[piece], definition = PIECES[piece]
+        const current = state?.pieces[piece], definition = piece === 'keys' ? { ...PIECES.keys, title: keys.title, what: keys.what } : PIECES[piece]
         const conflict = piece === 'keys' && state && state.keyConflicts.length > 0 &&
           (['missing', 'stale', 'skipped', 'failed'].includes(current?.status ?? '') || current?.status === 'conflict' && !current.owned)
         return <li key={piece} className="omarchy-setup__piece" data-piece={piece} data-state={current?.status ?? 'checking'}>
@@ -144,7 +161,7 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
       })}
     </ul>
     {all ? <div className="omarchy-setup__done" role="status"><strong>Sotto is set up in Omarchy.</strong>
-      <p>{surface === 'first-run' ? 'You’ll try F9 in the Shortcut step, once the speech model is downloaded.' : 'Hold F9 anywhere to talk.'}</p></div> : null}
+      <p>{surface === 'first-run' ? 'You’ll try F9 in the Shortcut step, once the speech model is downloaded.' : keys.done}</p></div> : null}
     <div className="omarchy-setup__actions">
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
         {busy ? setup.removing ? 'Removing' : 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}

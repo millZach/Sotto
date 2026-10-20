@@ -17,10 +17,14 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
   const services: DictationSocket[] = []
   beforeEach(() => { runtime = mkdtempSync(join(tmpdir(), 'sotto-')) })
   afterEach(() => { vi.restoreAllMocks(); services.splice(0).forEach(service => service.dispose()); rmSync(runtime, { recursive: true, force: true }) })
-  function service(dispatch: (command: CompositorDictationCommand) => Promise<boolean> = vi.fn(async () => true)): DictationSocket {
+  function service(dispatch: (command: CompositorDictationCommand, at?: bigint) => Promise<boolean> = vi.fn(async () => true)): DictationSocket {
     const instance = new DictationSocket(runtime, dispatch)
     services.push(instance)
     return instance
+  }
+  /** The commands dispatched, without the key-event stamp each one carries. */
+  function commands(dispatch: { mock: { calls: unknown[][] } }): unknown[][] {
+    return dispatch.mock.calls.map(call => [call[0]])
   }
   function send(input: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -44,7 +48,7 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
     expect(statSync(server.path).mode & 0o777).toBe(0o600)
     expect(statSync(server.path).isSocket()).toBe(true)
     for (const command of ['start', 'stop', 'toggle', 'cancel', 'retry', 'discard', 'place top', 'place bottom', 'place left', 'place right']) expect(await send(`${command}\n`)).toBe('ok\n')
-    expect(dispatch.mock.calls).toEqual([['start'], ['stop'], ['toggle'], ['cancel'], ['retry'], ['discard'], ['place top'], ['place bottom'], ['place left'], ['place right']])
+    expect(commands(dispatch)).toEqual([['start'], ['stop'], ['toggle'], ['cancel'], ['retry'], ['discard'], ['place top'], ['place bottom'], ['place left'], ['place right']])
     server.dispose()
     server.dispose()
     expect(existsSync(server.path)).toBe(false)
@@ -60,7 +64,7 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
       expect(await send(`${command} --at ${at}\n`)).toBe('ok\n')
     }
     expect(await send(`start --at ${at - 15_000_000n}\n`)).toBe('ok\n')
-    expect(dispatch.mock.calls).toEqual([['retry'], ['discard'], ['place top'], ['place bottom'], ['place left'], ['place right'], ['start']])
+    expect(commands(dispatch)).toEqual([['retry'], ['discard'], ['place top'], ['place bottom'], ['place left'], ['place right'], ['start']])
   })
   it('rejects text, multiple commands, and oversized messages without dispatch', async () => {
     const dispatch = vi.fn(async () => true)
@@ -76,9 +80,9 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
     expect(await send(`start --at ${at - 15_000_000n}\n`)).toBe('ok\n')
     expect(await send(`start --at ${at}\n`)).toBe('ok\n')
     // The renderer never receives a microphone start, including an equal-stamp replay.
-    expect(dispatch.mock.calls).toEqual([[end]])
+    expect(commands(dispatch)).toEqual([[end]])
     expect(await send('start\n')).toBe('ok\n')
-    expect(dispatch.mock.calls).toEqual([[end], ['start']])
+    expect(commands(dispatch)).toEqual([[end], ['start']])
   })
   it('records a normal stamped hold and permits the next hold after its release', async () => {
     let recording = false
@@ -96,7 +100,9 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
     expect(recording).toBe(true)
     expect(await send(`stop --at ${at + 30_000_000n}\n`)).toBe('ok\n')
     expect(recording).toBe(false)
-    expect(dispatch.mock.calls).toEqual([['start'], ['stop'], ['start'], ['stop']])
+    expect(commands(dispatch)).toEqual([['start'], ['stop'], ['start'], ['stop']])
+    // Each command reaches main with its key event's own time.
+    expect((dispatch.mock.calls as unknown[][]).map(call => call[1])).toEqual([at, at + 15_000_000n, at + 20_000_000n, at + 30_000_000n])
   })
   it('keeps the latest end stamp when an older release arrives later', async () => {
     const dispatch = vi.fn(async () => true)
@@ -105,7 +111,7 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
     await send(`stop --at ${at}\n`)
     await send(`cancel --at ${at - 30_000_000n}\n`)
     await send(`start --at ${at - 15_000_000n}\n`)
-    expect(dispatch.mock.calls).toEqual([['stop'], ['cancel']])
+    expect(commands(dispatch)).toEqual([['stop'], ['cancel']])
   })
   it('rejects stale and future stamps before they affect delivery or the release stamp', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_791_486_000_000)
@@ -132,7 +138,7 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
     const starting = send(`start --at ${at - 15_000_000n}\n`)
     held.resolve()
     expect(await Promise.all([stopping, starting])).toEqual(['ok\n', 'ok\n'])
-    expect(dispatch.mock.calls).toEqual([['stop']])
+    expect(commands(dispatch)).toEqual([['stop']])
   })
   it.each([false, 'throw'])('reports failed delivery (%s) without crashing', async result => {
     await service(vi.fn(async () => { if (result === 'throw') throw new Error('private failure'); return false })).start()
@@ -161,7 +167,7 @@ describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix
     try {
       expect(await exited).toBe(0)
       expect(error).toBe('')
-      expect(dispatch.mock.calls).toEqual([['toggle']])
+      expect(commands(dispatch)).toEqual([['toggle']])
     } finally {
       if (client.exitCode === null && client.signalCode === null) process.kill(client.pid!, 'SIGTERM')
       await exited

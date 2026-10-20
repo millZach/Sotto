@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { defaultHotkey } from '../../../src/shared/platform'
+import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platform'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
 import {
@@ -41,6 +41,8 @@ const customSettings = {
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
+  pressShortcuts: ['Alt+Shift+D'],
+  holdShortcuts: ['Fn', 'Control+Alt'],
   maxRecordingSeconds: 300,
   soundCues: false,
   formatWhitespace: false,
@@ -306,6 +308,8 @@ describe('settings', () => {
       reducedMotion: 'system',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
+      pressShortcuts: [],
+      holdShortcuts: [],
       maxRecordingSeconds: 60,
       soundCues: true,
       formatWhitespace: true,
@@ -387,12 +391,48 @@ describe('settings', () => {
 
 
 
-  it('builds per-platform defaults that differ only in the hotkey', () => {
+  it('builds per-platform defaults that differ only in the shortcuts', () => {
     expect(defaultSettings(defaultHotkey('win32'))).toEqual(DEFAULT_SETTINGS)
-    expect(defaultSettings(defaultHotkey('darwin'))).toEqual({
+    expect(defaultSettings(defaultHotkey('darwin'), defaultHoldShortcuts('darwin'))).toEqual({
       ...DEFAULT_SETTINGS,
       hotkey: 'Control+Shift+Space',
+      holdShortcuts: ['Fn'],
     })
+    expect(defaultSettings(defaultHotkey('win32'), defaultHoldShortcuts('win32')).holdShortcuts).toEqual(['CommandOrControl+Super'])
+    expect(defaultHoldShortcuts('linux')).toEqual(['F9'])
+  })
+
+  it('keeps saved hold and extra press shortcuts whole and drops damaged entries', () => {
+    const macDefaults = defaultSettings('Control+Shift+Space', ['Fn'])
+    const saved = parseSettings({ pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn', 'Control+Alt'] }, macDefaults)
+    expect(saved.pressShortcuts).toEqual(['Alt+Shift+D'])
+    expect(saved.holdShortcuts).toEqual(['Fn', 'Control+Alt'])
+    const damaged = parseSettings({ pressShortcuts: 'Alt+D', holdShortcuts: ['', 'Fn', 'Fn', 7] }, macDefaults)
+    expect(damaged.pressShortcuts).toEqual([])
+    expect(damaged.holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings({ holdShortcuts: 'Fn' }, macDefaults).holdShortcuts).toEqual([])
+  })
+
+  it('gives the hold default to new installs only', () => {
+    const macDefaults = defaultSettings('Control+Shift+Space', ['Fn'])
+    expect(parseSettings({}, macDefaults).holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings(undefined, macDefaults).holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings({ hotkey: 'Alt+D', theme: 'dark' }, macDefaults).holdShortcuts).toEqual([])
+  })
+
+  it('reads a Linux profile from before the recorder as the keys its Hyprland bindings always had', () => {
+    const linuxDefaults = defaultSettings(defaultHotkey('linux'), defaultHoldShortcuts('linux'))
+    // Wayland never registered `hotkey`, so whatever it said, F9 and Super+Ctrl+X were the keys.
+    const before = parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: ['Alt+D'], theme: 'dark' }, linuxDefaults, true)
+    expect(before).toMatchObject({ hotkey: 'Super+CommandOrControl+X', pressShortcuts: [], holdShortcuts: ['F9'], theme: 'dark' })
+    expect(parseSettings({}, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // An unreleased recorder build saved the old unused default with nothing held; Linux's rows can't make that pair.
+    expect(parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: [], holdShortcuts: [] }, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // Once saved by this version, the Linux shortcuts are the user's, an empty hold row included.
+    const chosen = parseSettings({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] }, linuxDefaults, true)
+    expect(chosen).toMatchObject({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] })
+    // Windows and macOS read the same profile as before.
+    expect(parseSettings({ hotkey: 'Alt+Shift+D', theme: 'dark' }, DEFAULT_SETTINGS)).toMatchObject({ hotkey: 'Alt+Shift+D', holdShortcuts: [] })
   })
 
   it('drops the retired widget style key from persisted settings', () => {

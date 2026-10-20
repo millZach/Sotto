@@ -21,6 +21,12 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  DICTATION_SHORTCUTS_REPLACE,
+  DICTATION_SHORTCUTS_SUSPEND,
+  DICTATION_KEYS_RECORD,
+  DICTATION_KEYS_RECORD_CANCEL,
+  KEY_LISTENER_PERMISSION_GET,
+  KEY_LISTENER_PERMISSION_REQUEST,
   RECOVERY_NOTICE_LIST,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -223,6 +229,9 @@ describe('IPC validation and lifecycle', () => {
     // Settings control would snap back on save.
     const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete fullPatch['hotkey']
+    // Dictation shortcuts change only through their own transactional channel.
+    delete fullPatch['pressShortcuts']
+    delete fullPatch['holdShortcuts']
     delete fullPatch['launchAtStartup']
     // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
     delete fullPatch['tailnetConnections']
@@ -495,4 +504,76 @@ describe('IPC validation and lifecycle', () => {
 
       expect(history.add).toHaveBeenCalledWith(entry, { enabled: false, retention: 25 })
     })
+})
+
+describe('dictation shortcut IPC', () => {
+  function shortcutsHarness(withService: boolean) {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const service = {
+      replace: vi.fn(async () => ({ ok: true as const })),
+      suspend: vi.fn(),
+      record: vi.fn(async () => ({ kind: 'recorded' as const, chord: 'Fn' })),
+      cancelRecord: vi.fn(),
+      permission: vi.fn(() => 'granted' as const),
+      requestPermission: vi.fn(async () => 'denied' as const),
+    }
+    registerIpc(harness.ipc, {
+      settings: harness.settings, history: harness.history, startup: harness.startup, hotkeys: harness.hotkeys, app: harness.app,
+      ...(withService ? { dictationShortcuts: service } : {}),
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+    })
+    return { ipc: harness.ipc, service }
+  }
+
+  it('forwards valid payloads to the service', async () => {
+    const { ipc, service } = shortcutsHarness(true)
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_REPLACE, { press: ['Alt+Space', 'Fn'], hold: ['Fn+Shift'] })).resolves.toEqual({ ok: true })
+    expect(service.replace).toHaveBeenCalledWith({ press: ['Alt+Space', 'Fn'], hold: ['Fn+Shift'] })
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND, true)).resolves.toEqual({ ok: true })
+    expect(service.suspend).toHaveBeenCalledWith(true)
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD)).resolves.toEqual({ kind: 'recorded', chord: 'Fn' })
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD_CANCEL)).resolves.toEqual({ ok: true })
+    expect(service.cancelRecord).toHaveBeenCalledOnce()
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_GET)).resolves.toBe('granted')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_REQUEST)).resolves.toBe('denied')
+  })
+
+  it('rejects malformed payloads before calling the service', async () => {
+    const { ipc, service } = shortcutsHarness(true)
+    for (const payload of [
+      { press: [], hold: [] },
+      { press: ['Alt+Space'], hold: ['Fn', 'Fn', 'Fn', 'Fn', 'Fn'] },
+      { press: ['Alt+Space', 'B', 'C', 'D', 'E'], hold: [] },
+      { press: [''], hold: [] },
+      { press: ['x'.repeat(65)], hold: [] },
+      { press: ['Alt+Space'] },
+      { press: ['Alt+Space'], hold: [], extra: true },
+      'Alt+Space',
+    ]) {
+      await expect(ipc.invoke(DICTATION_SHORTCUTS_REPLACE, payload)).rejects.toThrow('Invalid IPC payload')
+    }
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND, 'yes')).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND)).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD, true)).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD_CANCEL, 1)).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_GET, 'x')).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_REQUEST, 'x')).rejects.toThrow('Invalid IPC payload')
+    expect(service.replace).not.toHaveBeenCalled()
+    expect(service.suspend).not.toHaveBeenCalled()
+    expect(service.record).not.toHaveBeenCalled()
+    expect(service.cancelRecord).not.toHaveBeenCalled()
+    expect(service.permission).not.toHaveBeenCalled()
+    expect(service.requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('answers unavailable without a service', async () => {
+    const { ipc } = shortcutsHarness(false)
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_REPLACE, { press: ['Alt+Space'], hold: [] })).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND, false)).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD)).resolves.toEqual({ kind: 'unavailable' })
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD_CANCEL)).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_GET)).resolves.toBe('unsupported')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_REQUEST)).resolves.toBe('unsupported')
+  })
 })

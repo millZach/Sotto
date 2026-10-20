@@ -52,6 +52,18 @@ describe('SettingsRepository', () => {
     expect((await reopened.get()).workerRoles).toEqual(rows)
     expect((await reopened.update({ workerRoles: {} })).workerRoles).toEqual({})
   })
+  it('keeps saved extra and hold dictation shortcuts whole through a build without them', async () => {
+    const { filePath, repository: owl } = await createRepository()
+    await owl.update({ pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn'] })
+    const stable = new SettingsRepository(filePath, { dictationHoldShortcutsEnabled: false })
+    const saved = await stable.save({ ...DEFAULT_SETTINGS, hotkey: 'Alt+F8' })
+    expect([saved.hotkey, saved.pressShortcuts, saved.holdShortcuts]).toEqual(['Alt+F8', ['Alt+Shift+D'], ['Fn']])
+    const reset = await stable.reset()
+    expect([reset.hotkey, reset.pressShortcuts, reset.holdShortcuts]).toEqual([DEFAULT_SETTINGS.hotkey, ['Alt+Shift+D'], ['Fn']])
+    const reopened = new SettingsRepository(filePath, { dictationHoldShortcutsEnabled: true })
+    expect((await reopened.get()).pressShortcuts).toEqual(['Alt+Shift+D'])
+    expect((await reopened.reset()).pressShortcuts).toEqual(DEFAULT_SETTINGS.pressShortcuts)
+  })
   it('reads saved worker roles row by row, dropping only a damaged or unknown row', async () => {
     const { filePath, repository } = await createRepository()
     await writeFile(filePath, JSON.stringify({ ...DEFAULT_SETTINGS, workerRoles: {

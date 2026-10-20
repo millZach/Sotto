@@ -10,6 +10,8 @@ export interface SettingsRepositoryOptions {
    * reset keeps them, and a patch that would change them is refused. Absent keeps today's behaviour, as in tests.
    */
   workerRolesEnabled?: boolean
+  /** The Owl list's answer for extra and hold dictation shortcuts, read once at start. Off, a save or a reset keeps the saved lists. */
+  dictationHoldShortcutsEnabled?: boolean
   now?: () => number
   store?: AtomicJsonStore<AppSettings>
   onRecovery?: (notice: RecoveryNotice) => void
@@ -27,10 +29,12 @@ export class SettingsRepository {
   private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
   private readonly shellPillInUse: (() => boolean) | undefined
   private readonly workerRolesEnabled: boolean
+  private readonly dictationHoldShortcutsEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.workerRolesEnabled = options.workerRolesEnabled ?? true
+    this.dictationHoldShortcutsEnabled = options.dictationHoldShortcutsEnabled ?? true
     this.omarchyTheme = options.omarchyTheme
     this.shellPillInUse = options.shellPillInUse
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
@@ -85,9 +89,10 @@ export class SettingsRepository {
 
   /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
   private async keepHeld(settings: AppSettings): Promise<AppSettings> {
-    if (this.workerRolesEnabled) return settings
+    if (this.workerRolesEnabled && this.dictationHoldShortcutsEnabled) return settings
     const saved = await this.readSettings()
-    return { ...settings, workerRoles: saved.workerRoles }
+    return { ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
+      ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }) }
   }
 
   async exists(): Promise<boolean> {

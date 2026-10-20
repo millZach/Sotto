@@ -85,7 +85,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsMicrophoneUnavailable: 'Microphones are unavailable. Check your input device, then test again.',
     settingsMicrophoneDenied: 'Microphone access is blocked. Allow access if asked, then test again.',
     settingsMicrophoneDefaultOption: 'System default',
-    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, hold F9 to talk, or press Super+Ctrl+X to start and stop.',
+    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, change them in Settings › Dictation: press a shortcut, hold the new keys and let go, and Sotto rewrites its bindings and reloads Hyprland.',
     settingsAutoPasteDescription: 'Pastes into the focused window, terminals included. If it doesn’t arrive, press Super+V.',
     settingsLaunchAtStartupLabel: 'Launch when you sign in',
     settingsStartupFailureNotice: 'Launch at sign-in could not be updated.',

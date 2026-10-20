@@ -45,7 +45,7 @@ import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { requestDraftOwnerState } from './agents/requestDraftOwners'
+import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from './agents/requestDraftOwners'
 import { REQUEST_DRAFT_CHANGED } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
@@ -93,6 +93,11 @@ import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
+import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
+import { holdCanStart } from './hotkeys/chordMatcher'
+import { createKeyListener } from './hotkeys/keyListener'
+import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
+import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
 import { parseDictationEdge } from './hotkeys/dictationCommand'
 import { LinuxDictationShell } from './hotkeys/linuxDictationShell'
 import { ShellWidgetMonitor } from './windows/shellWidgetMonitor'
@@ -157,6 +162,9 @@ import {
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
+  DICTATION_KEYS_HELD,
+  DICTATION_KEYS_TAKEN,
+  KEY_LISTENER_PERMISSION_CHANGED,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
   UPDATE_CHECK_REQUESTED,
@@ -264,7 +272,7 @@ if (e2eConfiguration === null) {
 // decision resolves through this profile.
 const platform = resolvePlatform(process.platform)
 const profile = platformProfile(platform)
-const platformDefaults = defaultSettings(profile.defaultHotkey)
+const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultHoldShortcuts)
 
 type NativeDiagnostic =
   | 'omarchy-theme-missing'
@@ -299,6 +307,7 @@ type NativeDiagnostic =
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
   | OsascriptPasteEvent
+  | DictationShortcutEvent
   | 'dock-icon-unavailable'
   | 'dock-icon-failed'
 
@@ -617,7 +626,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1002,7 +1011,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     const key = parseHostEntityKey(owner.ownerId)
     if (key && key.hostId !== agentControl.hostId()) return hostRouter.preservesDormantThread(owner.ownerId)
     return localRuntime?.agentHost.dormantThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
-  })
+  }, () => requestDraftWatcherOwnerIds(agentControl, () => localRuntime?.agentHost.dormantThreadIds?.(), hostRouter))
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   const cleanRetiredHistory = async (): Promise<void> => {
@@ -1258,13 +1267,88 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : createE2EGlobalShortcuts(e2eConfiguration.scenario)
   const hotkeys = new HotkeyManager(
     e2eShortcuts ?? globalShortcut,
-    toggleDictation,
+    () => {
+      // A hold in progress no longer owns the session the primary shortcut toggled.
+      dictationShortcuts?.pressToggled()
+      toggleDictation()
+    },
     () => {
     hotkeys.cancelListening()
     dispatchDictation({ type: 'cancel' })
     },
     platform,
+    logOperational,
   )
+  // The widget's latest status: a hold shortcut starts dictation only when no session is under way.
+  let widgetState: { status: WidgetSnapshot['status']; kept: boolean } = { status: 'idle', kept: false }
+  // Sotto's own page must hold the keyboard: a site in the in-app browser or the cloud iPhone sits in the same
+  // window, and record mode must never hear what is typed there.
+  const mainWindowInFront = (): boolean => {
+    const focused = BrowserWindow.getFocusedWindow()
+    return focused !== null && focused.webContents === windows.getMainWebContents() && focused.isVisible()
+  }
+  const mainWindowFocused = (): boolean => mainWindowInFront() && BrowserWindow.getFocusedWindow()?.webContents.isFocused() === true
+  // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
+  const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
+    ? createDictationShortcutRouter({
+        shortcuts: e2eShortcuts ?? globalShortcut,
+        createListener: handlers => createKeyListener({
+          platform,
+          // The Windows helper can take long to start cold.
+          readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
+          // An E2E run never spawns the helper, so it never asks for Input Monitoring.
+          spawnHelper: e2eConfiguration === null
+            ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
+            : () => null,
+          log: event => logOperational(event as DictationShortcutEvent),
+          ...handlers,
+        }),
+        canStart: () => holdCanStart(widgetState),
+        isFocused: mainWindowFocused,
+        dispatch: dispatchDictation,
+        showWidget,
+        pushHeld: tokens => { windows.sendToMain(DICTATION_KEYS_HELD, tokens) },
+        pushPermission: permission => { windows.sendToMain(KEY_LISTENER_PERMISSION_CHANGED, permission) },
+        openInputMonitoring: () => e2eConfiguration === null
+          ? createSystemSettingsOpener(platform, url => shell.openExternal(url))?.('input-monitoring')
+          : undefined,
+        log: logOperational,
+        platform,
+      })
+    : null
+  if (dictationShortcuts !== null) interruptOnLockAndSleep(powerMonitor, () => dictationShortcuts.interrupt())
+  // Linux: while Settings records keys, Sotto's own Hyprland bindings start nothing. Hyprland keeps a bound key from the
+  // page, so the recording is told whose it was instead.
+  let compositorKeysSuspended = false
+  // The latest recording's span, in the epoch nanoseconds bindings stamp their key events with. A binding's command can
+  // arrive after the recording ends, since the launcher boots first, so a key pressed during it is still Sotto's.
+  let recordingSpan: { from: bigint; to: bigint | null } | null = null
+  const epochNanoseconds = (): bigint => BigInt(Date.now()) * 1_000_000n
+  // Settings recording stands every dictation shortcut down; stable has only the hotkey to suspend.
+  const shortcutLifecycle = createDictationShortcutLifecycle({
+    suspend: suspended => {
+      hotkeys.suspend(suspended)
+      dictationShortcuts?.suspend(suspended)
+      if (platform === 'linux' && suspended !== compositorKeysSuspended) {
+        recordingSpan = suspended ? { from: epochNanoseconds(), to: null } : recordingSpan && { ...recordingSpan, to: epochNanoseconds() }
+      }
+      compositorKeysSuspended = platform === 'linux' && suspended
+    },
+    router: dictationShortcuts,
+    isFocused: mainWindowFocused,
+    windowFocused: mainWindowInFront,
+  })
+  // A lock or a sleep also ends a page recording's stand-down, not only the router's own recording.
+  interruptOnLockAndSleep(powerMonitor, () => shortcutLifecycle.windowLostFocus())
+  // Record mode sees keys typed in other apps, so it ends the moment the main window loses the focus.
+  const watchMainWindowFocus = (window: BrowserWindow): void => {
+    const lost = (): void => { if (window.webContents === windows.getMainWebContents()) shortcutLifecycle.windowLostFocus() }
+    window.on('blur', lost)
+    window.on('hide', lost)
+    window.on('minimize', lost)
+  }
+  BrowserWindow.getAllWindows().forEach(watchMainWindowFocus)
+  app.on('browser-window-created', (_event, window) => watchMainWindowFocus(window))
 
   const nativeTray = e2eConfiguration === null
     ? await createTrayResource({
@@ -1294,9 +1378,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       nativeTray.destroy()
     },
   }
+  // Linux's keys are Hyprland bindings the Omarchy setup writes; it is built with the IPC, after this coordinator.
+  let omarchySetup: OmarchySetup | null = null
   const settingsCoordinator = new NativeSettingsCoordinator({
     repository: settings,
     hotkeys,
+    platform,
+    ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
+    ...(platform === 'linux' ? { compositorKeys: {
+      replace: async set => omarchySetup === null ? { ok: false as const, reason: 'unavailable' as const } : omarchySetup.replaceShortcuts(set),
+    } } : {}),
     startup,
     defaults: platformDefaults,
     onAutoPasteChanged(enabled): void {
@@ -1370,12 +1461,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       currentTrayState = state
       trayController.update(state)
     },
-    syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
+    syncEscape: (state) => {
+      widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
+      syncEscapeForWidgetSnapshot(hotkeys, state)
+    },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     presentation: () => widgetPresentation,
     log: logOperational,
   })
-  handleRendererProcessGone = (kind) => dictationLifecycle.rendererProcessGone(kind)
+  handleRendererProcessGone = (kind) => {
+    dictationLifecycle.rendererProcessGone(kind)
+    // A crashed Settings can no longer end its recording, so the shortcuts come back now.
+    if (kind === 'main') shortcutLifecycle.rendererGone()
+  }
   const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
     await dictationLifecycle.publish(state)
   }
@@ -1408,7 +1506,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           void settingsCoordinator.republish().catch(() => logOperational('shell-pill-refresh-failed'))
         },
       ),
-      async command => {
+      async (command, at) => {
         if (command.startsWith('place ')) {
           const edge = parseDictationEdge(command.slice(6))
           if (edge === null) return false
@@ -1416,6 +1514,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           await widgetPlacementStore.save({ edge })
           linuxDictationShell?.place(edge)
           await windows.setWidgetPlacement({ edge })
+          return true
+        }
+        const pressedWhileRecording = at !== undefined && recordingSpan !== null && at >= recordingSpan.from && (recordingSpan.to === null || at <= recordingSpan.to)
+        if ((compositorKeysSuspended || pressedWhileRecording) && (command === 'start' || command === 'toggle')) {
+          if (compositorKeysSuspended) windows.sendToMain(DICTATION_KEYS_TAKEN, command === 'toggle' ? 'press' : 'hold')
           return true
         }
         return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })
@@ -1428,6 +1531,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(linuxDictationShell === null ? {} : { dictationCommands: linuxDictationShell }),
     windows,
     hotkeys,
+    ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
     tray,
     startup,
     settings,
@@ -1510,11 +1614,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, () => windows.getTrustedRenderers())
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
-      const omarchySetup = platform === 'linux' ? new OmarchySetup({
+      omarchySetup = platform === 'linux' ? new OmarchySetup({
         home: homedir(), data: userDataPath,
         resources: omarchyResources!,
         version: appRunningVersion,
         settings: { get: () => settingsCoordinator.getSettings(), update: patch => settingsCoordinator.updateSettings(patch) },
+        // Read from the store, not the coordinator's queue: a shortcut change holds that queue's turn only to save.
+        shortcuts: async () => {
+          const saved = await settings.get()
+          return { press: [saved.hotkey, ...saved.pressShortcuts], hold: saved.holdShortcuts }
+        },
+        commitShortcuts: set => settingsCoordinator.commitCompositorShortcuts(set),
+        holdShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'],
         onChanged: state => windows.sendToMain(OMARCHY_SETUP_CHANGED, state),
       }) : null
       const cleanupOmarchySetup = registerOmarchySetupIpc(ipcMain, platform, omarchySetup, () => windows.getTrustedRenderers(), { follow: listener => {
@@ -1566,6 +1677,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           current: () => settingsCoordinator.getHotkey(),
           replace: (accelerator) => settingsCoordinator.replaceHotkey(accelerator),
         },
+        dictationShortcuts: {
+          replace: change => settingsCoordinator.replaceDictationShortcuts(change),
+          suspend: shortcutLifecycle.suspend,
+          record: shortcutLifecycle.record,
+          cancelRecord: () => dictationShortcuts?.cancelRecord(),
+          permission: () => dictationShortcuts?.permission() ?? (platform === 'darwin' ? 'not-needed' : 'unsupported'),
+          requestPermission: async () => dictationShortcuts === null
+            ? (platform === 'darwin' ? 'not-needed' : 'unsupported')
+            : dictationShortcuts.requestPermission(),
+        },
         app: {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
@@ -1575,6 +1696,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           // kept recording, that no controller holds any more.
           reload: () => {
             dictationLifecycle.rendererProcessGone('main')
+            // A reloaded Settings can no longer end its recording, so the shortcuts come back now.
+            shortcutLifecycle.rendererGone()
             return windows.reloadMain()
           },
           toggleMaximize: () => windows.toggleMaximizeMain(),
