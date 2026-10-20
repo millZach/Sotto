@@ -46,7 +46,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
  const action = async (id: string, value: Record<string,unknown>) => { const actionId = randomUUID(); await writeProviderAction(join(root, 'control.json'), value, { sessionId: await realId(id) }, actionId) }
  // Each thread session is its own Grok process, not a proxy to a shared leader, so a turn ends when Sotto
  // closes its process; the adapter says it was interrupted rather than leave it running forever.
- return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,restartStatus:'idle' as const,skips:grokFixtureSkips,
+ return {host:adapter,adapter,root,providerId:'grok' as const,projectId:'project',modelId:'fixture-model',realId,script,action,restartStatus:'idle' as const,skips:grokFixtureSkips,
   // A permission change comes back with the snapshot Grok's reload confirmed (#318).
   settings:{snapshot:true},
   // Every Grok process started from now on reports the newer client.

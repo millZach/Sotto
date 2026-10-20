@@ -39,7 +39,7 @@ import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, Threa
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
-import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf } from './clientVersions'
 import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
@@ -3014,6 +3014,18 @@ export class AgentControl {
       if (command.type === 'queue-followup' && !this.followupStore.get().receipts.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) this.setDelivery(command.threadId, command.draftId, 'failed')
     }
     this.publish(); this.pumpFollowups(); return this.shell()
+  }
+  /**
+   * Whether Watcher is answering one of Sotto's wake-ups, its news among them, or is about to: one is being sent to it, or
+   * its running turn's message is Sotto's (#1188). Watcher's own record of what it last sent says whose turn runs before a
+   * provider that starts a turn ahead of its echo has shown the message.
+   */
+  watcherWakeUpTurn(threadId: string): boolean {
+    const thread = this.state.host.threads.find(t => t.id === threadId)
+    if (thread?.kind !== 'watcher') return false
+    if (this.followupStore.peek().items.some(item => item.threadId === threadId && item.wakeUp && item.status === 'dispatching')) return true
+    if (!isThreadTurnRunning(thread)) return false
+    return this.watcherHooks?.lastSendWasWakeUp?.(threadId) ?? isWatcherWakeUpTurn(thread)
   }
   private isUserFollowup(item: Readonly<QueuedFollowup>): boolean {
     return !item.wakeUp && !item.watcherOperationId && !item.news?.length && !this.delegationHooks?.guardFor(item.draftId)

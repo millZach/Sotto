@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
+import { watcherProviderIds } from './providerProfile'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
 
@@ -110,9 +111,9 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
 
 /**
  * The providers Watcher runs on, as `watcherProviderSchema` names them (ADR-0073, ADR-0079): Orchestrating's model is one
- * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
+ * of theirs. Each provider's profile says whether Watcher runs on it; one that does not is never Orchestrating's.
  */
-export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
+export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(watcherProviderIds())
 /**
  * Watcher's providers in words, less those held to Owl on this run (ADR-0072): "Codex, Claude Code or Grok Build" on
  * stable, with Muse added on Owl. Every sentence that names where Watcher can run asks this.

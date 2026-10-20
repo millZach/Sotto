@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { AgentCapabilities, AgentCommand, AgentThread } from '../../../shared/agents'
 import { compactionPending } from '../../../shared/compaction'
+import { providerRecommendsCompaction } from '../../../shared/providerProfile'
 import { Button } from '../components/Button'
 import './threadCompaction.css'
 
@@ -47,7 +48,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     return () => clearTimeout(timer)
   }, [eligibleAt])
   const busy = compactionBusy(thread, blocked || submitting)
-  const offer = supported && connected && !busy && !thread.resumeCompactionDismissed && thread.providerId === 'claude'
+  const offer = supported && connected && !busy && !thread.resumeCompactionDismissed && providerRecommendsCompaction(thread.providerId)
     && (usage?.modelId === undefined || usage.modelId === thread.modelId) && (usage?.contextUsed ?? 0) >= 100_000
     && now >= eligibleAt && !dismissed
   const compact = async (): Promise<void> => {

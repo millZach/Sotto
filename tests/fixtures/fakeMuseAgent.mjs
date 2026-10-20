@@ -158,6 +158,11 @@ function check() {
   else if (action.type === 'exit') process.exit(0)
   else if (action.type === 'release-set-model') { const answer = parkedSetModel; parkedSetModel = undefined; answer?.() }
   else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })
+  else if (action.type === 'usage') {
+    // How full the context is, then token counts that arrive after it.
+    notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: action.context })
+    notify('session/tokenUsage', { sessionId: session.sessionId, usage: { inputTokens: 10, outputTokens: 5, cachedTokens: 0 }, cumulative: { promptTokens: 10, outputTokens: 5 } })
+  }
   else if (action.type === 'gap') {
     if (action.text) addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'completed', revision: 1,
       turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text }, false)
