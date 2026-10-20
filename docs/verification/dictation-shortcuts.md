@@ -57,7 +57,7 @@ The macOS e2e conflict spec failed on the first review. It was fixed by comparin
 
 ## Linux, October 20, 2026
 
-Linux now has the same rows, and a save rewrites Sotto's Hyprland snippet (ADR-0094, decision 9). What was checked, on the Windows development PC only:
+Linux now has the same rows, and a save rewrites Sotto's Hyprland snippet (ADR-0097, decision 9). What was checked, on the Windows development PC only:
 
 - Unit tests over real files with scripted `hyprctl`, `luac` and shell replies: `tests/unit/main/omarchyKeys.test.ts` (the snippet for the defaults is the bundled `apps/omarchy/bindings.lua` byte for byte; press lines bind `toggle`, hold lines bind `start` and a release `stop`; only the bound chords are unbound), `tests/unit/main/omarchyShortcuts.test.ts` (nothing written before setup or over keys set up by hand; only the snippet changes, the replaced snippet is kept as `sotto-bindings.lua.bak`, `bindings.lua` is never written even when edited meanwhile, and the setup backup stays the original; a chord Hyprland uses is refused with what it runs; a new Hyprland error and a failed save both put the previous snippet back; stable binds only the main press shortcut and the holds), `tests/unit/main/nativeSettingsCoordinatorLinux.test.ts`, `tests/unit/renderer/features/settings/linuxDictationShortcuts.test.tsx` and the Linux cases in `tests/unit/shared/`.
 

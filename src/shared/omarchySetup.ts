@@ -42,7 +42,7 @@ export interface OmarchySetupBridge {
 
 /**
  * Why Sotto's keys can't take a new shortcut right now, in the row's words, or null when they can: only keys Sotto set up
- * and still owns are rewritten (ADR-0062, ADR-0094).
+ * and still owns are rewritten (ADR-0062, ADR-0097).
  */
 export function shortcutsBlocked(keys: OmarchyPieceState): string | null {
   if (keys.owned && (keys.status === 'done' || keys.status === 'stale')) return null

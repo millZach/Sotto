@@ -40,7 +40,7 @@ export interface NativeSettingsDictationShortcutService {
 }
 
 /**
- * Linux: Sotto's keys are Hyprland bindings (ADR-0062, ADR-0094). A change rewrites them first, in the Omarchy setup's
+ * Linux: Sotto's keys are Hyprland bindings (ADR-0062, ADR-0097). A change rewrites them first, in the Omarchy setup's
  * own lane, which then saves the shortcuts through `commitCompositorShortcuts`; that order never waits on this queue.
  */
 export interface NativeSettingsCompositorKeys {
@@ -303,7 +303,7 @@ export class NativeSettingsCoordinator {
       const previousHotkey =
         (await this.dependencies.hotkeys.current()) ?? previousSettings.hotkey
       const previousStartup = await this.dependencies.startup.get()
-      // Linux's keys live in Hyprland and change only from their own row, so a reset keeps them (ADR-0094).
+      // Linux's keys live in Hyprland and change only from their own row, so a reset keeps them (ADR-0097).
       const keepKeys = this.dependencies.compositorKeys !== undefined
       const hotkey = keepKeys ? previousSettings.hotkey : defaults.hotkey
 

@@ -193,7 +193,7 @@ export class OmarchySetup {
     return this.bound(await (this.options.shortcuts?.() ?? Promise.resolve(DEFAULT_OMARCHY_SHORTCUTS)))
   }
   private bound(set: DictationShortcutSet): DictationShortcutSet {
-    // Stable keeps the first hold shortcut bound, F9 unless an Owl run changed it, as Linux always has (ADR-0094).
+    // Stable keeps the first hold shortcut bound, F9 unless an Owl run changed it, as Linux always has (ADR-0097).
     // Extra holds, like extra press shortcuts, are the Owl feature's: stable binds the first and keeps the rest saved.
     return this.options.holdShortcutsEnabled ? { press: [...set.press], hold: [...set.hold] } : { press: set.press.slice(0, 1), hold: set.hold.slice(0, 1) }
   }
@@ -375,7 +375,7 @@ export class OmarchySetup {
   }
 
   /**
-   * Rebinds Sotto's keys to these shortcuts. A save in Settings › Dictation is the user's press (ADR-0062, ADR-0094),
+   * Rebinds Sotto's keys to these shortcuts. A save in Settings › Dictation is the user's press (ADR-0062, ADR-0097),
    * and only keys Sotto set up are rewritten. The answer, Hyprland's words included, belongs to the row, never a log.
    */
   replaceShortcuts(set: DictationShortcutSet): Promise<OmarchyShortcutsResult> {

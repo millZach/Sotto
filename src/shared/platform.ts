@@ -14,7 +14,7 @@ const DEFAULT_HOTKEYS: Readonly<Record<SottoPlatform, string>> = Object.freeze({
   // so darwin binds the literal Control key instead.
   win32: 'CommandOrControl+Shift+Space',
   darwin: 'Control+Shift+Space',
-  // Linux's keys are Hyprland bindings Sotto writes (ADR-0062, ADR-0094): Super+Ctrl+X, as Omarchy's own dictation had it.
+  // Linux's keys are Hyprland bindings Sotto writes (ADR-0062, ADR-0097): Super+Ctrl+X, as Omarchy's own dictation had it.
   linux: 'Super+CommandOrControl+X',
 })
 

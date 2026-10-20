@@ -18,7 +18,7 @@ export interface LinuxDictationShortcutsProps {
 
 /**
  * Linux's shortcut rows: the same rows as macOS and Windows, saved as Hyprland bindings in the file Sotto's Omarchy
- * setup owns (ADR-0062, ADR-0094). Until Sotto's keys are set up, the rows say so and offer that setup.
+ * setup owns (ADR-0062, ADR-0097). Until Sotto's keys are set up, the rows say so and offer that setup.
  */
 export function LinuxDictationShortcuts({ settings, visible, onReplaceHotkey, onReplaceDictationShortcuts }: LinuxDictationShortcutsProps): ReactNode {
   const omarchy = useOmarchySetup(visible)

@@ -1,5 +1,5 @@
 // Sotto's macOS key listener: a listen-only event tap that reports modifier
-// transitions and shortcut keys to main as lines on stdout (ADR-0094).
+// transitions and shortcut keys to main as lines on stdout (ADR-0097).
 import Carbon.HIToolbox
 import CoreGraphics
 import Foundation

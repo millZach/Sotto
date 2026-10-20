@@ -486,7 +486,7 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
-/** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0094). */
+/** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0097). */
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
   // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
