@@ -39,3 +39,16 @@ export interface OmarchySetupBridge {
   onFocus(listener: () => void): () => void
   onChanged(listener: (state: OmarchySetupState) => void): () => void
 }
+
+/**
+ * Why Sotto's keys can't take a new shortcut right now, in the row's words, or null when they can: only keys Sotto set up
+ * and still owns are rewritten (ADR-0062, ADR-0094).
+ */
+export function shortcutsBlocked(keys: OmarchyPieceState): string | null {
+  if (keys.owned && (keys.status === 'done' || keys.status === 'stale')) return null
+  if (keys.status === 'working' || keys.status === 'queued') return 'Sotto is still changing its Omarchy setup. Try again in a moment.'
+  if (keys.status === 'manual') return 'Your bindings.lua gives Sotto its keys by hand, so Sotto leaves them alone. Change them there.'
+  if (keys.owned && keys.status === 'conflict') return 'Sotto’s keys changed outside Sotto, so Sotto leaves them alone. Nothing was changed.'
+  if (keys.status === 'failed' && keys.message) return keys.message
+  return 'Sotto’s keys aren’t set up in Hyprland yet, so these shortcuts don’t work. Set them up first. Nothing was changed.'
+}

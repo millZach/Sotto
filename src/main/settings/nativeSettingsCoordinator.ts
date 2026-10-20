@@ -39,6 +39,14 @@ export interface NativeSettingsDictationShortcutService {
   suspend(on: boolean): void
 }
 
+/**
+ * Linux: Sotto's keys are Hyprland bindings (ADR-0062, ADR-0094). A change rewrites them first, in the Omarchy setup's
+ * own lane, which then saves the shortcuts through `commitCompositorShortcuts`; that order never waits on this queue.
+ */
+export interface NativeSettingsCompositorKeys {
+  replace(set: DictationShortcutSet): Promise<DictationShortcutsResult>
+}
+
 export interface NativeSettingsCoordinatorDependencies {
   readonly repository: NativeSettingsRepository
   readonly hotkeys: NativeSettingsHotkeyService
@@ -53,6 +61,8 @@ export interface NativeSettingsCoordinatorDependencies {
   readonly defaults?: AppSettings
   /** Chords compare by token set, with this platform's aliases. Omitting it keeps Windows. */
   readonly platform?: SottoPlatform
+  /** Present only on Linux. */
+  readonly compositorKeys?: NativeSettingsCompositorKeys
 }
 
 export class NativeManagedSettingMutationError extends Error {
@@ -128,6 +138,14 @@ export class NativeSettingsCoordinator {
 
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult> {
     const next = accelerator.trim()
+    const keys = this.dependencies.compositorKeys
+    if (keys !== undefined) {
+      // Stable on Linux changes only the first press shortcut; the rest stay as they were saved.
+      return this.dependencies.repository.get().then(async (saved) => {
+        const result = await keys.replace({ press: [next, ...saved.pressShortcuts], hold: saved.holdShortcuts })
+        return result.ok ? result : { ok: false, reason: result.reason, ...(result.message === undefined ? {} : { message: result.message }) }
+      }, () => ({ ok: false, reason: 'unavailable' }))
+    }
     return this.enqueue(async () => {
       const previousSettings = await this.dependencies.repository.get()
       const previousNative =
@@ -162,10 +180,17 @@ export class NativeSettingsCoordinator {
   }
 
   replaceDictationShortcuts(change: DictationShortcutsChange): Promise<DictationShortcutsResult> {
-    const router = this.dependencies.dictationShortcuts
-    if (router === undefined) return Promise.resolve({ ok: false, reason: 'unavailable' })
     const press = change.press.map((chord) => chord.trim())
     const hold = change.hold.map((chord) => chord.trim())
+    const keys = this.dependencies.compositorKeys
+    if (keys !== undefined) {
+      const fits = (list: readonly string[], min: number): boolean =>
+        list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
+      if (!fits(press, 1) || !fits(hold, 0)) return Promise.resolve({ ok: false, reason: 'invalid' })
+      return keys.replace({ press, hold }).catch(() => ({ ok: false, reason: 'unavailable' }))
+    }
+    const router = this.dependencies.dictationShortcuts
+    if (router === undefined) return Promise.resolve({ ok: false, reason: 'unavailable' })
     return this.enqueue(async (): Promise<DictationShortcutsResult> => {
       const fits = (list: readonly string[], min: number): boolean =>
         list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
@@ -223,6 +248,24 @@ export class NativeSettingsCoordinator {
     })
   }
 
+  /** Linux: saves shortcuts Hyprland has just taken. A throw tells the Omarchy setup to put the previous keys back. */
+  commitCompositorShortcuts(set: DictationShortcutSet): Promise<void> {
+    return this.enqueue(async () => {
+      const primary = set.press[0]
+      if (primary === undefined) throw new NativeSettingsTransactionError()
+      const previous = await this.dependencies.repository.get()
+      try {
+        await this.dependencies.hotkeys.replace(primary)
+        const updated = await this.dependencies.repository.update({ hotkey: primary, pressShortcuts: set.press.slice(1), holdShortcuts: [...set.hold] })
+        await this.notifySettingsChanged(updated)
+      } catch {
+        await this.restoreHotkey(previous.hotkey)
+        await this.restoreSettings(previous)
+        throw new NativeSettingsTransactionError()
+      }
+    })
+  }
+
   getStartup(): Promise<StartupState> {
     return this.enqueue(() => Promise.resolve(this.dependencies.startup.get()))
   }
@@ -259,16 +302,19 @@ export class NativeSettingsCoordinator {
       const previousHotkey =
         (await this.dependencies.hotkeys.current()) ?? previousSettings.hotkey
       const previousStartup = await this.dependencies.startup.get()
+      // Linux's keys live in Hyprland and change only from their own row, so a reset keeps them (ADR-0094).
+      const keepKeys = this.dependencies.compositorKeys !== undefined
+      const hotkey = keepKeys ? previousSettings.hotkey : defaults.hotkey
 
       try {
         // An old extra may equal the default hotkey: release every dictation accelerator before it registers.
         this.releaseDictationShortcuts(true)
         this.dependencies.hotkeys.suspend?.(true)
-        const hotkeyResult = await this.dependencies.hotkeys.replace(defaults.hotkey)
+        const hotkeyResult = await this.dependencies.hotkeys.replace(hotkey)
         if (!hotkeyResult.ok) {
           throw new NativeSettingsTransactionError()
         }
-        if ((await this.dependencies.hotkeys.current()) !== defaults.hotkey) {
+        if ((await this.dependencies.hotkeys.current()) !== hotkey) {
           throw new NativeSettingsTransactionError()
         }
         const startupResult = await this.dependencies.startup.set(
@@ -281,9 +327,16 @@ export class NativeSettingsCoordinator {
           await this.dependencies.onAutoPasteChanged(defaults.autoPaste)
         }
 
-        const reset = await this.dependencies.repository.reset()
+        let reset = await this.dependencies.repository.reset()
+        if (keepKeys) {
+          reset = await this.dependencies.repository.update({
+            hotkey: previousSettings.hotkey,
+            pressShortcuts: previousSettings.pressShortcuts,
+            holdShortcuts: previousSettings.holdShortcuts,
+          })
+        }
         if (
-          reset.hotkey !== defaults.hotkey ||
+          reset.hotkey !== hotkey ||
           reset.launchAtStartup !== defaults.launchAtStartup ||
           reset.autoPaste !== defaults.autoPaste
         ) {

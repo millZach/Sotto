@@ -19,6 +19,8 @@ export const DICTATION_SHORTCUTS_SUSPEND = 'sotto:dictation-shortcuts:suspend' a
 export const DICTATION_KEYS_RECORD = 'sotto:dictation-keys:record' as const
 export const DICTATION_KEYS_RECORD_CANCEL = 'sotto:dictation-keys:record-cancel' as const
 export const DICTATION_KEYS_HELD = 'sotto:dictation-keys:held' as const
+/** Linux: a Sotto binding fired while Settings recorded keys, so Hyprland kept the keys; carries the row it belongs to. */
+export const DICTATION_KEYS_TAKEN = 'sotto:dictation-keys:taken' as const
 export const KEY_LISTENER_PERMISSION_GET = 'sotto:key-listener:permission' as const
 export const KEY_LISTENER_PERMISSION_REQUEST = 'sotto:key-listener:permission-request' as const
 export const KEY_LISTENER_PERMISSION_CHANGED = 'sotto:key-listener:permission-changed' as const

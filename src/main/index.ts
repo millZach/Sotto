@@ -162,6 +162,7 @@ import {
 import {
   DICTATION_COMMAND,
   DICTATION_KEYS_HELD,
+  DICTATION_KEYS_TAKEN,
   KEY_LISTENER_PERMISSION_CHANGED,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
@@ -1292,11 +1293,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
     : null
   if (dictationShortcuts !== null) interruptOnLockAndSleep(powerMonitor, () => dictationShortcuts.interrupt())
+  // Linux: while Settings records keys, Sotto's own Hyprland bindings start nothing. Hyprland keeps a bound key from the
+  // page, so the recording is told whose it was instead.
+  let compositorKeysSuspended = false
   // Settings recording stands every dictation shortcut down; stable has only the hotkey to suspend.
   const shortcutLifecycle = createDictationShortcutLifecycle({
     suspend: suspended => {
       hotkeys.suspend(suspended)
       dictationShortcuts?.suspend(suspended)
+      compositorKeysSuspended = platform === 'linux' && suspended
     },
     router: dictationShortcuts,
     isFocused: mainWindowFocused,
@@ -1342,11 +1347,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       nativeTray.destroy()
     },
   }
+  // Linux's keys are Hyprland bindings the Omarchy setup writes; it is built with the IPC, after this coordinator.
+  let omarchySetup: OmarchySetup | null = null
   const settingsCoordinator = new NativeSettingsCoordinator({
     repository: settings,
     hotkeys,
     platform,
     ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
+    ...(platform === 'linux' ? { compositorKeys: {
+      replace: async set => omarchySetup === null ? { ok: false as const, reason: 'unavailable' as const } : omarchySetup.replaceShortcuts(set),
+    } } : {}),
     startup,
     defaults: platformDefaults,
     onAutoPasteChanged(enabled): void {
@@ -1473,6 +1483,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           await windows.setWidgetPlacement({ edge })
           return true
         }
+        if (compositorKeysSuspended && (command === 'start' || command === 'toggle')) {
+          windows.sendToMain(DICTATION_KEYS_TAKEN, command === 'toggle' ? 'press' : 'hold')
+          return true
+        }
         return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })
       },
       () => windows.getWidgetPlacement().edge,
@@ -1566,11 +1580,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, () => windows.getTrustedRenderers())
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
-      const omarchySetup = platform === 'linux' ? new OmarchySetup({
+      omarchySetup = platform === 'linux' ? new OmarchySetup({
         home: homedir(), data: userDataPath,
         resources: omarchyResources!,
         version: appRunningVersion,
         settings: { get: () => settingsCoordinator.getSettings(), update: patch => settingsCoordinator.updateSettings(patch) },
+        // Read from the store, not the coordinator's queue: a shortcut change holds that queue's turn only to save.
+        shortcuts: async () => {
+          const saved = await settings.get()
+          return { press: [saved.hotkey, ...saved.pressShortcuts], hold: saved.holdShortcuts }
+        },
+        commitShortcuts: set => settingsCoordinator.commitCompositorShortcuts(set),
+        holdShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'],
         onChanged: state => windows.sendToMain(OMARCHY_SETUP_CHANGED, state),
       }) : null
       const cleanupOmarchySetup = registerOmarchySetupIpc(ipcMain, platform, omarchySetup, () => windows.getTrustedRenderers(), { follow: listener => {

@@ -307,9 +307,10 @@ export type UpdateStatus = z.infer<typeof updateStatusSchema>
 export type UnavailableResult = Readonly<{ ok: false; reason: 'unavailable' }>
 export type CommandResult = Readonly<{ ok: true }> | UnavailableResult
 
+/** `message` is Linux's: Sotto's keys are Hyprland bindings, and the row shows why one could not change in Hyprland's own terms. */
 export type HotkeyChangeResult =
   | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable' }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; message?: string | undefined }>
 
 /** Every dictation shortcut at once; `press[0]` is `settings.hotkey`. */
 export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[] }>
@@ -317,7 +318,7 @@ export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold
 /** A refused change names the chord that failed when one did; the previous shortcuts stay in force. */
 export type DictationShortcutsResult =
   | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string | undefined }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string | undefined; message?: string | undefined }>
 
 /** `unsupported-key`: a key outside the shortcut table was pressed, so no chord was taken. */
 export type KeyRecordResult =
@@ -399,6 +400,8 @@ export interface SottoBridge {
   cancelDictationKeyRecord?(): Promise<CommandResult>
   /** The keys held during a recording, as chord tokens. */
   onDictationKeysHeld?(listener: (tokens: readonly string[]) => void): Unsubscribe
+  /** Linux: one of Sotto's own Hyprland bindings fired during a recording, so the keys never reached the page. */
+  onDictationKeysTaken?(listener: (role: 'press' | 'hold') => void): Unsubscribe
   getKeyListenerPermission?(): Promise<KeyListenerPermission>
   /** Asks macOS for Input Monitoring and opens its pane in System Settings. */
   requestKeyListenerPermission?(): Promise<KeyListenerPermission>
