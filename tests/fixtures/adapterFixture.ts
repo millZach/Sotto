@@ -18,6 +18,8 @@ export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restar
 
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string
+  /** The provider whose adapter this is, whose profile the contract holds its capabilities to. Absent for the in-memory fake. */
+  providerId?: ProviderId
   driver: {
     typeInProvider(sessionId: string, text: string): Promise<void>
     completeTurn(sessionId: string, text: string): Promise<void>

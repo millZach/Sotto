@@ -185,6 +185,10 @@ export interface AppSettings {
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
+  /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
+  pressShortcuts: string[]
+  /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
+  holdShortcuts: string[]
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -267,7 +271,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -301,6 +305,8 @@ const fieldSchemas = {
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
+  holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
@@ -382,6 +388,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  pressShortcuts: [],
+  holdShortcuts: [],
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
@@ -451,11 +459,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 /**
- * The defaults for one platform. Only the hotkey differs today, and the caller
- * supplies it from the platform profile so this module stays platform-free.
+ * The defaults for one platform. Only the shortcuts differ today, and the caller
+ * supplies them from the platform profile so this module stays platform-free.
  */
-export function defaultSettings(defaultHotkey: string): AppSettings {
-  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey }
+export function defaultSettings(defaultHotkey: string, defaultHoldShortcuts: readonly string[] = []): AppSettings {
+  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey, holdShortcuts: [...defaultHoldShortcuts] }
+}
+
+/** Entry by entry, so one damaged shortcut costs only itself; a damaged list holds nothing rather than a default. */
+function parseShortcutList(input: unknown, max: number): string[] {
+  if (!Array.isArray(input)) return []
+  const entries = input.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0 && entry.length <= 64)
+  return [...new Set(entries)].slice(0, max)
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -471,8 +486,16 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
+/** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0097). */
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
+  // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
+  // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys, and so
+  // does one an unreleased build of the recorder saved with the old, unused default and nothing held: Linux's rows
+  // can't produce that pair, since only Owl removes the hold and Linux has no Owl build.
+  const untouchedLinux = Array.isArray(persisted.holdShortcuts) && persisted.holdShortcuts.length === 0 &&
+    persisted.hotkey === 'CommandOrControl+Shift+Space' && (persisted.pressShortcuts === undefined || Array.isArray(persisted.pressShortcuts) && persisted.pressShortcuts.length === 0)
+  const linuxBeforeRecorder = allowOmarchy && (persisted.holdShortcuts === undefined || untouchedLinux)
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.
@@ -505,7 +528,13 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
-    hotkey: parseField(persisted, 'hotkey', defaults),
+    hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
+    pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
+    // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
+    // Linux is the exception above: its existing profiles already held F9.
+    holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
+      ? [...defaults.holdShortcuts]
+      : parseShortcutList(persisted.holdShortcuts, 4),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),

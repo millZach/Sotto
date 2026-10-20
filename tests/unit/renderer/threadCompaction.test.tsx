@@ -19,7 +19,7 @@ it('offers Claude compaction only at the inclusive 100k token and 70 minute boun
   rerender(<ThreadCompaction thread={{ ...thread, usage: { ...thread.usage!, contextUpdatedAt: '2026-09-13T09:59:00Z' } }} supported connected command={command} />)
   expect(screen.getByText('Keep full history')).toBeInTheDocument()
 })
-it('preserves dismissal across remount, ignores bookkeeping timestamps, suppresses pending work and excludes other providers', () => {
+it('preserves dismissal across remount, ignores bookkeeping timestamps, suppresses pending work and excludes providers that cannot compact', () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T11:10:00Z'))
   const command = vi.fn()
   const owner = { ...thread, id: 'remount' }
@@ -36,7 +36,6 @@ it('preserves dismissal across remount, ignores bookkeeping timestamps, suppress
     { ...thread, id: 'small', usage: { ...thread.usage!, contextUsed: 99_999 } },
     { ...thread, id: 'unknown', usage: { ...thread.usage!, contextUpdatedAt: undefined } },
     { ...thread, id: 'never', resumeCompactionDismissed: true },
-    { ...thread, id: 'codex', providerId: 'codex' as const },
     { ...thread, id: 'grok', providerId: 'grok' as const },
   ]) {
     next.rerender(mount(value, value.providerId !== 'grok'))
@@ -85,4 +84,33 @@ it('offers compaction before Claude has reported support, but not once it report
   expect(compactionOffered(compact, { ...thread, manualCompactionSupported: false })).toBe(false)
   expect(compactionOffered(compact, { ...thread, nativeSessionStarted: false })).toBe(false)
   expect(compactionOffered({ compact: false }, thread)).toBe(false)
+})
+it('offers Codex and Muse compaction at the same 100k token and 70 minute boundary as Claude, once they report context', () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T11:09:59.999Z'))
+  const command = vi.fn()
+  for (const providerId of ['codex', 'muse'] as const) {
+    const owner = { ...thread, id: `${providerId}-offer`, providerId }
+    const view = render(<ThreadCompaction thread={owner} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByText('Keep full history')).toBeInTheDocument()
+    view.rerender(<ThreadCompaction thread={{ ...owner, usage: { ...owner.usage!, contextUsed: 99_999 } }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    // A thread whose provider has not said how full its context is gets no recommendation.
+    view.rerender(<ThreadCompaction thread={{ ...owner, usage: { ...owner.usage!, contextUsed: undefined } }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    view.rerender(<ThreadCompaction thread={{ ...owner, modelId: 'other', usage: { ...owner.usage!, modelId: 'earlier' } }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    view.unmount()
+    vi.setSystemTime(new Date('2026-09-13T11:09:59.999Z'))
+  }
+})
+it('never offers compaction for Grok Build, Devin, OpenCode or a thread that names no provider, whatever their usage says', () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T12:00:00Z'))
+  const command = vi.fn()
+  for (const providerId of ['grok', 'devin', 'opencode', undefined] as const) {
+    const view = render(<ThreadCompaction thread={{ ...thread, id: `${providerId ?? 'none'}-never`, providerId }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    view.unmount()
+  }
 })

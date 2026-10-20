@@ -35,6 +35,7 @@ const darwinModifierAliases = new Map<string, string>([
   ['⌥', 'Alt'],
   ['shift', 'Shift'],
   ['⇧', 'Shift'],
+  ['fn', 'Fn'],
 ])
 
 const modifierAliases: Readonly<Record<SottoPlatform, ReadonlyMap<string, string>>> =
@@ -45,6 +46,7 @@ const darwinModifierGlyphs = new Map<string, string>([
   ['Control', '⌃'],
   ['Alt', '⌥'],
   ['Shift', '⇧'],
+  ['Fn', 'Fn'],
 ])
 
 const darwinModifierWords = new Map<string, string>([
@@ -52,6 +54,7 @@ const darwinModifierWords = new Map<string, string>([
   ['Control', 'Control'],
   ['Alt', 'Option'],
   ['Shift', 'Shift'],
+  ['Fn', 'Fn'],
 ])
 
 const namedKeys = new Map<string, string>([
@@ -59,9 +62,11 @@ const namedKeys = new Map<string, string>([
   ['backspace', 'Backspace'], ['delete', 'Delete'], ['insert', 'Insert'],
   ['home', 'Home'], ['end', 'End'], ['pageup', 'PageUp'], ['pagedown', 'PageDown'],
   ['up', 'Up'], ['down', 'Down'], ['left', 'Left'], ['right', 'Right'],
+  ['escape', 'Escape'], ['esc', 'Escape'],
 ])
 
-function formatWin32Token(key: string): string {
+function formatWin32Token(key: string, platform: SottoPlatform): string {
+  if (key === 'Super' && platform === 'win32') return 'Win'
   return key === 'CommandOrControl' || key === 'CmdOrCtrl' || key === 'Control' ? 'Ctrl' : key
 }
 
@@ -83,26 +88,30 @@ export function formatAccelerator(
     .split('+')
     .map((key) => {
       const token = key.trim()
-      return platform === 'darwin' ? formatDarwinToken(token, style) : formatWin32Token(token)
+      return platform === 'darwin' ? formatDarwinToken(token, style) : formatWin32Token(token, platform)
     })
     .filter(Boolean)
     .join('+')
 }
 
+export function acceleratorModifier(token: string, platform: SottoPlatform): string | undefined {
+  return modifierAliases[platform].get(token.trim().toLowerCase())
+}
+
+export function acceleratorKey(token: string): string {
+  const named = namedKeys.get(token.toLowerCase())
+  return named ?? (/^f(?:[1-9]|1[0-9]|2[0-4])$/iu.test(token) ? token.toUpperCase() : token.length === 1 ? token.toUpperCase() : token)
+}
+
 export function parseAccelerator(value: string, platform: SottoPlatform): string | null {
-  const aliases = modifierAliases[platform]
   const tokens = value.split('+').map((token) => token.trim()).filter(Boolean)
   if (tokens.length < 2 || tokens.some((token) => /\s/u.test(token))) return null
   const modifiers: string[] = []
   const keys: string[] = []
   for (const token of tokens) {
-    const modifier = aliases.get(token.toLowerCase())
+    const modifier = acceleratorModifier(token, platform)
     if (modifier !== undefined) modifiers.push(modifier)
-    else {
-      const lower = token.toLowerCase()
-      const named = namedKeys.get(lower)
-      keys.push(named ?? (/^f(?:[1-9]|1[0-9]|2[0-4])$/iu.test(token) ? token.toUpperCase() : token.length === 1 ? token.toUpperCase() : token))
-    }
+    else keys.push(acceleratorKey(token))
   }
   if (keys.length !== 1 || modifiers.length === 0 || new Set(modifiers).size !== modifiers.length) return null
   return [...modifiers, keys[0]!].join('+')

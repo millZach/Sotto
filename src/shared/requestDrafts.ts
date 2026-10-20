@@ -72,7 +72,7 @@ export interface RequestDraftBridge {
 }
 export const requestDraftOwnerKey = (owner: RequestDraftOwner): string => JSON.stringify([owner.kind, owner.providerId, owner.ownerId])
 /** Legacy single-provider snapshots can identify the owner through its model instead of providerId: a model's provider label is the provider's id or its name. */
-export function requestDraftProvider(host: AgentHostSnapshot, thread: AgentThread, fallback: ProviderId): ProviderId {
+export function requestDraftProvider(host: Pick<AgentHostSnapshot, 'models'>, thread: AgentThread, fallback: ProviderId): ProviderId {
   const model = resolveModel(host.models, thread.modelId)
   return thread.providerId ?? model?.providerId ?? (model ? providerIdOfLabel(model.provider) : undefined) ?? fallback
 }

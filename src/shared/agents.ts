@@ -2,6 +2,7 @@ import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherC
 import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
@@ -1021,8 +1022,6 @@ export function summarizeThread(thread: { readonly messages: readonly AgentMessa
     ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }),
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
-/** The providers that write Sotto's short text. A provider is named here once it does; one that is not writes none. */
-const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'opencode'])
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
@@ -1032,19 +1031,17 @@ const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['code
  * Zen's free models do, writes nothing, and its threads keep their stand-ins.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
-  return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
+  return providerId === undefined || providerProfile(providerId)?.writesShortText === true
 }
 /**
- * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
- * threads take them only where their host says it gives them (`threadTakesSottoTools`).
+ * Whether this provider can receive Sotto's tool servers, as its profile says. Older unlabelled local hosts retain their
+ * tools. Devin's threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
-/** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
-  return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
+  return providerId === undefined || providerProfile(providerId)?.takesSottoTools === true
 }
 /**
- * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
+ * Whether this thread's agent gets Sotto's tool servers. Every provider whose profile says so takes them: Muse when its client grants
  * session tool servers (ADR-0079), Devin from CLI 3000.11.92, which attaches the servers a session is opened with
  * (ADR-0056), and OpenCode when its thread's server connects every one (ADR-0087). A client that cannot take them marks
  * its threads `sottoToolsWithheld`, and a Devin thread counts only when

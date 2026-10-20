@@ -5,11 +5,13 @@ import { dirname, join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { z } from 'zod'
 
-import { OMARCHY_PIECES, type OmarchyPiece, type OmarchyPieceState, type OmarchySetupCommand, type OmarchySetupState } from '../../shared/omarchySetup'
+import { OMARCHY_PIECES, shortcutsBlocked, type OmarchyPiece, type OmarchyPieceState, type OmarchySetupCommand, type OmarchySetupState } from '../../shared/omarchySetup'
+import type { DictationShortcutSet } from '../../shared/dictationShortcuts'
 import type { AppSettings, SettingsPatch } from '../../shared/settings'
 import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../shared/themes/omarchy'
 import { atomicWrite, contents, digest, exclusiveWrite, plainPath, treeDigest } from './files'
 import { omarchySetupEnvironment } from './environment'
+import { boundChords, chordOfBind, DEFAULT_OMARCHY_SHORTCUTS, hyprlandChord, linuxChordWords, linuxKeyList, renderSottoBindings, SOTTO_BIND_LABELS } from './keys'
 
 const ID = 'sotto.dictation'
 const REQUIRE = '-- Sotto Omarchy setup\nrequire("hypr.sotto-bindings")\n-- End Sotto Omarchy setup\n'
@@ -37,7 +39,18 @@ export interface OmarchySetupOptions {
   readonly run?: SetupRun
   readonly environment?: NodeJS.ProcessEnv
   readonly onChanged?: (state: OmarchySetupState) => void
+  /** The dictation shortcuts as saved, read without waiting on the settings queue. Omitted, Sotto's keys are the defaults. */
+  readonly shortcuts?: () => Promise<DictationShortcutSet>
+  /** Saves shortcuts whose keys Hyprland has just taken; a throw rolls the keys back. */
+  readonly commitShortcuts?: (set: DictationShortcutSet) => Promise<void>
+  /** The Owl feature `dictation-hold-shortcuts`, read once at start. Off, only the first press shortcut and the hold shortcuts are bound. */
+  readonly holdShortcutsEnabled?: boolean
 }
+
+/** A shortcut change's answer, shown only in its row. */
+export type OmarchyShortcutsResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: 'conflict' | 'invalid' | 'unavailable'; readonly chord?: string; readonly message: string }
 
 function state(status: OmarchyPieceState['status'], message = '', owned = false, retry?: OmarchyPieceState['retry']): OmarchyPieceState {
   return { status, message, owned, ...(retry ? { retry } : {}) }
@@ -47,26 +60,50 @@ function ownedHash(hash: string | null, receipt: PieceReceipt | undefined): bool
 }
 const bindSchema = z.object({ key: z.string(), modmask: z.number(), dispatcher: z.string(), arg: z.string(),
   release: z.boolean().optional(), description: z.string().optional() }).passthrough()
+type Bind = z.infer<typeof bindSchema>
+type Verb = 'start' | 'stop' | 'toggle'
+const VOXTYPE_LABELS = { start: 'Start dictation (push-to-talk)', stop: 'Stop dictation (push-to-talk)', toggle: 'Toggle dictation' }
+const isSottoBind = (bind: Bind, verb: Verb, legacySotto: boolean): boolean => sottoVerb(bind) === verb ||
+  bind.dispatcher === '__lua' && (bind.description === SOTTO_BIND_LABELS[verb] || legacySotto && bind.description === VOXTYPE_LABELS[verb])
+/** The verb a binding runs when it runs Sotto's command, read from its command line or its label. */
+function sottoVerb(bind: Bind): Verb | null {
+  const verb = /(?:^|[\s/'"])sotto(?:['"])?\s+dictation\s+(start|stop|toggle)\b/.exec(bind.arg)?.[1] as Verb | undefined
+  if (verb) return verb
+  if (bind.dispatcher !== '__lua') return null
+  return (Object.keys(SOTTO_BIND_LABELS) as Verb[]).find(key => bind.description === SOTTO_BIND_LABELS[key]) ?? null
+}
 
-/** Who owns each exact chord, including F9's release binding. */
-export function inspectDictationBindings(value: unknown, legacySotto = false): { conflicts: string[]; voxtype: boolean; manual: boolean } {
-  const binds = z.array(bindSchema).parse(value).filter(bind =>
-    (bind.key.toUpperCase() === 'F9' && bind.modmask === 0) || (bind.key.toUpperCase() === 'X' && bind.modmask === 68))
-  const verb = (bind: z.infer<typeof bindSchema>): 'start' | 'stop' | 'toggle' => bind.modmask === 68 ? 'toggle' : bind.release ? 'stop' : 'start'
-  const labels = { start: 'Start dictation (push-to-talk)', stop: 'Stop dictation (push-to-talk)', toggle: 'Toggle dictation' }
-  const sottoLabels = { start: 'Start Sotto dictation (push-to-talk)', stop: 'Stop Sotto dictation (push-to-talk)', toggle: 'Toggle Sotto dictation' }
+/** Who owns each of these chords, including a hold's release binding. Without shortcuts, the default F9 and Super+Ctrl+X. */
+export function inspectDictationBindings(value: unknown, legacySotto = false, shortcuts: DictationShortcutSet = DEFAULT_OMARCHY_SHORTCUTS): { conflicts: string[]; voxtype: boolean; manual: boolean } {
+  const chords = boundChords(shortcuts)
+  const binds = z.array(bindSchema).parse(value).flatMap(bind => {
+    const on = chordOfBind(bind, chords)
+    return on ? [{ bind, on }] : []
+  })
+  const verb = ({ bind, on }: (typeof binds)[number]): Verb => on.role === 'press' ? 'toggle' : bind.release ? 'stop' : 'start'
   // Lua binds expose only callback IDs. Sotto's labels identify new snippets;
   // the old shared labels are Sotto's only with a recognised, loaded legacy snippet.
-  const isSotto = (bind: z.infer<typeof bindSchema>): boolean => /(?:^|[\s/'"])sotto(?:['"])?\s+dictation\s+(start|stop|toggle)\b/.test(bind.arg) ||
-    bind.dispatcher === '__lua' && (bind.description === sottoLabels[verb(bind)] || legacySotto && bind.description === labels[verb(bind)])
-  const isVoxtype = (bind: z.infer<typeof bindSchema>): boolean => /(?:^|[\s/'"])voxtype(?:['"])?\s/.test(bind.arg) ||
-    bind.dispatcher === '__lua' && !legacySotto && bind.description === labels[verb(bind)]
-  const conflicts = binds.filter(bind => !isSotto(bind) && !isVoxtype(bind))
-    .map(bind => `${bind.key.toUpperCase() === 'F9' ? 'F9' : 'Super+Ctrl+X'} runs “${(bind.description || bind.dispatcher).slice(0, 800)}”.`)
+  const isSotto = (entry: (typeof binds)[number]): boolean => sottoVerb(entry.bind) !== null ||
+    entry.bind.dispatcher === '__lua' && legacySotto && entry.bind.description === VOXTYPE_LABELS[verb(entry)]
+  const isVoxtype = ({ bind, ...entry }: (typeof binds)[number]): boolean => /(?:^|[\s/'"])voxtype(?:['"])?\s/.test(bind.arg) ||
+    bind.dispatcher === '__lua' && !legacySotto && bind.description === VOXTYPE_LABELS[verb({ bind, ...entry })]
+  const conflicts = binds.filter(entry => !isSotto(entry) && !isVoxtype(entry))
+    .map(({ bind, on }) => `${linuxChordWords(on.chord)} runs “${(bind.description || bind.dispatcher).slice(0, 800)}”.`)
+  const has = (role: 'hold' | 'press', chord: (typeof chords)[number], wanted: Verb): boolean => binds.some(entry =>
+    entry.on === chord && isSottoBind(entry.bind, wanted, legacySotto) && (role === 'press' || (wanted === 'stop') === (entry.bind.release === true)))
   return { conflicts: [...new Set(conflicts)].slice(0, 100), voxtype: binds.some(isVoxtype),
-    manual: conflicts.length === 0 && ['start', 'stop', 'toggle'].every(verb => binds.some(bind =>
-      isSotto(bind) && (bind.dispatcher === '__lua' || new RegExp(`dictation\\s+${verb}\\b`).test(bind.arg)) &&
-      (verb === 'toggle' ? bind.modmask === 68 : bind.modmask === 0 && (verb === 'stop' ? bind.release === true : !bind.release)))) }
+    manual: conflicts.length === 0 && chords.length > 0 && chords.every(chord => chord.role === 'press'
+      ? has('press', chord, 'toggle') : has('hold', chord, 'start') && has('hold', chord, 'stop')) }
+}
+
+/** The bindings Hyprland already runs on a chord, other than Sotto's own and Voxtype's, which Sotto's keys take over. */
+export function hyprlandUses(value: unknown, chord: string): string | null {
+  const hypr = hyprlandChord(chord)
+  if (hypr === null) return null
+  const entry = z.array(bindSchema).parse(value).find(bind => chordOfBind(bind, [{ chord, role: 'press', hypr }]) !== undefined &&
+    sottoVerb(bind) === null && !/(?:^|[\s/'"])voxtype(?:['"])?\s/.test(bind.arg) &&
+    !(bind.dispatcher === '__lua' && Object.values(VOXTYPE_LABELS).includes(bind.description ?? '')))
+  return entry === undefined ? null : (entry.description || entry.dispatcher).slice(0, 800)
 }
 
 /** Resources are outside ASAR on Linux; development uses the same checked-in pieces. */
@@ -88,6 +125,7 @@ export class OmarchySetup {
   private readonly hypr: string
   private readonly bindings: string
   private readonly snippet: string
+  private readonly snippetBackup: string
   private readonly plugin: string
   private readonly template: string
   private readonly rendered: string
@@ -99,6 +137,8 @@ export class OmarchySetup {
     this.hypr = join(options.home, '.config/hypr')
     this.bindings = join(this.hypr, 'bindings.lua')
     this.snippet = join(this.hypr, 'sotto-bindings.lua')
+    // The snippet as it was before the latest shortcut change; bindings.lua's own backup is made once, at setup.
+    this.snippetBackup = join(this.hypr, 'sotto-bindings.lua.bak')
     this.plugin = join(options.home, '.config/omarchy/plugins', ID)
     this.template = join(options.home, '.config/omarchy/themed/sotto.json.tpl')
     this.rendered = join(options.home, '.local/state/omarchy/current/theme/sotto.json')
@@ -148,9 +188,26 @@ export class OmarchySetup {
     if (!result.ok) throw new Error(message)
     return result.stdout
   }
+  /** What Sotto's keys bind: the saved shortcuts, with extra press shortcuts only while the Owl feature is on. */
+  private async keyShortcuts(): Promise<DictationShortcutSet> {
+    return this.bound(await (this.options.shortcuts?.() ?? Promise.resolve(DEFAULT_OMARCHY_SHORTCUTS)))
+  }
+  private bound(set: DictationShortcutSet): DictationShortcutSet {
+    // Stable keeps the first hold shortcut bound, F9 unless an Owl run changed it, as Linux always has (ADR-0097).
+    // Extra holds, like extra press shortcuts, are the Owl feature's: stable binds the first and keeps the rest saved.
+    return this.options.holdShortcutsEnabled ? { press: [...set.press], hold: [...set.hold] } : { press: set.press.slice(0, 1), hold: set.hold.slice(0, 1) }
+  }
+  /** The bundled snippet, rebound to these shortcuts. */
+  private async renderKeys(set: DictationShortcutSet): Promise<string> {
+    const template = await contents(join(this.options.resources, 'bindings.lua'))
+    const rendered = template === null ? null : renderSottoBindings(set, template)
+    if (rendered === null) throw new Error('This Sotto install is missing its keys. Install Sotto again.')
+    return rendered
+  }
   private async bundledHash(piece: OmarchyPiece): Promise<string> {
+    if (piece === 'keys') return digest(await this.renderKeys(await this.keyShortcuts()))
     const value = piece === 'owl' ? await treeDigest(join(this.options.resources, 'shell-plugin', ID))
-      : await contents(join(this.options.resources, piece === 'keys' ? 'bindings.lua' : 'sotto.json.tpl'))
+      : await contents(join(this.options.resources, 'sotto.json.tpl'))
     if (value === null) throw new Error('This Sotto install is missing its Omarchy files. Install Sotto again, then try again.')
     return piece === 'owl' ? value : digest(value)
   }
@@ -173,13 +230,14 @@ export class OmarchySetup {
     await this.load()
     const binds = await this.run('hyprctl', ['binds', '-j'])
     let keys: ReturnType<typeof inspectDictationBindings> | null = null
+    const shortcuts = await this.keyShortcuts()
     if (binds.ok) {
       try {
         const file = await contents(this.bindings), snippet = await contents(this.snippet)
         const knownSnippet = (text: string): boolean => /local\s+sotto\s*=\s*["'][^\n]*sotto/.test(text) &&
           ['start', 'stop', 'toggle'].every(verb => new RegExp(`dictation\\(["']${verb}["']\\)`).test(text))
         const legacy = !!file && (snippet !== null && !snippet.includes('Sotto dictation') && knownSnippet(snippet) && /require\(["']hypr\.sotto-bindings["']\)\s*(?:-- End Sotto Omarchy setup\s*)?$/.test(file.trim()) || !file.includes('Sotto dictation') && knownSnippet(file))
-        keys = inspectDictationBindings(JSON.parse(binds.stdout), legacy)
+        keys = inspectDictationBindings(JSON.parse(binds.stdout), legacy, shortcuts)
       } catch { /* A malformed response is unavailable, never permission to replace keys. */ }
     }
     this.snapshot.keyConflicts = keys?.conflicts ?? []
@@ -198,7 +256,7 @@ export class OmarchySetup {
           const bindingHash = file === null ? null : digest(file)
           const untouched = ours?.pending && (bindingHash === ours.pending.bindingsBeforeHash || bindingHash === ours.pending.bindingsAfterHash)
           if (ours && installed !== null && !file?.includes(REQUIRE) && !untouched) next = state('conflict', 'The line Sotto added to bindings.lua changed. Sotto leaves your file alone.', true)
-          if (keys?.manual && !ours) next = state('manual', 'Your bindings.lua already gives F9 and Super+Ctrl+X to Sotto. Leaving those lines alone.')
+          if (keys?.manual && !ours) next = state('manual', `Your bindings.lua already gives ${linuxKeyList(shortcuts)} to Sotto. Leaving those lines alone.`)
           else if (keys && !keys.manual && next.status === 'manual') next = state('conflict', 'A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone.')
           else if (keys && !keys.manual && next.status === 'done') next = state('missing', 'Hyprland is not using Sotto’s keys.', true)
           else if (next.status === 'missing' && keys && keys.conflicts.length && !ours) next = state('conflict')
@@ -316,6 +374,60 @@ export class OmarchySetup {
     })
   }
 
+  /**
+   * Rebinds Sotto's keys to these shortcuts. A save in Settings › Dictation is the user's press (ADR-0062, ADR-0097),
+   * and only keys Sotto set up are rewritten. The answer, Hyprland's words included, belongs to the row, never a log.
+   */
+  replaceShortcuts(set: DictationShortcutSet): Promise<OmarchyShortcutsResult> {
+    return this.enqueue(async (): Promise<OmarchyShortcutsResult> => {
+      const next = this.bound(set)
+      const unbindable = [...next.press, ...next.hold].find(chord => hyprlandChord(chord) === null)
+      if (next.press.length === 0 || unbindable !== undefined) {
+        return { ok: false, reason: 'invalid', ...(unbindable === undefined ? {} : { chord: unbindable }),
+          message: 'Hyprland can’t bind those keys. Use a letter, a number, an F key, Space or an arrow key, with modifiers.' }
+      }
+      if (next.hold.some(chord => hyprlandChord(chord)!.modmask !== 0)) {
+        return { ok: false, reason: 'invalid', message: 'On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening.' }
+      }
+      if (boundChords(next).length !== next.press.length + next.hold.length) {
+        return { ok: false, reason: 'invalid', message: 'Each shortcut can be in only one row, once. Pick other keys.' }
+      }
+      const inspected = await this.inspect()
+      const blocked = inspected ? shortcutsBlocked(this.snapshot.pieces.keys) : this.snapshot.pieces.keys.message
+      if (blocked !== null) {
+        this.publish()
+        return { ok: false, reason: 'unavailable', message: blocked }
+      }
+      const active = await this.run('hyprctl', ['binds', '-j'])
+      let binds: unknown
+      try { binds = active.ok ? JSON.parse(active.stdout) : null } catch { binds = null }
+      if (!Array.isArray(binds)) return { ok: false, reason: 'unavailable', message: 'Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again.' }
+      for (const chord of [...next.hold, ...next.press]) {
+        const use = hyprlandUses(binds, chord)
+        if (use !== null) return { ok: false, reason: 'conflict', chord, message: `Hyprland already uses ${linuxChordWords(chord)} for “${use}”. Pick other keys.` }
+      }
+      const previous = await this.keyShortcuts()
+      this.snapshot.busy = true
+      this.publish()
+      try {
+        try { await this.changeKeys(false, next) } catch (error) { return { ok: false, reason: 'unavailable', message: this.explain(error) } }
+        try { await this.options.commitShortcuts?.(set) } catch {
+          try { await this.changeKeys(false, previous) } catch (error) {
+            return { ok: false, reason: 'unavailable', message: `Sotto could not save the shortcut or put your previous keys back. ${this.explain(error)}` }
+          }
+          return { ok: false, reason: 'unavailable', message: 'Sotto could not save the shortcut. Your previous keys are back in Hyprland.' }
+        }
+        return { ok: true }
+      } finally {
+        // The row says how it went; the Omarchy panel keeps its own notes.
+        delete this.notes.keys
+        this.snapshot.busy = false
+        await this.inspect()
+        this.publish()
+      }
+    })
+  }
+
   private async install(piece: OmarchyPiece, restart: boolean, refresh = false): Promise<void> {
     if (piece === 'keys') await this.changeKeys(false)
     else if (piece === 'owl') await this.changeOwl(false, restart)
@@ -336,23 +448,30 @@ export class OmarchySetup {
     const added = (await this.configErrors()).filter(line => !before.includes(line))
     if (added.length) throw new Error(`Hyprland reported an error after Sotto’s change. Hyprland said: “${added.join('\n').slice(0, 6000)}”.`)
   }
-  private async changeKeys(removing: boolean): Promise<void> {
+  /** Writes Sotto's keys for the saved shortcuts, or for `change` when a shortcut is being changed, and removes them. */
+  private async changeKeys(removing: boolean, change?: DictationShortcutSet): Promise<void> {
     const original = await contents(this.bindings), snippet = await contents(this.snippet), ours = this.receipt.pieces.keys
+    const shortcuts = change ?? await this.keyShortcuts()
     if (snippet !== null && !ownedHash(digest(snippet), ours)) throw new Error('These keys were changed by hand. Sotto left them alone.')
     if (ours && original !== null && !original.includes(REQUIRE) && digest(original) !== ours.pending?.bindingsBeforeHash && digest(original) !== ours.pending?.bindingsAfterHash) throw new Error('The line Sotto added changed. Your keys were left alone.')
     const without = (original ?? '').replace(REQUIRE, '')
-    const next = removing ? without : `${without}${without.endsWith('\n') || !without ? '' : '\n'}${REQUIRE}`
-    const bundled = await contents(join(this.options.resources, 'bindings.lua'))
-    if (!removing && bundled === null) throw new Error('This Sotto install is missing its keys. Install Sotto again.')
+    // A shortcut change rewrites only Sotto's own snippet; bindings.lua keeps its require where it is.
+    const next = removing ? without : change && original?.includes(REQUIRE) ? original : `${without}${without.endsWith('\n') || !without ? '' : '\n'}${REQUIRE}`
+    // A shortcut change leaves bindings.lua untouched, neither written nor restored, so an edit made meanwhile stays.
+    const keepBindings = !removing && change !== undefined && original !== null && original.includes(REQUIRE)
+    // Removal needs no snippet, so an install missing its keys can still take them out.
+    const bundled = removing ? '' : await this.renderKeys(shortcuts)
     await mkdir(this.hypr, { recursive: true })
     await mkdir(this.options.data, { recursive: true })
     const check = join(this.options.data, `.sotto-keys-${randomUUID()}.lua`)
     try {
-      await writeFile(check, next, { flag: 'wx', mode: 0o600 })
-      await this.checked('luac', ['-p', check], 'Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.')
-      await rm(check)
+      if (!keepBindings) {
+        await writeFile(check, next, { flag: 'wx', mode: 0o600 })
+        await this.checked('luac', ['-p', check], 'Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.')
+        await rm(check)
+      }
       if (!removing) {
-        await writeFile(check, bundled!, { flag: 'wx', mode: 0o600 })
+        await writeFile(check, bundled, { flag: 'wx', mode: 0o600 })
         await this.checked('luac', ['-p', check], 'Sotto’s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again.')
       }
     } finally { await rm(check, { force: true }) }
@@ -366,7 +485,9 @@ export class OmarchySetup {
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
       }
     }
-    const nextReceipt = { hash: removing ? ours!.hash : digest(bundled!), ...(backup ? { backup } : {}), originalMissing: ours?.originalMissing ?? original === null }
+    // Backup first: a shortcut change keeps the snippet it replaces beside it.
+    if (keepBindings && snippet !== null) await atomicWrite(this.snippetBackup, snippet, 0o600)
+    const nextReceipt = { hash: removing ? ours!.hash : digest(bundled), ...(backup ? { backup } : {}), originalMissing: ours?.originalMissing ?? original === null }
     await this.savePending('keys', nextReceipt, snippet === null ? null : digest(snippet), removing, {
       bindingsBeforeHash: original === null ? null : digest(original), bindingsAfterHash: removing && ours?.originalMissing && next === '' ? null : digest(next),
     })
@@ -374,19 +495,20 @@ export class OmarchySetup {
       if (removing) {
         if (ours?.originalMissing && next === '') await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, next)
         await rm(this.snippet, { force: true })
+        await rm(this.snippetBackup, { force: true })
       } else {
-        await atomicWrite(this.snippet, bundled!)
-        await atomicWrite(this.bindings, next)
+        await atomicWrite(this.snippet, bundled)
+        if (!keepBindings) await atomicWrite(this.bindings, next)
       }
       await this.reload(before)
       if (!removing) {
         const active = await this.checked('hyprctl', ['binds', '-j'], 'Sotto could not check the reloaded keys. Try again in your desktop session.')
-        if (!inspectDictationBindings(JSON.parse(active)).manual) throw new Error('Hyprland did not load Sotto’s keys. Check that bindings.lua loads after Omarchy’s defaults, then try again.')
+        if (!inspectDictationBindings(JSON.parse(active), false, shortcuts).manual) throw new Error('Hyprland did not load Sotto’s keys. Check that bindings.lua loads after Omarchy’s defaults, then try again.')
       }
       await this.save('keys', removing ? undefined : nextReceipt)
     } catch (error) {
       try {
-        if (original === null) await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, original)
+        if (keepBindings) { /* bindings.lua was never written */ } else if (original === null) await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, original)
         if (snippet === null) await rm(this.snippet, { force: true }); else await atomicWrite(this.snippet, snippet)
         await this.reload(before)
         await this.save('keys', ours)
@@ -396,8 +518,9 @@ export class OmarchySetup {
     if (removing) {
       let message = 'Your keys run what they did before.'
       try {
-        const keys = inspectDictationBindings(JSON.parse((await this.run('hyprctl', ['binds', '-j'])).stdout))
-        if (!keys.conflicts.length) message = keys.voxtype ? 'F9 and Super+Ctrl+X are Voxtype’s again.' : 'F9 and Super+Ctrl+X do nothing now.'
+        const keys = inspectDictationBindings(JSON.parse((await this.run('hyprctl', ['binds', '-j'])).stdout), false, shortcuts)
+        const list = linuxKeyList(shortcuts), one = boundChords(shortcuts).length === 1
+        if (!keys.conflicts.length) message = keys.voxtype ? `${list} ${one ? 'is' : 'are'} Voxtype’s again.` : `${list} ${one ? 'does' : 'do'} nothing now.`
       } catch { /* Do not guess a key owner after an unavailable read. */ }
       this.notes.keys = state('missing', message)
     } else this.notes.keys = state('done', 'Hyprland reloaded with no new errors.' + (this.snapshot.voxtype ? ' Voxtype keeps running without these keys.' : ''), true)

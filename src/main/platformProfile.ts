@@ -1,4 +1,4 @@
-import { defaultHotkey, type SottoPlatform } from '../shared/platform'
+import { defaultHoldShortcuts, defaultHotkey, type SottoPlatform } from '../shared/platform'
 
 export type MainWindowChrome = 'frameless' | 'hidden-inset'
 
@@ -36,6 +36,7 @@ export interface PlatformProfile {
   readonly pasteUsesWarmHelper: boolean
   readonly requiresMediaAccessGate: boolean
   readonly defaultHotkey: string
+  readonly defaultHoldShortcuts: readonly string[]
 }
 
 function immutableProfile(profile: PlatformProfile): PlatformProfile {
@@ -70,6 +71,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
       defaultHotkey: defaultHotkey('win32'),
+      defaultHoldShortcuts: defaultHoldShortcuts('win32'),
     }),
     darwin: immutableProfile({
       platform: 'darwin',
@@ -86,6 +88,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
       defaultHotkey: defaultHotkey('darwin'),
+      defaultHoldShortcuts: defaultHoldShortcuts('darwin'),
     }),
     linux: immutableProfile({
       platform: 'linux',
@@ -102,6 +105,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
       defaultHotkey: defaultHotkey('linux'),
+      defaultHoldShortcuts: defaultHoldShortcuts('linux'),
     }),
   })
 
