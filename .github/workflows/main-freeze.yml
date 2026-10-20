@@ -1,0 +1,64 @@
+# Times main in the built app at the owner's scale every night (#1232): tests/e2e/main-freeze.spec.ts on Sotto Owl with
+# about 250 threads that each have a provider session, Watcher's record at the owner's size, the owner's answer retirements
+# and a connected remote host, while one and then three threads stream. It fails when main's event loop stalls past the
+# spec's limits. A stopwatch is never a pull request's gate, so this runs only at night and when started by hand; the
+# counting gate in the default suite, tests/perf/ownerScaleWorkBudget.perf.test.ts, is the one pull requests meet.
+name: Main freeze
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A run started by hand while the nightly one runs waits for it rather than cancelling it.
+concurrency:
+  group: main-freeze
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    name: Main freeze at the owner's scale (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      SOTTO_PERF_BENCH: '1'
+      SOTTO_PERF_LIMITS: '1'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1), so a path a test builds from os.tmpdir()
+      # never equals the real path the code resolves. The runner's work temp folder is a long path.
+      - name: Use a long temp path
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Time main with the owner's history
+        run: npx playwright test tests/e2e/main-freeze.spec.ts --workers=1 --reporter=list
+
+      - name: Retain the run's results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-freeze-${{ github.run_attempt }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
