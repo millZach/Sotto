@@ -1,9 +1,9 @@
 import type { AgentModel } from '../../../shared/agents'
 import type { WatcherOpenRequest } from '../../../shared/watcherRoom'
+import { providerProfile } from '../../../shared/providerProfile'
 import { providerKey } from '../agents/threadFacts'
 
 export type WatcherProvider = WatcherOpenRequest['provider']
-const WATCHER_PROVIDERS: ReadonlySet<string> = new Set<WatcherProvider>(['codex', 'claude', 'grok', 'muse'])
 
 /**
  * Devin cannot host Watcher's tools, so only Codex, Claude Code, Grok Build and Muse models are offered for it. A Muse
@@ -12,5 +12,5 @@ const WATCHER_PROVIDERS: ReadonlySet<string> = new Set<WatcherProvider>(['codex'
  */
 export function watcherProviderOf(model: AgentModel): WatcherProvider | null {
   const provider = model.providerId ?? providerKey(model.provider)
-  return WATCHER_PROVIDERS.has(provider) ? provider as WatcherProvider : null
+  return providerProfile(provider)?.runsWatcher === true ? provider as WatcherProvider : null
 }
