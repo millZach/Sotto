@@ -1627,6 +1627,8 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   vi.spyOn(f.control, 'watcherWakeUpQueued').mockReturnValue(false)
   const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
   const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  // Sotto sends Watcher a message, here a wake-up, which starts its next turn.
+  const sent = () => f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), text: 'synthetic news', wakeUp: true }, undefined)
   await nudge()
   // At the point, not past it.
   expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
@@ -1650,14 +1652,18 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(1)
   // Watcher's next turn still past it: one more try.
+  sent()
   watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 406_000, contextUpdatedAt: '2026-10-19T10:04:00.000Z' } }
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
-  // It fails, and the provider reported the compaction as a turn of its own, as Codex does: no try until Watcher's next.
-  watcher = { ...watcher, lastTurn: { id: 'synthetic-compaction-turn', status: 'failed' }, compaction: { commandId: 'synthetic-compaction-2', status: 'failed' },
-    usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:00.000Z' } }
+  // It fails, and the provider reported the compaction as a turn of its own, as Codex does, or reports that turn only
+  // after the compaction finished, as Claude Code does: no try until Sotto sends Watcher its next message.
+  watcher = { ...watcher, compaction: { commandId: 'synthetic-compaction-2', status: 'failed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:00.000Z' } }
+  await nudge()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-compaction-turn', status: 'failed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:30.000Z' } }
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  sent()
   watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-3', status: 'completed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:06:00.000Z' } }
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(3)
@@ -1682,16 +1688,19 @@ it('tells Watcher to read its state after its context drops by more than half, a
 it.each([true, false])('takes a smaller context on another model for another conversation’s size, not a compaction (reading names its model: %s)', async named => {
   const f = await fixture()
   const real = f.control.watcherSnapshot.bind(f.control)
-  let reading = { tokens: 300_000, modelId: 'synthetic-model-a', at: '2026-10-19T10:00:00.000Z' }
+  let reading: { tokens: number; modelId: string; at: string | undefined } = { tokens: 300_000, modelId: 'synthetic-model-a', at: '2026-10-19T10:00:00.000Z' }
   vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
     const snapshot = real()
     return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, modelId: reading.modelId, usage: { contextUsed: reading.tokens,
-      ...named ? { modelId: reading.modelId } : {}, contextUpdatedAt: reading.at, rateVersions: [], partial: false, updatedAt: reading.at } } : thread) }
+      ...named ? { modelId: reading.modelId } : {}, ...reading.at ? { contextUpdatedAt: reading.at } : {}, rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
   })
   const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await nudge()
-  // The model changes before its first reading comes, and then the new model's own reading is far smaller.
+  // The model changes before its first reading comes. A token update that keeps the old size and drops its time, as
+  // Muse's does, is not the new model's either. Then the new model's own reading is far smaller.
   reading = { ...reading, modelId: 'synthetic-model-b' }
+  await nudge()
+  reading = { ...reading, at: undefined }
   await nudge()
   reading = { ...reading, tokens: 40_000, at: '2026-10-19T10:01:00.000Z' }
   await nudge()

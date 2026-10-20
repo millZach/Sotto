@@ -149,16 +149,19 @@ export class WatcherService implements WatcherControlHooks {
   private readonly kept: WatcherStateStore
   private stateOwed = false
   private seenCompaction: string | null = null
-  /** The last compaction seen finished, completed or failed: a provider may report the compaction itself as a turn. */
-  private seenSettled: string | null = null
   /**
    * The Watcher thread the last look was at, and its context then: the thread's model and the reading's time, with no
    * tokens just after a model change until a reading newer than the one at the change.
    */
   private seenFor: string | undefined
   private lastTokens: { tokens: number | null; modelId: string | undefined; at: string | undefined } | undefined
-  /** The turn, or the reading where a provider reports no turn, of the last compaction tried or seen: none again until it moves. */
-  private compactTried: string | undefined
+  /**
+   * Sotto's sends to Watcher's thread this run, and their count at the last compaction tried or seen: none again until
+   * Sotto sends Watcher another message. Counted here rather than read from the provider's turns, since a provider may
+   * report the compaction as a turn of its own, before or after it reports the compaction finished.
+   */
+  private sendsToWatcher = 0
+  private compactTried: number | undefined
   private compactingNow = false
   private changing = false
   private readonly dispatchRefusals = new Map<string, Refusal>()
@@ -226,8 +229,8 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * Compacts Watcher's conversation once it passes WATCHER_COMPACT_AT_TOKENS (#1189), when Watcher rests: no turn, no card,
    * no compaction, nothing queued for it. Every Watcher call rereads its whole conversation, so its cost grows with it.
-   * One try per Watcher turn, so a compaction that fails, or leaves the context high until Watcher's next turn reports it,
-   * is tried again only after that turn. A compaction that finished, this one or the user's, owes Watcher its state: the
+   * One try per message Sotto sends Watcher, so a compaction that fails, or leaves the context high until Watcher's next
+   * turn reports it, is tried again only after that turn. A compaction that finished, this one or the user's, owes Watcher its state: the
    * note of its next turn says to read it.
    */
   private compactWhenDue(): void {
@@ -238,9 +241,8 @@ export class WatcherService implements WatcherControlHooks {
     if (tokens === null || tokens <= WATCHER_COMPACT_AT_TOKENS || this.compactingNow || this.changing || !this.canCompact(snapshot, thread)) return
     if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
       || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
-    const turn = this.compactionTurn(thread, tokens)
-    if (turn === this.compactTried) return
-    this.compactTried = turn; this.compactingNow = true
+    if (this.compactTried === this.sendsToWatcher) return
+    this.compactTried = this.sendsToWatcher; this.compactingNow = true
     void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
   }
   /**
@@ -253,31 +255,23 @@ export class WatcherService implements WatcherControlHooks {
     const thread = current && snapshot?.threads.find(item => item.id === current.target.threadId)
     if (!thread || !snapshot) return undefined
     const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null, tokens = this.contextTokens(thread)
-    const settled = thread.compaction && !compactionPending(thread.compaction) ? thread.compaction.commandId : null
     if (this.seenFor !== thread.id) {
       // A new Watcher conversation starts from its state, and so does every start of Sotto, since a compaction may have
       // come before it that Watcher has not read its state since, and the reminder is not saved: one small call.
       this.stateOwed = true
-      this.seenFor = thread.id; this.seenCompaction = done; this.seenSettled = settled; this.lastTokens = undefined; this.compactTried = undefined
-    } else {
-      if (done !== null && done !== this.seenCompaction) { this.stateOwed = true; this.seenCompaction = done }
-      // Finished either way, it marks the turn it may have made as tried, so a failed one waits for Watcher's next turn.
-      if (settled !== null && settled !== this.seenSettled) { this.seenSettled = settled; this.compactTried = this.compactionTurn(thread, tokens) }
-    }
+      this.seenFor = thread.id; this.seenCompaction = done; this.lastTokens = undefined; this.compactTried = undefined
+    } else if (done !== null && done !== this.seenCompaction) { this.stateOwed = true; this.seenCompaction = done; this.compactTried = this.sendsToWatcher }
     // A sharp drop in context is a compaction too: Muse reports no compaction of its own, and a provider may compact by
     // itself. Only readings for one model count, since another model's context is another conversation's size, and the
-    // reading at a model change may still be the old model's, as with a provider that names no model for it.
+    // reading at a model change may still be the old model's, as with a provider that names no model for it: after a
+    // change, only a reading with a time of its own, newer than the one at the change, starts the comparison again.
     const last = this.lastTokens, modelId = thread.modelId, at = thread.usage?.contextUpdatedAt
     if (last && last.modelId !== modelId) this.lastTokens = { tokens: null, modelId, at }
-    else if (tokens !== null && !(last?.tokens === null && at !== undefined && at === last.at)) {
-      if (last?.tokens != null && last.tokens >= 50_000 && tokens < last.tokens / 2) { this.stateOwed = true; this.compactTried = this.compactionTurn(thread, tokens) }
+    else if (tokens !== null && !(last?.tokens === null && (at === undefined || at === last.at))) {
+      if (last?.tokens != null && last.tokens >= 50_000 && tokens < last.tokens / 2) { this.stateOwed = true; this.compactTried = this.sendsToWatcher }
       this.lastTokens = { tokens, modelId, at }
     }
     return { snapshot, thread, tokens }
-  }
-  /** Watcher's last turn, or its context reading where its provider reports no turn: the unit of one compaction try. */
-  private compactionTurn(thread: AgentThread, tokens: number | null): string {
-    return thread.lastTurn ? `turn:${thread.lastTurn.id}` : `reading:${thread.usage?.contextUpdatedAt ?? String(tokens)}`
   }
   /** Watcher's context in tokens as its provider last reported it for its current model, or null. */
   private contextTokens(thread: AgentThread): number | null {
@@ -1214,9 +1208,10 @@ export class WatcherService implements WatcherControlHooks {
     // Compact context for Watcher's own conversation, the user's or Sotto's, owes it its state whatever the provider
     // reports of it afterwards: Muse reports no compaction of its own (#1189). Here, once control has let it through.
     if (command.type === 'compact-thread' && command.threadId === this.record().current?.target.threadId) this.stateOwed = true
-    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) this.pendingPromptTurns.set(command.commandId, {
-      watcher: this.record().current!.target, messageId: command.messageId,
-    })
+    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) {
+      this.sendsToWatcher += 1
+      this.pendingPromptTurns.set(command.commandId, { watcher: this.record().current!.target, messageId: command.messageId })
+    }
     if (origin?.operationId) {
       this.options.control.mutateWatcher(record => {
         const operation = record.operations.find(item => item.id === origin.operationId)!
