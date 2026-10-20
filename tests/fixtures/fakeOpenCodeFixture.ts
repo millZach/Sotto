@@ -53,7 +53,7 @@ export async function opencodeFixture(root?: string, requestTimeoutMs = 3000, se
     // A server may be writing the file as it is read; a torn read counts as not there yet, and the caller polls again.
     try { return text ? Object.values((JSON.parse(text) as { sessions: Record<string, { id: string; title?: string; metadata?: unknown }> }).sessions) : [] } catch { return [] }
   }
-  return { host: adapter, adapter, root, events, projectId: 'project', modelId: 'opencode/fixture-model', realId, script, scriptAlso, sideCalls, action, holder, processes, nativeSessions, running, restartStatus: 'idle' as const, skips: opencodeFixtureSkips,
+  return { host: adapter, adapter, root, events, providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', realId, script, scriptAlso, sideCalls, action, holder, processes, nativeSessions, running, restartStatus: 'idle' as const, skips: opencodeFixtureSkips,
     // Side writing goes to the thread's own server, on the stateless generation route (ADR-0026, ADR-0087).
     sideWriting: {
       answer: (text: string) => scriptAlso({ generate: { text } }),

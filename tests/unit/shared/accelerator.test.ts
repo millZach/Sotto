@@ -36,7 +36,7 @@ describe('formatAccelerator on win32', () => {
   })
 
   it.each(styles)('leaves every other canonical token untouched in the %s style', (style) => {
-    expect(formatAccelerator('Super+Shift+Space', 'win32', style)).toBe('Super+Shift+Space')
+    expect(formatAccelerator('Super+Shift+Space', 'win32', style)).toBe('Win+Shift+Space')
     expect(formatAccelerator('Alt+Shift+A', 'win32', style)).toBe('Alt+Shift+A')
     expect(formatAccelerator('Shift+Alt+F5', 'win32', style)).toBe('Shift+Alt+F5')
   })
@@ -185,6 +185,26 @@ describe('formatAccelerator on darwin', () => {
     for (const style of styles) {
       expect(parseAccelerator(formatAccelerator(accelerator, 'darwin', style), 'darwin')).toBe(accelerator)
     }
+  })
+})
+
+describe('Fn and Win', () => {
+  it.each(styles)('shows Fn as Fn on darwin in the %s style', (style) => {
+    expect(formatAccelerator('Fn', 'darwin', style)).toBe('Fn')
+    expect(formatAccelerator('Fn+Shift+Space', 'darwin', style)).toBe(style === 'display' ? 'Fn+⇧+Space' : 'Fn+Shift+Space')
+  })
+
+  it('accepts the Fn token on darwin only', () => {
+    expect(parseAccelerator('fn+shift+space', 'darwin')).toBe('Fn+Shift+Space')
+    expect(parseAccelerator('fn+shift+space', 'win32')).toBeNull()
+  })
+
+  it('keeps Super as Super on Linux', () => {
+    expect(formatAccelerator('Super+Shift+Space', 'linux', 'display')).toBe('Super+Shift+Space')
+  })
+
+  it('names Escape', () => {
+    expect(parseAccelerator('ctrl+esc', 'win32')).toBe('CommandOrControl+Escape')
   })
 })
 

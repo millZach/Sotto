@@ -64,6 +64,15 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  DICTATION_SHORTCUTS_REPLACE,
+  DICTATION_SHORTCUTS_SUSPEND,
+  DICTATION_KEYS_RECORD,
+  DICTATION_KEYS_RECORD_CANCEL,
+  DICTATION_KEYS_HELD,
+  DICTATION_KEYS_TAKEN,
+  KEY_LISTENER_PERMISSION_GET,
+  KEY_LISTENER_PERMISSION_REQUEST,
+  KEY_LISTENER_PERMISSION_CHANGED,
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
@@ -146,10 +155,24 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
     .object({
       ok: z.literal(false),
       reason: z.enum(['conflict', 'invalid', 'unavailable']),
+      message: z.string().max(8000).optional(),
     })
     .strict(),
 ])
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
+const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4) }).strict()
+const dictationShortcutsResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true) }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['conflict', 'invalid', 'unavailable']), chord: z.string().max(64).optional(), message: z.string().max(8000).optional() }).strict(),
+])
+const keyRecordResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('recorded'), chord: z.string().min(1).max(64) }).strict(),
+  z.object({ kind: z.literal('cancelled') }).strict(),
+  z.object({ kind: z.literal('unsupported-key') }).strict(),
+  z.object({ kind: z.literal('unavailable') }).strict(),
+])
+const keyListenerPermissionSchema = z.enum(['granted', 'denied', 'not-needed', 'unsupported'])
+const heldKeysSchema = z.array(z.string().min(1).max(16)).max(8)
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
 const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'clipboard-unavailable', 'empty']), unavailableSchema])
@@ -457,6 +480,17 @@ export function createSottoBridge(
     getHotkey: () => invokeParsed(renderer, HOTKEY_GET, z.string().nullable()),
     replaceHotkey: (accelerator) =>
       invokeParsed(renderer, HOTKEY_REPLACE, hotkeyResultSchema, accelerator),
+    replaceDictationShortcuts: (change) =>
+      invokeParsed(renderer, DICTATION_SHORTCUTS_REPLACE, dictationShortcutsResultSchema, dictationShortcutsChangeSchema.parse(change)),
+    suspendDictationShortcuts: (suspended) => invokeParsed(renderer, DICTATION_SHORTCUTS_SUSPEND, commandResultSchema, z.boolean().parse(suspended)),
+    recordDictationKeys: () => invokeParsed(renderer, DICTATION_KEYS_RECORD, keyRecordResultSchema),
+    cancelDictationKeyRecord: () => invokeParsed(renderer, DICTATION_KEYS_RECORD_CANCEL, commandResultSchema),
+    onDictationKeysHeld: listener => subscribe(renderer, DICTATION_KEYS_HELD, heldKeysSchema, listener),
+    // Linux only: Sotto's Hyprland bindings stand down while Settings records keys.
+    ...(platform === 'linux' ? { onDictationKeysTaken: (listener: (role: 'press' | 'hold') => void) => subscribe(renderer, DICTATION_KEYS_TAKEN, z.enum(['press', 'hold']), listener) } : {}),
+    getKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_GET, keyListenerPermissionSchema),
+    requestKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_REQUEST, keyListenerPermissionSchema),
+    onKeyListenerPermission: listener => subscribe(renderer, KEY_LISTENER_PERMISSION_CHANGED, keyListenerPermissionSchema, listener),
 
     requestDictation: (command) =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, command),

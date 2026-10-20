@@ -18,8 +18,9 @@ export function watcherRequestNote(requestId: string, hostId: string, compacted 
 export const WATCHER_COMPACTED_NOTE = 'This conversation is new or was compacted. Before anything else, call read_state for the threads you watch and what each waits on, and the decisions, rules and issues you kept.'
 
 /**
- * The note as one bracketed line after the user's words, for Grok Build alone: its prompt has no other model-visible
- * channel. The snapshot below takes this exact line off again, so no one is shown it.
+ * The note as one bracketed line after the user's words, for Grok Build, whose prompt has no other model-visible channel,
+ * and for a steer that opens a request of its own, since a steer has none on any provider (#1188). The snapshot below
+ * takes this exact line off again, so no one is shown it.
  */
 export const watcherRequestLine = (note: string): string => `\n\n[${note}]`
 
@@ -32,9 +33,9 @@ const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, 
 const PROJECT = '[^\\s,\\[\\]]+'
 
 /**
- * A Watcher message as the user typed it. Sotto put a line after the user's words in two cases only, both naming the
+ * A Watcher message as the user typed it. Sotto put a line after the user's words in these cases only, each naming the
  * message's own request: the routing footer main appended before the request note existed (which also listed project
- * IDs), and Grok Build's request line. Only that exact line, for that request, comes off; any other text, including a
+ * IDs), and the request line of a Grok Build send or of a steer that opened a request. Only that exact line, for that request, comes off; any other text, including a
  * note or footer the user typed themselves, stays.
  */
 export function watcherTextAsTyped(text: string, request: WatcherMessageRequest): string {
