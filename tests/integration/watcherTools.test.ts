@@ -21,6 +21,9 @@ import { initializeGitRepository } from '../fixtures/gitRepository'
 import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
 import { FollowupStore } from '../../src/main/agents/followups'
 
+/** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
+const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
+
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 async function fixture(history = true) {
@@ -29,7 +32,7 @@ async function fixture(history = true) {
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
   let limit = 4
-  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control,
+  const service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control,
     historyEnabled: () => history, limit: () => limit })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
@@ -117,6 +120,7 @@ it('lists host-setup jobs as protected and readable while refusing their mutatio
   const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
   const unread = f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread
   expect(await f.call('list_threads', {})).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
+  expect(await f.call('list_threads', { detail: 'full' })).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
   expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok', messages: [{ text: 'Synthetic host setup progress' }] })
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   for (const name of ['send_to_thread', 'stop_thread', 'settle_thread'] as const) {
@@ -486,7 +490,7 @@ it('detects a Sotto user instruction sent while the Watcher service was dormant'
   f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.control.watcherSnapshot().threads.find(item => item.id === first.target.threadId)!.lastUserMessageId).not.toBe(baseline)
-  const recovered = new WatcherService({ directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true, limit: () => 4 })
+  const recovered = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true, limit: () => 4 })
   cleanups.push(async () => { recovered.close() })
   await recovered.recover()
   expect(recovered.state().recoveryNotice).toBeNull()
@@ -1057,7 +1061,7 @@ it('starts Watcher’s news afresh after a restart: wake-ups an earlier build sa
     { ...item, status: 'uncertain', commandId: randomUUID(), messageId: randomUUID(), text: watcherNewsText(saved.news![0] as Parameters<typeof watcherNewsText>[0]) },
     { ...item, id: randomUUID(), draftId: randomUUID(), news: [{ ...saved.news![0], events: [finish] }] }])
   await writeFile(path, JSON.stringify(file))
-  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true, limit: () => 4 })
+  const restored = f.create(), service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true, limit: () => 4 })
   f.workspace.host.useWatcherTools(new WatcherToolServer(service))
   cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
   // They leave the queue only once their news is saved as untold, so a crash in between leaves them to be observed afresh.
@@ -1177,10 +1181,10 @@ it('keeps the roster readable after more than one hundred requests address a wor
           ...(index === 99 ? { takeover: { reason: 'user-send', at: original.createdAt } } : {}) })) })
     }
   })
-  const result = await f.call('list_threads', { includeSettled: true })
+  const result = await f.call('list_threads', { includeSettled: true, detail: 'full' })
   expect(result.status).toBe('ok')
   if (result.status !== 'ok' || !('rows' in result)) throw new Error('roster refused')
-  const row = result.rows.find(item => item.target.threadId === first.target.threadId)!
+  const row = result.rows.find(item => item.target.threadId === first.target.threadId)! as Extract<(typeof result.rows)[number], { participation: unknown }>
   expect(row.participation).toHaveLength(100)
   expect(row.participation.at(-1)).toMatchObject({ requestId: latestRequestId, state: 'taken-over', takeover: { reason: 'user-send' } })
   expect(f.control.watcherRecord().requests).toHaveLength(101)
@@ -1548,7 +1552,7 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!, news = waitingNews(f)
   const ids = f.control.watcherRecord().wakeEventIds
   f.service.close()
-  const restarted = new WatcherService({ directory: f.root, control: f.control, host: f.workspace.host,
+  const restarted = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: f.control, host: f.workspace.host,
     historyEnabled: () => true, limit: () => 4 })
   cleanups.push(async () => restarted.close())
   await restarted.recover(); await restarted.wakes.drained()

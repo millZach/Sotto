@@ -108,6 +108,8 @@ mac:
       to: LICENSES.chromium.html
     - from: resources/tray
       to: tray
+    - from: resources/dock
+      to: dock
 
 # Default layout already gives the app plus an /Applications link.
 dmg:

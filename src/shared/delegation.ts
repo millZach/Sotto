@@ -54,7 +54,9 @@ export const cancelDelegationInputSchema = z.object({ delegation: z.uuid().descr
 
 export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST',
-  'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING'])
+  'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING',
+  // The delegated thread's own queue holds its next prompt until the user resumes, clears or checks it there (October 19, 2026).
+  'QUEUE_HELD'])
 export type DelegationRefusalCode = z.infer<typeof delegationRefusalCodeSchema>
 /**
  * A refusal, and the delegation it is recorded as when the call was a delegation main refused under its rules: the
@@ -67,7 +69,7 @@ export interface DelegationRefusal { readonly status: 'refused'; readonly code: 
  * refuses without one, since no delegation was asked for that the rules turned down.
  */
 export const RECORDED_REFUSALS: ReadonlySet<DelegationRefusalCode> = new Set(['NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
-  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD'])
+  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD', 'QUEUE_HELD'])
 
 /**
  * Where a delegation stands (CONTEXT.md, Outcome): Watcher's outcomes (ADR-0073), and `refused`, a delegation main
@@ -102,8 +104,9 @@ export interface DelegationRead {
 }
 
 /**
- * A delegation's news as a waiting wake-up keeps it (ADR-0081 decision 7): identities only, never the delegated
- * thread's words, which travel only when the delegating thread asks with `read_delegation`.
+ * A delegation's news as a waiting wake-up keeps it (ADR-0081 decision 7): identities only, never the delegated thread's
+ * words. Since October 19, 2026 an answered delegation's reply goes with the news as it is sent, read from delegation's
+ * own record then (`delegationNewsText`), so the queue still holds none of it.
  */
 export const DELEGATION_NEWS_MAX = 50
 export const delegationNewsSchema = z.object({
