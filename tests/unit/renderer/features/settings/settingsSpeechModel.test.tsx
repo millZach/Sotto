@@ -121,6 +121,26 @@ describe('Settings → Transcription speech model', () => {
       expect(onChooseSpeechModel).not.toHaveBeenCalled()
     })
 
+    it('opens the list on the chosen model, so a click on the one moved to chooses it', async () => {
+      const onChooseSpeechModel = await renderPicker()
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      fireEvent.mouseDown(picker())
+      expect(picker()).toHaveValue('')
+      await userEvent.selectOptions(picker(), 'Parakeet Ultra, 671 MB')
+      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
+    })
+
+    it('goes back to the chosen model when a key opens the list', async () => {
+      await renderPicker()
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      expect(fireEvent.keyDown(picker(), { key: ' ' })).toBe(true)
+      expect(picker()).toHaveValue('')
+      fireEvent.keyDown(picker(), { key: 'ArrowDown' })
+      expect(fireEvent.keyDown(picker(), { key: 'ArrowDown', altKey: true })).toBe(true)
+      expect(picker()).toHaveValue('')
+    })
+
     it('still chooses with a click in the open list', async () => {
       const onChooseSpeechModel = await renderPicker()
       await userEvent.selectOptions(picker(), 'Parakeet v2, 661 MB')
@@ -128,12 +148,17 @@ describe('Settings → Transcription speech model', () => {
     })
   })
 
-  it('leaves the keys to the menu macOS opens, where only Enter or a click chooses', async () => {
+  it('leaves the arrows to the menu macOS opens, and still keeps typed letters from choosing', async () => {
     const onChooseSpeechModel = vi.fn()
     render(<SettingsView {...baseProps({ platform: 'darwin', speechModels: DOWNLOADS, onChooseSpeechModel, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: null } })} />)
     await selectCategory('Transcription')
     expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(true)
+    expect(picker()).toHaveValue('')
     expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(true)
+    expect(fireEvent.keyDown(picker(), { key: 'p' })).toBe(false)
+    expect(picker()).toHaveValue(PARAKEET_V3.id)
     expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(false)
+    expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_V3.id)
   })
 })

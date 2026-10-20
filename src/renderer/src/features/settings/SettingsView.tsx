@@ -721,11 +721,13 @@ const PICKER_STEPS: Readonly<Record<string, (index: number, last: number) => num
  * this computer, then Sotto's models to download, then the chosen one's
  * statement and where it stands.
  *
- * On Windows and Linux a closed list changes its value, and says so, at every
- * arrow key or typed letter, and a choice can start a 650 MB download. So
- * there the keys only move to a model, and Enter, or a click in the open list,
- * chooses it; leaving the list goes back to the chosen one. macOS opens its own
- * menu on the arrows, where only Enter or a click chooses, so it keeps it.
+ * A closed list changes its value, and says so, at every typed letter, and on
+ * Windows and Linux at every arrow key too, and a choice can start a 650 MB
+ * download. So those keys only move to a model here, and Enter, or a click in
+ * the open list, chooses it; leaving the list goes back to the chosen one.
+ * macOS opens its own menu on the arrows, where only Enter or a click chooses,
+ * so the Mac keeps its arrows. Opening the list, by pointer or key, first goes
+ * back to the chosen model, so a click on the one moved to is a change.
  */
 function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry, platform }: {
   readonly models: readonly SpeechModelOption[] | null
@@ -748,7 +750,12 @@ function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry,
     if (id !== '' && id !== chosen?.id) onChoose?.(id)
   }
   const onKeyDown = (event: React.KeyboardEvent<HTMLSelectElement>): void => {
-    if (platform === 'darwin' || event.altKey || event.ctrlKey || event.metaKey) return
+    if (event.ctrlKey || event.metaKey) return
+    // These open the list; it opens on the chosen model, so choosing the one moved to is a change.
+    if (event.altKey || event.key === ' ' || event.key === 'F4' || (platform === 'darwin' && event.key.startsWith('Arrow'))) {
+      setMovedTo(null)
+      return
+    }
     if (event.key === 'Enter') {
       if (moved === null) return
       event.preventDefault()
@@ -763,7 +770,7 @@ function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry,
     }
     const index = options.findIndex(model => model.id === (moved ?? chosen)?.id)
     const last = options.length - 1
-    let next: number | undefined = PICKER_STEPS[event.key]?.(index, last)
+    let next: number | undefined = platform === 'darwin' ? undefined : PICKER_STEPS[event.key]?.(index, last)
     if (next === undefined && event.key.length === 1 && event.key !== ' ') {
       // Typing a letter goes to the next model whose name starts with it, as the list itself would.
       const letter = event.key.toLocaleLowerCase()
@@ -787,6 +794,7 @@ function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry,
         disabled={models === null || onChoose === undefined}
         onKeyDown={onKeyDown}
         onBlur={() => setMovedTo(null)}
+        onMouseDown={() => setMovedTo(null)}
         onChange={event => choose(event.currentTarget.value)}
       >
         {chosen === null ? <option value="" disabled>{models === null ? 'Looking for models…' : 'Choose a model'}</option> : null}

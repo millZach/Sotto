@@ -26,7 +26,7 @@ Moondream publishes Parakeet Ultra only as weights in Hugging Face's layout (`mo
 
 **6. A Mac is not offered a download of a model FluidAudio already keeps here.** When FluidAudio's folder holds a model, the picker and setup leave out Sotto's download of the same model, so the user never fetches 650 MB of a model they have. If Sotto's copy is already downloaded, or is the current choice, both are listed; the Core ML copies carry "(Core ML)" in their names so the two never read the same.
 
-**7. A download starts only on a deliberate choice.** Setup's buttons choose on a press. On Windows and Linux, a closed list changes its value at every arrow key or typed letter and fires a change each time, so the Settings picker takes those keys itself: they move to a model and say "Press Enter to download Parakeet Ultra, 671 MB, and switch dictation to it." Enter, or a click in the open list, chooses it. Escape or leaving the list goes back to the chosen model. macOS opens its own menu on the arrows, where only Enter or a click chooses, so the Mac keeps it.
+**7. A download starts only on a deliberate choice.** Setup's buttons choose on a press. A closed list changes its value at every typed letter, and on Windows and Linux at every arrow key too, and fires a change each time, so the Settings picker takes those keys itself: they move to a model and say "Press Enter to download Parakeet Ultra, 671 MB, and switch dictation to it." Enter, or a click in the open list, chooses it. Escape or leaving the list goes back to the chosen model, and so does opening the list, so a click on the model moved to still chooses it. macOS opens its own menu on the arrows, where only Enter or a click chooses, so the Mac keeps its arrows.
 
 ## Considered options
 
