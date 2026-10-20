@@ -72,8 +72,12 @@ export function watcherSlimRow(row: FullRow, watched: boolean) {
   const said = summariesByKey(row.evidence)
   const open = addressShared(row.pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
     .map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
+  // Why it needs the user or is not watched: its newest turn's failure, and its newest participation's takeover or stop.
+  const turnFailed = row.evidence.some(fact => fact.source === 'native-turn' && fact.fact === 'turn-failed'), latest = row.participation.at(-1)
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
+    ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
+    ...latest?.automationStopped ? { automationStopped: true as const } : {},
     ...row.protected ? { protected: true as const } : {}, pullRequests: open }
 }
 
@@ -88,11 +92,14 @@ export function watcherSlimRead(name: WatcherToolName, input: unknown, result: u
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))
-    return { ...result, rows: asked.detail === 'full' ? rows : rows.map(row => watcherSlimRow(row, watched(row.target))) }
+    // A paired host's page is filtered here, so its counts are counted again from what is left.
+    const counts = asked.watchedOnly ? Object.fromEntries(Object.keys(result.counts as Record<string, number>).map(group => [group, rows.filter(row => row.group === group).length])) : result.counts
+    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target) })) : rows.map(row => watcherSlimRow(row, watched(row.target))) }
   }
   if (name === 'read_thread') {
     const asked = input as WatcherToolInput<'read_thread'>, evidence = result.evidence as WatcherEvidence[]
-    return asked.evidence === 'full' ? result : { ...result, evidence: [], pullRequests: watcherPullRequestSummaries(evidence) }
+    // Only the pull request facts are summed up; the thread's own facts, a failed turn, a takeover or a receipt, are few and stay.
+    return asked.evidence === 'full' ? result : { ...result, evidence: evidence.filter(fact => fact.source !== 'github'), pullRequests: watcherPullRequestSummaries(evidence) }
   }
   if (name === 'list_projects') {
     const asked = input as WatcherToolInput<'list_projects'>, query = asked.query?.toLowerCase()

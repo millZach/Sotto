@@ -112,7 +112,9 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   group: watcherGroupSchema, waitsOn: z.array(pending).max(100), branch: z.string().max(512).nullable(),
   workingCopy: workingCopy.nullable(), pullRequests: z.array(pr).max(50), evidence: z.array(watcherEvidenceSchema).max(100),
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
-  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean() }).strict()
+  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean(),
+  // The desktop's alone (#1191): whether Watcher watches the thread, as a slim row says. A paired host never sends it.
+  watched: z.boolean().optional() }).strict()
 /**
  * A pull request as a slim read gives it (#1191): its number, or its address when that has none, and what it says now,
  * instead of every evidence fact. A fact GitHub has not been read for is left out rather than guessed, and approval,
@@ -125,6 +127,9 @@ export type WatcherPullRequestSummary = z.infer<typeof watcherPullRequestSummary
 /** A roster row in list_threads' slim detail, its default (#1191): who it is, where it stands and what it waits on. */
 const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId, status: z.enum(['idle', 'running', 'error']),
   group: watcherGroupSchema, waitsOn: z.array(pending).max(100), watched: z.boolean(), standingWatchId: z.uuid().optional(), connected: z.boolean(),
+  // Why it needs the user or is not watched, said only when true: its newest turn failed, its user took it over, or its
+  // automation was stopped.
+  turnFailed: z.literal(true).optional(), takenOver: z.literal(true).optional(), automationStopped: z.literal(true).optional(),
   protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
 /** How much list_threads and read_thread say of each thread's evidence (#1191). */
 export const watcherDetailSchema = z.enum(['slim', 'full'])

@@ -58,7 +58,7 @@ it('gives a slim roster by default, a full one when asked, and only the watched 
   expect(slim.rows[1]).toEqual({ target: target('thread-1'), title: 'Synthetic thread 1', projectId: 'project', status: 'idle', group: 'Ready for review', waitsOn: [],
     watched: true, connected: true, pullRequests: [
       { number: 1010, state: 'open', checks: 'passed' }, { number: 1011, state: 'open', checks: 'passed' }] })
-  expect(watcherSlimRead('list_threads', { detail: 'full' }, full, watched)).toEqual(full)
+  expect(watcherSlimRead('list_threads', { detail: 'full' }, full, watched)).toEqual({ ...full, rows: full.rows.map(row => ({ ...row, watched: watched(row.target) })) })
   expect((watcherSlimRead('list_threads', { watchedOnly: true }, full, watched) as typeof full).rows.map(row => row.target.threadId)).toEqual(['thread-1'])
   const refused = { status: 'refused', code: 'HOST_DISCONNECTED', message: 'Reconnect.', retryable: true }
   expect(watcherSlimRead('list_threads', {}, refused, watched)).toBe(refused)
@@ -116,4 +116,39 @@ it('keeps the address of pull requests that share a number, so Watcher can tell 
   row.evidence = [...facts(api, 'failed'), ...facts(ui, 'passed')]
   const slim = watcherSlimRead('list_threads', {}, full, () => true) as typeof full
   expect(slim.rows[0]).toMatchObject({ pullRequests: [{ number: 42, url: api, checks: 'failed' }, { number: 42, url: ui, checks: 'passed' }] })
+})
+
+it('says in a slim row why a thread needs the user or is not watched, and carries what it waits on', () => {
+  const full = roster(3, 1)
+  const [failed, takenOver, quiet] = full.rows as Extract<FullRows[number], { evidence: unknown }>[]
+  failed!.evidence.push({ id: randomUUID(), target: failed!.target, source: 'native-turn', observedAt: at, freshness: 'fresh', availability: 'available', turnId: 'turn-1',
+    fact: 'turn-failed', failureCategory: 'provider-turn-failed' })
+  failed!.waitsOn = [{ id: 'card', kind: 'permission', label: 'Open to answer permission', openTarget: failed!.target }]
+  takenOver!.participation = [{ requestId: randomUUID(), startedBy: 'watcher', generation: 0, state: 'taken-over', takeover: { reason: 'user-send', at }, automationStopped: true }]
+  quiet!.connected = false
+  const slim = watcherSlimRead('list_threads', {}, full, item => item.threadId === 'thread-0') as typeof full
+  expect(watcherToolSchemas.list_threads.output.parse(slim)).toBeTruthy()
+  expect(slim.rows[0]).toMatchObject({ watched: true, turnFailed: true, waitsOn: [{ id: 'card', kind: 'permission' }] })
+  expect(slim.rows[1]).toMatchObject({ watched: false, takenOver: true, automationStopped: true })
+  expect(slim.rows[2]).toMatchObject({ watched: false, connected: false })
+  expect(slim.rows[2]).not.toHaveProperty('turnFailed')
+  // A full row says whether Watcher watches the thread too.
+  const whole = watcherSlimRead('list_threads', { detail: 'full' }, full, item => item.threadId === 'thread-0') as typeof full
+  expect(whole.rows.map(row => (row as { watched?: boolean }).watched)).toEqual([true, false, false])
+  expect(watcherToolSchemas.list_threads.output.parse(whole)).toBeTruthy()
+})
+
+it('counts a watched-only page again from the rows left, as a paired host counted all of them', () => {
+  const full = roster(3, 0)
+  const only = watcherSlimRead('list_threads', { watchedOnly: true }, full, item => item.threadId === 'thread-2') as typeof full
+  expect(only.rows).toHaveLength(1)
+  expect(only.counts['Ready for review']).toBe(1)
+})
+
+it('keeps a read’s own facts, a failed turn or a takeover, and sums up only its pull request facts', () => {
+  const failure = { id: randomUUID(), target: target('a'), source: 'native-turn' as const, observedAt: at, freshness: 'fresh' as const, availability: 'available' as const,
+    turnId: 'turn-1', fact: 'turn-failed' as const, failureCategory: 'provider-turn-failed' as const }
+  const read = { status: 'ok', target: target('a'), messages: [], waitsOn: [], activities: [], evidence: [...prFacts('a', 7, 'failed'), failure], historyEpoch: 'epoch',
+    firstPosition: null, lastPosition: null, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at }
+  expect(watcherSlimRead('read_thread', {}, read, () => false)).toMatchObject({ evidence: [failure], pullRequests: [{ number: 7, checks: 'failed' }] })
 })

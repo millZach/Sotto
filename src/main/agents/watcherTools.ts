@@ -10,7 +10,7 @@ const descriptions: Record<WatcherToolName, string> = {
   watch_thread: 'Keep watching and managing a thread until the user stops watching. This does not send a prompt or answer a card.',
   unwatch_thread: 'Stop watching a thread and fence automatic messages for its standing watch. Does not interrupt the user\'s turn.',
   list_threads: 'List worker threads and their state using Sotto identities: each row gives the thread’s title, status, group, what it waits on, whether you watch it and its open pull requests. watchedOnly: true lists only the threads you watch. detail: "full" adds every evidence fact, model and participation; ask for it only when you need those. Does not mark anything read by the user.',
-  read_thread: 'Read a bounded window of a worker thread. Its pull requests come as one summary each; evidence: "full" gives every evidence fact. Questions and permissions must be answered by the user on that thread.',
+  read_thread: 'Read a bounded window of a worker thread. Its pull requests come as one summary each, beside its own facts such as a failed turn or a takeover; evidence: "full" gives every pull request fact as well. Questions and permissions must be answered by the user on that thread.',
   start_thread: 'Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt.',
   send_to_thread: 'Send now, queue or steer explicitly under an active Watcher request. Cannot answer pending questions or permissions.',
   stop_thread: 'Request interrupt of one eligible worker under the active Watcher request. Does not delete or reclaim anything.',
