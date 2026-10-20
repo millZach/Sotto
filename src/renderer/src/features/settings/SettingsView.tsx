@@ -1,5 +1,7 @@
 import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
+import { DictationShortcuts } from './DictationShortcuts'
+import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
@@ -7,12 +9,13 @@ import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, GitBranch, Mic,
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
   UPDATE_CHECK_PRIVACY_NOTICE,
+  type DictationShortcutsChange,
+  type DictationShortcutsResult,
   type HotkeyChangeResult,
   type OpenRouterKeyCheck,
   type StartupState,
   type UpdateStatus,
 } from '../../../../shared/contracts'
-import { formatAccelerator, parseAccelerator } from '../../../../shared/accelerator'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type {
   AppSettings,
@@ -38,7 +41,6 @@ import { Toggle } from '../../components/Toggle'
 import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
-import { OmarchySetupPanel } from '../omarchy/OmarchySetup'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
@@ -76,6 +78,8 @@ export interface SettingsViewProps {
   readonly onNotice?: (message: string | null) => void
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onReplaceHotkey: (accelerator: string) => Promise<HotkeyChangeResult>
+  /** Owl `dictation-hold-shortcuts`: replaces every dictation shortcut at once. */
+  readonly onReplaceDictationShortcuts?: ((change: DictationShortcutsChange) => Promise<DictationShortcutsResult>) | undefined
   readonly onSetStartup: (enabled: boolean) => Promise<StartupState | null>
   readonly onResetSettings: () => Promise<boolean>
   readonly onClearHistory: () => Promise<boolean>
@@ -152,12 +156,6 @@ function applyMotionPreference(reducedMotion: ReducedMotion): void {
   else document.documentElement.dataset.reducedMotion = 'on'
 }
 
-// The editing form is the one the shortcut input holds, so canonicalization
-// round-trips exactly what the user can type.
-function canonicalAccelerator(value: string, platform: SottoPlatform): string {
-  return parseAccelerator(formatAccelerator(value, platform, 'editing'), platform) ?? value.trim()
-}
-
 export function SettingsView({
   settings,
   openRouterKeyMigrationFailed = false,
@@ -169,6 +167,7 @@ export function SettingsView({
   onUpdateSettings,
   onNotice,
   onReplaceHotkey,
+  onReplaceDictationShortcuts,
   onSetStartup,
   onResetSettings,
   onClearHistory,
@@ -204,7 +203,6 @@ export function SettingsView({
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
   const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
-  const hotkeyDraft = useRevisionDraft(canonicalAccelerator(settings.hotkey, platform), formatAccelerator(settings.hotkey, platform, 'editing'))
   const pasteDelayDraft = useRevisionDraft(settings.pasteDelayMs, String(settings.pasteDelayMs), () => setPasteDelayError(undefined))
   const successDurationDraft = useRevisionDraft(settings.successDisplayMs, String(settings.successDisplayMs), () => setSuccessDurationError(undefined))
   const [dictionaryPasteCut, setDictionaryPasteCut] = useState(false)
@@ -399,25 +397,6 @@ export function SettingsView({
     }
   }
 
-  const saveHotkey = async (): Promise<void> => {
-    const candidate = parseAccelerator(hotkeyDraft.read(), platform)
-    if (candidate === null) {
-      hotkeyDraft.reset()
-      setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true })
-      return
-    }
-    const submission = hotkeyDraft.begin(candidate, true)
-    if (submission === null) return
-    const result = await onReplaceHotkey(candidate).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
-    const latest = hotkeyDraft.isLatest(submission)
-    hotkeyDraft.settle(submission, result.ok, true)
-    if (!latest) return
-    if (result.ok) setNotice({ text: 'Global shortcut updated.', error: false })
-    else {
-      setNotice({ text: result.reason === 'conflict' ? 'Another application is already using that shortcut. Your previous shortcut is still active.' : result.reason === 'invalid' ? 'That shortcut is not valid. Your previous shortcut is still active.' : 'The shortcut could not be updated. Your previous shortcut is still active.', error: true })
-    }
-  }
-
   const selectSection = (id: SettingsSectionId): void => {
     if (id !== 'settings-capture') stopMicrophoneTest()
     setActiveSection(id)
@@ -514,15 +493,9 @@ export function SettingsView({
                       {microphoneState === 'denied' ? <OpenSystemSettingsButton platform={platform} pane="microphone" /> : null}
                     </div>
                   </Field>
-                  <div className="settings-input-action">
-                    {platform === 'linux' ? <OmarchySetupPanel visible={activeSection === 'settings-capture'} /> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
-                      <input className="tt-input" value={hotkeyDraft.value} onBlur={() => void saveHotkey()} onChange={(event) => {
-                        const value = event.currentTarget.value
-                        hotkeyDraft.edit(value)
-                      }} />
-                    </Field>}
-
-                  </div>
+                  {platform === 'linux'
+                    ? <LinuxDictationShortcuts settings={settings} visible={activeSection === 'settings-capture'} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />
+                    : <DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />}
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>
                   <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="A short sound when recording starts and stops." />
                 </div>

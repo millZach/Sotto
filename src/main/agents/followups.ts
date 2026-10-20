@@ -429,6 +429,24 @@ export class FollowupStore {
       Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
     })
   }
+  /**
+   * Settles a wake-up that could not be sent and holds a resume note: the note leaves the queue rather than wait there for
+   * the user's review, so nothing the user sends that thread queues behind it (#1187). Other news folded with it stays,
+   * failed as any wake-up that could not be sent is, behind the thread's other items, so it holds none of them back. The
+   * thread is left as it was, not resumed.
+   */
+  dropFailedResume(id: string, word: WordWakeUp, error?: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(item => item.id === id)
+      if (!item) return false
+      const kept = (item.news ?? []).filter(news => !isRestartNews(news))
+      state.items = state.items.filter(candidate => candidate !== item)
+      if (!kept.length) return
+      Object.assign(item, { news: kept, text: word(kept), status: 'failed', error, updatedAt: new Date().toISOString() })
+      const last = state.items.findLastIndex(candidate => candidate.threadId === item.threadId)
+      state.items.splice(last + 1, 0, item)
+    })
+  }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)

@@ -91,6 +91,8 @@ async function packageMac() {
 checkPin()
 run(process.env.npm_execpath, ['run', 'assets:verify'])
 run(process.env.npm_execpath, ['run', 'build'])
+// The Mac app ships the key listener helper, which electron-builder copies from its build folder (ADR-0097).
+if (mac) run(resolve(root, 'scripts/build-key-listener.mjs'))
 run(resolve(root, 'scripts/write-build-provenance.mjs'))
 await readProvenance()
 checkPin()

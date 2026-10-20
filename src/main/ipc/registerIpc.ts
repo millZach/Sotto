@@ -25,6 +25,12 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  DICTATION_SHORTCUTS_REPLACE,
+  DICTATION_SHORTCUTS_SUSPEND,
+  DICTATION_KEYS_RECORD,
+  DICTATION_KEYS_RECORD_CANCEL,
+  KEY_LISTENER_PERMISSION_GET,
+  KEY_LISTENER_PERMISSION_REQUEST,
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
@@ -61,7 +67,11 @@ import {
   widgetSnapshotSchema,
   type CommandResult,
   type DictationCommand,
+  type DictationShortcutsChange,
+  type DictationShortcutsResult,
   type HotkeyChangeResult,
+  type KeyListenerPermission,
+  type KeyRecordResult,
   type OutputOutcome,
   type OutputDeliveryRequest,
   type OutputResult,
@@ -159,7 +169,7 @@ const looseSettingsPatchSchema = settingsSchema
   // so a payload naming it is refused rather than dropped (ADR-0053).
   // The speech model is chosen through SPEECH_MODEL_CHOOSE, which also loads it; a plain save would
   // change the setting without the model following, so a payload naming it is refused (ADR-0094).
-  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
+  .omit({ hotkey: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011). The retired glass and frost settings are
@@ -211,6 +221,11 @@ const hotkeySchema = z
   .min(1)
   .max(128)
   .refine((accelerator) => accelerator.toLowerCase() !== 'escape')
+// Mirrors the preload's schema for the same channel.
+const dictationShortcutsChangeSchema = z.object({
+  press: z.array(z.string().min(1).max(64)).min(1).max(4),
+  hold: z.array(z.string().min(1).max(64)).max(4),
+}).strict()
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -270,6 +285,16 @@ export interface StartupIpcService {
 export interface HotkeyIpcService {
   current(): string | null | Promise<string | null>
   replace(accelerator: string): HotkeyChangeResult | Promise<HotkeyChangeResult>
+}
+
+/** Every dictation shortcut beyond the single hotkey; suspend also covers the hotkey, so stable supplies it too. */
+export interface DictationShortcutsIpcService {
+  replace(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
+  suspend(suspended: boolean): void
+  record(): Promise<KeyRecordResult>
+  cancelRecord(): void
+  permission(): KeyListenerPermission
+  requestPermission(): Promise<KeyListenerPermission>
 }
 
 export interface AppIpcService {
@@ -338,6 +363,7 @@ export interface RegisterIpcDependencies {
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
   readonly hotkeys: HotkeyIpcService
+  readonly dictationShortcuts?: DictationShortcutsIpcService
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly openExternalLink?: (url: string) => Promise<void>
@@ -555,6 +581,25 @@ export function registerIpc(
     register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>
       dependencies.hotkeys.replace(accelerator),
     )
+    const shortcuts = dependencies.dictationShortcuts
+    register(DICTATION_SHORTCUTS_REPLACE, dictationShortcutsChangeSchema, 1, async (change): Promise<DictationShortcutsResult> =>
+      shortcuts === undefined ? UNAVAILABLE : shortcuts.replace(change))
+    register(DICTATION_SHORTCUTS_SUSPEND, z.boolean(), 1, async (suspended): Promise<CommandResult> => {
+      if (shortcuts === undefined) return UNAVAILABLE
+      shortcuts.suspend(suspended)
+      return OK
+    })
+    register(DICTATION_KEYS_RECORD, noPayloadSchema, 0, async (): Promise<KeyRecordResult> =>
+      shortcuts === undefined ? { kind: 'unavailable' } : shortcuts.record())
+    register(DICTATION_KEYS_RECORD_CANCEL, noPayloadSchema, 0, async (): Promise<CommandResult> => {
+      if (shortcuts === undefined) return UNAVAILABLE
+      shortcuts.cancelRecord()
+      return OK
+    })
+    register(KEY_LISTENER_PERMISSION_GET, noPayloadSchema, 0, async (): Promise<KeyListenerPermission> =>
+      shortcuts === undefined ? 'unsupported' : shortcuts.permission())
+    register(KEY_LISTENER_PERMISSION_REQUEST, noPayloadSchema, 0, async (): Promise<KeyListenerPermission> =>
+      shortcuts === undefined ? 'unsupported' : shortcuts.requestPermission())
 
     register(UPDATE_GET_STATUS, noPayloadSchema, 0, async () => {
       if (dependencies.updates === undefined) return UNAVAILABLE

@@ -56,6 +56,7 @@ export async function packageStable(platform, args = [], root = resolve(import.m
   await withStableManifestGuard(async () => {
     run(npm, ['run', 'assets:verify'])
     run(npm, ['run', 'build'])
+    if (platform === 'mac') run(resolve(root, 'scripts/build-key-listener.mjs'))
     run(resolve(root, 'scripts/write-build-provenance.mjs'))
     // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
     if (platform === 'mac') run(resolve(root, 'scripts/build-coreml-asr.mjs'))

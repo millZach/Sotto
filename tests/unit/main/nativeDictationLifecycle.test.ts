@@ -44,6 +44,22 @@ function createHarness(showWidgetWhenIdle = true) {
 }
 
 describe('NativeDictationLifecycle widget presence', () => {
+  it('hands a kept error to the native side, so a hold shortcut leaves the kept recording alone', async () => {
+    const syncEscape = vi.fn()
+    const lifecycle = new NativeDictationLifecycle({
+      delivery: { sendToWidget: vi.fn(async () => true) },
+      getTrayState: () => ({ dictating: false, autoPaste: true }),
+      updateTray: vi.fn(),
+      syncEscape,
+      showWidgetWhenIdle: () => true,
+      log: vi.fn(),
+    })
+
+    await lifecycle.publish(snapshot({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true } as Partial<WidgetSnapshot>))
+
+    expect(syncEscape).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', kept: true }))
+  })
+
   it('keeps the widget revealed for idle snapshots so the resting sliver stays visible', async () => {
     const { lifecycle, sendToWidget } = createHarness()
 

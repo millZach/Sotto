@@ -6,12 +6,13 @@ const PANE_URLS: Readonly<Record<SystemSettingsPane, string>> = Object.freeze({
   microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
   accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
   automation: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
+  'input-monitoring': 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
 })
 
 /**
  * Opens a macOS Privacy & Security pane, or returns null where there is none
  * to open. The pane is checked against the fixed list again here, so nothing
- * but these three URLs can reach `openExternal`.
+ * but these URLs can reach `openExternal`.
  */
 export function createSystemSettingsOpener(
   platform: SottoPlatform,

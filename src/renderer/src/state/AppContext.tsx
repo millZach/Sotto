@@ -12,6 +12,8 @@ import {
 
 import type {
   HotkeyChangeResult,
+  DictationShortcutsChange,
+  DictationShortcutsResult,
   OpenRouterKeyCheck,
   StartupState,
   SottoBridge,
@@ -142,6 +144,7 @@ export interface AppActions {
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
+  replaceDictationShortcuts(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
   setStartup(enabled: boolean): Promise<StartupState | null>
   listHistory(): Promise<boolean>
   searchHistory(query: string): Promise<boolean>
@@ -627,6 +630,16 @@ export function AppProvider({
       let result: HotkeyChangeResult = UNAVAILABLE
       await enqueueSettings(async () => {
         result = await bridge.replaceHotkey(accelerator)
+        if (!result.ok) throw new Error('HOTKEY_UPDATE_FAILED')
+        return bridge.getSettings()
+      }, 'HOTKEY_UPDATE_FAILED')
+      return result
+    },
+    replaceDictationShortcuts: async (change) => {
+      if (bridge?.replaceDictationShortcuts === undefined) return UNAVAILABLE
+      let result: DictationShortcutsResult = UNAVAILABLE
+      await enqueueSettings(async () => {
+        result = await bridge.replaceDictationShortcuts!(change)
         if (!result.ok) throw new Error('HOTKEY_UPDATE_FAILED')
         return bridge.getSettings()
       }, 'HOTKEY_UPDATE_FAILED')
