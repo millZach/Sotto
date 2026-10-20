@@ -42,16 +42,21 @@ export const OWL_SKY_STARS: readonly OwlSkyStar[] = [
   { at: { right: 87 }, top: 32.5, size: 1, tier: 3, accent: true },
 ]
 
+/** Where the tile ends and the open sky begins, in pixels from the tile's side of the sidebar. */
+const TILE_END = 40
+/** How far the toolbar reaches in from the sidebar's other end. */
+const TOOLBAR_WIDTH = 158
+
 /** The open sky between the tile and the toolbar: on macOS it closes on a narrow sidebar, and its stars go with it. */
-function inOpenSky({ at }: OwlSkyStar): boolean {
-  return 'between' in at || ('left' in at && at.left >= 40)
+function inOpenSky({ at }: Pick<OwlSkyStar, 'at'>): boolean {
+  return 'between' in at || ('left' in at && at.left >= TILE_END)
 }
 
 function place({ at, top, size }: OwlSkyStar): CSSProperties {
   // A star in the open sky past the tile keeps its share of that sky when the sky narrows (macOS, owlSky.css).
-  const across: CSSProperties = 'left' in at ? { left: at.left >= 40 ? `calc(var(--owl-sky-inset) + 40px + ${at.left - 40}px * var(--owl-open-sky-scale, 1))` : `calc(var(--owl-sky-inset) + ${at.left}px)` }
+  const across: CSSProperties = 'left' in at ? { left: inOpenSky({ at }) ? `calc(var(--owl-sky-inset) + ${TILE_END}px + ${at.left - TILE_END}px * var(--owl-open-sky-scale, 1))` : `calc(var(--owl-sky-inset) + ${at.left}px)` }
     : 'right' in at ? { right: `${at.right}px` }
-    : { left: `calc(var(--owl-sky-inset) + 40px + (100% - 198px - var(--owl-sky-inset)) * ${at.between})` }
+    : { left: `calc(var(--owl-sky-inset) + ${TILE_END}px + (100% - ${TILE_END + TOOLBAR_WIDTH}px - var(--owl-sky-inset)) * ${at.between})` }
   return { ...across, top: `${top}px`, ...{ '--owl-star-size': `${size}px` } as CSSProperties }
 }
 
@@ -76,7 +81,7 @@ const ROOM_MOVES = new Map<number, { readonly left: number; readonly top: number
 function roomLeft({ at, size }: OwlSkyStar): number {
   if ('left' in at) return at.left
   if ('right' in at) return ROOM_SKY_WIDTH - at.right - size
-  return 40 + (ROOM_SKY_WIDTH - 198) * at.between
+  return TILE_END + (ROOM_SKY_WIDTH - TILE_END - TOOLBAR_WIDTH) * at.between
 }
 
 /**
