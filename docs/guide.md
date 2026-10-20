@@ -999,6 +999,14 @@ In an Owl build, the newest reply of each finished turn offers **Fork from here*
 
 Codex and Claude Code make their own copy of the conversation up to that reply, and the new thread shows it with Sotto's note under the last reply it copied: **Forked from** the thread and at whose reply. Files aren't rewound: the new thread sees the folder as it is now. A Claude Code fork starts in its thread's own folder, so it offers no new worktree. Grok Build, Devin and Muse have no fork of their own, so their new thread starts from a handover of the conversation up to the reply, shown as Sotto's before your first message and sent with it, the way a continued Claude Code agent's thin handover is. Making a fork asks the model nothing; your next message is the first turn. On a paired host, the fork is made on that host.
 
+### Watcher's context and state
+
+Every message Watcher reads or sends reads its whole conversation again, so a long Watcher session costs more with each turn. In Owl, Sotto compacts Watcher's conversation once it passes 400k tokens, between turns: never while Watcher is working, answering a card, or has news or your messages waiting. Claude Code, Codex and Muse can compact; Grok Build can't, so a Grok Watcher keeps all of it.
+
+Watcher keeps what it must not lose through compaction: your pending decisions, the standing rules you gave it and the issues it filed. Sotto adds the threads Watcher watches and what each waits on. After a compaction, Watcher reads all of that back before anything else. With Keep local history off, Watcher's kept words stay in memory only.
+
+Press the owl in Watcher's header to see its context against the 400k point, **Compact context** to compact it now, and Watcher's state as it stands. The thin bar under the owl fills toward the point, and a dot shows when it is close. Escape closes the panel.
+
 ### Watcher permissions and standing watching
 
 In Owl, Watcher uses the ordinary thread permission modes its provider offers: Ask for approval, Allow edits, Auto and Full access. On Muse, whatever Muse asks reaches you: Watcher's session never lets Muse's own reviewer decide for you. Its first mode is Ask for approval, and later Watchers use your last Watcher choice. Changing that mode does not change ordinary new-thread defaults. Remembered permission-card answers such as Always allow remain unavailable; the user still answers every question and permission card.
