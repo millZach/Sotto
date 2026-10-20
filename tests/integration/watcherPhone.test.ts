@@ -283,7 +283,7 @@ it.each([
   expect(adapter.commands.filter(command => command.type === 'send' && command.text === original.text)).toHaveLength(1)
 })
 
-it('fences a phone direct send as takeover and binds Stop all previews to the exact user and ownership', async () => {
+it('holds Watcher behind a phone direct send and binds Stop all previews to the exact user and ownership', async () => {
   const f = await fixture(), peer = await f.pair(), other = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
@@ -292,12 +292,13 @@ it('fences a phone direct send as takeover and binds Stop all previews to the ex
   expect(await other.call('stolen', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(worker.threadId)
   expect(await peer.call('direct', { op: 'command', command: { type: 'manual-send', threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic direct user input' } })).toMatchObject({ ok: true })
-  expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('taken-over')
+  // The thread stays watched; while the user's own turn runs, Watcher may only steer it, and Stop all leaves it be.
+  expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('participating')
   const watch = f.watcher.state().standingWatches!.find(row => row.target.threadId === worker.threadId)!
   expect(f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)).toMatchObject({ watched: true, paused: true })
-  for (const delivery of ['now', 'queue', 'steer']) {
+  for (const delivery of ['now', 'queue']) {
     expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { requestId: watch.id, retryKey: randomUUID(),
-      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   }
   expect(await peer.call('changed', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(f.target.threadId); await peer.call('second-send', f.send(peer.paired.clientId)); const eligible = await f.start()

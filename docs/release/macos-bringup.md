@@ -17,6 +17,7 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 git clone https://github.com/millZach/Sotto.git && cd Sotto
 git checkout <branch-or-tag>
 npm ci
+node node_modules/electron/install.js   # Electron 43 no longer downloads itself during npm ci
 npm run assets:verify
 npm run lint && npm run typecheck && npm test
 npm run package:dir:mac

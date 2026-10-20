@@ -97,7 +97,7 @@
    fading out before the conversation. It is positioned and comes first in the pane, and the header, the needs-you line
    and the transcript are positioned after it, so they paint over it. */
 .watcher-room { --owl-sky-inset: 0px; }
-.watcher-room.threads-view--mac { --owl-sky-inset: 64px; }
+.watcher-room.threads-view--mac { --owl-sky-inset: calc(var(--mac-lights-room) - 14px); }
 .watcher-room__sky { position: absolute; top: 0; left: 0; width: calc(520px + var(--owl-sky-inset)); max-width: 100%; height: 104px; pointer-events: none;
   background: radial-gradient(130px 70px at calc(26px + var(--owl-sky-inset)) 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-room-night);
   mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
@@ -106,7 +106,8 @@
 
 /* ---------- Watcher's header ---------- */
 .watcher-head { padding-left: 14px; }
-.threads-view--mac .watcher-head { padding-left: calc(14px + var(--owl-sky-inset)); }
+/* A narrow pane sets its header's left padding to 14px (splitWorkspace.css); on macOS the traffic lights' room wins. */
+.threads-view.threads-view--mac .thread-pane .watcher-head { padding-left: calc(14px + var(--owl-sky-inset)); }
 .watcher-head__tile { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 6px; }
 .watcher-head h1 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* All threads, beside Watcher's name: it opens the Overview over the room. */
@@ -141,6 +142,28 @@
    heading stays for assistive technology. */
 @container thread-pane (width < 450px) {
   .watcher-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* macOS: Watcher's pane is always the room's left pane, so its header starts past the traffic lights' room, 88 pixels
+   in rather than 14, and gives way 74 pixels sooner (a container query cannot read --mac-lights-room, so these widths
+   follow its 88 pixels, with a few to spare for longer counts). Below 664 pixels All threads and Stop all keep their
+   icons and counts, and the tabs tighten. Below 520 pixels one row no longer holds the name, the tabs and the actions
+   beside the lights, so the tabs and the actions take a second row under them, starting at the pane's edge, and the
+   name stays. Focus still runs as the eye reads: the tile's row, then the tabs and the actions. */
+@container thread-pane (width < 664px) {
+  .threads-view--mac .watcher-head__list-text, .threads-view--mac .watcher-stop-all__text { display: none; }
+  .threads-view--mac .watcher-tabs { margin-left: 0; }
+  .threads-view--mac .watcher-tabs__tab, .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
+}
+@container thread-pane (width < 520px) {
+  .threads-view.threads-view--mac .thread-pane .watcher-head:has(.watcher-tabs) {
+    display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
+    column-gap: 10px; height: auto; padding-bottom: 6px; padding-left: 14px;
+  }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__title { display: contents; }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) .watcher-head__tile { margin: 0 0 0 var(--owl-sky-inset); }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) h1 { position: static; width: auto; height: auto; clip-path: none; }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) .watcher-tabs { grid-row: 2; grid-column: 1 / 5; justify-self: start; }
+  .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
 }
 
 .watcher-actions { position: relative; display: flex; }

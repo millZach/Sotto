@@ -147,7 +147,7 @@ struct WatcherSummary: Equatable, Sendable {
     let working: Bool
     let waiting: [ThreadRef]
     let watched: Set<String>
-    /// Watched threads where the user's own turn runs, so Watcher waits until it ends.
+    /// Watched threads where the user's own turn runs, which Watcher can only steer until it ends.
     let paused: Set<String>
     /// Watched threads under a standing watch, which lasts until the user stops it. The rest are watched for a Watcher
     /// request, which the user's own send there takes over.
@@ -337,7 +337,7 @@ enum WatcherWords {
     /// What Watcher last did with a watched thread, from its computer's own records and never from anyone's words: waiting
     /// while the user's own turn runs, its latest action and how that went, or how long it has watched with nothing sent.
     static func doing(_ thread: WatcherPage.WatchedThread, in page: WatcherPage) -> String? {
-        if thread.paused == true { return "You sent here yourself. Watcher waits until that turn ends." }
+        if thread.paused == true { return "You sent here yourself. Until that turn ends, Watcher can only steer it." }
         let rows = page.receiptGroups.flatMap(\.rows).filter { $0.target == thread.target }
         if let last = rows.max(by: { (Stamp.date($0.updatedAt) ?? .distantPast) < (Stamp.date($1.updatedAt) ?? .distantPast) }) {
             let at = clock(last.updatedAt).map { " at " + $0 } ?? ""
@@ -476,7 +476,7 @@ enum WatchedWords {
     /// What it says where Watcher keeps the thread watched until the user stops it, word for word as on the desktop, and
     /// while the user's own turn there runs.
     static let standing = "Watched by Watcher. It keeps this thread going and brings you its questions and permissions."
-    static let paused = "Watched by Watcher. It waits while your own turn here runs, then keeps this thread going."
+    static let paused = "Watched by Watcher. While your own turn here runs, it can only steer that turn."
     /// The words a row or card adds for VoiceOver after where the thread runs.
     static func spoken(_ watched: Bool) -> String { watched ? ", watched by Watcher" : "" }
 }

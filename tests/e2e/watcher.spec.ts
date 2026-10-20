@@ -43,6 +43,8 @@ const polishEvidence = evidenceDirectory('artifacts/watcher-room-polish')
 const answerEvidence = evidenceDirectory('artifacts/watcher-answer')
 /** Watcher's replies to news in place, their work in the reply's header (Zach's pick on October 19, 2026): captures for their note. */
 const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
+/** Watcher's header in the macOS layout, clear of the traffic lights in a narrow pane (#1214): captures for its note. */
+const macEvidence = evidenceDirectory('artifacts/macos-traffic-light-room')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -369,7 +371,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -378,10 +380,11 @@ test.describe("Watcher's room on the built app", () => {
     const polish = /^polish-/u
     const news = /^news-/u
     const answer = /^answer-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key))],
+    const mac = /^mac-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
       [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
-      [answerEvidence, [...recorded].filter(([key]) => answer.test(key))]] as const
+      [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -619,6 +622,88 @@ test.describe("Watcher's room on the built app", () => {
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toMatch(/footer-links$/)
       await expect(page.getByRole('region', { name: 'Footer links' })).toBeVisible()
     }))
+  })
+
+  test('in the macOS layout, Watcher’s header keeps its controls apart and clear of the traffic lights in a narrow pane', async () => {
+    // A Windows run has no traffic lights; the room's own macOS layout is what moves the header clear of them.
+    const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
+      const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
+      const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
+      // Shown, and not only to assistive technology (the name, below 450 pixels off macOS).
+      const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'), head.querySelector('.watcher-tabs'),
+        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const style = getComputedStyle(head)
+      return {
+        pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
+        head: { ...rect(head), right: head.getBoundingClientRect().right - parseFloat(style.paddingRight), height: head.getBoundingClientRect().height },
+        parts: parts.map(node => ({ name: named(node), ...rect(node) })),
+        // A label or count cut off by its own control.
+        clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+          .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
+      }
+    })
+    const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
+      a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
+    // The divider's Home key gives Watcher its 400-pixel minimum; each Arrow Right after it adds 5 per cent of the room.
+    const SPOTS = [[1280, 800, 0], [820, 560, 0], [1600, 1000, 1], [1600, 1000, 2], [1600, 1000, 3], [1600, 1000, 4]] as const
+    const result: Record<string, unknown> = {}
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+        await expect(beside(page)).toBeVisible()
+        for (const platform of ['win32', 'darwin'] as const) {
+          await page.locator('.watcher-room').evaluate((room, mac) => {
+            room.classList.toggle('threads-view--mac', mac)
+            // macOS draws its own traffic lights and has none of Sotto's window controls.
+            room.querySelector<HTMLElement>('.threads-view__winctl')?.style.setProperty('display', mac ? 'none' : '')
+          }, platform === 'darwin')
+          // Off macOS this checks the two narrowest panes, which this change leaves as they were.
+          for (const [width, height, steps] of platform === 'darwin' ? SPOTS : SPOTS.slice(0, 2)) {
+            await resizeContentWindow(launched, width, height)
+            await settle(page)
+            const divider = page.getByRole('separator', { name: 'Resize panes' })
+            await divider.focus()
+            await page.keyboard.press('Home')
+            for (let step = 0; step < steps; step += 1) await page.keyboard.press('ArrowRight')
+            await settle(page)
+            const reading = await read(page)
+            const where = `${platform}, ${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}`
+            if (steps === 0) expect(reading.pane, where).toBeLessThan(410)
+            for (const [index, part] of reading.parts.entries()) {
+              for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
+              expect.soft(part.right, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.right + 0.5)
+              expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
+            }
+            expect.soft(reading.clipped, where).toEqual([])
+            if (platform === 'darwin') {
+              // Nothing of the header's in the traffic lights' row where they are drawn, 16 to about 76 pixels in.
+              for (const part of reading.parts.filter(candidate => candidate.top < 38)) expect.soft(part.left, `${part.name} clear of the traffic lights, ${where}`).toBeGreaterThanOrEqual(84)
+            } else expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+            result[`mac-header-${platform}-${appearance}-${Math.round(reading.pane)}px-${width}x${height}`] = reading
+            if (platform === 'darwin') {
+              // The capture draws the traffic lights in where macOS 26 puts them (16 pixels in and down, about 60 across),
+              // so the picture shows the room they keep.
+              await page.evaluate(() => {
+                const lights = document.body.appendChild(document.createElement('div'))
+                lights.id = 'e2e-mac-lights'
+                lights.setAttribute('aria-hidden', 'true')
+                lights.style.cssText = 'position: fixed; top: 16px; left: 16px; z-index: 99999; display: flex; gap: 9px; pointer-events: none;'
+                for (const colour of ['#ff5f57', '#febc2e', '#28c840']) lights.appendChild(document.createElement('span')).style.cssText = `width: 14px; height: 14px; border-radius: 50%; background: ${colour};`
+              })
+              await captureInto(macEvidence, launched, `mac-header-${appearance}-${Math.round(reading.pane)}px-${width}x${height}.png`)
+              await page.evaluate(() => document.getElementById('e2e-mac-lights')?.remove())
+            }
+          }
+        }
+      })
+    })
+    recorded.set('mac-header', result)
   })
 
   test('the floating switch answers the keyboard, and Tab follows the eye through the room', async () => {

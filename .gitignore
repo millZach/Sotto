@@ -702,3 +702,10 @@ artifacts/watcher-news-turns/*
 !artifacts/watcher-news-turns/news-folded-dark-1280x800.png
 !artifacts/watcher-news-turns/news-open-dark-820x560.png
 !artifacts/watcher-news-turns/news-open-light-1280x800.png
+artifacts/macos-traffic-light-room/*
+!artifacts/macos-traffic-light-room/mac-header-before-dark-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-dark-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-light-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-dark-559px-1600x1000.png
+!artifacts/macos-traffic-light-room/mac-header-light-718px-1600x1000.png
+!artifacts/macos-traffic-light-room/readings.json
