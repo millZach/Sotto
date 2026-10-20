@@ -2,7 +2,7 @@ import type { CarriedDraft } from './EmptyWorkspace'
 
 /**
  * A New thread asked for in the sidebar beside another page, or by a surface outside the Threads page (an activity
- * recording's Attach to a thread, ADR-0097). The press leads to the Threads page, and the page opens the new thread
+ * recording's Attach to a thread, ADR-0098). The press leads to the Threads page, and the page opens the new thread
  * when it arrives, with the draft when one is carried; the intent is taken once and never kept.
  */
 export interface NewThreadIntent {

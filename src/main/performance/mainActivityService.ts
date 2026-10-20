@@ -58,7 +58,7 @@ function numbers(reading: MainLoopReading): Omit<MainLoopReading, 'frozen'> {
 }
 
 /**
- * Main's watch on itself and Record a minute (#1233, ADR-0097). Exists only while the `main-freeze` Owl feature is on:
+ * Main's watch on itself and Record a minute (#1233, ADR-0098). Exists only while the `main-freeze` Owl feature is on:
  * stable builds none of it, so no monitor runs there. It keeps the numbers, the notice's Not now, and one recording at a
  * time; the window reads it through the main-activity bridge.
  */

@@ -1,4 +1,4 @@
-/* The main freeze notice and Settings > Performance (#1233, ADR-0097). The notice sits in the title row, just left of
+/* The main freeze notice and Settings > Performance (#1233, ADR-0098). The notice sits in the title row, just left of
    the window controls, over the drag handle there, so it and its popover opt out of dragging. Colour comes from theme
    roles only. */
 

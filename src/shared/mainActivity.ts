@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Main's own activity (#1233, ADR-0097): how often Sotto's main process was blocked over the last minute, and an
+ * Main's own activity (#1233, ADR-0098): how often Sotto's main process was blocked over the last minute, and an
  * activity recording, one minute of main's and the window's CPU profiles saved on this computer. An Owl feature: the
  * window has this bridge only while the startup answers turn `main-freeze` on.
  */

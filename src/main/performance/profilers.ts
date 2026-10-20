@@ -39,7 +39,7 @@ export function protocolProfiler(connection: { readonly open: () => void; readon
 }
 
 /**
- * Main's own CPU profile through an in-process inspector session (ADR-0097). `Session.connect` talks to this process's
+ * Main's own CPU profile through an in-process inspector session (ADR-0098). `Session.connect` talks to this process's
  * own inspector without opening a port or a listener, so nothing outside Sotto can reach it.
  */
 export function mainProcessProfiler(): ProfilerTarget {

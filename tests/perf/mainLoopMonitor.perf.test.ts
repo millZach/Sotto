@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * What main's watch on itself costs (#1233, ADR-0097): one sample (a clock read, a subtraction, at most two
+ * What main's watch on itself costs (#1233, ADR-0098): one sample (a clock read, a subtraction, at most two
  * typed-array writes and, once a second, the frozen answer), and one reading the window asks for while the popover or
  * Settings is open. It measures a busy minute, and the worst one, where every sample is late and the window holds a
  * stretch for each. It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`):

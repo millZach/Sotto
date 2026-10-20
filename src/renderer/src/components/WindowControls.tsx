@@ -43,7 +43,7 @@ export function WindowControls({ maximized = false, onMaximize, onMinimize, onCl
 export function PageWindowControls(): ReactNode {
   const app = useOptionalApp()
   if (app === null) return null
-  // The main freeze notice (an Owl feature, ADR-0097) sits left of the controls on Windows, and alone in the corner
+  // The main freeze notice (an Owl feature, ADR-0098) sits left of the controls on Windows, and alone in the corner
   // where the system draws or omits them.
   if (app.platform !== 'win32') return <MainFreezeNotice frame="threads-view__winctl" />
   return <div className="threads-view__winctl">

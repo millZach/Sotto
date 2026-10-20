@@ -1,6 +1,6 @@
 # Main freeze notice and Record a minute (#1233)
 
-October 20, 2026, on the Windows development PC, from the built app with `SOTTO_OWL_FEATURES=main-freeze=1` (`tests/e2e/main-freeze-notice.spec.ts`, run with `SOTTO_E2E_EVIDENCE=publish`). Main was made to freeze by busy-waiting in its own process for 800 ms of every second; the watch's window was shortened to six seconds and the recording to three, through the development-only overrides ADR-0097 names. Sotto's data folder sat under a short neutral folder at the drive's root rather than the temporary folder, so the path the draft names carries no user name.
+October 20, 2026, on the Windows development PC, from the built app with `SOTTO_OWL_FEATURES=main-freeze=1` (`tests/e2e/main-freeze-notice.spec.ts`, run with `SOTTO_E2E_EVIDENCE=publish`). Main was made to freeze by busy-waiting in its own process for 800 ms of every second; the watch's window was shortened to six seconds and the recording to three, through the development-only overrides ADR-0098 names. Sotto's data folder sat under a short neutral folder at the drive's root rather than the temporary folder, so the path the draft names carries no user name.
 
 ## What was checked
 
@@ -11,7 +11,7 @@ October 20, 2026, on the Windows development PC, from the built app with `SOTTO_
 - **Not now** hides the pill while main stays frozen; after main recovers and freezes again it comes back.
 - **Settings > Performance** shows the live numbers in the warning colour while frozen, Record a minute, and **Tell me when main freezes**, on. The heading reads **Performance** alone, as the other Owl sections do.
 - **Record a minute** from the popover counts down in the pill (**Recording, N s**) with a progress bar, then shows **Activity recording saved** with the folder's name, its three files and size.
-- **The files.** `performance-recordings/sotto-activity-<date>-<time>/` holds `main.cpuprofile`, `window.cpuprofile` and `summary.json`. Every profile node has only `id`, `callFrame`, `hitCount` and `children`; every script URL is empty (V8's own frames), a Node or Electron built-in, `sotto:///…` or `(outside Sotto)`; neither the data folder's path nor the checkout's appears anywhere; the summary has exactly the fields ADR-0097 lists and says the window was recorded.
+- **The files.** `performance-recordings/sotto-activity-<date>-<time>/` holds `main.cpuprofile`, `window.cpuprofile` and `summary.json`. Every profile node has only `id`, `callFrame`, `hitCount` and `children`; every script URL is empty (V8's own frames), a Node or Electron built-in, `sotto:///…` or `(outside Sotto)`; neither the data folder's path nor the checkout's appears anywhere; the summary has exactly the fields ADR-0098 lists and says the window was recorded.
 - **Attach to a thread** opens the Threads page on a new thread whose composer holds the unsent draft naming the folder and files; nothing in the window carries the Windows user name. The popover then says it was added, and **Close** puts the pill away.
 - At 1600x1000, 1280x800 and 820x560, in dark and light, nothing spills past the window and the popover stays inside it.
 

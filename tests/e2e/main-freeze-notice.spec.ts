@@ -1,5 +1,5 @@
 /**
- * The main freeze notice and Record a minute (#1233, ADR-0097), in the built app with the `main-freeze` Owl feature on.
+ * The main freeze notice and Record a minute (#1233, ADR-0098), in the built app with the `main-freeze` Owl feature on.
  * Main is made to freeze by busy-waiting in its own process for most of every second, with the watch's window shortened
  * to six seconds and the recording to three (development-only overrides). The pill appears, opens the numbers, records,
  * and the files land in the data folder with only names, Sotto's script places and timings. Not now hides the notice

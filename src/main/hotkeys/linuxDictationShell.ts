@@ -27,7 +27,7 @@ export class LinuxDictationShell {
   constructor(
     private readonly runtimeDirectory: string | undefined,
     private readonly monitor: ShellWidgetMonitor,
-    private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>,
+    private readonly dispatch: (command: CompositorDictationCommand, at?: bigint) => Promise<boolean>,
     private readonly edge: () => WidgetEdge,
     private readonly log: (event: 'native-dictation-state-write-failed' | 'native-dictation-pid-start-unavailable') => void,
     private readonly exitSource: ExitSource = process,

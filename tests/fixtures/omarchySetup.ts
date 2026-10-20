@@ -13,6 +13,19 @@ export const voxtypeBinds = [
 ]
 export const sottoBinds = voxtypeBinds.map((bind, at) => ({ ...bind, arg: `sh -c 'sotto dictation ${['start', 'stop', 'toggle'][at]} --at 1'` }))
 
+const MASKS: Record<string, number> = { SUPER: 64, CTRL: 4, ALT: 8, SHIFT: 1 }
+function hyprChord(text: string): { key: string; modmask: number } {
+  const parts = text.split('+').map(part => part.trim())
+  return { key: parts[parts.length - 1]!, modmask: parts.slice(0, -1).reduce((mask, part) => mask | (MASKS[part] ?? 0), 0) }
+}
+/** What Hyprland would load from a Sotto snippet: its unbinds and its binds, as `hyprctl binds -j` reports them. */
+export function snippetBinds(text: string) {
+  const unbound = [...text.matchAll(/^hl\.unbind\("([^"]+)"\)/gmu)].map(match => hyprChord(match[1]!))
+  const binds = [...text.matchAll(/^o\.bind\("([^"]+)", "[^"]*", dictation\("(start|stop|toggle)"\)(, \{ release = true \})?\)/gmu)]
+    .map(match => ({ ...hyprChord(match[1]!), dispatcher: 'exec', arg: `sh -c 'sotto dictation ${match[2]} --at 1'`, release: match[3] !== undefined }))
+  return { unbound, binds }
+}
+
 /** Real files and saved ownership; scripted compositor/shell replies, never the live desktop. */
 export async function omarchySetupFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-omarchy-test-'))
@@ -27,7 +40,7 @@ export async function omarchySetupFixture() {
   }
   await write(bindings, '-- My keys\n')
   await write(config, JSON.stringify({ version: 1, bar: { layout: { center: [{ id: 'omarchy.indicators' }] } } }))
-  const desktop: { binds: Array<{ key: string; modmask: number; dispatcher: string; arg: string; release: boolean; description?: string }>; shell: boolean; lua: boolean; errors: string; newError: string; fail: string; restartCount: number; onBar: boolean; theme: boolean; appliesKeys: boolean } = { binds: voxtypeBinds, shell: true, lua: true, errors: '', newError: '', appliesKeys: true,
+  const desktop: { binds: Array<{ key: string; modmask: number; dispatcher: string; arg: string; release: boolean; description?: string }>; omarchy: Array<{ key: string; modmask: number; dispatcher: string; arg: string; release: boolean; description?: string }>; shell: boolean; lua: boolean; errors: string; newError: string; fail: string; restartCount: number; onBar: boolean; theme: boolean; appliesKeys: boolean } = { binds: voxtypeBinds, omarchy: [], shell: true, lua: true, errors: '', newError: '', appliesKeys: true,
     fail: '', restartCount: 0, onBar: false, theme: true }
   const calls: string[] = [], changes: OmarchySetupState[] = []
   let settings = structuredClone(DEFAULT_SETTINGS)
@@ -44,7 +57,12 @@ export async function omarchySetupFixture() {
     }
     if (key === 'hyprctl reload') {
       const file = await readFile(bindings, 'utf8').catch(() => '')
-      if (!desktop.newError && desktop.appliesKeys) desktop.binds = file.includes('-- Sotto Omarchy setup') ? sottoBinds : voxtypeBinds
+      if (!desktop.newError && desktop.appliesKeys) {
+        // Hyprland loads the snippet's binds over Voxtype's defaults and whatever else Omarchy binds.
+        const loaded = file.includes('-- Sotto Omarchy setup') ? snippetBinds(await readFile(snippet, 'utf8').catch(() => '')) : null
+        const others = [...voxtypeBinds, ...desktop.omarchy].filter(bind => !loaded?.unbound.some(chord => chord.key === bind.key && chord.modmask === bind.modmask))
+        desktop.binds = loaded ? [...loaded.binds, ...others] : others
+      }
       return ok()
     }
     if (command === 'luac') return desktop.lua ? ok() : no()
@@ -77,7 +95,7 @@ export async function omarchySetupFixture() {
     }
     return ok()
   }
-  const make = (runOverride: SetupRun = run) => new OmarchySetup({ home, data, resources, version: '9.0.0', run: runOverride,
+  const make = (runOverride: SetupRun = run, extra: Partial<ConstructorParameters<typeof OmarchySetup>[0]> = {}) => new OmarchySetup({ home, data, resources, version: '9.0.0', run: runOverride, ...extra,
     settings: { get: async () => settings, update: async (patch: SettingsPatch) => { settings = { ...settings, ...patch, worktreeCleanup: { ...settings.worktreeCleanup, ...patch.worktreeCleanup } }; return settings } },
     onChanged: state => changes.push(state) })
   return { root, home, data, resources, bindings, snippet, plugin, config, template, rendered, desktop, calls, changes, run, make,

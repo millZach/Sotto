@@ -8,7 +8,7 @@ import { activityRecordingDraft } from '../../../../shared/mainActivity'
 export const LIVE_READ_MS = 1_000
 
 /**
- * Main's watch on itself, as the window sees it (ADR-0097). Main says when the notice's answer changes; while `live`
+ * Main's watch on itself, as the window sees it (ADR-0098). Main says when the notice's answer changes; while `live`
  * (the popover or Settings > Performance is open) the window also reads the numbers once a second for the chart.
  */
 export function useMainActivity(live: boolean, bridge: MainActivityBridge | undefined = window.sotto?.mainActivity): MainActivityState | null {

@@ -1,6 +1,5 @@
 import { isAbsolute } from 'node:path'
 
-import { parseAccelerator } from '../../shared/accelerator'
 import {
   E2E_CONFLICTING_HOTKEY,
   E2E_PRESERVED_CLIPBOARD,
@@ -8,6 +7,7 @@ import {
   type E2EScenario,
   type E2ESnapshot,
 } from '../../shared/e2e'
+import { chordTokenSet } from '../hotkeys/dictationShortcutRouter'
 import type { GlobalShortcutAdapter } from '../hotkeys/hotkeyManager'
 import type { ClipboardAdapter, PasteProcessAdapter } from '../output/outputService'
 
@@ -83,9 +83,9 @@ export interface E2EGlobalShortcutAdapter extends GlobalShortcutAdapter {
 
 export function createE2EGlobalShortcuts(scenario: E2EScenario): E2EGlobalShortcutAdapter {
   const registered = new Map<string, () => void>()
-  const conflict = parseAccelerator(E2E_CONFLICTING_HOTKEY, 'win32') ?? E2E_CONFLICTING_HOTKEY
-  const canonical = (accelerator: string): string =>
-    parseAccelerator(accelerator, 'win32') ?? accelerator.trim()
+  // Like Electron, the same chord in any order or spelling is one shortcut.
+  const canonical = (accelerator: string): string => chordTokenSet(accelerator, 'win32')
+  const conflict = canonical(E2E_CONFLICTING_HOTKEY)
   return {
     register(accelerator, callback): boolean {
       const key = canonical(accelerator)

@@ -307,9 +307,28 @@ export type UpdateStatus = z.infer<typeof updateStatusSchema>
 export type UnavailableResult = Readonly<{ ok: false; reason: 'unavailable' }>
 export type CommandResult = Readonly<{ ok: true }> | UnavailableResult
 
+/** `message` is Linux's: Sotto's keys are Hyprland bindings, and the row shows why one could not change in Hyprland's own terms. */
 export type HotkeyChangeResult =
   | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable' }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; message?: string | undefined }>
+
+/** Every dictation shortcut at once; `press[0]` is `settings.hotkey`. */
+export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[] }>
+
+/** A refused change names the chord that failed when one did; the previous shortcuts stay in force. */
+export type DictationShortcutsResult =
+  | Readonly<{ ok: true }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string | undefined; message?: string | undefined }>
+
+/** `unsupported-key`: a key outside the shortcut table was pressed, so no chord was taken. */
+export type KeyRecordResult =
+  | Readonly<{ kind: 'recorded'; chord: string }>
+  | Readonly<{ kind: 'cancelled' }>
+  | Readonly<{ kind: 'unsupported-key' }>
+  | Readonly<{ kind: 'unavailable' }>
+
+/** The key listener's standing: macOS Input Monitoring granted or denied; `not-needed` while nothing needs it or where no grant exists (Windows); `unsupported` where the listener cannot run. */
+export type KeyListenerPermission = 'granted' | 'denied' | 'not-needed' | 'unsupported'
 
 export type DictationCommand = Readonly<{
   /** `cancel` stops work in progress; `dismiss` clears an error and a kept recording; `retry` sends it again. */
@@ -337,7 +356,7 @@ export interface SottoBridge {
   readonly continueThread?: import('./continueThread').ContinueBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
-  /** Main's watch on itself and Record a minute (ADR-0097), present only while the `main-freeze` Owl feature is on. */
+  /** Main's watch on itself and Record a minute (ADR-0098), present only while the `main-freeze` Owl feature is on. */
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
@@ -374,6 +393,21 @@ export interface SottoBridge {
 
   getHotkey(): Promise<string | null>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
+  /** Owl feature `dictation-hold-shortcuts`: replaces every dictation shortcut at once. */
+  replaceDictationShortcuts?(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
+  /** While Settings records a shortcut, every dictation shortcut stands down so the keys reach the recorder; main resumes them after 60 s regardless. */
+  suspendDictationShortcuts?(suspended: boolean): Promise<CommandResult>
+  /** Windows and macOS with the Owl feature on: records one chord through the key listener, Fn and the Win key included. */
+  recordDictationKeys?(): Promise<KeyRecordResult>
+  cancelDictationKeyRecord?(): Promise<CommandResult>
+  /** The keys held during a recording, as chord tokens. */
+  onDictationKeysHeld?(listener: (tokens: readonly string[]) => void): Unsubscribe
+  /** Linux: one of Sotto's own Hyprland bindings fired during a recording, so the keys never reached the page. */
+  onDictationKeysTaken?(listener: (role: 'press' | 'hold') => void): Unsubscribe
+  getKeyListenerPermission?(): Promise<KeyListenerPermission>
+  /** Asks macOS for Input Monitoring and opens its pane in System Settings. */
+  requestKeyListenerPermission?(): Promise<KeyListenerPermission>
+  onKeyListenerPermission?(listener: (permission: KeyListenerPermission) => void): Unsubscribe
 
   requestDictation(command: DictationCommand): Promise<CommandResult>
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe

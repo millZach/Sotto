@@ -140,7 +140,7 @@ export interface MainLoopMonitorOptions {
 
 /** Lateness this small is the timer's own jitter, not main being busy. */
 export const SAMPLE_TOLERANCE_MS = 2
-/** Ten samples a second: a 50 ms timer cost main's process about 6.5 ms of CPU a second, this about 2 ms (ADR-0097). */
+/** Ten samples a second: a 50 ms timer cost main's process about 6.5 ms of CPU a second, this about 2 ms (ADR-0098). */
 export const SAMPLE_INTERVAL_MS = 100
 
 /**
