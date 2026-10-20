@@ -23,6 +23,8 @@ export interface DictateRoomProps {
   readonly settings: AppSettings
   /** Where the speech model stands (ADR-0071); null until main answers, which counts as ready. */
   readonly speechModel: SpeechModelStatus | null
+  /** The chosen model's name, for the line that says it is ready. */
+  readonly speechModelName?: string
   readonly platform: SottoPlatform
   readonly dictation: DictationState
   readonly entries: readonly HistoryEntry[]
@@ -96,6 +98,7 @@ export function dictateSentence(
   copy: PlatformCopy,
   microphoneSkipped = false,
   speechModelReady = true,
+  speechModelChosen = true,
 ): { sentence: string; detail?: string; tone: 'normal' | 'error' } {
   // Setup was finished without a microphone, so the resting room says so
   // rather than offering a start that could only fail.
@@ -104,6 +107,10 @@ export function dictateSentence(
   }
   // The same for a speech model still downloading, starting or stopped; the pill
   // and the line beside it say which (ADR-0071).
+  // Nothing downloads by itself, so with no model chosen the room says where to choose one.
+  if (!speechModelChosen && state.status === 'idle') {
+    return { sentence: 'No speech model is chosen.', detail: 'Choose one in Settings → Transcription.', tone: 'normal' }
+  }
   if (!speechModelReady && state.status === 'idle') {
     return { sentence: 'The speech model is not ready yet.', tone: 'normal' }
   }
@@ -132,6 +139,7 @@ function waveStage(state: DictationState): VoiceWaveStage {
 export function DictateRoom({
   settings,
   speechModel,
+  speechModelName,
   platform,
   dictation,
   entries,
@@ -155,7 +163,7 @@ export function DictateRoom({
   const listening = dictation.status === 'listening'
   const sessionId = 'sessionId' in dictation ? dictation.sessionId : undefined
   const microphoneSkipped = settings.microphoneSkipped
-  const said = dictateSentence(dictation, copy, microphoneSkipped, configured)
+  const said = dictateSentence(dictation, copy, microphoneSkipped, configured, speechModel?.state !== 'missing')
 
   useEffect(() => {
     if (!listening) return
@@ -284,7 +292,7 @@ export function DictateRoom({
             </span>
           ) : (
             <>
-              {microphoneSkipped ? null : <span className="dictate__hint">{speechModelSummary(speechModel)}</span>}
+              {microphoneSkipped ? null : <span className="dictate__hint">{speechModelSummary(speechModel, speechModelName)}</span>}
               <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button>
             </>
           )}

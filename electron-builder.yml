@@ -108,6 +108,10 @@ mac:
       to: LICENSES.chromium.html
     - from: resources/tray
       to: tray
+    # Runs the Core ML speech models FluidAudio keeps on this Mac. `scripts/build-coreml-asr.mjs`
+    # builds it before packaging; it ships only in the Mac app.
+    - from: native/coreml-asr/.build/sotto-coreml-asr
+      to: coreml-asr/sotto-coreml-asr
 
 # Default layout already gives the app plus an /Applications link.
 dmg:

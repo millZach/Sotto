@@ -52,6 +52,8 @@ export async function packageStable(platform, args = [], root = resolve(import.m
     run(npm, ['run', 'assets:verify'])
     run(npm, ['run', 'build'])
     run(resolve(root, 'scripts/write-build-provenance.mjs'))
+    // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
+    if (platform === 'mac') run(resolve(root, 'scripts/build-coreml-asr.mjs'))
     recheck()
     const targets = { win: [Platform.WINDOWS, Arch.x64], mac: [Platform.MAC, Arch.arm64], linux: [Platform.LINUX, Arch.x64] }
     const [builderPlatform, arch] = targets[platform]

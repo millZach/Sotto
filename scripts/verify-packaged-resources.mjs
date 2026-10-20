@@ -1,5 +1,6 @@
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { accessSync, constants as fsConstants, existsSync, readFileSync } from 'node:fs'
 import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -158,6 +159,17 @@ export async function verifyPackagedMemoryStore(target) {
   }
 }
 
+// The Mac app runs FluidAudio's Core ML speech models through this helper; it must answer protocol 1.
+export function verifyCoreMlHelper(resources) {
+  const helper = join(resources, 'coreml-asr', 'sotto-coreml-asr')
+  if (!existsSync(helper)) fail('missing coreml-asr/sotto-coreml-asr')
+  try { accessSync(helper, fsConstants.X_OK) } catch { fail('coreml-asr/sotto-coreml-asr is not executable') }
+  const result = spawnSync(helper, ['--version'], { encoding: 'utf8', timeout: 30_000 })
+  if (result.status !== 0 || result.stdout.trim() !== '{"protocol":1}') {
+    fail(`coreml-asr/sotto-coreml-asr --version did not print {"protocol":1} (exit ${result.status ?? result.signal ?? result.error?.message})`)
+  }
+}
+
 async function verifyNormalPackagedLaunch(target) {
   const executable = profile.executablePath(target)
   const smokeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
@@ -259,6 +271,7 @@ export async function verifyPackagedResources(input, options = {}) {
   ]) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
   }
+  if (profile.key === 'darwin') verifyCoreMlHelper(resources)
 
   const entries = listAsarEntries(asarPath)
   for (const required of [

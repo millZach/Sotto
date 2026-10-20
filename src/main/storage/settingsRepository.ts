@@ -84,7 +84,8 @@ export class SettingsRepository {
   async reset(): Promise<AppSettings> {
     const parsed = this.parse(this.defaults)
     return this.enqueueMutation(async () => {
-      const settings = await this.keepHeld(parsed)
+      // The speech model stays chosen, as Settings promises: it is what is on this computer, not a preference.
+      const settings = { ...(await this.keepHeld(parsed)), speechModel: (await this.readSettings()).speechModel }
       await this.writeSettings(settings)
       return this.project(settings)
     })

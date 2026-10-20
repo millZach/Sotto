@@ -35,8 +35,8 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
-import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
-import { SPEECH_MODEL, type SpeechModelStatus } from '../../../../shared/speechModel'
+import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
+import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
 import { OmarchySetupPanel } from '../omarchy/OmarchySetup'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
@@ -84,6 +84,12 @@ export interface SettingsViewProps {
   readonly speechModel: SpeechModelStatus | null
   /** Starts the speech model download, or retries one that failed. */
   readonly onDownloadSpeechModel: () => void
+  /** The speech models Sotto can run on this computer; null until main answers. */
+  readonly speechModels?: readonly SpeechModelOption[] | null
+  /** Switches dictation to the model with this id. */
+  readonly onChooseSpeechModel?: (id: string) => void
+  /** True when the last choice was refused because that model is no longer on this computer. */
+  readonly speechModelRefused?: boolean
   readonly onCheckForUpdates: () => Promise<UpdateStatus | null>
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
@@ -169,6 +175,9 @@ export function SettingsView({
   onCheckOpenRouterKey,
   speechModel,
   onDownloadSpeechModel,
+  speechModels = null,
+  onChooseSpeechModel,
+  speechModelRefused = false,
   onCheckForUpdates,
   onDownloadUpdate,
   onInstallUpdate,
@@ -522,11 +531,14 @@ export function SettingsView({
               <Card className="settings-section" id="settings-transcription" {...panelProps('settings-transcription')}>
                 <div className="settings-section__heading"><h2>Transcription</h2><p>Speech to text, on this computer</p></div>
                 <div className="settings-rows">
-                  <div className="settings-model-statement">
-                    <h3>{SPEECH_MODEL.name}</h3>
-                    <p>Speech recognition by {SPEECH_MODEL.maker}, on this computer. Understands {SPEECH_MODEL.languages} European languages and works out which one you speak.</p>
-                    <SpeechModelStatusView status={speechModel} onRetry={onDownloadSpeechModel} />
-                  </div>
+                  <SpeechModelPicker
+                    models={speechModels}
+                    choice={settings.speechModel}
+                    status={speechModel}
+                    onChoose={onChooseSpeechModel}
+                    refused={speechModelRefused}
+                    onRetry={onDownloadSpeechModel}
+                  />
                   <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trims extra spaces without changing any words." />
                   <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
                 </div>
@@ -678,7 +690,42 @@ export function SettingsView({
       {statusText ? <p className="page-status">{statusText}</p> : null}
 
       {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
-      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key and history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
+      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
     </div>
   )
+}
+
+/** What the picker calls a model: its name, and for one not on this computer yet, that choosing it downloads it. */
+function speechModelLabel(model: SpeechModelOption): string {
+  return model.installed ? model.name : `${model.name} (download, ${formatModelSize(model.bytes)})`
+}
+
+/**
+ * Settings → Transcription's speech model: a list of the models Sotto can run
+ * on this computer, then the chosen one's statement and where it stands.
+ */
+function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry }: {
+  readonly models: readonly SpeechModelOption[] | null
+  readonly choice: string | null
+  readonly status: SpeechModelStatus | null
+  readonly onChoose: ((id: string) => void) | undefined
+  readonly refused: boolean
+  readonly onRetry: () => void
+}): ReactNode {
+  const chosen = models?.find(model => model.id === choice) ?? null
+  return <>
+    <Field label="Speech model" description="The model that turns your speech into text. Choosing one switches dictation to it." {...(refused ? { error: SPEECH_MODEL_REFUSED } : {})}>
+      <Select value={chosen?.id ?? ''} disabled={models === null || onChoose === undefined} onChange={event => { const id = event.currentTarget.value; if (id !== '') onChoose?.(id) }}>
+        {chosen === null ? <option value="" disabled>{models === null ? 'Looking for models…' : 'Choose a model'}</option> : null}
+        {(models ?? []).map(model => <option key={model.id} value={model.id}>{speechModelLabel(model)}</option>)}
+      </Select>
+    </Field>
+    <div className="settings-model-statement">
+      {chosen === null ? null : <>
+        <h3>{chosen.name}</h3>
+        <p>Speech recognition by {chosen.maker}, on this computer. {chosen.languages}.</p>
+      </>}
+      <SpeechModelStatusView status={status} model={chosen} onRetry={onRetry} />
+    </div>
+  </>
 }

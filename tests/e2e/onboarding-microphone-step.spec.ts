@@ -48,7 +48,7 @@ for (const skip of [false, true]) {
         await next.focus()
         await page.keyboard.press('Enter')
       }
-      await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeFocused()
+      await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeFocused()
       await page.getByRole('button', { name: 'Back', exact: true }).click()
       await expect(page.getByRole('heading', { name: 'Check your microphone' })).toBeFocused()
       await firstRunForwardButton(page).click()
@@ -114,7 +114,7 @@ test('onboarding notices an ended microphone and allows retry', async () => {
     // Access is confirmed but nothing was heard, so moving on is still a skip.
     await expect(next).toHaveText('Skip for now')
     await next.click()
-    await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeFocused()
+    await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeFocused()
     await page.evaluate(async () => {
       await (window as unknown as { onboardingMicrophoneFixture: { context: AudioContext } }).onboardingMicrophoneFixture.context.close()
     })

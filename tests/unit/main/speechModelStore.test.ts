@@ -180,4 +180,60 @@ describe('SpeechModelStore', () => {
     expect(github.requests.some((request) => request.url.endsWith('tokens.txt'))).toBe(true)
     expect(await readFile(join(directory, 'test-model', 'tokens.txt'))).toEqual(FILES['tokens.txt'])
   })
+
+  it('says whether the model is downloaded without hashing or loading it', async () => {
+    const { store, loadEngine } = createStore(fakeGitHub().fetchFn)
+    expect(await store.isDownloaded()).toBe(false)
+    await store.ensure()
+    expect(await store.isDownloaded()).toBe(true)
+    await writeFile(join(directory, 'test-model', 'tokens.txt'), 'changed')
+    expect(await store.isDownloaded()).toBe(false)
+    expect(loadEngine).toHaveBeenCalledTimes(1)
+  })
+
+  it('unloads the engine and goes back to missing, keeping the files', async () => {
+    const dispose = vi.fn()
+    const { store, statuses } = createStore(fakeGitHub().fetchFn, vi.fn(async () => ({ ...engine, dispose })))
+    await store.ensure()
+    store.unload()
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(statuses.at(-1)).toEqual({ state: 'missing' })
+    expect(store.currentEngine()).toBeNull()
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(await store.isDownloaded()).toBe(true)
+  })
+
+  it('never brings back a model unloaded while it was loading, and loads again when asked', async () => {
+    let finish!: (value: SpeechEngine) => void
+    const stale = { transcribe: async () => 'old', dispose: vi.fn() }
+    const loadEngine = vi.fn(async () => engine).mockImplementationOnce(() => new Promise<SpeechEngine>((resolve) => { finish = resolve }))
+    await createStore(fakeGitHub().fetchFn).store.ensure()
+    const { store, statuses } = createStore(fakeGitHub().fetchFn, loadEngine)
+    const first = store.ensure()
+    await vi.waitFor(() => expect(loadEngine).toHaveBeenCalledTimes(1))
+    store.unload()
+    finish(stale)
+    await first
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(store.currentEngine()).toBeNull()
+    expect(stale.dispose).toHaveBeenCalledTimes(1)
+    expect(statuses).toEqual([{ state: 'loading' }, { state: 'missing' }])
+
+    await store.ensure()
+    expect(store.currentEngine()).toBe(engine)
+  })
+
+  it('stops a download unloaded part way and publishes nothing more from it', async () => {
+    const github = fakeGitHub({ drop: new Set(['encoder.int8.onnx']) })
+    const subscribed: SpeechModelStatus[] = []
+    const { store, statuses } = createStore(github.fetchFn)
+    store.subscribe((status) => subscribed.push(status))
+    const attempt = store.ensure()
+    await vi.waitFor(() => expect(statuses[0]).toMatchObject({ state: 'downloading' }))
+    store.unload()
+    await attempt
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(statuses.at(-1)).toEqual({ state: 'missing' })
+    expect(subscribed).toEqual(statuses)
+  })
 })

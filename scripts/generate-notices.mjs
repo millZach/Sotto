@@ -337,6 +337,22 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
 
+// The Mac Core ML speech helper statically links FluidAudio, pinned in native/coreml-asr/Package.resolved.
+// Its texts come from the SwiftPM checkout, so build the helper (node scripts/build-coreml-asr.mjs) first.
+// FluidAudio's notices use Markdown code fences, which would end this file's text block, so those lines go.
+const fluidAudio = 'native/coreml-asr/.build/checkouts/FluidAudio'
+const fluidAudioNotice = async (file) => `${file}\n${(await read(`${fluidAudio}/ThirdPartyLicenses/${file}`)).replace(/^```.*\n/gmu, '').trim()}`
+const coreMlHelperLicenses = `FluidAudio 0.17.7 (Apache License 2.0; the full text is under "Apache License 2.0" below)
+Copyright (c) FluidInference and the FluidAudio contributors.
+https://github.com/FluidInference/FluidAudio
+
+The macOS app's Core ML speech helper (Contents/Resources/coreml-asr/sotto-coreml-asr) is built
+on FluidAudio, which compiles in the third-party code below. FluidAudio's own notices for it
+follow from its ThirdPartyLicenses folder, unmodified apart from Markdown code fences.
+vbx-LICENSE.md is the Apache License 2.0, reproduced under "Apache License 2.0" below.
+
+${(await Promise.all(['NemoTextProcessing-LICENSE.md', 'fastcluster-LICENSE.md', 'JapaneseG2P-LICENSE.md', 'KokoroAneSpanishFrenchG2P-LICENSE.md'].map(fluidAudioNotice))).join('\n\n')}`
+
 const licenseSections = [
   ['Claude Agent SDK terms', `${await read('node_modules/@anthropic-ai/claude-agent-sdk/LICENSE.md')}\n\n${await read('node_modules/@anthropic-ai/claude-agent-sdk/README.md')}`],
   ['Electron MIT license', await read('node_modules/electron/dist/LICENSE')],
@@ -387,11 +403,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Parakeet TDT 0.6B v3 (Creative Commons Attribution 4.0 International)
-The speech model Sotto downloads on first run is NVIDIA's Parakeet TDT 0.6B v3,
+The speech model Sotto downloads when it is chosen is NVIDIA's Parakeet TDT 0.6B v3,
 by NVIDIA Corporation, licensed under CC BY 4.0
 (https://creativecommons.org/licenses/by/4.0/). Sotto uses the 8-bit ONNX export
 published by the sherpa-onnx project, unmodified.
 https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3`],
+  ['Core ML speech helper licenses', coreMlHelperLicenses],
   ['Windows updater dependency MIT licenses', updaterMit],
   ['Windows updater dependency ISC licenses', updaterIsc],
   ['sax Blue Oak Model License 1.0.0', await read('node_modules/sax/LICENSE.md')],
@@ -446,7 +463,7 @@ const sections = licenseSections.map(([heading, text]) =>
 
 const output = `# Third-Party Notices
 
-Sotto transcribes dictated audio on the computer with NVIDIA's Parakeet speech model, which it downloads on first run, through sherpa-onnx. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
+Sotto transcribes dictated audio on the computer with NVIDIA's Parakeet speech model through sherpa-onnx, and on Apple silicon Macs it can also run the Core ML speech models already on the computer through a bundled helper built on FluidAudio. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 

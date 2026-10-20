@@ -40,16 +40,44 @@ export function speechModelFileUrl(file: SpeechModelFile): string {
 /**
  * Why the model is not ready after trying: the download stopped (`network`), a file arrived but
  * was not the pinned one (`checksum`), it could not be written (`disk`), or the files are right but
- * the speech engine would not start (`engine`).
+ * the speech engine would not start (`engine`), or the chosen model's files are no longer on this
+ * computer (`gone`).
  */
-export const speechModelFailureSchema = z.enum(['network', 'checksum', 'disk', 'engine'])
+export const speechModelFailureSchema = z.enum(['network', 'checksum', 'disk', 'engine', 'gone'])
 export type SpeechModelFailure = z.infer<typeof speechModelFailureSchema>
+
+/** Sotto's own model, the one it downloads. Every other model is one already on this computer. */
+export const SOTTO_SPEECH_MODEL_ID: string = SPEECH_MODEL.id
+
+/**
+ * Where a model on the picker comes from: Sotto's own download, or a Core ML model FluidAudio keeps
+ * on an Apple silicon Mac, which Sotto runs through its helper.
+ */
+export const speechModelSourceSchema = z.enum(['sotto', 'fluidaudio'])
+export type SpeechModelSource = z.infer<typeof speechModelSourceSchema>
+
+/**
+ * One model the user can choose for dictation. `installed` is whether its files are on this
+ * computer; `bytes` is their size there, or the download's size when they are not.
+ */
+export const speechModelOptionSchema = z.object({
+  id: z.string().min(1).max(128),
+  name: z.string().min(1).max(80),
+  maker: z.string().min(1).max(80),
+  languages: z.string().min(1).max(120),
+  source: speechModelSourceSchema,
+  installed: z.boolean(),
+  bytes: z.number().int().min(0),
+}).strict()
+export type SpeechModelOption = z.infer<typeof speechModelOptionSchema>
+export const speechModelListSchema = z.array(speechModelOptionSchema).max(32)
+export const speechModelIdSchema = z.string().min(1).max(128)
 
 const bytesSchema = z.number().int().min(0)
 const totalSchema = z.number().int().positive()
 
 /**
- * Where the speech model stands. `missing` before anything was tried; `downloading` with bytes so
+ * Where the speech model stands. `missing` while no model is chosen; `downloading` with bytes so
  * far; `loading` once the files are verified and the engine is starting; `ready` while it can
  * transcribe; `failed` with why and how far the download got, which a retry continues from.
  */
