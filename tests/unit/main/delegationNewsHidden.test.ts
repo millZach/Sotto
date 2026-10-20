@@ -232,6 +232,23 @@ it('waits for the user\'s prompt a crash left unresolved between the queue\'s cl
   expect(sends(host)[0]!.hiddenWakeUp).toBe(true)
 })
 
+it('sends nothing into a thread settled while its send was being prepared', async () => {
+  const f = await fixture()
+  let release!: () => void
+  f.host.preparation = new Promise(resolve => { release = resolve })
+  end(f.host)
+  await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
+  await expect.poll(() => f.host.preparing).toBe(1)
+  // The user settles the thread while the provider prepares the send; the native writer asks again and refuses it.
+  f.host.update('workshop', { workspaceSettledAt: new Date().toISOString() })
+  release()
+  await new Promise(resolve => setTimeout(resolve, 100))
+  expect(sends(f.host)).toHaveLength(0)
+  // It waits, hidden, and a settled thread never takes it.
+  expect(stored(f.control)).toHaveLength(1)
+  expect(f.control.shell().followups).toEqual([])
+})
+
 it('tries a send that surely did not go again ten seconds later, and only then', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   try {

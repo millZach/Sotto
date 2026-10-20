@@ -3190,7 +3190,9 @@ export class AgentControl {
             if (this.watcherHooks?.preserveUserQueue(threadId)) throw new Error('Watcher stopped this thread. Review it and resume its queue when ready.')
           } : undefined
           // News freshness and stopped participation both reach the native writer without changing origin.
-          const writeGuard = item.news?.some(isWatcherNews) ? () => { validate(); queueGuard?.() } : queueGuard
+          // A delegation's hidden news asks again at the native writer too, after the thread's preparation: a settle or an
+          // archive that landed meanwhile sends it nowhere (ADR-0081, October 19, 2026).
+          const writeGuard = item.news?.some(isWatcherNews) || hiddenNews ? () => { validate(); queueGuard?.() } : queueGuard
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
