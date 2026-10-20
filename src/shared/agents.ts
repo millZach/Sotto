@@ -997,7 +997,7 @@ export function lastWrittenMessage<T extends Pick<AgentMessage, 'id' | 'visual'>
  * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
  * agent's words, so it is left out: sidebar rows and search keep what the agent wrote.
  */
-export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
+export function summarizeThread(thread: { readonly messages: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[] | undefined }): AgentThreadSummary {
   const { activities = [] } = thread
   const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>

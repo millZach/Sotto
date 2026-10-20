@@ -25,6 +25,7 @@ import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
+import { samePlainValue, withoutHiddenWakeUps } from './hiddenWakeUpDisplay'
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -1051,7 +1052,7 @@ export class AgentControl {
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') {
       const shown = thread.continuedFrom?.handover !== undefined && this.continuationDisplay ? this.continuationDisplay(thread) : thread.messages
-      return thread.hiddenWakeUpMessageIds?.length ? this.withoutHiddenWakeUps(shown) : shown
+      return thread.hiddenWakeUpMessageIds?.length ? this.hiddenWakeUpsLeftOut(thread.id, shown) : shown
     }
     // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it. Only
     // a history a window holds is kept: an offscreen read keeps no text, as the display itself keeps none (ADR-0073).
@@ -1069,17 +1070,21 @@ export class AgentControl {
   }
   /**
    * A history without the wake-ups that carried only delegation news (ADR-0081, October 19, 2026): the agent read them, and
-   * no window or phone shows them. The host marks each from its own record of the send. The same array while nothing in it
-   * changed, so a publish neither copies it again nor rebuilds what reads it.
+   * no window or phone shows them. Kept by thread and made again only when the history changed: a publish hands every
+   * thread a new array of the same messages, so the projection is checked message by message, without a copy, and the
+   * last one shown is handed out again, so neither it nor what reads it is rebuilt for another thread's update.
    */
-  private withoutHiddenWakeUps(messages: readonly AgentMessage[]): readonly AgentMessage[] {
-    const held = this.hiddenCache.get(messages)
-    if (held && held.from.length === messages.length && messages.every((message, index) => message === held.from[index])) return held.shown
-    const shown = messages.some(message => message.hiddenWakeUp === true) ? messages.filter(message => message.hiddenWakeUp !== true) : messages
-    this.hiddenCache.set(messages, { from: [...messages], shown })
+  private hiddenWakeUpsLeftOut(threadId: string, messages: readonly AgentMessage[]): readonly AgentMessage[] {
+    const held = this.hiddenShown.get(threadId)
+    // A publish carries every message as a new copy of the same one, so a message is the same when it is equal to the one
+    // the last projection was made from, compared without copying: that projection is then exactly what this one would be.
+    if (held && held.length === messages.length && (held.source === messages || messages.every((message, index) => samePlainValue(message, held.source[index])))) return held.shown
+    const shown = withoutHiddenWakeUps(messages)
+    this.hiddenShown.set(threadId, { source: messages, length: messages.length, shown })
     return shown
   }
-  private hiddenCache = new WeakMap<readonly AgentMessage[], { from: readonly AgentMessage[]; shown: readonly AgentMessage[] }>()
+  /** Each shown thread's history without its hidden wake-ups, by thread, and the history it was made from. */
+  private readonly hiddenShown = new Map<string, { source: readonly AgentMessage[]; length: number; shown: readonly AgentMessage[] }>()
   /** Each Watcher history's presented messages, by the history they were made from, and what they were made from. */
   private presentedCache = new WeakMap<readonly AgentMessage[], { revision: number; hostId: string | undefined; messages: readonly AgentMessage[];
     from: readonly { message: AgentMessage; text: string; wakeUp: true | undefined }[] }>()
@@ -1093,14 +1098,14 @@ export class AgentControl {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') {
       // A row never quotes a wake-up of delegation news alone, which no one is shown (ADR-0081).
       if (!thread.hiddenWakeUpMessageIds?.length) return threadSummaryOf(thread)
-      if (!thread.summary) return summarizeThread({ messages: [...this.presentedMessages(thread)], ...(thread.activities ? { activities: [...thread.activities] } : {}) })
+      if (!thread.summary) return summarizeThread({ messages: this.presentedMessages(thread), activities: thread.activities })
       const last = thread.summary.lastUser
       if (!last || !thread.hiddenWakeUpMessageIds.includes(last.id)) return thread.summary
       const rest = { ...thread.summary }
       delete rest.lastUser
       return rest
     }
-    if (!thread.summary) return summarizeThread({ messages: [...this.presentedMessages(thread)], ...(thread.activities ? { activities: [...thread.activities] } : {}) })
+    if (!thread.summary) return summarizeThread({ messages: this.presentedMessages(thread), activities: thread.activities })
     const last = thread.summary.lastUser
     if (!last || !thread.wakeUpMessageIds?.includes(last.id)) return thread.summary
     const shown = watcherWakeUpShown({ ...last, role: 'user', wakeUp: true })
