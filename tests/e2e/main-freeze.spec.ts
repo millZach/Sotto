@@ -13,7 +13,7 @@ import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
+import { AGENT_STATE, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
 import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import type { WatcherRecord } from '../../src/shared/watcher'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
@@ -34,7 +34,10 @@ import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto 
  *   sh:          SOTTO_PERF_BENCH=1 npm run build && npx playwright test tests/e2e/main-freeze.spec.ts
  *
  * With `SOTTO_PERF_LIMITS=1` as well, it fails when main stalls past `FREEZE_LIMITS`; the nightly Main freeze workflow
- * runs it that way. `SOTTO_FREEZE_THREADS` sets the padding, and scales the rest of the history with it, for a quick
+ * runs it that way. Each case also reports what the window did: frames drawn, state broadcasts main sent it, time spent
+ * handling each key and in long tasks. `SOTTO_FREEZE_PROFILE` names a folder to write a CPU profile of the window per
+ * case into. The window must stay on screen: one minimized, covered or behind a locked screen draws about one frame a
+ * second, and every keystroke then reads as half a second (October 20, 2026), so a case that drew too few frames fails. `SOTTO_FREEZE_THREADS` sets the padding, and scales the rest of the history with it, for a quick
  * check of the setup. `docs/perf/2026-10-15-main-freeze.md` has what the numbers mean and where to record a run's results.
  */
 const PROJECT_ID = 'project'
@@ -57,10 +60,17 @@ const FREEZE_LIMITS: Readonly<Record<number, { readonly maxMs: number; readonly 
 const STREAM_CHUNKS_PER_SECOND = 20
 const STREAM_DURATION_MS = 15_000
 const SYNTHETIC_TEXT = 'Synthetic benchmark text for keystrokes.'
+/**
+ * Below this many frames a second the window was not on screen, not slow: Chromium draws a window that is minimized,
+ * covered or behind a locked screen about once a second, and every keystroke's next frame waits for that. A busy
+ * window on screen still drew 26 a second with three threads streaming at the owner's scale.
+ */
+const MIN_FRAMES_PER_SECOND = 5
 const KEY_DELAY_MS = Math.round(STREAM_DURATION_MS / SYNTHETIC_TEXT.length)
 const COMPOSER_THREAD_TITLE = 'Docs'
 
-declare global { interface Window { __freezeTyping?: number[] } }
+declare global { interface Window { __freezeTyping?: number[]; __freezeKeyHandling?: number[]; __freezeWindow?: WindowProbe } }
+interface WindowProbe { frames: number; longTasks: number; longTaskMs: number; stop: () => void }
 
 interface FreezeSample { maxMs: number; meanMs: number; p99Ms: number; stallCount: number; samples: number }
 interface Distribution { count: number; p50: number | null; p95: number | null; max: number | null }
@@ -70,7 +80,11 @@ interface CaseResult {
   readonly chunksEmitted: number[]
   readonly eventLoopDelay: FreezeSample
   readonly keystrokeLatencyMs: Distribution
+  /** Keydown to the composer's input event: the window's own handling of a key, without the wait for the next frame. */
+  readonly keyHandlingMs: Distribution
+  readonly window: WindowSample
 }
+interface WindowSample { framesPerSecond: number; stateBroadcastsPerSecond: number; longTasks: number; longTaskMs: number }
 
 function distribution(samples: readonly number[]): Distribution {
   if (samples.length === 0) return { count: 0, p50: null, p95: null, max: null }
@@ -203,6 +217,7 @@ async function attachTypingInstrumentation(page: Page): Promise<void> {
   await page.evaluate(() => {
     const started = new WeakMap<Element, number>()
     window.__freezeTyping = []
+    window.__freezeKeyHandling = []
     document.addEventListener('keydown', event => {
       const target = event.target as Element
       if (!target.matches?.('.prompt-editor[role="textbox"]')) return
@@ -213,13 +228,71 @@ async function attachTypingInstrumentation(page: Page): Promise<void> {
       const startedAt = started.get(target)
       if (startedAt === undefined) return
       started.delete(target)
+      window.__freezeKeyHandling!.push(globalThis.performance.now() - startedAt)
       requestAnimationFrame(() => window.__freezeTyping!.push(globalThis.performance.now() - startedAt))
     }, true)
   })
 }
 
-async function resetTyping(page: Page): Promise<void> { await page.evaluate(() => { window.__freezeTyping = [] }) }
-async function readTyping(page: Page): Promise<number[]> { return page.evaluate(() => window.__freezeTyping ?? []) }
+async function resetTyping(page: Page): Promise<void> { await page.evaluate(() => { window.__freezeTyping = []; window.__freezeKeyHandling = [] }) }
+async function readTyping(page: Page): Promise<{ latency: number[]; handling: number[] }> {
+  return page.evaluate(() => ({ latency: window.__freezeTyping ?? [], handling: window.__freezeKeyHandling ?? [] }))
+}
+
+/**
+ * Starts counting what the window does in a case: animation frames, long tasks, and in main, the state broadcasts sent
+ * to it. With `SOTTO_FREEZE_PROFILE` set, also a CPU profile of the window. `endWindowProbe` reads them all back.
+ */
+async function beginWindowProbe(launched: LaunchedSotto) {
+  await launched.page.evaluate(() => {
+    let stopped = false
+    const probe: WindowProbe = { frames: 0, longTasks: 0, longTaskMs: 0, stop: () => { stopped = true; observer.disconnect() } }
+    const observer = new PerformanceObserver(list => { for (const entry of list.getEntries()) { probe.longTasks++; probe.longTaskMs += entry.duration } })
+    observer.observe({ type: 'longtask' })
+    const frame = (): void => { if (stopped) return; probe.frames++; requestAnimationFrame(frame) }
+    requestAnimationFrame(frame)
+    window.__freezeWindow = probe
+  })
+  // Counted where main sends them: the window's own listener sits behind the preload's bridge.
+  await launched.app.evaluate(({ BrowserWindow }, channel) => {
+    const counter = { sent: 0, restore: [] as (() => void)[] }
+    for (const window of BrowserWindow.getAllWindows()) {
+      const contents = window.webContents
+      const send = contents.send
+      contents.send = function (sent: string, ...args: unknown[]) { if (sent === channel) counter.sent++; return send.call(this, sent, ...args) }
+      counter.restore.push(() => { contents.send = send })
+    }
+    ;(globalThis as unknown as { __freezeBroadcasts?: typeof counter }).__freezeBroadcasts = counter
+  }, AGENT_STATE)
+  const folder = process.env.SOTTO_FREEZE_PROFILE
+  if (!folder) return { startedAt: performance.now() }
+  const cdp = await launched.page.context().newCDPSession(launched.page)
+  await cdp.send('Profiler.enable')
+  await cdp.send('Profiler.start')
+  return { startedAt: performance.now(), profile: { cdp, folder } }
+}
+
+async function endWindowProbe(launched: LaunchedSotto, probe: Awaited<ReturnType<typeof beginWindowProbe>>, name: string): Promise<WindowSample> {
+  const seconds = (performance.now() - probe.startedAt) / 1_000
+  if (probe.profile) {
+    const { profile } = await probe.profile.cdp.send('Profiler.stop')
+    await writeFile(join(probe.profile.folder, `${name.replace(/[^a-z0-9]+/giu, '-')}.cpuprofile`), JSON.stringify(profile))
+    await probe.profile.cdp.detach()
+  }
+  const broadcasts = await launched.app.evaluate(() => {
+    const counter = (globalThis as unknown as { __freezeBroadcasts?: { sent: number; restore: (() => void)[] } }).__freezeBroadcasts!
+    for (const restore of counter.restore) restore()
+    delete (globalThis as unknown as { __freezeBroadcasts?: unknown }).__freezeBroadcasts
+    return counter.sent
+  })
+  const drawn = await launched.page.evaluate(() => {
+    const probe = window.__freezeWindow!
+    probe.stop()
+    return { frames: probe.frames, longTasks: probe.longTasks, longTaskMs: probe.longTaskMs }
+  })
+  return { framesPerSecond: round(drawn.frames / seconds, 1), stateBroadcastsPerSecond: round(broadcasts / seconds, 1),
+    longTasks: drawn.longTasks, longTaskMs: Math.round(drawn.longTaskMs) }
+}
 
 /** Streams one growing assistant message a thread, at `STREAM_CHUNKS_PER_SECOND`, for `durationMs`. Bare (unqualified) thread IDs: `sottoE2E.agentEvent` reaches the fixture host directly. */
 async function streamReplies(page: Page, bareThreadIds: readonly string[], durationMs: number): Promise<number[]> {
@@ -241,8 +314,9 @@ async function streamReplies(page: Page, bareThreadIds: readonly string[], durat
 }
 
 /** Streams `bareStreamIds` (if any) while typing a synthetic string into `composer`, then reads both measurements back. */
-async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds: readonly string[]): Promise<{ chunksEmitted: number[]; freeze: FreezeSample; typingSamples: number[] }> {
+async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds: readonly string[], name: string): Promise<{ chunksEmitted: number[]; freeze: FreezeSample; typingSamples: number[]; keyHandling: number[]; window: WindowSample }> {
   await resetTyping(launched.page)
+  const probe = await beginWindowProbe(launched)
   await beginFreezeMonitor(launched)
   const [chunksEmitted] = await Promise.all([
     streamReplies(launched.page, bareStreamIds, STREAM_DURATION_MS),
@@ -250,15 +324,19 @@ async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds
     composer.pressSequentially(SYNTHETIC_TEXT, { delay: KEY_DELAY_MS, timeout: 10 * STREAM_DURATION_MS }),
   ])
   const freeze = await endFreezeMonitor(launched)
+  const window = await endWindowProbe(launched, probe, name)
+  if (window.framesPerSecond < MIN_FRAMES_PER_SECOND) {
+    throw new Error(`The window drew ${window.framesPerSecond} frames a second in "${name}", so it was minimized, covered or behind a locked screen, where Chromium draws about once a second: its keystroke times would measure that, not Sotto. Keep the window on screen and run the spec again.`)
+  }
   // A busy renderer queues the typing samples' requestAnimationFrame callbacks behind its backlog; give it a
   // moment to drain before reading them, or the last several keystrokes of a heavily loaded case read as missing.
   await setTimeout(2_000)
-  const typingSamples = await readTyping(launched.page)
+  const { latency: typingSamples, handling: keyHandling } = await readTyping(launched.page)
   // `fillPrompt` sets the field's full value at once, which a controlled ProseMirror editor does not always
   // pick up; backspacing what was actually typed, key by key, is what this composer already answers to.
   for (let remaining = SYNTHETIC_TEXT.length; remaining > 0; remaining--) await composer.press('Backspace')
   await expectPromptText(composer, '')
-  return { chunksEmitted, freeze, typingSamples }
+  return { chunksEmitted, freeze, typingSamples, keyHandling, window }
 }
 
 test('main stays responsive while threads stream with the owner\'s history', async () => {
@@ -323,8 +401,9 @@ test('main stays responsive while threads stream with the owner\'s history', asy
           { name: '3 threads streaming', streamIds: bareStreamIds.slice(0, 3) },
         ]
         for (const { name, streamIds } of runCases) {
-          const { chunksEmitted, freeze, typingSamples } = await runCase(launched, composer, streamIds)
-          const result: CaseResult = { name, streamingThreads: streamIds.length, chunksEmitted, eventLoopDelay: freeze, keystrokeLatencyMs: distribution(typingSamples) }
+          const { chunksEmitted, freeze, typingSamples, keyHandling, window } = await runCase(launched, composer, streamIds, name)
+          const result: CaseResult = { name, streamingThreads: streamIds.length, chunksEmitted, eventLoopDelay: freeze,
+            keystrokeLatencyMs: distribution(typingSamples), keyHandlingMs: distribution(keyHandling), window }
           results.push(result)
           console.log(`main freeze: ${JSON.stringify(result)}`)
         }

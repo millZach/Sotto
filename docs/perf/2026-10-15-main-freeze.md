@@ -25,7 +25,9 @@ budget; a stopwatch budget would be `SOTTO_PERF_ASSERT=1`'s, which this benchmar
 
 ## Reproduce
 
-On an idle machine, after a build:
+On an idle machine, after a build, with the window left on screen: Chromium draws a minimized or covered window
+about once a second, and the spec fails a case that drew fewer than 5 frames a second rather than report keystrokes
+that wait for it (`docs/perf/2026-10-20-main-lag.md`, Keystrokes).
 
 ```powershell
 $env:SOTTO_PERF_BENCH = '1'; npm run build; npx playwright test tests/e2e/main-freeze.spec.ts
