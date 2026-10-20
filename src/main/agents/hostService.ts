@@ -87,8 +87,8 @@ export interface HostService {
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
-  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
-  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
+  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown>
+  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection
   /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
   readonly supportsAtomicSend?: boolean
@@ -237,8 +237,8 @@ export class LocalHostService implements HostService {
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
-  watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
-  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
+  watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard, mayAnswer) }
+  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard, mayAnswer) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true

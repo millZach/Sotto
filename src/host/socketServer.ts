@@ -749,10 +749,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       guard()
       // A read or a direction of a thread, project or model this desktop does not know is refused before it runs (#1107).
       refuseHiddenWatcherInput(peer, request.op === 'watcher-control' ? request.request.call.input : request.request.call?.input)
-      if (request.op === 'watcher-control') return watcherFor(peer, await service.watcherControl!(request.request, peer.client, guard))
+      if (request.op === 'watcher-control') return watcherFor(peer, await service.watcherControl!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false))
       if (request.request.standingWatches !== undefined && !offers(peer, 'watcher-standing-watch')) throw new Refusal('invalid_request')
       if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
-      const read = await service.watcherRead!(request.request, peer.client, guard)
+      const read = await service.watcherRead!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false)
       // A desktop that does not know a provider is sent no Watcher row of it (#1107).
       return watcherFor(peer, read)
     }

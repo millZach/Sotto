@@ -1199,7 +1199,7 @@ final class WatcherModelTests: XCTestCase {
         let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: true, paused: true))
         XCTAssertTrue(model.watchedByWatcher(worker))
         XCTAssertEqual(model.watchedLine(worker), WatchedWords.paused)
-        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. It waits while your own turn here runs, then keeps this thread going.")
+        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
         XCTAssertEqual(model.watchHost(for: worker), laptop, "Stop watching goes to the computer that watches it")
         try push(Spec(observedAt: "2026-10-11T09:01:00.000Z", standing: true))
         await until { model.watchedLine(worker) == WatchedWords.standing }
@@ -1213,7 +1213,7 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(WatcherWords.doing(started, in: try decoded(Spec(standing: true))), "Watcher started it at \(at).",
                        "From Watcher's own receipt for the thread")
         let paused = try decoded(Spec(standing: true, paused: true))
-        XCTAssertEqual(WatcherWords.doing(try XCTUnwrap(paused.watched.first), in: paused), "You sent here yourself. Watcher waits until that turn ends.")
+        XCTAssertEqual(WatcherWords.doing(try XCTUnwrap(paused.watched.first), in: paused), "You sent here yourself. Until that turn ends, Watcher can only steer it.")
         // A thread watched with nothing sent yet says since when.
         let json = page(Spec(standing: true)).replacingOccurrences(of: #""threadId":"t"},"title":"Fix login test","provider":"claude","action""#,
                                                                    with: #""threadId":"other"},"title":"Other","provider":"claude","action""#)

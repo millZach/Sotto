@@ -1,4 +1,5 @@
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
+import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { subagentSummarySchema } from './subagents'
@@ -336,6 +337,19 @@ export const agentMessageSchema = z.object({
    */
   wakeUp: z.literal(true).optional().catch(undefined),
   /**
+   * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
+   * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
+   * shows the wake-up as Sotto's.
+   */
+  hiddenWakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a Watcher wake-up whose news said watched threads waited on the user (ADR-0073, answering in Watcher's
+   * conversation): which thread's which request, text-free, from the host's own record of the send, put on as `wakeUp`
+   * is so it survives the history being read again and a restart. Watcher's pane shows each request's card from it. An
+   * older reader drops the field and shows no card.
+   */
+  watcherAsks: watcherAsksSchema.optional().catch(undefined),
+  /**
    * Set on Watcher's first message after a provider change when the user chose to continue with a handover of the last
    * Watcher (ADR-0073): the message's text is then the user's words, and this is the handover that went ahead of them in
    * the same message, told apart by its recorded provenance rather than its words. An older reader drops the field and
@@ -460,6 +474,9 @@ export const agentThreadSchema = z.object({
   /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
    * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
   wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
+  /** Which of those wake-ups carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026),
+   * from the same record. A row never quotes one. Absent when there are none, and from older hosts. */
+  hiddenWakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -980,7 +997,7 @@ export function lastWrittenMessage<T extends Pick<AgentMessage, 'id' | 'visual'>
  * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
  * agent's words, so it is left out: sidebar rows and search keep what the agent wrote.
  */
-export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
+export function summarizeThread(thread: { readonly messages: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[] | undefined }): AgentThreadSummary {
   const { activities = [] } = thread
   const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>

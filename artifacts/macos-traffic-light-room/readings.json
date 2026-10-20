@@ -1,0 +1,856 @@
+{
+  "mac-header": {
+    "mac-header-win32-dark-400px-1280x800": {
+      "pane": 399.984375,
+      "head": {
+        "left": 0,
+        "right": 393.984375,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 14,
+          "right": 38,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 48,
+          "right": 115.109375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 125.109375,
+          "right": 305.28125,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 332.984375,
+          "right": 361.984375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 363.984375,
+          "right": 393.984375,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-win32-dark-400px-820x560": {
+      "pane": 400,
+      "head": {
+        "left": 0,
+        "right": 394,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 14,
+          "right": 38,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 48,
+          "right": 115.109375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 125.109375,
+          "right": 305.28125,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 333,
+          "right": 362,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 364,
+          "right": 394,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-dark-400px-1280x800": {
+      "pane": 399.984375,
+      "head": {
+        "left": 0,
+        "right": 393.984375,
+        "top": 0,
+        "bottom": 90,
+        "height": 90
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 14,
+          "right": 194.171875,
+          "top": 48,
+          "bottom": 84
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 332.984375,
+          "right": 361.984375,
+          "top": 51,
+          "bottom": 81
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 363.984375,
+          "right": 393.984375,
+          "top": 51,
+          "bottom": 81
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-dark-400px-820x560": {
+      "pane": 400,
+      "head": {
+        "left": 0,
+        "right": 394,
+        "top": 0,
+        "bottom": 90,
+        "height": 90
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 14,
+          "right": 194.171875,
+          "top": 48,
+          "bottom": 84
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 333,
+          "right": 362,
+          "top": 51,
+          "bottom": 81
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 364,
+          "right": 394,
+          "top": 51,
+          "bottom": 81
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-dark-480px-1600x1000": {
+      "pane": 479.546875,
+      "head": {
+        "left": 0,
+        "right": 473.546875,
+        "top": 0,
+        "bottom": 90,
+        "height": 90
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 14,
+          "right": 194.171875,
+          "top": 48,
+          "bottom": 84
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 412.546875,
+          "right": 441.546875,
+          "top": 51,
+          "bottom": 81
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 443.546875,
+          "right": 473.546875,
+          "top": 51,
+          "bottom": 81
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-dark-559px-1600x1000": {
+      "pane": 559.09375,
+      "head": {
+        "left": 0,
+        "right": 553.09375,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 265.046875,
+          "right": 445.21875,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 492.09375,
+          "right": 521.09375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 523.09375,
+          "right": 553.09375,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-dark-639px-1600x1000": {
+      "pane": 638.640625,
+      "head": {
+        "left": 0,
+        "right": 632.640625,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 265.046875,
+          "right": 445.21875,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 571.640625,
+          "right": 600.640625,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 602.640625,
+          "right": 632.640625,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-dark-718px-1600x1000": {
+      "pane": 718.1875,
+      "head": {
+        "left": 0,
+        "right": 712.1875,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 322.75,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 336.75,
+          "right": 528.921875,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 595.53125,
+          "right": 680.1875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 682.1875,
+          "right": 712.1875,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-win32-light-400px-1280x800": {
+      "pane": 399.984375,
+      "head": {
+        "left": 0,
+        "right": 393.984375,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 14,
+          "right": 38,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 48,
+          "right": 115.109375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 125.109375,
+          "right": 305.28125,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 332.984375,
+          "right": 361.984375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 363.984375,
+          "right": 393.984375,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-win32-light-400px-820x560": {
+      "pane": 400,
+      "head": {
+        "left": 0,
+        "right": 394,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 14,
+          "right": 38,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 48,
+          "right": 115.109375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 125.109375,
+          "right": 305.28125,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 333,
+          "right": 362,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 364,
+          "right": 394,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-light-400px-1280x800": {
+      "pane": 399.984375,
+      "head": {
+        "left": 0,
+        "right": 393.984375,
+        "top": 0,
+        "bottom": 90,
+        "height": 90
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 14,
+          "right": 194.171875,
+          "top": 48,
+          "bottom": 84
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 332.984375,
+          "right": 361.984375,
+          "top": 51,
+          "bottom": 81
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 363.984375,
+          "right": 393.984375,
+          "top": 51,
+          "bottom": 81
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-light-400px-820x560": {
+      "pane": 400,
+      "head": {
+        "left": 0,
+        "right": 394,
+        "top": 0,
+        "bottom": 90,
+        "height": 90
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 14,
+          "right": 194.171875,
+          "top": 48,
+          "bottom": 84
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 333,
+          "right": 362,
+          "top": 51,
+          "bottom": 81
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 364,
+          "right": 394,
+          "top": 51,
+          "bottom": 81
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-light-480px-1600x1000": {
+      "pane": 479.546875,
+      "head": {
+        "left": 0,
+        "right": 473.546875,
+        "top": 0,
+        "bottom": 90,
+        "height": 90
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 14,
+          "right": 194.171875,
+          "top": 48,
+          "bottom": 84
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 412.546875,
+          "right": 441.546875,
+          "top": 51,
+          "bottom": 81
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 443.546875,
+          "right": 473.546875,
+          "top": 51,
+          "bottom": 81
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-light-559px-1600x1000": {
+      "pane": 559.09375,
+      "head": {
+        "left": 0,
+        "right": 553.09375,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 265.046875,
+          "right": 445.21875,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 492.09375,
+          "right": 521.09375,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 523.09375,
+          "right": 553.09375,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-light-639px-1600x1000": {
+      "pane": 638.640625,
+      "head": {
+        "left": 0,
+        "right": 632.640625,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 255.046875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 265.046875,
+          "right": 445.21875,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 571.640625,
+          "right": 600.640625,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 602.640625,
+          "right": 632.640625,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    },
+    "mac-header-darwin-light-718px-1600x1000": {
+      "pane": 718.1875,
+      "head": {
+        "left": 0,
+        "right": 712.1875,
+        "top": 0,
+        "bottom": 44,
+        "height": 44
+      },
+      "parts": [
+        {
+          "name": "Sotto Owl",
+          "left": 88,
+          "right": 112,
+          "top": 10,
+          "bottom": 34
+        },
+        {
+          "name": "Watcher",
+          "left": 122,
+          "right": 177.9375,
+          "top": 10.75,
+          "bottom": 33.25
+        },
+        {
+          "name": "All threads, 8. Show the list",
+          "left": 187.9375,
+          "right": 322.75,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "Watcher’s view",
+          "left": 336.75,
+          "right": 528.921875,
+          "top": 4,
+          "bottom": 40
+        },
+        {
+          "name": "Stop all threads Watcher started, 2 threads",
+          "left": 595.53125,
+          "right": 680.1875,
+          "top": 7,
+          "bottom": 37
+        },
+        {
+          "name": "More Watcher actions",
+          "left": 682.1875,
+          "right": 712.1875,
+          "top": 7,
+          "bottom": 37
+        }
+      ],
+      "clipped": []
+    }
+  }
+}

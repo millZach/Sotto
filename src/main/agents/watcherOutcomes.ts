@@ -111,6 +111,34 @@ function turnOfReply(turns: readonly Turn[], position: number, message: AgentMes
   return turn
 }
 
+/**
+ * The reply the thread's newest turn gave, for its news (#1190): its last worker message that belongs to that turn by the
+ * rule outcomes use, so a steer shown above an earlier turn's reply never takes it. Undefined when the newest turn cannot
+ * be placed or wrote nothing.
+ */
+export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | undefined {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), newest = turns.at(-1), last = thread.lastTurn
+  // A newest turn Sotto cannot place is not the newest it placed: it has no reply to give, never an earlier turn's.
+  if (!newest || !last || newest.nativeTurnId !== last.id && newest.turnId !== last.id) return undefined
+  return messages.findLast((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest)
+}
+
+/**
+ * Whether the turn a brief began, by its Sotto anchor, is still the thread's newest (#1190): the newest turn Sotto placed,
+ * and the provider's newest turn is that same turn, by its ID, its native ID or its anchor. A turn the provider started by
+ * itself, as Claude Code does to report background work, has no anchor and is not the brief's. A steer read into the
+ * brief's turn begins none of its own. A brief whose turn cannot be placed reads as newest, so nothing is claimed of it.
+ */
+export function watcherBriefTurnIsNewest(thread: AgentThread, turnMessageId: string): boolean {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), brief = turns.find(turn => turn.messageId === turnMessageId)
+  if (!brief) return true
+  if (turns.at(-1) !== brief) return false
+  const last = thread.lastTurn
+  return !last || last.id === brief.turnId || last.id === brief.nativeTurnId || last.messageId === turnMessageId
+}
+
 /** The newest turn's Sotto anchor, for naming the delegation a turn's news answers. */
 export function watcherLatestTurnMessageId(thread: AgentThread): string | undefined {
   const messages = thread.messages.filter(message => !isVisualMessage(message))

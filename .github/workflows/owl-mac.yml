@@ -1,4 +1,4 @@
-# Builds the Apple silicon Mac half of a Sotto Owl (ADR-0072, ADR-0092) from the same source commit and Owl version as the
+# Builds the Apple silicon Mac half of a Sotto Owl (ADR-0072, ADR-0093) from the same source commit and Owl version as the
 # Windows Owl the release lead packaged by hand. Runs only when started by hand; never on a push or a pull request.
 # It publishes nothing: it attests the disk image and zip and keeps them as a workflow artifact, which release:owl
 # verifies and attaches to the Owl prerelease. The build is ad-hoc signed until Developer ID signing arrives, and
