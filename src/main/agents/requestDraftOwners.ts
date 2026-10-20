@@ -21,5 +21,5 @@ export function requestDraftOwnerState(owner: RequestDraftOwner, local: Pick<Age
   const thread = host.threads.find(item => item.id === id && requestDraftProvider(host, item, provider) === owner.providerId)
   const recovery = local.requestAnswerRecovery(id, owner.providerId)
   return thread ? { connected: isThreadProviderConnected(host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
-    requests: structuredClone(thread.requests), ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
+    requests: structuredClone(thread.requests), ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), listed: true, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
 }

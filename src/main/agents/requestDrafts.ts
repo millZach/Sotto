@@ -38,6 +38,8 @@ export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: 
 export interface RequestDraftOwnerState {
   /** Main classifies the saved owner; a renderer cannot supply this evidence. */
   readonly watcher?: boolean
+  /** The owner's thread is on its host's list now, rather than known from answer receipts alone. */
+  readonly listed?: boolean
   readonly connected: boolean
   readonly ready: boolean
   readonly requests: readonly AgentRequest[]
@@ -55,6 +57,14 @@ export class RequestDraftService {
   private storageError: string | null = null
   private writing: Promise<unknown> = Promise.resolve()
   private readonly listeners = new Set<(owner: RequestDraftOwner) => void>()
+  /**
+   * Retirement owners a saved commit found listed as ordinary threads. A thread's kind and provider are fixed when it
+   * starts, and this run's held providers and Watcher switch are read once at start, so looking one up again cannot
+   * change what is saved.
+   * Every save looked up every retirement's thread, and with a few hundred answered questions that was half of main's
+   * time (#1230). Drafts and unclassified owners are still looked up on every commit.
+   */
+  private readonly ordinaryOwners = new Set<string>()
 
   constructor(directory: string, private readonly lookup: (owner: RequestDraftOwner) => RequestDraftOwnerState | undefined,
     private readonly refresh: (target: RequestDraftTarget, decisionId?: string) => Promise<void>,
@@ -136,12 +146,24 @@ export class RequestDraftService {
     // forms so offline startup and ordinary ledger trimming cannot lose their identity.
     const watchers = new Map((this.saved.watcherOwners ?? []).map(owner => [requestDraftOwnerKey(owner), owner]))
     const unclassified = new Map((this.saved.unclassifiedOwners ?? []).map(owner => [requestDraftOwnerKey(owner), owner]))
+    const drafted = new Set(drafts.map(draft => requestDraftOwnerKey(draft.target)))
+    const looked = new Set<string>(), ordinary: string[] = []
     const owners = [...drafts.map(draft => draft.target), ...retirements.map(item => item.owner), ...unclassified.values()]
-    for (const owner of owners.filter(owner => owner.kind === 'thread')) {
-      const key = requestDraftOwnerKey(owner), state = this.lookup(owner), classification = this.preserveOwner?.(owner)
+    for (const owner of owners) {
+      if (owner.kind !== 'thread') continue
+      const key = requestDraftOwnerKey(owner)
+      // Each owner once per commit. A retirement's owner already kept as Watcher, or already found ordinary, cannot
+      // change what this writes; an owner that is still unclassified, or has a draft, is always looked up.
+      if (looked.has(key)) continue
+      looked.add(key)
+      if (!drafted.has(key) && !unclassified.has(key) && (watchers.has(key) || this.ordinaryOwners.has(key))) continue
+      const state = this.lookup(owner), classification = this.preserveOwner?.(owner)
       const identity = { kind: owner.kind, ownerId: owner.ownerId, providerId: owner.providerId }
       if (state?.watcher === true || classification === true) { watchers.set(key, identity); unclassified.delete(key) }
-      else if (state || classification === false) unclassified.delete(key)
+      else if (state || classification === false) {
+        unclassified.delete(key)
+        if (state?.listed === true) ordinary.push(key)
+      }
       else if (this.saved.watcherOwners === undefined && classification === undefined) unclassified.set(key, identity)
     }
     const next = savedSchema.parse({ version: 2, drafts, retirements, watcherOwners: [...watchers.values()],
@@ -156,14 +178,18 @@ export class RequestDraftService {
       const owner = { kind, ownerId, providerId }
       changed.set(requestDraftOwnerKey(owner), owner)
     }
-    const beforeRetirements = new Map(this.saved.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
-    const afterRetirements = new Map(next.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
-    for (const item of [...this.saved.retirements, ...next.retirements]) {
-      const key = retirementKey(item)
-      if (beforeRetirements.get(key) !== afterRetirements.get(key)) changed.set(requestDraftOwnerKey(item.owner), item.owner)
+    // A save, discard or hold leaves the ledger as it was, and its owners with it.
+    if (retirements !== this.saved.retirements) {
+      const beforeRetirements = new Map(this.saved.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
+      const afterRetirements = new Map(next.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
+      for (const item of [...this.saved.retirements, ...next.retirements]) {
+        const key = retirementKey(item)
+        if (beforeRetirements.get(key) !== afterRetirements.get(key)) changed.set(requestDraftOwnerKey(item.owner), item.owner)
+      }
     }
     try { await this.store.write(next) } catch { throw new Error(saveFailed) }
     this.saved = next
+    for (const key of ordinary) this.ordinaryOwners.add(key)
     for (const owner of changed.values()) for (const listener of this.listeners) {
       // A failed window notification cannot turn a successful durable write into a failed save.
       try { listener(owner) } catch { /* the window lists again when it mounts */ }

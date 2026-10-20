@@ -113,7 +113,8 @@
     "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
-    "shell()": 32
+    "structuredClone(": 1,
+    "shell()": 30
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,
