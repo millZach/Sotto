@@ -1653,6 +1653,14 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 406_000, contextUpdatedAt: '2026-10-19T10:04:00.000Z' } }
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  // It fails, and the provider reported the compaction as a turn of its own, as Codex does: no try until Watcher's next.
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-compaction-turn', status: 'failed' }, compaction: { commandId: 'synthetic-compaction-2', status: 'failed' },
+    usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-3', status: 'completed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:06:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(3)
 })
 
 it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {
@@ -1671,19 +1679,29 @@ it('tells Watcher to read its state after its context drops by more than half, a
   expect(f.service.stateNote()).toContain('call read_state')
 })
 
-it('takes a smaller context on another model for another conversation’s size, not a compaction', async () => {
+it.each([true, false])('takes a smaller context on another model for another conversation’s size, not a compaction (reading names its model: %s)', async named => {
   const f = await fixture()
   const real = f.control.watcherSnapshot.bind(f.control)
-  let reading = { tokens: 300_000, modelId: 'synthetic-model-a' }
+  let reading = { tokens: 300_000, modelId: 'synthetic-model-a', at: '2026-10-19T10:00:00.000Z' }
   vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
     const snapshot = real()
     return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, modelId: reading.modelId, usage: { contextUsed: reading.tokens,
-      modelId: reading.modelId, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+      ...named ? { modelId: reading.modelId } : {}, contextUpdatedAt: reading.at, rateVersions: [], partial: false, updatedAt: reading.at } } : thread) }
   })
-  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  reading = { tokens: 40_000, modelId: 'synthetic-model-b' }
-  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await nudge()
+  // The model changes before its first reading comes, and then the new model's own reading is far smaller.
+  reading = { ...reading, modelId: 'synthetic-model-b' }
+  await nudge()
+  reading = { ...reading, tokens: 40_000, at: '2026-10-19T10:01:00.000Z' }
+  await nudge()
   expect(f.service.stateNote()).toBeUndefined()
+  // A drop on the new model is still a compaction.
+  reading = { ...reading, tokens: 120_000, at: '2026-10-19T10:02:00.000Z' }
+  await nudge()
+  reading = { ...reading, tokens: 30_000, at: '2026-10-19T10:03:00.000Z' }
+  await nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
 })
 
 it('asks Watcher to read its state after any Compact context for its conversation, whatever the provider reports', async () => {
