@@ -237,13 +237,13 @@ describe('thread store', () => {
     expect(reopened.store.readMessages('thread').messages).toEqual([])
   })
 
-  it('keeps committed history durable with synchronous=FULL', () => {
+  it('saves history at synchronous=NORMAL, flushing only what the user takes out (ADR-0016)', () => {
     const db = new DatabaseSync(':memory:')
     try {
       prepareThreadDatabase(db)
       // synchronous is per-connection, so it reads back here even though the memory
       // database's journal_mode reports 'memory' rather than 'wal'.
-      expect(db.prepare('PRAGMA synchronous').get()?.synchronous).toBe(2)
+      expect(db.prepare('PRAGMA synchronous').get()?.synchronous).toBe(1)
     } finally {
       db.close()
     }

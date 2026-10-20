@@ -3,6 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
@@ -53,6 +54,38 @@ it('migrates legacy activity without putting output back in workspace JSON and r
   await f.close(host)
   const reopened = await f.open()
   expect(reopened.workspaceSnapshot().threads[0]!.activities).toEqual(f.provider.state.threads[0]!.activities)
+})
+
+it('puts the sub-agent roster on the disk before it saves legacy activity without its task words', async () => {
+  const f = await fixture(() => true, true)
+  const flushed = vi.spyOn(SubagentStore.prototype, 'flushToDisk'), synced = vi.spyOn(ThreadStore.prototype, 'syncActivities')
+  await f.open()
+  expect(flushed).toHaveBeenCalled()
+  expect(synced).toHaveBeenCalled()
+  expect(flushed.mock.invocationCallOrder[0]).toBeLessThan(synced.mock.invocationCallOrder[0]!)
+})
+
+/** A legacy workspace.json whose thread carries a subagent record with its task words, as one from before the roster. */
+async function legacyWithTaskWords() {
+  const f = await fixture(() => true, false)
+  const spawn: AgentActivity = { id: 'spawn', turnId: 'turn', sequence: 1, kind: 'subagent', status: 'completed', title: 'Private task title',
+    agents: [{ id: 'child', assignmentId: 'task', status: 'completed', title: 'Private task title', prompt: 'Private moved task', message: 'Private moved result' }] }
+  f.provider.state.threads[0]!.activities = [...f.provider.state.threads[0]!.activities!, spawn]
+  await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
+  return f
+}
+
+it.each([
+  ['cannot be opened', () => vi.spyOn(SubagentStore.prototype, 'open').mockImplementation(() => { throw new Error('Synthetic roster open failure') })],
+  ['cannot reach the disk', () => vi.spyOn(SubagentStore.prototype, 'flushToDisk').mockImplementation(() => { throw new Error('Synthetic roster flush failure') })],
+])('keeps legacy task words in workspace.json, and still starts, when the roster %s', async (_name, fail) => {
+  const f = await legacyWithTaskWords()
+  fail()
+  // Starting still succeeds: only the strip waits for the roster, not the rest of the save.
+  await f.open()
+  const saved = await readFile(join(f.directory, 'workspace.json'), 'utf8')
+  expect(saved).toContain('Private moved task')
+  expect(saved).toContain('Private moved result')
 })
 
 it('persists changed activity independently while repeated frames avoid organization writes', async () => {
