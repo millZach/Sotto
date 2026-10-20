@@ -125,18 +125,23 @@
 .watcher-tabs__tab[aria-selected='true'] { background: var(--tt-surface-elevated); box-shadow: 0 1px 2px var(--tt-shadow-color); color: var(--tt-text); }
 .watcher-tabs__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
 @container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } .watcher-tabs__tab { padding: 0 7px; } }
-/* Off macOS a label comes back only where the whole row holds it, with room to spare for longer counts. All threads'
-   needs 495 pixels of pane, so it returns at 520. While Stop all shows, Stop all's needs 582 and returns at 610, All
-   threads' then needs 526 and returns at 550, and below 480 the name gives the tabs its room. macOS keeps its own widths,
-   since its header starts past the traffic lights. */
-@container thread-pane (width < 520px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
-@container thread-pane (width < 610px) {
+/* Off macOS a label comes back only where the whole row holds it with three-digit counts on All threads and Watched,
+   the counts being uncapped. All threads' needs 525 pixels of pane, so it returns at 540. While Stop all shows, Stop
+   all's needs 611 and returns at 630, All threads' then needs 556 and returns at 570, below 500 the name gives the tabs
+   its room, and below 420 the tabs and All threads tighten again. macOS keeps its own widths, since its header starts
+   past the traffic lights. */
+@container thread-pane (width < 540px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
+@container thread-pane (width < 630px) {
   .watcher-room:not(.threads-view--mac) .watcher-stop-all__text { display: none; }
   .watcher-room:not(.threads-view--mac) .watcher-stop-all__button { padding: 0 7px; }
 }
-@container thread-pane (width < 550px) { .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list-text { display: none; } }
-@container thread-pane (width < 480px) {
+@container thread-pane (width < 570px) { .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list-text { display: none; } }
+@container thread-pane (width < 500px) {
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@container thread-pane (width < 420px) {
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab { padding: 0 5px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list { gap: 4px; padding: 0 6px 0 7px; }
 }
 /* Beside a thread at the smallest window the tabs need the name's room: the tile still says whose room it is, and the
    heading stays for assistive technology. */

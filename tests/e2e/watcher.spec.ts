@@ -1272,7 +1272,9 @@ test.describe("Watcher's room on the built app", () => {
 
   test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
     // The header off macOS: the tile, the name, All threads, the tabs, then Stop all (while it shows) and More Watcher
-    // actions. The macOS layout moves the header clear of the traffic lights and has its own journey.
+    // actions, on one row. On macOS the header starts past the traffic lights and takes two rows in a narrow pane, which
+    // its own journey checks.
+    test.skip(process.platform === 'darwin', 'The macOS header has its own journey')
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
       const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
@@ -1282,12 +1284,15 @@ test.describe("Watcher's room on the built app", () => {
         ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       const box = head.getBoundingClientRect()
+      const present = (selector: string) => { const node = head.querySelector(selector); return node !== null && shown(node) }
       const labels = ['.watcher-head__list-text', '.watcher-stop-all__text'].map(selector => head.querySelector(selector)).filter((node): node is Element => node !== null && shown(node))
       return {
         pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
         head: { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight), top: box.top, bottom: box.bottom, height: box.height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         labels: labels.map(node => node.textContent ?? ''),
+        present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), conversation: present('[data-tab="conversation"]'),
+          watched: present('[data-tab="watched"]'), stopAll: present('.watcher-stop-all__button'), more: present('.watcher-actions > button') },
         // A label or count cut off by its own control, or the name cut to an ellipsis.
         clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
@@ -1296,6 +1301,10 @@ test.describe("Watcher's room on the built app", () => {
     const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
       a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
     const round = (value: number) => Math.round(value * 10) / 10
+    // watcher.css: while Stop all shows, Watcher's name gives way below this width.
+    const NAME_FROM = 500
+    // The narrowest pane that shows All threads' label beside Stop all, captured with three-digit counts.
+    const CAPTURE_100 = 570
     const evidence = evidenceDirectory('artifacts/watcher-header-overlap')
     await mkdir(evidence, { recursive: true })
     const readings: Record<string, unknown> = {}
@@ -1315,50 +1324,65 @@ test.describe("Watcher's room on the built app", () => {
           await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
           await expect(beside(page)).toBeVisible()
           await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
-          for (const [width, height] of SIZES) {
-            await resizeContentWindow(launched, width, height)
-            await settle(page)
-            const divider = page.getByRole('separator', { name: 'Resize panes' })
-            // Watcher's pane is the divider's offset in the room; each pane keeps 400 pixels, so the widest is the room less 409.
-            const room = await divider.evaluate(node => node.parentElement!.getBoundingClientRect())
-            const widest = Math.floor(room.width - 409)
-            const targets = [...new Set([...Array.from({ length: 41 }, (_, index) => 400 + index * 10).filter(target => target < widest), Math.min(widest, 800)])]
-            for (const target of targets) {
-              // Dragged, as a pointer would, to the pixel; a drag whose last move a busy machine dropped is dragged again.
-              await expect(async () => {
-                const handle = await box(divider)
-                await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
-                await page.mouse.down()
-                await page.mouse.move(room.left + target + 4.5, handle.y + handle.height / 2, { steps: 2 })
-                await page.mouse.up()
-                await settle(page)
-                const pane = await page.locator('.watcher-pane').evaluate(node => node.getBoundingClientRect().width)
-                expect(Math.abs(pane - target), `the divider moved to ${target}px`).toBeLessThanOrEqual(1)
-              }).toPass({ timeout: 15_000 })
-              const reading = await read(page)
-              const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all`
-              expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
-              for (const [index, part] of reading.parts.entries()) {
-                for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
-                expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
-                expect.soft(part.right, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.right + 0.5)
-                expect.soft(part.top, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.top - 0.5)
-                expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
+          for (const counts of ['seeded', 'three-digit'] as const) {
+            // The counts are uncapped. The second pass draws both as 100, the widest three digits in tabular figures, at the
+            // window sizes whose panes span the sweep.
+            if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
+              for (const count of head.querySelectorAll('.watcher-head__count, .watcher-tabs__count')) count.textContent = '100'
+            })
+            for (const [width, height] of counts === 'seeded' ? SIZES : [SIZES[1], SIZES[2]]) {
+              await resizeContentWindow(launched, width, height)
+              await settle(page)
+              const divider = page.getByRole('separator', { name: 'Resize panes' })
+              // Watcher's pane is the divider's offset in the room; each pane keeps 400 pixels, so the widest is the room less 409.
+              const room = await divider.evaluate(node => node.parentElement!.getBoundingClientRect())
+              const widest = Math.floor(room.width - 409)
+              const targets = [...new Set([...Array.from({ length: 41 }, (_, index) => 400 + index * 10).filter(target => target < widest), Math.min(widest, 800)])]
+              for (const target of targets) {
+                // Dragged, as a pointer would, to the pixel; a drag whose last move a busy machine dropped is dragged again.
+                await expect(async () => {
+                  const handle = await box(divider)
+                  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+                  await page.mouse.down()
+                  await page.mouse.move(room.left + target + 4.5, handle.y + handle.height / 2, { steps: 2 })
+                  await page.mouse.up()
+                  await settle(page)
+                  const pane = await page.locator('.watcher-pane').evaluate(node => node.getBoundingClientRect().width)
+                  expect(Math.abs(pane - target), `the divider moved to ${target}px`).toBeLessThanOrEqual(1)
+                }).toPass({ timeout: 15_000 })
+                const reading = await read(page)
+                const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all, ${counts} counts`
+                expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
+                // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
+                // styles keep it (from NAME_FROM pixels with Stop all, 450 without).
+                const { name, ...always } = reading.present
+                expect.soft(always, where).toEqual({ tile: true, list: true, conversation: true, watched: true, stopAll, more: true })
+                if (reading.pane >= (stopAll ? NAME_FROM : 450) + 1) expect.soft(name, `the name shown, ${where}`).toBe(true)
+                for (const [index, part] of reading.parts.entries()) {
+                  for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
+                  expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
+                  expect.soft(part.right, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.right + 0.5)
+                  expect.soft(part.top, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.top - 0.5)
+                  expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
+                }
+                expect.soft(reading.clipped, where).toEqual([])
+                expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+                readings[`${appearance}-${stopAll ? 'stop-all' : 'no-stop-all'}-${counts === 'seeded' ? '' : 'counts-100-'}${width}x${height}-${Math.round(reading.pane)}px`] = {
+                  pane: round(reading.pane), head: [round(reading.head.left), round(reading.head.right)], labels: reading.labels, clipped: reading.clipped,
+                  parts: reading.parts.map(part => [part.name, round(part.left), round(part.right)]),
+                }
+                // In the band that overlapped before this change (470 to 581 pixels with Stop all), where a 1100-pixel window’s even split lands.
+                if (target === 540 && width === 1280 && counts === 'seeded') await captureInto(evidence, launched, `header-${stopAll ? 'stop-all' : 'no-stop-all'}-${appearance}-540px-1280x800.png`)
+                if (target === CAPTURE_100 && width === 1280 && counts === 'three-digit' && stopAll) await captureInto(evidence, launched, `header-stop-all-counts-100-${appearance}-${CAPTURE_100}px-1280x800.png`)
               }
-              expect.soft(reading.clipped, where).toEqual([])
-              expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
-              readings[`${appearance}-${stopAll ? 'stop-all' : 'no-stop-all'}-${width}x${height}-${Math.round(reading.pane)}px`] = {
-                pane: round(reading.pane), head: [round(reading.head.left), round(reading.head.right)], labels: reading.labels, clipped: reading.clipped,
-                parts: reading.parts.map(part => [part.name, round(part.left), round(part.right)]),
-              }
-              // In the band that overlapped before this change (470 to 581 pixels with Stop all), where a 1100-pixel window’s even split lands.
-              if (target === 540 && width === 1280) await captureInto(evidence, launched, `header-${stopAll ? 'stop-all' : 'no-stop-all'}-${appearance}-540px-1280x800.png`)
             }
           }
         }
       })
     })
-    await writeFile(resolve(evidence, 'readings.json'), `${JSON.stringify(readings, null, 2)}\n`, 'utf8')
+    // One reading to a line: 516 of them pretty-printed would be thousands of lines of committed evidence.
+    const lines = Object.entries(readings).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
+    await writeFile(resolve(evidence, 'readings.json'), `{\n${lines.join(',\n')}\n}\n`, 'utf8')
   })
 
   test('the receipt cards hold still with reduced motion', async () => {

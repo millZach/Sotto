@@ -689,6 +689,8 @@ artifacts/watcher-header-overlap/*
 !artifacts/watcher-header-overlap/header-stop-all-light-540px-1280x800.png
 !artifacts/watcher-header-overlap/header-no-stop-all-dark-540px-1280x800.png
 !artifacts/watcher-header-overlap/header-no-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-counts-100-dark-570px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-counts-100-light-570px-1280x800.png
 !artifacts/watcher-header-overlap/readings.json
 artifacts/watcher-answer/*
 !artifacts/watcher-answer/answer-main-card-dark-1280x800.png
