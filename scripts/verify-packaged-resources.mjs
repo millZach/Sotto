@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { inflateSync } from 'node:zlib'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
@@ -238,15 +239,22 @@ export async function verifyPackagedResources(input, options = {}) {
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
   await verifyClaudeSdkAssets(join(resources, 'claude-sdk'))
+  // The Dock icon's coverage (src/main/dock/dockIcon.ts): two bytes for each of 512x512 pixels once inflated.
+  if (profile.key === 'darwin') {
+    const coveragePath = join(resources, 'dock', 'mark-coverage.bin')
+    let coverageBytes = -1
+    try { coverageBytes = inflateSync(readFileSync(coveragePath)).length } catch { /* reported below */ }
+    if (coverageBytes !== 512 * 512 * 2) fail('dock/mark-coverage.bin is missing or is not the Dock icon coverage')
+  }
   if (existsSync(join(resources, 'runtime'))) fail('retired voice runtime must not be bundled')
   for (const required of [
     profile.executablePath(target),
     asarPath,
     join(resources, 'README.md'),
     join(resources, 'THIRD_PARTY_NOTICES.md'),
-    // The menu-bar template icons are macOS-only extraResources.
+    // The menu-bar template icons and the Dock icon's coverage are macOS-only extraResources.
     ...(profile.key === 'darwin'
-      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png')]
+      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png'), join(resources, 'dock', 'mark-coverage.bin')]
       : []),
     ...(profile.key === 'linux' ? [
       join(resources, 'omarchy', 'bindings.lua'),
