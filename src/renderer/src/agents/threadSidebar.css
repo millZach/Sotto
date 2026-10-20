@@ -10,7 +10,7 @@
 /* The top row carries the mark, the mode switch and the project, thread and collapse actions, and it is the frameless window's
    drag region: every control in it opts back out. macOS keeps room at the left for the traffic lights. */
 .thread-nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; -webkit-app-region: drag; user-select: none; }
-.thread-nav--mac .thread-nav__top { padding-left: 78px; }
+.thread-nav--mac .thread-nav__top { padding-left: var(--mac-lights-room); }
 /* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
    down). On macOS the traffic lights take the left end of the row, and the narrowest expanded width does not hold
    the wordmark beside the mode switch and actions: the mark stands alone. */
