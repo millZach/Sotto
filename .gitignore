@@ -697,3 +697,10 @@ artifacts/watcher-news-turns/*
 
 # macOS key listener helper, built by scripts/build-key-listener.mjs
 native/key-listener/build/
+artifacts/macos-traffic-light-room/*
+!artifacts/macos-traffic-light-room/mac-header-before-dark-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-dark-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-light-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-dark-559px-1600x1000.png
+!artifacts/macos-traffic-light-room/mac-header-light-718px-1600x1000.png
+!artifacts/macos-traffic-light-room/readings.json

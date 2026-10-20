@@ -68,6 +68,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron 43 has no install script, so npm ci leaves node_modules/electron/dist empty.
+      # The Mac build copies Electron's licence files from there; without them the package check fails.
+      - name: Download Electron
+        run: node node_modules/electron/install.js
+
       # Refuses unless the checkout is clean, HEAD is the source and the version is this manifest's next Owl.
       - name: Package and verify the Mac Owl
         run: npm run package:owl -- --version "$VERSION" --source "$SOURCE"

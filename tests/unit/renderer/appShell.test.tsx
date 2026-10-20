@@ -233,7 +233,7 @@ describe('AppShell', () => {
     expect(css).toMatch(/\.app-strip\s*\{[^}]*-webkit-app-region:\s*drag;/su)
     expect(css).toMatch(/\.app-switch\s*\{[^}]*-webkit-app-region:\s*no-drag;/su)
     expect(css).toMatch(/\.app-controls\s*\{[^}]*-webkit-app-region:\s*no-drag;/su)
-    expect(css).toMatch(/\.app-strip--mac\s*\{[^}]*padding-left:\s*78px;/su)
+    expect(css).toMatch(/\.app-strip--mac\s*\{[^}]*padding-left:\s*var\(--mac-lights-room\);/su)
     expect(css).toMatch(/\.app-room\s*\{[^}]*overflow:\s*auto;/su)
     expect(css).toMatch(/\.app-footer\s*\{[^}]*border-top:\s*1px solid var\(--tt-hairline\);/su)
     expect(css).toContain('@media (max-width: 820px)')

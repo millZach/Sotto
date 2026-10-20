@@ -106,8 +106,11 @@ describe('coordinator images, authority and durable settings', () => {
     const state = await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })
     expect(state.error).toMatch(/not confirmed/)
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toHaveLength(1)
-    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })).error).toMatch(/unknown result/)
-    expect(f.host.attempts).toHaveLength(1)
+    // An effort change whose result is unknown holds nothing back, so asking again goes to the provider, is reported as
+    // unconfirmed again, and replaces the earlier one rather than piling up beside it (#1192).
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })).error).toMatch(/not confirmed/)
+    expect(f.host.attempts).toHaveLength(2)
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toHaveLength(1)
   })
   it('creates, configures and sends a screenshot on a long-context model the catalog lists only by its base', async () => {
     // Claude Code 2.1.283 lists `opus` and no `opus[1m]`; the thread keeps the variant's ID throughout (#344).

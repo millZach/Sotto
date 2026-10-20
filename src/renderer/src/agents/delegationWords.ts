@@ -100,6 +100,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'TARGET_CHANGED': return `You had sent your own message in that thread since this thread last read it. ${nothing}`
     case 'PENDING_USER_REQUEST': return `That thread was waiting for your answer on its own card. ${nothing}`
     case 'UNKNOWN_THREAD': return `That thread is gone or archived, or this thread did not delegate to it. ${nothing}`
+    case 'QUEUE_HELD': return `That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. ${nothing}`
     default: return `Sotto turned it down. ${nothing}`
   }
 }
@@ -118,13 +119,14 @@ export const stopLabel = (working: number): string => working ? `Stop agent and 
 /** The line under the composer while a press of Stop would stop delegated threads too. */
 export const stopLine = (working: number): string => `Stop also stops ${threadsWord(working)}.`
 /**
- * Whether the turn running in a delegated thread is the user's own: its newest user message is not a brief the thread
- * that delegated sent, as main decides it (decision 6). Not known, so false, until the thread's briefs are read.
+ * Whether the turn running in a delegated thread is the user's own: its newest user message is neither a brief the
+ * thread that delegated sent nor one of Sotto's wake-ups, such as a resume note, as main decides it (decision 6). Not
+ * known, so false, until the thread's briefs are read.
  */
-export function userTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn' | 'messages' | 'lastUserMessageId' | 'summary'>, received: readonly DelegatedView[]): boolean {
+export function userTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn' | 'messages' | 'lastUserMessageId' | 'summary' | 'wakeUpMessageIds'>, received: readonly DelegatedView[]): boolean {
   if (!isThreadTurnRunning(thread) || !received.length) return false
   const head = lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id
-  return head !== undefined && head !== null && !received.some(view => view.briefMessageId === head)
+  return head !== undefined && head !== null && !received.some(view => view.briefMessageId === head) && !thread.wakeUpMessageIds?.includes(head)
 }
 
 /**

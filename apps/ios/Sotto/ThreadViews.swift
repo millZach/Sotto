@@ -1498,7 +1498,7 @@ private struct ReplyDock: View, Equatable {
         .padding(.bottom, Space.s2)
     }
 
-    /// What watching means here: Watcher keeps the thread going, and waits while the user's own turn runs; or, on a
+    /// What watching means here: Watcher keeps the thread going, and only steers while the user's own turn runs; or, on a
     /// computer that keeps no standing watches, that a direct instruction here takes the thread over from Watcher.
     /// Opening the thread or answering its card changes neither.
     private func watchedLine(_ words: String) -> some View {

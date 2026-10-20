@@ -88,7 +88,7 @@
    window controls sit at its top right and the sentence at its bottom right. */
 .settings-view { position: relative; overflow: hidden; }
 .settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
-.settings-view .settings-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; }
+.settings-view .settings-sidebar { --thread-nav-inset: 10px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; padding-left: var(--thread-nav-inset); }
 /* Equal tracks fit both beta gate states without changing the sidebar or label size. */
 .settings-view .thread-nav__foot .thread-nav__seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 0; }
 .settings-view .thread-nav__foot .thread-nav__seg button { min-width: 0; padding-inline: 0; }
@@ -174,14 +174,15 @@
 @keyframes settings-arrive { from { opacity: .6; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @media (max-width: 1100px) {
   .settings-view .settings-layout { grid-template-columns: 205px minmax(0, 1fr); }
-  .settings-sidebar { padding-left: 15px; }
+  .settings-view .settings-sidebar { --thread-nav-inset: 15px; }
   .settings-view .settings-scroll { padding: 32px 35px; }
   .settings-feedback { padding-inline: 35px; }
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 35px; }
 }
 @media (max-width: 900px) {
   .settings-view .settings-layout { grid-template-columns: 178px minmax(0, 1fr); }
-  .settings-sidebar { padding: 23px 10px 15px; }
+  .settings-sidebar { padding-top: 23px; padding-right: 10px; padding-bottom: 15px; }
+  .settings-view .settings-sidebar { --thread-nav-inset: 10px; }
   .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
   .settings-subnav button { padding: 8px 10px; gap: 8px; min-height: 38px; }
   .settings-subnav button > svg:last-child:not(:first-child) { display: none; }
