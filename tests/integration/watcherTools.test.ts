@@ -1611,7 +1611,8 @@ it('saves none of Watcher’s kept words with Keep local history off', async () 
 it('compacts Watcher once its conversation passes 400K tokens while it rests, and tells it to read its state after', async () => {
   const f = await fixture()
   const real = f.control.watcherSnapshot.bind(f.control)
-  let watcher: Partial<AgentThread> = { status: 'idle', requests: [], usage: { contextUsed: 399_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
+  let watcher: Partial<AgentThread> = { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
+    usage: { contextUsed: 400_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
   vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
     const snapshot = real()
     return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
@@ -1623,8 +1624,9 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
   const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await nudge()
+  // At the point, not past it.
   expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
-  expect(f.service.state().context).toMatchObject({ tokens: 399_000, compactAt: 400_000, canCompact: true, compacting: false })
+  expect(f.service.state().context).toMatchObject({ tokens: 400_000, compactAt: 400_000, canCompact: true, compacting: false })
   // Past the point, but Watcher's turn is running: it waits for Watcher to rest.
   watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 412_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
   await nudge()
@@ -1639,6 +1641,14 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   expect(f.service.stateNote()).toContain('call read_state')
   await f.call('read_state', {})
   expect(f.service.stateNote()).toBeUndefined()
+  // A reading after the compaction that still says past the point, before Watcher's next turn reports, compacts nothing again.
+  watcher = { ...watcher, usage: { ...watcher.usage!, contextUsed: 405_000, contextUpdatedAt: '2026-10-19T10:03:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(1)
+  // Watcher's next turn still past it: one more try.
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 406_000, contextUpdatedAt: '2026-10-19T10:04:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
 })
 
 it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {
@@ -1657,10 +1667,28 @@ it('tells Watcher to read its state after its context drops by more than half, a
   expect(f.service.stateNote()).toContain('call read_state')
 })
 
+it('takes a smaller context on another model for another conversation’s size, not a compaction', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let reading = { tokens: 300_000, modelId: 'synthetic-model-a' }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, modelId: reading.modelId, usage: { contextUsed: reading.tokens,
+      modelId: reading.modelId, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+  })
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  reading = { tokens: 40_000, modelId: 'synthetic-model-b' }
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toBeUndefined()
+})
+
 it('asks Watcher to read its state after any Compact context for its conversation, whatever the provider reports', async () => {
   const f = await fixture()
   expect(f.service.stateNote()).toBeUndefined()
+  // Asked for, it owes nothing yet: control may still refuse it.
   f.service.userCommand({ type: 'compact-thread', threadId: f.id }, f.id, false)
+  expect(f.service.stateNote()).toBeUndefined()
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
   expect(f.service.stateNote()).toContain('call read_state')
   // A refused read, as for an expired cursor, has not read the state back, so the reminder stays.
   expect(await f.call('read_state', { cursor: `${randomUUID()}:100` })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED' })

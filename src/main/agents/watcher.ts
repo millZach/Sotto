@@ -130,9 +130,10 @@ export class WatcherService implements WatcherControlHooks {
   private readonly kept: WatcherStateStore
   private stateOwed = false
   private seenCompaction: string | null = null
-  /** The Watcher thread the last look was at, and its context then. */
+  /** The Watcher thread the last look was at, and its context then with the model it was read for. */
   private seenFor: string | undefined
-  private lastTokens: number | undefined
+  private lastTokens: { tokens: number; modelId: string | undefined } | undefined
+  /** The turn, or the reading where a provider reports no turn, of the last compaction tried or seen: none again until it moves. */
   private compactTried: string | undefined
   private compactingNow = false
   private changing = false
@@ -201,32 +202,53 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * Compacts Watcher's conversation once it passes WATCHER_COMPACT_AT_TOKENS (#1189), when Watcher rests: no turn, no card,
    * no compaction, nothing queued for it. Every Watcher call rereads its whole conversation, so its cost grows with it.
-   * One try per context reading, so a compaction that fails is tried again only after Watcher's next turn. A compaction that
-   * finished, this one or the user's, owes Watcher its state: the note of its next turn says to read it.
+   * One try per Watcher turn, so a compaction that fails, or leaves the context high until Watcher's next turn reports it,
+   * is tried again only after that turn. A compaction that finished, this one or the user's, owes Watcher its state: the
+   * note of its next turn says to read it.
    */
   private compactWhenDue(): void {
     if (this.closed) return
+    const seen = this.lookAtState()
+    if (!seen) return
+    const { snapshot, thread, tokens } = seen
+    if (tokens === null || tokens <= WATCHER_COMPACT_AT_TOKENS || this.compactingNow || this.changing || !this.canCompact(snapshot, thread)) return
+    if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
+      || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
+    const turn = this.compactionTurn(thread, tokens)
+    if (turn === this.compactTried) return
+    this.compactTried = turn; this.compactingNow = true
+    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
+  }
+  /**
+   * Brings stateOwed up to date with Watcher's thread as it is now, so a send or a wake-up before the next snapshot tick
+   * carries the reminder too, and returns that thread.
+   */
+  private lookAtState(): { snapshot: AgentHostSnapshot; thread: AgentThread; tokens: number | null } | undefined {
     const current = this.view().current
     const snapshot = current ? this.options.control.watcherSnapshot() : undefined
     const thread = current && snapshot?.threads.find(item => item.id === current.target.threadId)
-    if (!thread || !snapshot) return
+    if (!thread || !snapshot) return undefined
     const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null, tokens = this.contextTokens(thread)
     if (this.seenFor !== thread.id) {
       // A new Watcher conversation starts from its state, and so does every start of Sotto, since a compaction may have
       // come before it that Watcher has not read its state since, and the reminder is not saved: one small call.
       this.stateOwed = true
-      this.seenFor = thread.id; this.seenCompaction = done; this.lastTokens = undefined
-    } else if (done !== null && done !== this.seenCompaction) { this.stateOwed = true; this.seenCompaction = done }
-    // A sharp drop in context is a compaction too: Muse reports no compaction of its own, and a provider may compact by itself.
-    if (tokens !== null && this.lastTokens !== undefined && this.lastTokens >= 50_000 && tokens < this.lastTokens / 2) this.stateOwed = true
-    if (tokens !== null) this.lastTokens = tokens
-    if (tokens === null || tokens < WATCHER_COMPACT_AT_TOKENS || this.compactingNow || !this.canCompact(snapshot, thread)) return
-    if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
-      || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
-    const reading = thread.usage?.contextUpdatedAt ?? String(tokens)
-    if (reading === this.compactTried) return
-    this.compactTried = reading; this.compactingNow = true
-    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
+      this.seenFor = thread.id; this.seenCompaction = done; this.lastTokens = undefined; this.compactTried = undefined
+    } else if (done !== null && done !== this.seenCompaction) {
+      this.stateOwed = true; this.seenCompaction = done; this.compactTried = this.compactionTurn(thread, tokens)
+    }
+    // A sharp drop in context is a compaction too: Muse reports no compaction of its own, and a provider may compact by
+    // itself. Only a reading for the same model counts, since another model's context is another conversation's size.
+    const last = this.lastTokens, modelId = thread.usage?.modelId
+    if (tokens !== null && last && last.modelId === modelId && last.tokens >= 50_000 && tokens < last.tokens / 2) {
+      this.stateOwed = true; this.compactTried = this.compactionTurn(thread, tokens)
+    }
+    if (tokens !== null) this.lastTokens = { tokens, modelId }
+    return { snapshot, thread, tokens }
+  }
+  /** Watcher's last turn, or its context reading where its provider reports no turn: the unit of one compaction try. */
+  private compactionTurn(thread: AgentThread, tokens: number | null): string {
+    return thread.lastTurn ? `turn:${thread.lastTurn.id}` : `reading:${thread.usage?.contextUpdatedAt ?? String(tokens)}`
   }
   /** Watcher's context in tokens as its provider last reported it for its current model, or null. */
   private contextTokens(thread: AgentThread): number | null {
@@ -237,7 +259,7 @@ export class WatcherService implements WatcherControlHooks {
     return capabilitiesForThread(snapshot, thread).compact === true && thread.manualCompactionSupported !== false
   }
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
-  stateNote(): string | undefined { return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
+  stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
   privacyChanged(): Promise<void> { return this.kept.privacyChanged() }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   /** The record for reading only. It is replaced on every change, never edited, so no copy is needed to look at it. */
@@ -1005,9 +1027,6 @@ export class WatcherService implements WatcherControlHooks {
   }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
-    // Compact context for Watcher's own conversation, the user's or Sotto's, owes it its state whatever the provider
-    // reports of it afterwards: Muse reports no compaction of its own (#1189).
-    if (command.type === 'compact-thread' && threadId === this.record().current?.target.threadId) this.stateOwed = true
     if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
     if (threadId === this.record().current?.target.threadId && command.type === 'queue-followup' && command.draftId) {
       const latest = this.record().requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)
@@ -1096,6 +1115,9 @@ export class WatcherService implements WatcherControlHooks {
         record.localTakeovers!.find(item => key(item.target) === key(target))!.userDrafts!.find(item => item.draftId === _draftId)!.messageId = command.messageId
       })
     }
+    // Compact context for Watcher's own conversation, the user's or Sotto's, owes it its state whatever the provider
+    // reports of it afterwards: Muse reports no compaction of its own (#1189). Here, once control has let it through.
+    if (command.type === 'compact-thread' && command.threadId === this.record().current?.target.threadId) this.stateOwed = true
     if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) this.pendingPromptTurns.set(command.commandId, {
       watcher: this.record().current!.target, messageId: command.messageId,
     })
@@ -1135,6 +1157,7 @@ export class WatcherService implements WatcherControlHooks {
     }
     // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
     // After a compaction the note also tells Watcher to read its state back first (#1189).
+    this.lookAtState()
     const note = watcherRequestNote(request.id, this.hostId(), this.stateOwed)
     // Codex and Claude Code are sent the words alone, and their display proof says so: a proven message is never
     // searched for an older footer, even one the user typed. Grok Build's request line is taken off by its exact
@@ -1494,8 +1517,9 @@ export class WatcherService implements WatcherControlHooks {
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
         const input = parsed.data as WatcherToolInput<'read_state'>, page = this.page('state', this.watching(this.state().watchedThreads), input.cursor, 100)
-        // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder.
-        this.stateOwed = false
+        // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder. The look
+        // comes first, so a reminder owed but not yet noticed is not raised again after this read.
+        this.lookAtState(); this.stateOwed = false
         return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
