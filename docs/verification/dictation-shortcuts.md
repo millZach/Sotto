@@ -61,7 +61,13 @@ Linux now has the same rows, and a save rewrites Sotto's Hyprland snippet (ADR-0
 
 - Unit tests over real files with scripted `hyprctl`, `luac` and shell replies: `tests/unit/main/omarchyKeys.test.ts` (the snippet for the defaults is the bundled `apps/omarchy/bindings.lua` byte for byte; press lines bind `toggle`, hold lines bind `start` and a release `stop`; only the bound chords are unbound), `tests/unit/main/omarchyShortcuts.test.ts` (nothing written before setup or over keys set up by hand; only the snippet changes, the replaced snippet is kept as `sotto-bindings.lua.bak`, `bindings.lua` is never written even when edited meanwhile, and the setup backup stays the original; a chord Hyprland uses is refused with what it runs; a new Hyprland error and a failed save both put the previous snippet back; stable binds only the main press shortcut and the holds), `tests/unit/main/nativeSettingsCoordinatorLinux.test.ts`, `tests/unit/renderer/features/settings/linuxDictationShortcuts.test.tsx` and the Linux cases in `tests/unit/shared/`.
 
-Not run, because forge's Tailscale SSH asked for a browser check that only Zach can pass:
+Read-only checks on forge (Omarchy, Hyprland 0.56.2), touching none of its files:
+
+- The installed `~/.config/hypr/sotto-bindings.lua` has the same MD5 as the bundled `apps/omarchy/bindings.lua` (`a34b558b…`), which is what the writer renders for the default shortcuts, so an existing install reads as done and is not rewritten.
+- `hyprctl binds -j` (228 bindings) names keys as Sotto's writer and reader expect: `F9` and `X` with modmask 0 and 68, `RETURN` and `SPACE` in capitals, and Sotto's binds as `__lua` with its labels. Against that list, the reader found no conflict for the defaults and saw Sotto's keys loaded, and the conflict check named Omarchy's own bindings: Super+Ctrl+Q runs "Calculator", Super+Enter "Terminal", Super+Space "Omarchy menu", Super+X "Universal cut". F9, Super+Ctrl+X, Super+Alt+D and F10 were free.
+- `luac -p` (Lua 5.5.1) accepted a snippet rendered for Super+Alt+D and Ctrl+Shift+Enter pressed and F10 held.
+
+Not run. Zach's installed Sotto was running on forge with his real keys, and a development build beside it would share the dictation socket and rewrite those keys, so nothing was changed there without his say-so:
 
 - The built app on forge under Omarchy: recording a new press shortcut in Settings › Dictation, seeing `~/.config/hypr/sotto-bindings.lua` change while `bindings.lua` and its `bindings.lua.bak.<epoch>` stay, `hyprctl configerrors` staying clean and `hyprctl binds -j` showing the new binding, and the new key starting dictation.
 - Whether Electron on Wayland reports Super as `MetaLeft`, and whether Hyprland hands the page the modifiers of a chord it keeps.
