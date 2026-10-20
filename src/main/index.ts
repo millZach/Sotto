@@ -45,7 +45,7 @@ import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { requestDraftOwnerState } from './agents/requestDraftOwners'
+import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from './agents/requestDraftOwners'
 import { REQUEST_DRAFT_CHANGED } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
@@ -1044,7 +1044,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     const key = parseHostEntityKey(owner.ownerId)
     if (key && key.hostId !== agentControl.hostId()) return hostRouter.preservesDormantThread(owner.ownerId)
     return localRuntime?.agentHost.dormantThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
-  })
+  }, () => requestDraftWatcherOwnerIds(agentControl, () => localRuntime?.agentHost.dormantThreadIds?.(), hostRouter))
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })

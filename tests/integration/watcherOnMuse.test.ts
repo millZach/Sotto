@@ -88,7 +88,8 @@ it('runs Watcher on Muse with its own tools: lists, reads, starts a worker, and 
   const requestId = f.service.state().requests.at(-1)!.id
   const turn = (await records(f, 'turn/start')).at(-1)!
   expect(turn.params!.input).toEqual([{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS },
-    { type: 'text', text: typed + watcherRequestLine(watcherRequestNote(requestId, f.control.hostId()!)) }])
+    // A new Watcher is asked to read its state first (#1189); the line still comes off whole, so the message shows as typed.
+    { type: 'text', text: typed + watcherRequestLine(watcherRequestNote(requestId, f.control.hostId()!, true)) }])
   expect(turn.params!.displayText).toBe(typed)
   await f.control.commandShell({ type: 'observe-threads', threadIds: [id] })
   await expect.poll(() => f.control.threadDetail(id)?.messages.find(message => message.role === 'user')?.text).toBe(typed)
