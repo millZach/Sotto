@@ -391,6 +391,29 @@ limit from what the host says it may answer, so `list_projects`, `start_thread` 
 anything crosses the wire. A host's own default still applies to threads the host or a phone opens itself. No policy
 is written and nothing is answered.
 
+## October 19, 2026: an idle thread takes Watcher's send (#1203)
+
+Watcher could not reach threads that read idle with background work running. A send now was refused as busy, a steer
+was refused because no turn ran, and a queued prompt waited, on three of Zach's threads for hours. Background work was
+not what held them. Each was a thread Watcher had started, and Stop all had stopped the request that started it. Since
+ticket 3 a machine Stop keeps the user's queue for their review, and the check that did so held the thread's whole
+queue, including the prompts a later request queued after the user asked Watcher again. A held prompt then refused
+every send now, since a send never goes ahead of a thread's queue.
+
+Decided, at Zach's word that an idle thread should just take the message:
+
+- Only the thread's foreground turn and its own queue hold Watcher's send, never background work, sub-agents or
+  monitoring. A thread whose turn is over takes a send now and starts a new turn, and a queued prompt goes as soon as
+  the turn is free. Steer still needs a running turn; background work is not one.
+- A machine Stop, Watcher's stop or Stop all, still holds the user's saved prompts and Sotto's news on that thread until
+  the user reviews them, as before. It no longer holds Watcher's own prompts: each answers to its own request's checks
+  at admission and again at the writer, which refuse it once that request is stopped. A later request's prompt goes.
+- A refusal says what the thread waits on: its running turn, a queued prompt that goes first, a queue paused or failed
+  for the user's review, a user prompt a machine Stop holds, or an earlier send Sotto has not confirmed. A refused steer
+  says no turn is running and that background work does not hold a send.
+- The user's own running turn still holds Watcher's sends, and the queue's order is unchanged. The owning host applies
+  the same rule to a paired desktop's prompts, since its queue is the same code.
+
 ## October 19, 2026: quieter news (#1190)
 
 A Watcher session on October 19 cost about $28 over about 300 calls, and only about a third of some 110 wake-ups needed Watcher. Every wake-up rereads the whole conversation, so each costs more as it grows. This amends "what wakes Watcher" (October 14) and "work settled under the wake rule" (October 15). Zach chose the batch timing, and how delegated threads reach Watcher, the same day.
