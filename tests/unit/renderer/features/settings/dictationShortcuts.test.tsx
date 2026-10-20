@@ -97,7 +97,7 @@ describe('DictationShortcuts', () => {
     await waitFor(() => expect(onReplaceHotkey).toHaveBeenCalledWith('CommandOrControl+Alt+M'))
     expect(bridge.suspendDictationShortcuts).toHaveBeenLastCalledWith(false)
     expect(await screen.findByRole('status')).toHaveTextContent('Shortcut saved.')
-    expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toHaveFocus())
   })
 
   it.each([
@@ -181,7 +181,8 @@ describe('DictationShortcuts', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(onReplaceHotkey).not.toHaveBeenCalled()
     expect(onReplaceDictationShortcuts).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toHaveFocus()
+    // Focus comes back one render after the alert, once the refused save has settled.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toHaveFocus())
   })
 
   it('keeps the previous chips and names both shortcuts when another app holds the new one', async () => {
