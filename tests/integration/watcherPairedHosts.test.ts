@@ -555,7 +555,8 @@ it('settles a refused paired queue send even when the takeover clears the queue 
     finishing.release()
     await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
-    expect(f.watcher.state().inFlight).toBe(0)
+    // The in-flight count can follow the failed receipt by an update (it failed CI twice when read at once), so it is waited for too.
+    await vi.waitFor(() => expect(f.watcher.state().inFlight).toBe(0))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); finishing.release() }
