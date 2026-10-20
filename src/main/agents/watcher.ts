@@ -507,7 +507,7 @@ export class WatcherService implements WatcherControlHooks {
     const snapshot = this.options.control.watcherSnapshot()
     room.context = current ? { tokens: this.contextTokens(current), compactAt: WATCHER_COMPACT_AT_TOKENS, canCompact: this.canCompact(snapshot, current),
       compacting: compactionPending(current.compaction) } : null
-    room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read() }
+    room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read(), ...this.kept.readable() ? {} : { unread: true as const } }
     return room
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */

@@ -57,3 +57,19 @@ it('refuses rather than keep over saved lists it could not read at start, and re
   await writeFile(file, JSON.stringify({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: [], updatedAt: null }))
   expect(await store.keep({ issues: ['#1189'] }, '2026-10-19T10:00:00.000Z')).toMatchObject({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: ['#1189'] })
 })
+
+it('writes nothing over saved lists it could not read when a settings save runs the privacy cleanup', async () => {
+  const directory = await folder(), file = join(directory, 'watcher-state.json')
+  await mkdir(file)
+  const store = new WatcherStateStore(directory, () => true)
+  await expect(store.current()).rejects.toThrow()
+  expect(store.readable()).toBe(false)
+  // Still unreadable: the cleanup reports it and writes nothing.
+  await expect(store.privacyChanged()).rejects.toThrow()
+  await rm(file, { recursive: true })
+  await writeFile(file, JSON.stringify({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: [], updatedAt: null }))
+  // Readable again: it reads before it writes, so the saved lists stay.
+  await store.privacyChanged()
+  expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'] })
+  expect(store.readable()).toBe(true)
+})

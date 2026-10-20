@@ -219,4 +219,11 @@ describe('the Sotto Owl tile in Watcher’s room', () => {
     expect(within(group('Issues filed, 1')).getByText('#1189 Watcher: auto-compact its conversation')).toBeInTheDocument()
     expect(within(panel).queryByText('None')).toBeNull()
   })
+
+  it('says it could not read what Watcher kept, rather than that nothing was kept', async () => {
+    renderRoom(roomState({ state: { watching: [], kept: emptyKept, unread: true } }))
+    const { panel } = await openPanel()
+    expect(within(panel).getByRole('status')).toHaveTextContent('Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost.')
+    expect(within(panel).queryByRole('heading', { name: 'Your rules' })).toBeNull()
+  })
 })

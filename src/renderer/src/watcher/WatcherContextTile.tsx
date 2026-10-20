@@ -138,9 +138,11 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
         <h3>Watcher’s state, kept through compaction</h3>
         <div className="watcher-context__groups">
           <StateGroup label="Watching" items={watching} />
-          <StateGroup label="Waiting on you" items={groups.decisions} />
-          <StateGroup label="Your rules" items={groups.rules} />
-          <StateGroup label="Issues filed" items={groups.issues} />
+          {state?.state?.unread ? <p className="watcher-context__said" role="status">Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</p> : <>
+            <StateGroup label="Waiting on you" items={groups.decisions} />
+            <StateGroup label="Your rules" items={groups.rules} />
+            <StateGroup label="Issues filed" items={groups.issues} />
+          </>}
         </div>
       </div>
     </div> : null}

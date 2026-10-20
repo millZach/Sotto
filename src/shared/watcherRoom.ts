@@ -63,7 +63,8 @@ export const watcherRoomStateSchema = z.object({
   context: z.object({ tokens: z.number().int().nonnegative().nullable(), compactAt: z.number().int().positive(),
     canCompact: z.boolean(), compacting: z.boolean() }).strict().nullable().optional(),
   /** Watcher's state, kept through compaction (#1189): what each watched thread waits on, and what Watcher kept. */
-  state: z.object({ watching: z.array(watcherStateThreadSchema), kept: watcherKeptStateSchema }).strict().optional(),
+  // `unread` while a saved state could not be read: the lists are not what is kept, and the panel says so.
+  state: z.object({ watching: z.array(watcherStateThreadSchema), kept: watcherKeptStateSchema, unread: z.literal(true).optional() }).strict().optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()

@@ -65,8 +65,12 @@ export class WatcherStateStore {
   }
   /** Keep local history changed: turned off, nothing kept stays on disk; turned on, what is kept now is saved. */
   privacyChanged(): Promise<void> {
-    return this.inTurn(async () => { if (this.historyEnabled()) await this.store.write(this.kept); else await this.removeSaved() })
+    // Every settings save comes here. A saved state not read yet is read first, so what is kept is never written over it;
+    // one still unreadable is left as it is, and the privacy cleanup reports it.
+    return this.inTurn(async () => { if (this.historyEnabled()) { await this.ensureRead(); await this.store.write(this.kept) } else await this.removeSaved() })
   }
+  /** Whether what is kept is known: false while a saved state could not be read, when the lists say nothing of it. */
+  readable(): boolean { return !this.unread }
 }
 
 type WatchedThread = WatcherRoomState['watchedThreads'][number]
