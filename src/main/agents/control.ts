@@ -4479,8 +4479,11 @@ export class AgentControl {
   /** Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. */
   private observeWatcher(snapshot: AgentHostSnapshot): void {
     if (this.disposed) return
-    this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
+    // Watcher's pass runs for every update, and asks which messages Sotto sent only of a head that may be a takeover, so the
+    // set is gathered from the outbox and every delivery only when it is first asked.
+    let known: Set<string> | undefined
+    this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) })
   }
   private acceptSnapshot(incoming: AgentHostSnapshot): void {
     if (this.disposed) return
