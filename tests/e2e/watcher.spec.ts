@@ -1185,6 +1185,97 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
+  test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
+    // The header off macOS: the tile, the name, All threads, the tabs, then Stop all (while it shows) and More Watcher
+    // actions. The macOS layout moves the header clear of the traffic lights and has its own journey.
+    const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
+      const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
+      const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
+      // Shown, and not only to assistive technology (the name, below 450 pixels).
+      const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'), ...head.querySelectorAll('.watcher-tabs__tab'),
+        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const style = getComputedStyle(head)
+      const box = head.getBoundingClientRect()
+      const labels = ['.watcher-head__list-text', '.watcher-stop-all__text'].map(selector => head.querySelector(selector)).filter((node): node is Element => node !== null && shown(node))
+      return {
+        pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
+        head: { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight), top: box.top, bottom: box.bottom, height: box.height },
+        parts: parts.map(node => ({ name: named(node), ...rect(node) })),
+        labels: labels.map(node => node.textContent ?? ''),
+        // A label or count cut off by its own control, or the name cut to an ellipsis.
+        clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+          .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
+      }
+    })
+    const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
+      a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
+    const round = (value: number) => Math.round(value * 10) / 10
+    const evidence = evidenceDirectory('artifacts/watcher-header-overlap')
+    await mkdir(evidence, { recursive: true })
+    const readings: Record<string, unknown> = {}
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        for (const stopAll of [true, false] as const) {
+          // Without Stop all, the two threads Watcher started have finished their turns.
+          await seedRoom(page, { current: true, ...stopAll ? {} : { more: (hostId, requestId) => ({ watchedThreads: WATCHED.map(threadId => {
+            const target = { hostId, threadId }
+            return { target, title: threadId, watched: true, paused: false, status: 'idle' as const, connected: true, settled: true, backgroundWorkCount: 0, waitsOn: [],
+              participation: [{ requestId, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target, promptCount: 1 }] }
+          }) }) } })
+          await resizeContentWindow(launched, 1280, 800)
+          await openRoom(page)
+          await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+          await expect(beside(page)).toBeVisible()
+          await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
+          for (const [width, height] of SIZES) {
+            await resizeContentWindow(launched, width, height)
+            await settle(page)
+            const divider = page.getByRole('separator', { name: 'Resize panes' })
+            // Watcher's pane is the divider's offset in the room; each pane keeps 400 pixels, so the widest is the room less 409.
+            const room = await divider.evaluate(node => node.parentElement!.getBoundingClientRect())
+            const widest = Math.floor(room.width - 409)
+            const targets = [...new Set([...Array.from({ length: 41 }, (_, index) => 400 + index * 10).filter(target => target < widest), Math.min(widest, 800)])]
+            for (const target of targets) {
+              // Dragged, as a pointer would, to the pixel; a drag whose last move a busy machine dropped is dragged again.
+              await expect(async () => {
+                const handle = await box(divider)
+                await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+                await page.mouse.down()
+                await page.mouse.move(room.left + target + 4.5, handle.y + handle.height / 2, { steps: 2 })
+                await page.mouse.up()
+                await settle(page)
+                const pane = await page.locator('.watcher-pane').evaluate(node => node.getBoundingClientRect().width)
+                expect(Math.abs(pane - target), `the divider moved to ${target}px`).toBeLessThanOrEqual(1)
+              }).toPass({ timeout: 15_000 })
+              const reading = await read(page)
+              const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all`
+              expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
+              for (const [index, part] of reading.parts.entries()) {
+                for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
+                expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
+                expect.soft(part.right, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.right + 0.5)
+                expect.soft(part.top, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.top - 0.5)
+                expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
+              }
+              expect.soft(reading.clipped, where).toEqual([])
+              expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+              readings[`${appearance}-${stopAll ? 'stop-all' : 'no-stop-all'}-${width}x${height}-${Math.round(reading.pane)}px`] = {
+                pane: round(reading.pane), head: [round(reading.head.left), round(reading.head.right)], labels: reading.labels, clipped: reading.clipped,
+                parts: reading.parts.map(part => [part.name, round(part.left), round(part.right)]),
+              }
+              // In the band that overlapped before this change (470 to 581 pixels with Stop all), where a 1100-pixel window’s even split lands.
+              if (target === 540 && width === 1280) await captureInto(evidence, launched, `header-${stopAll ? 'stop-all' : 'no-stop-all'}-${appearance}-540px-1280x800.png`)
+            }
+          }
+        }
+      })
+    })
+    await writeFile(resolve(evidence, 'readings.json'), `${JSON.stringify(readings, null, 2)}\n`, 'utf8')
+  })
+
   test('the receipt cards hold still with reduced motion', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark', 'reduced'), async (launched) => {
       const { page } = launched
