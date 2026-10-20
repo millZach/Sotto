@@ -69,8 +69,9 @@ function names(given: string, url: string): boolean {
   const key = pullRequestKey(parsed)
   return key !== null ? key === pullRequestKey(url) : pullRequestAddress(url)?.number === Number(parsed)
 }
-// Agents told the user "stopped watching" after a stop, which reads as Watcher's Watch, which the stop leaves alone.
-const NOT_WATCHER = ' When you tell the user, call it babysitting, not watching: Watcher\'s Watch is separate, and this did not change it.'
+// Agents told the user "stopped watching" after a stop, which reads as Watcher's Watch, which the stop leaves alone,
+// so a stop's reply in a Watcher build ends with this clarification.
+const WATCHER_CLARIFICATION = ' When you tell the user, call it babysitting, not watching: Watcher\'s Watch is separate, and this did not change it.'
 const who = (listing: Pick<BabysitListing, 'startedBy'>): string => listing.startedBy === 'agent' ? 'you started it' : 'the user started it'
 
 /**
@@ -110,7 +111,7 @@ export class PullRequestToolServer implements ScopedThreadTools {
   private async invoke(threadId: string, name: string, args: unknown): Promise<ThreadToolResult> {
     const text = (value: string, isError = false): ThreadToolResult => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError: true } : {}) })
     const babysitter = this.handlers.babysitter
-    const notWatcher = this.handlers.watcherEnabled ? NOT_WATCHER : ''
+    const watcherClarification = this.handlers.watcherEnabled ? WATCHER_CLARIFICATION : ''
     if (!this.handlers.enabled()) return text(name === BABYSIT_PULL_REQUEST_TOOL ? BABYSITTING_SWITCHED_OFF : SWITCHED_OFF_STOP, true)
     if (!babysitter || !this.admits(threadId)) return text(NOT_HERE, true)
     if (name === LIST_BABYSITTING_TOOL) {
@@ -125,12 +126,12 @@ export class PullRequestToolServer implements ScopedThreadTools {
       const given = input.data.pull_request
       if (given === undefined) {
         const stopped = await babysitter.stop({ threadId }, 'agent')
-        return text(stopped ? `Sotto stopped babysitting ${stopped === 1 ? 'the pull request' : `all ${stopped} pull requests`} for this thread. It sends no more wake-ups about ${stopped === 1 ? 'it' : 'them'}.${notWatcher}` : 'This thread babysits no pull requests. Nothing was stopped.')
+        return text(stopped ? `Sotto stopped babysitting ${stopped === 1 ? 'the pull request' : `all ${stopped} pull requests`} for this thread. It sends no more wake-ups about ${stopped === 1 ? 'it' : 'them'}.${watcherClarification}` : 'This thread babysits no pull requests. Nothing was stopped.')
       }
       const match = babysitter.list(threadId).find(item => names(given, item.url))
       if (!match) return text(`This thread does not babysit that pull request. Nothing was stopped. Call ${LIST_BABYSITTING_TOOL} to see what it babysits.`)
       await babysitter.stop({ threadId, url: match.url }, 'agent')
-      return text(`Sotto stopped babysitting pull request #${match.number}. It sends no more wake-ups about it.${notWatcher}`)
+      return text(`Sotto stopped babysitting pull request #${match.number}. It sends no more wake-ups about it.${watcherClarification}`)
     }
     const input = babysitInput.safeParse(args)
     if (!input.success) return text(NAME_IT, true)
