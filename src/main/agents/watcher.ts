@@ -797,7 +797,11 @@ export class WatcherService implements WatcherControlHooks {
     const automatic = Boolean(record.requests.find(request => request.id === requestId)?.standingWatchId)
     if ((automatic || !askedNow) && this.humanTurnRunning(thread, record)) refuse('THREAD_BUSY', 'The user’s own turn in this thread is running, and Watcher does not stop it. Nothing was stopped.', true)
   }
-  /** Old requests stay fenced. Only a later local user request under a standing watch can outlive the local fence. */
+  /**
+   * Whether a takeover fences this request on a thread. Admission asks only for a thread with no standing watch, since a
+   * standing watch outlasts the user's own message (ADR-0073, October 19); there a takeover fences every request. The
+   * ordering by the local takeover record below is what applied to watched threads from October 17 to 19.
+   */
   private requestTakenOver(record: WatcherRecord, request: WatcherRequest, target: WatcherThreadTarget): boolean {
     if (request.standingWatchId) return false
     const previous = record.requests.flatMap(item => item.participants).filter(item => key(item.target) === key(target) && item.state === 'taken-over')
