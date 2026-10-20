@@ -1,7 +1,7 @@
 // Launch the unpacked Owl app with an isolated profile and check its real preload status.
 // node tools/verify-owl-package.mjs 0.1.37-owl.20261011.1
 // Reads this platform's unpacked app: release/win-unpacked on Windows, release/mac-arm64 on a Mac.
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
@@ -36,7 +36,9 @@ try {
   await page.waitForLoadState('domcontentloaded')
   await page.getByRole('button', { name: 'Get started', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
   const status = await page.evaluate(() => globalThis.sotto.getUpdateStatus())
-  if (identity.version !== expectedVersion || identity.name.toLowerCase() !== 'sotto' || identity.userData !== userData ||
+  // On macOS the temporary folder is under /var, a link to /private/var, and the app reports the resolved form.
+  const ownProfile = await realpath(identity.userData).catch(() => identity.userData) === await realpath(userData)
+  if (identity.version !== expectedVersion || identity.name.toLowerCase() !== 'sotto' || !ownProfile ||
     status.currentVersion !== expectedVersion || status.releaseTrack !== 'owl') {
     throw new Error(`Packaged Owl identity/status mismatch: ${JSON.stringify({ identity, status })}`)
   }
