@@ -13,6 +13,7 @@ import { owlPublicationArguments, prepareOwlRelease } from '../../../scripts/rel
 import { sha256 } from '../../../scripts/verify-host-archive.mjs'
 
 const roots = [], sourceCommit = 'a'.repeat(40), version = '0.1.38-owl.20261019.1', macInputs = 'c'.repeat(64)
+const signing = { identity: 'Developer ID Application', teamId: 'ABCDE12345', hardenedRuntime: true, notarized: true, stapled: true }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 async function directory() { const root = await mkdtemp(join(tmpdir(), 'sotto-owl-mac-test-')); roots.push(root); return root }
 
@@ -50,18 +51,17 @@ async function macFolder({ receipt: change = receipt => receipt, blockmaps = tru
     const bytes = await readFile(join(folder, names[role]))
     files[role] = { filename: names[role], size: bytes.length, sha256: sha256(bytes) }
   }
-  const receipt = change({ kind: 'sotto-owl-mac-package', schemaVersion: 1, version, track: 'owl', platform: 'darwin', arch: 'arm64', sourceCommit, buildInputsRevision: macInputs, files })
+  const receipt = change({ kind: 'sotto-owl-mac-package', schemaVersion: 2, version, track: 'owl', platform: 'darwin', arch: 'arm64', sourceCommit, buildInputsRevision: macInputs, signing, files })
   await writeFile(join(folder, 'owl-mac-package.json'), JSON.stringify(receipt))
   return { root, folder, names }
 }
 
 describe('Mac Owl files from the workflow run', () => {
-  it('accepts the receipt\'s files when their bytes and the zip\'s app match, attaching all but the update manifest', async () => {
+  it('accepts the receipt\'s files, update feed included, when their bytes and the zip\'s app match', async () => {
     const { folder, names } = await macFolder()
     const result = await verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar: fakeExtract() })
-    expect(result).toMatchObject({ version, sourceCommit, buildInputsRevision: macInputs })
-    expect(result.files.filter(file => file.attach).map(file => file.filename).sort()).toEqual([names.dmg, names.dmgBlockmap, names.zip, names.zipBlockmap].sort())
-    expect(result.files.find(file => file.filename === 'owl-mac.yml')).toMatchObject({ attach: false })
+    expect(result).toMatchObject({ version, sourceCommit, buildInputsRevision: macInputs, signing })
+    expect(result.files.map(file => file.filename).sort()).toEqual([names.dmg, names.dmgBlockmap, names.zip, names.zipBlockmap, 'owl-mac.yml'].sort())
     const blockmapless = await macFolder({ blockmaps: false })
     expect((await verifyOwlMacArtifacts(blockmapless.folder, { version, sourceCommit }, { extractAsar: fakeExtract() })).files).toHaveLength(3)
   })
@@ -75,6 +75,19 @@ describe('Mac Owl files from the workflow run', () => {
   ])('refuses a receipt that does not describe this Owl (%#)', async (change, message) => {
     const { folder } = await macFolder({ receipt: change })
     await expect(verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar: fakeExtract() })).rejects.toThrow(message)
+  })
+  it.each([
+    ['a receipt from before signing', receipt => ({ ...receipt, signing: undefined, schemaVersion: 1 })],
+    ['a newer schema without a signing record', receipt => ({ ...receipt, signing: undefined })],
+    ['an app that is not notarized', receipt => ({ ...receipt, signing: { ...signing, notarized: false } })],
+    ['an app without its stapled ticket', receipt => ({ ...receipt, signing: { ...signing, stapled: false } })],
+    ['an ad-hoc signature', receipt => ({ ...receipt, signing: { ...signing, identity: '-' } })],
+    ['no hardened runtime', receipt => ({ ...receipt, signing: { ...signing, hardenedRuntime: false } })],
+  ])('refuses %s, so an unsigned Mac Owl never joins the Owl feed', async (_, change) => {
+    const { folder } = await macFolder({ receipt: change })
+    const failure = await verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar: fakeExtract() }).catch(error => error)
+    expect(failure.message).toContain('signed with Sotto\'s Developer ID, notarized and stapled')
+    expect(failure.message).toContain('Sotto Owl for Mac workflow from main')
   })
   it('refuses bytes that differ from the receipt and files the receipt does not list', async () => {
     const changed = await macFolder()
@@ -120,7 +133,7 @@ describe('Mac Owl files from the workflow run', () => {
   })
   it('checks the receipt on its own terms', () => {
     const files = Object.fromEntries(['dmg', 'zip', 'updateManifest'].map(role => [role, { filename: owlMacFileNames(version)[role], size: 1, sha256: 'f'.repeat(64) }]))
-    const receipt = { kind: 'sotto-owl-mac-package', schemaVersion: 1, version, track: 'owl', platform: 'darwin', arch: 'arm64', sourceCommit, buildInputsRevision: macInputs, files }
+    const receipt = { kind: 'sotto-owl-mac-package', schemaVersion: 2, version, track: 'owl', platform: 'darwin', arch: 'arm64', sourceCommit, buildInputsRevision: macInputs, signing, files }
     expect(checkedOwlMacReceipt(receipt, { version, sourceCommit }).files.map(file => file.role)).toEqual(['dmg', 'zip', 'updateManifest'])
     expect(() => checkedOwlMacReceipt({ ...receipt, track: 'stable' }, { version, sourceCommit })).toThrow('Apple silicon Owl')
     expect(() => checkedOwlMacReceipt({ ...receipt, files: { ...files, zip: { ...files.zip, size: 0 } } }, { version, sourceCommit })).toThrow('invalid entry')
@@ -129,7 +142,7 @@ describe('Mac Owl files from the workflow run', () => {
     const root = await directory(), plan = owlMacPackagePlan(root, version)
     await mkdir(join(root, 'release'))
     for (const path of [plan.dmg, plan.zip, plan.zipBlockmap, plan.updateManifest]) await writeFile(path, basename(path))
-    const receipt = await owlMacReceipt({ version, provenance: { sourceCommit, buildInputsRevision: macInputs }, plan })
+    const receipt = await owlMacReceipt({ version, provenance: { sourceCommit, buildInputsRevision: macInputs }, plan, signing })
     expect(checkedOwlMacReceipt(JSON.parse(JSON.stringify(receipt)), { version, sourceCommit }).files.map(file => file.role).sort()).toEqual(['dmg', 'updateManifest', 'zip', 'zipBlockmap'])
   })
   it('names libarchive\'s tar, which reads zip files, on Windows and macOS', () => {
@@ -168,13 +181,12 @@ describe('Owl publication with the Mac files', () => {
     expect(() => owlPublicationArguments(['--mac-artifacts', 'one', '--mac-artifacts', 'two'])).toThrow('Usage')
     expect(() => owlPublicationArguments(['--mac-artifacts'])).toThrow('Supply a path')
   })
-  it('attaches the disk image, zip and blockmaps to the same prerelease, never the Mac update feed, after printing attestation checks', async () => {
+  it('attaches the disk image, zip, blockmaps and the Mac update feed beside owl.yml, after printing attestation checks', async () => {
     const setup = await fixture(), result = await prepareOwlRelease({ ...setup, args: ['--mac-artifacts', 'mac'] })
-    const attached = [setup.names.dmg, setup.names.dmgBlockmap, setup.names.zip, setup.names.zipBlockmap]
-    for (const name of attached) expect(result.files.some(file => file.endsWith(name))).toBe(true)
-    expect(result.files.some(file => file.endsWith('owl-mac.yml'))).toBe(false)
-    expect(result.files).toHaveLength(7); expect(result.sums).toHaveLength(7)
-    expect(result.sums.some(line => line.endsWith('  owl-mac.yml'))).toBe(false)
+    const attached = [setup.names.dmg, setup.names.dmgBlockmap, setup.names.zip, setup.names.zipBlockmap, 'owl-mac.yml', 'owl.yml']
+    for (const name of attached) expect(result.files.filter(file => basename(file) === name)).toHaveLength(1)
+    expect(result.files).toHaveLength(8); expect(result.sums).toHaveLength(8)
+    expect(result.sums.some(line => line.endsWith('  owl-mac.yml'))).toBe(true)
     expect((await readFile(join(setup.root, 'release', 'SHA256SUMS.txt'), 'utf8')).trim().split('\n')).toEqual(result.sums)
     // Windows PowerShell carries on after a failed native command, so each check stops the pasted commands itself.
     const stop = "; if ($LASTEXITCODE -ne 0) { throw 'The Mac Owl build attestation did not verify. Nothing was published.' }"
@@ -183,10 +195,14 @@ describe('Owl publication with the Mac files', () => {
     expect(`${dmgCheck}${stop}`).toBe(`gh attestation verify '${join(setup.folder, setup.names.dmg)}' --repo millZach/Sotto${stop}`)
     expect(`${zipCheck}${stop}`).toBe(`gh attestation verify '${join(setup.folder, setup.names.zip)}' --repo millZach/Sotto${stop}`)
     expect(create).toMatch(/^gh release create /u); expect(create).toContain('--prerelease --latest=false')
-    expect(create).toContain(setup.names.dmg); expect(create).not.toContain('owl-mac.yml')
+    expect(create).toContain(setup.names.dmg); expect(create).toContain(`'${join(setup.folder, 'owl-mac.yml')}'`)
+    // Only the files the workflow attested are checked against an attestation; the feed is held to the receipt's digest.
+    expect(result.commands[0]).not.toContain(`attestation verify '${join(setup.folder, 'owl-mac.yml')}'`)
     const notes = await readFile(join(setup.root, 'release', 'owl-notes.md'), 'utf8')
-    expect(notes).toContain('Windows and Apple silicon Macs'); expect(notes).toContain('Open Anyway')
-    expect(notes).toContain('xattr -dr com.apple.quarantine /Applications/Sotto.app'); expect(notes).toContain(`Source commit: ${sourceCommit}`)
+    expect(notes).toContain('Windows and Apple silicon Macs'); expect(notes).toContain('notarized by Apple')
+    // A signed build needs no Gatekeeper steps; a Mac on an unsigned Owl installs the first signed one by hand once.
+    expect(notes).not.toContain('xattr'); expect(notes).not.toContain('Privacy & Security')
+    expect(notes).toContain('Install this one by hand once'); expect(notes).toContain(`Source commit: ${sourceCommit}`)
   })
   it('keeps the Windows notes and commands when no Mac files are supplied', async () => {
     const setup = await fixture(), result = await prepareOwlRelease(setup)
