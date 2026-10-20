@@ -1263,3 +1263,35 @@ it('reads a paired worker\'s outcome and reply through exact host reads, and an 
   const projection = await f.socket.watcherRead({ master: f.watcher.state().current! }) as WatcherHostProjection
   expect(projection.operations.every(item => item.outcome === undefined && item.replyMessageId === undefined)).toBe(true)
 })
+
+it('delivers a later request’s queued prompt to a paired thread Stop all held, as soon as its turn is free (#1203)', async () => {
+  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const turn = () => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.lastTurn?.status
+  await vi.waitFor(() => expect(turn()).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  await vi.waitFor(() => expect(turn()).toBe('completed'))
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok' })
+  // The user asks Watcher again. Its new request reaches the thread Stop all stopped: now while the turn is free, then a
+  // queued prompt while the turn it started runs, which the owning host sends once that turn ends.
+  const binding = f.workspace.registry.byThread(f.id)!, watcher = f.workspace.adapters.codex.state.threads.find(item => item.id === binding.sessionId)!
+  watcher.status = 'idle'; watcher.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic second master request' })).error).toBeNull()
+  const requestId = f.watcher.state().requests.at(-1)!.id
+  expect(requestId).not.toBe(f.requestId)
+  const send = (delivery: 'now' | 'queue', text: string) => f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: first.target, delivery, text })
+  expect(await send('now', 'Synthetic paired now')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  await vi.waitFor(() => expect(turn()).toBe('running'))
+  expect(await send('queue', 'Synthetic paired note')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const starts = async () => (await native.driver.requests()).filter(item => item.method === 'turn/start').length
+  expect(await starts()).toBe(2)
+  await native.driver.completeTurn(nativeId, 'Synthetic second completion')
+  await vi.waitFor(async () => expect(await starts()).toBe(3), { timeout: 10_000 })
+}, 60_000)
