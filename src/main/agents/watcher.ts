@@ -1763,8 +1763,10 @@ export class WatcherService implements WatcherControlHooks {
   }
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation) }
+    // A refusal met at the writer keeps only its code. The writer's only busy refusal is a turn that began meanwhile (#1203).
     if (operation.refusalCode) return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
-      ? 'You took over this thread. Watcher stopped sending to it.' : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
+      ? 'You took over this thread. Watcher stopped sending to it.' : operation.refusalCode === 'THREAD_BUSY' ? RUNNING_TURN_HOLD
+      : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
     if (name === 'start_thread') {
       const create = input as WatcherToolInput<'start_thread'>
       const thread = this.owningSnapshot(operation.target.hostId)?.threads.find(item => item.id === operation.target.threadId)

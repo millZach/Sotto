@@ -96,6 +96,17 @@ describe.each(['codex', 'claude', 'grok'] as const)('Watcher reaches a %s thread
   })
 })
 
+it('says a turn that began during preparation is what held the send, here and on a retry', async () => {
+  const f = await fixture('codex')
+  await f.turn('finished', job)
+  const original = f.control.commandFromWatcher.bind(f.control)
+  vi.spyOn(f.control, 'commandFromWatcher').mockImplementationOnce(async (command, origin) => { await f.turn('running', job); return original(command, origin) })
+  const input = { requestId: f.service.state().requests.at(-1)!.id, retryKey: randomUUID(), target: f.target, delivery: 'now', text: 'Synthetic late send' }
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message: RUNNING_TURN_HOLD })
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message: RUNNING_TURN_HOLD })
+  expect(f.sent('Synthetic late send')).toBe(0)
+})
+
 it('holds Watcher’s sends while the user’s own turn runs, background work or not', async () => {
   const f = await fixture('codex')
   await f.turn('finished', job)

@@ -16,7 +16,7 @@ export function queueHold(reason: CheckoutPendingWork, heldByStop: boolean): str
     case 'failed-followups': return 'A queued prompt in this thread failed and waits for the user to review it. Nothing was sent.'
     case 'paused-followups': return 'This thread’s queue is paused until the user reviews it. Nothing was sent.'
     case 'pending-work': return heldByStop
-      ? 'This thread’s queue holds a user prompt since Watcher was stopped, until the user reviews it. Nothing was sent.'
+      ? 'This thread’s queue holds a user prompt from before this thread was stopped, until the user reviews it. Nothing was sent.'
       : 'This thread has a queued prompt that goes first, as soon as its turn is free. Queue this one behind it. Nothing was sent.'
   }
 }
