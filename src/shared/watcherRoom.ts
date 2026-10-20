@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
 import { watcherEventSchema } from './watcherNews'
+import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
 import { watcherOwnChangeSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
 
@@ -56,6 +57,14 @@ export const watcherRoomStateSchema = z.object({
    * there: its turn is not in the conversation the window holds.
    */
   receiptReplies: z.array(z.object({ operationId: z.uuid(), messageId: z.string() }).strict()).optional(),
+  /**
+   * The requests the current Watcher's wake-ups said waited on the user, oldest first, each with the message of its
+   * conversation the request's card goes under (ADR-0073, answering in Watcher's conversation): the reply of the turn
+   * the wake-up began, or the message before it while that turn has none. Identities alone, from the host's record of
+   * each wake-up. The card itself is drawn from the thread's live request, never from here, and answers only as the
+   * user's own answer from that card. A wake-up outside the window main holds places nothing.
+   */
+  asks: z.array(watcherAskSchema.extend({ messageId: z.string(), wakeUpMessageId: z.string() }).strict()).optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()

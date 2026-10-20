@@ -937,7 +937,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
     finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }

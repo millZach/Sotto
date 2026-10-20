@@ -90,6 +90,14 @@ async function master(native?: CodexAppServerHost, usage = false) {
   }
   return { ...f, ...paired, watcher, router, connection, workspace, id, requestId, start, call }
 }
+/** Lets the paired desktop answer on the host, or stops it, as Settings > Hosts does, and waits for the desktop to hear. */
+async function allowAnswers(f: Awaited<ReturnType<typeof master>>, allowed: boolean) {
+  const { adminToken } = JSON.parse(await readFile(join(remote.root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+  const response = await fetch(remote.url + '/v1/admin/' + (allowed ? 'allow-answers' : 'deny-answers'), { method: 'POST',
+    headers: { Authorization: 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: f.pairing.clientId }) })
+  expect(response.status).toBe(200)
+  await expect.poll(() => f.router.watcherHosts().hosts()[0]?.permissionCeiling).toBe(allowed ? 'full-access' : 'approval-required')
+}
 
 it('negotiates host-v1 features only for recorded desktops and never for stable desktop automation', async () => {
   const health = await (await fetch(remote.url + '/v1/health')).json() as { v: number; features: string[] }
@@ -570,7 +578,7 @@ it('refuses changed operation identities and master ceilings on the owning host'
   await expect(raw.call({ op: 'command', command: { type: 'manual-send', threadId: packet!.operation.target.threadId, text: 'Synthetic forged', origin: packet } })).rejects.toMatchObject({ code: 'invalid_request' })
 })
 
-it('enforces the narrower owning-host default and keeps a confirmed remote Stop all after the master default changes', async () => {
+it('refuses a mode wider than the owning host lets this computer give and keeps a confirmed remote Stop all after the master default changes', async () => {
   const f = await master()
   await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
   expect(await f.call('start_thread', { ...f.start(), permission: { kind: 'runtime', mode: 'full-access' } })).toMatchObject({ code: 'PERMISSION_TOO_WIDE' })
@@ -602,6 +610,72 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   expect(await f.call('start_thread', acceptedInput)).toMatchObject({ status: 'ok', receipt: { operationId: first.receipt.operationId } })
   expect(writes).not.toHaveBeenCalled()
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('sends to a full-access thread on a paired host when this computer\'s new-thread default is full access, and only where it may answer', async () => {
+  const f = await master()
+  await allowAnswers(f, true)
+  // As on a real desktop: Settings saves the default on this computer only (ADR-0074), so the host keeps none of its own.
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
+  expect(remote.host.service.state().configuration.newThreadRuntimeMode).toBeUndefined()
+  const threadId = randomUUID()
+  await remote.host.service.command({ type: 'create-thread', threadId, projectId: f.project.id, title: 'Synthetic full-access thread',
+    titleSource: 'user', modelId: f.model.id, runtimeMode: 'full-access' }, desktopWindowClient())
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === threadId)?.runtimeMode).toBe('full-access')
+  // The aggregate list and one naming the host give the permission start and send hold to there.
+  const listed = async (input: { hostId?: string }) => {
+    const projects = await f.call('list_projects', input)
+    if (projects.status !== 'ok') throw new Error('list-refused')
+    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)?.defaultPermission
+  }
+  expect(await listed({})).toEqual({ kind: 'runtime', mode: 'full-access' })
+  expect(await listed({ hostId: f.pairing.hostId })).toEqual({ kind: 'runtime', mode: 'full-access' })
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.pairing.hostId, threadId }, text: 'Synthetic full-access send', delivery: 'now' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
+  expect(writes).toHaveBeenCalledOnce()
+  // A restarted host learns again from the desktop's next read whether it may answer, so restored operations are not held back.
+  const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  const answers = (owner as unknown as { remoteAnswers: Map<string, () => boolean> }).remoteAnswers
+  answers.clear()
+  expect(await f.call('read_thread', { target: { hostId: f.pairing.hostId, threadId } })).toMatchObject({ status: 'ok' })
+  expect(answers.get(f.pairing.clientId)?.()).toBe(true)
+  // Where this computer may not answer, Watcher is held to Ask for approval there, and says so before it starts.
+  await allowAnswers(f, false)
+  expect(await listed({})).toEqual({ kind: 'runtime', mode: 'approval-required' })
+  expect(await listed({ hostId: f.pairing.hostId })).toEqual({ kind: 'runtime', mode: 'approval-required' })
+  // The host holds it back itself: with this computer's own check out of the way, the host refuses the send and the start.
+  vi.spyOn(f.watcher as unknown as { permissionLimits: () => object }, 'permissionLimits').mockReturnValue({})
+  remote.native.event({ type: 'ready', threadId: (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic full-access thread')!.id, text: 'Synthetic completion' })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === threadId)?.status).toBe('idle')
+  const held = { status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') }
+  const refused = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.pairing.hostId, threadId }, text: 'Synthetic held send', delivery: 'now' })
+  expect(refused, JSON.stringify(refused)).toMatchObject(held)
+  const threads = remote.host.service.state().host.threads.length
+  const start = await f.call('start_thread', { ...f.start(), permission: { kind: 'runtime', mode: 'full-access' } })
+  expect(start, JSON.stringify(start)).toMatchObject(held)
+  expect(writes).toHaveBeenCalledTimes(3)
+  expect(remote.host.service.state().host.threads).toHaveLength(threads)
+})
+
+it('refuses a model without an asking mode on a host where this computer may not answer, rather than fit it to one that skips asking', async () => {
+  const f = await master()
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
+  // The router reads the host through `view` where it can and `shell` elsewhere; both see the same catalog.
+  for (const read of ['shell', 'view'] as const) {
+    const original = f.socket[read].bind(f.socket)
+    vi.spyOn(f.socket, read).mockImplementation(() => {
+      const state = original()
+      return { ...state, host: { ...state.host, models: state.host.models.map(model => model.id === f.model.id ? { ...model, runtimeModes: ['auto', 'full-access'] as const } : model) } }
+    })
+  }
+  const projects = await f.call('list_projects', { hostId: f.pairing.hostId })
+  if (projects.status !== 'ok') throw new Error('list-refused')
+  expect(projects.projects[0]?.workers.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') })
+  expect(writes).not.toHaveBeenCalled()
 })
 
 it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {
@@ -953,17 +1027,19 @@ it('keeps operation-specific restart fences when another receipt or a new operat
 
 
 it.each([
-  { desktop: 'approval-required', host: 'full-access' },
-  { desktop: 'full-access', host: 'approval-required' },
-] as const)('uses the common narrower default with desktop $desktop and host $host when permission is omitted', async defaults => {
+  { desktop: 'full-access', host: 'approval-required', answers: true, expected: 'full-access' },
+  { desktop: 'approval-required', host: 'full-access', answers: true, expected: 'approval-required' },
+  { desktop: 'full-access', host: 'full-access', answers: false, expected: 'approval-required' },
+] as const)('starts on this computer\'s $desktop over the host\'s own $host, held to asking unless this computer may answer there ($answers)', async defaults => {
   const f = await master()
+  if (defaults.answers) await allowAnswers(f, true)
   await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: defaults.desktop } })
   await remote.host.service.command({ type: 'configure', patch: { newThreadRuntimeMode: defaults.host } }, desktopWindowClient())
   const first = await f.call('start_thread', f.start())
   expect(first.status, first.status === 'refused' ? first.code : undefined).toBe('ok')
-  expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: 'approval-required' } } })
+  expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: defaults.expected } } })
   if (first.status !== 'ok') throw new Error('start-refused')
-  await expect.poll(() => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
+  await expect.poll(() => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe(defaults.expected)
 })
 
 
@@ -1187,3 +1263,37 @@ it('reads a paired worker\'s outcome and reply through exact host reads, and an 
   const projection = await f.socket.watcherRead({ master: f.watcher.state().current! }) as WatcherHostProjection
   expect(projection.operations.every(item => item.outcome === undefined && item.replyMessageId === undefined)).toBe(true)
 })
+
+it('delivers a later request’s queued prompt to a paired thread Stop all held, as soon as its turn is free (#1203)', async () => {
+  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const turn = () => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.lastTurn?.status
+  await vi.waitFor(() => expect(turn()).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  await vi.waitFor(() => expect(turn()).toBe('completed'))
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok' })
+  // The user asks Watcher again. Its new request reaches the thread Stop all stopped: now while the turn is free, then a
+  // queued prompt while the turn it started runs, which the owning host sends once that turn ends.
+  const binding = f.workspace.registry.byThread(f.id)!, watcher = f.workspace.adapters.codex.state.threads.find(item => item.id === binding.sessionId)!
+  watcher.status = 'idle'; watcher.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic second master request' })).error).toBeNull()
+  // The user's own request: a stop receipt read back late may fence a standing scope for this Watcher turn after it.
+  const requestId = f.watcher.state().requests.filter(request => !request.standingWatchId).at(-1)!.id
+  expect(requestId).not.toBe(f.requestId)
+  const send = (delivery: 'now' | 'queue', text: string) => f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: first.target, delivery, text })
+  const now = await send('now', 'Synthetic paired now')
+  expect(now, JSON.stringify(now)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  await vi.waitFor(() => expect(turn()).toBe('running'))
+  expect(await send('queue', 'Synthetic paired note')).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const starts = async () => (await native.driver.requests()).filter(item => item.method === 'turn/start').length
+  expect(await starts()).toBe(2)
+  await native.driver.completeTurn(nativeId, 'Synthetic second completion')
+  await vi.waitFor(async () => expect(await starts()).toBe(3), { timeout: 10_000 })
+}, 60_000)

@@ -39,6 +39,8 @@ const permissionEvidence = evidenceDirectory('artifacts/watcher-permission')
 const handoverEvidence = evidenceDirectory('artifacts/watcher-handover')
 /** Receipt cards, the takeover line and Stop all (#1120): captures for their note. */
 const polishEvidence = evidenceDirectory('artifacts/watcher-room-polish')
+/** Answering a watched thread's request in Watcher's conversation (October 19, 2026): captures for its note. */
+const answerEvidence = evidenceDirectory('artifacts/watcher-answer')
 /** Watcher's replies to news in place, their work in the reply's header (Zach's pick on October 19, 2026): captures for their note. */
 const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
@@ -269,6 +271,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
       '.thread-message__work', '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
+      '.watcher-ask__title', '.watcher-ask__meta', '.watcher-ask__kind', '.watcher-ask__open', '.watcher-ask__toggle', '.watcher-ask__said-body', '.watcher-ask-receipt__words',
       '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
       '.watcher-stop .tt-button',
       '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button']
@@ -366,7 +369,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -374,9 +377,11 @@ test.describe("Watcher's room on the built app", () => {
     const handover = /^handover-/u
     const polish = /^polish-/u
     const news = /^news-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key))],
+    const answer = /^answer-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
-      [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))]] as const
+      [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
+      [answerEvidence, [...recorded].filter(([key]) => answer.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -1089,6 +1094,66 @@ test.describe("Watcher's room on the built app", () => {
         await expect(page.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeFocused()
       })
     })
+  })
+
+  test('a watched thread’s permission is answered on its card in Watcher’s conversation, which then says what was chosen', async () => {
+    for (const [appearance, motion] of [['dark', 'normal'], ['light', 'reduced']] as const) await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', appearance, motion), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      // Visual gate flake waits on a permission; the wake-up that told Watcher so placed its card under Watcher's reply.
+      const requestCardId = 'visual-gate-permission'
+      await seedRoom(page, { current: true, more: hostId => ({ asks: [{ target: { hostId, threadId: 'visual-gate' }, requestCardId, kind: 'permission',
+        messageId: 'watcher-reply', wakeUpMessageId: 'wake-visual-gate' }] }) })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const pane = watcherPane(page)
+      const card = pane.getByRole('region', { name: 'Permission request from Visual gate flake' })
+      await expect(card).toBeVisible()
+      await expect(card).toContainText('This computer')
+      // The needs-you line goes to the card and focuses it, rather than open the thread.
+      await page.getByRole('button', { name: 'Go to the permission from Visual gate flake in this conversation' }).click()
+      await expect(card).toBeFocused()
+      await expect(beside(page)).toHaveCount(0)
+      // The thread's last reply is folded until asked for; Escape folds it again onto its toggle.
+      await page.keyboard.press('Tab')
+      await expect(card.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      const said = card.getByRole('button', { name: 'Show what it said' })
+      await expect(said).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(card.getByRole('group', { name: 'What Visual gate flake said last' })).toBeVisible()
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await card.scrollIntoViewIfNeeded()
+        expect(await pageBoundProblems(page), `the card at ${width}x${height}`).toEqual([])
+        await captureInto(answerEvidence, launched, `answer-card-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `answer-card-${appearance}-${width}x${height}`)
+      }
+      await resizeContentWindow(launched, 1280, 800)
+      await card.getByRole('button', { name: 'Hide what it said' }).focus()
+      await page.keyboard.press('Escape')
+      await expect(card.getByRole('group', { name: 'What Visual gate flake said last' })).toHaveCount(0)
+      await expect(card.getByRole('button', { name: 'Show what it said' })).toBeFocused()
+      // The user's own answer, from the card, to Visual gate flake's request.
+      const choice = card.locator('.agent-request__actions button').first()
+      const label = (await choice.textContent())!.trim()
+      await choice.click()
+      await expect(card).toHaveCount(0)
+      const line = pane.locator('.watcher-ask-receipt')
+      await expect(line.locator('.watcher-ask-receipt__words')).toHaveText(`You answered Visual gate flake: ${label}.`)
+      await expect(line.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toBeVisible()
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await line.scrollIntoViewIfNeeded()
+        expect(await pageBoundProblems(page), `the answered line at ${width}x${height}`).toEqual([])
+        await captureInto(answerEvidence, launched, `answer-line-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `answer-line-${appearance}-${width}x${height}`)
+      }
+      // With no card left, the needs-you name opens the thread as before.
+      await expect(page.getByRole('button', { name: /^Go to the permission from Visual gate flake/ })).toHaveCount(0)
+    }))
   })
 
   test('Stop all, confirmed from the keyboard, answers Escape while its stop is still going and keeps what came of it', async () => {
