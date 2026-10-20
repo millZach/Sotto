@@ -65,8 +65,9 @@ change to it should fix:
 **October 20, 2026: the owner's history, and a nightly run (#1232).** The second reason is gone. The benchmark now runs on
 Owl with every padding thread given a provider session, Watcher's record at the owner's size (5 standing watches, 160
 requests, 150 operations), the owner's 256 answer retirements and a paired headless host with 40 threads, built from
-`tests/fixtures/ownerScale.ts`. The fixture's provider has no Watcher model, so the record is one an earlier Watcher
-left rather than an open Watcher's; Watcher's pass and room read it as they read the owner's. With `SOTTO_PERF_LIMITS=1`
+`tests/fixtures/ownerScale.ts`. The fixture's provider has no Watcher model, so Watcher cannot be opened from the
+window; the record names one padding thread as the current Watcher instead, so its wake-up pass reads the standing
+watches on every update, as the owner's does. With `SOTTO_PERF_ASSERT=1`
 it fails when main's longest stall or its count of stalls of 100 ms or more passes the spec's limits, and
 `.github/workflows/main-freeze.yml` runs it that way every night (`docs/ci.md`, under Main freeze nightly).
 `docs/perf/2026-10-20-main-lag.md` has the counting gate that pull requests meet.
