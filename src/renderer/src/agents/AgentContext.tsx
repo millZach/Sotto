@@ -221,8 +221,13 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           setFailure(null)
           // A shell held for its frame is older than this response; it commits first so it can never land after.
           // Both commit urgently: the user is watching their own action land, and a transition here could let
-          // the sync command reply paint before the older pending shell it must follow.
-          if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent: true }); receiveState(next, { urgent: true }) }
+          // the sync command reply paint before the older pending shell it must follow. A draft save is not an
+          // action the user watches: the composer saves a pause in typing on its own, and its reply is background
+          // news like a broadcast. Both commit as one transition there, still in order, so the whole-sidebar render
+          // a reply causes yields to the next keystroke instead of holding it (October 20, 2026: with a few hundred
+          // threads that render took 60-70 ms, once per saved pause).
+          const urgent = request.type !== 'save-thread-draft'
+          if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
       } catch (error) {
