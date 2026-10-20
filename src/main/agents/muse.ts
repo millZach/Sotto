@@ -1325,6 +1325,8 @@ export class MuseMspHost implements AgentHost {
             total: { input: parsed.cumulative.promptTokens, output: parsed.cumulative.outputTokens },
             ...(before?.contextUsed !== undefined ? { contextUsed: before.contextUsed } : {}),
             ...(before?.contextWindow !== undefined ? { contextWindow: before.contextWindow } : {}),
+            // The context figure is unchanged, so it keeps the time it was reported; the compaction recommendation reads it.
+            ...(before?.contextUpdatedAt !== undefined ? { contextUpdatedAt: before.contextUpdatedAt } : {}),
             rateVersions: [], partial: true, updatedAt: new Date().toISOString(),
             ...(parsed.modelId ? { modelId: parsed.modelId } : before?.modelId ? { modelId: before.modelId } : {}),
           }
