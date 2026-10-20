@@ -1672,10 +1672,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private withWakeUps(threadId: string, messages: AgentMessage[]): AgentMessage[] {
     const recorded = this.wakeUpRecords.get(threadId) ?? []
-    const hidden: ReadonlySet<string> = new Set(this.hiddenWakeUpRecords.get(threadId))
+    const recordedHidden = this.hiddenWakeUpRecords.get(threadId) ?? []
     let stored: ReadonlySet<string> = new Set()
+    let storedHidden: ReadonlySet<string> = new Set()
     let storedAsks = NO_ASKS
-    if (!this.storeUnavailable) try { stored = this.threadStore.wakeUps(threadId); storedAsks = this.threadStore.wakeUpAsks(threadId) } catch { /* The record still answers. */ }
+    if (!this.storeUnavailable) try { stored = this.threadStore.wakeUps(threadId); storedAsks = this.threadStore.wakeUpAsks(threadId); storedHidden = this.threadStore.hiddenWakeUps(threadId) } catch { /* The record still answers. */ }
+    // A wake-up of delegation news alone stays hidden past the record's newest thousand: the thread store keeps every mark.
+    const hidden: ReadonlySet<string> = recordedHidden.length ? new Set([...storedHidden, ...recordedHidden]) : storedHidden
     if (!recorded.length && !stored.size) return messages
     const kept = new Set(recorded)
     // A Watcher wake-up also carries the requests its news said waited on the user, from the same records (ADR-0073).
@@ -1700,7 +1703,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.storeUnavailable || this.threadStore.ephemeral) return
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const ids = this.wakeUpRecords.get(thread.id)
-      if (ids?.length) try { this.threadStore.addWakeUps(thread.id, ids, this.wakeUpAskRecords.get(thread.id)) } catch { /* The record still marks its own. */ }
+      if (ids?.length) try { this.threadStore.addWakeUps(thread.id, ids, this.wakeUpAskRecords.get(thread.id), this.hiddenWakeUpRecords.get(thread.id)) } catch { /* The record still marks its own. */ }
     }
   }
   /**
@@ -1720,7 +1723,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Only a Watcher wake-up whose news said threads waited on the user has asks, and only their identities are kept.
     const parsed = watcherAsksSchema.safeParse(asks)
     const kept = parsed.success && parsed.data.length ? parsed.data : undefined
-    if (!this.storeUnavailable) try { this.threadStore.addWakeUp(threadId, messageId, kept) } catch { /* The record below still names it. */ }
+    if (!this.storeUnavailable) try { this.threadStore.addWakeUp(threadId, messageId, kept, hidden) } catch { /* The record below still names it. */ }
     const recorded = this.wakeUpRecords.get(threadId) ?? []
     const askRecord = this.wakeUpAskRecords.get(threadId)
     if (recorded.includes(messageId) && (kept === undefined || askRecord?.has(messageId))) return
