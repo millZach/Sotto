@@ -172,7 +172,7 @@ import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
-import { dockBrandFor, paintDockIcon, readDockCoverage } from './dock/dockIcon'
+import { dockPainter, readDockCoverage } from './dock/dockIcon'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
@@ -652,27 +652,24 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   // The Dock icon wears the saved theme's mark, as the main window's mark does, repainted when the theme or the
-  // system's scheme changes. Without its coverage file, or on any failure, the Dock keeps the bundle's icon.
+  // system's scheme changes. Without its coverage file the Dock keeps the bundle's icon, and a failed paint gives
+  // the bundle's icon back rather than leaving an earlier theme's.
   const dockCoverage = platform === 'darwin' && app.dock !== undefined
     ? await readFile(join(resourceRoot, 'dock', 'mark-coverage.bin')).then(readDockCoverage, () => null)
     : null
   if (platform === 'darwin' && dockCoverage === null) logOperational('dock-icon-unavailable')
   let dockSettings = await settings.get()
-  let dockBrandKey = ''
-  const paintDock = (): void => {
-    if (dockCoverage === null) return
-    try {
-      const brand = dockBrandFor(dockSettings, nativeTheme.shouldUseDarkColors)
-      const key = `${brand.tile}|${brand.glyph}`
-      if (key === dockBrandKey) return
-      const image = nativeImage.createFromBuffer(paintDockIcon(dockCoverage, brand))
+  const paintDockFor = dockCoverage === null ? undefined : dockPainter(dockCoverage, {
+    setIcon: png => {
+      const image = nativeImage.createFromBuffer(png)
       if (image.isEmpty()) throw new Error('Unreadable Dock icon')
       app.dock?.setIcon(image)
-      dockBrandKey = key
-    } catch {
-      logOperational('dock-icon-failed')
-    }
-  }
+    },
+    // Electron hands macOS an empty image for null, which restores the bundle's icon; its types leave null out.
+    restoreBundleIcon: () => app.dock?.setIcon(null as unknown as Electron.NativeImage),
+    log: logOperational,
+  })
+  const paintDock = (): void => paintDockFor?.(dockSettings, nativeTheme.shouldUseDarkColors)
   paintDock()
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined

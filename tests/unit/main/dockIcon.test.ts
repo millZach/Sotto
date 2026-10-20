@@ -8,6 +8,7 @@ import {
   DOCK_COVERAGE_SIZE,
   dockAppearance,
   dockBrandFor,
+  dockPainter,
   paintDockIcon,
   readDockCoverage,
 } from '../../../src/main/dock/dockIcon'
@@ -68,5 +69,29 @@ describe('dock icon', () => {
     // The eyes are holes in the owl that show the tile, with the owl's pupils inside them.
     expect(pixel(png, Math.round(26 * scale), Math.round(55 * scale))).toEqual([255, 0, 0, 255])
     expect(pixel(png, Math.round(36 * scale), Math.round(48.96 * scale))).toEqual([0, 0, 255, 255])
+  })
+
+  it('gives the Dock back the bundle\'s icon when a repaint fails, and paints again on the next change', () => {
+    const events: string[] = []
+    let failing = false
+    const paint = dockPainter(coverage!, {
+      setIcon: () => {
+        if (failing) throw new Error('setIcon failed')
+        events.push('painted')
+      },
+      restoreBundleIcon: () => events.push('bundle icon'),
+      log: code => events.push(code),
+    })
+    const [first, second] = BUILT_IN_THEMES.filter(theme => theme.id !== DEFAULT_THEME_ID)
+    const themed = { ...DEFAULT_SETTINGS, appearance: 'dark' as const, darkTheme: first!.id }
+    paint(themed, false)
+    paint(themed, false)
+    expect(events).toEqual(['painted'])
+    failing = true
+    paint({ ...themed, darkTheme: second!.id }, false)
+    expect(events).toEqual(['painted', 'dock-icon-failed', 'bundle icon'])
+    failing = false
+    paint(themed, false)
+    expect(events).toEqual(['painted', 'dock-icon-failed', 'bundle icon', 'painted'])
   })
 })

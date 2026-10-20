@@ -91,3 +91,34 @@ export function paintDockIcon(coverage: Buffer, brand: ThemeBrand): Buffer {
     pngChunk('IEND', Buffer.alloc(0)),
   ])
 }
+
+/** What the painter needs from macOS, so it can be exercised without a Dock. */
+export interface DockIconHost {
+  /** Shows the painted PNG in the Dock; throws when it cannot. */
+  setIcon(png: Buffer): void
+  /** Gives the Dock back the bundle's own icon. */
+  restoreBundleIcon(): void
+  log(code: 'dock-icon-failed'): void
+}
+
+/**
+ * Paints the Dock for the saved settings, skipping a repaint that would change nothing. A failure logs, gives the
+ * Dock back the bundle's icon rather than leaving an earlier theme's, and forgets what it painted, so the next call
+ * paints again.
+ */
+export function dockPainter(coverage: Buffer, host: DockIconHost): (settings: DockIconSettings, systemDark: boolean) => void {
+  let painted = ''
+  return (settings, systemDark) => {
+    try {
+      const brand = dockBrandFor(settings, systemDark)
+      const key = `${brand.tile}|${brand.glyph}`
+      if (key === painted) return
+      host.setIcon(paintDockIcon(coverage, brand))
+      painted = key
+    } catch {
+      painted = ''
+      host.log('dock-icon-failed')
+      try { host.restoreBundleIcon() } catch { /* the failure is already logged */ }
+    }
+  }
+}
