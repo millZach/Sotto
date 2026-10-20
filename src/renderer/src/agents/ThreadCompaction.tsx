@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { AgentCapabilities, AgentCommand, AgentThread } from '../../../shared/agents'
 import { compactionPending } from '../../../shared/compaction'
+import { providerRecommendsCompaction } from '../../../shared/providerProfile'
 import { Button } from '../components/Button'
 import './threadCompaction.css'
 
@@ -12,6 +13,16 @@ const dismissalListeners = new Set<() => void>()
 const subscribeDismissals = (listener: () => void): (() => void) => {
   dismissalListeners.add(listener)
   return () => { dismissalListeners.delete(listener) }
+}
+const contextSnapshot = (thread: Pick<AgentThread, 'id' | 'usage'>): string => JSON.stringify([thread.id, thread.usage?.contextUpdatedAt])
+const dismissSnapshot = (snapshot: string): void => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }
+/**
+ * Holds the recommendation once a compaction of this context has started. Codex and Muse name a compaction without
+ * its new size, so their old figure stays until they next report usage; it must not ask again for a context just
+ * compacted. Claude Code reports the smaller context at once, a new snapshot, so this changes nothing for it.
+ */
+export function holdCompactionRecommendation(thread: Pick<AgentThread, 'id' | 'usage'>): void {
+  dismissSnapshot(contextSnapshot(thread))
 }
 /**
  * Whether a thread shows its compaction control. Claude learns whether its client can compact only once
@@ -38,7 +49,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
   const [error, setError] = useState('')
   const sending = useRef(false)
   const usage = thread.usage
-  const snapshot = JSON.stringify([thread.id, usage?.contextUpdatedAt])
+  const snapshot = contextSnapshot(thread)
   const dismissed = useSyncExternalStore(subscribeDismissals, () => dismissedSnapshots.has(snapshot))
   const eligibleAt = Date.parse(usage?.contextUpdatedAt ?? '') + AGE
   useEffect(() => {
@@ -47,13 +58,13 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     return () => clearTimeout(timer)
   }, [eligibleAt])
   const busy = compactionBusy(thread, blocked || submitting)
-  const offer = supported && connected && !busy && !thread.resumeCompactionDismissed && thread.providerId === 'claude'
+  const offer = supported && connected && !busy && !thread.resumeCompactionDismissed && providerRecommendsCompaction(thread.providerId)
     && (usage?.modelId === undefined || usage.modelId === thread.modelId) && (usage?.contextUsed ?? 0) >= 100_000
     && now >= eligibleAt && !dismissed
   const compact = async (): Promise<void> => {
     if (sending.current || busy || !connected) return
     sending.current = true; setSubmitting(true); setError('')
-    try { await command({ type: 'compact-thread', threadId: thread.id }) }
+    try { await command({ type: 'compact-thread', threadId: thread.id }); dismissSnapshot(snapshot) }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Native compaction could not start.') }
     finally { sending.current = false; setSubmitting(false) }
   }
@@ -62,7 +73,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
   return <div className="thread-compaction">
     {offer ? <><p>This context is large and hasn’t been updated for over an hour.</p>
       <Button variant="secondary" onClick={() => void compact()}>Compact</Button>
-      <Button variant="ghost" onClick={() => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }}>Keep full history</Button></> : null}
+      <Button variant="ghost" onClick={() => dismissSnapshot(snapshot)}>Keep full history</Button></> : null}
     {/* A running compaction is said in the thread, where it would otherwise read as the agent working; what stays here is its result. */}
     {thread.compaction && thread.compaction.status !== 'running' ? <p role="status">{thread.compaction.status === 'completed' ? 'Context compacted'
       : thread.compaction.error ?? (thread.compaction.status === 'failed' ? 'Native compaction failed.' : 'Native compaction is unconfirmed. Reconnect to observe its result.')}</p> : null}
