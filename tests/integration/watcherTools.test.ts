@@ -45,6 +45,8 @@ async function fixture(history = true) {
   const opened = await service.open({ provider: 'codex', modelId: model.id })
   expect(opened).toMatchObject({ status: 'ok' })
   const id = service.state().current!.target.threadId
+  // A new Watcher is asked to read its state first (#1189); these tests start from one that has.
+  await tools.call(id, 'read_state', {})
   const user = await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic Watcher user request' })
   expect(user.error).toBeNull()
   const requestId = service.state().requests.at(-1)!.id
@@ -1609,4 +1611,163 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   expect(queued(f).find(item => item.id === waiting.id) && waitingNews(f)).toBe(news)
   expect(f.control.watcherRecord().wakeEventIds).toEqual(ids)
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+})
+
+// #1189: Watcher's state, kept through compaction, and compacting its conversation when it grows.
+it('keeps the decisions, rules and issues Watcher gives, list by list, and reads them back with what each watched thread waits on', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  expect(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
+    .toMatchObject({ status: 'ok', kept: { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'], issues: [] } })
+  // A list left out stays as it was.
+  await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
+  const read = await f.call('read_state', {})
+  expect(read).toMatchObject({ status: 'ok', compactAtTokens: 400_000, kept: { decisions: ['Merge #1186 once CI is green?'],
+    rules: ['Full test suites run in CI, not on the laptop.'], issues: ['#1189 Watcher: auto-compact its conversation'] } })
+  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: expect.any(String) }))
+  expect(f.service.state().state?.kept.rules).toEqual(['Full test suites run in CI, not on the laptop.'])
+  // With Keep local history on, the kept words are saved beside the control record.
+  expect(await readFile(join(f.root, 'watcher-state.json'), 'utf8')).toContain('Full test suites run in CI')
+})
+
+it('says a watched thread waits on the card of a thread it delegated to, as list_threads does', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real(), parent = snapshot.threads.find(thread => thread.id === started.target.threadId)!
+    return { ...snapshot, threads: [...snapshot.threads, { ...structuredClone(parent), id: 'synthetic-delegated', title: 'Delegated', delegatedBy: parent.id, status: 'idle',
+      requests: [{ id: 'card', kind: 'permission', text: 'synthetic private command', options: [] }] }] }
+  })
+  const read = await f.call('read_state', {})
+  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: 'The user’s answer to a permission request in a thread it delegated to.' }))
+  expect(JSON.stringify(read)).not.toContain('synthetic private command')
+})
+
+it('saves none of Watcher’s kept words with Keep local history off', async () => {
+  const f = await fixture(false)
+  await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })
+  expect(await f.call('read_state', {})).toMatchObject({ kept: { rules: ['synthetic_private_rule_51c2'] } })
+  const saved = await readFile(join(f.root, 'watcher-state.json'), 'utf8').catch(() => '')
+  expect(saved).not.toContain('synthetic_private_rule_51c2')
+})
+
+it('compacts Watcher once its conversation passes 400K tokens while it rests, and tells it to read its state after', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let watcher: Partial<AgentThread> = { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
+    usage: { contextUsed: 400_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
+      ...snapshot.providers ? { providers: snapshot.providers.map(provider => ({ ...provider, capabilities: { ...provider.capabilities, compact: true } })) } : {},
+      threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, ...watcher } : thread) }
+  })
+  vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
+  vi.spyOn(f.control, 'watcherWakeUpQueued').mockReturnValue(false)
+  const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
+  const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  // Sotto sends Watcher a message, here a wake-up, which starts its next turn.
+  const sent = () => f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), text: 'synthetic news', wakeUp: true }, undefined)
+  await nudge()
+  // At the point, not past it.
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
+  expect(f.service.state().context).toMatchObject({ tokens: 400_000, compactAt: 400_000, canCompact: true, compacting: false })
+  // Past the point, but Watcher's turn is running: it waits for Watcher to rest.
+  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 412_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
+  await nudge()
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
+  watcher = { ...watcher, status: 'idle' }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toEqual([[{ type: 'compact-thread', threadId: f.id }]])
+  expect(f.service.stateNote()).toBeUndefined()
+  // The compaction finished: the next turn's note says to read the state back, until Watcher does.
+  watcher = { ...watcher, compaction: { commandId: 'synthetic-compaction', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 31_000, contextUpdatedAt: '2026-10-19T10:02:00.000Z' } }
+  await nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+  await f.call('read_state', {})
+  expect(f.service.stateNote()).toBeUndefined()
+  // A reading after the compaction that still says past the point, before Watcher's next turn reports, compacts nothing again.
+  watcher = { ...watcher, usage: { ...watcher.usage!, contextUsed: 405_000, contextUpdatedAt: '2026-10-19T10:03:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(1)
+  // Watcher's next turn still past it: one more try.
+  sent()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 406_000, contextUpdatedAt: '2026-10-19T10:04:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  // It fails, and the provider reported the compaction as a turn of its own, as Codex does, or reports that turn only
+  // after the compaction finished, as Claude Code does: no try until Sotto sends Watcher its next message.
+  watcher = { ...watcher, compaction: { commandId: 'synthetic-compaction-2', status: 'failed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:00.000Z' } }
+  await nudge()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-compaction-turn', status: 'failed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:30.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  sent()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-3', status: 'completed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:06:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(3)
+})
+
+it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let tokens = 300_000
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, usage: { contextUsed: tokens, contextUpdatedAt: `2026-10-19T10:00:0${tokens > 200_000 ? 0 : 1}.000Z`,
+      rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+  })
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toBeUndefined()
+  tokens = 40_000
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toContain('call read_state')
+})
+
+it.each([true, false])('takes a smaller context on another model for another conversation’s size, not a compaction (reading names its model: %s)', async named => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let reading: { tokens: number; modelId: string; at: string | undefined } = { tokens: 300_000, modelId: 'synthetic-model-a', at: '2026-10-19T10:00:00.000Z' }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, modelId: reading.modelId, usage: { contextUsed: reading.tokens,
+      ...named ? { modelId: reading.modelId } : {}, ...reading.at ? { contextUpdatedAt: reading.at } : {}, rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+  })
+  const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await nudge()
+  // The model changes before its first reading comes. A token update that keeps the old size and drops its time, as
+  // Muse's does, is not the new model's either. Then the new model's own reading is far smaller.
+  reading = { ...reading, modelId: 'synthetic-model-b' }
+  await nudge()
+  reading = { ...reading, at: undefined }
+  await nudge()
+  reading = { ...reading, tokens: 40_000, at: '2026-10-19T10:01:00.000Z' }
+  await nudge()
+  expect(f.service.stateNote()).toBeUndefined()
+  // A drop on the new model is still a compaction.
+  reading = { ...reading, tokens: 120_000, at: '2026-10-19T10:02:00.000Z' }
+  await nudge()
+  reading = { ...reading, tokens: 30_000, at: '2026-10-19T10:03:00.000Z' }
+  await nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+})
+
+it('asks Watcher to read its state after any Compact context for its conversation, whatever the provider reports', async () => {
+  const f = await fixture()
+  expect(f.service.stateNote()).toBeUndefined()
+  // Asked for, it owes nothing yet: control may still refuse it.
+  f.service.userCommand({ type: 'compact-thread', threadId: f.id }, f.id, false)
+  expect(f.service.stateNote()).toBeUndefined()
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
+  expect(f.service.stateNote()).toContain('call read_state')
+  // A refused read, as for an expired cursor, has not read the state back, so the reminder stays.
+  expect(await f.call('read_state', { cursor: `${randomUUID()}:100` })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED' })
+  expect(f.service.stateNote()).toContain('call read_state')
+  await f.call('read_state', {})
+  expect(f.service.stateNote()).toBeUndefined()
 })

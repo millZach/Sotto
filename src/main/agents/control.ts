@@ -1485,6 +1485,7 @@ export class AgentControl {
       () => maintainProviderRecovery(this.dependencies.directory),
       () => this.dependencies.host.privacyChanged?.(),
       () => this.followupStore.privacyChanged(),
+      () => this.watcherHooks?.privacyChanged?.(),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))
@@ -3234,7 +3235,9 @@ export class AgentControl {
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
-          const watcherNews = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.()) : undefined
+          const news = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.()) : undefined
+          // After a compaction, Watcher is told to read its state back first (#1189).
+          const stateNote = news ? this.watcherHooks?.stateNote?.() : undefined, watcherNews = news && stateNote ? `${news}\n\n${stateNote}` : news
           // The requests that news said wait on the user go with the wake-up as identities alone, for the workspace to
           // record, so Watcher's pane can show their cards under it (ADR-0073). They answer nothing. A delegated thread's
           // card, told as news of the watched thread above it (#1190), is the delegated thread's: it is recorded there.

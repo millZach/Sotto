@@ -227,7 +227,8 @@ describe("Watcher's room", () => {
     const { command } = renderRoom(stateWithWatcher(), roomState())
     const pane = await screen.findByRole('region', { name: 'Watcher' })
     expect(within(pane).getByRole('heading', { level: 1, name: 'Watcher' })).toBeInTheDocument()
-    expect(within(pane).getByRole('img', { name: 'Sotto Owl' })).toBeInTheDocument()
+    // Once Watcher runs, the tile is the button for its context and state (#1189).
+    expect(within(pane).getByRole('button', { name: 'Watcher’s context and state' })).toBeInTheDocument()
     // The tile is the owl in the corner; the small owl that sat before Watcher's name is gone, and so is the sidebar.
     expect(pane.querySelector('.watcher-head .watcher-owl')).toBeNull()
     expect(screen.queryByRole('complementary')).toBeNull()

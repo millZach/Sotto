@@ -357,8 +357,14 @@ it('refuses start before the wire when the owning-host path is missing', async (
 })
 
 it('publishes the host user’s turn and holds automated prompts behind it before another writer', async () => {
-  const f = await master(), first = await f.call('start_thread', f.start())
+  // Turns here end only when the test ends them, so the user's turn, and its pause, last while the test reads them.
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  await native.driver.completeTurn(Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0], 'Synthetic start completion')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.lastTurn?.status).toBe('completed'))
   const confirmation = f.watcher.prepareStopAll()
   if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
   await f.socket.command({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic phone instruction' })

@@ -54,9 +54,9 @@ describe('closed watcher contracts', () => {
       expect(watcherPhoneSendSchema.safeParse({ ...input, origin: invalid }).success).toBe(false)
     }
   })
-  it('offers exactly the twelve bounded tools', () => {
+  it('offers exactly the fourteen bounded tools', () => {
     expect(Object.keys(watcherToolSchemas)).toEqual(['watch_thread', 'unwatch_thread', 'list_threads', 'read_thread', 'start_thread', 'send_to_thread', 'stop_thread', 'settle_thread',
-      'list_projects', 'list_machines', 'list_working_copies', 'read_operation'])
+      'list_projects', 'keep_state', 'read_state', 'list_machines', 'list_working_copies', 'read_operation'])
   })
   for (const [name, schemas] of Object.entries(watcherToolSchemas)) {
     const fixture = watcherToolFixtures[name as keyof typeof watcherToolFixtures]
