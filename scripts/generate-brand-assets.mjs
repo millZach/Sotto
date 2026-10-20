@@ -14,6 +14,8 @@ import path from 'node:path'
 import { deflateSync } from 'node:zlib'
 import sharp from 'sharp'
 
+import { DOCK_COVERAGE_SIZE } from '../src/main/dock/coverage.mjs'
+
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const buildDir = path.join(repoRoot, 'build')
 const trayDir = path.join(repoRoot, 'resources', 'tray')
@@ -159,8 +161,7 @@ await trayTemplate()
 
 // The Dock icon follows the theme (src/main/dock/dockIcon.ts). Main cannot draw
 // SVG, so the icon's shapes are written as coverage it paints: per pixel the
-// tile's alpha, then the glyph's, deflated. The size matches DOCK_COVERAGE_SIZE.
-const DOCK_COVERAGE_SIZE = 512
+// tile's alpha, then the glyph's, deflated.
 async function dockCoverage() {
   const svg = iconSvg.toString('utf8')
   const alpha = async (source) => sharp(Buffer.from(source), { density: (72 * DOCK_COVERAGE_SIZE) / 96 })

@@ -10,9 +10,9 @@ import { crc32, deflateSync, inflateSync } from 'node:zlib'
 import { resolveThemeFor, type ThemeSelection } from '../../shared/themes/library'
 import type { ThemeAppearance } from '../../shared/themes/palettes'
 import { themeBrand, wearsAppIcon, type ThemeBrand } from '../../shared/themeBranding'
+import { DOCK_COVERAGE_BYTES, DOCK_COVERAGE_SIZE } from './coverage.mjs'
 
-/** The coverage's side in pixels; the generator writes exactly this. */
-export const DOCK_COVERAGE_SIZE = 512
+export { DOCK_COVERAGE_SIZE }
 
 export interface DockIconSettings extends ThemeSelection {
   /** The main window's mode, not the widget's `theme`. */
@@ -39,7 +39,7 @@ export function dockBrandFor(settings: DockIconSettings, systemDark: boolean): T
 export function readDockCoverage(file: Buffer): Buffer | null {
   try {
     const coverage = inflateSync(file)
-    return coverage.length === DOCK_COVERAGE_SIZE * DOCK_COVERAGE_SIZE * 2 ? coverage : null
+    return coverage.length === DOCK_COVERAGE_BYTES ? coverage : null
   } catch {
     return null
   }

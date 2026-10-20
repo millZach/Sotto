@@ -10,6 +10,7 @@ import { pathToFileURL, URL } from 'node:url'
 
 import { _electron as electron } from '@playwright/test'
 
+import { DOCK_COVERAGE_BYTES } from '../src/main/dock/coverage.mjs'
 import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
@@ -239,12 +240,12 @@ export async function verifyPackagedResources(input, options = {}) {
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
   await verifyClaudeSdkAssets(join(resources, 'claude-sdk'))
-  // The Dock icon's coverage (src/main/dock/dockIcon.ts): two bytes for each of 512x512 pixels once inflated.
+  // The Dock icon's coverage (src/main/dock/coverage.mjs), at its inflated length.
   if (profile.key === 'darwin') {
     const coveragePath = join(resources, 'dock', 'mark-coverage.bin')
     let coverageBytes = -1
     try { coverageBytes = inflateSync(readFileSync(coveragePath)).length } catch { /* reported below */ }
-    if (coverageBytes !== 512 * 512 * 2) fail('dock/mark-coverage.bin is missing or is not the Dock icon coverage')
+    if (coverageBytes !== DOCK_COVERAGE_BYTES) fail('dock/mark-coverage.bin is missing or is not the Dock icon coverage')
   }
   if (existsSync(join(resources, 'runtime'))) fail('retired voice runtime must not be bundled')
   for (const required of [
