@@ -8,7 +8,7 @@ import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
-import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
+import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
 import type { HostMachineReport } from '../../shared/hostFacts'
@@ -19,10 +19,12 @@ import { clonePlainData } from './cloneHostSnapshot'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
-import { WatcherWakeUp, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
+import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherHostInput, watcherSlimRead } from './watcherSlimReads'
-import { watcherRequestNote } from './watcherRequestNote'
+import { WATCHER_COMPACTED_NOTE, watcherRequestNote } from './watcherRequestNote'
 import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
+import { WatcherStateStore, watcherWaitsOn } from './watcherState'
+import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { followupDigest } from './followups'
 import type { Handover } from './handover'
@@ -135,6 +137,20 @@ const LATE: unique symbol = Symbol('late')
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
+/**
+ * The user's newest request to this Watcher thread, by when it began rather than by its place in the record: a request a
+ * queued message started after its own had ended takes that request's place among takeovers (#1184), so it can sit
+ * before it. Of two that began at the same moment, the active one.
+ */
+function newestUserRequest(record: Readonly<WatcherRecord>, threadId: string): WatcherRequest | undefined {
+  let newest: WatcherRequest | undefined
+  for (const request of record.requests) {
+    if (request.watcher.threadId !== threadId || request.standingWatchId) continue
+    if (!newest || request.createdAt > newest.createdAt || request.createdAt === newest.createdAt && (request.state === 'active' || newest.state !== 'active')) newest = request
+  }
+  return newest
+}
+
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
@@ -143,6 +159,24 @@ export class WatcherService implements WatcherControlHooks {
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
   private readonly active = new Map<string, Promise<unknown>>()
   private invocations = 0
+  /** What Watcher keeps through compaction (#1189), and whether a compaction since it last read it owes it a note. */
+  private readonly kept: WatcherStateStore
+  private stateOwed = false
+  private seenCompaction: string | null = null
+  /**
+   * The Watcher thread the last look was at, and its context then: the thread's model and the reading's time, with no
+   * tokens just after a model change until a reading newer than the one at the change.
+   */
+  private seenFor: string | undefined
+  private lastTokens: { tokens: number | null; modelId: string | undefined; at: string | undefined } | undefined
+  /**
+   * Sotto's sends to Watcher's thread this run, and their count at the last compaction tried or seen: none again until
+   * Sotto sends Watcher another message. Counted here rather than read from the provider's turns, since a provider may
+   * report the compaction as a turn of its own, before or after it reports the compaction finished.
+   */
+  private sendsToWatcher = 0
+  private compactTried: number | undefined
+  private compactingNow = false
   private changing = false
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
@@ -202,9 +236,68 @@ export class WatcherService implements WatcherControlHooks {
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
-    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.closeAnsweredRequests(); this.publish() })
+    this.kept = new WatcherStateStore(options.directory, options.historyEnabled)
+    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.closeAnsweredRequests(); this.compactWhenDue(); this.publish() })
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
+  /**
+   * Compacts Watcher's conversation once it passes WATCHER_COMPACT_AT_TOKENS (#1189), when Watcher rests: no turn, no card,
+   * no compaction, nothing queued for it. Every Watcher call rereads its whole conversation, so its cost grows with it.
+   * One try per message Sotto sends Watcher, so a compaction that fails, or leaves the context high until Watcher's next
+   * turn reports it, is tried again only after that turn. A compaction that finished, this one or the user's, owes Watcher its state: the
+   * note of its next turn says to read it.
+   */
+  private compactWhenDue(): void {
+    if (this.closed) return
+    const seen = this.lookAtState()
+    if (!seen) return
+    const { snapshot, thread, tokens } = seen
+    if (tokens === null || tokens <= WATCHER_COMPACT_AT_TOKENS || this.compactingNow || this.changing || !this.canCompact(snapshot, thread)) return
+    if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
+      || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
+    if (this.compactTried === this.sendsToWatcher) return
+    this.compactTried = this.sendsToWatcher; this.compactingNow = true
+    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
+  }
+  /**
+   * Brings stateOwed up to date with Watcher's thread as it is now, so a send or a wake-up before the next snapshot tick
+   * carries the reminder too, and returns that thread.
+   */
+  private lookAtState(): { snapshot: AgentHostSnapshot; thread: AgentThread; tokens: number | null } | undefined {
+    const current = this.view().current
+    const snapshot = current ? this.options.control.watcherSnapshot() : undefined
+    const thread = current && snapshot?.threads.find(item => item.id === current.target.threadId)
+    if (!thread || !snapshot) return undefined
+    const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null, tokens = this.contextTokens(thread)
+    if (this.seenFor !== thread.id) {
+      // A new Watcher conversation starts from its state, and so does every start of Sotto, since a compaction may have
+      // come before it that Watcher has not read its state since, and the reminder is not saved: one small call.
+      this.stateOwed = true
+      this.seenFor = thread.id; this.seenCompaction = done; this.lastTokens = undefined; this.compactTried = undefined
+    } else if (done !== null && done !== this.seenCompaction) { this.stateOwed = true; this.seenCompaction = done; this.compactTried = this.sendsToWatcher }
+    // A sharp drop in context is a compaction too: Muse reports no compaction of its own, and a provider may compact by
+    // itself. Only readings for one model count, since another model's context is another conversation's size, and the
+    // reading at a model change may still be the old model's, as with a provider that names no model for it: after a
+    // change, only a reading with a time of its own, newer than the one at the change, starts the comparison again.
+    const last = this.lastTokens, modelId = thread.modelId, at = thread.usage?.contextUpdatedAt
+    if (last && last.modelId !== modelId) this.lastTokens = { tokens: null, modelId, at }
+    else if (tokens !== null && !(last?.tokens === null && (at === undefined || at === last.at))) {
+      if (last?.tokens != null && last.tokens >= 50_000 && tokens < last.tokens / 2) { this.stateOwed = true; this.compactTried = this.sendsToWatcher }
+      this.lastTokens = { tokens, modelId, at }
+    }
+    return { snapshot, thread, tokens }
+  }
+  /** Watcher's context in tokens as its provider last reported it for its current model, or null. */
+  private contextTokens(thread: AgentThread): number | null {
+    const usage = thread.usage
+    return usage?.contextUsed !== undefined && (usage.modelId === undefined || usage.modelId === thread.modelId) ? usage.contextUsed : null
+  }
+  private canCompact(snapshot: AgentHostSnapshot, thread: AgentThread): boolean {
+    return capabilitiesForThread(snapshot, thread).compact === true && thread.manualCompactionSupported !== false
+  }
+  /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
+  stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
+  privacyChanged(): Promise<void> { return this.kept.privacyChanged() }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   /** The record for reading only. It is replaced on every change, never edited, so no copy is needed to look at it. */
   private view(): Readonly<WatcherRecord> { return this.options.control.watcherRecordView() }
@@ -466,7 +559,7 @@ export class WatcherService implements WatcherControlHooks {
     // One host list for the whole read: each list reads every paired host, so asking per operation grew with them (#1023).
     let hosts: ReturnType<WatcherRemoteHosts['hosts']> | undefined
     const reportsOutcomes = (hostId: string) => (hosts ??= this.remote?.hosts() ?? []).find(host => host.hostId === hostId)?.outcomes === true
-    return { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
+    const room: WatcherRoomState = { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
       ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: record.requests,
@@ -498,6 +591,26 @@ export class WatcherService implements WatcherControlHooks {
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
       receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
+    // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
+    const snapshot = this.options.control.watcherSnapshot()
+    room.context = current ? { tokens: this.contextTokens(current), compactAt: WATCHER_COMPACT_AT_TOKENS, canCompact: this.canCompact(snapshot, current),
+      compacting: compactionPending(current.compaction) } : null
+    room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read(), ...this.kept.readable() ? {} : { unread: true as const } }
+    return room
+  }
+  /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
+  private watching(threads: WatcherRoomState['watchedThreads']) {
+    // This computer's threads only: this runs on every room update, and a paired host's shell is not read again for it.
+    // A paired host's thread keeps the count its room input carries, which leaves its sub-agents out.
+    const local = this.options.control.watcherSnapshot(), hostId = this.hostId()
+    return threads.filter(thread => thread.watched !== false).map(thread => {
+      // The work its last turn left running, sub-agents working or left unknown included, as its news counts it.
+      const owned = thread.target.hostId === hostId ? local.threads.find(item => item.id === thread.target.threadId) : undefined
+      const work = owned ? watcherBackgroundWorkCount(owned) : thread.backgroundWorkCount
+      // The cards of the threads it delegated to, as list_threads gives them; a paired host's are left out, as above.
+      const delegatedWaitsOn = owned ? local.threads.filter(child => child.delegatedBy === owned.id).flatMap(child => child.requests) : []
+      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn }) }
+    })
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
@@ -1015,11 +1128,11 @@ export class WatcherService implements WatcherControlHooks {
     if (!threadId || answersQuestion) return
     if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
     if (threadId === this.record().current?.target.threadId && command.type === 'queue-followup' && command.draftId) {
-      const latest = this.record().requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)
+      const latest = newestUserRequest(this.record(), threadId)
       if (!latest) refuse('REQUEST_NOT_ACTIVE', 'Send an instruction to Watcher before queuing a continuation.')
       if ((latest.userFollowups?.length ?? 0) >= 1_000) refuse('REQUEST_NOT_ACTIVE', 'This request has too many queued continuations. Send a new instruction instead.')
       this.options.control.mutateWatcher(record => {
-        const request = record.requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)
+        const request = newestUserRequest(record, threadId)
         if (request && (request.userFollowups?.length ?? 0) < 1_000) {
           request.userFollowups ??= []
           if (!request.userFollowups.some(item => item.draftId === command.draftId)) request.userFollowups.push({ draftId: command.draftId!,
@@ -1106,9 +1219,13 @@ export class WatcherService implements WatcherControlHooks {
         record.localTakeovers!.find(item => key(item.target) === key(target))!.userDrafts!.find(item => item.draftId === _draftId)!.messageId = command.messageId
       })
     }
-    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) this.pendingPromptTurns.set(command.commandId, {
-      watcher: this.record().current!.target, messageId: command.messageId,
-    })
+    // Compact context for Watcher's own conversation, the user's or Sotto's, owes it its state whatever the provider
+    // reports of it afterwards: Muse reports no compaction of its own (#1189). Here, once control has let it through.
+    if (command.type === 'compact-thread' && command.threadId === this.record().current?.target.threadId) this.stateOwed = true
+    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) {
+      this.sendsToWatcher += 1
+      this.pendingPromptTurns.set(command.commandId, { watcher: this.record().current!.target, messageId: command.messageId })
+    }
     if (origin?.operationId) {
       this.options.control.mutateWatcher(record => {
         const operation = record.operations.find(item => item.id === origin.operationId)!
@@ -1122,12 +1239,19 @@ export class WatcherService implements WatcherControlHooks {
     const record = this.record()
     let request = record.requests.find(item => item.rootUserMessageId === command.messageId
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
-    // An instruction the user queued after a takeover fenced its request, with no takeover since, is their fresh word.
-    // On its first delivery it starts its own request, ordered after that takeover as a Send to an idle Watcher would
-    // be, even if the old one has closed. A later takeover, Stop or Stop all clears the mark, and a request the user
-    // stopped keeps it, so those still hold; a retry keeps the request its first delivery made.
-    const fresh = request !== undefined && request.state !== 'stopped' && request.rootUserMessageId !== command.messageId
-      && request.userFollowups?.some(item => item.draftId === _draftId && item.afterTakeover && item.messageId === undefined)
+    // Every Send of the user's reaches Watcher under an active request (#1184). An instruction queued as a continuation
+    // keeps its request only while that request is still active when it is delivered: one the user stopped, or one that
+    // closed, while it waited is over, and the instruction starts its own request, as a Send to an idle Watcher would.
+    // Its request takes the old one's place among takeovers, since the instruction is no newer than it was: a takeover
+    // that fenced the old request fences it too. One the user queued after a takeover fenced its request, with no
+    // takeover since, is their fresh word instead, ordered after that takeover. A retry keeps the request its first
+    // delivery made.
+    // A continuation whose recorded message is not this one never reached Watcher: a queued message goes again only as a
+    // new message, after a definite failure. An older build kept that failed message on it, so it is matched this way.
+    const queued = request?.userFollowups?.find(item => item.draftId === _draftId && item.messageId !== command.messageId)
+    const fresh = request !== undefined && request.rootUserMessageId !== command.messageId && queued !== undefined
+      && (queued.afterTakeover === true || request.state !== 'active')
+    const inPlace = fresh && queued?.afterTakeover !== true
     // Decided before anything is recorded, so a refused handover leaves no request behind.
     const continuing = request !== undefined && !fresh && request.rootUserMessageId !== command.messageId
     const handover = continuing ? undefined : this.handoverFor(command.threadId, command.commandId, _draftId)
@@ -1140,11 +1264,14 @@ export class WatcherService implements WatcherControlHooks {
       this.options.control.mutateWatcher(next => {
         const old = from ? next.requests.find(item => item.id === from) : undefined
         if (old) old.userFollowups = old.userFollowups!.filter(item => item.draftId !== _draftId)
-        next.requests.push(created)
+        if (old && inPlace) next.requests.splice(next.requests.indexOf(old), 0, created)
+        else next.requests.push(created)
       })
     }
     // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
-    const note = watcherRequestNote(request.id, this.hostId())
+    // After a compaction the note also tells Watcher to read its state back first (#1189).
+    this.lookAtState()
+    const note = watcherRequestNote(request.id, this.hostId(), this.stateOwed)
     // Codex and Claude Code are sent the words alone, and their display proof says so: a proven message is never
     // searched for an older footer, even one the user typed. Grok Build's request line is taken off by its exact
     // provenance instead (watcherRequestNote.ts), since a skill prompt can change what its adapter sends.
@@ -1183,6 +1310,19 @@ export class WatcherService implements WatcherControlHooks {
   dispatchAborted(command: AgentHostCommand): void {
     this.pendingPromptTurns.delete(command.commandId)
     if (this.handoverOffer?.sendingCommandId === command.commandId) delete this.handoverOffer.sendingCommandId
+    // A message that definitely never reached the provider was not delivered: its continuation keeps no message, so its
+    // next try is a first delivery again and takes an active request if its own has ended since (#1184). A request it
+    // started, which nothing has acted under, goes with it, so the next try starts one rooted in a message that exists.
+    const messageId = 'messageId' in command ? command.messageId : undefined
+    // One a takeover has since taken as its boundary stays: dropping it would fence every request after it.
+    const unsent = (request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord>): boolean => request.rootUserMessageId === messageId
+      && !request.participants.length && !record.operations.some(operation => operation.requestId === request.id)
+      && !record.localTakeovers?.some(takeover => takeover.lastRequestId === request.id)
+    const view = this.view()
+    if (messageId && view.requests.some(request => unsent(request, view) || request.userFollowups?.some(item => item.messageId === messageId))) this.options.control.mutateWatcher(record => {
+      record.requests = record.requests.filter(request => !unsent(request, record))
+      for (const request of record.requests) for (const item of request.userFollowups ?? []) if (item.messageId === messageId) { delete item.messageId; delete item.displayPrompt }
+    })
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     // This pass runs on every update and walks every thread, so it reads the record without copying it. A copy per thread
@@ -1505,6 +1645,22 @@ export class WatcherService implements WatcherControlHooks {
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
       if (name === 'list_machines') return await this.listMachines()
+      if (name === 'keep_state') {
+        const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
+          .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now, so nothing was kept and nothing kept was lost. Try again.', true))
+        return { status: 'ok', kept }
+      }
+      if (name === 'read_state') {
+        const kept = await this.kept.current()
+          .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
+        const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
+        const input = parsed.data as WatcherToolInput<'read_state'>, page = this.page('state', this.watching(this.state().watchedThreads), input.cursor, 100)
+        // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder. The look
+        // comes first, so a reminder owed but not yet noticed is not raised again after this read.
+        this.lookAtState(); this.stateOwed = false
+        return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept,
+          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
+      }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
       const requestId = 'requestId' in parsed.data ? parsed.data.requestId : undefined

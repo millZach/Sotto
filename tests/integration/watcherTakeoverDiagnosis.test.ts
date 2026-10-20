@@ -494,7 +494,7 @@ it('ends a request with no participants when the only other instruction to it wa
   await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
 }, 60_000)
 
-it('keeps an instruction queued after a takeover inside its request when the user stops Watcher', async () => {
+it('delivers an instruction queued before the user stopped Watcher under a request of its own (#1184)', async () => {
   const f = await fixture()
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
@@ -509,7 +509,12 @@ it('keeps an instruction queued after a takeover inside its request when the use
     expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.watcherId })).error).toBeNull()
   }
   await expect.poll(() => f.thread(f.watcherId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
-  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  // The Stop ended the request the instruction was queued under; the instruction is the user's word and starts its own.
+  const delivered = f.thread(f.watcherId).messages.findLast(item => item.role === 'user')!.id
+  expect(f.control.watcherRecord().requests).toHaveLength(requests + 1)
+  expect(f.control.watcherRecord().requests.find(item => item.rootUserMessageId === delivered)).toMatchObject({ state: 'active' })
+  expect(f.control.watcherRecord().requests.find(item => item.id === f.requestA)?.state).not.toBe('active')
+  // The stopped request stays stopped.
   expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic forbidden continuation after Stop' })).toMatchObject({ status: 'refused' })
 }, 60_000)
