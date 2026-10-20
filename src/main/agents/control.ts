@@ -3083,6 +3083,19 @@ export class AgentControl {
         const step = hiddenWakeUpStep(first, { echoed: false, reconciling: this.outbox.some(item => item.id === first.commandId), outdated: false })
         if (step === 'wait' || step === 'withdrawn') continue
         if (step === 'send' && (!this.delegationNewsReady(threadId, first) || (this.delegationNewsRetryAt.get(threadId) ?? 0) > Date.now())) continue
+        // The news turn completes like any other, so the user's prompts a machine Stop holds would go unreviewed once the
+        // Stop lifts. They are paused for the user's Resume first, as a turn that did not finish pauses them (ADR-0073).
+        const stopHeld = (item: Readonly<QueuedFollowup>): boolean => this.isUserFollowup(item) && item.id !== first.id
+        if (step === 'send' && this.watcherHooks?.preserveUserQueue(threadId)
+          && items.some(item => item.threadId === threadId && item.status === 'queued' && stopHeld(item))) {
+          this.pumping.add(threadId)
+          let paused = false
+          void this.followupStore.pauseUserPrompts(threadId, 'Watcher stopped this thread. Review the queue and resume it when ready.', stopHeld)
+            .then(() => { paused = true })
+            .catch(() => { this.state.error = 'Could not pause the follow-up queue. The news was not sent.' })
+            .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
+          continue
+        }
         if (step === 'failed' || step === 'unknown') {
           if (step === 'failed' && (this.delegationNewsRetryAt.get(threadId) ?? 0) > Date.now()) continue
           // A send that may have gone is never sent again (ADR-0081 decision 7): the news leaves, as told.
@@ -3147,6 +3160,9 @@ export class AgentControl {
           const validate = (): void => {
             if (item.watcherOperationId) { if (!this.watcherHooks) throw new Error('Watcher is unavailable.'); this.watcherHooks.guardOperation(item.watcherOperationId) }
             if (this.disposed || !ready(item)) throw new Error('The thread is no longer ready. Review it and resume its queue when ready.')
+            // A prompt queued under a machine Stop since its pause waits for that pause too: the news goes on a later pass.
+            if (isDelegationOnlyWakeUp(item) && this.watcherHooks?.preserveUserQueue(threadId) && this.followupStore.peek().items.some(queued => queued.threadId === threadId
+              && queued.status === 'queued' && queued.id !== item.id && this.isUserFollowup(queued))) throw new Error('The thread\'s queue changed before the news went.')
             const latest = this.thread(threadId)
             if (latest.status === 'running' || latest.requests.length || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))) throw new Error('The thread changed before dispatch. Review it and resume the queue.')

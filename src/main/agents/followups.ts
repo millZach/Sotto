@@ -391,6 +391,18 @@ export class FollowupStore {
       for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isHiddenWakeUp(item)) Object.assign(item, { status: 'paused', error })
     })
   }
+  /**
+   * Pauses the user's own queued prompts in a thread, and nothing of Sotto's or Watcher's: those `held` says wait. A
+   * delegation's hidden news going past prompts a machine Stop holds pauses them first, so they wait for the user's
+   * Resume whatever turn completes next (ADR-0073, ADR-0081). Saves nothing when there are none.
+   */
+  pauseUserPrompts(threadId: string, error: string, held: (item: QueuedFollowup) => boolean): Promise<void> {
+    return this.change(state => {
+      const items = state.items.filter(item => item.threadId === threadId && item.status === 'queued' && !item.wakeUp && !item.watcherOperationId && held(item))
+      if (!items.length) return false
+      for (const item of items) Object.assign(item, { status: 'paused', error, updatedAt: new Date().toISOString() })
+    })
+  }
   resume(threadId: string, turnId?: string): Promise<void> {
     return this.change(state => {
       for (const item of state.items) if (item.threadId === threadId && ['paused', 'failed'].includes(item.status)) {

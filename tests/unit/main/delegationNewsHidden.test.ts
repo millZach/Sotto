@@ -106,17 +106,29 @@ it('waits only while the thread\'s own turn runs, and goes as soon as it ends', 
   expect(sends(f.host)[0]!.hiddenWakeUp).toBe(true)
 })
 
-it('goes past a machine Stop\'s fence, leaving the user\'s queued prompts where they are', async () => {
+it('goes past a machine Stop\'s fence, pausing the user\'s held prompts first so they wait for the user\'s Resume', async () => {
   const f = await fixture()
   await queueUser(f.control, 'Synthetic queued prompt')
+  // Watcher's Stop all on a thread Watcher started stops its turn, so it does not finish; the fence holds the user's prompt.
   f.fence(true)
-  // Watcher's Stop all stopped the turn, so it did not finish; the fence holds the user's prompt, unreviewed.
   end(f.host, 'interrupted')
   await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
   await f.control.deliverWakeUp('workshop', pullRequest(1), { tool: false })
   await expect.poll(() => sends(f.host).length).toBe(1)
   expect(sends(f.host)[0]).toMatchObject({ hiddenWakeUp: true })
-  await expect.poll(() => stored(f.control).map(item => [item.wakeUp ? 'wake-up' : item.text, item.status])).toEqual([['Synthetic queued prompt', 'queued'], ['wake-up', 'queued']])
+  // The news turn completes like any other, so the user's prompt was paused for their review before it went.
+  await expect.poll(() => stored(f.control).map(item => [item.wakeUp ? 'wake-up' : item.text, item.status])).toEqual([['Synthetic queued prompt', 'paused'], ['wake-up', 'queued']])
+  expect(f.control.shell().followups?.find(item => !item.wakeUp)?.error).toBe('Watcher stopped this thread. Review the queue and resume it when ready.')
+  // The news turn ends and the Stop's hold lifts: the prompt still waits, and so does the news behind it.
+  end(f.host)
+  f.fence(false)
+  f.host.emit()
+  await new Promise(resolve => setTimeout(resolve, 100))
+  expect(sends(f.host)).toHaveLength(1)
+  // Resume is the user's review: their prompt goes, then the pull request's news.
+  expect((await f.control.command({ type: 'resume-followups', threadId: 'workshop' })).error ?? null).toBeNull()
+  await expect.poll(() => sends(f.host).length).toBe(2)
+  expect(sends(f.host)[1]!.text).toBe('Synthetic queued prompt')
 })
 
 it('goes past the user\'s paused prompt at the head of the queue, which stays paused and in place', async () => {
