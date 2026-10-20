@@ -68,15 +68,12 @@ type FullRow = Extract<Rows[number], { evidence: unknown }>
  * A roster row as list_threads' slim detail gives it: who it is, where it stands, what it waits on, whether Watcher watches
  * it, and its open pull requests' summaries in place of every evidence fact.
  */
-export function watcherSlimRow(row: FullRow, watched: boolean) {
+export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false) {
   const said = summariesByKey(row.evidence)
   const open = addressShared(row.pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
     .map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
-  // Why it needs the user or is not watched: its newest turn's failure, and its newest participation's takeover or stop.
-  // A paired host's turn fact sits beside the desktop's own, so only the newest one says how the thread's last turn ended.
-  const turn = row.evidence.filter(fact => fact.source === 'native-turn').reduce<WatcherEvidence | undefined>((newest, fact) =>
-    !newest || Date.parse(fact.observedAt) > Date.parse(newest.observedAt) ? fact : newest, undefined)
-  const turnFailed = turn?.fact === 'turn-failed', latest = row.participation.at(-1)
+  // Why it needs the user or is not watched: its last turn's failure, and its newest participation's takeover or stop.
+  const latest = row.participation.at(-1)
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
@@ -90,14 +87,17 @@ const isOk = (result: unknown): result is { status: 'ok' } & Record<string, unkn
 /**
  * What Watcher is given of a read's full result, from what its call asked (#1191). Refusals and other tools pass as they
  * are. `watched` says which threads Watcher watches. A paired host's page is filtered here, since the host is not asked to.
+ * `turnFailed` says whether a thread's last turn failed, from the thread itself: its turn facts cannot, as a paired host's
+ * sits beside the desktop's own and either can be the older.
  */
-export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean): unknown {
+export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean,
+  turnFailed: (target: WatcherThreadTarget) => boolean = () => false): unknown {
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))
     // A paired host's page is filtered here, so its counts are counted again from what is left.
     const counts = asked.watchedOnly ? Object.fromEntries(Object.keys(result.counts as Record<string, number>).map(group => [group, rows.filter(row => row.group === group).length])) : result.counts
-    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target) })) : rows.map(row => watcherSlimRow(row, watched(row.target))) }
+    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target) })) : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target))) }
   }
   if (name === 'read_thread') {
     const asked = input as WatcherToolInput<'read_thread'>, evidence = result.evidence as WatcherEvidence[]

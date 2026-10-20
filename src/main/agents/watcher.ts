@@ -2244,7 +2244,8 @@ export class WatcherService implements WatcherControlHooks {
   /** What Watcher is given of a read's full result (#1191): slim unless it asked for all of it. */
   private slim(name: WatcherToolName, input: unknown, result: unknown): unknown {
     const watched = this.wakes.watchedKeys()
-    return watcherSlimRead(name, input, result, target => watched.has(key(target)))
+    return watcherSlimRead(name, input, result, target => watched.has(key(target)),
+      target => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)?.lastTurn?.status === 'failed')
   }
   private prunePages(): void {
     for (const [id, page] of this.pages) if (page.expires < Date.now()) this.pages.delete(id)

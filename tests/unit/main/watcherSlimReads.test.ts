@@ -126,7 +126,7 @@ it('says in a slim row why a thread needs the user or is not watched, and carrie
   failed!.waitsOn = [{ id: 'card', kind: 'permission', label: 'Open to answer permission', openTarget: failed!.target }]
   takenOver!.participation = [{ requestId: randomUUID(), startedBy: 'watcher', generation: 0, state: 'taken-over', takeover: { reason: 'user-send', at }, automationStopped: true }]
   quiet!.connected = false
-  const slim = watcherSlimRead('list_threads', {}, full, item => item.threadId === 'thread-0') as typeof full
+  const slim = watcherSlimRead('list_threads', {}, full, item => item.threadId === 'thread-0', item => item.threadId === 'thread-0') as typeof full
   expect(watcherToolSchemas.list_threads.output.parse(slim)).toBeTruthy()
   expect(slim.rows[0]).toMatchObject({ watched: true, turnFailed: true, waitsOn: [{ id: 'card', kind: 'permission' }] })
   expect(slim.rows[1]).toMatchObject({ watched: false, takenOver: true, automationStopped: true })
@@ -153,14 +153,14 @@ it('keeps a read’s own facts, a failed turn or a takeover, and sums up only it
   expect(watcherSlimRead('read_thread', {}, read, () => false)).toMatchObject({ evidence: [failure], pullRequests: [{ number: 7, checks: 'failed' }] })
 })
 
-it('reads a slim row’s failure from its newest turn fact, as a paired host’s older one sits beside the desktop’s', () => {
-  const full = roster(1, 0), row = full.rows[0] as Extract<FullRows[number], { evidence: unknown }>
-  const turn = { target: row.target, source: 'native-turn' as const, freshness: 'fresh' as const, availability: 'available' as const }
-  row.evidence.push({ ...turn, id: randomUUID(), observedAt: '2026-10-19T09:00:00.000Z', turnId: 'turn-1', fact: 'turn-failed', failureCategory: 'provider-turn-failed' },
-    { ...turn, id: randomUUID(), observedAt: '2026-10-19T09:05:00.000Z', turnId: 'turn-2', fact: 'turn-finished' })
-  expect((watcherSlimRead('list_threads', {}, full, () => true) as typeof full).rows[0]).not.toHaveProperty('turnFailed')
-  row.evidence.reverse()
-  expect((watcherSlimRead('list_threads', {}, full, () => true) as typeof full).rows[0]).not.toHaveProperty('turnFailed')
+it('takes a slim row’s failure from the thread’s last turn, not from a turn fact that may be older', () => {
+  const full = roster(2, 0), row = full.rows[0] as Extract<FullRows[number], { evidence: unknown }>
+  // A paired host's failure fact can outlive the turn that followed it, or carry a later time from a skewed clock.
+  row.evidence.push({ id: randomUUID(), target: row.target, source: 'native-turn', observedAt: '2026-10-19T11:00:00.000Z', freshness: 'fresh', availability: 'available',
+    turnId: 'turn-1', fact: 'turn-failed', failureCategory: 'provider-turn-failed' })
+  const slim = watcherSlimRead('list_threads', {}, full, () => true, item => item.threadId === 'thread-1') as typeof full
+  expect(slim.rows[0]).not.toHaveProperty('turnFailed')
+  expect(slim.rows[1]).toMatchObject({ turnFailed: true })
 })
 
 it('adds nothing to a read with no pull requests, so a read that fit its bound still does', () => {
