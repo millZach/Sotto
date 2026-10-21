@@ -568,7 +568,9 @@ export function AppProvider({
               entries = await request
             } catch (error: unknown) {
               refreshDictationRecord(entry.id)
-              if (isCurrentGeneration(generation) && historyVersionRef.current === version) {
+              // With history off there is no transcript to have failed, so a refused record is not History's failure.
+              const historyOff = settingsRef.current?.historyEnabled === false
+              if (!historyOff && isCurrentGeneration(generation) && historyVersionRef.current === version) {
                 setHistoryStatus('degraded')
                 setFailure('HISTORY_UPDATE_FAILED')
               }

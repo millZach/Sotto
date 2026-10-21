@@ -49,13 +49,25 @@ export function createLsappinfoFocusedApp(run: RunProgram = runProgram): Focused
   }
 }
 
+/** Chromium-family browsers, by the prefix their installed web apps put on a window class. */
+const WEB_APP_BROWSERS: Readonly<Record<string, string>> = {
+  chrome: 'Google Chrome',
+  chromium: 'Chromium',
+  brave: 'Brave',
+  msedge: 'Microsoft Edge',
+  vivaldi: 'Vivaldi',
+}
+
 /**
  * A readable name for a Hyprland window class: the last part of a reverse-DNS id (`org.gnome.Nautilus` reads
  * `Nautilus`), and a lowercase class with its first letter raised and its dashes as spaces (`brave-browser` reads
- * `Brave browser`). Any other class is kept as it is.
+ * `Brave browser`). An installed web app's class carries its site (`chrome-mail.google.com__-Default`), so it reads
+ * as its browser and the site is never kept. Any other class is kept as it is.
  */
 export function readableWindowClass(windowClass: string): string | null {
   let name = windowClass.trim()
+  const webApp = /^(chrome|chromium|brave|msedge|vivaldi)-.+(?:__|-(?:Default|Profile_\d+)$)/u.exec(name)
+  if (webApp !== null) return WEB_APP_BROWSERS[webApp[1]!]!
   if (/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2,}$/u.test(name)) name = name.slice(name.lastIndexOf('.') + 1)
   if (/^[a-z0-9_-]+$/u.test(name)) name = name.replace(/[_-]+/gu, ' ').trim().replace(/^./u, letter => letter.toUpperCase())
   return deliveredAppName(name)

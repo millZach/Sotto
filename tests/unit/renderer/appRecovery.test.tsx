@@ -89,6 +89,31 @@ it('retains failed dictation across navigation and later dictation, and copies w
   expect(screen.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue('Completed words 2')
 })
 
+it('does not report a History failure when a dictation record is refused while history is off', async () => {
+  const factory: AppControllerFactory = bindings => createProductionDictationController(bindings, {
+    createRecorder: () => ({ start: async () => undefined, stop: async () => ({ samples: new Float32Array([0.2]), sourceSampleRate: 16_000, durationMs: 500 }), cancel: async () => undefined }),
+    createTranscriber: () => ({ transcribe: async () => ({ text: 'Off the record', language: 'en' }), cancel: () => undefined, dispose: () => undefined }),
+    createCuePlayer: () => ({ playStart: () => undefined, playStop: () => undefined }),
+  })
+  const bridge = createBridge({
+    getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false, autoPaste: false })),
+    deliverOutput: vi.fn(async () => 'copied' as const),
+    addHistory: vi.fn(async () => { throw new Error('Synthetic record failure') }),
+  })
+  const user = userEvent.setup()
+  const FailureProbe = (): React.ReactNode => {
+    const app = useApp()
+    return <output data-testid="history-probe">{`${app.failure ?? 'none'} ${app.historyStatus}`}</output>
+  }
+  render(<AppProvider bridge={bridge} createController={factory}><NavigationProbe /><FailureProbe /><App /></AppProvider>)
+  await openPage('home')
+  await user.click(screen.getByRole('button', { name: 'Start dictation' }))
+  await user.click(screen.getByRole('button', { name: 'Stop' }))
+  await waitFor(() => expect(bridge.addHistory).toHaveBeenCalledOnce())
+  await waitFor(() => expect(bridge.getDictationRecord).toHaveBeenCalledOnce())
+  expect(screen.getByTestId('history-probe')).toHaveTextContent('none ready')
+})
+
 it('keeps cached history and reports failure when deletion is refused while history is off', async () => {
   const entry = { id: 'retained', text: 'Retained transcript', createdAt: 1, durationMs: 10, language: 'en', modelPreset: 'balanced' as const }
   const otherEntry = { ...entry, id: 'other-retained', text: 'Another retained transcript' }

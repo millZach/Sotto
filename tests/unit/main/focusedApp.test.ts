@@ -59,6 +59,11 @@ describe('Linux delivered app through hyprctl', () => {
     expect(readableWindowClass('Alacritty')).toBe('Alacritty')
     expect(readableWindowClass('Code')).toBe('Code')
     expect(readableWindowClass('zoom.us')).toBe('zoom.us')
+    // An installed web app names its site in the class; only the browser is kept.
+    expect(readableWindowClass('chrome-mail.google.com__-Default')).toBe('Google Chrome')
+    expect(readableWindowClass('brave-app.slack.com__client-Profile_2')).toBe('Brave')
+    expect(readableWindowClass('msedge-outlook.office.com__mail-Default')).toBe('Microsoft Edge')
+    expect(readableWindowClass('chrome-fmgjjmmmlfnkbppncabfkddbjimcfncm-Default')).toBe('Google Chrome')
     expect(readableWindowClass('  ')).toBeNull()
   })
 
