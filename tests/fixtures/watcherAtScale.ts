@@ -124,7 +124,7 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
       })
       detach.push(() => { subscribeSpy.mockRestore(); sendsSpy.mockRestore(); pendingSpy.mockRestore(); snapshotSpy.mockRestore(); hostIdSpy.mockRestore() })
       const service = new WatcherService({ directory: workspace.root, host: workspace.host, control,
-        historyEnabled: () => false, streamingPublishCost: true, limit: () => 8 })
+        historyEnabled: () => false, streamingPublishCost: true })
       detach.push(() => service.close())
       let rooms = 0
       const unsubscribeRoom = service.subscribe(() => { rooms++ })
