@@ -102,6 +102,13 @@ export class CodexActivityProjection {
   private readonly owners = new Map<string, Child>()
   /** Multi-agent v2 agent paths to native child thread IDs, per conversation, so a nested agent finds its parent. */
   private readonly paths = new WeakMap<ActivityConversation, Map<string, string>>()
+  /** Native agents whose own thread has a turn running, from their own notifications: started, until it ends. */
+  private readonly working = new Set<string>()
+  /**
+   * A message to a finished multi-agent v2 agent, by its native ID, not yet shown to be work: when it came, and how. The
+   * newest one waits; the agent's own turn starting, or a later completion, makes it the agent's next assignment (#1261).
+   */
+  private readonly messaged = new Map<string, { thread: ActivityConversation; item: Item; context: Context; senderPath: string; at?: number }>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
@@ -270,13 +277,22 @@ export class CodexActivityProjection {
    * or `interrupted` each time it finishes. Every item for one assignment folds into one record in the turn the
    * assignment began, so a busy agent does not fill the bounded activity window. The task name the parent gave it is
    * its title; its task words reach Codex encrypted and are never seen. Items naming the reporting agent or one of its
-   * ancestors are its own replies upward, not work it started.
+   * ancestors are its own replies upward, not work it started. `held` is a message an agent was sent once it had finished,
+   * shown since to have started work, with when it came.
    */
-  private subAgentActivity(thread: ActivityConversation, item: Item, context: Context, senderPath: string): void {
+  private subAgentActivity(thread: ActivityConversation, item: Item, context: Context, senderPath: string, held?: { readonly at: number | undefined }): void {
     const child = item.agentThreadId, path = item.agentPath
     if (!child || !path || !path.startsWith(`${ROOT_PATH}/`) || `${senderPath}/`.startsWith(`${path}/`)) return
     const status = item.kind === 'started' || item.kind === 'interacted' ? 'running' : item.kind === 'completed' ? 'completed' : item.kind === 'interrupted' ? 'interrupted' : undefined
     if (!status) return
+    if (!held) {
+      // An agent that completes again after a message it was sent once finished ran a turn for it: that message is the
+      // assignment this ends. A start or a newer message replaces a waiting one.
+      const waiting = this.messaged.get(child)
+      this.messaged.delete(child)
+      if (waiting && status !== 'running') this.subAgentActivity(waiting.thread, waiting.item, waiting.context, waiting.senderPath, { at: waiting.at })
+      if (status !== 'running' && context.phase !== 'history') this.working.delete(child)
+    }
     const paths = this.paths.get(thread) ?? new Map<string, string>()
     paths.set(path, child); this.paths.set(thread, paths)
     const prior = this.child(thread, child)?.agent
@@ -285,6 +301,14 @@ export class CodexActivityProjection {
     // The same item reported again, started and then completed, is the same assignment. Arriving after the agent
     // finished, it cannot make the agent working again, or the work handed to it next would not read as new.
     if (prior?.assignmentId === itemActivityId && status === 'running' && priorFinished) return
+    // A message to an agent that has finished is no work by itself. Codex reports send_message, which leaves it in the
+    // agent's mail, and followup_task, which also starts the agent's turn, both as `interacted` (codex-cli 0.163). It
+    // waits until the agent is seen working: its own turn starting, as a follow-up's does at once, or a later completion.
+    // One that starts nothing leaves the agent finished, so its parent's turn is not held for work that never began (#1261).
+    if (!held && item.kind === 'interacted' && priorFinished && !this.working.has(child)) {
+      this.messaged.set(child, { thread, item, context, senderPath, ...context.phase === 'history' ? {} : { at: this.now() } })
+      return
+    }
     // A start, or work handed to an agent that had finished, is a new assignment; a message to a working agent is not.
     const assignment = prior?.assignmentId !== itemActivityId && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || priorFinished))
     const assignmentId = assignment || !prior?.assignmentId ? itemActivityId : prior.assignmentId
@@ -293,7 +317,7 @@ export class CodexActivityProjection {
     const id = record || !this.seen.get(thread)?.has(assignmentId) ? assignmentId : itemActivityId
     // History names no times. A reread keeps the times this assignment's record already holds, not the agent's latest.
     const recorded = record?.agents?.find(agent => agent.id === agentId(child))
-    const observedAt = context.phase === 'history' ? undefined : iso(this.now())
+    const observedAt = held ? iso(held.at) : context.phase === 'history' ? undefined : iso(this.now())
     const parent = paths.get(parentPath(path))
     const title = path.slice(path.lastIndexOf('/') + 1)
     const model = item.model ?? prior?.model
@@ -386,7 +410,7 @@ export class CodexActivityProjection {
   }
 
   childNotification(child: string, method: string, params: unknown): ActivityConversation | undefined {
-    const owner = this.owners.get(child)
+    let owner = this.owners.get(child)
     if (!owner) return undefined
     if (method === 'item/started' || method === 'item/completed') {
       const nested = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() }).safeParse(params)
@@ -400,6 +424,13 @@ export class CodexActivityProjection {
     const status = method === 'turn/started' ? 'running' : method === 'turn/completed' ? payload.data.turn?.status
       : method === 'thread/status/changed' ? ({ active: 'running', idle: 'unknown', systemError: 'errored', notLoaded: 'unknown' } as Record<string, string>)[payload.data.status?.type ?? ''] : undefined
     if (!status) return undefined
+    if (status === 'running') {
+      this.working.add(child)
+      // Its own turn starting shows a message it was sent once finished handed it work: that is its next assignment.
+      const waiting = this.messaged.get(child)
+      this.messaged.delete(child)
+      if (waiting) { this.subAgentActivity(waiting.thread, waiting.item, waiting.context, waiting.senderPath, { at: waiting.at }); owner = this.owners.get(child)! }
+    } else this.working.delete(child)
     const prior = owner.agent
     // A late status notification cannot restart a completed assignment. A new input item can.
     if (isTerminalActivity(mappedStatus(prior.status, 'unknown')) && !isTerminalActivity(mappedStatus(status, 'unknown'))) return owner.thread

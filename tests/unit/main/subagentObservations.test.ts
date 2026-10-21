@@ -85,6 +85,8 @@ describe('observational subagent roster metadata', () => {
     expect(agents()[0]).toMatchObject({ status: 'completed', assignmentId: started.assignmentId, completedAt: new Date(now).toISOString() })
     now = 4_000
     projection.item(thread, activity('call-followup', 'interacted', '/root/review_tests', 'native-child'), { turnId: 'later-turn', phase: 'completed' })
+    // A follow-up task starts the agent's own turn; a message alone would leave it finished.
+    projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn', status: 'inProgress' } })
     const followup = thread.activities.at(-1)!.agents![0]!
     expect(thread.activities).toHaveLength(2)
     expect(followup).toMatchObject({ id: started.id, status: 'running', model: 'reported-model', startedAt: new Date(now).toISOString() })
@@ -99,6 +101,51 @@ describe('observational subagent roster metadata', () => {
     thread.activities.forEach(row => agentActivitySchema.parse(row))
   })
 
+  it('leaves a finished Codex v2 agent finished when it is only sent a message, and opens a new assignment once it works again (#1261)', () => {
+    let now = 1_000
+    const projection = new CodexActivityProjection(() => now)
+    const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const activity = (id: string, kind: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/spec_review' })
+    const statuses = () => thread.activities.filter(record => record.kind === 'subagent').map(record => record.agents![0]!.status)
+    // As codex-cli 0.163 reported it: a message while the agent works, a follow-up task, its completion, then a message.
+    projection.item(thread, activity('call-spawn', 'started'), { turnId: 'turn', phase: 'completed' })
+    projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-1', status: 'inProgress' } })
+    projection.item(thread, activity('call-message', 'interacted'), { turnId: 'turn', phase: 'completed' })
+    projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn-1', status: 'completed' } })
+    expect(statuses()).toEqual(['completed'])
+    now = 2_000
+    projection.item(thread, activity('call-followup', 'interacted'), { turnId: 'turn', phase: 'completed' })
+    // A follow-up task starts the agent's own turn at once; that is what shows it is working again.
+    projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
+    expect(statuses()).toEqual(['completed', 'running'])
+    expect(thread.activities[1]!.agents![0]!.startedAt).toBe(new Date(2_000).toISOString())
+    now = 3_000
+    projection.item(thread, activity('subagent-completed-child-turn-2', 'completed'), { turnId: 'turn', phase: 'completed' })
+    projection.childNotification('native-child', 'thread/status/changed', { status: { type: 'idle' } })
+    projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn-2', status: 'completed' } })
+    now = 4_000
+    // send_message to a finished agent leaves it in the agent's mail and starts no turn.
+    projection.item(thread, activity('call-thanks', 'interacted'), { turnId: 'turn', phase: 'completed' })
+    projection.turn(thread, { id: 'turn', status: 'completed' }, true)
+    expect(statuses()).toEqual(['completed', 'completed'])
+    // Read again from history, with no notifications, it reads the same.
+    for (const [id, kind] of [['call-spawn', 'started'], ['call-message', 'interacted'], ['call-followup', 'interacted'], ['subagent-completed-child-turn-2', 'completed'], ['call-thanks', 'interacted']] as const) {
+      projection.item(thread, activity(id, kind), { turnId: 'turn', phase: 'history' })
+    }
+    expect(statuses()).toEqual(['completed', 'completed'])
+  })
+
+  it('opens a Codex v2 follow-up a later completion shows ran, when no turn of the agent\'s own was seen', () => {
+    const projection = new CodexActivityProjection(() => 1_000)
+    const history = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const activity = (id: string, kind: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/spec_review' })
+    for (const [id, kind] of [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted'], ['subagent-completed-2', 'completed']] as const) {
+      projection.item(history, activity(id, kind), { turnId: 'turn', phase: 'history' })
+    }
+    expect(history.activities.map(record => record.agents![0]!.status)).toEqual(['completed', 'completed'])
+    expect(new Set(history.activities.map(record => record.agents![0]!.assignmentId)).size).toBe(2)
+  })
+
   it('starts a new Codex v2 assignment after a late repeat of the item that started a finished one', () => {
     const projection = new CodexActivityProjection(() => 1_000)
     const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
@@ -107,6 +154,7 @@ describe('observational subagent roster metadata', () => {
     projection.item(thread, activity('subagent-completed-1', 'completed'), { turnId: 'turn', phase: 'completed' })
     projection.item(thread, activity('call-spawn', 'started'), { turnId: 'turn', phase: 'completed' })
     projection.item(thread, activity('call-followup', 'interacted'), { turnId: 'turn', phase: 'completed' })
+    projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn', status: 'inProgress' } })
     expect(thread.activities.map(record => record.agents![0]!.status)).toEqual(['completed', 'running'])
   })
 
