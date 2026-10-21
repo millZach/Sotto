@@ -39,10 +39,11 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
     thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activityBodySize(activity, 'text'), activityBodySize(activity, 'output'), ...activity.cut?.diffs ? [activity.cut.diffs] : [], activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.subagentSummary, thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
 }
 /**
- * Refusals the user's own message to a thread caused: they took the thread over, or their own turn there is running.
- * The user sent that message directly, and a takeover is news of its own, so a receipt saying so is not (#1263).
+ * A send turned away because the user sent to that thread themselves: they took it over, or their message changed its
+ * watch. The user did that directly, and Watcher hears of the thread's turn, so a receipt saying so is not news (#1263).
+ * A busy thread is not this: `THREAD_BUSY` is also an ordinary running turn, and that failure is news.
  */
-const USER_MESSAGE_REFUSALS: ReadonlySet<string> = new Set(['THREAD_TAKEN_OVER', 'THREAD_BUSY'])
+const USER_MESSAGE_REFUSALS: ReadonlySet<string> = new Set(['THREAD_TAKEN_OVER'])
 /**
  * Whether a receipt for one of Watcher's own sends is news to it: the send failed, was refused or may not have gone. An
  * ordinary delivered receipt is not; Watcher made the send and reads its receipts with read_operation when it wants them.
@@ -505,15 +506,13 @@ export class WatcherWakeUp {
   }
   /**
    * Forgets that these events were told, so what is still true is observed afresh and told in a new wake-up; what is no
-   * longer true stays untold. As a restart does: a quiet episode already told is open again. A pull request's facts the
-   * send carried stay told (`settled`), so its evidence comes again but wakes no one unless its checks failed.
+   * longer true stays untold. As a restart does: a quiet episode already told is open again, and the thread's own facts
+   * ride with its turn's end told again. A pull request's facts the send carried stay told (`settled`), so they are made
+   * into news again only while one of them is untold, as failed checks are.
    */
   private forget(events: readonly WatcherEvent[]): void {
     const pullRequests = new Map<string, WatcherThreadTarget>()
-    // Evidence the send carried whose pull request facts are all told stays told: the same evidence is no news again.
-    const kept = new Set(events.filter(event => event.kind === 'evidence-changed' && this.carriedAll(event)).map(event => event.id))
     for (const event of events) {
-      if (kept.has(event.id)) continue
       this.seen.delete(event.id); this.rememberPending.delete(event.id)
       this.reobserved.delete(event.id); this.reobserved.add(event.id)
       while (this.reobserved.size > 2_000) this.reobserved.delete(this.reobserved.values().next().value!)
@@ -521,7 +520,7 @@ export class WatcherWakeUp {
         const scope = observationDigest(['evidence-changed', event.requestId, event.target, event.generation])
         if (this.latestEvidence.get(scope)?.id === event.id) this.latestEvidence.delete(scope)
         this.toldLocal.delete(targetKey(event.target))
-        if (this.waking.has(event.id)) pullRequests.set(targetKey(event.target), event.target)
+        if (this.waking.has(event.id) && this.attentionUntold(event.target)) pullRequests.set(targetKey(event.target), event.target)
       }
       if (event.kind === 'work-settled') this.oweWorkSettled(workSettledScope(event.target, event.turnId))
       if (event.kind === 'quiet') {
@@ -529,13 +528,8 @@ export class WatcherWakeUp {
         if (progress) { progress.quiet = false; progress.cancel?.(); delete progress.cancel }
       }
     }
-    this.recent = this.recent.filter(event => kept.has(event.id) || !events.some(item => item.id === event.id))
+    this.recent = this.recent.filter(event => !events.some(item => item.id === event.id))
     for (const target of pullRequests.values()) this.evidenceChanged(target, [], false, 'again')
-  }
-  /** Whether this evidence is still the thread's latest, and every pull request fact of the thread is told. */
-  private carriedAll(event: WatcherEvent): boolean {
-    const latest = this.latestEvidence.get(observationDigest(['evidence-changed', event.requestId, event.target, event.generation]))
-    return latest?.id === event.id && !latest.restoredRefs && this.evidence.readsPullRequests(event.target) && !this.attentionUntold(event.target)
   }
   /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it

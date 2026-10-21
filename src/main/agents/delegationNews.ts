@@ -39,9 +39,14 @@ export interface DelegationNewsDetail {
   readonly notSent?: string
   /** A released background outcome's newest reply (#1263): the delegated thread's own words, whole, cut as the news is worded. */
   readonly lastReply?: string
+  /** A released background outcome whose thread has run another turn since its own, and is idle again. */
+  readonly laterTurn?: true
 }
-/** What a background outcome released after `minutes` says (#1263): plainly, so the thread that delegated reads it rather than wait. */
-export const heldWords = (minutes: number): string => `held ${minutes} minutes, thread idle: its turn ended with background work or monitoring still running, no turn has run in that thread since, and Sotto has not seen that work end. Read the delegated thread to see whether it is stuck. Sotto still sends news if that work ends.`
+/**
+ * What a background outcome released after `minutes` says (#1263): plainly, so the thread that delegated reads it rather
+ * than wait. Said only while the delegated thread is idle; `laterTurn` when it has run another turn since.
+ */
+export const heldWords = (minutes: number, laterTurn = false): string => `held ${minutes} minutes, thread idle: its turn ended with background work or monitoring still running, ${laterTurn ? 'the thread has run another turn since and is idle now' : 'no turn has run in that thread since'}, and Sotto has not seen that work end. Read the delegated thread to see whether it is stuck. Sotto still sends news if that work ends.`
 /** The start of a released outcome's newest reply, labelled as the delegated thread's own words. */
 function lastReplyStart(text: string): string {
   const characters = [...text.trim()], cut = characters.length > WATCHER_NEWS_REPLY_CHARS
@@ -69,7 +74,7 @@ export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<s
     const detail = details?.get(item.delegationId)
     if (detail?.notSent) return `was not sent. ${detail.notSent}`
     if (item.outcome === 'answered' && detail?.replyUnavailable) return `answered. ${detail.replyUnavailable}`
-    if (item.outcome === 'background' && item.heldMinutes !== undefined) return `${heldWords(item.heldMinutes)}${detail?.lastReply?.trim() ? lastReplyStart(detail.lastReply) : ''}`
+    if (item.outcome === 'background' && item.heldMinutes !== undefined) return `${heldWords(item.heldMinutes, detail?.laterTurn === true)}${detail?.lastReply?.trim() ? lastReplyStart(detail.lastReply) : ''}`
     return SAYS[item.outcome]
   }
   const lines = news.items.map(item => `${head(item)} ${says(item)}`)

@@ -1032,6 +1032,15 @@ export class DelegationService {
     if (Number.isFinite(next) && !this.closed) this.cancelRelease = this.schedule(() => { this.cancelRelease = undefined; if (!this.closed) this.observe(this.snapshot()) }, next - clock)
     return released
   }
+  /**
+   * A released background outcome as it stands now: how long it was held, and whether its thread has run another turn
+   * since. Undefined unless its delegated thread is idle now, so nothing ever says "idle" of a thread that is working.
+   */
+  private heldNow(record: DelegationRecord, thread: AgentThread | undefined, untold = true): { minutes: number; laterTurn: boolean } | undefined {
+    const minutes = this.heldMinutes(record, untold)
+    if (minutes === undefined || !thread || isThreadTurnRunning(thread)) return undefined
+    return { minutes, laterTurn: record.turnMessageId !== undefined && !watcherBriefTurnIsNewest(thread, record.turnMessageId) }
+  }
   /** How long a released background outcome was held, in minutes; with `untold`, only while its delegating thread has not been told so. */
   private heldMinutes(record: DelegationRecord, untold = true): number | undefined {
     if (!record.releasedAt || !record.outcomeAt || untold && record.releaseTold || this.outcomeOf(record) !== 'background') return undefined
@@ -1104,9 +1113,9 @@ export class DelegationService {
     const thread = this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
     const latest = this.records.findLast(item => item.delegatedThreadId === record.delegatedThreadId && item.deliveryState === 'accepted')
     const head = thread ? userHead(thread) : null
-    const held = this.heldMinutes(record, false)
+    const held = this.heldNow(record, thread, false)
     const note = record.deliveryState === 'failed' ? FAILURE_NOTES[record.failure ?? 'provider'] : !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE
-      : held !== undefined ? heldWords(held).replace(/^h/u, 'H') : NOTES[outcome]
+      : held ? heldWords(held.minutes, held.laterTurn).replace(/^h/u, 'H') : NOTES[outcome]
     const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
       outcome, note, createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
@@ -1141,9 +1150,17 @@ export class DelegationService {
    * went did not. Read as it is sent, so the queue never holds a reply.
    */
   private newsText(threadId: string, news: readonly DelegationNews[]): string | undefined {
-    const folded = news.reduce<DelegationNews | undefined>((all, part) => foldDelegationNews(all, part), undefined)
-    if (!folded || this.closed) return undefined
+    const queued = news.reduce<DelegationNews | undefined>((all, part) => foldDelegationNews(all, part), undefined)
+    if (!queued || this.closed) return undefined
     const threads = new Map(this.snapshot().threads.map(thread => [thread.id, thread]))
+    // A release queued while the thread that delegated was busy says "held" only if the delegated thread is idle still.
+    const folded: DelegationNews = { ...queued, items: queued.items.map(item => {
+      if (item.heldMinutes === undefined) return item
+      const record = this.record(item.delegationId)
+      if (record && this.heldNow(record, threads.get(record.delegatedThreadId), false)) return item
+      const { heldMinutes, ...rest } = item; void heldMinutes
+      return rest
+    }) }
     const details = new Map<string, DelegationNewsDetail>()
     for (const item of folded.items) {
       const record = this.record(item.delegationId)
@@ -1152,9 +1169,9 @@ export class DelegationService {
       else if (item.outcome === 'answered' && this.outcomeOf(record) === 'answered') details.set(record.id, this.replyOf(record, threads.get(record.delegatedThreadId)))
       else if (item.heldMinutes !== undefined) {
         // The brief's turn's own reply, while that turn is still the thread's newest: never a later turn's words.
-        const thread = threads.get(record.delegatedThreadId)
-        const reply = thread && record.turnMessageId && watcherBriefTurnIsNewest(thread, record.turnMessageId) ? watcherNewestTurnReply(thread) : undefined
-        if (reply) details.set(record.id, { lastReply: reply.text })
+        const thread = threads.get(record.delegatedThreadId), held = this.heldNow(record, thread, false)
+        const reply = thread && held && !held.laterTurn ? watcherNewestTurnReply(thread) : undefined
+        details.set(record.id, { ...reply ? { lastReply: reply.text } : {}, ...held?.laterTurn ? { laterTurn: true as const } : {} })
       }
     }
     return delegationNewsText(folded, details)

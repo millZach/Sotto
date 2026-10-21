@@ -1963,10 +1963,25 @@ describe('#1263: held finishes say they were released, and the same facts are no
     expect(f.wakes.needsAttention(again)).toBe(true)
   })
 
-  it.each(['THREAD_TAKEN_OVER', 'THREAD_BUSY'] as const)('sends no receipt news for a Watcher send refused with %s because the user sent to the thread', async refusalCode => {
+  it.each([['THREAD_TAKEN_OVER', 0], ['THREAD_BUSY', 1]] as const)('sends receipt news for a Watcher send refused with %s only when the user did not cause it (%i)', async (refusalCode, count) => {
     const f = fixture(false)
     Object.assign(f.record.operations[0]!, { deliveryState: 'failed', refusalCode })
     f.wakes.start(); await f.advance(2_000)
-    expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'delivery-changed')).toEqual([])
+    // The user's own message took the thread over; a busy thread is also an ordinary running turn, and that failure is news.
+    expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'delivery-changed')).toHaveLength(count)
+  })
+
+  it('tells the thread\'s own facts afresh after an unknown send, without telling its merged pull request again', async () => {
+    const f = fixture()
+    finish(f.thread); f.wakes.observe()
+    merged(f)
+    f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'synthetic-checkpoint', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 2 })
+    await f.advance(WATCHER_BATCH_MS)
+    const count = f.delivered.length
+    f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.advance(2_000)
+    const again = f.delivered.slice(count).flatMap(news => news.events)
+    // The turn's end is told again with the working copy it left; the merge it carried is not news again.
+    expect(again.map(event => event.kind).sort()).toEqual(['evidence-changed', 'turn-finished'])
+    expect(f.wakes.untoldAttention(centerTarget).size).toBe(0)
   })
 })
