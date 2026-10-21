@@ -519,6 +519,17 @@ with the other settled threads, and the line under Watcher's header (3A) does no
 groups, so it lists such a thread under Idle and leaves it out of the Needs you count; its row still carries the
 thread's status. An unsettled thread's error or failed turn is in Needs you as before.
 
+## October 21, 2026: Watcher's changing state is worked out, not kept (#1274)
+
+After a compaction, the notes Watcher kept with `keep_state` still described threads that had finished and a check failure that had moved on, and missed a new issue and the exact merge queue, while the parts of `read_state` Sotto wrote from its records were right. Keeping notes current was a model habit, which cannot be relied on. Zach chose the following on October 21, 2026.
+
+- **Sotto works out what changes.** `read_state` now gives, from live data at each read and never saved: each watched thread's open pull requests, as `list_threads`' slim rows summarise them; the **merge queue**, every open pull request of a watched thread that is not a draft and whose checks passed, oldest pass first by when Sotto first saw them pass (Zach's pick, over every open pull request ranked by checks, and over approved ones only); and the **pending settles**, the watched threads whose work is done but for an open pull request, or for Watcher hearing their news and resting, each with what holds it, while Settle finished threads is on (Zach's pick, over open pull requests only and over settle calls in flight). The pending settles come from the same check the settle itself makes, split so it can say what holds a thread; when Sotto settles a thread is unchanged. When a pass began is kept in memory only, like the rest of the evidence, so after a restart a pass counts from Sotto's first read of it.
+- **Kept notes are the user's words.** `keep_state` keeps the user's pending decisions and standing rules in the user's own words, and the issues Watcher filed (Zach kept that list, over dropping it). Watcher is told not to keep what `read_state` works out: what threads are doing or wait on, pull requests and checks, the merge queue or settles.
+- **Stale notes are flagged.** `read_state` flags each kept line, in any of the three lists, that names a thread that is settled or that Watcher does not watch, by its title or Sotto thread ID, or a pull request that is merged or closed, by its link or number, with Sotto's reason. A title shorter than eight characters, the "New thread" stand-in, or one a watched thread that is not settled also has, flags nothing, nor does a number that an open pull request also has. A flag changes nothing kept: Watcher is told to fix or drop the line. Sotto cannot read an issue's state, so an issue is flagged only through a thread or pull request it names.
+- **Only Watcher sees it** (Zach's pick). The owl tile's panel is unchanged; showing the merge queue or stale flags there can follow on its own.
+
+Out of scope, possible follow-ups: a prompt before compaction to reconcile the notes against live state, and adding, removing or editing one kept line instead of replacing a whole list.
+
 ## October 21, 2026: held news goes, and says so once (#1263)
 
 On the night of October 20, Watcher heard nothing for 7.5 hours while a thread it watched waited on a delegation that never came back (#1261). Two things made that cost hours instead of minutes, and a third buried what did come.

@@ -193,6 +193,24 @@ export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
 export const watcherStateThreadSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsOn: z.string().min(1).max(200) }).strict()
 export type WatcherStateThread = z.infer<typeof watcherStateThreadSchema>
+/**
+ * What read_state computes from live data each time it is read (#1274), so none of it can go stale the way notes Watcher
+ * kept by hand did after a compaction: each watched thread's open pull requests, the merge queue, the watched threads
+ * Settle finished threads is waiting to settle and what holds each, and the kept notes that name a settled or unwatched
+ * thread or a merged or closed pull request.
+ */
+export const WATCHER_STATE_COMPUTED_MAX = 100
+const sottoSentence = z.string().min(1).max(300)
+const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
+/** A pull request in the merge queue: open, not a draft, its checks passed, oldest pass first. */
+export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
+  pullRequest: watcherPullRequestSummarySchema, checksPassedAt: time }).strict()
+export const watcherPendingSettleSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), settlesWhen: sottoSentence }).strict()
+export const watcherStaleNoteSchema = z.object({ list: z.enum(['decisions', 'rules', 'issues']), index: z.number().int().min(0).max(WATCHER_KEPT_ITEMS_MAX - 1),
+  reasons: z.array(sottoSentence).min(1).max(5) }).strict()
+export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
+export type WatcherPendingSettle = z.infer<typeof watcherPendingSettleSchema>
+export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
 const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
@@ -270,8 +288,11 @@ export const watcherToolSchemas = {
   read_state: {
     // A hundred watched threads to a page; nextCursor reads the rest.
     input: z.object({ cursor: cursor.optional() }).strict(),
-    output: result({ watching: z.array(watcherStateThreadSchema).max(100), nextCursor: cursor.nullable(), kept: watcherKeptStateSchema,
-      contextTokens: counter.nullable(), compactAtTokens: counter }),
+    // Computed from live data at each read (#1274); the merge queue and pending settles are whole on every page.
+    output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
+      mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settlesFinishedThreads: z.boolean(),
+      pendingSettles: z.array(watcherPendingSettleSchema).max(WATCHER_STATE_COMPUTED_MAX), kept: watcherKeptStateSchema,
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter }),
   },
   list_machines: {
     input: z.object({}).strict(),
