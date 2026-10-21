@@ -4,7 +4,7 @@ import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, Gauge, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
+import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, Eye, Gauge, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -38,6 +38,7 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
+import { SettingsGroup } from './SettingsGroup'
 import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
@@ -109,7 +110,7 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-phones', label: 'Phones', icon: Smartphone },
   { id: 'settings-cloud-iphone', label: 'Cloud iPhone', icon: Cloud },
   { id: 'settings-agents', label: 'Agents', icon: Workflow },
-  // Worker roles (#1041), an Owl feature: shown only while the Owl list turns it on, with Watcher.
+  // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
   { id: 'settings-watcher', label: 'Watcher', icon: WatcherNavIcon },
   { id: 'settings-output', label: 'Output', icon: ArrowUpRight },
   { id: 'settings-appearance', label: 'Appearance', icon: Palette },
@@ -380,11 +381,11 @@ export function SettingsView({
   const copy = platformCopy(platform)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(SETTINGS_SECTIONS[0].id)
-  // Settings, under Watcher, exists only while the Owl list turns on both Watcher and its worker roles.
+  // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
   const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
   const workerRoles = watcherOn && workerRolesOn
   const performanceOn = useOwlFeature('main-freeze')
-  const sections = SETTINGS_SECTIONS.filter(section => (section.id !== 'settings-watcher' || workerRoles) && (section.id !== 'settings-performance' || performanceOn))
+  const sections = SETTINGS_SECTIONS.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn))
   // Panels stay mounted so account, key and theme drafts survive category changes.
   // Each visit starts at the heading; the sidebar keeps its own scroll position.
   useLayoutEffect(() => {
@@ -561,9 +562,14 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>New threads & projects</p></div><AgentSetupFields /></Card>
 
-              {workerRoles ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}><div className="settings-section__heading"><h2>Watcher</h2><p>What each kind of work runs on</p></div>
-                <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
-                  onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /></Card> : null}
+              {watcherOn ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>
+                <div className="settings-section__heading"><h2>Watcher</h2><p>{workerRoles ? 'How Watcher looks after threads, and what each kind of work runs on' : 'How Watcher looks after threads'}</p></div>
+                <SettingsGroup title="Watched threads" icon={Eye}>
+                  <Toggle label="Settle finished threads" checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
+                    description="Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it." />
+                </SettingsGroup>
+                {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
+                  onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
               <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
                 <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>

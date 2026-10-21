@@ -58,4 +58,9 @@ export interface WatcherRemoteHosts {
   subscribe(listener: (hostId?: string, force?: boolean) => void): () => void
   /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
+  /**
+   * Settles a thread on a connected host the way the user's Settle does from this computer, for Settle finished threads
+   * once Watcher has stopped watching it. Rejects when the host is out of reach or refuses.
+   */
+  settle?(hostId: string, threadId: string): Promise<void>
 }

@@ -9,7 +9,7 @@ import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission 
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
 import { rebuildReservations } from './watcherRecords'
-import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
+import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
@@ -78,6 +78,8 @@ const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? threa
 type PromptTurn = NonNullable<WatcherRecord['promptTurns']>[number]
 type TakeoverDraft = NonNullable<NonNullable<WatcherRecord['localTakeovers']>[number]['userDrafts']>[number]
 type TakeoverReason = NonNullable<Participant['takeover']>['reason']
+/** What Settle finished threads did with a watched thread, as stable event names. */
+export type WatcherAutoSettleEvent = 'watcher-thread-auto-settled' | 'watcher-thread-auto-settle-skipped'
 export function watcherRefusal(code: WatcherRefusal['code'], message: string, retryable = false): WatcherRefusal {
   return { status: 'refused', code, message, retryable }
 }
@@ -258,6 +260,13 @@ export class WatcherService implements WatcherControlHooks {
    * record, so the record keeps its shape; a retry after a restart reads its receipt without this block.
    */
   private readonly roleStarts = new Map<string, RoleReceipt>()
+  /**
+   * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
+   * tried again until it has worked again; the wait before the next look; and whether a look is under way.
+   */
+  private readonly settleTried = new Map<string, string>()
+  private settleTimer: ReturnType<typeof setTimeout> | undefined
+  private settlingFinished = false
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
@@ -269,7 +278,15 @@ export class WatcherService implements WatcherControlHooks {
     /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
     machineFacts?: () => Promise<HostMachineReport>
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
-    ordinaryBatch?: WatcherWakeOptions['ordinaryBatch'] }) {
+    ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
+    /**
+     * Settle finished threads (`watcherSettlesFinishedThreads`), read at every look; absent, Watcher settles nothing by
+     * itself. `settleFinishedAfterMs` is the most often it looks, one second unless a test says otherwise.
+     */
+    settleFinished?: () => boolean
+    settleFinishedAfterMs?: number
+    /** What Settle finished threads did, as stable event names; never a thread, a title or a pull request. */
+    log?: (event: WatcherAutoSettleEvent) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.view(), ...options.ordinaryBatch ? { ordinaryBatch: options.ordinaryBatch } : {},
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
       reportsWork: () => {
@@ -425,8 +442,97 @@ export class WatcherService implements WatcherControlHooks {
       for (const watch of record.watches ?? []) if (ended.includes(watch.id)) watch.pausedByUserMessageId = null
     }).catch(() => undefined)
   }
+  /** A setting was saved: Settle finished threads looks now, not at the next update. */
+  settingsChanged(): void { this.lookForFinished() }
+  /**
+   * Settle finished threads: at most once a second while updates come, a look for a watched thread whose work is done.
+   * Each look reads the setting, so turning it off stops the next one and turning it on settles what already qualifies.
+   */
+  private lookForFinished(): void {
+    if (this.closed || this.options.workerHost || this.settleTimer !== undefined || this.options.settleFinished?.() !== true) return
+    this.settleTimer = setTimeout(() => { this.settleTimer = undefined; void this.settleFinished() }, this.options.settleFinishedAfterMs ?? 1_000)
+    this.settleTimer.unref?.()
+  }
+  private async settleFinished(): Promise<void> {
+    if (this.settlingFinished || this.closed || this.options.settleFinished?.() !== true || !this.watcherAtRest()) return
+    this.settlingFinished = true
+    try {
+      const snapshots = new Map<string, AgentHostSnapshot | undefined>()
+      const finished = (this.view().watches ?? []).flatMap(watch => {
+        const turnId = this.finishedWork(watch.target, snapshots)
+        return turnId === undefined || this.settleTried.get(key(watch.target)) === turnId ? [] : [{ target: watch.target, turnId }]
+      })
+      for (const { target, turnId } of finished) {
+        if (this.closed || this.options.settleFinished?.() !== true || !this.watcherAtRest()) return
+        // Once per turn: a refusal waits for the thread to work again rather than being asked again on every update.
+        this.settleTried.set(key(target), turnId)
+        try {
+          await this.settleWatched(target, turnId)
+          this.options.log?.('watcher-thread-auto-settled')
+        } catch { this.options.log?.('watcher-thread-auto-settle-skipped') }
+      }
+    } finally { this.settlingFinished = false }
+  }
+  /**
+   * Whether Watcher has nothing under way: no turn running or about to, no card of its own, and nothing queued for it,
+   * news included. A thread's news is told in Watcher's next turn, which has to end before the thread is settled.
+   */
+  private watcherAtRest(): boolean {
+    const current = this.view().current
+    if (this.changing || !current || current.target.hostId !== this.options.control.hostId()) return false
+    const watcher = this.options.control.watcherSnapshot().threads.find(thread => thread.id === current.target.threadId)
+    if (!watcher || watcher.status === 'running' || watcher.lastTurn?.status === 'running' || watcher.requests.length) return false
+    if (this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(watcher.id)) return false
+    // A message sent that its provider has yet to show is a turn about to run.
+    const sent = this.currentSend(watcher.id)
+    return !sent || nativeHead(watcher) === sent.messageId
+  }
+  /**
+   * The turn a watched thread finished all its work with, or undefined while it has not: its last turn completed, nothing
+   * runs, no card waits on the user, nothing is queued for it or on its way from Watcher, the user is not in the middle of
+   * a turn there and has not taken it over, every pull request it has is merged or closed, and Watcher has heard all of it.
+   */
+  private finishedWork(target: WatcherThreadTarget, snapshots: Map<string, AgentHostSnapshot | undefined>): string | undefined {
+    const record = this.view(), watch = record.watches?.find(item => sameTarget(item.target, target))
+    if (!watch || watch.remoteOrigin || watch.pausedByUserMessageId) return undefined
+    const local = target.hostId === this.options.control.hostId()
+    if (!local && !this.remote?.settle) return undefined
+    if (!snapshots.has(target.hostId)) snapshots.set(target.hostId, this.owningSnapshot(target.hostId))
+    const snapshot = snapshots.get(target.hostId), thread = snapshot?.threads.find(item => item.id === target.threadId)
+    const turn = thread?.lastTurn
+    if (!snapshot?.connected || !thread || !turn || turn.status !== 'completed' || thread.status !== 'idle') return undefined
+    if (thread.requests.length || isWatcherWorkActive(thread) || !this.connected(thread) || this.protectedThread(thread) || isThreadClosed(thread)
+      || isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return undefined
+    if (thread.pullRequests?.some(pr => pr.state === 'open') || thread.worktree?.git?.pullRequest?.state === 'open') return undefined
+    if (local && this.options.control.hasPendingThreadWork(thread.id)) return undefined
+    if (record.operations.some(operation => sameTarget(operation.target, target) && ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))) return undefined
+    if (record.requests.some(request => request.state === 'active' && request.participants.some(item => sameTarget(item.target, target) && item.state === 'taken-over'))) return undefined
+    return this.wakes.heardAllOf(target, turn.id) ? turn.id : undefined
+  }
+  /**
+   * Settles a finished watched thread and stops watching it, quietly: no notice, no news, and not the user's own settle,
+   * so nothing reads it as a takeover. This computer's thread is settled first, checked again as it is written, so a
+   * thread just given more work keeps its watch. A paired host's thread is let go first, so its host does not take the
+   * settle for the user's, then settled the way the user settles it from here.
+   */
+  private async settleWatched(target: WatcherThreadTarget, turnId: string): Promise<void> {
+    const unwatch = async () => {
+      const result = await this.unwatchThread({ target }, undefined, 'watcher')
+      if (result.status !== 'ok') throw new Error('unwatch-refused')
+    }
+    if (target.hostId === this.options.control.hostId()) {
+      await this.options.host.setWorkspaceSettled('thread', target.threadId, true, undefined, () => {
+        if (this.closed || this.options.settleFinished?.() !== true || !this.watcherAtRest() || this.finishedWork(target, new Map()) !== turnId) throw new Error('changed')
+      })
+      await unwatch()
+      return
+    }
+    await unwatch()
+    await this.remote!.settle!(target.hostId, target.threadId)
+  }
   private publish(observe = true): void {
     if (this.closed) return
+    this.lookForFinished()
     // A pass put off while threads stream publishes again once it has run, without asking for another.
     if (observe && !this.options.workerHost) this.wakes.observeSoon(() => this.publish(false))
     this.options.control.refreshWatcherObservation()
@@ -3119,5 +3225,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

@@ -302,6 +302,12 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
     })
 
+  it('persists turning Watcher’s Settle finished threads off through settings IPC', async () => {
+      const { ipc, settings } = createIpcHarness()
+      await expect(ipc.invoke(SETTINGS_UPDATE, { watcherSettlesFinishedThreads: false })).resolves.toMatchObject({ watcherSettlesFinishedThreads: false })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
+    })
+
   it('refuses the removed Threads in flight limit, which is no longer on the allow-list (#1183)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).rejects.toThrow('Invalid IPC payload')

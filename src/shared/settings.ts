@@ -138,6 +138,11 @@ export interface AppSettings {
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
    */
   workerRoles: WorkerRoleChoices
+  /**
+   * Settle finished threads, under Settings, Watcher: on by default, part of Watcher's Owl feature. On, Watcher settles a
+   * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
+   */
+  watcherSettlesFinishedThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -310,6 +315,7 @@ const fieldSchemas = {
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
+  watcherSettlesFinishedThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -394,6 +400,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
   workerRoles: {},
+  watcherSettlesFinishedThreads: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -539,6 +546,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
+    watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
