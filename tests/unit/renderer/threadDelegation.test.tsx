@@ -207,6 +207,24 @@ describe('delegated threads in the sidebar', () => {
     expect(open(delegatingState())).not.toContain(CHILD)
   })
 
+  it('keeps delegated threads settled with their thread out of Open, and says on its Settled row when one waits', () => {
+    const state = delegatingState()
+    // What main records when the user settles Visual gate flake: its delegated threads settle with it, under its timestamp.
+    for (const thread of state.host.threads) if ([PARENT, CHILD, GRANDCHILD].includes(thread.id)) thread.workspaceSettledAt = at(1)
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.requests = []; parent.status = 'idle'
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = [{ id: 'review-permission', kind: 'permission', text: 'Run gh pr merge', options: [] }]
+    const organized = folderOf(state)
+    const open = organized.open.flatMap(folder => folder.rows.map(row => row.thread.id))
+    for (const id of [PARENT, CHILD, GRANDCHILD]) expect(open).not.toContain(id)
+    expect(ids(state)).not.toContain(CHILD)
+    expect(ids(state)).not.toContain(GRANDCHILD)
+    expect(organized.listedAs).toEqual(new Map([[CHILD, PARENT], [GRANDCHILD, PARENT]]))
+    const shelf = organized.settled.find(folder => folder.id === 'workshop')!
+    expect(shelf.rows.find(row => row.thread.id === PARENT)).toMatchObject({ waitingFor: 'approval', stateLabel: 'Needs your approval', waitingIn: 'Review the gate fix' })
+    expect(shelf.needs).toBeGreaterThan(0)
+  })
+
   it('rolls a delegated thread\'s error up onto the delegating row in its own words, below a waiting request', () => {
     const state = delegatingState()
     const parent = state.host.threads.find(thread => thread.id === PARENT)!
