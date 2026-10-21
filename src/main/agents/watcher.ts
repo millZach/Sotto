@@ -1658,13 +1658,13 @@ export class WatcherService implements WatcherControlHooks {
     return !record.requests.some(request => this.requestDone(request, record, snapshot, threads))
   }
   /**
-   * Whether an active request is done: every thread taking part has settled, Watcher's turn has ended, and nothing is left
-   * queued to Watcher or to them. A settle relinquishes its thread at once, so a turn settling several threads would
-   * otherwise close its own request after the first (#1254).
+   * Whether an active request is done: every thread taking part has settled, nothing is left queued to Watcher or to them,
+   * and no Watcher turn answering it still runs. A settle relinquishes its thread at once, so a turn settling several
+   * threads would otherwise close its own request after the first (#1254). Asked last, since it reads Watcher's turn.
    */
   private requestDone(request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord>, snapshot: AgentHostSnapshot, threads: ReadonlyMap<string, AgentThread>): boolean {
     const local = request.watcher.hostId === this.hostId(), master = local ? threads.get(request.watcher.threadId) : undefined
-    return request.state === 'active' && request.participants.length > 0 && !(master && isThreadTurnRunning(master)) && request.participants.every(item => {
+    return request.state === 'active' && request.participants.length > 0 && request.participants.every(item => {
       if (item.state !== 'participating') return true
       const local = item.target.hostId === this.hostId(), owner = local ? snapshot : this.owningSnapshot(item.target.hostId)
       const thread = local ? threads.get(item.target.threadId) : owner?.threads.find(thread => thread.id === item.target.threadId)
@@ -1673,6 +1673,8 @@ export class WatcherService implements WatcherControlHooks {
     })
       && (!local || !this.options.control.hasPendingThreadWork(request.watcher.threadId))
       && !record.operations.some(item => item.requestId === request.id && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))
+      && !(master && isThreadTurnRunning(master) && record.current && key(record.current.target) === key(request.watcher)
+        && this.turnRequest(master.id, record, master)?.id === request.id)
   }
   /**
    * Records what this host's thread now proves about an accepted start or send it owns: its outcome and the text-free
@@ -1849,10 +1851,13 @@ export class WatcherService implements WatcherControlHooks {
     const head = master ? nativeHead(master) : null
     return !request.standingWatchId && head !== null && (request.rootUserMessageId === head || request.userFollowups?.some(item => item.messageId === head) === true)
   }
-  /** The user's active request whose root or recorded continuation is the current Watcher's newest user message, if any. */
-  private requestAnsweredByHead(): WatcherRequest | undefined {
-    const record = this.record(), current = record.current
-    const head = current && nativeHead(this.thread(current.target))
+  /**
+   * The user's active request whose root or recorded continuation is the current Watcher's newest user message, if any.
+   * An observe pass hands in the record it reads and the current Watcher's thread, so it copies and refuses nothing.
+   */
+  private requestAnsweredByHead(record: Readonly<WatcherRecord> = this.record(), master?: AgentThread): WatcherRequest | undefined {
+    const current = record.current
+    const head = current && nativeHead(master ?? this.thread(current.target))
     return head ? record.requests.findLast(request => request.state === 'active' && !request.standingWatchId && !request.remoteOrigin
       && key(request.watcher) === key(current.target)
       && (request.rootUserMessageId === head || request.userFollowups?.some(followup => followup.messageId === head))) : undefined
@@ -1862,8 +1867,8 @@ export class WatcherService implements WatcherControlHooks {
    * one a steer into a news turn opened, while that message is the thread's newest or the provider has yet to show it.
    * Otherwise, the one the newest message started or continued, unless that turn is Sotto's own.
    */
-  private turnRequest(threadId: string): WatcherRequest | undefined {
-    const record = this.record(), head = this.headOf(threadId)
+  private turnRequest(threadId: string, record: Readonly<WatcherRecord> = this.record(), master?: AgentThread): WatcherRequest | undefined {
+    const head = master ? nativeHead(master) : this.headOf(threadId)
     const sent = this.currentSend(threadId, head), steer = this.lastSteer
     const active = (match: (request: WatcherRequest) => boolean): WatcherRequest | undefined => record.requests.findLast(request =>
       request.state === 'active' && !request.standingWatchId && !request.remoteOrigin && match(request))
@@ -1871,7 +1876,7 @@ export class WatcherService implements WatcherControlHooks {
     if (steered) return steered
     if (sent) return sent.wakeUp ? undefined : active(request => request.rootUserMessageId === sent.messageId || request.userFollowups?.some(item => item.messageId === sent.messageId) === true)
     // A message of Sotto's starts and continues no request, so the newest message answers for news as well.
-    return this.requestAnsweredByHead()
+    return this.requestAnsweredByHead(record, master)
   }
   /** The last send this run made to Watcher's thread, while it is still the newest message or the provider has yet to show it. */
   private currentSend(threadId: string, head = this.headOf(threadId)): typeof this.lastSend {
