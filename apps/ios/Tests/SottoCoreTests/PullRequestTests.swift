@@ -12,7 +12,7 @@ final class PullRequestTests: XCTestCase {
     /// those names, so the JSON never holds a key twice.
     private func detail(checks: String = "[]", reviews: String = "[]", extra: String = "") throws -> PullRequestDetail {
         let fields: [(String, String)] = [("number", "1287"), ("url", #""\#(url)""#), ("title", #""Show a thread's pull request""#),
-            ("body", #""## What\nIt reads.""#), ("state", #""open""#), ("draft", "false"), ("baseBranch", #""main""#),
+            ("body", ###""## What\nIt reads.""###), ("state", #""open""#), ("draft", "false"), ("baseBranch", #""main""#),
             ("headBranch", #""feat/pr-view""#), ("crossRepository", "false"), ("reviewDecision", "null"), ("reviews", reviews),
             ("mergeable", #""mergeable""#), ("checks", checks), ("checksUnknown", "false"), ("mergeMethods", #"["squash"]"#),
             ("autoMergeAllowed", "true"), ("autoMerge", "null"), ("mergedAt", "null"), ("behindBy", "0"), ("canUpdateBranch", "true"),
