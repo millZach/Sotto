@@ -46,12 +46,14 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     expect(await detectClientInstall('opencode', hoisted, await noMise(), 'win32')).toEqual({ channel: 'npm', npmPrefix: prefix })
     const alone = join(await root('sotto-opencode-alone-'), 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe')
     expect(await detectClientInstall('opencode', alone, await noMise(), 'win32')).toEqual({ channel: 'unknown' })
-    // The temporary folder holds nothing a shell would expand, so the command names it.
-    expect(shellArgument(prefix, process.platform)).toBeDefined()
     const reading = await clients.check('opencode', '2.0.31', executable, await noMise())
     expect(asked).toEqual(['https://registry.npmjs.org/%40opencode/cli/latest'])
-    expect(reading).toMatchObject({ id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'npm', canInstall: true,
-      command: `npm install -g --prefix ${shellArgument(prefix, process.platform)} --allow-scripts=@opencode/cli @opencode/cli@latest` })
+    // The command names the temporary folder, unless it holds something a shell would expand: then there is none.
+    const shown = shellArgument(prefix, process.platform)
+    expect(reading).toMatchObject(shown === undefined
+      ? { id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'npm', canInstall: false }
+      : { id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'npm', canInstall: true,
+        command: `npm install -g --prefix ${shown} --allow-scripts=@opencode/cli @opencode/cli@latest` })
   })
 
   it('lets the install script’s copy in ~/.opencode/bin update itself with opencode upgrade, on Sotto’s own OpenCode folders', async () => {

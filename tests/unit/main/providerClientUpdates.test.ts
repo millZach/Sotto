@@ -137,10 +137,11 @@ describe('which channel owns an install', () => {
     const environment = { GROK_HOME: home, npm_config_prefix: prefix }
     expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), environment, 'win32')).toBe('npm')
     const clients = new ProviderClients({ fetchImpl: async () => answer('1.0.40'), npmPath: async () => join(prefix, 'npm.cmd'), platform: 'win32' })
-    // The temporary folder holds nothing a shell would expand, so the command names it.
-    expect(shellArgument(prefix, process.platform)).toBeDefined()
-    expect(await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), environment))
-      .toMatchObject({ behind: true, channel: 'npm', canInstall: true, command: `npm install -g --prefix ${shellArgument(prefix, process.platform)} --allow-scripts=@xai-official/grok @xai-official/grok@latest` })
+    // The command names the temporary folder, unless it holds something a shell would expand: then there is none.
+    const shown = shellArgument(prefix, process.platform)
+    expect(await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), environment)).toMatchObject(shown === undefined
+      ? { behind: true, channel: 'npm', canInstall: false }
+      : { behind: true, channel: 'npm', canInstall: true, command: `npm install -g --prefix ${shown} --allow-scripts=@xai-official/grok @xai-official/grok@latest` })
   })
 
   it('lets npm run the install scripts of the one package it installs, which npm 12 skips while still exiting 0', async () => {
