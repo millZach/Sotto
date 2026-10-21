@@ -23,7 +23,14 @@ export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
   opencode: '@opencode/cli',
 }
 const REGISTRY = 'https://registry.npmjs.org'
-const PUBLISHED_CACHE_MS = 60 * 60 * 1000
+/** How often each machine asks again while Sotto stays open, so a client published meanwhile is noticed (ADR-0042). */
+export const CLIENT_CHECK_INTERVAL_MS = 5 * 60 * 1000
+/**
+ * How long an answer from the registry or Muse's channel feed is reused. Shorter than the check interval, so no
+ * five-minute check ever reads an answer kept from the one before; it spares the registry only the checks that come
+ * together, as when several providers connect at once. An explicit check asks afresh whatever is kept.
+ */
+const PUBLISHED_CACHE_MS = 4 * 60 * 1000
 const REGISTRY_TIMEOUT_MS = 10_000
 const REGISTRY_MAX_BYTES = 256 * 1024
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000
@@ -514,13 +521,16 @@ export class ProviderClients {
     this.opencodeFolders = options.opencodeFolders
   }
 
-  /** The published version, or undefined when the registry cannot be read. A failed check is not a finding. */
-  async publishedVersion(provider: ProviderId, museChannel: MuseChannel = 'muse-stable'): Promise<string | undefined> {
-    if (provider === 'muse') return this.publishedMuseVersion(museChannel)
+  /**
+   * The published version, or undefined when the registry cannot be read. A failed check is not a finding. `afresh`
+   * asks the registry even when an answer is kept, and keeps the new one.
+   */
+  async publishedVersion(provider: ProviderId, museChannel: MuseChannel = 'muse-stable', afresh = false): Promise<string | undefined> {
+    if (provider === 'muse') return this.publishedMuseVersion(museChannel, afresh)
     const packageName = CLIENT_PACKAGES[provider]
     if (!packageName) return undefined
     const cached = this.cache.get(packageName)
-    if (cached && cached.expiresAt > this.now()) return cached.version
+    if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
     try {
       const response = await this.fetchImpl(`${REGISTRY}/${packageName.split('/').map(encodeURIComponent).join('/')}/latest`, {
         redirect: 'error', signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
@@ -536,11 +546,11 @@ export class ProviderClients {
     } catch { return undefined }
   }
 
-  private async publishedMuseVersion(channel: MuseChannel): Promise<string | undefined> {
+  private async publishedMuseVersion(channel: MuseChannel, afresh: boolean): Promise<string | undefined> {
     // Even an untyped caller cannot turn a channel response or a setting into another endpoint.
     if (channel !== 'muse-stable' && channel !== 'muse-canary') return undefined
     const key = `muse:${channel}`, cached = this.cache.get(key)
-    if (cached && cached.expiresAt > this.now()) return cached.version
+    if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
     try {
       const response = await this.fetchImpl(`https://api.meta.ai/muse-code/channels/${channel}`, {
         redirect: 'error', signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS), headers: { accept: 'application/json' },
@@ -552,14 +562,17 @@ export class ProviderClients {
     } catch { return undefined }
   }
 
-  /** One client's reading. `installed` is the version the adapter connected to; without one nothing is claimed. */
+  /**
+   * One client's reading. `installed` is the version the adapter connected to; without one nothing is claimed. `afresh`
+   * asks the registry or channel feed rather than reusing an answer it gave a few minutes ago.
+   */
   async check(provider: ProviderId, installed: string, executable: string | undefined,
-    environment: NodeJS.ProcessEnv = process.env): Promise<ProviderClientUpdate> {
+    environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean } = {}): Promise<ProviderClientUpdate> {
     const install = await detectClientInstall(provider, executable, environment)
     const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
     const byHand = action?.byHand ?? byHandFor(provider, install)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
-    const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined : await this.publishedVersion(provider, museChannel)
+    const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined : await this.publishedVersion(provider, museChannel, options.afresh === true)
     const behind = provider === 'muse'
       ? Boolean(latest && (compareMuseVersions(installed, latest) ?? 0) < 0)
       : Boolean(installed && latest && isComparableVersion(installed) && isComparableVersion(latest) && compareClientVersions(installed, latest) < 0)

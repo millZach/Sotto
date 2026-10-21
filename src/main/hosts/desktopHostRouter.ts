@@ -517,6 +517,25 @@ export class DesktopHostRouter {
     if (!entry?.connected) return false
     return entry?.clientUpdateRun !== undefined || entry?.clientUpdates?.some(update => update.state === 'queued' || update.state === 'updating') === true
   }
+  /**
+   * Asks each connected host that offers client updates to check its clients afresh, when Sotto finds a new version of
+   * itself, so Update all lists their updates beside it rather than after the restart (ADR-0077). This computer's own
+   * check is the coordinator's, not this. Nothing waits for the answers: what each host finds arrives with its next
+   * shell. A host whose readings hold an update's outcome, or whose line runs, is left to its own five-minute check:
+   * `check-client-updates` would set those outcomes aside, and a press may still be reading them. A host that refuses,
+   * is older or does not answer changes nothing.
+   */
+  async checkHostClientsAfresh(): Promise<void> {
+    const command = { type: 'check-client-updates' } as const
+    await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
+      if (connection.kind !== 'remote' || connection.available?.() === false || connection.offersClientUpdates?.() !== true) return
+      if (this.requiresManagementUpdate(connection.hostId)) return
+      const view = readView(connection.service)
+      if (view.clientUpdateRun !== undefined || view.clientUpdates?.some(update => update.state !== 'idle')) return
+      if (this.held.size && heldProviderRefusedBy(command, this.held, view.host)) return
+      await connection.service.command(command, desktopWindowClient()).catch(() => undefined)
+    }))
+  }
   /** What the router last published, read in place; afresh before anything is published. */
   private lastPublished(): AgentState { return this.published ?? this.shell() }
   private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {

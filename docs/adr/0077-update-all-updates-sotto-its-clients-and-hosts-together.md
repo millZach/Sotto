@@ -17,6 +17,9 @@ Sotto restarts (decision 6), and the card's list became the press's steps. Of th
 `docs/prototypes/update-all-hosts-together-prototype.html` (stacked rows, one block per machine, steps) they chose
 variant c, "Steps".
 
+Amended October 21, 2026: a new version of Sotto has every machine check its clients afresh (decision 6), so their
+updates are listed in the same card rather than after the restart.
+
 ## Context
 
 Three things in Sotto go out of date, and each had its own place: the update control for Sotto itself (Windows only),
@@ -163,6 +166,20 @@ place of asking for Sotto on this computer to be updated, and a connect that fai
 SSH session for Stop host. Later leaves the host ahead until Sotto next restarts, which stays usable the same way.
 When both sides run Owl, a host on a later Owl build of the same release counts as newer even once the pending version
 has gone: it is never offered a downgrade, and a refusal asks for Sotto on this computer to be updated.
+
+October 21, 2026 amendment: when Sotto finds a new version of itself, every machine checks its clients afresh. Each
+machine's readings were taken when its providers connected, so when a new Sotto appeared the card listed only the
+clients already known to be behind, and the ones published since appeared on this computer and on forge only after the
+restart. Now, the first time the update service offers, downloads or has downloaded a version it has not found before
+in this run (never for a download's progress), main has this computer's coordinator ask the registry afresh, keeping
+the outcome of any update already run, which a press may still be reading, and sends `check-client-updates` to each
+connected host that offers client updates. That command sets a host's outcomes aside, so a host whose readings hold an
+update's outcome, or whose line runs, is left to its own five-minute check (ADR-0042), as is a host that would check a
+provider this build holds. Every host already takes the command, so host protocol version 1 is unchanged. The press
+does not wait for the answers: a client found behind joins the list as its reading arrives, and the order stays as
+above. Nothing reads the `update-all` switch for this: on stable the client update card and each host's tiles read the
+same readings, sooner, and nothing new is shown. Where Sotto does not update itself, no version is found and nothing
+changes.
 
 **7. Settings follows.** On Owl, Settings → Application → Updates offers Update all where it offered Download, and it
 runs the same press.
