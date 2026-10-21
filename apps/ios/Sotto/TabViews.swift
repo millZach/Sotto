@@ -307,6 +307,8 @@ struct TerminalView: View {
 /// A request shown on a Needs you card: the thread, and the first request waiting in it.
 private struct NeedsItem {
     let row: HostedThread
+    /// The thread that asks: the row's own, or the delegated thread it stands for (ADR-0081).
+    let asking: HostedThread
     let request: AgentRequest
 }
 
@@ -319,6 +321,8 @@ private struct CardAnswer {
     /// Where the card stood in Needs you, so it keeps its place once its thread has moved on.
     let index: Int
     let row: HostedThread
+    /// The thread the answer went to: the row's own, or the delegated thread it stands for.
+    let asking: HostedThread
     let request: AgentRequest
     /// Until the model has finished sending it.
     var inFlight = true
@@ -530,7 +534,7 @@ struct ThreadsView: View {
                     .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.opacity.combined(with: .scale(scale: 0.96)))
                 }
                 ForEach(Array(needs.enumerated()), id: \.element.row.id) { index, item in
-                    RequestCard(row: item.row, request: item.request, answer: sent[item.row.id]) { choice, busy, done in
+                    RequestCard(row: item.row, asking: item.asking, request: item.request, answer: sent[item.row.id]) { choice, busy, done in
                         answer(item, choice: choice, busy: busy, done: done, index: index)
                     }
                     .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.opacity.combined(with: .scale(scale: 0.96)))
@@ -595,13 +599,14 @@ struct ThreadsView: View {
     /// The live requests, with any card that was just answered here kept in its place until it leaves.
     private func needsItems(_ groups: FocusThreads) -> [NeedsItem] {
         var items: [NeedsItem] = groups.questions.compactMap { row in
-            guard let request = row.thread.requests.first else { return nil }
-            return NeedsItem(row: row, request: request)
+            let asking = groups.asking(row)
+            guard let request = asking.thread.requests.first else { return nil }
+            return NeedsItem(row: row, asking: asking, request: request)
         }
         let live = Set(items.map { $0.row.id })
         let leaving = sent.values.filter { !live.contains($0.row.id) && model.show.admits($0.row.ref.hostID) }.sorted { $0.index < $1.index }
         for answer in leaving {
-            items.insert(NeedsItem(row: answer.row, request: answer.request), at: min(answer.index, items.count))
+            items.insert(NeedsItem(row: answer.row, asking: answer.asking, request: answer.request), at: min(answer.index, items.count))
         }
         return items
     }
@@ -648,9 +653,9 @@ struct ThreadsView: View {
     /// keeps a marker until the computer confirms it.
     private func answer(_ item: NeedsItem, choice: String, busy: String, done: String, index: Int) {
         let id = item.row.id
-        sent[id] = CardAnswer(requestID: item.request.id, busy: busy, done: done, index: index, row: item.row, request: item.request)
+        sent[id] = CardAnswer(requestID: item.request.id, busy: busy, done: done, index: index, row: item.row, asking: item.asking, request: item.request)
         Task {
-            await model.answer(item.request, in: item.row.ref, choice: choice, answers: Self.oneTapAnswers(item.request, choice: choice))
+            await model.answer(item.request, in: item.asking.ref, choice: choice, answers: Self.oneTapAnswers(item.request, choice: choice))
             sent[id]?.inFlight = false
             resolve(id)
         }
@@ -668,7 +673,7 @@ struct ThreadsView: View {
     /// computer hasn't confirmed it, the card says so and waits.
     private func resolve(_ id: String) {
         guard let answer = sent[id], !answer.inFlight, !answer.answered else { return }
-        let ref = answer.row.ref
+        let ref = answer.asking.ref
         if model.pending(for: ref).contains(where: { $0.kind == "answer" && $0.requestID == answer.requestID }) { return }
         let waiting = model.thread(ref)?.requests.contains(where: { $0.id == answer.requestID }) ?? false
         if waiting {
@@ -757,6 +762,9 @@ private struct ThreadCounts: View {
 private struct RequestCard: View {
     @EnvironmentObject var model: AppModel
     let row: HostedThread
+    /// The thread that asks and takes the answer: the row's own, or the delegated thread the row stands for (ADR-0081).
+    /// Opening the card opens the row's thread; reviewing the request opens the thread that asks.
+    let asking: HostedThread
     let request: AgentRequest
     let answer: CardAnswer?
     let send: (_ choice: String, _ busy: String, _ done: String) -> Void
@@ -784,7 +792,7 @@ private struct RequestCard: View {
     private var phase: Phase {
         guard let answer, answer.requestID == request.id else { return .idle }
         if answer.answered { return .answered }
-        if let marker = model.pending(for: row.ref).first(where: { $0.kind == "answer" && $0.requestID == answer.requestID }) {
+        if let marker = model.pending(for: asking.ref).first(where: { $0.kind == "answer" && $0.requestID == answer.requestID }) {
             return model.isSending(marker) ? .sending : .unconfirmed
         }
         return .sending
@@ -794,12 +802,19 @@ private struct RequestCard: View {
     private var isPermission: Bool { request.kind == "permission" }
     private var tag: String { isPermission ? "Permission" : "Question" }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
+    /// The delegated thread the request waits in, when it is not the row's own.
+    private var delegated: Bool { asking.ref != row.ref }
+    private var place: String {
+        let base = "\(Words.provider(row.thread.providerId)) on \(row.computer)"
+        return delegated ? base + " · Waiting in \(asking.thread.title)" : base
+    }
     private var openLabel: String {
         "\(row.thread.title). \(tag) from \(Words.provider(row.thread.providerId)) on \(row.computer)"
+            + (delegated ? ", waiting in \(asking.thread.title)" : "")
             + WatchedWords.spoken(model.watchedByWatcher(row.ref)) + ": \(ask)"
     }
     private var reviewWords: String {
-        if row.thread.requests.count > 1 { return "Review \(row.thread.requests.count) requests" }
+        if asking.thread.requests.count > 1 { return "Review \(asking.thread.requests.count) requests" }
         return isPermission ? "Review permission" : "Review question"
     }
 
@@ -819,7 +834,7 @@ private struct RequestCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
             PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
-                      text: "\(Words.provider(row.thread.providerId)) on \(row.computer)")
+                      text: place)
                 .padding(.top, Space.s1)
             Text(ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -832,8 +847,8 @@ private struct RequestCard: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                     .padding(.top, Space.s2)
             }
-            if row.thread.requests.count > 1 {
-                Text(row.thread.requests.count == 2 ? "1 more request in this thread" : "\(row.thread.requests.count - 1) more requests in this thread")
+            if asking.thread.requests.count > 1 {
+                Text(asking.thread.requests.count == 2 ? "1 more request in this thread" : "\(asking.thread.requests.count - 1) more requests in this thread")
                     .font(.sotto(.caption)).foregroundStyle(Palette.muted)
                     .padding(.top, Space.s2)
             }
@@ -873,10 +888,10 @@ private struct RequestCard: View {
     }
 
     @ViewBuilder private var idleActions: some View {
-        let ready = model.canAnswer(request, in: row.ref) && !model.answering(row.ref.hostID)
+        let ready = model.canAnswer(request, in: asking.ref) && !model.answering(asking.ref.hostID)
         if !request.supported {
             reviewOnly("Answer this one in the thread.")
-        } else if !model.mayAnswer(row.ref.hostID) {
+        } else if !model.mayAnswer(asking.ref.hostID) {
             reviewOnly("This iPhone can’t answer on \(row.computer) yet.")
         } else if isPermission {
             permissionActions(enabled: ready)
@@ -893,7 +908,7 @@ private struct RequestCard: View {
                 Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(reviewWords) }
+            NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(reviewWords) }
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
@@ -903,7 +918,7 @@ private struct RequestCard: View {
         return OneTapQuestion(options: options, enabled: enabled, picked: $picked) { choice in
             send(choice, "Sending…", "Answered")
         } more: {
-            NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(ownWords) }
+            NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(ownWords) }
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
@@ -911,14 +926,14 @@ private struct RequestCard: View {
     private func permissionActions(enabled: Bool) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: Space.s2) {
-                NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(moreWords) }
+                NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(moreWords) }
                     .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
                 Spacer(minLength: 0)
                 permissionButtons(enabled: enabled)
             }
             VStack(alignment: .trailing, spacing: Space.s2) {
                 HStack(spacing: Space.s2) { permissionButtons(enabled: enabled) }
-                NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(moreWords) }
+                NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(moreWords) }
                     .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1084,7 +1099,8 @@ private struct ThreadRowList: View {
 }
 
 /// A finished, failed or settled thread. One that finished while nothing showed it (ADR-0046) has an accent
-/// light, a bold title and Just finished until it is opened here or on the desktop.
+/// light, a bold title and Just finished until it is opened here or on the desktop. A settled thread says neither
+/// that nor Turn failed.
 private struct ThreadRow: View {
     let row: HostedThread
     let unread: Bool
@@ -1092,7 +1108,8 @@ private struct ThreadRow: View {
     var watched = false
     @Environment(\.sottoDensity) private var density
     private var state: ThreadState { ThreadState(row.thread) }
-    private var failed: Bool { row.reachable && state == .failed }
+    /// Settled is quiet: a settled thread whose last turn failed doesn't say so here.
+    private var failed: Bool { row.failed }
     var body: some View {
         NavigationLink(value: ThreadRoute(ref: row.ref)) {
             HStack(alignment: .top, spacing: Space.s3) {

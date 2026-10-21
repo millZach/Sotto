@@ -2,18 +2,34 @@ import XCTest
 @testable import SottoCore
 
 final class FocusThreadsTests: XCTestCase {
-    private func thread(_ id: String, _ extra: String = "") throws -> ThreadSummary {
-        try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"\#(id)","projectId":"p","title":"\#(id)","status":"idle","requests":[]\#(extra)}"#.utf8))
+    private func thread(_ id: String, _ extra: String = "", requests: String = "[]") throws -> ThreadSummary {
+        try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"\#(id)","projectId":"p","title":"\#(id)","status":"idle","requests":\#(requests)\#(extra)}"#.utf8))
     }
-    func testSettledRequestsAndBackgroundWorkRemainVisible() throws {
+    func testSettledRequestsStayInNeedsYouAndSettledWorkIsQuiet() throws {
         let question = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"q","projectId":"p","title":"Ship","status":"idle","settledAt":"yesterday","requests":[{"id":"r","kind":"question","text":"Which target?","options":[]}]}"#.utf8))
         let work = try thread("background", #", "settledAt":"yesterday", "backgroundWork":[{"type":"subagent"}]"#)
+        let running = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"running","projectId":"p","title":"running","status":"running","workspaceSettledAt":"2026-10-21","requests":[]}"#.utf8))
         let done = try thread("finished", #", "settledAt":"yesterday""#)
-        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [question, work, done])])
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [question, work, running, done])])
+        // Only the user can answer a request, so it is asked wherever the thread is filed.
         XCTAssertEqual(rows.questions.map(\.id), ["h/q"])
         XCTAssertEqual(rows.requestCount, 1)
-        XCTAssertEqual(rows.working.map(\.id), ["h/background"])
-        XCTAssertEqual(rows.settled.map(\.id), ["h/finished"])
+        // Settled is quiet: work a settled thread still does sits on the Settled shelf, not in Working now.
+        XCTAssertTrue(rows.working.isEmpty)
+        XCTAssertEqual(Set(rows.settled.map(\.id)), ["h/background", "h/running", "h/finished"])
+    }
+    func testSettledThreadsSayNeitherJustFinishedNorTurnFailed() throws {
+        let finished = try thread("finished", #", "finishedUnread":true, "workspaceSettledAt":"2026-10-21""#)
+        let failed = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"failed","projectId":"p","title":"failed","status":"error","settledAt":"2026-10-21","requests":[]}"#.utf8))
+        let inProject = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"project","projectId":"done","title":"project","status":"error","requests":[]}"#.utf8))
+        let open = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"open","projectId":"p","title":"open","status":"error","requests":[]}"#.utf8))
+        let project = try JSONDecoder().decode(Project.self, from: Data(#"{"id":"done","title":"Done","workspaceSettledAt":"2026-10-21"}"#.utf8))
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [finished, failed, inProject, open], projects: [project])])
+        XCTAssertEqual(Set(rows.settled.map(\.id)), ["h/finished", "h/failed", "h/project"])
+        XCTAssertEqual(rows.settled.filter { rows.isUnreadFinish($0) || $0.failed }.map(\.id), [])
+        XCTAssertEqual(rows.recent.map(\.id), ["h/open"])
+        XCTAssertTrue(rows.recent[0].failed)
+        XCTAssertEqual(rows.unreadFinishedCount, 0)
     }
     func testOfflineSnapshotsDoNotClaimLiveWork() throws {
         let work = try thread("work", #", "backgroundWork":[{"type":"command"}]"#)
@@ -42,8 +58,8 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertEqual(rows.recent.map(\.id), ["h/read", "h/unread"])
         XCTAssertEqual(rows.settled.map(\.id), ["h/settled"])
         XCTAssertEqual(rows.recent.map(rows.isUnreadFinish), [false, true])
-        XCTAssertTrue(rows.isUnreadFinish(rows.settled[0]))
-        // A closed Settled shelf would hide what it counted, so the count is Recent's.
+        // Settled is quiet: a settled thread is never marked, whatever its computer says.
+        XCTAssertFalse(rows.isUnreadFinish(rows.settled[0]))
         XCTAssertEqual(rows.unreadFinishedCount, 1)
     }
     func testOpeningAThreadReadsItBeforeItsComputerSaysSo() throws {
@@ -81,5 +97,84 @@ final class FocusThreadsTests: XCTestCase {
         let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [waiting, compacting, failed])])
         XCTAssertEqual(rows.working.count, 2)
         XCTAssertEqual(rows.recent.map(\.id), ["h/failed"])
+    }
+    // MARK: Delegated threads (ADR-0081)
+
+    private func ask(_ kind: String, _ id: String = "r") -> String {
+        #"[{"id":"\#(id)","kind":"\#(kind)","text":"\#(kind) from \#(id)","options":[]}]"#
+    }
+    func testDelegatedThreadsLeaveTheListAtBothLevels() throws {
+        let top = try thread("top")
+        let child = try thread("child", #", "delegatedBy":"top", "backgroundWork":[{"type":"subagent"}]"#)
+        let grandchild = try thread("grandchild", #", "delegatedBy":"child", "finishedUnread":true"#)
+        let computers = [ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, child, grandchild])]
+        let rows = FocusThreads(computers)
+        XCTAssertEqual(rows.recent.map(\.id), ["h/top"])
+        XCTAssertTrue(rows.working.isEmpty)
+        XCTAssertTrue(rows.questions.isEmpty)
+        // Counts leave hidden threads out: the grandchild's finish is not the Threads tab's to count.
+        XCTAssertEqual(rows.unreadFinishedCount, 0)
+        // No search finds a delegated thread by its own name.
+        XCTAssertTrue(FocusThreads(computers, query: "grandchild").isEmpty)
+        XCTAssertEqual(ThreadGroups.delegationTops(ThreadGroups.merged(computers)), ["h/child": "h/top", "h/grandchild": "h/top"])
+        XCTAssertEqual(child.delegatedBy, "top")
+        XCTAssertNil(top.delegatedBy)
+    }
+    func testADelegatedThreadWhoseDelegatingThreadIsNotListedKeepsItsRow() throws {
+        let orphan = try thread("orphan", #", "delegatedBy":"gone""#)
+        // The same thread ID on another computer is another thread, so it delegated nothing here.
+        let elsewhere = try thread("top")
+        let other = try thread("other", #", "delegatedBy":"top""#)
+        let first = try thread("first", #", "delegatedBy":"second""#)
+        let second = try thread("second", #", "delegatedBy":"first""#)
+        let rows = FocusThreads([ComputerThreads(hostID: "one", name: "Laptop", status: .online, threads: [elsewhere]),
+                                 ComputerThreads(hostID: "two", name: "Forge", status: .online, threads: [orphan, other, first, second])])
+        XCTAssertEqual(Set(rows.recent.map(\.id)), ["one/top", "two/orphan", "two/other", "two/first", "two/second"])
+    }
+    func testAnOpenDelegatedThreadUnderASettledOneKeepsItsRow() throws {
+        let top = try thread("top", #", "workspaceSettledAt":"2026-10-21""#)
+        let open = try thread("open", #", "delegatedBy":"top""#)
+        let settled = try thread("settled", #", "delegatedBy":"top", "workspaceSettledAt":"2026-10-21""#)
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, open, settled])])
+        XCTAssertEqual(rows.recent.map(\.id), ["h/open"])
+        XCTAssertEqual(rows.settled.map(\.id), ["h/top"])
+    }
+    func testADelegatedThreadWaitingOnYouPutsItsTopInNeedsYou() throws {
+        let top = try thread("top", #", "backgroundWork":[{"type":"subagent"}]"#)
+        let child = try thread("child", #", "delegatedBy":"top""#, requests: ask("question", "q"))
+        let grandchild = try thread("grandchild", #", "delegatedBy":"child""#, requests: ask("permission", "p"))
+        let computers = [ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, child, grandchild])]
+        let rows = FocusThreads(computers)
+        XCTAssertEqual(rows.questions.map(\.id), ["h/top"])
+        XCTAssertTrue(rows.working.isEmpty)
+        // A permission holds its agent still, so it outranks a question below the same thread.
+        XCTAssertEqual(rows.asking(rows.questions[0]).id, "h/grandchild")
+        XCTAssertEqual(rows.requestCount, 1)
+        // A search finds the row by what it asks.
+        XCTAssertEqual(FocusThreads(computers, query: "permission from p").questions.map(\.id), ["h/top"])
+        // The row's own request wins over one below it.
+        let asking = try thread("top", requests: ask("question", "own"))
+        let own = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [asking, child, grandchild])])
+        XCTAssertEqual(own.questions.map(\.id), ["h/top"])
+        XCTAssertEqual(own.asking(own.questions[0]).id, "h/top")
+        XCTAssertEqual(own.requestCount, 1)
+    }
+    func testASettledThreadWithADelegatedThreadWaitingOnYouStaysInNeedsYou() throws {
+        let top = try thread("top", #", "workspaceSettledAt":"2026-10-21""#)
+        let child = try thread("child", #", "delegatedBy":"top", "workspaceSettledAt":"2026-10-21""#, requests: ask("permission"))
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, child])])
+        XCTAssertEqual(rows.questions.map(\.id), ["h/top"])
+        XCTAssertTrue(rows.settled.isEmpty)
+        XCTAssertEqual(rows.asking(rows.questions[0]).id, "h/child")
+    }
+    func testNoRollUpFromAComputerThisIPhoneCannotReach() throws {
+        let top = try thread("top")
+        let child = try thread("child", #", "delegatedBy":"top""#, requests: ask("permission"))
+        for status in [ComputerStatus.connecting, .unreachable] {
+            let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: status, threads: [top, child])])
+            XCTAssertTrue(rows.questions.isEmpty)
+            XCTAssertEqual(rows.recent.map(\.id), ["h/top"])
+            XCTAssertEqual(rows.requestCount, 0)
+        }
     }
 }
