@@ -4,7 +4,7 @@ import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { detectClientInstall, ProviderClients, byHandFor, opencodeManager, type RunLike } from '../../../src/main/agents/providerClients'
+import { detectClientInstall, ProviderClients, byHandFor, opencodeManager, shellArgument, type RunLike } from '../../../src/main/agents/providerClients'
 import { opencodeFolders, opencodeVersionRefusal, OpenCodeTooOld } from '../../../src/main/agents/opencodeServer'
 import { root } from '../../fixtures/providerClientInstallFixture'
 
@@ -49,7 +49,7 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     const reading = await clients.check('opencode', '2.0.31', executable, await noMise())
     expect(asked).toEqual(['https://registry.npmjs.org/%40opencode/cli/latest'])
     expect(reading).toMatchObject({ id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'npm', canInstall: true,
-      command: `npm install -g --prefix ${prefix} --allow-scripts=@opencode/cli @opencode/cli@latest` })
+      command: `npm install -g --prefix ${shellArgument(prefix, process.platform)} --allow-scripts=@opencode/cli @opencode/cli@latest` })
   })
 
   it('lets the install script’s copy in ~/.opencode/bin update itself with opencode upgrade, on Sotto’s own OpenCode folders', async () => {

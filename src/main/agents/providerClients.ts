@@ -68,6 +68,10 @@ function grokBin(environment: NodeJS.ProcessEnv): string {
 const within = (path: string, directory: string): boolean =>
   path.toLowerCase().startsWith(`${directory.toLowerCase()}${sep}`)
 
+/** The platform part of a client's platform package name: `darwin-arm64`, `linux-x64-musl`, `win32-x64`. */
+const PLATFORM_PACKAGE = /^(?:darwin|linux|win32)-(?:x64|arm64)(?:-[a-z0-9]+)?$/u
+/** The program Grok Build's install step links `~/.grok/bin/grok` to: `grok-1.0.5`. */
+const GROK_VERSIONED = /^grok-\d+(?:\.\d+)*(?:\.exe)?$/iu
 /** Where a global npm install keeps its packages, without running npm to ask. */
 function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
   const home = homedir()
@@ -93,11 +97,12 @@ async function npmPackageFolder(packageName: string, executable: string, environ
   platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
   const parts = executable.split(sep), names = packageName.split('/')
   // A platform package npm hoisted beside the client's own (`@openai/codex-darwin-arm64` beside `@openai/codex`) stands
-  // for that package, which is what npm updates.
+  // for that package, which is what npm updates. Only a platform package's name does: `@openai/codex-tools` is not one.
   const inside = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules'
     && names.every((name, offset) => {
       const found = parts[index + 1 + offset]?.toLowerCase(), wanted = name.toLowerCase()
-      return found === wanted || (offset === names.length - 1 && found?.startsWith(`${wanted}-`))
+      return found === wanted || (offset === names.length - 1 && found !== undefined && found.startsWith(`${wanted}-`)
+        && PLATFORM_PACKAGE.test(found.slice(wanted.length + 1)))
     }))
   const bin = dirname(executable)
   const ownPrefix = [join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
@@ -106,7 +111,7 @@ async function npmPackageFolder(packageName: string, executable: string, environ
   // even when `~/.grok` is npm's prefix too, so a package there claims that link without resolving into it.
   const linked = real !== undefined && dirname(real) !== await realpath(bin).catch(() => bin)
   const grokVersionLink = packageName === CLIENT_PACKAGES.grok && real !== undefined && !linked
-    && basename(real).toLowerCase().startsWith(`${basename(executable).toLowerCase()}-`)
+    && bin.toLowerCase() === grokBin(environment ?? {}).toLowerCase() && GROK_VERSIONED.test(basename(real))
   const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...environment ? npmGlobalRoots(environment) : []]
   for (const root of roots) {
     const folder = join(root, ...names)
@@ -372,9 +377,12 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
   releaseAgeFlag = false): readonly string[] | undefined {
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
-    case 'npm': return packageName
-      ? [`npm install -g${install.npmPrefix ? ` --prefix ${shellArgument(install.npmPrefix, platform)}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
-      : undefined
+    case 'npm': {
+      if (!packageName) return undefined
+      // A Windows prefix no shell there would keep literal is left out, as it was before prefixes were named.
+      const prefix = install.npmPrefix === undefined ? undefined : shellArgument(install.npmPrefix, platform)
+      return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
+    }
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
       : provider === 'opencode' ? ['opencode upgrade'] : undefined
     case 'mise': {
@@ -390,10 +398,14 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
     default: return install.byHand?.length ? [...install.byHand] : undefined
   }
 }
-/** A path as one argument to type into a shell: bare when nothing in it needs quoting, else quoted for that platform's shell. */
-function shellArgument(value: string, platform: NodeJS.Platform): string {
-  if (/^[\w/\\.:~+-]+$/u.test(value)) return value
-  return platform === 'win32' ? `"${value}"` : `'${value.replaceAll("'", "'\\''")}'`
+/**
+ * A path as one argument to type into a shell, or undefined when it cannot be written so that it stays literal. POSIX
+ * shells take anything in single quotes literally but the quote itself. On Windows the line may be typed into PowerShell
+ * or cmd, so double quotes go only around a path neither would expand: no `$`, backtick, `%`, `!` or `"`.
+ */
+export function shellArgument(value: string, platform: NodeJS.Platform): string | undefined {
+  if (platform === 'win32') return /^[\w\\/.:+-]+$/u.test(value) ? value : /[$`%!"]/u.test(value) ? undefined : `"${value}"`
+  return /^[\w/.:+-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 const needsInstallStep = (provider: ProviderId, miseTool: string): boolean => provider === 'grok' && miseTool === `npm:${CLIENT_PACKAGES.grok}`
 
