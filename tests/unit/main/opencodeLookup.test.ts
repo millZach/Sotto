@@ -60,7 +60,7 @@ describe('finding OpenCode 2 on Windows', () => {
     await writeFile(join(npm, 'node_modules', '@opencode', 'cli', 'package.json'), '{}')
     const found = await find('win32', { APPDATA: join(home, 'AppData', 'Roaming') })
     expect(found).toBe(program)
-    expect(await channel(found)).toEqual({ channel: 'npm' })
+    expect(await channel(found)).toEqual({ channel: 'npm', npmPrefix: npm })
   })
 
   it('passes over the stand-in an install without scripts leaves, for the program package npm nested inside it', async () => {
@@ -72,7 +72,7 @@ describe('finding OpenCode 2 on Windows', () => {
     const program = await file(join(cli, 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe'), MZ)
     const found = await find('win32', { APPDATA: join(home, 'AppData', 'Roaming') })
     expect(found).toBe(program)
-    expect(await channel(found)).toEqual({ channel: 'npm' })
+    expect(await channel(found)).toEqual({ channel: 'npm', npmPrefix: npm })
   })
 
   it('takes the ARM64 program package on Windows ARM, and the x64 one only when it is all there is', async () => {
@@ -236,7 +236,8 @@ describe.skipIf(systemOpenCode)('finding OpenCode 2 on macOS and Linux', () => {
     await mkdir(join(prefix, 'bin'), { recursive: true })
     const found = await find('darwin', { npm_config_prefix: prefix }, { arch: 'arm64' })
     expect(found).toBe(program)
-    expect(await channel(found)).toEqual({ channel: 'npm' })
+    // npm on Windows keeps global packages in `<prefix>\node_modules`, so there this layout's prefix is its `lib`.
+    expect(await channel(found)).toEqual({ channel: 'npm', npmPrefix: process.platform === 'win32' ? join(prefix, 'lib') : prefix })
   })
 
   it('follows pnpm\'s sh launcher to pnpm\'s store, and never takes the launcher', async () => {
