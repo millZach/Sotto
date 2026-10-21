@@ -1835,6 +1835,70 @@ it('says a watched thread waits on the card of a thread it delegated to, as list
   expect(JSON.stringify(read)).not.toContain('synthetic private command')
 })
 
+// #1274: read_state works out what changes from live data, and flags kept notes that name what is over.
+it('gives the merge queue and each watched thread’s open pull requests from live data, and flags kept notes that name what is over', async () => {
+  const f = await fixture()
+  const first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok' || !('target' in second)) throw new Error('start refused')
+  // A thread the user put aside, under a title of its own.
+  const aside = randomUUID()
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: aside, projectId: f.project.id, modelId: f.model.id,
+    title: 'Synthetic release notes', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  const pr = (number: number, state: 'open' | 'merged', draft = false) => ({ url: `https://github.com/synthetic/project/pull/${number}`, number,
+    title: 'Synthetic pull request', state, draft, source: 'linked' as const, linkedAt: new Date().toISOString() })
+  const link = (threadId: string, links: ReturnType<typeof pr>[]) => {
+    const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
+    record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  }
+  link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true)])
+  link(second.target.threadId, [pr(7, 'open')])
+  link(aside, [pr(4, 'merged')])
+  const passed = (number: number, observedAt: string) => f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`,
+    head: `synthetic-head-${number}`, observedAt, availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  passed(7, '2026-10-21T10:00:00.000Z'); passed(5, '2026-10-21T10:05:00.000Z'); passed(6, '2026-10-21T09:00:00.000Z')
+  await f.call('keep_state', { decisions: ['Merge #4 once CI is green?', 'Merge #5 after #7?'], rules: ['Leave Synthetic release notes to the user.'] })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  // The draft passed first but is not queued; the rest go in the order their checks passed.
+  expect(read.mergeQueue.map(item => [item.target.threadId, item.pullRequest.number])).toEqual([[second.target.threadId, 7], [first.target.threadId, 5]])
+  expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
+    expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' })])
+  expect(read.staleNotes).toEqual([
+    { list: 'decisions', index: 0, reasons: ['Names pull request #4, which is merged.'] },
+    { list: 'rules', index: 0, reasons: ['Names the thread “Synthetic release notes”, which Watcher does not watch.'] },
+  ])
+  // This fixture has no Settle finished threads, so nothing is pending and read_state says why.
+  expect(read).toMatchObject({ settlesFinishedThreads: false, pendingSettles: [] })
+  // The kept words are as Watcher gave them: the flags sit beside them and change nothing kept.
+  expect(read.kept.decisions).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
+})
+
+it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {
+  const f = await fixture(), targets: string[] = []
+  for (let at = 0; at < 6; at++) {
+    const started = await f.call('start_thread', f.start())
+    if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+    targets.push(started.target.threadId)
+  }
+  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } } }).state.snapshot
+  targets.forEach((threadId, at) => {
+    const links = Array.from({ length: 20 }, (_, index) => ({ url: `https://github.com/synthetic/project/pull/${at * 20 + index + 1}`, number: at * 20 + index + 1,
+      title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }))
+    record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  })
+  for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,
+    observedAt: new Date(Date.now() + number * 1_000).toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  const first = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (first.status !== 'ok' || first.nextCursor === null) throw new Error('expected a second page')
+  const second = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: first.nextCursor }))
+  if (second.status !== 'ok') throw new Error('read refused')
+  expect(second.nextCursor).toBeNull()
+  expect([...first.mergeQueue, ...second.mergeQueue].map(item => item.pullRequest.number)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
+  expect(first.mergeQueue).toHaveLength(100)
+})
+
 it('saves none of Watcher’s kept words with Keep local history off', async () => {
   const f = await fixture(false)
   await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })

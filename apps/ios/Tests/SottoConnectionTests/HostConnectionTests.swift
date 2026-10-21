@@ -136,7 +136,7 @@ private final class HostResponses: URLProtocol {
         try await connection.revoke(endpoint: endpoint, pairing: pairing)
         XCTAssertEqual(routes.values, ["/v1/health", "/v1/revoke"])
     }
-    /// The phone opts in to Watcher's page, its Stop all and its permission and watch controls on every computer, keeping
+    /// The phone opts in to Watcher's page, its Stop all, its permission and watch controls and steering on every computer, keeping
     /// every snapshot feature it asked for before. Only an Owl desktop that runs Watcher offers them back.
     func testHelloOptsInToWatcherAndKeepsTheSnapshotFeatures() {
         guard case .array(let accepts) = HostConnection.hello["accepts"],
@@ -145,6 +145,7 @@ private final class HostResponses: URLProtocol {
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.feature) }.count, 1)
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.stopFeature) }.count, 1)
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.manageFeature) }.count, 1)
+        XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.steerFeature) }.count, 1, "Steering Watcher while it works (#1229)")
         XCTAssertEqual(accepts.filter { $0 == .string("provider-opencode") }.count, 1, "OpenCode's threads and models reach this phone")
         XCTAssertEqual(HostConnection.hello["op"], .string("hello"))
         XCTAssertEqual(HostConnection.hello["afterSeq"], Wire.snapshotHello["afterSeq"])
