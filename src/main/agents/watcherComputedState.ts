@@ -59,7 +59,9 @@ function names(text: string, phrase: string): boolean {
   return false
 }
 const URLS = /https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/giu
+const QUALIFIED = /\b([\w.-]+)\/([\w.-]+)#(\d+)\b/giu
 const NUMBERS = /(?:#|\b(?:pr|pull request)\s*#?\s*)(\d+)\b/giu
+const WORDED_NUMBERS = /\b(?:pr|pull request)\s*#?\s*(\d+)\b/giu
 const shown = (title: string) => title.length > TITLE_SHOWN_MAX ? `${title.slice(0, TITLE_SHOWN_MAX - 1)}…` : title
 
 /**
@@ -86,16 +88,19 @@ export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'ru
       const byId = thread.target.threadId.length >= ID_MIN && text.includes(thread.target.threadId.toLowerCase())
       if (byTitle || byId) reasons.push(`Names the thread “${shown(thread.title)}”, which ${thread.settled ? 'is settled' : 'Watcher does not watch'}.`)
     }
-    // A link names one pull request; a number its link already named, or said once, is not read again.
+    // A link or an `owner/repo#N` names one pull request in its own repository; a number one of them already named, or said
+    // once, is not read again. The issues list numbers issues the same way, so there a bare number counts only as "PR 12".
     const linked = new Set<string>(), numbers = new Set<number>()
-    for (const match of note.matchAll(URLS)) {
-      const prKey = pullRequestKey(match[0]) ?? match[0], pr = byKey.get(prKey), number = pullRequestAddress(match[0])?.number
+    const named = [...[...note.matchAll(URLS)].map(match => ({ prKey: pullRequestKey(match[0]) ?? match[0], number: pullRequestAddress(match[0])?.number })),
+      ...[...note.matchAll(QUALIFIED)].map(match => ({ prKey: `${match[1]}/${match[2]}#${match[3]}`.toLowerCase(), number: Number(match[3]) }))]
+    for (const { prKey, number } of named) {
+      const pr = byKey.get(prKey)
       if (number !== undefined) numbers.add(number)
       if (!pr || linked.has(prKey)) continue
       linked.add(prKey)
       if (pr.state !== 'open') reasons.push(`Names pull request #${pr.number}, which is ${pr.state}.`)
     }
-    for (const match of note.matchAll(NUMBERS)) {
+    for (const match of note.replace(URLS, ' ').replace(QUALIFIED, ' ').matchAll(list === 'issues' ? WORDED_NUMBERS : NUMBERS)) {
       const number = Number(match[1]), known = byNumber.get(number) ?? []
       if (numbers.has(number) || !known.length || known.some(pr => pr.state === 'open')) continue
       numbers.add(number)

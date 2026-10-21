@@ -73,6 +73,18 @@ it('flags a kept note that names a settled or unwatched thread, by title or ID, 
   ])
 })
 
+it('reads `owner/repo#N` in its own repository, and a bare number in the issues list as the issue’s own', () => {
+  expect(watcherStaleNotes({
+    decisions: ['Merge o/r#40 once CI is green?', 'Filed o/x#40 about the crash'],
+    rules: [],
+    // Issue numbers are written as pull request numbers are: only "PR 40" or a link names a pull request here.
+    issues: ['#40 Watcher keeps stale notes', 'o/other#40 crash on start', 'PR 40 follow-up'],
+  }, [], pullRequests)).toEqual([
+    { list: 'decisions', index: 0, reasons: ['Names pull request #40, which is merged.'] },
+    { list: 'issues', index: 2, reasons: ['Names pull request #40, which is merged.'] },
+  ])
+})
+
 it('flags nothing when the kept notes name only what is live, or nothing at all', () => {
   expect(watcherStaleNotes(nothing, threads, pullRequests)).toEqual([])
   expect(watcherStaleNotes({ ...nothing, rules: ['Full test suites run in CI, not on the laptop.', 'Release notes drafting waits for Zach'] }, threads, pullRequests)).toEqual([])
