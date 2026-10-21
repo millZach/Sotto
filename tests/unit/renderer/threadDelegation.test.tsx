@@ -172,6 +172,29 @@ describe('delegated threads in the sidebar', () => {
     expect(searched.delegation).toBeUndefined()
   })
 
+  it('keeps them under a settled delegating thread in Settled, and one restored on its own stands open by itself', () => {
+    const state = delegatingState()
+    // What main records when the user settles Visual gate flake: its delegated threads settle with it, under its timestamp.
+    for (const thread of state.host.threads) if ([PARENT, CHILD, GRANDCHILD].includes(thread.id)) thread.workspaceSettledAt = at(1)
+    const settled = organizeWorkspace(state, describeThreads(state, NOW), '', null, true)
+    const openIds = settled.open.flatMap(folder => folder.rows.map(row => row.thread.id))
+    for (const id of [PARENT, CHILD, GRANDCHILD]) expect(openIds).not.toContain(id)
+    const shelf = settled.settled.find(folder => folder.id === 'workshop')!
+    const shelved = shelf.rows.map(row => row.thread.id)
+    expect(shelved.slice(shelved.indexOf(PARENT), shelved.indexOf(PARENT) + 3)).toEqual([PARENT, CHILD, GRANDCHILD])
+    expect(shelf.delegation?.get(CHILD)).toEqual({ level: 1, parent: 'Visual gate flake' })
+    expect(shelf.rows.find(row => row.thread.id === CHILD)?.settledBy).toBe('thread')
+    // Restore on the review's own row makes it an ordinary open thread; what it delegated stays settled under the parent.
+    state.host.threads.find(thread => thread.id === CHILD)!.workspaceSettledAt = null
+    const restored = organizeWorkspace(state, describeThreads(state, NOW), '', null, true)
+    const open = restored.open.find(folder => folder.id === 'workshop')!
+    expect(open.rows.map(row => row.thread.id)).toContain(CHILD)
+    expect(open.delegation?.has(CHILD) ?? false).toBe(false)
+    const stillShelved = restored.settled.find(folder => folder.id === 'workshop')!.rows.map(row => row.thread.id)
+    expect(stillShelved).toEqual(expect.arrayContaining([PARENT, GRANDCHILD]))
+    expect(stillShelved).not.toContain(CHILD)
+  })
+
   it('indents them with their machine badge and says who delegated them; stable lists them as any other thread', () => {
     owl(true)
     vi.stubGlobal('sotto', { delegations: bridge({}).fake })

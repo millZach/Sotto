@@ -32,6 +32,8 @@ Watcher already starts and briefs threads under rules main enforces (ADR-0073): 
 
 **10. Where it runs.** A delegated thread starts on the delegating thread's own host by default. Once [#1032](https://github.com/millZach/Sotto/issues/1032) (E9) lands, `delegate` also takes a machine, defaulting to the setting E9 adds. Paired hosts take part only through an optional host-v1 feature, as Watcher's paths do; a host without it refuses before anything crosses the wire.
 
+**11. Settling.** Settling a thread settles every delegated thread below it that is still unsettled, at both levels, under the delegating thread's own timestamp, so none is left in the project's open list on its own (Zach, October 20, 2026). Restoring the delegating thread restores the delegated threads that still carry that timestamp. A delegated thread the user settled or restored by itself keeps its own state, and **Restore** on a delegated thread's row makes it an ordinary open thread, standing on its own while the thread that delegated stays settled. Settling a whole project is unchanged, since it settles every thread in it.
+
 ## Amends ADR-0073
 
 ADR-0073 gives start and send authority to Watcher alone, rooted in a Watcher request. This record extends that authority, within the same limits, to an ordinary thread rooted in the user's latest message to it, with the narrower ceiling of decision 4 and the two-level rule of decision 2. ADR-0073's own text is amended when this lands with E6's code, not before.
