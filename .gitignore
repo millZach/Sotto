@@ -714,3 +714,11 @@ artifacts/macos-traffic-light-room/*
 !artifacts/macos-traffic-light-room/mac-header-dark-559px-1600x1000.png
 !artifacts/macos-traffic-light-room/mac-header-light-718px-1600x1000.png
 !artifacts/macos-traffic-light-room/readings.json
+artifacts/draft-save-reply-priority/*
+!artifacts/draft-save-reply-priority/gate-alone-on-screen.json
+!artifacts/draft-save-reply-priority/gate-alone-minimized.json
+!artifacts/draft-save-reply-priority/both-fixes-on-screen.json
+!artifacts/draft-save-reply-priority/both-fixes-minimized.json
+!artifacts/draft-save-reply-priority/both-fixes-and-reply-priority-on-screen.json
+!artifacts/draft-save-reply-priority/screenshot-run-on-screen.json
+!artifacts/draft-save-reply-priority/typing-three-threads-streaming-1280x800.png

@@ -58,6 +58,7 @@ export default tseslint.config(
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-dictation-unreachable/**',
       'artifacts/codex-terminal-state/**',
+      'artifacts/draft-save-reply-priority/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
       'artifacts/babysitting-surfaces-run/**',
