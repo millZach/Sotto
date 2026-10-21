@@ -51,6 +51,34 @@ final class WatcherTests: XCTestCase {
         XCTAssertTrue(new.contains(.string(WatcherWire.feature)))
         XCTAssertTrue(new.contains(.string(WatcherWire.stopFeature)))
     }
+    func testSteeringIsOptionalOnTheWireAndRidesWithManagement() throws {
+        // An older computer says nothing of steering or what waits for Watcher.
+        let old = try decode(WatcherPhoneState.self, state)
+        XCTAssertNil(old.followups)
+        XCTAssertNil(old.current?.steers)
+        let steering = state.replacingOccurrences(of: #""status":"running","connected":true}"#, with: #""status":"running","connected":true,"steers":false}"#)
+        XCTAssertNotEqual(steering, state)
+        let extra = #", "followups":[{"itemId":"item","draftId":"draft","text":"After this turn","status":"queued"}]"#
+        let page = try decode(WatcherPhoneState.self, String(steering.dropLast()) + extra + "}")
+        XCTAssertEqual(page.current?.steers, false)
+        XCTAssertEqual(page.followups?.first?.id, "item")
+        XCTAssertEqual(page.followups?.first?.draftId, "draft")
+        XCTAssertEqual(page.followups?.first?.status, "queued")
+        // Only the app's hello asks for steering, with management; the plain Watcher hello is unchanged.
+        guard case .array(let managing)? = WatcherWire.managementHello["accepts"], case .array(let plain)? = WatcherWire.hello["accepts"] else { return XCTFail("Missing accepts") }
+        XCTAssertTrue(managing.contains(.string(WatcherWire.steerFeature)))
+        XCTAssertFalse(plain.contains(.string(WatcherWire.steerFeature)))
+        let target = WatcherTarget(hostId: host, threadId: "watcher")
+        let plainSend = JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on"))
+        XCTAssertEqual(plainSend["request"]["delivery"], .null, "A send says nothing of steering unless asked")
+        let steer = JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on", steer: true))
+        XCTAssertEqual(steer["request"]["delivery"], .string("steer"))
+        XCTAssertEqual(steer["request"]["draftId"], .string("draft"))
+        let remove = JSONValue.object(WatcherWire.removeFollowup(target: target, itemID: "item"))
+        XCTAssertEqual(remove["op"], .string("watcher-phone-remove-followup"))
+        XCTAssertEqual(remove["request"]["itemId"], .string("item"))
+        XCTAssertEqual(remove["request"]["target"]["threadId"], .string("watcher"))
+    }
     func testSendCarriesExplicitPhoneOriginAndStableDraft() throws {
         let target = WatcherTarget(hostId: host, threadId: "watcher")
         let operation = WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Start a worker")

@@ -47,6 +47,8 @@ function service() {
   const handover = { text: 'From before', provider: 'opencode', counts }
   const phone = {
     currentThreadId: () => watcherThread,
+    // The listener says whether a phone is still paired; this fake queues nothing for Watcher, so it asks nothing.
+    useAdmission: () => () => undefined,
     state: () => phoneState(),
     get: () => ({ status: 'ok', state: phoneState() }),
     manage: async (action: string) => { acted.push(`phone-${action}`); return { status: 'ok' } },
