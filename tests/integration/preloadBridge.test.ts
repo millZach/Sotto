@@ -135,8 +135,10 @@ describe('typed preload bridge', () => {
         'agents',
         'browser',
           'cancelTranscription',
+        'cancelDictationKeyRecord',
         'checkForUpdates',
         'checkOpenRouterKey',
+        'chooseSpeechModel',
         'downloadSpeechModel',
         'ensureMicrophoneAccess',
         'clearHistory',
@@ -147,6 +149,7 @@ describe('typed preload bridge', () => {
         'deliverOutput',
         'files',
         'getHotkey',
+        'getKeyListenerPermission',
         'getSettings',
         'getSpeechModelStatus',
         'getStartup',
@@ -158,11 +161,14 @@ describe('typed preload bridge', () => {
         'installUpdate',
         'listHistory',
         'listRecoveryNotices',
+        'listSpeechModels',
         'memory',
         'minimizeApp',
         'reloadApp',
         'toggleMaximizeApp',
         'onDictationCommand',
+        'onDictationKeysHeld',
+        'onKeyListenerPermission',
         'onRecoveryNotice',
         'onSettingsChanged',
         'onSpeechModelStatus',
@@ -178,12 +184,16 @@ describe('typed preload bridge', () => {
         'polishTranscript',
         'publishWidgetState',
         'quitApp',
+        'recordDictationKeys',
+        'replaceDictationShortcuts',
         'replaceHotkey',
         'requestDictation',
+        'requestKeyListenerPermission',
         'requestDrafts',
         'resetSettings',
         'searchHistory',
         'subagents',
+        'suspendDictationShortcuts',
         'setStartup',
         'showApp',
         'terminal',
@@ -205,7 +215,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {

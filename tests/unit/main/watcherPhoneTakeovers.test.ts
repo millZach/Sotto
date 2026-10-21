@@ -18,10 +18,10 @@ it('carries the takeover lines to the phone, as protocol version 1 adds them, wi
   const room: WatcherRoomState = { current: { target: watcher, projectId: 'project', provider: 'codex', creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT },
     currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
     requests: [{ id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'active', createdAt: AT, closedAt: null, participants: [taken] }],
-    watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: AT }
+    watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: AT }
   const snapshot = { ...emptyDesktopState(HOST).host, threads: [{ id: 'auth', projectId: 'project', title: 'Auth refactor', modelId: 'codex:gpt', status: 'idle' as const, messages: [], requests: [] }] }
   const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
-    { state: () => room, phoneSnapshot: () => snapshot } as unknown as WatcherService)
+    { state: () => room, phoneSnapshot: () => snapshot, startsInFlight: () => 0 } as unknown as WatcherService)
   const state = service.state(false)
   expect(state.takeovers).toEqual([{ target: { hostId: HOST, threadId: 'auth' }, title: 'Auth refactor', at: AT }])
   // An older phone reads the same page without the field.
@@ -36,11 +36,11 @@ it('carries the newest five hundred takeover lines, as it carries receipts, and 
   const room: WatcherRoomState = { current: { target: watcher, projectId: 'project', provider: 'codex', creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT },
     currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
     requests: [{ id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'active', createdAt: AT, closedAt: null, participants: lines }],
-    watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: AT }
+    watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: AT }
   const threads = lines.map(line => ({ id: line.target.threadId, projectId: 'project', title: `Task ${line.target.threadId}`, modelId: 'codex:gpt', status: 'idle' as const, messages: [], requests: [] }))
   const snapshot = { ...emptyDesktopState(HOST).host, threads }
   const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
-    { state: () => room, phoneSnapshot: () => snapshot } as unknown as WatcherService)
+    { state: () => room, phoneSnapshot: () => snapshot, startsInFlight: () => 0 } as unknown as WatcherService)
   const find = vi.spyOn(threads, 'find')
   const state = service.state(false)
   expect(state.takeovers).toHaveLength(500)

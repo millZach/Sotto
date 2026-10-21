@@ -133,13 +133,16 @@ export interface AppSettings {
    * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
    */
   resumeThreadsAfterRestart: boolean
-  /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
-  watcherInFlightLimit: number
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
    */
   workerRoles: WorkerRoleChoices
+  /**
+   * Settle finished threads, under Settings, Watcher: on by default, part of Watcher's Owl feature. On, Watcher settles a
+   * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
+   */
+  watcherSettlesFinishedThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -185,6 +188,10 @@ export interface AppSettings {
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
+  /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
+  pressShortcuts: string[]
+  /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
+  holdShortcuts: string[]
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -194,6 +201,11 @@ export interface AppSettings {
    */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
+  /**
+   * The model that transcribes dictation, by its picker id, or null until the user chooses one.
+   * Nothing downloads before then. Main writes it when the user chooses on the picker or in setup.
+   */
+  speechModel: string | null
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -235,6 +247,12 @@ export interface AppSettings {
   commitMessages: boolean
   autoUpdateCheck: boolean
   /**
+   * The notice beside the window controls while Sotto's main process is frozen (#1233, ADR-0098). Part of the
+   * `main-freeze` Owl feature: stable never shows it, whatever this says. Off hides only the notice; Settings >
+   * Performance keeps the numbers and Record a minute.
+   */
+  mainFreezeNotice: boolean
+  /**
    * Whether the agent runtime runs on this computer at all. Read once at
    * startup; off starts no local host after the next restart. Remote hosts
    * still work, dictation is unaffected and no saved data is removed.
@@ -267,7 +285,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -296,14 +314,17 @@ const fieldSchemas = {
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
-  watcherInFlightLimit: z.number().int().min(1).max(8),
   workerRoles: workerRoleChoicesSchema,
+  watcherSettlesFinishedThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
+  holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
+  speechModel: z.string().min(1).max(128).nullable(),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -346,6 +367,7 @@ const fieldSchemas = {
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
+  mainFreezeNotice: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
@@ -377,14 +399,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visualsInThreads: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
-  watcherInFlightLimit: 4,
   workerRoles: {},
+  watcherSettlesFinishedThreads: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  pressShortcuts: [],
+  holdShortcuts: [],
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
+  speechModel: null,
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -435,6 +460,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
+  // On by default in Owl, the only place it shows: a freeze is worth hearing about until the owner says otherwise.
+  mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
   localHostEnabled: true,
@@ -451,11 +478,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 /**
- * The defaults for one platform. Only the hotkey differs today, and the caller
- * supplies it from the platform profile so this module stays platform-free.
+ * The defaults for one platform. Only the shortcuts differ today, and the caller
+ * supplies them from the platform profile so this module stays platform-free.
  */
-export function defaultSettings(defaultHotkey: string): AppSettings {
-  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey }
+export function defaultSettings(defaultHotkey: string, defaultHoldShortcuts: readonly string[] = []): AppSettings {
+  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey, holdShortcuts: [...defaultHoldShortcuts] }
+}
+
+/** Entry by entry, so one damaged shortcut costs only itself; a damaged list holds nothing rather than a default. */
+function parseShortcutList(input: unknown, max: number): string[] {
+  if (!Array.isArray(input)) return []
+  const entries = input.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0 && entry.length <= 64)
+  return [...new Set(entries)].slice(0, max)
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -471,8 +505,16 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
+/** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0097). */
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
+  // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
+  // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys, and so
+  // does one an unreleased build of the recorder saved with the old, unused default and nothing held: Linux's rows
+  // can't produce that pair, since only Owl removes the hold and Linux has no Owl build.
+  const untouchedLinux = Array.isArray(persisted.holdShortcuts) && persisted.holdShortcuts.length === 0 &&
+    persisted.hotkey === 'CommandOrControl+Shift+Space' && (persisted.pressShortcuts === undefined || Array.isArray(persisted.pressShortcuts) && persisted.pressShortcuts.length === 0)
+  const linuxBeforeRecorder = allowOmarchy && (persisted.holdShortcuts === undefined || untouchedLinux)
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.
@@ -484,6 +526,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 
+  // Only the keys named here are read. One a version of Sotto no longer has, such as `watcherInFlightLimit`, the Threads
+  // in flight limit removed in #1183, is left behind here and gone from the file at the next save.
   return {
     version: parseField(persisted, 'version', defaults),
     theme: parseField(persisted, 'theme', defaults),
@@ -500,15 +544,22 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
-    watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
+    watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
-    hotkey: parseField(persisted, 'hotkey', defaults),
+    hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
+    pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
+    // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
+    // Linux is the exception above: its existing profiles already held F9.
+    holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
+      ? [...defaults.holdShortcuts]
+      : parseShortcutList(persisted.holdShortcuts, 4),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
+    speechModel: parseField(persisted, 'speechModel', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),
@@ -545,6 +596,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
+    mainFreezeNotice: parseField(persisted, 'mainFreezeNotice', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),

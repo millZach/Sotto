@@ -30,7 +30,7 @@ async function fixture(phoneFeature = true, usageEnabled = false) {
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, ...(usage ? { usage } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: client => ({ allowed: client.transport === 'ipc' || canAnswer, reason: 'paired-client' }) } } })
-  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, limit: () => 4, historyEnabled: () => true })
+  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); usage?.close(); await workspace.stop() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
@@ -73,7 +73,7 @@ it('offers phone Watcher only on its desktop listener and leaves old phones ordi
   expect(await old.call('no-opt', { op: 'watcher-phone-read' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   expect(await old.call('hidden-detail', { op: 'detail', threadId: f.target.threadId })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   const read = await current.call('read', { op: 'watcher-phone-read' })
-  expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { current: { target: f.target }, inFlightLimit: 4 } })
+  expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { current: { target: f.target }, inFlight: 0, inFlightLimit: 8 } })
   const admin = await startSocketServer({ service: f.service, pairing: f.pairing }); cleanups.push(() => admin.close())
   expect(admin.descriptor.features).not.toContain('watcher-phone')
   const stable = await fixture(false), stablePhone = await stable.pair()
@@ -283,7 +283,7 @@ it.each([
   expect(adapter.commands.filter(command => command.type === 'send' && command.text === original.text)).toHaveLength(1)
 })
 
-it('fences a phone direct send as takeover and binds Stop all previews to the exact user and ownership', async () => {
+it('holds Watcher behind a phone direct send and binds Stop all previews to the exact user and ownership', async () => {
   const f = await fixture(), peer = await f.pair(), other = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
@@ -292,12 +292,13 @@ it('fences a phone direct send as takeover and binds Stop all previews to the ex
   expect(await other.call('stolen', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(worker.threadId)
   expect(await peer.call('direct', { op: 'command', command: { type: 'manual-send', threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic direct user input' } })).toMatchObject({ ok: true })
-  expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('taken-over')
+  // The thread stays watched; while the user's own turn runs, Watcher may only steer it, and Stop all leaves it be.
+  expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('participating')
   const watch = f.watcher.state().standingWatches!.find(row => row.target.threadId === worker.threadId)!
   expect(f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)).toMatchObject({ watched: true, paused: true })
-  for (const delivery of ['now', 'queue', 'steer']) {
+  for (const delivery of ['now', 'queue']) {
     expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { requestId: watch.id, retryKey: randomUUID(),
-      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   }
   expect(await peer.call('changed', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(f.target.threadId); await peer.call('second-send', f.send(peer.paired.clientId)); const eligible = await f.start()

@@ -19,8 +19,24 @@ export type DormantProviderThreads = ReadonlyMap<string, DormantProviderThread>
 const heldOf = (provider: string | undefined, held: HeldProviders): ProviderId | undefined =>
   provider !== undefined && held.has(provider as ProviderId) ? provider as ProviderId : undefined
 const heldOfLabel = (label: string, held: HeldProviders): ProviderId | undefined => heldOf(providerIdOfLabel(label), held)
+/**
+ * Each public ID's provider, read once. The workspace asks every thread's model ID on every publish, and the catalog's
+ * model IDs too; parsing each again was about a second of a busy minute (October 19, 2026). IDs are few, the models and
+ * projects a run names, and the cache starts again past its bound.
+ */
+const scopedProviders = new Map<string, ProviderId | null>()
+const SCOPED_PROVIDERS_MAX = 10_000
+function scopedProvider(id: string): ProviderId | undefined {
+  let provider = scopedProviders.get(id)
+  if (provider === undefined) {
+    if (scopedProviders.size >= SCOPED_PROVIDERS_MAX) scopedProviders.clear()
+    provider = parsePublicProviderEntityId(id)?.provider ?? null
+    scopedProviders.set(id, provider)
+  }
+  return provider ?? undefined
+}
 const heldOfScoped = (id: string | undefined, held: HeldProviders): ProviderId | undefined =>
-  id ? heldOf(parsePublicProviderEntityId(id)?.provider, held) : undefined
+  id && held.size ? heldOf(scopedProvider(id), held) : undefined
 
 /** A catalog entry's held provider, by its own provider, its scoped identity or its label. */
 export function heldProviderOfModel(model: AgentModel, held: HeldProviders): ProviderId | undefined {
@@ -35,10 +51,15 @@ const heldCatalogs = new WeakMap<AgentModel[], WeakMap<HeldProviders, AgentModel
 /** A stable catalog omits held providers and keeps certified ownership, so streaming snapshots can share it. */
 export function modelsWithoutHeld(models: AgentModel[], held: HeldProviders): AgentModel[] {
   const hidden = (model: AgentModel): boolean => heldProviderOfModel(model, held) !== undefined
-  if (!held.size || !models.some(hidden)) return models
-  if (!isImmutableModels(models)) return models.filter(model => !hidden(model))
-  const cached = heldCatalogs.get(models)?.get(held)
+  if (!held.size) return models
+  // Asked before anything is read from the catalog: it is the same catalog on nearly every publish.
+  const cached = isImmutableModels(models) ? heldCatalogs.get(models)?.get(held) : undefined
   if (cached) return cached
+  if (!models.some(hidden)) {
+    if (isImmutableModels(models)) { const byHeld = heldCatalogs.get(models) ?? new WeakMap<HeldProviders, AgentModel[]>(); byHeld.set(held, models); heldCatalogs.set(models, byHeld) }
+    return models
+  }
+  if (!isImmutableModels(models)) return models.filter(model => !hidden(model))
   const visible = immutableModels(models.filter(model => !hidden(model)))
   const byHeld = heldCatalogs.get(models) ?? new WeakMap<HeldProviders, AgentModel[]>()
   byHeld.set(held, visible); heldCatalogs.set(models, byHeld)
@@ -123,6 +144,7 @@ export function heldProviderOfThread(thread: AgentThread, snapshot: AgentHostSna
 
 /** A saved thread record's held provider, from its provider or its scoped model alone: the workspace's own records. */
 export function heldProviderOfThreadRecord(thread: Pick<AgentThread, 'providerId' | 'modelId'>, held: HeldProviders): ProviderId | undefined {
+  if (!held.size) return undefined
   return heldOf(thread.providerId, held) ?? heldOfScoped(thread.modelId, held)
 }
 

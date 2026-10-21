@@ -96,8 +96,9 @@ describe('platformCopy', () => {
     expect(platformCopy('linux').helpPasteFallback).toContain('apps and terminals')
     expect(platformCopy('linux').settingsAutoPasteDescription).toContain('focused window, terminals included')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Compositor bindings live in Hyprland')
-    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('hold F9')
-    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Super+Ctrl+X')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('change them in Settings › Dictation')
+    // The keys can change, so the copy names none.
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).not.toMatch(/F9|Super\+Ctrl\+X/u)
     expect(platformCopy('linux').settingsGlobalShortcutDescription).not.toContain('first')
   })
 

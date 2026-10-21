@@ -1,3 +1,6 @@
+import { lstat } from 'node:fs/promises'
+import { basename } from 'node:path'
+import { fileSha256 } from './release-provenance.mjs'
 import { decideStablePromotion, requireStableCheckout, stableVersionParts } from './stable-promotion.mjs'
 
 /** Recheck the checkout and evidence recorded by release:check, without another network call. */
@@ -19,7 +22,11 @@ export function checkedPromotion(promotion, checkout) {
 export function stablePackagePlan(platform, version) {
   stableVersionParts(version)
   if (platform === 'win') return { platform, target: 'nsis', unpacked: 'release/win-unpacked', installer: `release/Sotto Setup ${version}.exe`, config: { extraMetadata: { version } } }
-  if (platform === 'mac') return { platform, target: 'dmg', unpacked: 'release/mac-arm64', installer: `release/Sotto-${version}-arm64.dmg`, config: { extraMetadata: { version }, npmRebuild: true } }
+  if (platform === 'mac') {
+    const installer = `release/Sotto-${version}-arm64.dmg`
+    return { platform, target: 'dmg', unpacked: 'release/mac-arm64', installer, blockmap: `${installer}.blockmap`, receipt: 'release/mac-desktop-package.json',
+      config: { extraMetadata: { version }, npmRebuild: true } }
+  }
   if (platform === 'linux') return { platform, target: 'tar.gz', unpacked: 'release/linux-unpacked', installer: `release/Sotto-${version}-linux-x64.tar.gz`, config: { extraMetadata: { version }, npmRebuild: true } }
   throw new Error('Stable release packaging supports win, mac or linux.')
 }
@@ -37,4 +44,25 @@ export async function withStableManifestGuard(packageFiles, verifyManifests) {
   }
   await verifyManifests()
   return result
+}
+
+async function receiptFile(path, digest) {
+  const { bytes, sha256 } = await digest(path)
+  return { filename: basename(path), size: bytes, sha256 }
+}
+
+/**
+ * What the stable Mac workflow keeps beside the disk image (ADR-0096): the version, the source the build provenance
+ * names, and each file's size and SHA-256. The blockmap is listed only when electron-builder produced one.
+ */
+export async function stableMacReceipt({ version, provenance, dmg, blockmap }, digest = fileSha256) {
+  stableVersionParts(version)
+  if (!/^[a-f0-9]{40}$/u.test(provenance?.sourceCommit ?? '') || !/^[a-f0-9]{64}$/u.test(provenance?.buildInputsRevision ?? '')) {
+    throw new Error('The build provenance needs a full source commit and build-input revision.')
+  }
+  const files = { dmg: await receiptFile(dmg, digest) }
+  const hasBlockmap = await lstat(blockmap).then(info => info.isFile(), error => { if (error.code === 'ENOENT') return false; throw error })
+  if (hasBlockmap) files.dmgBlockmap = await receiptFile(blockmap, digest)
+  return { kind: 'sotto-stable-mac-package', schemaVersion: 1, version, track: 'stable', platform: 'darwin', arch: 'arm64',
+    sourceCommit: provenance.sourceCommit, buildInputsRevision: provenance.buildInputsRevision, files }
 }

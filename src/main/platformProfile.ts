@@ -1,4 +1,5 @@
-import { defaultHotkey, type SottoPlatform } from '../shared/platform'
+import { defaultHoldShortcuts, defaultHotkey, type SottoPlatform } from '../shared/platform'
+import type { ReleaseTrack } from '../shared/releaseTrack'
 
 export type MainWindowChrome = 'frameless' | 'hidden-inset'
 
@@ -31,11 +32,17 @@ export interface PlatformProfile {
    */
   readonly widgetIsPanel: boolean
   readonly trayIcon: TrayIconSource
-  readonly inAppUpdates: boolean
+  /**
+   * The release tracks whose installed app updates itself here (ADR-0093). macOS's updater takes only an update
+   * signed by the same developer as the running app, and only Owl is signed with Sotto's Developer ID; stable on a
+   * Mac is ad-hoc signed and has no update feed. Linux has no in-app updater on either track (ADR-0062).
+   */
+  readonly inAppUpdateTracks: readonly ReleaseTrack[]
   readonly pasteRequiresAccessibilityTrust: boolean
   readonly pasteUsesWarmHelper: boolean
   readonly requiresMediaAccessGate: boolean
   readonly defaultHotkey: string
+  readonly defaultHoldShortcuts: readonly string[]
 }
 
 function immutableProfile(profile: PlatformProfile): PlatformProfile {
@@ -46,6 +53,7 @@ function immutableProfile(profile: PlatformProfile): PlatformProfile {
         ? null
         : Object.freeze(profile.trafficLightPosition),
     trayIcon: Object.freeze(profile.trayIcon),
+    inAppUpdateTracks: Object.freeze([...profile.inAppUpdateTracks]),
   })
 }
 
@@ -65,11 +73,12 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
-      inAppUpdates: true,
+      inAppUpdateTracks: ['stable', 'owl'],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
       defaultHotkey: defaultHotkey('win32'),
+      defaultHoldShortcuts: defaultHoldShortcuts('win32'),
     }),
     darwin: immutableProfile({
       platform: 'darwin',
@@ -81,11 +90,12 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: true,
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
-      inAppUpdates: false,
+      inAppUpdateTracks: ['owl'],
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
       defaultHotkey: defaultHotkey('darwin'),
+      defaultHoldShortcuts: defaultHoldShortcuts('darwin'),
     }),
     linux: immutableProfile({
       platform: 'linux',
@@ -97,14 +107,20 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'image', relativePath: 'icon.png' },
-      inAppUpdates: false,
+      inAppUpdateTracks: [],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
       defaultHotkey: defaultHotkey('linux'),
+      defaultHoldShortcuts: defaultHoldShortcuts('linux'),
     }),
   })
 
 export function platformProfile(platform: SottoPlatform): PlatformProfile {
   return PLATFORM_PROFILES[platform]
+}
+
+/** Whether the installed app on this platform and track updates itself: Windows on both tracks, a Mac on Owl only. */
+export function updatesInApp(profile: PlatformProfile, track: ReleaseTrack): boolean {
+  return profile.inAppUpdateTracks.includes(track)
 }

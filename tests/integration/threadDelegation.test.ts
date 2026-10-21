@@ -2,85 +2,21 @@
 // ADR-0081's proof over fake providers: an ordinary thread delegates to a thread it starts, under rules main enforces.
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { DelegationService } from '../../src/main/agents/delegation'
-import { DelegationToolServer } from '../../src/main/agents/delegationTools'
-import { lastUserMessageIdOf, type AgentThread, type ProviderId } from '../../src/shared/agents'
+import { lastUserMessageIdOf } from '../../src/shared/agents'
 import { DELEGATE_MCP_SERVER, type DelegatedView, type DelegationView } from '../../src/shared/delegation'
-import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { firstMessageTitleWriter } from '../../src/main/llm/threadTitle'
-import { workspaceFixture } from '../fixtures/workspaceFixture'
-import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { countWorkingThreads } from '../../src/shared/workingThreads'
+import { delegationFixture, type DelegationRefused as Refused } from '../fixtures/delegationFixture'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-type Read = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; reply?: { from: string; text: string }; refusal?: string; userSentSince?: boolean }; limits: { inFlight: number; prompts?: number } }
-type Refused = { status: 'refused'; code: string; message: string }
 /** A card the window reads for a delegation main accepted, not one it refused. */
 function accepted(view: DelegationView | undefined): DelegatedView {
   if (view === undefined || view.outcome === 'refused') throw new Error('Expected a delegation main accepted.')
   return view
 }
 
-async function fixture(options: { limit?: number; otherStarts?: number; history?: boolean; titles?: boolean } = {}) {
-  const history = options.history ?? true
-  const workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
-  cleanups.push(workspace.remove)
-  // Codex offers every mode, so only the ceiling can refuse a wider one.
-  workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
-  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
-    credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: false,
-      // Sotto's own naming, as the app runs it: the first message's opening words, then a generated name after the first reply.
-      ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })
-  const make = () => new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => history,
-    limit: () => options.limit ?? 4, otherStartsInFlight: () => options.otherStarts ?? 0 })
-  let service = make()
-  let tools = new DelegationToolServer(service)
-  workspace.host.useThreadTools([tools])
-  cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
-  await f.control.start()
-  for (const provider of ['claude', 'codex', 'grok'] as const) await f.control.commandShell({ type: 'connect', provider })
-  await service.recover()
-  const model = (provider: ProviderId) => f.control.shell().host.models.find(item => item.providerId === provider)!
-  const native = (threadId: string): AgentThread => {
-    const binding = workspace.registry.byThread(threadId)!
-    return workspace.adapters[binding.provider as keyof typeof workspace.adapters].state.threads.find(item => item.id === binding.sessionId)!
-  }
-  const adapterOf = (threadId: string) => workspace.adapters[workspace.registry.byThread(threadId)!.provider as keyof typeof workspace.adapters]
-  const emit = async (threadId: string) => {
-    const binding = workspace.registry.byThread(threadId)!
-    workspace.adapters[binding.provider as keyof typeof workspace.adapters].emit()
-    await f.control.commandShell({ type: 'refresh', provider: binding.provider as ProviderId })
-  }
-  /** The provider ends the running turn, naming it by the user message it began with. */
-  const endTurn = async (threadId: string, reply: string, status: 'completed' | 'interrupted' | 'failed' = 'completed') => {
-    const thread = native(threadId)
-    thread.messages.push({ id: randomUUID(), role: 'assistant', text: reply, createdAt: new Date().toISOString() })
-    thread.lastTurn = { id: thread.messages.findLast(message => message.role === 'user')!.id, status }
-    thread.status = 'idle'
-    await emit(threadId)
-  }
-  /** A thread the user opened on `provider` and sent a message, as the user's own. */
-  const userThread = async (provider: ProviderId) => {
-    const project = f.control.shell().host.projects.find(item => item.providerId === provider) ?? f.control.shell().host.projects[0]!
-    const threadId = randomUUID()
-    expect((await f.control.commandShell({ type: 'create-thread', threadId, projectId: project.id, title: `Synthetic ${provider} thread`, modelId: model(provider).id })).error).toBeNull()
-    expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user request' })).error).toBeNull()
-    return threadId
-  }
-  // A new thread names its effort and permission, as delegate requires; a send to a delegated thread names neither.
-  const delegate = async (threadId: string, input: Record<string, unknown>) => await service.delegate(threadId, { work: 'code-review', brief: 'Synthetic brief',
-    ...input.thread === undefined ? { effort: 'low', permission: 'approval-required' } : {}, ...input }) as Read | Refused
-  const read = async (threadId: string, delegation: string) => await service.read(threadId, { delegation }) as Read
-  const ok = (result: Read | Refused): Read => { if (result.status !== 'ok') throw new Error(`refused ${result.code}: ${result.message}`); return result }
-  const restart = async () => {
-    service.close(); await tools.close()
-    service = make(); tools = new DelegationToolServer(service)
-    workspace.host.useThreadTools([tools])
-    await service.recover()
-  }
-  return { ...f, workspace, model, native, adapterOf, emit, endTurn, userThread, delegate, read, ok, restart, get service() { return service }, get tools() { return tools } }
-}
+const fixture = (options: Parameters<typeof delegationFixture>[1] = {}) => delegationFixture(cleanups, options)
 
 it('starts a Codex thread for a Claude Code thread, and the wait returns its answer as the delegated thread\'s words', async () => {
   const f = await fixture(), parent = await f.userThread('claude')
@@ -112,20 +48,6 @@ it('keeps the title the delegating thread gave, and names an untitled delegated 
   // After the first reply, a generated name replaces only the stand-in; the given title stays.
   await vi.waitFor(() => expect(thread(untitled).title).toBe('Synthetic generated name'))
   expect(thread(titled)).toMatchObject({ title: 'Synthetic chosen name', titleSource: 'user' })
-})
-
-it('turns a wait that ends first into a wake-up carrying identities only', async () => {
-  const f = await fixture(), parent = await f.userThread('claude')
-  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
-  expect(result.delegation.outcome).toBe('working')
-  await f.endTurn(result.delegation.thread, 'Synthetic later reply')
-  // The parent's own turn is still running, so the wake-up waits in its queue, where its words can be read.
-  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.threadId === parent && item.wakeUp)).toBeDefined())
-  const wake = f.control.shell().followups!.find(item => item.threadId === parent && item.wakeUp)!
-  expect(wake.text).toContain(`Delegation ${result.delegation.id} to thread ${result.delegation.thread}`)
-  expect(wake.text).toContain('answered')
-  expect(wake.text).not.toContain('Synthetic later reply')
-  expect(f.ok(await f.read(parent, result.delegation.id)).delegation).toMatchObject({ outcome: 'answered', reply: { text: 'Synthetic later reply' } })
 })
 
 it('stops both levels below the thread the user stops, and only the second level when that is the one stopped', async () => {
@@ -220,12 +142,43 @@ it('leaves a brief unknown after a restart and sends nothing again', async () =>
   expect(f.control.shell().followups?.some(item => item.threadId === parent && item.wakeUp)).toBeFalsy()
 })
 
-it('shares the starts limit with Watcher and refuses a full one with how many are in flight', async () => {
-  const f = await fixture({ limit: 2, otherStarts: 1 }), parent = await f.userThread('claude')
-  f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
-  const refused = await f.delegate(parent, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 }) as Refused
-  expect(refused).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
-  expect(refused.message).toMatch(/^2 new threads are in flight/u)
+it('starts past the old Threads in flight limit, and warns once more than ten threads are working on this computer (#1183)', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const working = () => countWorkingThreads(f.control.shell().host.threads)
+  // The user's own threads, working, until this computer has nine.
+  while (working() < 9) await f.userThread('claude')
+  expect(working()).toBe(9)
+  // The tenth is the first delegated thread: ten working is not more than ten, so the result says nothing extra.
+  const tenth = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  expect(tenth.warning).toBeUndefined()
+  expect(working()).toBe(10)
+  // The eleventh starts too, nothing is refused or held back, and its result carries the warning.
+  const retryKey = randomUUID(), eleventhInput = { provider: 'grok', model: f.model('grok').id, wait_seconds: 0, retry_key: retryKey }
+  const eleventh = f.ok(await f.delegate(parent, eleventhInput))
+  expect(eleventh.warning).toBe('11 threads are working. This computer may slow down or use its battery faster.')
+  // A retry returns the first delegation and says nothing of the count: it started nothing.
+  const retried = f.ok(await f.delegate(parent, eleventhInput))
+  expect(retried.delegation.id).toBe(eleventh.delegation.id)
+  expect(retried.warning).toBeUndefined()
+  expect(f.control.shell().host.threads.filter(thread => thread.delegatedBy === parent)).toHaveLength(2)
+  expect('inFlight' in eleventh.limits || 'inFlightLimit' in eleventh.limits).toBe(false)
+  // A send to a thread it already started is not a start, and carries no warning.
+  await f.endTurn(tenth.delegation.thread, 'Synthetic reply')
+  await vi.waitFor(async () => expect(f.ok(await f.read(parent, tenth.delegation.id)).delegation.outcome).toBe('answered'))
+  expect(f.ok(await f.delegate(parent, { thread: tenth.delegation.thread, brief: 'Synthetic second brief', wait_seconds: 0 })).warning).toBeUndefined()
+})
+
+it('does not count a delegated thread whose first brief failed as working (#1183)', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const working = () => countWorkingThreads(f.control.shell().host.threads)
+  while (working() < 10) await f.userThread('claude')
+  // The provider refuses the new thread's first brief: the thread is made, but nothing works in it.
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  vi.spyOn(codex, 'execute').mockImplementation(async command => command.type === 'send' ? { accepted: false, error: 'Synthetic refusal.' } : execute(command))
+  const failed = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  expect(failed.delegation.outcome).toBe('failed')
+  expect(working()).toBe(10)
+  expect(failed.warning).toBeUndefined()
 })
 
 it('gives each delegated thread four briefs per turn of the delegating thread, renewed by the user\'s next message alone', async () => {
@@ -268,6 +221,9 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
   expect(answered).toMatchObject({ outcome: 'answered', waiting: false, told: true, wait: { seconds: 60 } })
   expect(answered.wait?.wentOnAt).toBeUndefined()
   expect(answered.outcomeAt).toBeDefined()
+  // Opening its roster row reads the whole brief it was sent from its own record, never the reply.
+  expect(f.service.brief(waiting.thread)).toBe('Synthetic brief')
+  expect(f.service.brief('another-thread')).toBeUndefined()
   // A call that waits for nothing goes on at once; the card says the answer comes later.
   f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, work: 'research' }))
   expect(f.service.views(parent).made[1]).toMatchObject({ outcome: 'working', waiting: false, wait: { seconds: 0, wentOnAt: expect.any(String) } })
@@ -277,19 +233,16 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
 })
 
 it('records a delegation it refuses as refused, holding no slot, starting and sending nothing, and telling no wake-up', async () => {
-  const f = await fixture({ limit: 2, otherStarts: 1 }), parent = await f.userThread('claude')
+  const f = await fixture(), parent = await f.userThread('claude')
   const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
   const started = () => f.control.shell().host.threads.filter(thread => thread.delegatedBy === parent).length
-  const refused = await f.delegate(parent, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 }) as Refused & { delegation?: string }
-  expect(refused).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  const refused = await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, permission: 'full-access', wait_seconds: 0 }) as Refused & { delegation?: string }
+  expect(refused).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
   expect(refused.delegation).toBeDefined()
   expect(started()).toBe(1)
   const read = f.ok(await f.read(parent, refused.delegation!))
-  expect(read.delegation).toMatchObject({ id: refused.delegation, outcome: 'refused', refusal: 'IN_FLIGHT_LIMIT', note: refused.message, provider: 'grok', action: 'start' })
+  expect(read.delegation).toMatchObject({ id: refused.delegation, outcome: 'refused', refusal: 'PERMISSION_TOO_WIDE', note: refused.message, provider: 'codex', action: 'start' })
   expect(read.delegation.thread).toBeUndefined()
-  // It holds no slot: the in-flight count is the first delegation's and Watcher's alone.
-  expect(read.limits.inFlight).toBe(2)
-  expect(f.service.startsInFlight()).toBe(1)
   // A cancel has nothing to stop, and the listing names it beside the delegation that started.
   expect(await f.service.cancel(parent, { delegation: refused.delegation })).toMatchObject({ status: 'ok', delegation: { outcome: 'refused' } })
   const listed = await f.service.read(parent, {}) as { delegations: { id: string; outcome: string }[] }
@@ -306,7 +259,7 @@ it('records a delegation it refuses as refused, holding no slot, starting and se
   expect(invalid.delegation).toBeUndefined()
   // It is kept across a restart, and nothing about it reaches the delegating thread as a wake-up.
   await f.restart()
-  expect(f.ok(await f.read(parent, refused.delegation!)).delegation).toMatchObject({ outcome: 'refused', refusal: 'IN_FLIGHT_LIMIT' })
+  expect(f.ok(await f.read(parent, refused.delegation!)).delegation).toMatchObject({ outcome: 'refused', refusal: 'PERMISSION_TOO_WIDE' })
   expect(f.control.shell().followups?.some(item => item.threadId === parent && item.wakeUp)).toBeFalsy()
 })
 
@@ -323,20 +276,20 @@ it('records the refusal of a thread that may not delegate, with its rule, throug
 })
 
 it('gives the window each refused delegation by its rule, in the turn it was asked in, and never its words (#1029)', async () => {
-  const f = await fixture({ limit: 2, otherStarts: 1 }), parent = await f.userThread('claude')
+  const f = await fixture(), parent = await f.userThread('claude')
   const shell = f.control.shell().host.threads.find(thread => thread.id === parent)!
   const root = lastUserMessageIdOf(shell) ?? shell.summary?.lastUser?.id
   const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
   const told: string[][] = []
   const stop = f.service.onViewsChanged(threadIds => { told.push([...threadIds]) })
-  const refused = await f.delegate(parent, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 }) as Refused & { delegation?: string }
-  expect(refused).toMatchObject({ code: 'IN_FLIGHT_LIMIT' })
+  const refused = await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, permission: 'full-access', wait_seconds: 0 }) as Refused & { delegation?: string }
+  expect(refused).toMatchObject({ code: 'PERMISSION_TOO_WIDE' })
   // The window hears that the thread that asked has a new card, and nothing about any other thread.
   await vi.waitFor(() => expect(told).toEqual([[parent]]))
   const made = f.service.views(parent).made
   expect(made.map(view => [view.id, view.outcome])).toEqual([[first.delegation.id, 'working'], [refused.delegation, 'refused']])
   // A refused start names the provider it asked for and no thread, since nothing was started.
-  expect(made[1]).toEqual({ id: refused.delegation, provider: 'grok', action: 'start', work: 'code-review', outcome: 'refused', refusal: 'IN_FLIGHT_LIMIT',
+  expect(made[1]).toEqual({ id: refused.delegation, provider: 'codex', action: 'start', work: 'code-review', outcome: 'refused', refusal: 'PERMISSION_TOO_WIDE',
     rootUserMessageId: root, anchorMessageId: root, createdAt: expect.any(String) })
   // A refused send names the thread it would have gone to, which was sent nothing and so shows no brief for it.
   await f.control.commandShell({ type: 'save-thread-draft', threadId: first.delegation.thread, draftId: randomUUID(), text: 'The user is typing', requestId: null })

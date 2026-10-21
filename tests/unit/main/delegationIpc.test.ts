@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { registerDelegationIpc, type DelegationViews } from '../../../src/main/agents/delegationIpc'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { DELEGATIONS_CHANGED, DELEGATIONS_READ, type DelegatedView, type DelegationView, type RefusedView } from '../../../src/shared/delegation'
+import { DELEGATION_BRIEF_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, type DelegatedView, type DelegationView, type RefusedView } from '../../../src/shared/delegation'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -14,11 +14,12 @@ const view = (thread: string): DelegatedView => ({ id: randomUUID(), thread, act
 const refused = (thread?: string): RefusedView => ({ id: randomUUID(), ...(thread ? { thread } : { provider: 'codex' as const }), action: thread ? 'send' : 'start', work: 'code-review',
   outcome: 'refused', refusal: thread ? 'PAUSED' : 'PERMISSION_TOO_WIDE', rootUserMessageId: 'root', anchorMessageId: 'root', createdAt: '2026-10-15T12:00:02.000Z' })
 
-function service(views: Record<string, { made: DelegationView[]; received: DelegatedView[] }> = {}) {
+function service(views: Record<string, { made: DelegationView[]; received: DelegatedView[] }> = {}, briefs: Record<string, string> = {}) {
   let listener: ((threadIds: readonly string[]) => void) | undefined
   const delegation: DelegationViews & { readonly asked: string[] } = {
     asked: [],
     views: threadId => { delegation.asked.push(threadId); return views[threadId] ?? { made: [], received: [] } },
+    brief: threadId => { delegation.asked.push(`brief:${threadId}`); return briefs[threadId] },
     onViewsChanged: given => { listener = given; return () => { listener = undefined } },
   }
   return { delegation, change: (ids: readonly string[]) => listener?.(ids), listening: () => listener !== undefined }
@@ -59,6 +60,22 @@ describe('the window\'s read of a thread\'s delegations (#1029)', () => {
     expect(() => read2(widgetEvent, { threadId: 'parent' })).toThrow('main Sotto window')
     expect(() => read2(mainEvent, { threadId: 'parent', brief: 'words' })).toThrow()
     expect(() => read2(mainEvent, { threadId: 'parent' }, 'extra')).toThrow()
+    close()
+    expect(handlers.size).toBe(0)
+  })
+
+  it('reads a delegated thread\'s newest brief, its words alone, for the main window and this computer\'s threads only', async () => {
+    const { ipc, handlers, main, mainEvent, widgetEvent } = ipcRegistry()
+    const { delegation } = service({}, { child: 'Review the whole diff.' })
+    const close = registerDelegationIpc(ipc, delegation, () => [main], () => LOCAL, vi.fn())
+    const brief = handlers.get(DELEGATION_BRIEF_READ)!
+    expect(await brief(mainEvent, { threadId: hostEntityKey(LOCAL, 'child') })).toEqual({ threadId: hostEntityKey(LOCAL, 'child'), text: 'Review the whole diff.' })
+    // None held, or a thread on a paired host, which delegation does not run on: nothing.
+    expect(await brief(mainEvent, { threadId: hostEntityKey(LOCAL, 'other') })).toBeNull()
+    expect(await brief(mainEvent, { threadId: hostEntityKey(REMOTE, 'child') })).toBeNull()
+    expect(delegation.asked).toEqual(['brief:child', 'brief:other'])
+    expect(() => brief(widgetEvent, { threadId: 'child' })).toThrow('main Sotto window')
+    expect(() => brief(mainEvent, { threadId: 'child', reply: true })).toThrow()
     close()
     expect(handlers.size).toBe(0)
   })

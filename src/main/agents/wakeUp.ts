@@ -5,9 +5,10 @@ import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews,
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
 import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
-import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT } from './watcherNews'
+import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT, type WatcherNewsDetail, type WatcherNewsHeld } from './watcherNews'
 import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
 import { delegationNewsText, foldDelegationNews } from './delegationNews'
+import { watcherAsksOf, type WatcherAsk } from '../../shared/watcherAsks'
 
 /**
  * The wake-up (ADR-0061 decision 7): the one message babysitting sends a thread, worded by Sotto from the reader's
@@ -68,6 +69,7 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
   const delegations = earlier.filter(isDelegationNews)
   if (isRestartNews(later)) return [later, ...prs, ...workers, ...delegations]
   if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later), ...delegations]
+  // Kept for queues an earlier build saved: delegation news now waits in a wake-up of its own (`isDelegationOnlyWakeUp`).
   if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later)]
   return [...restart, ...foldNews(prs, later), ...workers, ...delegations]
 }
@@ -78,7 +80,7 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
   const restart = news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
-  const delegation = news.filter(isDelegationNews).map(delegationNewsText).join('\n\n')
+  const delegation = news.filter(isDelegationNews).map(item => delegationNewsText(item)).join('\n\n')
   if (!restart && !prs.length && !delegation) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''
   const room = AGENT_TEXT_MAX - [restart, delegation].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
   return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...delegation ? [delegation] : []].join('\n\n')
@@ -87,12 +89,30 @@ export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOpt
  * Watcher's news in a wake-up, as the note its send carries (ADR-0073): the provider's own per-turn context channel,
  * as the request note goes, so the conversation, the queue and the phone show none of it.
  */
-export function watcherWakeUpNote(news: readonly WakeUpNews[]): string | undefined {
-  return news.filter(isWatcherNews).map(watcherNewsText).join('\n\n') || undefined
+export function watcherWakeUpNote(news: readonly WakeUpNews[], detail?: WatcherNewsDetail, held?: WatcherNewsHeld): string | undefined {
+  return news.filter(isWatcherNews).map(item => watcherNewsText(item, detail, held)).join('\n\n') || undefined
+}
+/**
+ * The request cards a wake-up's Watcher news says wait on the user, as identities for Watcher's pane (ADR-0073). A delegated
+ * thread's card, told as news of the watched thread above it (#1190), stands on the delegated thread, and is that thread's.
+ */
+export function watcherNewsAsks(news: readonly WakeUpNews[]): WatcherAsk[] {
+  return watcherAsksOf(news.flatMap(item => isWatcherNews(item)
+    ? item.events.map(event => event.delegatedThreadId ? { ...event, target: { hostId: event.target.hostId, threadId: event.delegatedThreadId } } : event) : []))
 }
 /** A wake-up holding nothing but Watcher's news: Sotto's own background action, shown nowhere. */
 export const isWatcherOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
   item.wakeUp === true && !!item.news?.length && item.news.every(isWatcherNews)
+/**
+ * A wake-up holding nothing but news of the thread's delegations (ADR-0081, October 19, 2026): handed to the delegating
+ * thread's agent as its next turn, privately. No queue panel, transcript or phone shows it, so no one edits, reorders or
+ * resumes it; only that thread's own running turn, a request on it, or a thread that cannot be sent to holds it.
+ */
+export const isDelegationOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
+  item.wakeUp === true && !!item.news?.length && item.news.every(isDelegationNews)
+/** A wake-up no one is shown: Watcher's news or a delegation's (`isWatcherOnlyWakeUp`, `isDelegationOnlyWakeUp`). */
+export const isHiddenWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
+  isWatcherOnlyWakeUp(item) || isDelegationOnlyWakeUp(item)
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
 type Change<Kind extends BabysitChange['kind']> = Extract<BabysitChange, { kind: Kind }>

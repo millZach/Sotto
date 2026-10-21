@@ -31,7 +31,7 @@ export async function museFixture(root?: string, requestTimeoutMs = 2000, sessio
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'muse-threads.json'), 'utf8'))[id].museSessionId
   // Each thread session has its own fake host. The one holding the session takes the command.
   const action = async (id: string, value: Record<string, unknown>) => { await writeProviderAction(join(root, 'control.json'), value, { sessionId: await realId(id) }, randomUUID()) }
-  return { host: adapter, adapter, root, projectId: 'project', modelId: 'fixture-model', realId, script, action, hostArguments, restartStatus: 'idle' as const, skips: museFixtureSkips,
+  return { host: adapter, adapter, root, providerId: 'muse' as const, projectId: 'project', modelId: 'fixture-model', realId, script, action, hostArguments, restartStatus: 'idle' as const, skips: museFixtureSkips,
     // A settings change comes back with the snapshot the adapter itself confirmed (#318).
     settings: { snapshot: true },
     // Every Muse process started from now on reports the newer client.

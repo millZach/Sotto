@@ -1,0 +1,218 @@
+{
+  "run": "gate-alone-on-screen",
+  "build": "origin/main at 9376061ef with the gate (neither lag fix)",
+  "window": "on screen",
+  "scale": "232 threads on this computer (the spec's default: 230 padding threads, no SOTTO_FREEZE_THREADS override, and the fixture's 2), each with a provider session, and a paired headless host with 40 more, 272 in the sidebar; Watcher's record with 5 standing watches, 160 requests and 150 operations; 256 answer retirements, 40 of them remote",
+  "measured": "October 20, 2026, Windows 11, tests/e2e/main-freeze.spec.ts with SOTTO_PERF_BENCH=1",
+  "cases": [
+    {
+      "name": "baseline (nothing streaming)",
+      "ipc": {
+        "main": {
+          "sends": {
+            "sotto:watcher:changed": 124,
+            "sotto:agents:state": 124
+          },
+          "bytes": {
+            "sotto:agents:state": 481789
+          },
+          "invokes": {
+            "sotto:agents:command": 42
+          }
+        },
+        "renderer": {
+          "longTasks": 2,
+          "longTaskMs": 108,
+          "longTaskMax": 58
+        }
+      },
+      "frames": {
+        "frames": 1303,
+        "visibility": [
+          "visible"
+        ],
+        "hidden": false
+      },
+      "keySplit": {
+        "queueBeforeKeydown": {
+          "count": 40,
+          "p50": 2.7,
+          "p95": 6,
+          "max": 6.9
+        },
+        "keydownToInput": {
+          "count": 40,
+          "p50": 3,
+          "p95": 4,
+          "max": 17.9
+        },
+        "keydownToFrame": {
+          "count": 40,
+          "p50": 22.4,
+          "p95": 30.6,
+          "max": 47.7
+        }
+      },
+      "result": {
+        "name": "baseline (nothing streaming)",
+        "streamingThreads": 0,
+        "chunksEmitted": [],
+        "eventLoopDelay": {
+          "maxMs": 288.358399,
+          "meanMs": 25.255324411899313,
+          "p99Ms": 152.698879,
+          "stallCount": 101,
+          "samples": 874
+        },
+        "keystrokeLatencyMs": {
+          "count": 40,
+          "p50": 22.4,
+          "p95": 30.6,
+          "max": 47.7
+        }
+      }
+    },
+    {
+      "name": "1 thread streaming",
+      "ipc": {
+        "main": {
+          "sends": {
+            "sotto:watcher:changed": 158,
+            "sotto:agents:state": 158
+          },
+          "bytes": {
+            "sotto:agents:state": 486920
+          },
+          "invokes": {
+            "sotto:agents:command": 42,
+            "sotto:e2e:agents": 75
+          }
+        },
+        "renderer": {
+          "longTasks": 3,
+          "longTaskMs": 189,
+          "longTaskMax": 85
+        }
+      },
+      "frames": {
+        "frames": 1332,
+        "visibility": [
+          "visible"
+        ],
+        "hidden": false
+      },
+      "keySplit": {
+        "queueBeforeKeydown": {
+          "count": 40,
+          "p50": 3.2,
+          "p95": 6.3,
+          "max": 14.9
+        },
+        "keydownToInput": {
+          "count": 40,
+          "p50": 2.85,
+          "p95": 4.4,
+          "max": 16.9
+        },
+        "keydownToFrame": {
+          "count": 40,
+          "p50": 20.75,
+          "p95": 24.5,
+          "max": 57.5
+        }
+      },
+      "result": {
+        "name": "1 thread streaming",
+        "streamingThreads": 1,
+        "chunksEmitted": [
+          75
+        ],
+        "eventLoopDelay": {
+          "maxMs": 263.847935,
+          "meanMs": 39.0751175890411,
+          "p99Ms": 182.059007,
+          "stallCount": 106,
+          "samples": 584
+        },
+        "keystrokeLatencyMs": {
+          "count": 40,
+          "p50": 20.75,
+          "p95": 24.5,
+          "max": 57.5
+        }
+      }
+    },
+    {
+      "name": "3 threads streaming",
+      "ipc": {
+        "main": {
+          "sends": {
+            "sotto:watcher:changed": 139,
+            "sotto:agents:state": 139
+          },
+          "bytes": {
+            "sotto:agents:state": 491942
+          },
+          "invokes": {
+            "sotto:agents:command": 42,
+            "sotto:e2e:agents": 136
+          }
+        },
+        "renderer": {
+          "longTasks": 22,
+          "longTaskMs": 1287,
+          "longTaskMax": 95
+        }
+      },
+      "frames": {
+        "frames": 1475,
+        "visibility": [
+          "visible"
+        ],
+        "hidden": false
+      },
+      "keySplit": {
+        "queueBeforeKeydown": {
+          "count": 40,
+          "p50": 3.05,
+          "p95": 29.9,
+          "max": 36.5
+        },
+        "keydownToInput": {
+          "count": 40,
+          "p50": 3.2,
+          "p95": 4.6,
+          "max": 20.5
+        },
+        "keydownToFrame": {
+          "count": 40,
+          "p50": 22.45,
+          "p95": 33.8,
+          "max": 44.6
+        }
+      },
+      "result": {
+        "name": "3 threads streaming",
+        "streamingThreads": 3,
+        "chunksEmitted": [
+          46,
+          45,
+          45
+        ],
+        "eventLoopDelay": {
+          "maxMs": 286.261247,
+          "meanMs": 46.232212488812394,
+          "p99Ms": 242.352127,
+          "stallCount": 130,
+          "samples": 581
+        },
+        "keystrokeLatencyMs": {
+          "count": 40,
+          "p50": 22.45,
+          "p95": 33.8,
+          "max": 44.6
+        }
+      }
+    }
+  ]
+}

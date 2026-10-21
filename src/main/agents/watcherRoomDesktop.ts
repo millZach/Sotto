@@ -1,5 +1,6 @@
 import type { WatcherBridge, WatcherRoomState } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
+import { clonePlainData } from './cloneHostSnapshot'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
@@ -11,7 +12,6 @@ export function createWatcherRoomDesktop(options: {
   watcherEnabled: boolean
   streamingPublishCost: boolean
   watcher?: RoomService | undefined
-  setLimit(limit: number): Promise<unknown>
   send(state: WatcherRoomState): boolean
   schedule?: PublishScheduler
 }): { bridge: RoomBridge; dispose(): void } | undefined {
@@ -24,7 +24,6 @@ export function createWatcherRoomDesktop(options: {
     open: request => watcher?.open(request) ?? Promise.resolve(unavailable()),
     prepareStopAll: async () => watcher?.prepareStopAll() ?? unavailable(),
     stopAll: request => watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailable()),
-    setLimit: async request => { if (!watcher) return unavailable(); await options.setLimit(request.limit); return watcher.get() },
     setPermission: request => watcher?.setPermission(request) ?? Promise.resolve(unavailable()),
     watchThread: request => watcher?.watchThread(request) ?? Promise.resolve(unavailable()),
     unwatchThread: request => watcher?.unwatchThread(request) ?? Promise.resolve(unavailable()),
@@ -38,7 +37,8 @@ export function createWatcherRoomDesktop(options: {
     return { bridge, dispose: () => unsubscribe?.() }
   }
   const publisher = coalesceAgentStatePublishes<WatcherRoomState>(state => { options.send(state) }, options.schedule ? { schedule: options.schedule } : {})
-  const unsubscribe = watcher.subscribe(state => publisher.publish(structuredClone(state)))
+  // The room state is plain schema data, so it is copied as such: containers copied and strings kept, not serialized again.
+  const unsubscribe = watcher.subscribe(state => publisher.publish(clonePlainData(state)))
   const reply = async <Result>(operation: () => Promise<Result>): Promise<Result> => {
     try { return await operation() }
     finally { publisher.flush() }
@@ -49,7 +49,6 @@ export function createWatcherRoomDesktop(options: {
       open: request => reply(() => bridge.open(request)),
       prepareStopAll: () => reply(() => bridge.prepareStopAll()),
       stopAll: request => reply(() => bridge.stopAll(request)),
-      setLimit: request => reply(() => bridge.setLimit(request)),
       setPermission: request => reply(() => bridge.setPermission(request)),
       watchThread: request => reply(() => bridge.watchThread(request)),
       unwatchThread: request => reply(() => bridge.unwatchThread(request)),

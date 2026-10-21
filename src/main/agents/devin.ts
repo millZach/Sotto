@@ -17,6 +17,7 @@ import { existingWorkingDirectory } from './threadWorktrees'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
+import { DEVIN_OPEN_FAILED } from '../../shared/threadFailures'
 import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpToolName, type DevinPending } from './devinRequests'
@@ -113,7 +114,7 @@ const modeOf = (id: string | undefined): DevinMode => DEVIN_MODES.find(mode => m
 const RUNTIME_OF_ALLOWANCE: Record<DevinAllowance, AgentRuntimeMode> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
 /** Devin's own reason when it gave one, since the provider notice is the only place a thread's open failure is read. */
 const openFailure = (error: unknown): string => error instanceof Error && !(error instanceof DevinUncertain) && error.message
-  ? error.message : 'A Devin session could not be opened. Your thread is kept. Check the native client and reconnect.'
+  ? error.message : DEVIN_OPEN_FAILED
 
 interface Connection {
   rpc: DevinRpc

@@ -68,7 +68,7 @@ describe.skipIf(!PERF_BENCH)('Watcher room reads from a real socket cache (#991)
           state: 'active', createdAt: at, closedAt: null, participants: [] })
       })
       const watcher = new WatcherService({ directory: local.root, control: f.control, host: local.host,
-        historyEnabled: () => false, limit: () => 8, ...{ streamingPublishCost: true } })
+        historyEnabled: () => false, ...{ streamingPublishCost: true } })
       cleanups.push(async () => { watcher.close() })
       const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, ...{ streamingPublishCost: true } })
       cleanups.push(async () => { router.dispose() })

@@ -89,6 +89,15 @@
 .thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
 .thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
+/* Watcher's reply to news carries its turn's work in its header instead of on a line above it. */
+.thread-message__work {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 24px; margin: -2px 0 -2px -4px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.thread-message__work:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-message[data-turn-outcome='failed'] .thread-message__work { color: var(--tt-error-text); }
+.thread-message__work-body { margin: 0 0 12px 1px; padding: 4px 0 4px 14px; border-left: 1px solid var(--tt-hairline); }
+.thread-message__work-body > .thread-activity:last-child { margin-bottom: 0; }
 /* The copy control sits in the message's bottom-left corner and appears while the message is hovered,
    holds focus, or is mid-confirmation. A message that has one keeps room for it under its last line:
    replies line its icon up with their text, user bubbles pin it inside their padding. */
@@ -138,6 +147,11 @@
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
+/* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
+.thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }
+.thread-failed-notice__icon { flex: none; margin-top: 3px; color: var(--tt-attention); }
+.thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }

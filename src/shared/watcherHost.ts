@@ -44,7 +44,11 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 }
 
 export interface WatcherRemoteHosts {
-  /** `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031). */
+  /**
+   * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031).
+   * `permissionCeiling` is the widest mode the host lets this computer give a thread there: Full access where this
+   * computer may answer on it, Ask for approval where it may not.
+   */
   hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; muse?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
@@ -54,4 +58,9 @@ export interface WatcherRemoteHosts {
   subscribe(listener: (hostId?: string, force?: boolean) => void): () => void
   /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
+  /**
+   * Settles a thread on a connected host the way the user's Settle does from this computer, for Settle finished threads
+   * once Watcher has stopped watching it. Rejects when the host is out of reach or refuses.
+   */
+  settle?(hostId: string, threadId: string): Promise<void>
 }

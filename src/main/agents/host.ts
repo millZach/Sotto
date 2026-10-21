@@ -4,6 +4,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
+import type { WatcherAsk } from '../../shared/watcherAsks'
 import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
@@ -56,6 +57,11 @@ export type AgentHostCommand =
     /** A wake-up babysitting sends (ADR-0061 decision 8): the workspace records the message as Sotto's before the provider hears it. */
     readonly wakeUp?: true
     /**
+     * Set beside `wakeUp` on a wake-up that carries only delegation news (ADR-0081, October 19, 2026): the workspace
+     * records the message as one no window or phone shows. No adapter hears it; the provider gets the text as any send's.
+     */
+    readonly hiddenWakeUp?: true
+    /**
      * Main's request note for a user Send to the current Watcher (ADR-0073), set only by its Watcher service. A Watcher
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
@@ -66,7 +72,13 @@ export type AgentHostCommand =
      * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
      * one is shown. Every other thread ignores it.
      */
-    readonly watcherNews?: string }
+    readonly watcherNews?: string
+    /**
+     * The requests that wake-up's news said waited on the user, text-free (ADR-0073, answering in Watcher's
+     * conversation), set only by the coordinator beside `watcherNews`. The workspace records them with the wake-up, and
+     * no adapter hears them.
+     */
+    readonly watcherAsks?: readonly WatcherAsk[] }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }

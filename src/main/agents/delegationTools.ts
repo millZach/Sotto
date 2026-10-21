@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { CANCEL_DELEGATION_TOOL, cancelDelegationInputSchema, DELEGATE_MCP_SERVER, DELEGATE_TOOL, delegateInputSchema, DELEGATION_PROMPTS_PER_THREAD,
   DELEGATION_WAIT_MAX_SECONDS, READ_DELEGATION_TOOL, readDelegationInputSchema } from '../../shared/delegation'
+import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
 import { NOT_ADMITTED, type DelegationService } from './delegation'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 
@@ -23,8 +24,8 @@ export function delegationToolDefinitions(roles: boolean): readonly ThreadToolDe
       'Hand work to another thread on this computer: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.',
       'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
-      `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up when the outcome changes: end your turn or carry on, and do not poll.`,
-      `New threads share the computer's limit on threads in flight with Watcher's. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
+      `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up, with the reply once answered, when the outcome changes: end your turn or carry on, and do not poll.`,
+      `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on this computer after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
     ].join(' ') },
     { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
       `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits. Reading charges nothing.`,
@@ -35,7 +36,7 @@ export function delegationToolDefinitions(roles: boolean): readonly ThreadToolDe
 }
 export const DELEGATION_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = delegationToolDefinitions(false)
 // Grok asks before a call it cannot tie to a server, and a call by the bare name is one (#800): the full names are given.
-const INSTRUCTIONS = `These tools let this thread hand work to threads it starts on this computer (ADR-0081), such as a review on another provider. Sotto starts the thread, sends your brief and tells you its outcome. A delegated thread is the user's: it asks the user, never you, and nothing you send approves anything. When ${DELEGATE_TOOL} returns working, end your turn or carry on; Sotto sends a wake-up when the outcome changes, carrying none of the delegated thread's words, and ${READ_DELEGATION_TOOL} reads its reply. Where tools are found by search and called through use_tool, call them by their full names, such as ${DELEGATE_MCP_SERVER}__${DELEGATE_TOOL}.`
+const INSTRUCTIONS = `These tools let this thread hand work to threads it starts on this computer (ADR-0081), such as a review on another provider. Sotto starts the thread, sends your brief and tells you its outcome. A delegated thread is the user's: it asks the user, never you, and nothing you send approves anything. When ${DELEGATE_TOOL} returns working, end your turn or carry on; Sotto sends this thread a wake-up when the outcome changes, which carries the reply once answered, labelled as the delegated thread's words. The user is not shown that wake-up, so tell them what you learned. ${READ_DELEGATION_TOOL} reads a delegation again. Where tools are found by search and called through use_tool, call them by their full names, such as ${DELEGATE_MCP_SERVER}__${DELEGATE_TOOL}.`
 
 /**
  * `sotto_delegate`: the loopback MCP server through which an ordinary thread on this computer delegates work to threads

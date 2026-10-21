@@ -20,9 +20,12 @@ export type SendGitFixture = Awaited<ReturnType<typeof workspaceFixture>> & { re
  */
 const NO_REFRESH_AFTER_TURN_MS = 600_000
 
-/** The fake provider's project as a real repository with one commit and an origin it was pushed to. */
-export async function repositoryWithOrigin(): Promise<SendGitFixture> {
-  const f = await workspaceFixture(undefined, { worktreeRefreshDelayMs: NO_REFRESH_AFTER_TURN_MS })
+/**
+ * The fake provider's project as a real repository with one commit and an origin it was pushed to. A benchmark of the
+ * refresh itself passes the host's own delay.
+ */
+export async function repositoryWithOrigin(options: { readonly worktreeRefreshDelayMs?: number } = {}): Promise<SendGitFixture> {
+  const f = await workspaceFixture(undefined, { worktreeRefreshDelayMs: options.worktreeRefreshDelayMs ?? NO_REFRESH_AFTER_TURN_MS })
   const project = f.adapters.codex.state.projects[0]!.path
   const origin = join(f.root, 'origin.git'); await mkdir(origin)
   await initializeBareGitRepository(origin)

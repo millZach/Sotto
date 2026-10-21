@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { URL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { decideStablePromotion, newestOwlRelease, publishedCheckRuns, publishedReleases, releaseCheckout } from '../../../scripts/stable-promotion.mjs'
-import { checkedPromotion, stablePackagePlan } from '../../../scripts/stable-package.mjs'
+import { checkedPromotion, stableMacReceipt, stablePackagePlan } from '../../../scripts/stable-package.mjs'
 import { checkRelease, stableReleaseArguments } from '../../../scripts/check-release.mjs'
 import { owlPublication } from '../../../scripts/owl-publication.mjs'
 import { cleanStableCheckout as checkout, successfulStableChecks as checks, sourceCommit, stableReleaseRecord } from '../../fixtures/stableReleaseFixture.mjs'
@@ -111,6 +111,15 @@ describe('Stable from main', () => {
     expect(ci.mock.calls[1][0]).toBe(`https://api.github.com/repos/millZach/Sotto/commits/${sourceCommit}/check-runs?filter=latest&per_page=100&page=2`)
     for (const call of [feed.mock.calls[0], ci.mock.calls[0]]) expect(call[1].headers).not.toHaveProperty('Authorization')
   })
+  it('sends a read-only token only when the stable Mac workflow sets one', async () => {
+    vi.stubEnv('SOTTO_RELEASE_CHECK_TOKEN', 'job-token')
+    try {
+      const feed = vi.fn().mockResolvedValue({ ok: true, json: async () => [] })
+      const ci = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ check_runs: [] }) })
+      await publishedReleases(feed); await publishedCheckRuns(sourceCommit, ci)
+      for (const call of [feed.mock.calls[0], ci.mock.calls[0]]) expect(call[1].headers.Authorization).toBe('Bearer job-token')
+    } finally { vi.unstubAllEnvs() }
+  })
   it('refuses network, rate limit, HTTP and malformed response failures plainly', async () => {
     for (const read of [publishedReleases, fetcher => publishedCheckRuns(sourceCommit, fetcher)]) {
       await expect(read(async () => { throw new Error('secret upstream prose') })).rejects.toThrow('Check your connection')
@@ -128,6 +137,24 @@ describe('Stable package and Owl publication plans', () => {
     expect(stablePackagePlan('mac', '0.1.38')).toMatchObject({ installer: 'release/Sotto-0.1.38-arm64.dmg', target: 'dmg', config: { extraMetadata: { version: '0.1.38' }, npmRebuild: true } })
     expect(stablePackagePlan('linux', '0.1.38')).toEqual({ platform: 'linux', target: 'tar.gz', unpacked: 'release/linux-unpacked', installer: 'release/Sotto-0.1.38-linux-x64.tar.gz', config: { extraMetadata: { version: '0.1.38' }, npmRebuild: true } })
     expect(() => stablePackagePlan('win', '0.1.37-owl.20261011.1')).toThrow('plain stable')
+  })
+  it('names the stable Mac receipt and lists the disk image and blockmap it vouches for', async () => {
+    const plan = stablePackagePlan('mac', '0.1.38')
+    expect(plan).toMatchObject({ blockmap: 'release/Sotto-0.1.38-arm64.dmg.blockmap', receipt: 'release/mac-desktop-package.json' })
+    const root = await mkdtemp(join(tmpdir(), 'sotto-stable-mac-receipt-'))
+    try {
+      const dmg = join(root, 'Sotto-0.1.38-arm64.dmg'), blockmap = `${dmg}.blockmap`
+      await writeFile(dmg, 'disk image')
+      const provenance = { sourceCommit, buildInputsRevision: 'b'.repeat(64) }
+      const withoutBlockmap = await stableMacReceipt({ version: '0.1.38', provenance, dmg, blockmap })
+      expect(withoutBlockmap).toEqual({ kind: 'sotto-stable-mac-package', schemaVersion: 1, version: '0.1.38', track: 'stable', platform: 'darwin', arch: 'arm64',
+        sourceCommit, buildInputsRevision: 'b'.repeat(64),
+        files: { dmg: { filename: 'Sotto-0.1.38-arm64.dmg', size: 10, sha256: '0bb2f0f3ed953c47d835a7adaefd95afa328e30a5c80fdce417dd12b014ad602' } } })
+      await writeFile(blockmap, 'blockmap')
+      expect(Object.keys((await stableMacReceipt({ version: '0.1.38', provenance, dmg, blockmap })).files)).toEqual(['dmg', 'dmgBlockmap'])
+      await expect(stableMacReceipt({ version: '0.1.38', provenance: { sourceCommit: 'short' }, dmg, blockmap })).rejects.toThrow('full source commit')
+      await expect(stableMacReceipt({ version: '0.1.38-owl.20261020.1', provenance, dmg, blockmap })).rejects.toThrow('plain stable')
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
   it('rechecks saved source, version, main membership and CI evidence, refusing old Owl records', () => {
     expect(checkedPromotion(stableReleaseRecord, checkout)).toEqual(stableReleaseRecord)

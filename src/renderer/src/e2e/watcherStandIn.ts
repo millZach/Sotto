@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import type { SottoBridge } from '../../../shared/contracts'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
 import { stopAllRunning, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
@@ -29,12 +28,12 @@ const same = (a: WatcherThreadTarget, b: WatcherThreadTarget): boolean => a.host
 
 /**
  * Main's Watcher bridge, stood in for by an end-to-end run that seeds one, so the room's renderer is checked on a
- * fixed projection whatever main's side does. `open` takes the seeded identity as the one main created, and
- * Threads in flight saves the real setting, as main's own `setLimit` does. Permissions, Watch and Stop watching answer
+ * fixed projection whatever main's side does. `open` takes the seeded identity as the one main created. Permissions,
+ * Watch and Stop watching answer
  * as the contract says main does: the remembered mode and the current Watcher's, and a standing watch with the row
  * marked watched, kept until Stop watching. Without a seed there is no stand-in.
  */
-export function createE2EWatcherBridge(sotto: SottoBridge | undefined): WatcherBridge | undefined {
+export function createE2EWatcherBridge(): WatcherBridge | undefined {
   let raw: string | null
   try { raw = localStorage.getItem(WATCHER_STAND_IN_KEY) } catch { return undefined }
   if (raw === null) return undefined
@@ -52,10 +51,6 @@ export function createE2EWatcherBridge(sotto: SottoBridge | undefined): WatcherB
       if (seed.created === undefined) return { ...NOT_HERE, message: 'This test run starts no Watcher.' }
       return { status: 'ok', state: publish({ current: { ...seed.created, provider: request.provider },
         currentOptions: { modelId: request.modelId, reasoningEffort: request.reasoningEffort ?? null, status: 'idle', connected: true } }) }
-    },
-    setLimit: async ({ limit }) => {
-      const saved = await sotto?.updateSettings({ watcherInFlightLimit: limit })
-      return { status: 'ok', state: publish({ inFlightLimit: saved?.watcherInFlightLimit ?? limit }) }
     },
     setPermission: async ({ runtimeMode }) => {
       const confirms = seed.permissionConfirms !== false

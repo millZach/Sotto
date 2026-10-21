@@ -44,6 +44,15 @@ export function mapHostReferences<T>(value: T, map: (id: string) => string): T {
 }
 
 /**
+ * The ID a client gives a thread of a host whose state names `hostId`: keyed by the host the thread names, else that host,
+ * and left as it is when the state names no host. `clientAgentState` gives every thread this ID, and the router finds one
+ * thread by it without projecting the state.
+ */
+export function clientThreadId(hostId: string | undefined, id: string, threadHostId?: string): string {
+  return hostId === undefined ? id : hostEntityKey(threadHostId ?? hostId, id)
+}
+
+/**
  * Project one host's state before combining it with other hosts or putting it in client stores. Threads are keyed from
  * the host's own list and models name no Sotto entity, so neither is walked: the router projects every host's state at
  * its broadcast rate, and the catalog keeps its identity for the revision check at the IPC boundary (#917).
@@ -61,7 +70,7 @@ export function clientAgentState(state: AgentState): AgentState {
       // window names threads, so their links find them.
       threads: threads.map(thread => {
         const own = thread.hostId ?? hostId
-        return { ...thread, id: hostEntityKey(own, thread.id), projectId: hostEntityKey(own, thread.projectId),
+        return { ...thread, id: clientThreadId(hostId, thread.id, thread.hostId), projectId: hostEntityKey(own, thread.projectId),
           ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
           ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
           ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),

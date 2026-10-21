@@ -139,7 +139,7 @@ describe('Sotto application onboarding integration', () => {
     await openPage('home')
 
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
-    const control = await screen.findByRole('button', { name: 'Update checks run only in the installed Windows app.' })
+    const control = await screen.findByRole('button', { name: 'Update checks run in the installed Windows app and in Sotto Owl on a Mac.' })
     expect(control).toHaveAttribute('aria-disabled', 'true')
   })
 

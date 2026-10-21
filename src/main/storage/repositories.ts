@@ -11,8 +11,7 @@ export function createStorageRepositories(
   now: () => number = Date.now,
   defaults: AppSettings = DEFAULT_SETTINGS,
   log?: (event: 'history-temp-cleanup-failed') => void,
-  watcherEnabled = true,
-  options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled'> = {},
+  options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled' | 'dictationHoldShortcutsEnabled'> = {},
 ): Readonly<{
   settings: SettingsRepository
   history: HistoryRepository
@@ -20,7 +19,7 @@ export function createStorageRepositories(
   return Object.freeze({
     settings: new SettingsRepository(join(userDataPath, 'settings.json'), {
       now,
-      defaults, watcherEnabled,
+      defaults,
       ...options,
       onRecovery: (notice) => recoveryNotices.publish(notice),
     }),

@@ -27,3 +27,17 @@ The decision above has send validation refresh the target thread. For Codex that
 ## Amendment, October 5, 2026: one read before a send (#765)
 
 Send validation and confirmation still refresh only the target thread, but neither always reaches the provider now. The coordinator's validation read names the send it is for, and it stands for the adapter's own read at the start of that send while the thread has not moved. The adapter's dispatch-time takeover and stale-reply checks after it are unchanged. The confirmation read after a send is accepted is answered first from what the workspace holds, where the echo usually waits, and reads the thread only when the echo is not there. So "Sends keep their confirmation read" above still holds, but that read is usually of what Sotto already has. [ADR-0005](0005-codex-app-server-adapter.md)'s amendment "one read before a send" has the rule and what it narrows.
+
+## Amendment, October 19, 2026: an unknown model or effort change holds nothing back (#1192)
+
+A settings change whose result is unknown stays in the coordinator's outbox as unconfirmed, and until now it held its
+thread like any other action with an unknown result: no send, queued follow-up or further change until a snapshot
+showed it. Muse showed the cost. A model change whose answer was lost was never confirmed by reading the loaded thread,
+so the thread refused every send, and the adapter's own recovery, which asks for the wanted model before the next turn,
+was never reached. That broke Zach's rule of October 18: nothing blocks sending another message or changing the model.
+
+A change that sets only a model or an effort now holds nothing back while its result is unknown. At worst a turn runs
+on the model before, which the thread's chip shows, and the change is still reconciled against the next snapshot and
+never sent twice. A newer accepted choice of the same settings replaces it, since no snapshot can confirm the earlier
+one after that. A change that sets a permission mode or a provider mode still holds the thread until it is reconciled:
+a turn under a wider mode than the user chose could act without asking (ADR-0004).

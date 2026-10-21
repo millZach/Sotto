@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { preloadElectron } from '../../fixtures/preloadElectron'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { WATCHER_OPEN, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD } from '../../../src/shared/watcherRoom'
+import { WATCHER_OPEN, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD } from '../../../src/shared/watcherRoom'
 
 it('offers the private Watcher bridge only behind the main renderer gate and validates inputs and results', async () => {
   const ipc = preloadElectron().ipcRenderer
@@ -15,9 +15,8 @@ it('offers the private Watcher bridge only behind the main renderer gate and val
   ipc.invoke.mockResolvedValue(refused)
   await expect(bridge.open({ provider: 'codex', modelId: 'model', reasoningEffort: 'low' })).resolves.toEqual(refused)
   expect(ipc.invoke).toHaveBeenLastCalledWith(WATCHER_OPEN, { provider: 'codex', modelId: 'model', reasoningEffort: 'low' })
-  await bridge.setLimit({ limit: 2 })
-  expect(ipc.invoke).toHaveBeenLastCalledWith(WATCHER_SET_LIMIT, { limit: 2 })
-  expect(() => bridge.setLimit({ limit: 9 })).toThrow()
+  // No limit is left to set (#1183).
+  expect('setLimit' in bridge).toBe(false)
   await bridge.setPermission!({ runtimeMode: 'full-access' })
   expect(ipc.invoke).toHaveBeenLastCalledWith(WATCHER_SET_PERMISSION, { runtimeMode: 'full-access' })
   expect(() => bridge.setPermission!({ runtimeMode: 'always' as 'full-access' })).toThrow()

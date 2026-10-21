@@ -54,8 +54,11 @@ export function createElectronUpdaterAdapter(updater = autoUpdater): UpdaterAdap
     },
     quitAndInstall(): void {
       // Silent install, then relaunch: the user already confirmed the restart,
-      // so the NSIS wizard has nothing left to ask. `app.quit()` runs Sotto's
-      // ordinary before-quit path, which lets the tray-hidden window close.
+      // so the NSIS wizard has nothing left to ask. On a Mac the arguments are
+      // ignored; Squirrel.Mac takes the downloaded zip only now, because
+      // autoInstallOnAppQuit is off, then replaces the app and relaunches it.
+      // `app.quit()` runs Sotto's ordinary before-quit path, which lets the
+      // tray-hidden window close.
       updater.quitAndInstall(true, true)
     },
   }
