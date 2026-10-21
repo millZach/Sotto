@@ -1,0 +1,876 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: what should an ASCII owl scene behind Watcher's empty room look like? (Zach, October 21, 2026, after a
+  shark animation by @stackedlol.) Answers already given: it shows whenever Watcher's room is empty (the first-time
+  screen and an empty conversation); the owl flies its route once and then perches, blinking and looking around;
+  a click anywhere in the open background sends out an ASCII ripple; light mode keeps the same night in dark ink.
+
+  The route: the owl sits in the left tree watching over the open landscape, drops down and skims over the composer,
+  rises across the moon, lands in the right tree, then drops onto the composer's top edge and stays there (Zach,
+  October 21: variant A, the second flight ends on the composer, light mode needed darker ink, no cabins).
+
+    a  Glyphs.   The whole scene is a density ramp of characters ( .·:-=+*#%@), like the shark.
+    b  Tiles.    Each inked cell is a small square holding a faint glyph: the mosaic look of the shark video itself.
+    c  Lines.    Outlines only, drawn with / \ | - _, with the owl alone filled in. The quietest.
+
+  Switch variants from the bar at the bottom (← → keys). R replays the flight, T flips light and dark, M forces
+  reduced motion, S cycles the window size (fit, 1600×1000, 1280×800, 820×560). Sending a message fades the scene
+  out the way the room would when Watcher's conversation starts. Everything here is drawn on two canvases at
+  20 to 30 frames a second, and drawing stops while the scene is still.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Watcher's owl scene, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-field: oklch(0.145 0.008 265); --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: 'Spline Sans Mono', ui-monospace, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-field: oklch(0.99 0.003 85); --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-text: oklch(0.2 0.01 265); --tt-text-2: oklch(0.36 0.012 265); --tt-text-muted: oklch(0.45 0.012 265);
+  --tt-hairline: oklch(0.88 0.006 85); --tt-field-border: oklch(0.78 0.01 85);
+  --tt-accent: oklch(0.52 0.1 183); --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-hover: oklch(0.93 0.02 185); --tt-shadow-color: rgb(0 0 0 / 22%);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #2a2b30; color: var(--tt-text); font: 14px/1.45 var(--tt-font); overflow: hidden; }
+:root[data-theme='light'] body { background: #c9c9cc; }
+
+/* The window. With a size picked it is drawn at that size and scaled to fit the page. */
+.stage { position: fixed; inset: 0 0 56px 0; display: grid; place-items: center; }
+.win { position: relative; width: 100%; height: 100%; background: var(--tt-canvas); overflow: hidden; transform-origin: center center; }
+.win[data-sized] { border-radius: 10px; box-shadow: 0 20px 60px rgb(0 0 0 / 50%); }
+
+.room { position: absolute; inset: 0; display: grid; grid-template-rows: 48px minmax(0, 1fr) auto 54px; }
+.ascii { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; transition: opacity .7s ease; }
+.ascii--bg { z-index: 0; }
+.ascii--fg { z-index: 3; }
+.room[data-started] .ascii { opacity: 0; }
+
+.head { position: relative; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 0 0 0 12px; -webkit-app-region: drag; }
+.head .tile { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: color-mix(in oklab, var(--tt-accent) 22%, var(--tt-surface-elevated)); color: var(--tt-text); }
+.head h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
+.head .list { -webkit-app-region: no-drag; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); cursor: pointer; }
+.head .count { color: var(--tt-text-muted); }
+.head .tabs { display: none; gap: 2px; -webkit-app-region: no-drag; }
+.room[data-state='empty'] .head .tabs { display: inline-flex; }
+.head .tabs button { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); cursor: pointer; }
+.head .tabs button[aria-selected='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.head .grow { flex: 1; }
+.head .wc { display: flex; -webkit-app-region: no-drag; }
+.head .wc span { width: 46px; height: 48px; display: grid; place-items: center; color: var(--tt-text-muted); font-size: 13px; }
+
+.transcript { position: relative; z-index: 2; display: flex; flex-direction: column; min-height: 0; padding: 0 24px; }
+.intro { display: flex; flex-direction: column; align-items: center; margin: auto auto 0; padding-bottom: 6px; text-align: center; }
+.intro h2 { margin: 10px 0 8px; font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+.intro p { max-width: 470px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
+.intro .owl-mark { color: var(--tt-text-2); }
+.room[data-state='empty'] .intro { display: none; }
+.bubble { display: none; align-self: flex-end; margin: auto 0 12px; max-width: 70%; padding: 9px 13px; border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); }
+.room[data-started] .bubble { display: block; }
+.room[data-started] .intro { display: none; }
+
+.compose { position: relative; z-index: 2; width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 24px 8px; }
+.prompt { border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-field); padding: 10px 10px 8px 14px; box-shadow: 0 10px 30px -18px var(--tt-shadow-color); }
+.prompt textarea { width: 100%; min-height: 44px; resize: none; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: 14px/1.5 var(--tt-font); }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt .foot { display: flex; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 13px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12px var(--tt-font); cursor: pointer; }
+.send { margin-left: auto; width: 30px; height: 30px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--tt-accent); color: var(--tt-on-accent); cursor: pointer; }
+.send:disabled { background: var(--tt-hover); color: var(--tt-text-muted); cursor: default; }
+.note { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 8px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.room[data-state='empty'] .note, .room[data-started] .note { visibility: hidden; }
+:is(button, .chip):focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.prompt:focus-within { border-color: color-mix(in oklab, var(--tt-accent) 60%, var(--tt-field-border)); }
+
+.dock { position: relative; z-index: 2; display: flex; justify-content: center; align-items: flex-start; padding-top: 2px; }
+.pill { display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); }
+.pill .ico { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--tt-text-2); }
+.pill .sep { width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
+.pill .seg { display: grid; grid-template-columns: 1fr 46px 1fr; width: 236px; border-radius: 999px; background: var(--tt-field); padding: 2px; }
+.pill .seg span { height: 30px; display: grid; place-items: center; border-radius: 999px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 500; }
+.pill .seg span.on { background: var(--tt-hover); color: var(--tt-text); }
+
+/* The prototype's own bar: not part of the design. */
+.pbar { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 22px;
+  background: #0d0d0f; color: #fff; font: 600 12.5px system-ui, sans-serif; box-shadow: 0 8px 26px rgb(0 0 0 / 45%); z-index: 20; white-space: nowrap; }
+.pbar button { height: 28px; padding: 0 10px; border-radius: 14px; border: 1px solid #333; background: #1b1b1f; color: #fff; font: inherit; cursor: pointer; }
+.pbar button:hover { background: #26262b; }
+.pbar .label { min-width: 150px; text-align: center; }
+@media (max-width: 1180px) { .pbar .readout { display: none; } .pbar .label { min-width: 0; } }
+@media (max-width: 900px) { .pbar { gap: 4px; font-size: 11px; } .pbar button { padding: 0 6px; } }
+.pbar .readout { color: #9a9aa3; font: 500 11.5px ui-monospace, Consolas, monospace; min-width: 260px; }
+</style>
+</head>
+<body>
+<div class="stage"><div class="win" id="win">
+  <div class="room" id="room" data-state="first">
+    <canvas class="ascii ascii--bg" id="bg" aria-hidden="true"></canvas>
+
+    <header class="head">
+      <span class="tile" role="img" aria-label="Sotto Owl"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="5"/></svg></span>
+      <h1>Watcher</h1>
+      <button type="button" class="list">All threads <span class="count">6</span></button>
+      <div class="tabs" role="tablist" aria-label="Watcher’s view">
+        <button type="button" role="tab" aria-selected="true">Conversation</button>
+        <button type="button" role="tab" aria-selected="false">Watched 0</button>
+      </div>
+      <span class="grow"></span>
+      <div class="wc" aria-hidden="true"><span>—</span><span>☐</span><span>✕</span></div>
+    </header>
+
+    <div class="transcript">
+      <div class="intro" id="intro">
+        <svg class="owl-mark" width="28" height="28" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.540 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8ZM1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.330 10.71 9.33 9.22Z"/>
+          <circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/>
+        </svg>
+        <h2>Start Watcher</h2>
+        <p>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</p>
+        <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</p>
+        <p>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</p>
+      </div>
+      <div class="bubble" id="bubble"></div>
+    </div>
+
+    <div class="compose" id="compose">
+      <form class="prompt" id="form">
+        <label class="sr" for="msg" hidden>Watcher message</label>
+        <textarea id="msg" rows="2" placeholder="Say what to start or check. Sending starts Watcher."></textarea>
+        <div class="foot">
+          <button type="button" class="chip">Opus 5.5 ▾</button>
+          <button type="button" class="chip">High ▾</button>
+          <button type="button" class="chip">Ask before edits ▾</button>
+          <button type="submit" class="send" id="send" aria-label="Start Watcher and send" disabled>↑</button>
+        </div>
+      </form>
+      <p class="note"><span>Your first message starts Watcher on Opus 5.5, with your own Claude Code account.</span></p>
+    </div>
+
+    <canvas class="ascii ascii--fg" id="fg" aria-hidden="true"></canvas>
+
+    <nav class="dock" aria-label="Pages">
+      <div class="pill">
+        <span class="ico" title="History">◷</span><span class="ico" title="Usage">▥</span><span class="ico" title="Settings">⚙</span><span class="ico" title="Help">?</span>
+        <span class="sep"></span>
+        <div class="seg"><span>Dictate</span><span class="on">●</span><span>Threads</span></div>
+      </div>
+    </nav>
+  </div>
+</div></div>
+
+<div class="pbar" id="pbar">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <span class="label" id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+  <button type="button" id="replay">Replay (R)</button>
+  <button type="button" id="state"></button>
+  <button type="button" id="theme"></button>
+  <button type="button" id="motion"></button>
+  <button type="button" id="size"></button>
+  <span class="readout" id="readout"></span>
+</div>
+
+<script>
+'use strict'
+// ---------- prototype controls ----------
+const VARIANTS = { a: 'Glyphs', b: 'Tiles', c: 'Lines' }
+const KEYS = Object.keys(VARIANTS)
+const SIZES = [null, [1600, 1000], [1280, 800], [820, 560]]
+const params = new URLSearchParams(location.search)
+const ui = {
+  variant: KEYS.includes(params.get('variant')) ? params.get('variant') : 'a',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  reduced: params.get('motion') === 'reduced' ? true : params.get('motion') === 'full' ? false : matchMedia('(prefers-reduced-motion: reduce)').matches,
+  size: Math.min(SIZES.length - 1, Math.max(0, Number(params.get('size') ?? 0) || 0)),
+  state: params.get('state') === 'empty' ? 'empty' : 'first',
+}
+const $ = id => document.getElementById(id)
+const room = $('room'), win = $('win'), bgCanvas = $('bg'), fgCanvas = $('fg')
+
+function syncUrl() {
+  const p = new URLSearchParams()
+  p.set('variant', ui.variant)
+  if (ui.theme === 'light') p.set('theme', 'light')
+  if (ui.size) p.set('size', ui.size)
+  if (ui.state === 'empty') p.set('state', 'empty')
+  p.set('motion', ui.reduced ? 'reduced' : 'full')
+  history.replaceState(null, '', `?${p}`)
+}
+function syncBar() {
+  $('label').textContent = `${ui.variant.toUpperCase()} — ${VARIANTS[ui.variant]}`
+  $('theme').textContent = ui.theme === 'dark' ? 'Light (T)' : 'Dark (T)'
+  $('motion').textContent = ui.reduced ? 'Full motion (M)' : 'Reduced motion (M)'
+  $('state').textContent = ui.state === 'first' ? 'Show empty conversation' : 'Show first time'
+  const s = SIZES[ui.size]
+  $('size').textContent = s ? `${s[0]}×${s[1]} (S)` : 'Fit window (S)'
+  document.documentElement.dataset.theme = ui.theme
+  room.dataset.state = ui.state
+  $('msg').placeholder = ui.state === 'first' ? 'Say what to start or check. Sending starts Watcher.' : 'Message Watcher'
+  $('send').setAttribute('aria-label', ui.state === 'first' ? 'Start Watcher and send' : 'Send')
+  syncUrl()
+}
+function cycle(step) { ui.variant = KEYS[(KEYS.indexOf(ui.variant) + step + KEYS.length) % KEYS.length]; syncBar(); relayout() }
+$('prev').onclick = () => cycle(-1)
+$('next').onclick = () => cycle(1)
+$('replay').onclick = () => replay()
+$('theme').onclick = () => { ui.theme = ui.theme === 'dark' ? 'light' : 'dark'; syncBar(); buildPalette(); wake() }
+$('motion').onclick = () => { ui.reduced = !ui.reduced; syncBar(); replay() }
+$('size').onclick = () => { ui.size = (ui.size + 1) % SIZES.length; syncBar(); relayout() }
+$('state').onclick = () => { ui.state = ui.state === 'first' ? 'empty' : 'first'; syncBar(); relayout(); replay() }
+addEventListener('keydown', event => {
+  const typing = event.target.closest?.('input, textarea, [contenteditable]')
+  if (typing || event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.key === 'ArrowLeft') cycle(-1)
+  else if (event.key === 'ArrowRight') cycle(1)
+  else if (event.key === 'r' || event.key === 'R') replay()
+  else if (event.key === 't' || event.key === 'T') $('theme').click()
+  else if (event.key === 'm' || event.key === 'M') $('motion').click()
+  else if (event.key === 's' || event.key === 'S') $('size').click()
+})
+
+// The composer: typing enables send, sending starts the conversation and the scene fades out.
+$('msg').addEventListener('input', () => { $('send').disabled = $('msg').value.trim() === '' })
+$('msg').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('form').requestSubmit() } })
+$('form').addEventListener('submit', event => {
+  event.preventDefault()
+  const text = $('msg').value.trim()
+  if (!text) return
+  $('bubble').textContent = text
+  $('msg').value = ''
+  $('send').disabled = true
+  room.dataset.started = ''
+})
+
+// ---------- small maths ----------
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+const lerp = (a, b, t) => a + (b - a) * t
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t) }
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+
+// ---------- grid and fields ----------
+const SS = 2 // field pixels per cell side
+const CELL = { a: [7, 12], b: [9, 9], c: [7, 12] }
+let W = 0, H = 0, cols = 0, rows = 0, cw = 7, ch = 12, scale = 1, dpr = 1
+let bgD, bgA, quiet, noise, edge, owlD, owlA, halo
+let stars = []
+let geo = null
+const fieldCanvas = document.createElement('canvas')
+const accentCanvas = document.createElement('canvas')
+const owlCanvas = document.createElement('canvas')
+const owlAccentCanvas = document.createElement('canvas')
+const fx = fieldCanvas.getContext('2d', { willReadFrequently: true })
+const ax = accentCanvas.getContext('2d', { willReadFrequently: true })
+const ox = owlCanvas.getContext('2d', { willReadFrequently: true })
+const oax = owlAccentCanvas.getContext('2d', { willReadFrequently: true })
+const bgx = bgCanvas.getContext('2d')
+const fgx = fgCanvas.getContext('2d')
+
+function readField(ctx, out, c0, r0, cn, rn) {
+  if (cn <= 0 || rn <= 0) return
+  const data = ctx.getImageData(c0 * SS, r0 * SS, cn * SS, rn * SS).data
+  const stride = cn * SS
+  for (let r = 0; r < rn; r++) for (let c = 0; c < cn; c++) {
+    let sum = 0
+    for (let y = 0; y < SS; y++) for (let x = 0; x < SS; x++) sum += data[((r * SS + y) * stride + c * SS + x) * 4 + 3]
+    out[(r0 + r) * cols + c0 + c] = sum / (SS * SS * 255)
+  }
+}
+
+function roomRect(el) {
+  const r = el.getBoundingClientRect(), base = room.getBoundingClientRect()
+  return { x: (r.left - base.left) / scale, y: (r.top - base.top) / scale, w: r.width / scale, h: r.height / scale }
+}
+
+function sizeWindow() {
+  const s = SIZES[ui.size]
+  const stage = document.querySelector('.stage').getBoundingClientRect()
+  if (s) {
+    win.style.width = `${s[0]}px`; win.style.height = `${s[1]}px`; win.dataset.sized = ''
+    scale = Math.min(1, (stage.width - 24) / s[0], (stage.height - 16) / s[1])
+    win.style.transform = `scale(${scale})`
+  } else {
+    win.style.width = '100%'; win.style.height = '100%'; delete win.dataset.sized
+    win.style.transform = ''; scale = 1
+  }
+}
+
+// ---------- the scene's layout ----------
+function layoutScene() {
+  const comp = roomRect(document.querySelector('.prompt'))
+  const intro = ui.state === 'first' && !('started' in room.dataset) ? roomRect($('intro')) : null
+  const headH = 48, dockH = 54
+  const s = clamp(Math.min(W / 1600, H / 1000) * 2.7, 1.5, 2.8)
+  const groundY = comp.y + comp.h * 0.55
+  const sky = groundY - headH
+  const lt = { x: Math.max(52, W * 0.055), y: groundY + 4, h: sky * 0.78 }
+  lt.perch = { x: lt.x + Math.min(lt.h * 0.42, W * 0.17), y: groundY - lt.h * 0.5 }
+  const rt = { x: W - Math.max(70, W * 0.085), y: groundY + 4, h: sky * 0.58 }
+  rt.perch = { x: rt.x - rt.h * 0.3, y: groundY - rt.h * 0.5 }
+  const moonR = clamp(Math.min(W, H) * 0.058, 26, 62)
+  const moon = { x: Math.min(W * 0.78, rt.x - rt.h * 0.42 - moonR), y: headH + sky * 0.2 + moonR * 0.4, r: moonR }
+  const end = { x: comp.x + comp.w - 24 * s, y: comp.y + 1 } // the right corner, clear of the intro's text
+  return { comp, intro, headH, dockH, s, groundY, lt, rt, moon, end, horizon: groundY - sky * 0.3 }
+}
+
+function buildBackground() {
+  const g = geo
+  fieldCanvas.width = accentCanvas.width = owlCanvas.width = owlAccentCanvas.width = cols * SS
+  fieldCanvas.height = accentCanvas.height = owlCanvas.height = owlAccentCanvas.height = rows * SS
+  for (const ctx of [fx, ax, ox, oax]) { ctx.setTransform(SS / cw, 0, 0, SS / ch, 0, 0); ctx.fillStyle = ctx.strokeStyle = '#fff' }
+  fx.clearRect(0, 0, W, H); ax.clearRect(0, 0, W, H)
+  const R = rng(7)
+
+  // Far, middle and near hills, open on the left and lower toward the right.
+  const hill = (base, amp, seed, alpha, fade, ridge) => {
+    const r = rng(seed); const ph = [r() * 6, r() * 6, r() * 6]
+    fx.globalAlpha = alpha; fx.beginPath(); fx.moveTo(0, g.groundY + 2)
+    for (let x = 0; x <= W; x += 6) {
+      const k = x / W
+      const lift = (1 - smooth(0.25, fade, k) * 0.75) * amp
+      const y = base - lift * (0.55 + 0.25 * Math.sin(k * 7 + ph[0]) + 0.15 * Math.sin(k * 17 + ph[1]) + 0.05 * Math.sin(k * 41 + ph[2]))
+      fx.lineTo(x, y)
+    }
+    fx.lineTo(W, g.groundY + 2); fx.closePath(); fx.fill()
+    fx.globalAlpha = ridge; fx.lineWidth = 5; fx.stroke()
+  }
+  const sky = g.groundY - g.headH
+  hill(g.horizon, sky * 0.22, 11, 0.03, 0.6, 0.45)
+  hill(g.horizon + sky * 0.1, sky * 0.16, 23, 0.04, 0.5, 0.55)
+  hill(g.groundY - sky * 0.04, sky * 0.12, 37, 0.05, 0.42, 0.65)
+
+  // Furrows across the near fields on the left.
+  fx.globalAlpha = 0.3; fx.lineWidth = 3.5
+  for (let i = 0; i < 6; i++) {
+    const y = g.groundY - sky * 0.05 + i * 11 - 30
+    fx.beginPath(); fx.moveTo(0, y + 26); fx.quadraticCurveTo(W * 0.12, y, W * 0.26, y + 16); fx.stroke()
+  }
+
+  // A river from the far hills to the front left, catching the moon.
+  const river = new Path2D()
+  river.moveTo(W * 0.3, g.horizon + 6)
+  river.bezierCurveTo(W * 0.22, g.horizon + sky * 0.14, W * 0.27, g.groundY - sky * 0.03, W * 0.12, g.groundY + 20)
+  river.quadraticCurveTo(W * 0.04, g.groundY + 45, -10, H - g.dockH)
+  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.85
+  for (const [w, a] of [[5, 1], [12, 0.6]]) { fx.lineWidth = w; fx.globalAlpha = a; fx.stroke(river) }
+  fx.globalCompositeOperation = 'source-over'
+  ax.globalAlpha = 0.7; ax.lineWidth = 5; ax.stroke(river); fx.globalAlpha = 0.22; fx.lineWidth = 4; fx.stroke(river)
+
+  // Pines on the far hills.
+  for (let i = 0; i < 14; i++) {
+    const x = W * (0.1 + R() * 0.26), y = g.horizon + sky * (0.03 + R() * 0.12), h = 10 + R() * 14
+    fx.globalAlpha = 0.4; fx.beginPath(); fx.moveTo(x, y - h); fx.lineTo(x + h * 0.35, y); fx.lineTo(x - h * 0.35, y); fx.fill()
+  }
+
+  // The ground, with grass along its edge.
+  const grad = fx.createLinearGradient(0, g.groundY, 0, H)
+  grad.addColorStop(0, 'rgba(255,255,255,.07)'); grad.addColorStop(0.4, 'rgba(255,255,255,.03)'); grad.addColorStop(1, 'rgba(255,255,255,0)')
+  fx.globalAlpha = 1; fx.fillStyle = grad
+  fx.beginPath(); fx.moveTo(0, g.groundY)
+  for (let x = 0; x <= W; x += 10) fx.lineTo(x, g.groundY + Math.sin(x * 0.013) * 3 + Math.sin(x * 0.051) * 1.5)
+  fx.lineTo(W, H); fx.lineTo(0, H); fx.closePath(); fx.fill()
+  fx.fillStyle = '#fff'; fx.globalAlpha = 0.6; fx.lineWidth = 5
+  fx.beginPath(); fx.moveTo(0, g.groundY); for (let x = 0; x <= W; x += 10) fx.lineTo(x, g.groundY + Math.sin(x * 0.013) * 3 + Math.sin(x * 0.051) * 1.5); fx.stroke()
+  fx.lineWidth = 3; fx.globalAlpha = 0.45
+  for (let x = 4; x < W; x += 5 + R() * 9) {
+    const h = 4 + R() * 9, y = g.groundY + Math.sin(x * 0.013) * 3
+    fx.beginPath(); fx.moveTo(x, y + 2); fx.lineTo(x + (R() - 0.5) * 5, y - h); fx.stroke()
+  }
+
+  // The moon and its glow.
+  const m = g.moon
+  fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
+  fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
+  fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(m.x, m.y, m.r - 1.5, 0, 7); fx.stroke()
+  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
+  for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]]) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
+  fx.globalCompositeOperation = 'source-over'
+  const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
+  glow.addColorStop(0, 'rgba(255,255,255,.55)'); glow.addColorStop(1, 'rgba(255,255,255,0)')
+  ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = '#fff'
+  ax.globalCompositeOperation = 'destination-out'; ax.beginPath(); ax.arc(m.x, m.y, m.r * 0.98, 0, 7); ax.fill(); ax.globalCompositeOperation = 'source-over'
+
+  // The two trees: a broad one on the left with the owl's branch, a bare one on the right.
+  tree(g.lt, 101, true, 1)
+  tree(g.rt, 202, false, -1)
+
+  bgD = new Float32Array(cols * rows); bgA = new Float32Array(cols * rows)
+  readField(fx, bgD, 0, 0, cols, rows); readField(ax, bgA, 0, 0, cols, rows)
+  owlD = new Float32Array(cols * rows); owlA = new Float32Array(cols * rows); halo = new Uint8Array(cols * rows)
+
+  // Noise, the quiet zone under the header and the intro, stars, and the outline glyphs for Lines.
+  const N = rng(99)
+  noise = new Float32Array(cols * rows); for (let i = 0; i < noise.length; i++) noise[i] = N()
+  quiet = new Float32Array(cols * rows).fill(1)
+  // The header keeps a clear band; the intro sits in a soft oval of quiet, so its text keeps its contrast.
+  const oval = g.intro && { x: g.intro.x + g.intro.w / 2, y: g.intro.y + g.intro.h / 2, rx: g.intro.w / 2 + 40, ry: g.intro.h / 2 + 30 }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const px = (c + 0.5) * cw, py = (r + 0.5) * ch
+    let q = lerp(0.1, 1, smooth(g.headH - 14, g.headH + 10, py))
+    if (oval) {
+      const e = Math.hypot((px - oval.x) / oval.rx, (py - oval.y) / oval.ry)
+      q = Math.min(q, lerp(0.12, 1, smooth(0.85, 1.35, e)))
+    }
+    quiet[r * cols + c] = q
+  }
+  stars = []
+  const S = rng(5), count = Math.round(W * H / 7500)
+  for (let k = 0; k < count; k++) {
+    const c = Math.floor(S() * cols), r = Math.floor(S() * rows), py = r * ch
+    if (py < g.headH * 0.4 || py > g.horizon - sky * 0.08) continue
+    const i = r * cols + c
+    if (bgD[i] > 0.05) continue
+    const tier = S()
+    stars.push({ i, c, r, base: tier > 0.93 ? 0.9 : tier > 0.7 ? 0.55 : 0.3, phase: S() * 6.28, speed: 0.5 + S() * 1.2, accent: S() > 0.86 })
+  }
+  edge = new Array(cols * rows).fill('')
+  if (ui.variant === 'c') {
+    for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) {
+      const i = r * cols + c
+      const gx = (bgD[i + 1] - bgD[i - 1]) / cw, gy = (bgD[i + cols] - bgD[i - cols]) / ch
+      const mag = Math.hypot(gx * cw, gy * ch)
+      if (mag < 0.16) continue
+      let th = Math.atan2(gx, -gy); if (th < 0) th += Math.PI
+      const e = th < Math.PI / 8 || th > Math.PI * 7 / 8 ? (gy > 0 ? '-' : '_') : th < Math.PI * 3 / 8 ? '\\' : th < Math.PI * 5 / 8 ? '|' : '/'
+      edge[i] = e
+    }
+  }
+}
+
+function tree(t, seed, leaves, dir) {
+  const r = rng(seed)
+  const w0 = t.h * 0.05
+  const topX = t.x - dir * t.h * 0.03, topY = t.y - t.h * 0.46
+  fx.globalAlpha = 0.72
+  fx.beginPath()
+  fx.moveTo(t.x - w0 * 2.2, t.y); fx.quadraticCurveTo(t.x - w0 * 0.9, t.y - w0 * 0.6, t.x - w0 * 0.8, t.y - t.h * 0.12)
+  fx.quadraticCurveTo(t.x - w0 * 0.7, topY + t.h * 0.15, topX - w0 * 0.4, topY)
+  fx.lineTo(topX + w0 * 0.4, topY); fx.quadraticCurveTo(t.x + w0 * 0.7, topY + t.h * 0.15, t.x + w0 * 0.8, t.y - t.h * 0.12)
+  fx.quadraticCurveTo(t.x + w0 * 0.9, t.y - w0 * 0.6, t.x + w0 * 2.2, t.y); fx.closePath(); fx.fill()
+  fx.lineCap = 'round'
+  const tips = []
+  const branch = (x, y, len, ang, w, depth, max) => {
+    const x1 = x + Math.cos(ang) * len, y1 = y + Math.sin(ang) * len
+    const bend = (r() - 0.5) * len * 0.35
+    fx.globalAlpha = 0.7; fx.lineWidth = Math.max(2.6, w)
+    fx.beginPath(); fx.moveTo(x, y); fx.quadraticCurveTo((x + x1) / 2 - Math.sin(ang) * bend, (y + y1) / 2 + Math.cos(ang) * bend, x1, y1); fx.stroke()
+    if (depth >= max) { tips.push([x1, y1, len]); return }
+    const n = r() > 0.6 ? 3 : 2
+    for (let k = 0; k < n; k++) branch(x1, y1, len * (0.68 + r() * 0.12), ang + (k - (n - 1) / 2) * (0.55 + r() * 0.25) + (r() - 0.5) * 0.2, w * 0.64, depth + 1, max)
+  }
+  const max = leaves ? 4 : 5
+  branch(topX, topY, t.h * 0.2, -Math.PI / 2 - dir * 0.22, w0 * 0.8, 0, max)
+  branch(topX, topY + t.h * 0.03, t.h * 0.15, -Math.PI / 2 + dir * 0.6, w0 * 0.55, 1, max)
+  branch(topX, topY + t.h * 0.07, t.h * 0.17, -Math.PI / 2 - dir * 1.0, w0 * 0.55, 1, max)
+  // The perch: a long, nearly level branch reaching toward the room.
+  const p = t.perch
+  const from = { x: t.x, y: p.y + t.h * 0.06 }
+  fx.globalAlpha = 0.75; fx.lineWidth = w0 * 0.45
+  fx.beginPath(); fx.moveTo(from.x, from.y); fx.quadraticCurveTo((from.x + p.x) / 2, p.y + 6, p.x + dir * 34, p.y - 4); fx.stroke()
+  fx.lineWidth = Math.max(1, w0 * 0.18)
+  fx.beginPath(); fx.moveTo(p.x + dir * 20, p.y); fx.lineTo(p.x + dir * 34, p.y - 22); fx.stroke()
+  if (leaves) {
+    for (const [x, y, len] of tips) {
+      if (Math.hypot(x - p.x, y - p.y) < t.h * 0.3 || r() < 0.45) continue
+      for (let k = 0; k < 2; k++) {
+        fx.globalAlpha = 0.1; fx.beginPath(); fx.arc(x + (r() - 0.5) * len, y + (r() - 0.5) * len * 0.7, len * (0.45 + r() * 0.4), 0, 7); fx.fill()
+      }
+    }
+    fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.3
+    for (const [x, y, len] of tips) { fx.beginPath(); fx.arc(x + (r() - 0.5) * len, y + (r() - 0.5) * len, len * 0.18, 0, 7); fx.fill() }
+    fx.globalCompositeOperation = 'source-over'
+  }
+}
+
+// ---------- the owl ----------
+function ellipse(ctx, x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); ctx.fill() }
+function poly(ctx, pts) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill() }
+
+function wing(d, side, o) {
+  const span = 12 + 52 * o.spread
+  const lift = Math.sin(o.flap) * span * 0.55
+  const persp = 0.8 + 0.2 * Math.cos(o.flap)
+  const sx = side * 9, sy = -3
+  const tx = side * (9 + span * persp), ty = sy - lift
+  const rx = side * 7, ry = sy + 17 - lift * 0.15
+  d.globalAlpha = 0.72
+  d.beginPath(); d.moveTo(sx, sy - 5)
+  d.quadraticCurveTo(side * (9 + span * 0.5 * persp), sy - lift * 0.8 - 10, tx, ty)
+  let px = tx, py = ty
+  for (let k = 1; k <= 5; k++) {
+    const t = k / 5
+    const nx = lerp(tx, rx, t), ny = lerp(ty, ry, t) + Math.sin(t * Math.PI) * 7
+    d.quadraticCurveTo((px + nx) / 2, (py + ny) / 2 + 5, nx, ny)
+    px = nx; py = ny
+  }
+  d.closePath(); d.fill()
+  d.globalCompositeOperation = 'destination-out'; d.globalAlpha = 0.32; d.lineWidth = 1.6
+  for (let k = 1; k <= 3; k++) {
+    const t = k / 4
+    d.beginPath(); d.moveTo(lerp(sx, tx, t), lerp(sy - 3, ty, t)); d.lineTo(lerp(sx, tx, t * 0.85), lerp(sy + 12, ty + 6, t)); d.stroke()
+  }
+  d.globalCompositeOperation = 'source-over'
+}
+
+function drawOwl(d, a, o) {
+  for (const ctx of [d, a]) { ctx.save(); ctx.translate(o.x, o.y - 30 * o.s); ctx.rotate(o.bank); ctx.scale(o.s, o.s * o.squash); ctx.translate(0, 30 * (1 - o.squash)) }
+  const fly = o.spread > 0.05
+  d.globalAlpha = 0.9
+  poly(d, [[-5, 22], [5, 22], [fly ? 8 : 4, fly ? 33 : 31], [fly ? -8 : -4, fly ? 33 : 31]])
+  if (fly) { wing(d, -1, o); wing(d, 1, o) }
+  d.globalAlpha = 0.5; ellipse(d, 0, 6, fly ? 14 : 17, fly ? 19 : 22)
+  if (!fly) { d.globalAlpha = 0.85; ellipse(d, -13.5, 7, 6.5, 18, 0.12); ellipse(d, 13.5, 7, 6.5, 18, -0.12) }
+  d.globalCompositeOperation = 'destination-out'; d.globalAlpha = 0.55; d.lineWidth = 1.5
+  for (let row = 0; row < 4; row++) for (let k = -1; k <= 1; k++) {
+    const x = k * 6 + (row % 2) * 3 - 1.5, y = 1 + row * 5.5
+    if (Math.abs(x) > 9 - row) continue
+    d.beginPath(); d.moveTo(x - 2.2, y); d.lineTo(x, y + 2); d.lineTo(x + 2.2, y); d.stroke()
+  }
+  d.globalCompositeOperation = 'source-over'
+  const hx = o.turn * 4
+  d.globalAlpha = 0.62; ellipse(d, hx * 0.5, -17, 16, 13)
+  d.globalAlpha = 0.85
+  const tuft = fly ? -31 : -37
+  poly(d, [[-12 + hx, -25], [-18 + hx * 1.2, tuft], [-5 + hx, -28]])
+  poly(d, [[12 + hx, -25], [18 + hx * 1.2, tuft], [5 + hx, -28]])
+  const sp = 6.6 * (1 - 0.22 * Math.abs(o.turn))
+  d.globalCompositeOperation = 'destination-out'; d.globalAlpha = 0.6
+  ellipse(d, hx - sp, -17, 6.8, 6.8); ellipse(d, hx + sp, -17, 6.8, 6.8)
+  d.globalCompositeOperation = 'source-over'
+  for (const side of [-1, 1]) {
+    const ex = hx + side * sp, ey = -17
+    if (o.blink) { d.globalAlpha = 0.9; ellipse(d, ex, ey + 0.5, 4.8, 1.5) }
+    else {
+      d.globalAlpha = 1; ellipse(d, ex + o.gx, ey + o.gy, 3.2, 3.2)
+      a.globalAlpha = 1; ellipse(a, ex + o.gx, ey + o.gy, 3.8, 3.8)
+    }
+  }
+  d.globalAlpha = 1; poly(d, [[hx - 1.9, -13], [hx + 1.9, -13], [hx, -8.3]])
+  d.lineCap = 'round'; d.lineWidth = 1.7
+  if (!fly) {
+    for (const side of [-1, 1]) for (const t of [-2, 0, 2]) { d.beginPath(); d.moveTo(side * 5, 27); d.lineTo(side * 5 + t, 30.5); d.stroke() }
+  } else if (o.legs > 0) {
+    for (const side of [-1, 1]) {
+      const fy = 24 + 9 * o.legs
+      d.beginPath(); d.moveTo(side * 4, 22); d.lineTo(side * 5, fy); d.stroke()
+      for (const t of [-2.2, 0, 2.2]) { d.beginPath(); d.moveTo(side * 5, fy); d.lineTo(side * 5 + t, fy + 3); d.stroke() }
+    }
+  }
+  d.restore(); a.restore()
+}
+
+// The route through the scene, in feet-point coordinates.
+const TIMES = { perch0: 2.6, takeoff: 0.45, fly: 5.6, perch1: 1.9, hop: 1.4 }
+function catmull(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t
+  return {
+    x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+    y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+  }
+}
+let route = null
+function buildRoute() {
+  const g = geo, s = g.s, c = g.comp, m = g.moon
+  const P0 = g.lt.perch, P1 = g.rt.perch
+  const B = { x: c.x + c.w * 0.4, y: c.y + 38 * s }
+  const pts = [
+    P0,
+    { x: lerp(P0.x, c.x, 0.55), y: lerp(P0.y, c.y + 20 * s, 0.6) },
+    { x: c.x + 10 * s, y: c.y + 30 * s },
+    B,
+    { x: c.x + c.w * 0.7, y: c.y + 26 * s },
+    { x: lerp(c.x + c.w * 0.7, m.x, 0.6), y: lerp(c.y, m.y + 30 * s, 0.6) },
+    { x: m.x, y: m.y + 30 * s },
+    { x: Math.min(W - 50 * s, m.x + m.r * 1.5 + 30), y: m.y + m.r + 40 * s },
+    { x: P1.x - 30, y: P1.y - 46 },
+    P1,
+  ]
+  const ext = [pts[0], ...pts, pts[pts.length - 1]]
+  const samples = [{ ...pts[0], d: 0 }]
+  for (let k = 1; k < ext.length - 2; k++) for (let j = 1; j <= 30; j++) {
+    const p = catmull(ext[k - 1], ext[k], ext[k + 1], ext[k + 2], j / 30)
+    const last = samples[samples.length - 1]
+    samples.push({ ...p, d: last.d + Math.hypot(p.x - last.x, p.y - last.y) })
+  }
+  route = { samples, length: samples[samples.length - 1].d }
+}
+function along(u) {
+  const target = u * route.length, S = route.samples
+  let lo = 0, hi = S.length - 1
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (S[mid].d < target) lo = mid; else hi = mid }
+  const a = S[lo], b = S[hi], t = b.d === a.d ? 0 : (target - a.d) / (b.d - a.d)
+  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) }
+}
+
+let t0 = performance.now(), look = null, phaseName = ''
+const IDLE_TURNS = [0, -0.7, 0, 0.55, 0.15, -0.35]
+function owlAt(t) {
+  const g = geo, s = g.s
+  const o = { x: 0, y: 0, s, bank: 0, squash: 1, spread: 0, flap: 0, turn: 0, gx: 0, gy: 0, blink: false, legs: 0 }
+  const T1 = TIMES.perch0, T2 = T1 + TIMES.takeoff, T3 = T2 + TIMES.fly, T4 = T3 + TIMES.perch1, T5 = T4 + TIMES.hop
+  const settled = ui.reduced || t >= T5
+  if (settled) {
+    const e = g.end
+    Object.assign(o, { x: e.x, y: e.y })
+    phaseName = 'on the composer'
+    if (!ui.reduced) {
+      const k = t - T5, seg = Math.floor(k / 5.2)
+      const prev = IDLE_TURNS[(seg + IDLE_TURNS.length - 1) % IDLE_TURNS.length], next = IDLE_TURNS[seg % IDLE_TURNS.length]
+      o.turn = lerp(prev, next, smooth(0, 0.25, k - seg * 5.2))
+      o.blink = (k + 1.3) % 4.7 < 0.14
+    }
+  } else if (t < T1) {
+    Object.assign(o, g.lt.perch)
+    o.turn = lerp(-0.85, 0.25, smooth(1.3, 1.6, t)) * smooth(0.2, 0.5, t) + (t < 0.2 ? 0 : 0)
+    o.blink = t > 2.0 && t < 2.13
+    phaseName = 'in the left tree'
+  } else if (t < T2) {
+    const k = (t - T1) / TIMES.takeoff
+    Object.assign(o, { x: g.lt.perch.x, y: g.lt.perch.y - 10 * k * s })
+    o.squash = 1 - 0.1 * Math.sin(Math.min(1, k * 2) * Math.PI)
+    o.spread = smooth(0.25, 1, k); o.flap = k * Math.PI * 3
+    phaseName = 'taking off'
+  } else if (t < T3) {
+    const k = (t - T2) / TIMES.fly
+    const u = clamp(k - Math.sin(2 * Math.PI * k) / (2 * Math.PI) * 0.55, 0, 1)
+    const p = along(u), q = along(Math.min(1, u + 0.01)), v = { x: q.x - p.x, y: q.y - p.y }
+    Object.assign(o, p)
+    o.lift = 0
+    o.bank = clamp(v.x * 0.012, -0.3, 0.3) * (v.x >= 0 ? 1 : 1)
+    o.spread = 1
+    const rising = v.y < -0.4 ? 1 : v.y < 0.6 ? 0.55 : 0.12
+    const landing = smooth(0.86, 1, k)
+    o.flap = 0.3 + Math.sin(t * 2 * Math.PI * (2.4 + landing * 1.6)) * lerp(rising, 1.1, landing)
+    o.legs = landing
+    o.gy = 0.6
+    phaseName = k < 0.42 ? 'gliding over the composer' : k < 0.68 ? 'crossing the moon' : 'landing in the right tree'
+  } else if (t < T4) {
+    Object.assign(o, g.rt.perch)
+    const k = t - T3
+    o.turn = k < 0.9 ? lerp(0, -0.8, smooth(0.1, 0.35, k)) : lerp(-0.8, 0.4, smooth(0.9, 1.15, k))
+    o.blink = k > 1.4 && k < 1.53
+    phaseName = 'in the right tree'
+  } else {
+    const k = (t - T4) / TIMES.hop
+    const a = g.rt.perch, b = g.end
+    const cx = lerp(a.x, b.x, 0.5) - 20, cy = Math.min(a.y, b.y) - 36 * s
+    const u = smooth(0, 1, k)
+    o.x = (1 - u) ** 2 * a.x + 2 * (1 - u) * u * cx + u * u * b.x
+    o.y = (1 - u) ** 2 * a.y + 2 * (1 - u) * u * cy + u * u * b.y
+    o.spread = Math.sin(Math.PI * clamp(k * 1.15, 0, 1)) ** 0.6
+    o.flap = t * 2 * Math.PI * 3.6
+    o.legs = smooth(0.6, 0.95, k)
+    phaseName = 'dropping onto the composer'
+  }
+  if (look && t - look.t < 1.8 && (settled || t < T1 || (t > T3 && t < T4))) {
+    const k = smooth(0, 0.2, t - look.t) * (1 - smooth(1.4, 1.8, t - look.t))
+    o.turn = lerp(o.turn, clamp((look.x - o.x) / 260, -1, 1), k)
+    o.gx = lerp(o.gx, clamp((look.x - o.x) / 200, -1.2, 1.2), k)
+    o.gy = lerp(o.gy, clamp((look.y - (o.y - 47 * s)) / 200, -1, 1.2), k)
+    o.blink = false
+  }
+  return { o, done: settled }
+}
+
+// ---------- ripples ----------
+const ripples = []
+room.addEventListener('pointerdown', event => {
+  if (event.target.closest('form, button, .dock, .head, a, input, textarea, [role=tab], .wc')) return
+  if ('started' in room.dataset) return
+  const base = room.getBoundingClientRect()
+  const x = (event.clientX - base.left) / scale, y = (event.clientY - base.top) / scale
+  ripples.push({ x, y, t: now() })
+  if (ripples.length > 8) ripples.shift()
+  look = { x, y, t: now() }
+  wake()
+})
+const now = () => (performance.now() - t0) / 1000
+
+// ---------- palettes ----------
+let INK, ACC
+function buildPalette() {
+  const ink = ui.theme === 'dark' ? [242, 242, 248] : [28, 30, 38]
+  const acc = ui.theme === 'dark' ? [86, 196, 182] : [14, 104, 96]
+  // Dark ink on a light surface needs more of it to be seen as well as light ink on dark does.
+  const boost = ui.theme === 'dark' ? 1 : 1.9, accBoost = ui.theme === 'dark' ? 1 : 1.5
+  INK = Array.from({ length: 21 }, (_, k) => `rgba(${ink},${Math.min(1, k / 20 * boost).toFixed(2)})`)
+  ACC = Array.from({ length: 21 }, (_, k) => `rgba(${acc},${Math.min(1, k / 20 * accBoost).toFixed(2)})`)
+}
+const col = (pal, alpha) => pal[Math.round(clamp(alpha, 0, 1) * 20)]
+
+// ---------- drawing ----------
+const RAMP = ' .·:-=+*#%@'
+const RIP = '·∘oO'
+const TILE_GLYPHS = '0123456789abcdef#%&$'
+const OWL_RAMP_C = ' .:-=+#@'
+let lastBox = null, framesDrawn = 0
+
+function render(t) {
+  const { o, done } = owlAt(t)
+  // The owl's own field, read only around it.
+  ox.clearRect(-W, -H, 3 * W, 3 * H); oax.clearRect(-W, -H, 3 * W, 3 * H)
+  if (lastBox) for (let r = lastBox.r0; r < lastBox.r0 + lastBox.rn; r++) for (let c = lastBox.c0; c < lastBox.c0 + lastBox.cn; c++) { owlD[r * cols + c] = 0; owlA[r * cols + c] = 0 }
+  drawOwl(ox, oax, o)
+  const pad = 84 * o.s
+  const c0 = clamp(Math.floor((o.x - pad) / cw), 0, cols), c1 = clamp(Math.ceil((o.x + pad) / cw), 0, cols)
+  const r0 = clamp(Math.floor((o.y - 30 * o.s - pad) / ch), 0, rows), r1 = clamp(Math.ceil((o.y + 14 * o.s) / ch), 0, rows)
+  lastBox = { c0, r0, cn: c1 - c0, rn: r1 - r0 }
+  readField(ox, owlD, c0, r0, c1 - c0, r1 - r0); readField(oax, owlA, c0, r0, c1 - c0, r1 - r0)
+
+  halo.fill(0)
+  for (let r = lastBox.r0; r < lastBox.r0 + lastBox.rn; r++) for (let c = lastBox.c0; c < lastBox.c0 + lastBox.cn; c++) {
+    if (owlD[r * cols + c] < 0.1) continue
+    for (let y = Math.max(0, r - 1); y <= Math.min(rows - 1, r + 1); y++) for (let x = Math.max(0, c - 1); x <= Math.min(cols - 1, c + 1); x++) halo[y * cols + x] = 1
+  }
+  // Ripples still running.
+  for (let k = ripples.length - 1; k >= 0; k--) if (t - ripples[k].t > (ui.reduced ? 0.7 : 2.4)) ripples.splice(k, 1)
+
+  const v = ui.variant
+  bgx.setTransform(dpr, 0, 0, dpr, 0, 0); bgx.clearRect(0, 0, W, H)
+  bgx.font = `${v === 'b' ? 7 : 10.5}px 'Spline Sans Mono', ui-monospace, Consolas, monospace`
+  bgx.textAlign = 'center'; bgx.textBaseline = 'middle'
+  const twinkle = !ui.reduced
+  const starAt = new Map()
+  for (const st of stars) starAt.set(st.i, st)
+  for (let r = 0; r < rows; r++) {
+    const py = (r + 0.5) * ch
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c
+      if (halo[i]) continue
+      const px = (c + 0.5) * cw
+      let j = i, ring = 0, racc = 0
+      if (ripples.length) {
+        let dx = 0, dy = 0
+        for (const rp of ripples) {
+          const age = t - rp.t, ddx = px - rp.x, ddy = py - rp.y, dist = Math.hypot(ddx, ddy) || 1
+          if (ui.reduced) { const f = (1 - age / 0.7) * (1 - smooth(0, 70, dist)); ring += f * 0.8; racc += f; continue }
+          const amp = (1 - age / 2.4) ** 1.6
+          for (const [R, w, a] of [[age * 430, 20, 1], [age * 430 * 0.62, 14, 0.45]]) {
+            const x = dist - R, band = Math.exp(-(x * x) / (2 * w * w)) * amp * a
+            if (band < 0.01) continue
+            const wave = band * Math.cos(x / w * 1.7)
+            ring += band; racc += band * (x > 0 ? 1 : 0.4)
+            dx += ddx / dist * wave * 1.8; dy += ddy / dist * wave * 1.8
+          }
+        }
+        const sc = c - Math.round(dx), sr = r - Math.round(dy)
+        if (sc >= 0 && sc < cols && sr >= 0 && sr < rows) j = sr * cols + sc
+      }
+      const q = quiet[i]
+      let d = bgD[j] * q
+      const a = bgA[j]
+      ring = Math.min(1, ring) * (0.5 + 0.5 * q)
+      const st = starAt.get(i)
+      let sd = 0
+      if (st) sd = st.base * (twinkle ? 0.65 + 0.35 * Math.sin(t * st.speed + st.phase) : 1) * q
+      if (d < 0.1 && ring < 0.08 && sd === 0) {
+        if (v === 'b' && noise[i] > 0.992 && py < geo.groundY) { bgx.fillStyle = col(INK, 0.16 * q); bgx.fillText('·', px, py) }
+        continue
+      }
+      const jitter = (noise[j] - 0.5) * 0.1
+      const accent = a > 0.3 || (st && st.accent)
+      if (v === 'a') {
+        if (ring > d + 0.05) { bgx.fillStyle = col(ACC, 0.18 + 0.6 * ring); bgx.fillText(RIP[Math.min(3, Math.floor(ring * 4))], px, py); continue }
+        if (sd > d) { bgx.fillStyle = col(accent ? ACC : INK, 0.15 + 0.6 * sd); bgx.fillText(sd > 0.7 ? '*' : sd > 0.45 ? '+' : '·', px, py); continue }
+        const dd = clamp(d + jitter + ring * 0.3, 0, 1)
+        const g = RAMP[Math.max(1, Math.round(dd * (RAMP.length - 1)))]
+        bgx.fillStyle = col(accent ? ACC : INK, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); bgx.fillText(g, px, py)
+      } else if (v === 'b') {
+        const dd = clamp(Math.max(d + jitter * 0.5, sd * 0.8), 0, 1)
+        const grow = ring * 2.2
+        const inset = clamp(1.4 - grow, -0.6, 1.4)
+        bgx.fillStyle = ring > dd ? col(ACC, 0.1 + 0.45 * ring) : col(accent ? ACC : INK, 0.05 + 0.3 * dd)
+        bgx.fillRect(c * cw + inset, r * ch + inset, cw - inset * 2, ch - inset * 2)
+        if (dd > 0.18) { bgx.fillStyle = col(accent ? ACC : INK, 0.12 + 0.5 * dd); bgx.fillText(TILE_GLYPHS[Math.floor(noise[j] * TILE_GLYPHS.length)], px, py + 0.5) }
+      } else {
+        if (ring > 0.12) { bgx.fillStyle = col(ACC, 0.15 + 0.6 * ring); bgx.fillText(ring > 0.55 ? 'o' : '°', px, py); continue }
+        if (sd) { bgx.fillStyle = col(st.accent ? ACC : INK, 0.15 + 0.55 * sd); bgx.fillText(sd > 0.6 ? '+' : '.', px, py); continue }
+        const e = edge[j]
+        if (e) { bgx.fillStyle = col(accent ? ACC : INK, (0.2 + 0.45 * bgD[j]) * q); bgx.fillText(e, px, py) }
+        else if (d > 0.5 && (c + r) % 3 === 0) { bgx.fillStyle = col(accent ? ACC : INK, 0.14 * q); bgx.fillText('.', px, py) }
+        else if (a > 0.4) { bgx.fillStyle = col(ACC, 0.35 * a * q); bgx.fillText('~', px, py) }
+      }
+    }
+  }
+
+  // The owl, above the composer.
+  fgx.setTransform(dpr, 0, 0, dpr, 0, 0); fgx.clearRect(0, 0, W, H)
+  fgx.font = bgx.font; fgx.textAlign = 'center'; fgx.textBaseline = 'middle'
+  const B = lastBox
+  for (let r = B.r0; r < B.r0 + B.rn; r++) for (let c = B.c0; c < B.c0 + B.cn; c++) {
+    const i = r * cols + c, d = owlD[i]
+    if (d < 0.1) continue
+    const px = (c + 0.5) * cw, py = (r + 0.5) * ch
+    const eye = owlA[i] > 0.35
+    if (v === 'b') {
+      fgx.fillStyle = eye ? col(ACC, 0.95) : col(INK, 0.12 + 0.62 * d)
+      fgx.fillRect(c * cw + 0.8, r * ch + 0.8, cw - 1.6, ch - 1.6)
+      if (!eye && d > 0.3) { fgx.fillStyle = col(INK, 0.9 * d); fgx.fillText(TILE_GLYPHS[Math.floor(noise[i] * TILE_GLYPHS.length)], px, py + 0.5) }
+      continue
+    }
+    const ramp = v === 'c' ? OWL_RAMP_C : RAMP
+    const g = eye ? '@' : ramp[Math.max(1, Math.round(clamp(d + (noise[i] - 0.5) * 0.08, 0, 1) * (ramp.length - 1)))]
+    fgx.fillStyle = eye ? col(ACC, 1) : col(INK, 0.5 + 0.5 * d)
+    fgx.fillText(g, px, py)
+  }
+  framesDrawn++
+  return done && ripples.length === 0
+}
+
+// ---------- loop ----------
+let timer = null, lastFrame = 0
+function frame(ts) {
+  timer = null
+  const t = now()
+  const still = render(t)
+  const idle = still && !ui.reduced
+  $('readout').textContent = `owl ${phaseName} · ripples ${ripples.length} · ${cols}×${rows} cells · ${idle ? '10' : still ? '0' : '30'} fps`
+  if (ui.reduced && still) return // nothing moves: draw nothing until something changes
+  if ('started' in room.dataset) return // the conversation has begun and the scene is gone
+  const wait = idle ? 100 : 33
+  lastFrame = ts
+  timer = setTimeout(() => requestAnimationFrame(frame), wait)
+}
+function wake() { if (timer === null) requestAnimationFrame(frame) }
+function replay() {
+  t0 = performance.now(); ripples.length = 0; look = null
+  delete room.dataset.started
+  relayout()
+}
+function relayout() {
+  sizeWindow()
+  W = room.clientWidth; H = room.clientHeight
+  dpr = window.devicePixelRatio || 1
+  for (const cv of [bgCanvas, fgCanvas]) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr) }
+  ;[cw, ch] = CELL[ui.variant]
+  cols = Math.ceil(W / cw); rows = Math.ceil(H / ch)
+  lastBox = null
+  geo = layoutScene()
+  buildBackground()
+  buildRoute()
+  wake()
+}
+addEventListener('resize', relayout)
+buildPalette()
+syncBar()
+document.fonts.ready.then(relayout)
+relayout()
+</script>
+</body>
+</html>
