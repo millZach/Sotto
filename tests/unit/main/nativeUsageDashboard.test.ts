@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NativeUsage } from '../../../src/main/agents/nativeUsage'
+import { NativeUsage, tokenCount } from '../../../src/main/agents/nativeUsage'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import type { UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { usageTokenObservationSchema } from '../../../src/shared/usageDashboard'
@@ -41,6 +41,11 @@ const grokFrame = (ticks: number | null = 100) => ({ _meta: { agentTimestampMs: 
       'grok-b': { inputTokens: 20, outputTokens: 3, cachedReadTokens: 0, cacheCreationTokens: 2 } } } } })
 
 describe('Owl native numeric projection', () => {
+  it('reads a provider figure as a non-negative safe integer, the one check Muse, OpenCode and the native ledgers share', () => {
+    expect([0, 1, 1_200_000, Number.MAX_SAFE_INTEGER].map(tokenCount)).toEqual([0, 1, 1_200_000, Number.MAX_SAFE_INTEGER])
+    expect([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Infinity, '12', null, undefined].map(tokenCount)).toEqual(new Array(8).fill(undefined))
+  })
+
   it('collects nothing when off and repairs cache-write totals without extending the stable ledger format', async () => {
     const { usage, rows, root } = await fixture('claude', false)
     usage.claude('thread', claudeFrame('native-message-secret'))

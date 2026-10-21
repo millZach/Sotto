@@ -19,6 +19,7 @@ import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSch
 import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
 import { needsPerson, unreadableRequest } from './nativeRequests'
+import { tokenCount } from './nativeUsage'
 import { ObservedUsage } from './observedUsage'
 import { parseMuseQuota, unavailableProviderQuota } from './providerQuota'
 import { OpenSessions } from './openSessions'
@@ -142,7 +143,6 @@ const tokenCallSchema = z.looseObject({
     cacheReadTokens: z.number().optional(), cacheWriteTokens: z.number().optional() }),
   cumulative: z.looseObject({ promptTokens: z.number().optional(), outputTokens: z.number().optional() }).optional(),
 })
-const tokenCount = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 /** A refusal that says the client has no such method: a Muse from before `usage/read`. */
 const methodMissing = (error: unknown): boolean => error instanceof MuseRejected && (error.code === -32601 || error.kind === 'methodNotFound')
 /** How long Usage waits on one thread host's `usage/read`, a local read that makes no model call. */

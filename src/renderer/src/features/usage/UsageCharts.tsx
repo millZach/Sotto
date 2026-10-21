@@ -86,7 +86,9 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const top = niceMax(Math.max(metric === 'prompts' ? 10 : 1e5, plan.peak))
   const gap = count <= 7 ? 18 : count <= 45 ? 4 : count <= 100 ? 2 : 1
   const radius = count > 60 ? 1 : count > 20 ? 3 : 5
-  const none = waiting === undefined && metric === 'tokens' && plan.peak === 0
+  // A token chart with nothing reported, or a split with no series to draw, says so rather than draw an empty frame.
+  const none = waiting !== undefined ? undefined : metric === 'tokens' && plan.peak === 0 ? 'No token counts in this range'
+    : plan.series.length === 0 ? 'No prompts in this range' : undefined
   const scale = (amount: number): string => metric === 'prompts' ? fmtInt(amount) : fmtTok(amount)
   const index = selected === null ? -1 : days.indexOf(selected)
   const point = (event: PointerEvent<HTMLDivElement>): void => {
@@ -129,7 +131,7 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
     <div className="usage-chart__plot tt-focusable" tabIndex={0} role="group" aria-label={`${label} Use Left and Right to read one day; Escape goes back to the whole range.`}
       aria-busy={waiting !== undefined || undefined} data-active={selected !== null || undefined} onPointerMove={point} onPointerLeave={() => onHover(null)} onClick={onPin} onKeyDown={onKey}>
       {drawing}
-      {waiting !== undefined ? <div className="usage-chart__none">{waiting}</div> : none ? <div className="usage-chart__none">No token counts in this range</div> : <>
+      {waiting !== undefined ? <div className="usage-chart__none">{waiting}</div> : none !== undefined ? <div className="usage-chart__none">{none}</div> : <>
         <div className="usage-chart__grid" style={{ top: 0 }}><span>{scale(top)}</span></div>
         <div className="usage-chart__grid" style={{ top: '50%' }}><span>{scale(top / 2)}</span></div>
       </>}
@@ -144,7 +146,10 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   </div>
 }
 
-/** The value list above a split chart: every series with its range total, or its value on the day being read. */
+/**
+ * The value list above a split chart: every series with its range figure, or its figure on the day being read. A
+ * figure no record reports is a dash read as "Not reported"; one some records leave out says "at least".
+ */
 export function SeriesValues({ plan, dayIndex, metric, kind, ready, label }: {
   readonly plan: ChartPlan
   readonly dayIndex: number | null
@@ -157,7 +162,7 @@ export function SeriesValues({ plan, dayIndex, metric, kind, ready, label }: {
     {seriesValues(plan, ready ? dayIndex : null).map(row => <li key={row.key} title={row.title}>
       <i data-tone={row.tone} aria-hidden="true" />
       <span>{row.name}</span>
-      <b>{ready ? (metric === 'prompts' ? fmtInt(row.value) : fmtTok(row.value)) : null}</b>
+      <b>{ready ? <Figure of={row.figure} format={metric === 'prompts' ? fmtInt : fmtTok} /> : null}</b>
     </li>)}
   </ul>
 }
@@ -181,9 +186,9 @@ export function HourGrid({ grid, cell, onCell, onKey, label }: {
   </div>
 }
 
-/** One token figure as reported: a dash when no row reports it, "at least" when some rows leave it out. */
-function Figure({ of }: { readonly of: TokenFigure }): ReactNode {
-  return of.known ? <>{of.partial ? <small>at least </small> : null}{fmtTok(of.value)}</> : <Dash />
+/** One figure as reported: a dash when no row reports it, "at least" when some rows leave it out. */
+function Figure({ of, format = fmtTok }: { readonly of: TokenFigure; readonly format?: (value: number) => string }): ReactNode {
+  return of.known ? <>{of.partial ? <small>at least </small> : null}{format(of.value)}</> : <Dash />
 }
 const figureWords = (of: TokenFigure): string => of.known ? `${of.partial ? 'at least ' : ''}${fmtTok(of.value)}` : 'an unreported number of'
 

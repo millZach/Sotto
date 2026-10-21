@@ -21,6 +21,7 @@ import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeF
 import { chooseOpenCode, endServersLeftBehind, rememberOpenCodeChoice, type OpenCodeChoice, ensureOpenCodeFolders, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { acceptOpenCode } from './opencodeLookup'
 import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
+import { tokenCount } from './nativeUsage'
 import { ObservedUsage, type ObservedUsageFacts } from './observedUsage'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
@@ -188,7 +189,6 @@ const tokensSchema = z.looseObject({ input: z.number().default(0), output: z.num
 const usageSchema = ofSession.extend({ tokens: tokensSchema })
 const stepTokensSchema = z.looseObject({ input: z.number().optional(), output: z.number().optional(), reasoning: z.number().optional(),
   cache: z.looseObject({ read: z.number().optional(), write: z.number().optional() }).optional() })
-const tokenCount = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 const sum = (...values: (number | undefined)[]): number | undefined => {
   if (values[0] === undefined) return undefined
   const total = values.reduce<number>((all, value) => all + (value ?? 0), 0)

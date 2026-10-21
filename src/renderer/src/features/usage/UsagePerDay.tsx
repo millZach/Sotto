@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { UsageActivityAggregate, UsageDailyAggregate, UsageModelAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
+import { ChevronRight } from 'lucide-react'
+import type { UsageActivityAggregate, UsageDailyAggregate, UsageDashboardRead, UsageFieldTotal, UsageModelAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
 import { roomKeyTarget } from '../../components/AppShell'
-import { DailyChart, SeriesValues, type DayValue } from './UsageCharts'
+import { DailyChart, SeriesValues, dismissDisclosure, type DayValue } from './UsageCharts'
 import {
-  assignSlots, chooseSeries, seriesValues, splitPlan, totalPlan,
-  type ChartKind, type ChartMetric, type ChartShow, type SeriesCandidate,
+  assignSlots, chooseSeries, measureFigure, seriesValues, splitPlan, totalPlan,
+  type ChartFigure, type ChartKind, type ChartMetric, type ChartShow, type SeriesCandidate,
 } from './usageChartSeries'
 import type { UsagePage } from './usagePage'
-import { NO_TOKENS, PROVIDER_NAMES, fieldTokens, fieldValue, fmtInt, fmtTok, joinNames, joinedDays, longDay, modelSpellings } from './usagePresentation'
+import { PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, joinNames, joinedDays, longDay, modelSpellings } from './usagePresentation'
 
 export interface ChartChoice { readonly show: ChartShow; readonly kind: ChartKind }
 const FIRST_CHOICE: ChartChoice = { show: 'total', kind: 'bars' }
@@ -53,39 +54,67 @@ function Choice<T extends string>({ label, options, value, onChoose }: {
 /** What one filtered read asks for: a provider, or one model by every spelling its computers stored. */
 interface SeriesRequest { readonly key: string; readonly providerId: UsageProviderId; readonly modelIds?: readonly string[] }
 
+/** The computers whose figures the page drew: every one that answered with its activity. */
+const readyHosts = (read: UsageDashboardRead): string[] => read.hosts.filter(host => host.status === 'ready' && host.activity !== undefined).map(host => host.hostId)
+
+/**
+ * A filtered read answers for every computer the page's own figures came from, each with all its days. One that left a
+ * computer out, or had it offline, failed or without days, would draw that computer's work as zero and hand it to Other.
+ */
+const covers = (read: UsageDashboardRead, hostIds: readonly string[]): boolean => hostIds.every(hostId => read.hosts.some(host =>
+  host.hostId === hostId && host.status === 'ready' && host.activity?.dailyCoverage === 'complete'))
+
+const NOTHING_TO_READ: ReadonlyMap<string, UsageDailyAggregate[]> = new Map()
+
 /**
  * Each drawn series' days, one filtered read per series across the chosen computers, only while a split is shown.
- * A new question drops the old answer at once; newer figures for the same question replace it when they arrive.
+ * A new question drops the old answer at once; newer figures for the same question replace it when they arrive. A read
+ * that fails, or does not cover every computer the page drew, is a failure and nothing of it is drawn. With no series
+ * to draw there is nothing to read, so the answer is ready at once.
  */
 function useSeriesDays(page: UsagePage, requests: readonly SeriesRequest[]): { days: ReadonlyMap<string, UsageDailyAggregate[]> | undefined; failed: boolean; retry: () => void } {
-  const { bridge, query, hostIds, summary } = page
+  const { bridge, query, hostIds, summary, read } = page
   const [found, setFound] = useState<{ question: string; days: ReadonlyMap<string, UsageDailyAggregate[]> } | undefined>(undefined)
   const [failure, setFailure] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
-  const question = requests.length === 0 ? null : JSON.stringify([requests, query, hostIds])
+  const expected = readyHosts(read)
+  const question = requests.length === 0 ? null : JSON.stringify([requests, query, hostIds, expected])
   // The page reads its figures again every half minute; the split follows when they moved.
   const version = `${summary.totals.prompts.total}:${fieldValue(summary.totals.tokens.total)}:${summary.totals.tokenRecords}`
-  const asked = useRef(requests)
-  asked.current = requests
+  const asked = useRef({ requests, expected })
+  asked.current = { requests, expected }
   useEffect(() => {
     if (bridge === undefined || question === null) return
     let current = true
-    const list = asked.current
+    const { requests: list, expected: hosts } = asked.current
     Promise.all(list.map(request => bridge.read({ ...query, includeDaily: true, providerIds: [request.providerId],
       ...(request.modelIds === undefined ? {} : { modelIds: [...request.modelIds] }), ...(hostIds.length > 0 ? { hostIds: [...hostIds] } : {}) }))).then(results => {
       if (!current) return
+      if (!results.every(result => covers(result, hosts))) { setFailure(question); return }
       setFound({ question, days: new Map(results.map((result, index) => [list[index]!.key, joinedDays(result, query.sources)])) })
       setFailure(null)
     }, () => { if (current) setFailure(question) })
     return () => { current = false }
     // The question names every input; the arrays it is built from are new on each render.
   }, [bridge, question, version, attempt])
-  const days = found !== undefined && found.question === question ? found.days : undefined
-  return { days, failed: days === undefined && failure !== null && failure === question, retry: () => { setFailure(null); setAttempt(value => value + 1) } }
+  if (question === null) return { days: NOTHING_TO_READ, failed: false, retry: () => undefined }
+  const failed = failure === question
+  const days = !failed && found !== undefined && found.question === question ? found.days : undefined
+  return { days, failed, retry: () => { setFailure(null); setAttempt(value => value + 1) } }
 }
 
-/** A day's tokens in words, keeping what was not reported. */
-const dayTokens = (row: DayValue): string => !row.tokensKnown ? 'not reported,' : `${row.tokensPartial ? 'at least ' : ''}${fmtTok(row.input + row.output)}`
+/** A figure in words for the keyboard announcement, as the value list shows it. */
+const figureWords = (figure: ChartFigure, format: (value: number) => string): string =>
+  !figure.known ? 'not reported' : `${figure.partial ? 'at least ' : ''}${format(figure.value)}`
+/** A token field as a figure, for the whole range's announcement. */
+const fieldFigure = (field: UsageFieldTotal): ChartFigure => ({ value: field.value ?? 0, known: field.value !== undefined, partial: field.partial })
+
+/** What Other holds, in a sentence: each model and its provider, and any models the ranking left out. */
+function otherHolds(rest: readonly SeriesCandidate[], truncated: boolean): string {
+  const named = rest.map(item => `${item.name} from ${PROVIDER_NAMES[item.providerId]}`)
+  if (truncated) named.push("models Usage doesn't list")
+  return `Other holds ${joinNames(named)}.`
+}
 
 /**
  * The Per day block of the Prompts and Tokens stages: Show and Bars | Lines, the value list when the chart is split,
@@ -107,8 +136,7 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
   const { summary } = page
   const { show, kind } = choice
   const tokens = metric === 'tokens'
-  const measure = (row: UsageActivityAggregate, providerId: UsageProviderId): number => !tokens ? row.prompts.total
-    : NO_TOKENS.has(providerId) ? 0 : fieldValue(row.tokens.input) + fieldValue(row.tokens.output)
+  const measure = (row: UsageActivityAggregate, providerId: UsageProviderId): number => measureFigure(metric, row, providerId).value
   const models = new Map<string, UsageModelAggregate>(summary.models.map(row => [`${row.providerId}:${row.modelId}`, row]))
   const candidates: SeriesCandidate[] = show === 'provider'
     ? summary.providers.map(row => ({ key: row.providerId, name: PROVIDER_NAMES[row.providerId], providerId: row.providerId, total: measure(row, row.providerId) }))
@@ -125,21 +153,26 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
   useEffect(() => { if (show === 'model') modelSlots = slots }, [show, slots])
 
   const dayList = rows.map(row => row.day)
-  const totals = rows.map(row => tokens ? row.input + row.output : row.prompts)
+  const split = show !== 'total'
+  const pageDays = new Map(summary.daily.map(row => [row.day, row]))
+  const totals = split ? dayList.map(day => measureFigure(metric, pageDays.get(day))) : []
   const values = found === undefined ? undefined : new Map(series.drawn.map(item => {
     const byDay = new Map((found.get(item.key) ?? []).map(row => [row.day, row]))
-    return [item.key, dayList.map(day => { const row = byDay.get(day); return row === undefined ? 0 : measure(row, item.providerId) })] as const
+    return [item.key, dayList.map(day => measureFigure(metric, byDay.get(day), item.providerId))] as const
   }))
-  const split = show !== 'total'
   const plan = split
     ? splitPlan({ kind, choice: series, totals, values, slots, incomplete: show === 'model' && summary.modelsTruncated,
       titleOf: item => show === 'model' ? `${item.name} · ${PROVIDER_NAMES[item.providerId]}` : undefined })
     : { ...totalPlan(metric, kind, rows), ready: true }
   const noun = split ? NOUN[show] : ''
+  // Each computer lists its models by tokens, a few hundred at most. The top five by tokens on one computer are still its
+  // top five; by prompts, or joined across computers, a model left off a list may belong among them.
+  const rankingIncomplete = show === 'model' && summary.modelsTruncated && (!tokens || readyHosts(page.read).length > 1)
+  const other = plan.series.find(item => item.key === 'other')
   // The note above says what failed; the plot stays empty rather than say it twice.
   const waiting = !plan.ready ? (failed ? '' : `Reading each ${noun}'s days…`) : undefined
   const dayIndex = selected === null ? null : dayList.indexOf(selected)
-  const amount = (value: number): string => tokens ? fmtTok(value) : fmtInt(value)
+  const amount = tokens ? fmtTok : fmtInt
   const unit = tokens ? 'tokens' : 'prompts'
   const names = joinNames(plan.series.map(item => item.name))
   const what = split && plan.series.length > 0 ? ` ${kind === 'bars' ? 'Stacked' : 'One line'} by ${noun}: ${names}.` : ''
@@ -156,9 +189,10 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
     event.preventDefault(); event.stopPropagation(); setHover(null); setPin(current)
     const at = current === null ? null : index(current)
     const row = at === null ? undefined : rows[at]
-    const whole = row === undefined ? (tokens ? fieldTokens(summary.totals.tokens.total) : fmtInt(summary.totals.prompts.total)) : tokens ? dayTokens(row) : fmtInt(row.prompts)
-    const parts = split && plan.ready && plan.series.length > 0 ? `. ${seriesValues(plan, at).map(item => `${item.name} ${amount(item.value)}`).join(', ')}` : ''
-    page.announce(`${current === null ? 'Whole range' : longDay(current, page.today)}: ${whole} ${unit}${parts}`)
+    const whole: ChartFigure = row === undefined ? (tokens ? fieldFigure(summary.totals.tokens.total) : { value: summary.totals.prompts.total, known: true, partial: false })
+      : tokens ? { value: row.input + row.output, known: row.tokensKnown, partial: row.tokensPartial } : { value: row.prompts, known: true, partial: false }
+    const parts = split && plan.ready && plan.series.length > 0 ? `. ${seriesValues(plan, at).map(item => `${item.name} ${figureWords(item.figure, amount)}`).join(', ')}` : ''
+    page.announce(`${current === null ? 'Whole range' : longDay(current, page.today)}: ${whole.known ? `${figureWords(whole, amount)} ${unit}` : `${unit} not reported`}${parts}`)
   }
 
   return <div className={`usage-per${tokens ? ' usage-stage__sub' : ''}`}>
@@ -171,12 +205,20 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
       </div>
     </div>
     {children}
+    {rankingIncomplete ? <p className="usage-note">Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most {unit}. Other counts the rest.</p> : null}
     {failed ? <p className="usage-note">Each {noun}'s days couldn't be read. Nothing was lost, and the totals above still count them. <button type="button" className="usage-link tt-focusable" onClick={retry}>Try again</button></p> : null}
     {split && plan.series.length > 0 ? <SeriesValues plan={plan} dayIndex={dayIndex} metric={metric} kind={kind} ready={plan.ready}
       label={`Each ${noun}, ${dayIndex === null ? page.rangeLabel : longDay(selected!, page.today)}`} /> : null}
     <DailyChart days={dayList} plan={plan} kind={kind} metric={metric} today={page.today} selected={selected} waiting={waiting}
       label={`${tokens ? 'Tokens' : 'Prompts'} per day, ${page.rangeLabel}.${what}`}
       onHover={setHover} onPin={() => { setPin(hover === null || pin === hover ? null : hover); setHover(null) }} onKey={onKey} />
+    {show === 'model' && plan.series.length > 0 ? <details className="usage-about usage-values-more" onKeyDown={dismissDisclosure}>
+      <summary className="tt-focusable"><ChevronRight size={14} aria-hidden="true" />{other === undefined ? "Each model's provider" : "Each model's provider, and what Other holds"}</summary>
+      <ul>
+        {series.drawn.map(item => <li key={item.key}>{item.name}, from {PROVIDER_NAMES[item.providerId]}</li>)}
+        {other === undefined ? null : <li>{otherHolds(series.rest, summary.modelsTruncated)}</li>}
+      </ul>
+    </details> : null}
     {!split && tokens ? <p className="usage-legend usage-legend--below">{kind === 'bars'
       ? <><span><i className="usage-kind--input" />Input</span><span><i className="usage-kind--out" />Output</span></>
       : <span><i className="usage-kind--both" />Input and output</span>}</p> : null}

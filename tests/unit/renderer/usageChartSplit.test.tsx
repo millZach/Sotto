@@ -2,14 +2,15 @@ import React from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { UsageBridge, UsageQuery } from '../../../src/shared/usageDashboard'
+import type { UsageActivityAggregate, UsageBridge, UsageHostRead, UsageQuery } from '../../../src/shared/usageDashboard'
 import { UsageView } from '../../../src/renderer/src/features/usage/UsageView'
 import { forgetChartChoice } from '../../../src/renderer/src/features/usage/UsagePerDay'
 import { deferred } from '../../fixtures/deferred'
-import { USAGE_NOW, USAGE_ZONE, dashboard, fixtureBridge, localHost, splitBridge } from '../../fixtures/renderer/usageReads'
+import { USAGE_NOW, USAGE_ZONE, dashboard, fixtureBridge, localHost, splitBridge, splitHost, tokens } from '../../fixtures/renderer/usageReads'
 
 afterEach(() => { cleanup(); forgetChartChoice() })
 const laptop = { hostId: 'laptop', name: 'zach-laptop', kind: 'local' as const, connected: true }
+const forge = { hostId: 'forge', name: 'forge', kind: 'remote' as const, connected: true }
 const measure = (name: RegExp) => within(screen.getByRole('tablist', { name: 'Usage measures' })).getByRole('tab', { name })
 const show = () => screen.getByRole('radiogroup', { name: 'Show on the chart' })
 const style = () => screen.getByRole('radiogroup', { name: 'Draw the days as' })
@@ -18,9 +19,25 @@ const valueList = () => screen.getByRole('list', { name: /^Each (model|provider)
 const values = () => within(valueList()).getAllByRole('listitem').map(item => [item.querySelector('span')!.textContent, item.querySelector('b')!.textContent])
 const tones = () => Object.fromEntries(within(valueList()).getAllByRole('listitem').map(item => [item.querySelector('span')!.textContent, item.querySelector('i')!.getAttribute('data-tone')]))
 const filteredReads = (bridge: { reads: UsageQuery[] }) => bridge.reads.filter(query => query.providerIds !== undefined || query.modelIds !== undefined)
+const filtered = (query: UsageQuery) => query.providerIds !== undefined || query.modelIds !== undefined
 
-async function open(bridge: UsageBridge = splitBridge()) {
-  const view = render(<UsageView now={() => USAGE_NOW} timeZone={USAGE_ZONE} computers={[laptop]} bridge={bridge} />)
+/**
+ * The split host on this computer and on forge. `answer` says what a filtered read gives for forge: its days, nothing at
+ * all (the router left it out), or forge offline.
+ */
+function twoComputers(answer: () => 'ready' | 'missing' | 'offline'): UsageBridge {
+  const base = splitBridge()
+  return { ...base, read: async query => {
+    const [here] = (await base.read(query)).hosts
+    const there: UsageHostRead = { ...here!, hostId: 'forge' }
+    if (!filtered(query)) return { hosts: [here!, there] }
+    const mode = answer()
+    return { hosts: mode === 'missing' ? [here!] : [here!, mode === 'offline' ? { hostId: 'forge', status: 'offline', quotas: [] } : there] }
+  } }
+}
+
+async function open(bridge: UsageBridge = splitBridge(), computers: ReadonlyArray<typeof laptop | typeof forge> = [laptop]) {
+  const view = render(<UsageView now={() => USAGE_NOW} timeZone={USAGE_ZONE} computers={computers} bridge={bridge} />)
   await screen.findByRole('tablist', { name: 'Usage measures' })
   return { view, user: userEvent.setup() }
 }
@@ -160,5 +177,104 @@ describe('Usage Per day chart split', () => {
     await open(fixtureBridge(dashboard(host)))
     expect(screen.queryByRole('radiogroup', { name: 'Show on the chart' })).toBeNull()
     expect(screen.getByText('Choose a range of a year or less to see each day. The totals still cover the whole range.')).toBeVisible()
+  })
+
+  it('draws nothing from a filtered read that leaves out a computer the page drew, says so, and reads it again', async () => {
+    let answer: 'ready' | 'missing' | 'offline' = 'missing'
+    const { user } = await open(twoComputers(() => answer), [laptop, forge])
+    await user.click(within(show()).getByRole('radio', { name: 'By model' }))
+    // Without forge, each model would read as this computer's half and Other would take the rest.
+    expect(await screen.findByText(/^Each model's days couldn't be read\. Nothing was lost, and the totals above still count them\./u)).toBeVisible()
+    expect(plot().querySelectorAll('.usage-chart__bar, .usage-chart__line')).toHaveLength(0)
+    expect(values().every(([, value]) => value === '')).toBe(true)
+    answer = 'offline'
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeVisible()
+    expect(values().every(([, value]) => value === '')).toBe(true)
+    answer = 'ready'
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(values()[0]).toEqual(['Claude Opus 5.5', '112']))
+    expect(values().at(-1)).toEqual(['Other (2)', '10'])
+    expect(screen.queryByText(/couldn't be read/u)).toBeNull()
+  })
+
+  it('shows a token figure no record reports as a dash read as Not reported, and a partial one as at least, in the list and aloud', async () => {
+    const gaps = [{ modelId: 'claude-sonnet-5-5', day: '2026-10-13', kind: 'unreported' as const }, { modelId: 'grok-code-2', day: '2026-10-14', kind: 'partial' as const }]
+    const { user } = await open(splitBridge(undefined, gaps))
+    await user.click(measure(/^Tokens /u))
+    await user.click(within(show()).getByRole('radio', { name: 'By model' }))
+    await waitFor(() => expect(values()[0]![1]).toBe('11.3M'))
+    expect(values()).toEqual([['Claude Opus 5.5', '11.3M'], ['Claude Haiku 4.5', '9.1M'], ['GPT-6.1 Sol', '4.5M'], ['Claude Sonnet 5.5', 'at least 1.3M'], ['Grok code 2', 'at least 566K'], ['Other (1)', '202K']])
+    plot('Tokens').focus()
+    await user.keyboard('{End}{ArrowLeft}')
+    expect(valueList()).toHaveAccessibleName('Each model, Tuesday, October 13')
+    const sonnet = within(valueList()).getByText('Claude Sonnet 5.5').closest('li')!
+    expect(sonnet.querySelector('b')).toHaveTextContent('—Not reported')
+    expect(within(sonnet).getByText('Not reported')).toHaveClass('tt-visually-hidden')
+    // The gap is Sonnet's, so what Other holds that day is whole.
+    expect(values().at(-1)).toEqual(['Other (1)', '40K'])
+    expect(await screen.findByText(/^Tuesday, October 13: at least [\d.]+M tokens\. Claude Opus 5\.5 [\d.]+M, .*Claude Sonnet 5\.5 not reported, .*Other \(1\) 40K$/u)).toBeInTheDocument()
+    await user.keyboard('{ArrowRight}')
+    expect(values().find(([name]) => name === 'Grok code 2')).toEqual(['Grok code 2', 'at least 81K'])
+    expect(await screen.findByText(/Grok code 2 at least 81K/u)).toBeInTheDocument()
+  })
+
+  it("names each drawn model's provider and Other's models in words, behind a disclosure that closes on Escape", async () => {
+    const { user } = await open()
+    await user.click(within(show()).getByRole('radio', { name: 'By model' }))
+    await waitFor(() => expect(values()[0]![1]).toBe('56'))
+    const summary = screen.getByText("Each model's provider, and what Other holds").closest('summary')!
+    const details = summary.closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    await user.click(summary)
+    expect(details).toHaveAttribute('open')
+    expect(within(details).getByText('Claude Opus 5.5, from Claude Code')).toBeVisible()
+    expect(within(details).getByText('GPT-6.1 Sol, from Codex')).toBeVisible()
+    expect(within(details).getByText('Other holds Claude Haiku 4.5 from Claude Code and Swe 1 from Devin.')).toBeVisible()
+    // jsdom does not focus a pressed summary the way Chromium does.
+    summary.focus()
+    await user.keyboard('{Escape}')
+    expect(details).not.toHaveAttribute('open')
+    expect(summary).toHaveFocus()
+    // By provider names its series already; there is nothing more to say.
+    await user.click(within(show()).getByRole('radio', { name: 'By provider' }))
+    expect(screen.queryByText(/^Each model's provider/u)).toBeNull()
+  })
+
+  it('says the ranking is incomplete when a computer listed only some of its models, on Prompts', async () => {
+    const base = splitBridge()
+    const truncated: UsageBridge = { ...base, read: async query => {
+      const read = await base.read(query)
+      return { hosts: read.hosts.map(host => ({ ...host, activity: { ...host.activity!, modelsTruncated: true } })) }
+    } }
+    const { user } = await open(truncated)
+    await user.click(within(show()).getByRole('radio', { name: 'By model' }))
+    await waitFor(() => expect(values()[0]![1]).toBe('56'))
+    const note = 'Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most prompts. Other counts the rest.'
+    expect(screen.getByText(note)).toBeVisible()
+    expect(values().at(-1)![0]).toBe('Other')
+    expect(screen.getByText(/^Other holds Claude Haiku 4\.5 from Claude Code, Swe 1 from Devin and models Usage doesn't list\.$/u)).toBeInTheDocument()
+    // One computer lists its models by tokens, so on Tokens its top five are still its top five.
+    await user.click(measure(/^Tokens /u))
+    await waitFor(() => expect(values()[0]![1]).toBe('11.3M'))
+    expect(screen.queryByText(/^Ranking is incomplete\. There are more models/u)).toBeNull()
+  })
+
+  it('says there are no token counts, and reads nothing, when a split has nothing to draw', async () => {
+    const host = splitHost()
+    const strip = <T extends UsageActivityAggregate>(row: T): T => ({ ...row, tokens: tokens(), tokenRecords: 0 })
+    const activity = host.activity!
+    host.activity = { ...activity, totals: strip(activity.totals), providers: activity.providers.map(strip), models: activity.models.map(strip),
+      daily: activity.daily.map(strip), ...(activity.clients === undefined ? {} : { clients: activity.clients.map(strip) }) }
+    const bridge = fixtureBridge(dashboard(host))
+    const { user } = await open(bridge)
+    await user.click(measure(/^Tokens /u))
+    await user.click(within(show()).getByRole('radio', { name: 'By provider' }))
+    expect(plot('Tokens')).toHaveTextContent('No token counts in this range')
+    expect(plot('Tokens')).not.toHaveAttribute('aria-busy')
+    expect(plot('Tokens')).not.toHaveTextContent(/Reading/u)
+    await user.click(within(show()).getByRole('radio', { name: 'By model' }))
+    expect(plot('Tokens')).toHaveTextContent('No token counts in this range')
+    expect(filteredReads(bridge)).toEqual([])
   })
 })

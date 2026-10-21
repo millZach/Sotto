@@ -53,6 +53,15 @@
       "minimumContrast": 7.1
     },
     {
+      "name": "prompts-by-model-providers-dark-820.png",
+      "width": 820,
+      "height": 560,
+      "targetWidth": 820,
+      "targetHeight": 560,
+      "appearance": "dark",
+      "minimumContrast": 7.1
+    },
+    {
       "name": "prompts-by-model-lines-dark-820.png",
       "width": 820,
       "height": 560,

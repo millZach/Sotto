@@ -307,6 +307,21 @@ test('Owl Usage splits the Per day chart by model and provider, as bars or lines
     await harness.capture(splitArtifacts, 'prompts-by-model-lines-dark-1600.png', 1600, 1000, 'dark')
     await plot.press('Escape')
     await expect(row('Claude Opus 5.5')).toHaveText(String(sum(SEEDED_USAGE_MODELS[0]!)))
+    // Each model's provider and what Other holds, in words: the next Tab stop after the chart opens them and Escape closes them.
+    const more = page.locator('details.usage-values-more')
+    const providerOf = (model: typeof SEEDED_USAGE_MODELS[number]): string => model.providerId === 'claude' ? 'Claude Code' : 'Codex'
+    await page.keyboard.press('Tab')
+    await expect(more.locator('summary')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(more).toHaveAttribute('open', '')
+    await expect(more.getByRole('listitem').first()).toHaveText(`${SEEDED_USAGE_MODELS[0]!.name}, from ${providerOf(SEEDED_USAGE_MODELS[0]!)}`)
+    await expect(more.getByRole('listitem').last()).toHaveText(`Other holds ${SEEDED_USAGE_MODELS.slice(5).map(model => `${model.name} from ${providerOf(model)}`).join(' and ')}.`)
+    await harness.resize(820, 560)
+    await more.evaluate(element => element.scrollIntoView({ block: 'end' }))
+    await harness.capture(splitArtifacts, 'prompts-by-model-providers-dark-820.png', 820, 560, 'dark')
+    await page.keyboard.press('Escape')
+    await expect(more).not.toHaveAttribute('open', '')
+    await expect(more.locator('summary')).toBeFocused()
     await toPerDay(820, 560)
     await harness.capture(splitArtifacts, 'prompts-by-model-lines-dark-820.png', 820, 560, 'dark')
 

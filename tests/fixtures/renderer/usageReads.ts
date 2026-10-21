@@ -129,19 +129,26 @@ const SPLIT_MODELS: ReadonlyArray<readonly [UsageProviderId, string, readonly nu
   ['devin', 'swe-1', [1, 0, 0, 0, 0, 1, 0], undefined],
 ]
 const SPLIT_DAYS = ['2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14']
-function splitDaily(rows: typeof SPLIT_MODELS): UsageDailyAggregate[] {
-  return SPLIT_DAYS.map((day, index) => ({ ...sumActivity(rows.map(([, , prompts, perPrompt]) => {
+/** A day on which one model's records left its tokens out: all of them, or some, so its figure is a lower bound. */
+export interface TokenGap { readonly modelId: string; readonly day: string; readonly kind: 'unreported' | 'partial' }
+function splitDaily(rows: typeof SPLIT_MODELS, gaps: readonly TokenGap[] = []): UsageDailyAggregate[] {
+  return SPLIT_DAYS.map((day, index) => ({ ...sumActivity(rows.map(([, modelId, prompts, perPrompt]) => {
     const count = prompts[index]!
-    return activityRow(count, 0, 0, perPrompt === undefined ? tokens() : tokens(count * perPrompt, count * perPrompt / 100))
+    const gap = gaps.find(item => item.modelId === modelId && item.day === day)?.kind
+    if (perPrompt === undefined || count === 0 || gap === undefined) return activityRow(count, 0, 0, perPrompt === undefined ? tokens() : tokens(count * perPrompt, count * perPrompt / 100))
+    if (gap === 'unreported') return activityRow(count, 0, 0, { ...tokens(), input: field(), output: field(), cached: field(), cacheWrite: field(), total: field() }, { tokenRecords: 1 })
+    // Two records, one of them without its counts: what was reported is a lower bound.
+    const some = (value: number): UsageFieldTotal => ({ value, knownRows: 1, rows: 2, partial: true })
+    return activityRow(count, 0, 0, { ...tokens(), input: some(count * perPrompt), output: some(count * perPrompt / 100), total: some(count * perPrompt * 1.01) }, { tokenRecords: 2, partialTokenRecords: 1 })
   })), day }))
 }
 
 /** This computer with seven models across four providers, so the Per day chart can be split by provider and by model. */
-export function splitHost(): UsageHostRead {
-  const daily = splitDaily(SPLIT_MODELS)
+export function splitHost(gaps: readonly TokenGap[] = []): UsageHostRead {
+  const daily = splitDaily(SPLIT_MODELS, gaps)
   const totals = sumActivity(daily)
-  const models: UsageModelAggregate[] = SPLIT_MODELS.map(row => ({ ...sumActivity(splitDaily([row])), providerId: row[0], modelId: row[1] }))
-  const providers: UsageProviderAggregate[] = [...new Set(SPLIT_MODELS.map(row => row[0]))].map(providerId => ({ ...sumActivity(splitDaily(SPLIT_MODELS.filter(row => row[0] === providerId))), providerId }))
+  const models: UsageModelAggregate[] = SPLIT_MODELS.map(row => ({ ...sumActivity(splitDaily([row], gaps)), providerId: row[0], modelId: row[1] }))
+  const providers: UsageProviderAggregate[] = [...new Set(SPLIT_MODELS.map(row => row[0]))].map(providerId => ({ ...sumActivity(splitDaily(SPLIT_MODELS.filter(row => row[0] === providerId), gaps)), providerId }))
   return { hostId: 'laptop', status: 'ready', persistence: 'saved', quotas: [], activity: {
     metadata: { startedAt: '2026-04-21T00:00:00Z', revision: 9, generation: 0, legacySeedCompleted: true, history: { status: 'complete' } },
     totals, timeZone: USAGE_ZONE, providers, models, modelCount: models.length, modelsTruncated: false, daily, dailyCoverage: 'complete', hourly: [],
@@ -153,20 +160,20 @@ export function splitHost(): UsageHostRead {
  * A bridge for `splitHost`: a read filtered by provider or model answers with only those models' days. `filtered`
  * runs before each filtered answer, so a test can hold or fail it.
  */
-export function splitBridge(filtered: (query: UsageQuery) => Promise<void> = async () => undefined): UsageBridge & { readonly reads: UsageQuery[] } {
+export function splitBridge(filtered: (query: UsageQuery) => Promise<void> = async () => undefined, gaps: readonly TokenGap[] = []): UsageBridge & { readonly reads: UsageQuery[] } {
   const reads: UsageQuery[] = []
   return {
     reads,
     read: async query => {
       reads.push(query)
-      const host = splitHost()
+      const host = splitHost(gaps)
       if (query.providerIds === undefined && query.modelIds === undefined) return { hosts: [host] }
       await filtered(query)
       const rows = SPLIT_MODELS.filter(([providerId, modelId]) => (query.providerIds?.includes(providerId) ?? true)
         && (query.modelIds === undefined || query.modelIds.some(id => id === modelId || id.endsWith(`:model:${modelId}`))))
-      return { hosts: [{ ...host, activity: { ...host.activity!, daily: splitDaily(rows) } }] }
+      return { hosts: [{ ...host, activity: { ...host.activity!, daily: splitDaily(rows, gaps) } }] }
     },
-    refresh: async () => ({ hosts: [splitHost()] }),
+    refresh: async () => ({ hosts: [splitHost(gaps)] }),
     clear: async query => query.hosts.map(item => ({ hostId: item.hostId, status: 'cleared' as const })),
   }
 }
