@@ -40,6 +40,7 @@ import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { delegatedThreadsBelow } from '../../shared/delegation'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
@@ -3393,11 +3394,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!entity) throw new Error(`That ${kind} is unavailable.`)
       const previous = entity.workspaceSettledAt ?? null
       entity.workspaceSettledAt = settled ? previous ?? new Date().toISOString() : null
+      // A thread's delegated threads (ADR-0081) settle with it, under its timestamp, so none is left open on its own;
+      // restoring it brings back those that timestamp still marks. One settled or restored by itself keeps its own, so
+      // settling a thread that is already settled moves none of them. Stable leaves every thread to itself.
+      const delegated = new Map<string, string | null>()
+      if (kind === 'thread' && this.delegationEnabled && (settled ? previous === null : previous !== null)) {
+        const below = new Set(delegatedThreadsBelow(this.state.snapshot.threads, id))
+        for (const thread of this.state.snapshot.threads) {
+          if (!below.has(thread.id) || thread.projectId !== projectId) continue
+          const own = thread.workspaceSettledAt ?? null
+          if (settled ? own !== null : own !== previous) continue
+          delegated.set(thread.id, own); thread.workspaceSettledAt = entity.workspaceSettledAt
+        }
+      }
       this.dirty = true
       try { await this.flush() }
       catch (error) {
         const current = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
         if (current) current.workspaceSettledAt = previous
+        for (const thread of this.state.snapshot.threads) if (delegated.has(thread.id)) thread.workspaceSettledAt = delegated.get(thread.id)!
         throw error
       }
       this.publish(); return this.workspaceSnapshot()
@@ -3617,6 +3632,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Delegation (ADR-0081) sends its guarded commands the way Watcher does, whether or not Watcher is on. */
   private delegationGuards = false
   admitDelegationCommands(): void { this.delegationGuards = true }
+  /** Delegation is on (the Owl list's `thread-delegation`), so settling a thread settles the threads it delegated to. */
+  private delegationEnabled = false
+  enableDelegation(): void { this.delegationEnabled = true }
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
     if (!this.watcherEnabled && !this.delegationGuards) throw new Error(WATCHER_DISABLED)
     this.watcherDispatchGuards.set(command, guard); guard(); return this.execute(command)
