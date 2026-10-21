@@ -72,12 +72,15 @@ describe('storage recovery notice flow', () => {
     expect(JSON.stringify(notices.list())).not.toContain('private transcript content')
   })
 
-  it('does not read, recover, back up, or report corrupt history until history is listed', async () => {
+  it('does not recover, back up, or report corrupt history while history is disabled', async () => {
     const root = await fixtureRoot()
     const historyBytes = Buffer.from('[{"text":"private disabled transcript"}', 'utf8')
     await writeFile(join(root, 'history.json'), historyBytes)
     const notices = new RecoveryNoticeCenter()
-    createStorageRepositories(root, notices, () => 1_725_000_000_025)
+    const repositories = createStorageRepositories(root, notices, () => 1_725_000_000_025)
+
+    await repositories.history.initialize()
+    await expect(repositories.history.list({ enabled: false })).resolves.toEqual([])
 
     expect(await readFile(join(root, 'history.json'))).toEqual(historyBytes)
     expect(await readdir(root)).toEqual(['history.json'])

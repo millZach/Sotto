@@ -396,6 +396,8 @@ export interface SottoBridge {
   clearHistory(): Promise<void>
   /** Every dictation record, newest first (ADR-0100): numbers and the delivered app, never text. */
   listDictationRecords(): Promise<DictationRecord[]>
+  /** One dictation's record, or null when it has none; read after a dictation instead of every record again. */
+  getDictationRecord(id: string): Promise<DictationRecord | null>
 
   getHotkey(): Promise<string | null>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>

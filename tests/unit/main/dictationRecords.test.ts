@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { appendFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -137,6 +137,58 @@ describe('dictation records', () => {
     expect((await second.listRecords()).map(record => record.id)).toEqual(['new', 'old'])
     expect(await recordsFile(root)).toBe(filled)
     expect(log).not.toHaveBeenCalled()
+  })
+
+  it('fills the records from saved transcripts on a later save when the first start could not write them', async () => {
+    const root = await folder()
+    await writeFile(join(root, 'history.json'), JSON.stringify([entry('older', 1)]))
+    const log = vi.fn()
+    // A folder standing where the records file goes makes the first start fail to read or write it.
+    await mkdir(join(root, 'dictation-records.jsonl'))
+    const history = new HistoryRepository(join(root, 'history.json'), { log })
+    await history.initialize()
+    expect(log.mock.calls).toEqual([['dictation-records-backfill-failed']])
+    await rm(join(root, 'dictation-records.jsonl'), { recursive: true })
+
+    await history.add(entry('newer', 2), OFF)
+
+    expect((await history.listRecords()).map(record => record.id)).toEqual(['newer', 'older'])
+    expect((await new HistoryRepository(join(root, 'history.json')).listRecords()).map(record => record.id)).toEqual(['newer', 'older'])
+  })
+
+  it('deletes the record before the transcript, so a failed delete leaves the transcript to delete again', async () => {
+    const root = await folder()
+    const history = new HistoryRepository(join(root, 'history.json'))
+    await history.add(entry('one', 1), ON)
+    const writes = vi.spyOn((history as unknown as { store: { write: (value: unknown) => Promise<void> } }).store, 'write')
+      .mockRejectedValueOnce(new Error('disk full'))
+
+    await expect(history.delete('one')).rejects.toThrow('disk full')
+    expect(await history.listRecords()).toEqual([])
+    expect((await history.list()).map(saved => saved.id)).toEqual(['one'])
+
+    await expect(history.delete('one')).resolves.toBe(true)
+    expect(await history.list()).toEqual([])
+    expect(writes).toHaveBeenCalledTimes(2)
+  })
+
+  it('only reads a corrupt history file while history is off, and fills no records from it', async () => {
+    const root = await folder()
+    const corrupt = '[{"text":"private words"'
+    await writeFile(join(root, 'history.json'), corrupt)
+    const onRecovery = vi.fn()
+    const history = new HistoryRepository(join(root, 'history.json'), { onRecovery })
+    await history.initialize()
+
+    await expect(history.list({ enabled: false })).resolves.toEqual([])
+    await expect(history.search('private', { enabled: false })).resolves.toEqual([])
+    await history.add(entry('off', 1), OFF)
+
+    expect(onRecovery).not.toHaveBeenCalled()
+    expect(await readFile(join(root, 'history.json'), 'utf8')).toBe(corrupt)
+    expect((await history.listRecords()).map(record => record.id)).toEqual(['off'])
+    await expect(history.getRecord('off')).resolves.toEqual({ id: 'off', createdAt: 1, durationMs: 10, words: 3 })
+    await expect(history.getRecord('missing')).resolves.toBeNull()
   })
 
   it('writes no records file on a first start without transcripts', async () => {

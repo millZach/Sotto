@@ -207,7 +207,11 @@ describe('HistoryRepository', () => {
 
     await expect(pending).resolves.toEqual([seededEntry])
     expect(await readFile(filePath)).toEqual(seededBytes)
-    expect(await repository.listRecords()).toEqual([{ id: 'candidate', createdAt: 2, durationMs: 500, words: 2 }])
+    // The seeded transcript had no record yet, so it is filled in before the new one is kept.
+    expect(await repository.listRecords()).toEqual([
+      { id: 'candidate', createdAt: 2, durationMs: 500, words: 2 },
+      { id: 'seeded', createdAt: 1, durationMs: 500, words: 2 },
+    ])
   })
 
   it('persists an invocation-time entry and retention snapshot when history is enabled', async () => {

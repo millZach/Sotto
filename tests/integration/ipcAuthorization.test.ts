@@ -6,6 +6,7 @@ import {
 import {
   APP_QUIT,
   APP_RELOAD,
+  DICTATION_RECORD_GET,
   DICTATION_RECORDS_LIST,
   DICTATION_REQUEST,
   HISTORY_CLEAR,
@@ -58,6 +59,7 @@ describe('IPC validation and lifecycle', () => {
       SETTINGS_UPDATE,
       HISTORY_CLEAR,
       DICTATION_RECORDS_LIST,
+      DICTATION_RECORD_GET,
       APP_RELOAD,
       APP_QUIT,
       WIDGET_PUBLISH,

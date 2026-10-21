@@ -124,32 +124,38 @@ export class HistoryRepository {
   }
 
   /**
-   * Removes stale temporary files and, while there is no records file, writes a record for every saved transcript so
-   * stats do not start empty after an upgrade. Once the file is there it is never filled from transcripts again, and
-   * after Clear history there are no transcripts to fill it from.
+   * Removes stale temporary files and reads the records, filling them from the saved transcripts when there is no
+   * records file yet (see `loadRecords`), so stats do not start empty after an upgrade.
    */
   initialize(): Promise<void> {
     return this.enqueueMutation(async () => {
       await this.removeSiblings(this.filePath, false)
       await this.removeSiblings(this.recordsPath, false)
       try {
-        await this.backfillRecords()
+        await this.loadRecords()
       } catch {
-        this.records = null
         this.options.log?.('dictation-records-backfill-failed')
       }
     })
   }
 
-  /** Every saved transcript, newest first, whether or not Keep local history is on now. */
-  async list(): Promise<HistoryEntry[]> {
+  /**
+   * Every saved transcript, newest first, whether or not Keep local history is on now. While it is off
+   * (`enabled: false`) the file is only read: a corrupt one is not recovered, backed up or reported.
+   */
+  async list(options: { readonly enabled: boolean } = { enabled: true }): Promise<HistoryEntry[]> {
     await this.mutationTail
-    return cloneEntries(await this.readSorted())
+    return options.enabled ? cloneEntries(await this.readSorted()) : sortEntries(await this.store.peek())
   }
 
   /** Every dictation record, newest first. */
   listRecords(): Promise<DictationRecord[]> {
     return this.enqueueMutation(async () => [...(await this.loadRecords()).values()].sort(byNewest))
+  }
+
+  /** One dictation's record, or null when it has none. */
+  getRecord(id: string): Promise<DictationRecord | null> {
+    return this.enqueueMutation(async () => (await this.loadRecords()).get(id) ?? null)
   }
 
   /**
@@ -180,8 +186,11 @@ export class HistoryRepository {
     })
   }
 
-  async search(query: string): Promise<HistoryEntry[]> {
-    const entries = await this.list()
+  async search(
+    query: string,
+    options: { readonly enabled: boolean } = { enabled: true },
+  ): Promise<HistoryEntry[]> {
+    const entries = await this.list(options)
     const normalizedQuery = query.trim().toLowerCase()
 
     if (normalizedQuery.length === 0) {
@@ -193,19 +202,24 @@ export class HistoryRepository {
     )
   }
 
-  /** Deletes everything about one dictation: its transcript and its record. False when neither was here. */
+  /**
+   * Deletes everything about one dictation: its record, then its transcript. False when neither was here. The record
+   * goes first, so if deleting the transcript fails, the transcript is still listed and deleting it again finishes.
+   */
   delete(id: string): Promise<boolean> {
     return this.enqueueMutation(async () => {
+      const records = await this.loadRecords()
+      const recordRemoved = records.has(id)
+      if (recordRemoved) {
+        const kept = new Map(records)
+        kept.delete(id)
+        await this.rewriteRecords(kept)
+      }
+
       const current = await this.readSorted()
       const remaining = current.filter((entry) => entry.id !== id)
-      const transcriptRemoved = remaining.length !== current.length
-      if (transcriptRemoved) await this.store.write(remaining)
-
-      const records = await this.loadRecords()
-      if (!records.has(id)) return transcriptRemoved
-      const kept = new Map(records)
-      kept.delete(id)
-      await this.rewriteRecords(kept)
+      if (remaining.length === current.length) return recordRemoved
+      await this.store.write(remaining)
       return true
     })
   }
@@ -237,19 +251,24 @@ export class HistoryRepository {
     return sortEntries(await this.store.read())
   }
 
-  private async backfillRecords(): Promise<void> {
-    if (await this.readRecordsFile() !== null) return
-    const transcripts = await this.store.read()
-    const records = new Map<string, DictationRecord>()
-    for (const entry of [...transcripts].sort(byNewest).reverse()) records.set(entry.id, dictationRecordOf(entry))
-    if (records.size > 0) await this.rewriteRecords(records)
-    else this.records = records
-  }
-
+  /**
+   * The records, read once. With no records file yet, they are filled from the saved transcripts first: on the first
+   * start after an upgrade, or on a later read when that start could not write them, so a record appended in the
+   * meantime never shuts the saved transcripts out. Once the file is there it is never filled again, and after Clear
+   * history there are no transcripts to fill it from. Transcripts are only read here, never recovered.
+   */
   private async loadRecords(): Promise<Map<string, DictationRecord>> {
     if (this.records !== null) return this.records
-    this.records = await this.readRecordsFile() ?? new Map()
-    return this.records
+    const read = await this.readRecordsFile()
+    if (read !== null) {
+      this.records = read
+      return read
+    }
+    const records = new Map<string, DictationRecord>()
+    for (const entry of [...await this.store.peek()].sort(byNewest).reverse()) records.set(entry.id, dictationRecordOf(entry))
+    if (records.size > 0) await this.rewriteRecords(records)
+    else this.records = records
+    return records
   }
 
   /** The records file's records, a later line for the same id winning; null when there is no file. */
@@ -276,7 +295,6 @@ export class HistoryRepository {
     }
     if (skipped) this.options.log?.('dictation-records-lines-skipped')
     this.recordsEndInNewline = text.length === 0 || text.endsWith('\n')
-    this.records = records
     return records
   }
 

@@ -14,6 +14,7 @@ import {
   APP_QUIT,
   APP_RELOAD,
   APP_SHOW,
+  DICTATION_RECORD_GET,
   DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -204,7 +205,8 @@ describe('IPC validation and lifecycle', () => {
 
       await expect(harness.ipc.invokeArgs(HISTORY_LIST, [])).resolves.toEqual([kept])
 
-      expect(harness.history.list).toHaveBeenCalledWith()
+      // With history off the file is only read, so a corrupt one is not recovered.
+      expect(harness.history.list).toHaveBeenCalledWith({ enabled: false })
     })
 
   it('answers the dictation records from storage', async () => {
@@ -215,6 +217,11 @@ describe('IPC validation and lifecycle', () => {
       await expect(harness.ipc.invokeArgs(DICTATION_RECORDS_LIST, [])).resolves.toEqual([record])
       await expect(harness.ipc.invokeArgs(DICTATION_RECORDS_LIST, ['extra'])).rejects.toThrow('Invalid IPC payload')
       expect(harness.history.listRecords).toHaveBeenCalledOnce()
+
+      harness.history.getRecord.mockResolvedValue(record as never)
+      await expect(harness.ipc.invoke(DICTATION_RECORD_GET, 'one')).resolves.toEqual(record)
+      await expect(harness.ipc.invoke(DICTATION_RECORD_GET, '')).rejects.toThrow('Invalid IPC payload')
+      expect(harness.history.getRecord).toHaveBeenCalledWith('one')
     })
 
   it('allows deleting retained history when recording history is disabled', async () => {

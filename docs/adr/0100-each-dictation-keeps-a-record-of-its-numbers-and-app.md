@@ -14,13 +14,13 @@ For every finished dictation, main keeps a **dictation record** on this computer
 - `words`, how many words came out, counted the way a reader would (`Intl.Segmenter`'s word-like segments, so a language written without spaces counts too);
 - `app`, the **delivered app**, when Sotto could read one.
 
-There is no text and no audio in it. Records live in `dictation-records.jsonl` beside `history.json` in Sotto's data folder, one JSON line each. Saving a dictation appends one line, so it costs the same however many came before; deleting one rewrites the file atomically; Clear history removes it. A line cut short by a crash costs only that dictation's numbers, and the next record starts on a line of its own. Main reads the file once and holds the records in memory; the window asks for them through `listDictationRecords`, newest first, and asks again after each dictation, delete and clear.
+There is no text and no audio in it. Records live in `dictation-records.jsonl` beside `history.json` in Sotto's data folder, one JSON line each. Saving a dictation appends one line, so it costs the same however many came before; deleting one rewrites the file atomically; Clear history removes it. A line cut short by a crash costs only that dictation's numbers, and the next record starts on a line of its own. Main reads the file once and holds the records in memory. The window reads them all once through `listDictationRecords`, newest first, then reads only the one record a dictation or a delete changed through `getDictationRecord`, so neither grows with the number of records; Clear history empties its list.
 
 A record that cannot be saved does not fail the dictation or its transcript. Main logs `dictation-record-not-saved`, and nothing else.
 
 ## The delivered app
 
-The delivered app is the name of the app that had focus when Sotto pasted or copied the dictation. It is read as delivery starts, before the widget hides for a paste, on the paste path and the copy-only path alike, and kept only when the text was pasted or copied.
+The delivered app is the name of the app that had focus when Sotto pasted or copied the dictation. It is read as delivery starts, while the clipboard is written, and the widget does not hide for a paste until the answer is in, on the paste path and the copy-only path alike. It is kept only when the text was pasted or copied.
 
 - **Windows.** The warm paste helper answers a second command, `app`, alongside `paste`: the foreground window's process, named by its file description, then its product name, then its file name ("Microsoft Outlook", "Windows Terminal", "Sotto"). A UWP app's window belongs to Application Frame Host, so the hosted process is named instead. Its type compiles in the helper's one Add-Type, so the helper starts about as fast as before (a median 530 ms against 506 ms over five starts on the development PC); a query takes under a millisecond warm and about 20 ms the first time, inside the paste delay.
 - **macOS.** `/usr/bin/lsappinfo front`, then `lsappinfo info -only name` for that application. Launch Services answers without an Automation or Accessibility grant, so there is no new prompt; System Events is never asked, because it would ask for Automation. This path is NOT VERIFIED on a Mac: it has unit tests on parsing what `lsappinfo` is known to print, but it has not run on one. If it reads nothing there, a Mac's dictations simply have no app until it is fixed.
@@ -37,12 +37,12 @@ It is a display name and nothing more: never a window title, a document name, a 
 ## History on, off, retention, delete and clear
 
 - **History on.** The transcript is saved as before and also carries the app name. The record is kept.
-- **History off.** No text is written. The record is kept, so stats keep working. Main reads the saved transcripts without recovering or rewriting them, so a corrupt `history.json` stays as it is.
+- **History off.** No text is written. The record is kept, so stats keep working. Main only reads the saved transcripts: a corrupt `history.json` is not recovered, backed up or reported while history is off, and stays as it is.
 - **Transcripts saved before history was turned off** stay listed, and can be copied, deleted and cleared while it is off, including after a restart.
 - **Retention** (25, 100, 500 or Unlimited) trims transcripts. Records are never trimmed.
-- **Delete** removes everything about that dictation: its transcript and its record.
+- **Delete** removes everything about that dictation: its record first, then its transcript, so if the second step fails the transcript is still listed and deleting it again finishes.
 - **Clear history** removes every transcript and every record, with their backups and temporary files.
 
 ## Filling the records on the first start
 
-On a start with no records file, main writes a record for every saved transcript: its words counted from the text, its app only if the transcript carries one, which none from before this change do. This runs once. When the file is there, even empty, it is never filled from transcripts again, and after Clear history there are none to fill it from. A fresh install with no transcripts writes no file until its first dictation.
+While there is no records file, main fills it from the saved transcripts before it reads or writes a record: their words counted from the text, their app only if the transcript carries one, which none from before this change do. That is the first start after the upgrade, or, if that start could not write the file, the next time a record is read or saved, so a later dictation never shuts the older transcripts out. Once the file is there, even empty, it is never filled from transcripts again, and after Clear history there are none to fill it from. The transcripts are only read for this, never recovered. A fresh install with no transcripts writes no file until its first dictation.

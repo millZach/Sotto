@@ -185,6 +185,7 @@ export function createIpcHarness(extra: Partial<Parameters<typeof registerIpc>[1
     delete: vi.fn(async () => false),
     clear: vi.fn(async () => undefined),
     listRecords: vi.fn(async () => []),
+    getRecord: vi.fn(async () => null),
   }
   const startup = {
     get: vi.fn(() => ({ enabled: false })),

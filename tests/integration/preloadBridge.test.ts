@@ -19,6 +19,7 @@ import {
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   DICTATION_RECORDS_LIST,
+  DICTATION_RECORD_GET,
   QUESTION_PAGE_OPEN,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
@@ -160,6 +161,7 @@ describe('typed preload bridge', () => {
         'hideApp',
         'hosts',
         'installUpdate',
+        'getDictationRecord',
         'listDictationRecords',
         'listHistory',
         'listRecoveryNotices',
@@ -662,6 +664,15 @@ describe('typed preload bridge', () => {
     await expect(bridge.listDictationRecords()).rejects.toThrow()
     await expect(bridge.listDictationRecords()).rejects.toThrow()
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(1, DICTATION_RECORDS_LIST)
+
+    electronMock.ipcRenderer.invoke
+      .mockResolvedValueOnce(records[0])
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...records[0], title: 'Inbox' })
+    await expect(bridge.getDictationRecord('one')).resolves.toEqual(records[0])
+    await expect(bridge.getDictationRecord('gone')).resolves.toBeNull()
+    await expect(bridge.getDictationRecord('one')).rejects.toThrow()
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(4, DICTATION_RECORD_GET, 'one')
   })
 
   it('forwards a PNG to copy on its own fixed channel', async () => {

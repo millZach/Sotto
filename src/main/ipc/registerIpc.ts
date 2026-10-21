@@ -18,6 +18,7 @@ import {
   QUESTION_PAGE_OPEN,
   SYSTEM_SETTINGS_OPEN,
   DICTATION_REQUEST,
+  DICTATION_RECORD_GET,
   DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -270,18 +271,19 @@ export interface SettingsIpcService {
 }
 
 export interface HistoryIpcService {
-  /** Every saved transcript, including those kept from before Keep local history was turned off. */
-  list(): Promise<HistoryEntry[]>
+  /** Every saved transcript, including those kept from before Keep local history was turned off; only read while it is off. */
+  list(options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
   /** Keeps a finished dictation's record, and its transcript while `enabled` (ADR-0100). */
   add(
     entry: HistoryEntry,
     options: { readonly enabled: boolean; readonly retention: number | 'unlimited' },
   ): Promise<HistoryEntry[]>
-  search(query: string): Promise<HistoryEntry[]>
+  search(query: string, options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
   /** Deletes a dictation's transcript and its record. */
   delete(id: string): Promise<boolean>
   clear(): Promise<void>
   listRecords(): Promise<DictationRecord[]>
+  getRecord(id: string): Promise<DictationRecord | null>
 }
 
 export interface StartupIpcService {
@@ -575,7 +577,10 @@ export function registerIpc(
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
 
     // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
-    register(HISTORY_LIST, noPayloadSchema, 0, () => dependencies.history.list())
+    register(HISTORY_LIST, noPayloadSchema, 0, async () => {
+      const settings = await dependencies.settings.get()
+      return dependencies.history.list({ enabled: settings.historyEnabled })
+    })
     // Every finished dictation keeps its record; Keep local history decides only whether its text is saved (ADR-0100).
     register(HISTORY_ADD, finishedDictationSchema, 1, async (entry) => {
       const settings = await dependencies.settings.get()
@@ -586,10 +591,15 @@ export function registerIpc(
         retention: settings.historyRetention,
       })
     })
-    register(HISTORY_SEARCH, historyQuerySchema, 1, (query) => dependencies.history.search(query))
+    register(HISTORY_SEARCH, historyQuerySchema, 1, async (query) => {
+      const settings = await dependencies.settings.get()
+      return dependencies.history.search(query, { enabled: settings.historyEnabled })
+    })
     register(HISTORY_DELETE, historyIdSchema, 1, (id) => dependencies.history.delete(id))
     register(HISTORY_CLEAR, noPayloadSchema, 0, () => dependencies.history.clear())
     register(DICTATION_RECORDS_LIST, noPayloadSchema, 0, () => dependencies.history.listRecords())
+    // One record, so the window takes in a new dictation without reading every record again.
+    register(DICTATION_RECORD_GET, historyIdSchema, 1, (id) => dependencies.history.getRecord(id))
 
     register(HOTKEY_GET, noPayloadSchema, 0, () => dependencies.hotkeys.current())
     register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>

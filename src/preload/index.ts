@@ -58,6 +58,7 @@ import {
   SYSTEM_SETTINGS_OPEN,
   DICTATION_COMMAND,
   DICTATION_REQUEST,
+  DICTATION_RECORD_GET,
   DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -123,7 +124,7 @@ import {
   type WidgetPresentationPayload,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
-import { dictationRecordsSchema } from '../shared/dictationRecord'
+import { dictationRecordSchema, dictationRecordsSchema } from '../shared/dictationRecord'
 import {
   PLATFORM_ARGUMENT_PREFIX,
   resolvePlatform,
@@ -488,6 +489,7 @@ export function createSottoBridge(
     deleteHistory: (id) => invokeParsed(renderer, HISTORY_DELETE, z.boolean(), id),
     clearHistory: () => invokeParsed(renderer, HISTORY_CLEAR, voidSchema),
     listDictationRecords: () => invokeParsed(renderer, DICTATION_RECORDS_LIST, dictationRecordsSchema),
+    getDictationRecord: (id) => invokeParsed(renderer, DICTATION_RECORD_GET, dictationRecordSchema.nullable(), id),
 
     getHotkey: () => invokeParsed(renderer, HOTKEY_GET, z.string().nullable()),
     replaceHotkey: (accelerator) =>

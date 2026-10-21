@@ -626,6 +626,19 @@ describe('OutputService dictation delivery', () => {
     expect(harness.events.slice(0, 4)).toEqual(['app', 'clipboard', 'hide', 'delay:0'])
   })
 
+  it('does not hide the widget for a paste until a slow app read has answered', async () => {
+    const answer = deferred<string | null>()
+    const harness: ReturnType<typeof createHarness> = createHarness({
+      readFocusedApp: () => { harness.events.push('app-asked'); return answer.promise },
+    })
+    const delivery = harness.service.deliverDictation('hello', { autoPaste: true, pasteDelayMs: 0 })
+    await vi.waitFor(() => expect(harness.events).toEqual(['app-asked', 'clipboard']))
+    harness.events.push('app-answered')
+    answer.resolve('Slack')
+    await expect(delivery).resolves.toEqual({ outcome: 'pasted', app: 'Slack' })
+    expect(harness.events.slice(0, 4)).toEqual(['app-asked', 'clipboard', 'app-answered', 'hide'])
+  })
+
   it('reads the delivered app on the copy-only path too', async () => {
     const readFocusedApp = vi.fn(async () => 'Windows Terminal')
     const harness = createHarness({ readFocusedApp })
