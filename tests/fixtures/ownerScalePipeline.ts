@@ -154,12 +154,12 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   await control.command({ type: 'connect' })
   const localHostId = control.hostId()!
   const idOf = (session: string): string => registry.bySession('claude', session)!.threadId
-  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, limit: () => 4 }) : undefined
+  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
   const tools = watcher ? new WatcherToolServer(watcher) : undefined
   if (tools) workspace.useWatcherTools(tools)
   // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
   await watcher?.recover()
-  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true, setLimit: async () => undefined })
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
   const service = new LocalHostService({ control, events: workspace, ...(usage ? { usage } : {}), ...(watcher ? { watcher } : {}) })
   const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
