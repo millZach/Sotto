@@ -12,7 +12,9 @@ if (process.platform !== 'darwin' || process.arch !== 'arm64') {
 }
 
 const packagePath = join(import.meta.dirname, '..', 'native', 'coreml-asr')
-const args = ['build', '-c', 'release', '--arch', 'arm64', '--package-path', packagePath]
+// Only the versions pinned in the committed Package.resolved (FluidAudio 0.17.7): a missing or
+// stale file fails the build rather than letting SwiftPM pick other versions.
+const args = ['build', '-c', 'release', '--arch', 'arm64', '--only-use-versions-from-resolved-file', '--package-path', packagePath]
 
 try {
   execFileSync('swift', args, { stdio: 'inherit' })
