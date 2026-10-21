@@ -1086,12 +1086,16 @@ import XCTest
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
         XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 15),
                       "Fix login test's question arrives while Watcher writes")
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.exists, "Watcher's permissions sit over the box while the page follows Watcher's words")
         let choice = app.buttons["A fresh account for each run"]
         revealInWatcher(choice)
         // Watcher goes on writing above the card while the reader is on it.
         let before = writing.label
         let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the card")
+        // The chip over the box is put away while the reader is on the card, so the card fits whole above the box on the SE.
+        XCTAssertTrue(waitUntilGone(permissions), "Watcher's permissions are put away while the reader is on the card")
         stays(choice, "The card's answer")
         // More words come, and the card is still where the reader left it.
         let later = writing.label
@@ -1142,6 +1146,7 @@ import XCTest
         let before = writing.label
         let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the question")
+        XCTAssertTrue(waitUntilGone(app.buttons["watcher-permissions"]), "Watcher's permissions are put away while the reader is on the question")
         stays(choice, "The question's answer")
         XCTAssertTrue(permission.exists, "The permission is still under the question the reader is held on")
         // The permission is answered on the laptop and leaves the page. The question doesn't move with the page's end.

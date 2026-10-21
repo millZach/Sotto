@@ -306,8 +306,8 @@ private struct WatcherConversationPane: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var follow = WatcherFollow()
-    /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
-    /// never as the page scrolls, and read only on iOS 18 and later.
+    /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor and the box need it. Changed only where that is
+    /// decided, never as the page scrolls, and so only on iOS 18 and later.
     @State private var holdingCard = false
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
@@ -389,7 +389,7 @@ private struct WatcherConversationPane: View {
             }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                WatcherDock(hostID: hostID, willSend: {
+                WatcherDock(hostID: hostID, holdingCard: holdingCard, willSend: {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
@@ -1071,6 +1071,9 @@ private struct WatcherDock: View {
     /// The box's words, watched here alone, so a keystroke redraws the box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
+    /// The reader is on a card waiting on them (`WatcherFollow.held`), as the conversation decided it. Set on iOS 18 and
+    /// later only, where it changes where the user lets go of the page, never as it scrolls.
+    let holdingCard: Bool
     let willSend: () -> Void
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
@@ -1086,8 +1089,12 @@ private struct WatcherDock: View {
                     .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .accessibilityIdentifier("watcher-send-held")
             }
-            // Put away while the box is being written in, so a small phone keeps room for the conversation over the keyboard.
-            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused { WatcherPermissionChip(hostID: hostID) }
+            // Put away while the box is being written in, so a small phone keeps room for the conversation over the keyboard,
+            // and while the reader is on a card, so a card as tall as a question with its answers fits whole above the box
+            // on a small phone. The page puts the card back where the reader has it as the box moves.
+            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused, !holdingCard {
+                WatcherPermissionChip(hostID: hostID)
+            }
             field
         }
         .padding(.horizontal, Space.s3)
