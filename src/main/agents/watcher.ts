@@ -785,6 +785,8 @@ export class WatcherService implements WatcherControlHooks {
     const live = this.view(), { localTakeovers: _localTakeovers, ...view } = live; void _localTakeovers
     const record = { ...view, ...clonePlainData({ current: view.current, history: view.history, requests: view.requests,
       watches: view.watches, operations: view.operations }) }
+    // Which phone started a request is main's alone, for its own checks: no window or phone is sent a phone's client ID.
+    for (const request of record.requests) delete request.phoneOrigin
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     // Every target the record names, with its standing watch and every participation, gathered in one walk of the record by
     // keys built once per record. A walk of every request for each target, building both keys each time, was most of what

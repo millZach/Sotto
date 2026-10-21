@@ -89,7 +89,7 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   const f = await fixture(), peer = await f.pair(), packet = f.send(peer.paired.clientId)
   const sent = await peer.call('send', packet)
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
-  expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.control.watcherRecord().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages[0]?.text).toBe(packet.request.text)
   // The provider receives the phone's words as typed; the request rides beside them.
   expect(f.native(f.target.threadId).messages[0]?.text).toBe(packet.request.text)
@@ -136,7 +136,7 @@ it('counts accepted paired phone instructions as user prompts while keeping actu
   const f = await fixture(true, true), peer = await f.pair()
   const text = 'Synthetic private phone instruction', packet = f.send(peer.paired.clientId, randomUUID(), text)
   expect(await peer.call('phone-user', packet)).toMatchObject({ ok: true, result: { status: 'ok' } })
-  expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.control.watcherRecord().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages.some(message => message.text === text)).toBe(true)
   expect(f.native(f.target.threadId).messages.filter(message => message.role === 'user')).toHaveLength(1)
   expect((await f.usage!.read()).activity!.totals.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
@@ -714,7 +714,7 @@ it('steers a phone message into Watcher’s running turn under the request it an
   const newsText = 'Synthetic phone steer: watch that thread again'
   expect(await peer.call('news-steer', f.send(clientId, randomUUID(), newsText, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok' } })
   const second = lastSteer(f)
-  const opened = f.watcher.state().requests.find(request => request.rootUserMessageId === second.messageId)!
+  const opened = f.control.watcherRecord().requests.find(request => request.rootUserMessageId === second.messageId)!
   expect(opened).toMatchObject({ state: 'active', participants: [], phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
   expect(second.text).toBe(newsText + watcherRequestLine(watcherRequestNote(opened.id, f.control.hostId()!)))
   // The phone shows the words alone.
@@ -759,14 +759,15 @@ it('queues a phone message to go next when Watcher’s provider takes no steer, 
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === nextText)).toBe(true), { timeout: 30_000 })
   const delivered = f.workspace.adapters.codex.commands.find(command => command.type === 'send' && command.text === nextText)!
   if (delivered.type !== 'send') throw new Error('The message was not sent')
-  const own = f.watcher.state().requests.find(request => request.rootUserMessageId === delivered.messageId)!
+  const own = f.control.watcherRecord().requests.find(request => request.rootUserMessageId === delivered.messageId)!
   // Its request is the phone's, as one its own send opened would be.
   expect(own).toMatchObject({ state: 'active', phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
   expect(own.id).not.toBe(asked.id)
   // The queue lets the item go once the provider has acknowledged it, which can come after the adapter has the words.
   await vi.waitFor(() => expect(f.phone.state(false, true, true).followups).toEqual([]), { timeout: 30_000 })
   await vi.waitFor(() => expect(f.phone.state(false).draftDeliveries).toContainEqual({ draftId: nextDraft, status: 'accepted' }))
-  // The desktop is never sent the phone's client ID with its queue.
+  // The desktop's window is never sent the phone's client ID, with its queue or with Watcher's requests.
+  expect(JSON.stringify(f.watcher.state())).not.toContain(clientId)
   expect(JSON.stringify(f.control.shell().followups ?? [])).not.toContain(clientId)
 })
 
