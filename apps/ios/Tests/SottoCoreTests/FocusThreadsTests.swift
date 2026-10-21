@@ -177,4 +177,28 @@ final class FocusThreadsTests: XCTestCase {
             XCTAssertEqual(rows.requestCount, 0)
         }
     }
+    func testAChoiceIsForTheRequestItWasPickedForAndGoesWhenAnotherTakesOver() throws {
+        let top = try thread("top")
+        let first = try thread("first", #", "delegatedBy":"top""#, requests: ask("question"))
+        let host = "h"
+        let before = FocusThreads([ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: [top, first])])
+        let askedFirst = try XCTUnwrap(before.asked(before.questions[0]))
+        XCTAssertEqual(askedFirst, AskedRequest(thread: ThreadRef(hostID: host, threadID: "first"), requestID: "r"))
+        let yes = CardChoice(asked: askedFirst, option: "Yes")
+        XCTAssertEqual(yes.chosen(for: askedFirst), "Yes")
+        // A permission in another delegated thread takes the row over. Its request has the same ID, which is unique only
+        // in its own thread, so the row's card shows another request and the choice picked for the first is gone.
+        let second = try thread("second", #", "delegatedBy":"top""#, requests: ask("permission"))
+        let after = FocusThreads([ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: [top, first, second])])
+        XCTAssertEqual(after.questions.map(\.id), ["h/top"])
+        let askedSecond = try XCTUnwrap(after.asked(after.questions[0]))
+        XCTAssertEqual(askedSecond, AskedRequest(thread: ThreadRef(hostID: host, threadID: "second"), requestID: "r"))
+        XCTAssertNotEqual(askedSecond, askedFirst)
+        XCTAssertNil(yes.chosen(for: askedSecond))
+        // A thread's own next request is another request too.
+        XCTAssertNil(yes.chosen(for: AskedRequest(thread: askedFirst.thread, requestID: "next")))
+        // A row with nothing to ask has no request for a card.
+        let quiet = FocusThreads([ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: [top])])
+        XCTAssertNil(quiet.asked(quiet.recent[0]))
+    }
 }

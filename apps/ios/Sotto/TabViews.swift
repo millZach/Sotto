@@ -329,6 +329,8 @@ private struct CardAnswer {
     var answered = false
     /// Whether the computer confirmed it. A request that left without that reads as no longer waiting instead.
     var confirmed = false
+    /// What it answered. The card's row can go on to show another thread's request, so the answer is matched on both.
+    var asked: AskedRequest { AskedRequest(thread: asking.ref, requestID: requestID) }
 }
 
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
@@ -768,7 +770,9 @@ private struct RequestCard: View {
     let request: AgentRequest
     let answer: CardAnswer?
     let send: (_ choice: String, _ busy: String, _ done: String) -> Void
-    @State private var picked: String?
+    /// The chip picked and not sent yet, kept with the request it was picked for, so it is gone once the card shows
+    /// another request, from another delegated thread or the same one.
+    @State private var choice: CardChoice?
 
     enum Phase: Equatable { case idle, sending, answered, unconfirmed }
 
@@ -789,8 +793,13 @@ private struct RequestCard: View {
         .animation(.easeInOut(duration: 0.4), value: phase)
     }
 
+    private var asked: AskedRequest { AskedRequest(thread: asking.ref, requestID: request.id) }
+    private var picked: Binding<String?> {
+        Binding(get: { choice?.chosen(for: asked) }, set: { option in choice = option.map { CardChoice(asked: asked, option: $0) } })
+    }
+
     private var phase: Phase {
-        guard let answer, answer.requestID == request.id else { return .idle }
+        guard let answer, answer.asked == asked else { return .idle }
         if answer.answered { return .answered }
         if let marker = model.pending(for: asking.ref).first(where: { $0.kind == "answer" && $0.requestID == answer.requestID }) {
             return model.isSending(marker) ? .sending : .unconfirmed
@@ -915,8 +924,8 @@ private struct RequestCard: View {
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
         let ownWords = request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords
-        return OneTapQuestion(options: options, enabled: enabled, picked: $picked) { choice in
-            send(choice, "Sending…", "Answered")
+        return OneTapQuestion(options: options, enabled: enabled, picked: picked) { option in
+            send(option, "Sending…", "Answered")
         } more: {
             NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(ownWords) }
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))

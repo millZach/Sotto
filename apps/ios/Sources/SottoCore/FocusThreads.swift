@@ -57,9 +57,34 @@ public struct FocusThreads {
     /// The thread whose requests a Needs you row shows and answers: the delegated thread it stands for, or its own.
     public func asking(_ row: HostedThread) -> HostedThread { waitingIn[row.id] ?? row }
 
+    /// The request a Needs you row's card shows and answers: the first one waiting in the thread that asks.
+    public func asked(_ row: HostedThread) -> AskedRequest? {
+        let thread = self.asking(row)
+        return thread.thread.requests.first.map { AskedRequest(thread: thread.ref, requestID: $0.id) }
+    }
+
     /// Whether a row shows the finished-unread mark: its computer says so and it is not the thread open here (ADR-0046).
     public func isUnreadFinish(_ row: HostedThread) -> Bool { row.finishedUnread && row.ref != opened }
 
     /// A permission holds an agent still until it is answered, so it outranks a question.
     private static func rank(_ row: HostedThread) -> Int { ThreadState(row.thread) == .needsAnswer ? 2 : 1 }
+}
+
+/// The request a Needs you card shows: the thread that asks and the request's ID there. A request ID is only unique in
+/// its own thread, and a row that stands for delegated threads can show one thread's request and then another's, so a
+/// card's choice and the answer it sent belong to this pair rather than to the card's row.
+public struct AskedRequest: Hashable, Sendable {
+    public let thread: ThreadRef
+    public let requestID: String
+    public init(thread: ThreadRef, requestID: String) { self.thread = thread; self.requestID = requestID }
+}
+
+/// A choice picked on a Needs you card and not sent yet, kept with the request it was picked for. Once the card shows
+/// another request, the choice is gone, so Send answer can never send it to a thread that did not ask it.
+public struct CardChoice: Equatable, Sendable {
+    public let asked: AskedRequest
+    public let option: String
+    public init(asked: AskedRequest, option: String) { self.asked = asked; self.option = option }
+    /// The picked option while the card still shows the request it was picked for, and nothing otherwise.
+    public func chosen(for shown: AskedRequest) -> String? { asked == shown ? option : nil }
 }
