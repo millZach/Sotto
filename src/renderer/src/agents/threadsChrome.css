@@ -10,7 +10,7 @@
 .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 34px; min-height: 30px; height: 30px; border-radius: 6px; }
 /* How much of the pane header's right end the controls take. The header reads this to pad itself, so the
    thread title never runs under them; macOS paints its own controls beside the sidebar and needs no inset. */
-.threads-view:not(.threads-view--mac) { --threads-winctl-inset: 116px; }
+.threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(116px + var(--main-freeze-room, 0px)); }
 /* With the tools panel open it, not the last pane, meets the window's corner: the rail's top stays empty under
    the controls, and each surface's line of chrome keeps the rest of their room plus a 20px gap, so the surface's
    own last action never reads as one of the window's buttons. The pane it displaced takes its own back. An
@@ -18,7 +18,7 @@
    overlay closes. */
 .threads-view:not(.threads-view--mac) .thread-workspace__tools > .tools-panel .tools-chrome { padding-right: max(8px, calc(var(--threads-winctl-inset, 0px) - var(--tools-rail-width, 58px) + 20px)); }
 /* Linux keeps the title area but has no buttons to reserve room for. */
-[data-platform='linux'] .threads-view { --threads-winctl-inset: 0px; }
+[data-platform='linux'] .threads-view { --threads-winctl-inset: var(--main-freeze-room, 0px); }
 .threads-view:has(.thread-workspace__tools > .tools-panel:not([data-mode='overlay'])) .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
 
 /* Before agent state arrives, and for as long as an agent error stands, the page is one sentence. It is still a

@@ -92,6 +92,17 @@ export function watcherDelegationOwners(snapshot: Pick<AgentHostSnapshot, 'hostI
   }
   return owners
 }
+/** One of the current Watcher's workers: a participation, or a standing watch as one, with its target's key. */
+type Worker = { request: WatcherRecord['requests'][number]; participant: WatcherRecord['requests'][number]['participants'][number]
+  /** Every open worker's, and a closed request's only when it is a takeover: nothing else asks for it by target. */
+  key?: string }
+interface Workers {
+  readonly all: readonly Worker[]
+  /** The workers with a key on each target, in order. */
+  readonly byTarget: ReadonlyMap<string, readonly Worker[]>
+  /** The first worker under each standing watch's scope. */
+  readonly byStandingWatch: ReadonlyMap<string, Worker>
+}
 export interface WatcherWakeOptions {
   snapshot: () => AgentHostSnapshot
   /** The Watcher record, read only: the record is replaced on every change and never edited, so it is not copied. */
@@ -191,10 +202,13 @@ export class WatcherWakeUp {
    */
   private lookedAt: Set<string> | undefined
   private sawThreads: Set<string> | undefined
+  /** Each thread's key by host and thread ID, as the last pass built it, so a pass builds keys only for threads new to it. */
+  private threadKeys = new Map<string, Map<string, string>>()
   /** What the owed pass would run after it, for a read's pass that takes its place. */
   private owedAfter: (() => void) | undefined
   /** The reads the synchronous pass under way shares; see `withPassReads`. */
-  private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean } | undefined
+  private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean
+    workers?: Workers; closedWorkers?: Workers; requests?: Map<string, WatcherRecord['requests'][number]>; threads?: Map<string, Map<string, AgentThread>> } | undefined
   constructor(private readonly options: WatcherWakeOptions) {
     this.now = options.now ?? Date.now
     this.ordinary = options.ordinaryBatch ?? { quietMs: WATCHER_ORDINARY_BATCH_MS, maxMs: WATCHER_ORDINARY_BATCH_MAX_MS }
@@ -269,28 +283,52 @@ export class WatcherWakeUp {
     this.owedWorkSettled.delete(scope); this.owedWorkSettled.add(scope)
     while (this.owedWorkSettled.size > 2_000) this.owedWorkSettled.delete(this.owedWorkSettled.values().next().value!)
   }
-  private workers(includeClosed = false) {
-    const record = this.record()
-    const watches = record.current ? (record.watches ?? []).filter(watch => !watch.remoteOrigin) : []
-    const standing = watches.map(watch => {
-      const request: WatcherRecord['requests'][number] = { id: watch.id, watcher: record.current!.target, rootUserMessageId: `standing:${watch.id}`,
+  private workers(includeClosed = false): readonly Worker[] { return this.workerIndex(includeClosed).all }
+  /**
+   * The current Watcher's workers: each standing watch, then each participation in its active requests (and closed ones,
+   * when asked) on a thread no standing watch covers. Worked out once per pass and shared by everything the pass asks:
+   * news is asked of every recent event on every publish, and working them out for each event, building every
+   * participant's key each time, grew with the record times the events (#1231).
+   */
+  private workerIndex(includeClosed: boolean): Workers {
+    const kept = includeClosed ? this.pass?.closedWorkers : this.pass?.workers
+    if (kept) return kept
+    const record = this.record(), current = record.current
+    const watches = current ? (record.watches ?? []).filter(watch => !watch.remoteOrigin) : []
+    const standing = watches.map((watch): Worker => {
+      const request: WatcherRecord['requests'][number] = { id: watch.id, watcher: current!.target, rootUserMessageId: `standing:${watch.id}`,
         standingWatchId: watch.id, state: 'active', createdAt: watch.createdAt, closedAt: null, participants: [] }
       const participant: WatcherRecord['requests'][number]['participants'][number] = { requestId: watch.id, target: watch.target,
         startedBy: 'user', generation: watch.generation, state: 'participating', promptCount: 0 }
-      return { request, participant }
+      return { request, participant, key: targetKey(watch.target) }
     })
-    return [...standing, ...record.requests.filter(request => (request.state === 'active' || includeClosed && request.state === 'closed') && targetKey(request.watcher) === (record.current ? targetKey(record.current.target) : ''))
-      .flatMap(request => request.participants.map(participant => ({ request, participant })))
-      .filter(({ participant }) => !watches.some(watch => targetKey(watch.target) === targetKey(participant.target)))]
+    // A closed request's participation is only ever news as a takeover, so only those need a key. Closed requests are most
+    // of an old record, and the pass that asks for them runs every few hundred milliseconds while threads stream.
+    const all = [...standing, ...!current ? [] : record.requests.filter(request => (request.state === 'active' || includeClosed && request.state === 'closed')
+      && request.watcher.hostId === current.target.hostId && request.watcher.threadId === current.target.threadId)
+      .flatMap(request => request.participants.flatMap((participant): Worker[] => watches.some(watch => watch.target.hostId === participant.target.hostId
+        && watch.target.threadId === participant.target.threadId) ? [] : [{ request, participant,
+        ...request.state === 'active' || participant.state === 'taken-over' ? { key: targetKey(participant.target) } : {} }]))]
+    const byTarget = new Map<string, Worker[]>(), byStandingWatch = new Map<string, Worker>()
+    for (const worker of all) {
+      const list = worker.key === undefined ? undefined : byTarget.get(worker.key)
+      if (list) list.push(worker); else if (worker.key !== undefined) byTarget.set(worker.key, [worker])
+      if (worker.request.standingWatchId !== undefined && !byStandingWatch.has(worker.request.standingWatchId)) byStandingWatch.set(worker.request.standingWatchId, worker)
+    }
+    const index: Workers = { all, byTarget, byStandingWatch }
+    if (this.pass) { if (includeClosed) this.pass.closedWorkers = index; else this.pass.workers = index }
+    return index
   }
-  private watchedTargets(): WatcherThreadTarget[] {
-    return [...new Map(this.workers().filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
-      .map(({ participant }) => [targetKey(participant.target), participant.target])).values()]
+  private watchedTargets(): WatcherThreadTarget[] { return [...this.watchedByKey().values()] }
+  /** The threads Watcher watches, by their keys, from the pass's workers: every open worker has its key. */
+  private watchedByKey(): Map<string, WatcherThreadTarget> {
+    return new Map(this.workers().filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
+      .map(({ participant, key }) => [key!, participant.target]))
   }
   /** The threads Watcher watches, by target key, for its reads' watched-only filter and slim rows (#1191). */
-  watchedKeys(): Set<string> { return this.withPassReads(() => new Set(this.watchedTargets().map(targetKey))) }
+  watchedKeys(): Set<string> { return this.withPassReads(() => new Set(this.watchedByKey().keys())) }
   watchedThreadIds(hostId: string): string[] {
-    return this.watchedTargets().filter(target => target.hostId === hostId).map(target => target.threadId)
+    return this.withPassReads(() => this.watchedTargets().filter(target => target.hostId === hostId).map(target => target.threadId))
   }
   private project(snapshot: AgentHostSnapshot, thread: AgentThread) {
     return snapshot.projects.find(project => project.id === thread.projectId && (project.hostId ?? snapshot.hostId) === (thread.hostId ?? snapshot.hostId))
@@ -476,11 +514,12 @@ export class WatcherWakeUp {
       return false
     })
   }
-  private event(kind: WatcherEvent['kind'], target: WatcherThreadTarget, identity: unknown, extra: Partial<WatcherEvent> = {}): void {
+  /** `key` is the target's key, when the caller has it already. */
+  private event(kind: WatcherEvent['kind'], target: WatcherThreadTarget, identity: unknown, extra: Partial<WatcherEvent> = {}, key = targetKey(target)): void {
     if (!this.started || this.closed) return
     // A thread a watched thread delegated to is that thread's to watch: its news reaches Watcher through it (#1190).
-    if (this.delegatedOwner.has(targetKey(target))) return
-    const matching = this.workers(kind === 'taken-over').filter(item => targetKey(item.participant.target) === targetKey(target))
+    if (this.delegatedOwner.has(key)) return
+    const matching = this.workerIndex(kind === 'taken-over').byTarget.get(key) ?? []
     // A thread's news is told once, under one of the requests it takes part in: its standing watch, or else the newest.
     // A takeover is each participation's own.
     const eligible = kind === 'taken-over' ? matching : matching.filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
@@ -698,11 +737,14 @@ export class WatcherWakeUp {
    */
   private threadEdges(snapshot: AgentHostSnapshot): string {
     let edges = String(snapshot.connected)
-    const watched = new Set(this.watchedTargets().map(targetKey)), owners = watcherDelegationOwners(snapshot, watched)
+    const byKey = this.watchedByKey(), targets = [...byKey.values()], watched = new Set(byKey.keys()), owners = watcherDelegationOwners(snapshot, watched)
+    // Watched threads by host, so the walk below asks of each thread without building its key: it runs on every publish.
+    const byHost = new Map<string, Set<string>>()
+    for (const target of targets) { const ids = byHost.get(target.hostId); if (ids) ids.add(target.threadId); else byHost.set(target.hostId, new Set([target.threadId])) }
     for (const thread of snapshot.threads) {
-      const key = targetKey({ hostId: thread.hostId ?? snapshot.hostId ?? '', threadId: thread.id })
+      const hostId = thread.hostId ?? snapshot.hostId ?? ''
       // A thread a watched thread delegated to tells its cards as that thread's news, so its cards are edges too.
-      if (thread.kind !== 'watcher' && !watched.has(key) && !owners.has(key)) continue
+      if (thread.kind !== 'watcher' && !byHost.get(hostId)?.has(thread.id) && !(owners.size && owners.has(targetKey({ hostId, threadId: thread.id })))) continue
       edges += `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => `${card.id}@${requestRevision(card)}`).join(',')}`
     }
     return edges
@@ -712,8 +754,8 @@ export class WatcherWakeUp {
     const snapshot = this.snapshot(), stamp = new Date(this.now()).toISOString()
     this.cancelObserve?.(); this.cancelObserve = undefined
     this.observedAt = this.now(); this.observedEdges = { record: this.record(), threads: this.threadEdges(snapshot) }
-    const targets = new Set<string>(), watched = new Set(this.watchedTargets().map(targetKey))
-    const lookedAt = new Set<string>()
+    const targets = new Set<string>(), watched = new Set(this.watchedByKey().keys())
+    const lookedAt = new Set<string>(), keys = new Map<string, Map<string, string>>()
     // A thread a watched thread delegated to is that thread's responsibility (ADR-0081): Watcher watches only the
     // delegating thread, and hears of the delegated thread's request cards as its news (#1190).
     const muted = this.delegatedOwner = watcherDelegationOwners(snapshot, watched)
@@ -721,7 +763,10 @@ export class WatcherWakeUp {
     if (this.pending.length) this.pending = this.stillDue(this.pending)
     for (const thread of snapshot.threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !snapshot.hostId) continue
-      const target = { hostId: thread.hostId ?? snapshot.hostId, threadId: thread.id }, key = targetKey(target)
+      // Each thread's key is kept from the last pass while the thread is there: this pass looks at every thread.
+      const target = { hostId: thread.hostId ?? snapshot.hostId, threadId: thread.id }
+      const key = this.threadKeys.get(target.hostId)?.get(thread.id) ?? targetKey(target)
+      ;(keys.get(target.hostId) ?? keys.set(target.hostId, new Map()).get(target.hostId)!).set(thread.id, key)
       targets.add(key)
       // A thread Watcher does not watch makes no news, so a pass looks at it only for one of Watcher's own reads. It keeps
       // no progress, so watching it again starts a new quiet episode.
@@ -760,7 +805,7 @@ export class WatcherWakeUp {
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
         if (told) {
           const turn = thread.lastTurn, finished = finishedTurn(thread)
-          const ends = () => this.pending.filter(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind)).map(event => event.id)
+          const ends = () => this.pending.filter(event => event.target.hostId === target.hostId && event.target.threadId === target.threadId && TURN_ENDS.has(event.kind)).map(event => event.id)
           const endsBefore = new Set(ends())
           let settles = false
           if (finished) {
@@ -773,7 +818,7 @@ export class WatcherWakeUp {
               { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
                 evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
             if (this.workSettled(thread, target.hostId)) {
-              const settling = () => this.pending.filter(event => event.kind === 'work-settled' && targetKey(event.target) === key).map(event => event.id)
+              const settling = () => this.pending.filter(event => event.kind === 'work-settled' && event.target.hostId === target.hostId && event.target.threadId === target.threadId).map(event => event.id)
               const waiting = new Set(settling())
               this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
               settles = settling().some(id => !waiting.has(id))
@@ -824,10 +869,10 @@ export class WatcherWakeUp {
       for (const card of child.requests) this.event('needs-user', { hostId, threadId }, [child.id, card.id, requestRevision(card)],
         { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), delegatedThreadId: child.id })
     }
-    this.lookedAt = lookedAt; this.sawThreads = targets
+    this.lookedAt = lookedAt; this.sawThreads = targets; this.threadKeys = keys
     for (const [key, progress] of this.progress) if (!targets.has(key)) { progress.cancel?.(); this.progress.delete(key) }
     this.evidence.removeMissing(targets)
-    for (const { participant } of this.workers(true)) if (participant.state === 'taken-over') this.event('taken-over', participant.target, participant.takeover)
+    for (const { participant, key } of this.workers(true)) if (participant.state === 'taken-over') this.event('taken-over', participant.target, participant.takeover, {}, key)
     // A receipt for Watcher's own send wakes it only when the send did not plainly go: failed, refused or uncertain.
     // A receipt a tool's answer already gave Watcher, a refusal included, is no news to it (#1190).
     for (const operation of this.record().operations) if (receiptNeedsWatcher(operation)) {
@@ -953,6 +998,27 @@ export class WatcherWakeUp {
     if (this.evidence.checkpoint(target, read)) this.evidenceChanged(target, before, false, false)
     this.options.changed?.()
   }
+  /** A request by its ID: the first, as a search of the record finds it. Indexed once per pass, since news asks it of every event. */
+  private request(id: string): WatcherRecord['requests'][number] | undefined {
+    if (!this.pass) return this.record().requests.find(item => item.id === id)
+    if (!this.pass.requests) {
+      const requests = this.pass.requests = new Map<string, WatcherRecord['requests'][number]>()
+      for (const request of this.record().requests) if (!requests.has(request.id)) requests.set(request.id, request)
+    }
+    return this.pass.requests.get(id)
+  }
+  /** A target's thread in the pass's snapshot: the first, as a search of the snapshot finds it. Indexed once per pass. */
+  private thread(snapshot: AgentHostSnapshot, target: WatcherThreadTarget): AgentThread | undefined {
+    if (!this.pass || this.pass.snapshot !== snapshot) return snapshot.threads.find(item => item.id === target.threadId && (item.hostId ?? snapshot.hostId) === target.hostId)
+    if (!this.pass.threads) {
+      const threads = this.pass.threads = new Map<string, Map<string, AgentThread>>()
+      for (const thread of snapshot.threads) {
+        const hostId = thread.hostId ?? snapshot.hostId, ids = threads.get(hostId ?? '') ?? threads.set(hostId ?? '', new Map()).get(hostId ?? '')!
+        if (hostId !== undefined && !ids.has(thread.id)) ids.set(thread.id, thread)
+      }
+    }
+    return this.pass.threads.get(target.hostId)?.get(target.threadId)
+  }
   /**
    * Whether each of these events may still go, asked as one pass: main prunes its queued wake-ups after every pass, and
    * asking for each queued event alone read the merged snapshot and the record once per event (#1070).
@@ -962,14 +1028,15 @@ export class WatcherWakeUp {
     if (!this.started || this.closed) return false
     // A delegated thread's own news is not Watcher's while a watched thread answers for it, even news made before then.
     if (this.delegatedOwner.has(targetKey(event.target))) return false
-    const record = this.record(), standing = this.workers().find(item => item.request.standingWatchId === event.requestId)
-    const request = standing?.request ?? record.requests.find(item => item.id === event.requestId)
-    if (!record.current || !request || request.state !== 'active' && !(event.kind === 'taken-over' && request.state === 'closed') || targetKey(record.current.target) !== targetKey(request.watcher)) return false
-    const participant = standing?.participant ?? request.participants.find(item => targetKey(item.target) === targetKey(event.target))
+    const record = this.record(), standing = this.workerIndex(false).byStandingWatch.get(event.requestId)
+    const request = standing?.request ?? this.request(event.requestId)
+    if (!record.current || !request || request.state !== 'active' && !(event.kind === 'taken-over' && request.state === 'closed')
+      || record.current.target.hostId !== request.watcher.hostId || record.current.target.threadId !== request.watcher.threadId) return false
+    const participant = standing?.participant ?? request.participants.find(item => item.target.hostId === event.target.hostId && item.target.threadId === event.target.threadId)
     if (!participant || participant.generation !== event.generation || participant.automationStopped) return false
     if (event.kind === 'taken-over') return participant.state === 'taken-over'
     if (participant.state !== 'participating') return false
-    const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot.hostId) === event.target.hostId)
+    const snapshot = this.snapshot(), thread = this.thread(snapshot, event.target)
     if (!thread || isThreadArchived(thread) || !standing && (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)))) return false
     if (event.kind === 'delivery-changed') {
       const operation = record.operations.find(item => item.id === event.operationId)

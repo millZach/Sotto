@@ -63,7 +63,7 @@ async function master(native?: CodexAppServerHost, usage = false) {
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource()
-  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
+  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
     machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads) })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
@@ -141,16 +141,16 @@ it('reads and directs a paired host for a Watcher on Muse only when the host lis
   expect(remoteRows.every(item => !item.controlAvailable && !item.readsAvailable)).toBe(true)
 })
 
-it('lists This computer and each paired machine with its facts, running threads and starts in flight; an older host reads unknown, a disconnected one not connected (#1031)', async () => {
+it('lists This computer and each paired machine with its facts and running threads; an older host reads unknown, a disconnected one not connected (#1031)', async () => {
   const f = await master()
   const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
   const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
   expect(await machines()).toEqual([
     expect.objectContaining({ hostId: f.control.hostId(), name: 'This computer', thisComputer: true, connected: true, factsState: 'reported',
-      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), inFlight: 0, inFlightLimit: 1 }),
+      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }) }),
     expect.objectContaining({ hostId: f.pairing.hostId, name: 'Synthetic remote', thisComputer: false, connected: true, factsState: 'reported',
-      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0, inFlight: 0, inFlightLimit: 1 })])
-  // A start on the paired machine is in flight there, and its thread runs there; This computer's count is unchanged.
+      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0 })])
+  // A start on the paired machine is in flight there, and its thread runs there.
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
   // The owning host's reply can arrive before the desktop's copy of the thread shows its first turn. A reconcile in
@@ -168,15 +168,16 @@ it('lists This computer and each paired machine with its facts, running threads 
   const shell = behindOf(f.socket.shell.bind(f.socket)), view = behindOf(f.socket.view.bind(f.socket))
   const behind = [vi.spyOn(f.socket, 'shell').mockImplementation(shell), vi.spyOn(f.socket, 'view').mockImplementation(view)]
   await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(f.pairing.hostId)
-  expect((await machines())[1]).toMatchObject({ inFlight: 1 })
+  expect(f.watcher.startsInFlight()).toBe(1)
   for (const spy of behind) spy.mockRestore()
-  await expect.poll(async () => (await machines())[1]).toMatchObject({ runningThreads: 1, inFlight: 1 })
-  expect((await machines())[0]).toMatchObject({ inFlight: 0 })
+  await expect.poll(async () => (await machines())[1]).toMatchObject({ runningThreads: 1 })
+  // No machine says anything of the Threads in flight limit, which is gone (#1183).
+  for (const machine of await machines()) expect(Object.keys(machine)).not.toEqual(expect.arrayContaining(['inFlight']))
   // An older host does not list host-facts: it reads unknown, and nothing is asked of it.
   const socket = f.socket as unknown as { features: readonly string[] }, features = socket.features
   socket.features = features.filter(feature => feature !== 'host-facts')
   const asked = vi.spyOn(f.socket, 'hostFacts')
-  expect((await machines())[1]).toMatchObject({ connected: true, factsState: 'unknown', facts: null, runningThreads: null, inFlight: 1,
+  expect((await machines())[1]).toMatchObject({ connected: true, factsState: 'unknown', facts: null, runningThreads: null,
     note: expect.stringContaining('Update Sotto on it') })
   expect(asked).not.toHaveBeenCalled()
   socket.features = features
@@ -186,18 +187,27 @@ it('lists This computer and each paired machine with its facts, running threads 
     Object.assign(f.connection, { available: () => false })
     return report
   })
-  expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null, inFlight: 1 })
+  expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null })
   expect(asked).toHaveBeenCalledTimes(1)
   // A host that is not connected says so rather than reading its last facts as current, and is not asked.
-  expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null, inFlight: 1 })
+  expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null })
   expect(asked).toHaveBeenCalledTimes(1)
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {
   const f = await master(), selected = f.router.shell().activeThreadId, input = f.start()
   expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, workSettled: true })])
+  // The host answers as host protocol version 1 has it, with the old limit's numbers, so an older desktop still reads
+  // it. This desktop takes them off, and the owning host sends no working threads warning of its own (#1183).
+  const raw = vi.spyOn(f.socket as unknown as { call(request: { op: string }): Promise<unknown> }, 'call')
   const first = await f.call('start_thread', input)
-  expect(first).toMatchObject({ status: 'ok', limits: { inFlightLimit: 1, promptCount: 1 } })
+  const wire = await raw.mock.results[raw.mock.calls.findIndex(([request]) => request.op === 'watcher-control')]!.value as { limits: Record<string, unknown> }
+  raw.mockRestore()
+  expect(wire.limits).toMatchObject({ inFlight: 0, inFlightLimit: 8, promptCount: 1 })
+  expect(wire).not.toHaveProperty('warning')
+  expect(first).toMatchObject({ status: 'ok', limits: { promptCount: 1, promptLimit: 4 } })
+  expect(first).not.toHaveProperty('warning')
+  if (first.status === 'ok') expect(first.limits).toEqual({ promptCount: 1, promptLimit: 4 })
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   expect(await f.call('start_thread', input)).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
   const read = await f.call('read_thread', { target: first.target })
@@ -246,7 +256,7 @@ it('holds a lost acknowledgement through disconnection and reconciles without an
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => { admitted = packet; await original(packet); throw new Error('lost-ack') })
   expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
   f.router.setReconnecting(f.pairing.hostId, true)
-  expect(f.watcher.state().inFlight).toBe(1)
+  expect(f.watcher.startsInFlight()).toBe(1)
   expect(await f.call('start_thread', input)).toMatchObject({ receipt: { operationId: admitted!.operation.id } })
   const retry = await original(admitted!) as { receipt: { operationId: string } }
   expect(retry.receipt.operationId).toBe(admitted!.operation.id)
@@ -342,7 +352,7 @@ it('refuses start before the wire when the owning-host path is missing', async (
   f.router.replace({ ...f.connection, service: { ...f.connection.service,
     shell: () => f.socket.shell(), command: command => f.socket.command(command), subscribe: listener => f.socket.subscribe(listener), supportsWatcherControl: false, supportsWatcherReads: false } })
   expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'HOST_FEATURE_UNAVAILABLE' })
-  expect(spy).not.toHaveBeenCalled(); expect(f.watcher.state().inFlight).toBe(0)
+  expect(spy).not.toHaveBeenCalled(); expect(f.watcher.startsInFlight()).toBe(0)
   expect(await f.call('list_projects', {})).toMatchObject({ status: 'ok', projects: expect.arrayContaining([expect.objectContaining({ target: { hostId: f.pairing.hostId, projectId: f.project.id }, controlAvailable: false })]) })
 })
 
@@ -567,8 +577,8 @@ it('settles a refused paired queue send even when the takeover clears the queue 
     finishing.release()
     await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
     await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
-    // The in-flight count can follow the failed receipt by an update (it failed CI twice when read at once), so it is waited for too.
-    await vi.waitFor(() => expect(f.watcher.state().inFlight).toBe(0))
+    // The count of starts still working can follow the failed receipt by an update (it failed CI twice when read at once), so it is waited for too.
+    await vi.waitFor(() => expect(f.watcher.startsInFlight()).toBe(0))
     const written = await native.driver.requests()
     expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); finishing.release() }
@@ -598,7 +608,7 @@ it('refuses a mode wider than the owning host lets this computer give and keeps 
   const f = await master()
   await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
   expect(await f.call('start_thread', { ...f.start(), permission: { kind: 'runtime', mode: 'full-access' } })).toMatchObject({ code: 'PERMISSION_TOO_WIDE' })
-  expect(f.watcher.state().inFlight).toBe(0)
+  expect(f.watcher.startsInFlight()).toBe(0)
   const acceptedInput = { ...f.start(), permission: { kind: 'runtime' as const, mode: 'approval-required' } }
   const first = await f.call('start_thread', acceptedInput)
   expect(first.status).toBe('ok')
@@ -699,7 +709,7 @@ it('keeps remote Stop all ownership while desktop room IPC is held and flushes b
   const f = await master(), sent = vi.fn<(state: WatcherRoomState) => boolean>(() => true)
   const timers: (() => void)[] = []
   const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: f.watcher,
-    send: sent, setLimit: async () => undefined, schedule: run => { timers.push(run); return () => undefined } })!
+    send: sent, schedule: run => { timers.push(run); return () => undefined } })!
   const ipc = createIpcHarness(); ipc.cleanup()
   const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
     app: ipc.app, trustedSenders: () => [{ role: 'main', webContents: ipc.trustedContents, url: ipc.trustedUrl }], watcher: desktop.bridge })
@@ -731,7 +741,7 @@ it('keeps remote Stop all ownership while desktop room IPC is held and flushes b
   if (ownResult?.status !== 'ok') throw new Error('stop-refused')
   const last = sent.mock.calls.at(-1)![0]
   expect(last).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
-    currentOptions: ownResult.state.currentOptions, inFlight: ownResult.state.inFlight, inFlightLimit: ownResult.state.inFlightLimit })
+    currentOptions: ownResult.state.currentOptions })
   // publish() and the operation's own state() are distinct captures; keep both original timestamps.
   expect(Date.parse(last.observedAt)).toBeLessThanOrEqual(Date.parse(ownResult.state.observedAt))
   const count = sent.mock.calls.length
@@ -862,7 +872,7 @@ it('refuses a remote mutation before transmission when the master closes during 
   try {
     await gate.entered; f.watcher.close(); gate.release()
     expect(await start).toMatchObject({ code: 'NOT_CURRENT_WATCHER', receipt: { deliveryState: 'failed' } })
-    expect(writes).not.toHaveBeenCalled(); expect(f.watcher.state().inFlight).toBe(0)
+    expect(writes).not.toHaveBeenCalled(); expect(f.watcher.startsInFlight()).toBe(0)
     expect(f.watcher.state().requests[0]!.participants[0]).toMatchObject({ state: 'relinquished', promptCount: 1 })
     expect(await f.call('start_thread', input)).toMatchObject({ code: 'NOT_CURRENT_WATCHER' })
     expect(f.watcher.state().requests[0]!.participants[0]!.promptCount).toBe(1)
@@ -970,7 +980,7 @@ it.each(['stopped', 'closed'] as const)('fences a request %s during remote dispa
     expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe(state)
     gate.release()
     expect(await start).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
-    expect(writes).not.toHaveBeenCalled(); expect(f.watcher.state().inFlight).toBe(0)
+    expect(writes).not.toHaveBeenCalled(); expect(f.watcher.startsInFlight()).toBe(0)
     expect((await remote.native.snapshot()).threads.some(item => item.title === input.title)).toBe(false)
     expect(await f.call('start_thread', input)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
   } finally { gate.release(); await start }
@@ -1005,7 +1015,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => true, watcherEnabled: true } })
   let control = f.control
-  let worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  let worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, workerHost: true })
   cleanups.push(async () => { worker.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-master-project', provider: 'codex' as const,
@@ -1028,7 +1038,7 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   expect(await worker.admitRemote(queued, clientId, () => undefined)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   worker.close(); control.dispose(); await control.closed()
   control = f.create()
-  worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  worker = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control, historyEnabled: () => true, workerHost: true })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
   const code = (id: string) => { try { worker.guardOperation(id); return undefined } catch (error) { return (error as { result?: { code: string } }).result?.code } }
   expect(control.watcherRecord().operations.find(item => item.id === queued.operation.id)?.deliveryState).toBe('queued')
@@ -1187,10 +1197,10 @@ it('refunds only an exact fenced absence and rejects a late packet for that oper
   let packet: WatcherHostControl | undefined
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async input => { packet = input; throw new Error('synthetic-before-admission') })
   expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
-  expect(f.watcher.state().inFlight).toBe(1)
+  expect(f.watcher.startsInFlight()).toBe(1)
   await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
   expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)).toMatchObject({ deliveryState: 'failed', refusalCode: 'OPERATION_NOT_RECORDED' })
-  expect(f.watcher.state().inFlight).toBe(0)
+  expect(f.watcher.startsInFlight()).toBe(0)
   expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(0)
   expect(await original(packet!)).toMatchObject({ code: 'OPERATION_NOT_RECORDED' })
   expect(remote.host.service.state().host.threads.some(thread => thread.title === 'Synthetic remote worker')).toBe(false)

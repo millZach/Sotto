@@ -63,8 +63,9 @@ export class WatcherEvidenceStore {
     this.entries.set(key, entries)
     return previous?.id !== id
   }
-  read(target: WatcherThreadTarget, connected = true, now = Date.now()): WatcherEvidence[] {
-    const entries = this.entries.get(targetKey(target))
+  /** `key` is the target's key, when the caller has already built it: the room reads every target's evidence on every publish. */
+  read(target: WatcherThreadTarget, connected = true, now = Date.now(), key = targetKey(target)): WatcherEvidence[] {
+    const entries = this.entries.get(key)
     return [...entries?.entries() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
       const prefix = slot.startsWith('host:github:') ? 'host:github:' : 'pr:'
       const unread = item.source === 'github' && item.url ? entries?.get(prefix + pullRequestKey(item.url)) : undefined

@@ -5,7 +5,7 @@ import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
 import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { watcherRoomInputs } from './watcherRoomInput'
-import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
+import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -688,7 +688,7 @@ export class SocketHostService implements HostService {
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     guard?.()
-    return watcherToolSchemas[request.call.name].output.parse(await this.call({ op: 'watcher-control', request }))
+    return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(await this.call({ op: 'watcher-control', request })))
   }
   subscribeWatcher(listener: (projection: WatcherHostProjection) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
   cachedWatcherProjection(master: WatcherIdentity): WatcherHostProjection | undefined {
@@ -702,7 +702,7 @@ export class SocketHostService implements HostService {
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     const result = await this.call({ op: 'watcher-read', request })
-    if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)
+    if (request.call) return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(result))
     this.cachedWatcher = watcherHostProjectionSchema.parse(result)
     return this.cachedWatcher
   }

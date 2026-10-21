@@ -112,7 +112,8 @@ describe('delegation words', () => {
     expect(delegationRefusalLine({ action: 'start', refusal: 'PERMISSION_TOO_WIDE' })).toBe('It asked for more permission than this thread has, or than your new-thread default allows. '
       + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
     expect(delegationRefusalLine({ action: 'start', refusal: 'LEVEL_LIMIT' })).toBe('This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.')
-    expect(delegationRefusalLine({ action: 'start', refusal: 'IN_FLIGHT_LIMIT' })).toMatch(/Threads in flight allows, delegated and Watcher's together\. Nothing was started\. It can ask again once one finishes\.$/u)
+    // Only a refusal recorded before #1183 has it: Sotto no longer limits how many threads start.
+    expect(delegationRefusalLine({ action: 'start', refusal: 'IN_FLIGHT_LIMIT' })).toBe('This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. Nothing was started.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PAUSED' })).toBe('You were working in that thread, so it takes no brief until your turn there ends. Nothing was sent.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROMPT_LIMIT' })).toBe('That thread already had 4 briefs from this thread in this turn. Your next message to this thread renews the limit. Nothing was sent.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^That thread's provider or model was not available/u)

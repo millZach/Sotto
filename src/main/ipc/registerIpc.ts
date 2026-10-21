@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, watcherContinueHandoverRequestSchema,
-  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
+  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
 import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
@@ -147,6 +147,7 @@ const settingKeys = [
   'commitMessages',
   'pullRequestText',
   'autoUpdateCheck',
+  'mainFreezeNotice',
   'webLinkDestination',
   'responseStreaming',
   'localHostEnabled',
@@ -157,7 +158,6 @@ const settingKeys = [
   'visualsInThreads',
   'babysitPullRequests',
   'resumeThreadsAfterRestart',
-  'watcherInFlightLimit',
   'workerRoles',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
@@ -542,7 +542,6 @@ export function registerIpc(
       register(WATCHER_OPEN, watcherOpenRequestSchema, 1, request => watcher.open(request))
       register(WATCHER_PREPARE_STOP_ALL, noPayloadSchema, 0, () => watcher.prepareStopAll())
       register(WATCHER_STOP_ALL, watcherStopAllRequestSchema, 1, request => watcher.stopAll(request))
-      register(WATCHER_SET_LIMIT, watcherSetLimitRequestSchema, 1, request => watcher.setLimit(request))
       register(WATCHER_SET_PERMISSION, watcherSetPermissionRequestSchema, 1, request => watcher.setPermission(request))
       register(WATCHER_WATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.watchThread(request))
       register(WATCHER_UNWATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.unwatchThread(request))

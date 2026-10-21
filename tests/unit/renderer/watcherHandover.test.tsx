@@ -57,7 +57,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
   return {
     current: identity, currentOptions: { modelId: 'claude:sonnet', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true },
     history: [{ ...identity, target: target('watcher-old'), provider: 'codex' }], runtimeMode: 'approval-required', standingWatches: [], ownChanges: [],
-    requests: [], watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at,
+    requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at,
     handover: { source: target('watcher-old'), provider: 'codex', counts }, ...patch,
   }
 }
@@ -69,7 +69,7 @@ function fakeBridge(initial: WatcherRoomState, options: { readonly handover?: bo
   const bridge = {
     get: vi.fn(async () => ({ status: 'ok' as const, state })),
     open: vi.fn(async ({ provider }: { provider: 'codex' | 'claude' | 'grok' }) => ok({ ...state, current: { ...identity, provider } })),
-    setLimit: vi.fn(), prepareStopAll: vi.fn(), stopAll: vi.fn(), setPermission: vi.fn(),
+    prepareStopAll: vi.fn(), stopAll: vi.fn(), setPermission: vi.fn(),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
     ...options.handover === false ? {} : {
       readHandover: vi.fn(async (): Promise<WatcherHandoverRead> => ({ status: 'ok', text: WORDS, counts })),

@@ -161,3 +161,37 @@ it('Codex brackets a compaction it reports without numbers using the context siz
   await reported(41000, 'turn-3')
   expect((await compaction())?.context).toEqual({ before: 90000, after: 12000 })
 })
+
+it('Codex clears the context figure its compaction leaves out of date, unless a reading came in while it ran', async () => {
+  const f = await codexFixture(); cleanup.push(f.cleanup)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  const threadId = await f.realId('thread')
+  const usage = async () => (await f.host.snapshot()).threads[0]?.usage
+  const reported = async (totalTokens: number, turnId: string): Promise<void> => {
+    await f.action('thread', { type: 'notify', method: 'thread/tokenUsage/updated',
+      params: { threadId, turnId, tokenUsage: { total: { inputTokens: totalTokens, outputTokens: 1 }, last: { inputTokens: totalTokens, outputTokens: 1, totalTokens }, modelContextWindow: 258400 } } })
+  }
+  const boundary = async (method: 'item/started' | 'item/completed', id: string): Promise<void> => {
+    await f.action('thread', { type: 'notify', method, params: { threadId, turnId: `${id}-turn`, item: { id, type: 'contextCompaction' } } })
+  }
+  await reported(120000, 'turn-1')
+  await expect.poll(async () => (await usage())?.contextUsed).toBe(120000)
+  const before = (await usage())?.contextUpdatedAt
+  // Codex reports no size after a compaction, so the figure from before it is cleared, with a new time, wherever it started.
+  await boundary('item/started', 'first'); await boundary('item/completed', 'first')
+  await expect.poll(async () => (await usage())?.contextUsed).toBeUndefined()
+  expect((await usage())?.contextUpdatedAt).not.toBe(before)
+  await reported(130000, 'turn-2')
+  await expect.poll(async () => (await usage())?.contextUsed).toBe(130000)
+  // A reading that came in while the compaction ran is the size after it, and is kept.
+  const compactions = async () => (await f.host.snapshot()).threads[0]?.activities?.filter(record => record.kind === 'compaction').length
+  await boundary('item/started', 'second')
+  await expect.poll(compactions).toBe(2)
+  await reported(20000, 'turn-3')
+  await expect.poll(async () => (await usage())?.contextUsed).toBe(20000)
+  await boundary('item/completed', 'second')
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.activities?.filter(record => record.kind === 'compaction' && record.status === 'completed').length).toBe(2)
+  expect((await usage())?.contextUsed).toBe(20000)
+})

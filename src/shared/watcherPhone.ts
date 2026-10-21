@@ -6,6 +6,11 @@ import { watcherStopAllPreviewSchema } from './watcherRoom'
 
 /** How many takeover lines a phone's page carries, the newest, as it carries the newest five hundred receipts. */
 export const WATCHER_PHONE_TAKEOVERS_MAX = 500
+/**
+ * What the page sends as `inFlightLimit` since #1183 removed the Threads in flight limit: the highest an iPhone accepts.
+ * Host protocol version 1 requires the field; it limits nothing.
+ */
+export const WATCHER_PHONE_LEGACY_LIMIT = 8
 /** Optional host-v1 phone features, offered only by the Owl desktop running Watcher. */
 export const WATCHER_PHONE_FEATURE = 'watcher-phone' as const
 export const WATCHER_PHONE_STOP_FEATURE = 'watcher-phone-stop-all' as const
@@ -39,6 +44,7 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
     status: z.enum(['idle', 'running', 'error', 'unavailable']), connected: z.boolean(), watched: z.boolean(),
     paused: z.boolean().optional(),
     takenOver: z.boolean(), backgroundWorkCount: z.number().int().nonnegative() }).strict()),
+  // Kept for host protocol version 1, which requires both: Watcher's starts still working, at most seven, and WATCHER_PHONE_LEGACY_LIMIT.
   needsYou: z.array(requestCard), inFlight: z.number().int().nonnegative(), inFlightLimit: z.number().int().min(1).max(8),
   working: z.boolean(), recoveryNotice: z.string().nullable(), observedAt: z.string(),
   draftDeliveries: z.array(z.object({ draftId: z.uuid(), status: z.enum(['queued', 'submitting', 'accepted', 'uncertain', 'failed']) }).strict()).optional(),

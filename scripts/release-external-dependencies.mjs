@@ -25,6 +25,8 @@ const reviewedInventories = Object.freeze({
       'node:fs/promises',
       'node:http',
       'node:https',
+      // Record a minute profiles main through an in-process inspector session, with no port (ADR-0098).
+      'node:inspector',
       // The SSH launcher listens on a loopback port it picks and validates host addresses (#181).
       'node:net',
       'node:os',

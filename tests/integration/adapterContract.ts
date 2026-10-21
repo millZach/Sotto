@@ -9,6 +9,7 @@ import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentHostSnapshot, AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 import { resolveModel } from '../../src/shared/modelCatalog'
+import { PROVIDER_PROFILES } from '../../src/shared/providerProfile'
 import type { ThreadEventKind } from '../../src/shared/threadEvents'
 import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, RecordedRpc } from '../fixtures/adapterFixture'
 import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
@@ -54,6 +55,12 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       unsubscribeEvents = f.host.subscribeEvents?.(event => events.push(event))
     })
     afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; const previous = f; f = undefined!; await previous?.cleanup() })
+    it('can compact exactly when its provider profile says it compacts (ADR-0095)', async context => {
+      if (!f.providerId) { context.skip(); return }
+      const { capabilities } = await f.host.snapshot()
+      // The profile is what Sotto offers before a client says anything; the adapter is what the client can do.
+      expect(capabilities.compact === true).toBe(PROVIDER_PROFILES[f.providerId].compacts)
+    })
     it('keeps ordinary permissions when main supplies no Watcher profile', async context => {
       if (!f.host.useLaunchProfiles) { context.skip(); return }
       f.host.useLaunchProfiles({ profileFor: async () => undefined })

@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * Every delegation ends (ADR-0081, #1029): a brief whose delivery was never confirmed, or whose delegated thread is gone,
- * reaches an outcome, holds no start slot after it, and the delegating thread is told.
+ * reaches an outcome, Sotto stops looking at it, and the delegating thread is told.
  */
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -44,27 +44,25 @@ async function service(delegations: Record<string, unknown>[], threads: AgentThr
     deliverWakeUp: async (_threadId, news) => { told.push(news) },
   }
   const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined },
-    historyEnabled: () => true, limit: () => 1 })
+    historyEnabled: () => true })
   await delegation.recover()
   ;(delegation as unknown as { records: unknown[] }).records = structuredClone(delegations)
   const internals = delegation as unknown as { queuedBriefs: Map<string, string> }
   return { delegation, hooks: hooks!, snapshot, told, state, internals }
 }
 
-it('ends a brief whose delivery was never confirmed as unknown once nothing can prove it, frees its slot and tells the delegating thread', async () => {
+it('ends a brief whose delivery was never confirmed as unknown once nothing can prove it and tells the delegating thread', async () => {
   const lost = brief({ deliveryState: 'uncertain', outcome: undefined, told: undefined })
   const f = await service([lost], [thread('parent', { status: 'running' }), thread('child')])
-  // While the coordinator still holds the send unresolved, the brief holds its slot, as Watcher's uncertain start does.
+  // While the coordinator still holds the send unresolved, the brief stays open and its thread is looked at.
   f.state.pendingWork = true
   for (let pass = 0; pass < 3; pass++) f.hooks.observe(f.snapshot)
   await settle()
-  expect(f.delegation.startsInFlight()).toBe(1)
   expect(f.hooks.observedThreadIds()).toEqual(['child'])
   // Once nothing is unresolved and its message never showed, Sotto cannot prove it landed: unknown, never resent.
   f.state.pendingWork = false
   f.hooks.observe(f.snapshot)
   await settle()
-  expect(f.delegation.startsInFlight()).toBe(0)
   expect(f.hooks.observedThreadIds()).toEqual([])
   expect(f.told).toEqual([{ source: 'delegation', items: [{ delegationId: lost.id, threadId: 'child', outcome: 'unknown' }] }])
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
@@ -74,7 +72,7 @@ it('ends a brief whose delivery was never confirmed as unknown once nothing can 
   f.snapshot.threads[1] = thread('child', { messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }], lastUserMessageId: lost.messageId })
   f.hooks.observe(f.snapshot)
   await settle()
-  expect(f.delegation.startsInFlight()).toBe(0)
+  expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
 })
 
 it('reconciles an unconfirmed brief as delivered when its own message shows in the thread', async () => {
@@ -84,19 +82,17 @@ it('reconciles an unconfirmed brief as delivered when its own message shows in t
       messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }] })])
   f.hooks.observe(f.snapshot)
   await settle()
-  expect(f.delegation.startsInFlight()).toBe(1)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'working' } })
 })
 
-it('ends the briefs of a delegated thread that is gone, frees what they held and tells the delegating thread', async () => {
+it('ends the briefs of a delegated thread that is gone, stops looking at them and tells the delegating thread', async () => {
   const working = brief({})
   const waiting = brief({ delegatedThreadId: 'other', action: 'send', deliveryState: 'queued', outcome: undefined, told: undefined })
   const f = await service([working, waiting], [thread('parent', { status: 'running' })])
   f.internals.queuedBriefs.set(waiting.id, 'Synthetic brief')
-  expect(f.delegation.startsInFlight()).toBe(1)
   f.hooks.observe(f.snapshot)
   await settle()
-  expect(f.delegation.startsInFlight()).toBe(0)
   expect(f.hooks.observedThreadIds()).toEqual([])
   expect(f.internals.queuedBriefs.size).toBe(0)
   expect(f.told).toEqual([{ source: 'delegation', items: [

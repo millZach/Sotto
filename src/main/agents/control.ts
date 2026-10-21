@@ -39,7 +39,7 @@ import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, Threa
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
-import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf } from './clientVersions'
 import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
@@ -71,7 +71,7 @@ import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
-import { migrateWatcherRecord, prunePromptTurns } from './watcherRecords'
+import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -188,6 +188,8 @@ class WakeUpNoLongerDue extends Error {
  * What the coordinator asks of babysitting before a wake-up goes (ADR-0061 decision 9): whether each part may still go,
  * and whether the thread has Sotto's tool, which the wording names.
  */
+/** A copy of Watcher's record being changed (`watcherDraft`), and the record it was copied from. */
+export interface WatcherDraft { readonly from: Readonly<WatcherRecord>; readonly record: WatcherRecord }
 /** What the coordinator asks of resuming after a restart, and tells it (ADR-0076). */
 export interface RestartResumeHooks {
   /** Whether a resume note may still go: the feature and its setting are on. */
@@ -326,6 +328,11 @@ export class AgentControl {
   private outbox: Saved['outbox'] = []
   private readonly pendingSetAsideDeliveries = new Map<string, AgentDelivery>()
   private watcher: WatcherRecord = emptyWatcherRecord()
+  /**
+   * Whether the record may hold prompt turns nothing reads, as one loaded from a file saved before they were let go of
+   * can. Every change lets go of them, so only loading sets this.
+   */
+  private watcherUnpruned = false
   private readonly watcherMessageDisplay: WatcherMessageDisplay | undefined
   private watcherHooks: WatcherControlHooks | undefined
   /** Delegation between threads (ADR-0081), given only while the Owl feature is on. */
@@ -346,6 +353,13 @@ export class AgentControl {
    * record per thread on every update; copying it each time cost main more than the rest of the pass.
    */
   watcherRecordView(): Readonly<WatcherRecord> { return this.watcher }
+  /**
+   * A copy of the record to change over several steps before handing it to `mutateWatcher`, for a caller that must read
+   * its own earlier steps on the way, as Watcher's observe pass does after a takeover. One copy serves the whole change.
+   */
+  watcherDraft(): WatcherDraft { return { from: this.watcher, record: this.watcherRecord() } }
+  /** Whether a change with nothing new would still change the record, by letting go of prompt turns nothing reads. */
+  watcherNeedsPruning(): boolean { return this.watcherUnpruned }
   /** The deliveries and follow-ups the shell names, read without copying every thread to reach them. */
   watcherSendRecords(): { readonly deliveries: readonly Readonly<AgentDelivery>[]; readonly followups: readonly Readonly<AgentFollowup>[] } {
     return { deliveries: (this.state.deliveries ?? []).filter(item => this.threadAvailable(item.threadId)),
@@ -358,14 +372,17 @@ export class AgentControl {
     this.mutateWatcher(update)
     return this.persist()
   }
-  mutateWatcher(update: (record: WatcherRecord) => void): void {
-    const next = this.watcherRecord(); update(next)
+  /** Changes the record. A draft (`watcherDraft`) is changed in place of a fresh copy, and only while it is of this record. */
+  mutateWatcher(update: (record: WatcherRecord) => void, draft?: WatcherDraft): void {
+    if (draft && draft.from !== this.watcher) throw new Error('The Watcher record changed while a change to it was being made.')
+    const next = (draft ?? this.watcherDraft()).record; update(next)
     // Stable keeps Watcher's record whole (ADR-0072); only Owl, where Watcher runs, lets go of the turns nothing reads.
     if (this.dependencies.watcherEnabled === true) prunePromptTurns(next)
     // Watcher's observe pass offers an update on every streamed chunk, and most change nothing. Checking the record again
     // costs more than copying it, and both grow with every prompt and wake-up Watcher has had, so an unchanged record stays.
-    if (isDeepStrictEqual(next, this.watcher)) return
+    if (isDeepStrictEqual(next, this.watcher)) { this.watcherUnpruned = false; return }
     this.watcher = watcherRecordSchema.parse(next)
+    this.watcherUnpruned = false
     this.watcherMessageDisplay?.update(this.watcher.requests)
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
@@ -680,6 +697,7 @@ export class AgentControl {
     }
     const saved = await this.store.read()
     this.watcher = saved.watcher
+    this.watcherUnpruned = this.dependencies.watcherEnabled === true && (saved.watcher.promptTurns?.length ?? 0) > WATCHER_PROMPT_TURNS_KEPT
     this.watcherMessageDisplay?.update(this.watcher.requests)
     if (this.dependencies.watcherEnabled !== true) {
       const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
@@ -1372,7 +1390,8 @@ export class AgentControl {
   private savedOverLiveState(): Saved {
     this.syncLegacyDraft()
     const { configuration, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing } = this.state
-    const saved = { configuration, watcher: this.watcher, providerUpgrade: this.state.providerUpgrade ?? null,
+    // At most eight reservations, so a build from before #1183 can still read the file (`watcherRecordForDisk`).
+    const saved = { configuration, watcher: watcherRecordForDisk(this.watcher), providerUpgrade: this.state.providerUpgrade ?? null,
       ...this.savedDormant,
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId,
       draftAttachments: this.dormantLegacyDraft?.draftThreadId === draftThreadId ? this.dormantLegacyDraft.draftAttachments : this.state.draftAttachments ?? [], composing,
@@ -3014,6 +3033,18 @@ export class AgentControl {
     }
     this.publish(); this.pumpFollowups(); return this.shell()
   }
+  /**
+   * Whether Watcher is answering one of Sotto's wake-ups, its news among them, or is about to: one is being sent to it, or
+   * its running turn's message is Sotto's (#1188). Watcher's own record of what it last sent says whose turn runs before a
+   * provider that starts a turn ahead of its echo has shown the message.
+   */
+  watcherWakeUpTurn(threadId: string): boolean {
+    const thread = this.state.host.threads.find(t => t.id === threadId)
+    if (thread?.kind !== 'watcher') return false
+    if (this.followupStore.peek().items.some(item => item.threadId === threadId && item.wakeUp && item.status === 'dispatching')) return true
+    if (!isThreadTurnRunning(thread)) return false
+    return this.watcherHooks?.lastSendWasWakeUp?.(threadId) ?? isWatcherWakeUpTurn(thread)
+  }
   private isUserFollowup(item: Readonly<QueuedFollowup>): boolean {
     return !item.wakeUp && !item.watcherOperationId && !item.news?.length && !this.delegationHooks?.guardFor(item.draftId)
   }
@@ -4525,8 +4556,11 @@ export class AgentControl {
   /** Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. */
   private observeWatcher(snapshot: AgentHostSnapshot): void {
     if (this.disposed) return
-    this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
+    // Watcher's pass runs for every update, and asks which messages Sotto sent only of a head that may be a takeover, so the
+    // set is gathered from the outbox and every delivery only when it is first asked.
+    let known: Set<string> | undefined
+    this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) })
   }
   private acceptSnapshot(incoming: AgentHostSnapshot): void {
     if (this.disposed) return

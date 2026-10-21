@@ -23,7 +23,10 @@ export interface WatcherControlHooks {
   dispatched?(command: AgentHostCommand): void
   /** Clear unproven native-write candidates when an intent or dispatch definitively fails. */
   dispatchAborted?(command: AgentHostCommand): void
-  observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void
+  /** Whether the last message sent to Watcher's thread was one of Sotto's wake-ups; undefined when this run sent it none. */
+  lastSendWasWakeUp?(threadId: string): boolean | undefined
+  /** `knownUserMessages` holds the messages Sotto itself queued or delivered: only asked of a head that may be a takeover. */
+  observe(snapshot: AgentHostSnapshot, knownUserMessages: Pick<ReadonlySet<string>, 'has'>): void
   /** These operations' queued items failed to send. Their items may already be gone, so this is the only word of it. */
   queueFailed?(operationIds: ReadonlySet<string>): void
   guardOperation(operationId: string): void

@@ -133,8 +133,6 @@ export interface AppSettings {
    * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
    */
   resumeThreadsAfterRestart: boolean
-  /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
-  watcherInFlightLimit: number
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
@@ -244,6 +242,12 @@ export interface AppSettings {
   commitMessages: boolean
   autoUpdateCheck: boolean
   /**
+   * The notice beside the window controls while Sotto's main process is frozen (#1233, ADR-0098). Part of the
+   * `main-freeze` Owl feature: stable never shows it, whatever this says. Off hides only the notice; Settings >
+   * Performance keeps the numbers and Record a minute.
+   */
+  mainFreezeNotice: boolean
+  /**
    * Whether the agent runtime runs on this computer at all. Read once at
    * startup; off starts no local host after the next restart. Remote hosts
    * still work, dictation is unaffected and no saved data is removed.
@@ -305,7 +309,6 @@ const fieldSchemas = {
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
-  watcherInFlightLimit: z.number().int().min(1).max(8),
   workerRoles: workerRoleChoicesSchema,
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
@@ -358,6 +361,7 @@ const fieldSchemas = {
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
+  mainFreezeNotice: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
@@ -389,7 +393,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visualsInThreads: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
-  watcherInFlightLimit: 4,
   workerRoles: {},
   reducedMotion: 'system',
   microphoneId: null,
@@ -450,6 +453,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
+  // On by default in Owl, the only place it shows: a freeze is worth hearing about until the owner says otherwise.
+  mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
   localHostEnabled: true,
@@ -514,6 +519,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 
+  // Only the keys named here are read. One a version of Sotto no longer has, such as `watcherInFlightLimit`, the Threads
+  // in flight limit removed in #1183, is left behind here and gone from the file at the next save.
   return {
     version: parseField(persisted, 'version', defaults),
     theme: parseField(persisted, 'theme', defaults),
@@ -530,7 +537,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
-    watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
@@ -582,6 +588,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
+    mainFreezeNotice: parseField(persisted, 'mainFreezeNotice', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),

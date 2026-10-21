@@ -27,7 +27,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: true } })
   let choices: WorkerRoleChoices = {}, reads = 0
-  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => true, limit: () => 4,
+  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => true,
     ...(options.roles === false ? {} : { roles: () => { reads++; return choices } }) })
   const tools = new WatcherToolServer(service, { roles: options.roles !== false })
   workspace.host.useWatcherTools(tools)
@@ -169,7 +169,7 @@ function acceptingHost(f: Awaited<ReturnType<typeof fixture>>, permissionCeiling
       const { operation, call } = request
       if (call.name !== 'start_thread') throw new Error('Synthetic host takes starts only')
       return { status: 'ok', receipt: { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted',
-        receiptId: operation.receiptId, cardId: operation.cardId }, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, target: operation.target,
+        receiptId: operation.receiptId, cardId: operation.cardId }, limits: { promptCount: 1, promptLimit: 4 }, target: operation.target,
         effectiveChoices: { modelId: call.input.modelId!, reasoningEffort: call.input.reasoningEffort ?? null, permission: call.input.permission!, workingCopy: call.input.workingCopy },
         creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId! }
     },
