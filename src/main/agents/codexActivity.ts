@@ -313,7 +313,10 @@ export class CodexActivityProjection {
     // History says only what its items say: the agent's live state is evidence for a live item alone, and only in the
     // conversation its notifications reach.
     const working = context.phase !== 'history' && this.owners.get(child)?.thread === thread && this.working.get(thread)?.has(child) === true
-    if (!held && item.kind === 'interacted' && priorFinished && !working) {
+    // A message this conversation already holds as one of the agent's assignments was shown to be work when it came: a
+    // reread of the same history takes it as that assignment again, so its later completion ends it and not the one before.
+    const known = thread.activities?.some(record => record.agents?.some(agent => agent.id === agentId(child) && agent.assignmentId === itemActivityId)) === true
+    if (!held && item.kind === 'interacted' && priorFinished && !working && !known) {
       const waiting = this.messaged.get(thread) ?? new Map<string, { item: Item; context: Context; senderPath: string; at?: number }>()
       waiting.set(child, { item, context, senderPath, ...context.phase === 'history' ? {} : { at: this.now() } }); this.messaged.set(thread, waiting)
       return

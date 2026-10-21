@@ -165,6 +165,27 @@ describe('observational subagent roster metadata', () => {
       expect(statuses(fork)).toEqual(['completed'])
     })
 
+    it('keeps a follow-up its own conversation already holds when that history is read again, so its end is its own', () => {
+      let now = 1_000
+      const projection = new CodexActivityProjection(() => now)
+      const source = conversation('source')
+      read(projection, source, 'completed', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']])
+      now = 2_000
+      projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
+      expect(statuses(source)).toEqual(['completed', 'running'])
+      const first = () => source.activities.filter(record => record.kind === 'subagent')[0]!.agents![0]!
+      const before = structuredClone(first())
+      // A refresh reads the same history again while the follow-up still runs.
+      read(projection, source, 'history', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']])
+      expect(statuses(source)).toEqual(['completed', 'running'])
+      now = 5_000
+      projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn-2', status: 'failed', durationMs: 3_000, error: { message: 'Synthetic failure' } } })
+      // The follow-up's own end, failure and duration are its own; the first assignment is untouched.
+      expect(statuses(source)).toEqual(['completed', 'failed'])
+      expect(first()).toEqual(before)
+      expect(source.activities.filter(record => record.kind === 'subagent')[1]!.agents![0]).toMatchObject({ durationMs: 3_000, message: 'Synthetic failure' })
+    })
+
     it('takes no agent as working once its conversation\'s runtime has ended', () => {
       const projection = new CodexActivityProjection(() => 1_000)
       const source = conversation('source')
