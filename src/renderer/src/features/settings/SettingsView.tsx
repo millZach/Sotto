@@ -51,6 +51,7 @@ import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { WatcherSettlePrototype, watcherSettlePrototypeEnabled } from './WatcherSettings.prototype'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
@@ -561,9 +562,13 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>New threads & projects</p></div><AgentSetupFields /></Card>
 
-              {workerRoles ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}><div className="settings-section__heading"><h2>Watcher</h2><p>What each kind of work runs on</p></div>
-                <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
-                  onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /></Card> : null}
+              {workerRoles ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>{(() => {
+                // PROTOTYPE — throwaway: where "Settle finished threads" sits under Watcher (WatcherSettings.prototype.tsx).
+                const roles = <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
+                  onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} />
+                const now = <><div className="settings-section__heading"><h2>Watcher</h2><p>What each kind of work runs on</p></div>{roles}</>
+                return watcherSettlePrototypeEnabled() ? <WatcherSettlePrototype roles={roles} current={now} /> : now
+              })()}</Card> : null}
 
               <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
                 <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>

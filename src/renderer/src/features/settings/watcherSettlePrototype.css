@@ -1,0 +1,27 @@
+/* PROTOTYPE — throwaway. Settings, under Watcher: where "Settle finished threads" sits, and the floating variant bar. */
+
+/* Room under the last row so the variant bar never covers it. */
+.settings-view .watcher-proto { padding-bottom: 64px; }
+
+/* A: worker roles under a group heading like Watched threads'. Its own heading steps aside; Reset all stays on the line. */
+.settings-view .watcher-proto__roles { position: relative; }
+.settings-view .watcher-proto__roles-body { border-top: 1px solid var(--tt-hairline); padding-top: 12px; }
+.settings-view .watcher-proto__roles .worker-roles__head { position: absolute; top: -7px; right: 0; }
+.settings-view .watcher-proto__roles .worker-roles__head h3 { display: none; }
+
+/* B: the group after the role cards, at the distance Settings groups keep from what comes before. */
+.settings-view .watcher-proto--b > .settings-group { margin-top: 34px; }
+
+/* C: one row, the toggle then the list, in line with the description it explains. */
+.settings-view .watcher-proto__settle .tt-toggle { padding: 0; }
+.settings-view .watcher-proto__finished { margin: 12px 0 0; max-width: 420px; }
+.settings-view .watcher-proto__finished > p { margin: 0 0 6px; color: var(--tt-text-2); font-size: 13px; font-weight: 500; line-height: 1.45; }
+.settings-view .watcher-proto__finished > ul { display: grid; gap: 3px; margin: 0; padding: 0 0 0 18px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.settings-view .watcher-proto__finished li::marker { color: var(--tt-text-muted); }
+.settings-view .watcher-proto__roles-c { margin-top: 16px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); }
+
+/* The bar is the prototype's, not Sotto's: high contrast so it never reads as part of a variant. */
+.prototype-switcher { position: fixed; z-index: 9999; bottom: 18px; left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); padding: 6px 10px; border-radius: var(--tt-radius-pill); background: var(--tt-text); color: var(--tt-canvas); box-shadow: var(--tt-shadow-lg); font-size: 13px; white-space: nowrap; -webkit-app-region: no-drag; }
+.prototype-switcher > button { width: 28px; height: 28px; border: 0; border-radius: var(--tt-radius-pill); background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
+.prototype-switcher > button:hover { background: var(--tt-text-muted); }
+.prototype-switcher > span { min-width: 220px; text-align: center; }
