@@ -142,7 +142,9 @@ export function createCoreMlEngineLoader(helperPath: string, version: CoreMlMode
         if (!message || dead) return
         if (!ready) {
           if (message.ready === true && message.protocol !== HELPER_PROTOCOL) {
-            // A helper left from an earlier build (a development checkout that was not rebuilt).
+            // A helper left from an earlier build (a development checkout that was not rebuilt). The speech model's status
+            // says only that it failed, so the way out goes to main's log, where the developer running it reads it.
+            console.warn('coreml-helper-outdated', { protocol: message.protocol ?? 1, expected: HELPER_PROTOCOL, rebuild: 'node scripts/build-coreml-asr.mjs' })
             fail(new Error(`Core ML helper speaks protocol ${String(message.protocol ?? 1)}, not ${HELPER_PROTOCOL}; rebuild it with scripts/build-coreml-asr.mjs`))
           } else if (message.ready === true) {
             ready = true

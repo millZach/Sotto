@@ -50,7 +50,10 @@ describe('Core ML engine', () => {
   })
 
   it('refuses a helper from an earlier build, which would refuse long recordings', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     await expect(load('protocol-1')).rejects.toThrow('speaks protocol 1, not 2; rebuild it')
+    expect(warn).toHaveBeenCalledWith('coreml-helper-outdated', { protocol: 1, expected: 2, rebuild: 'node scripts/build-coreml-asr.mjs' })
+    warn.mockRestore()
   })
 
   it('gives a request 20 seconds plus twice its audio, and never more than two minutes', () => {
