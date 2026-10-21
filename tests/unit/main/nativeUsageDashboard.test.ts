@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NativeUsage } from '../../../src/main/agents/nativeUsage'
+import { NativeUsage, tokenCount } from '../../../src/main/agents/nativeUsage'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import type { UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { usageTokenObservationSchema } from '../../../src/shared/usageDashboard'
@@ -41,6 +41,11 @@ const grokFrame = (ticks: number | null = 100) => ({ _meta: { agentTimestampMs: 
       'grok-b': { inputTokens: 20, outputTokens: 3, cachedReadTokens: 0, cacheCreationTokens: 2 } } } } })
 
 describe('Owl native numeric projection', () => {
+  it('reads a provider figure as a non-negative safe integer, the one check Muse, OpenCode and the native ledgers share', () => {
+    expect([0, 1, 1_200_000, Number.MAX_SAFE_INTEGER].map(tokenCount)).toEqual([0, 1, 1_200_000, Number.MAX_SAFE_INTEGER])
+    expect([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Infinity, '12', null, undefined].map(tokenCount)).toEqual(new Array(8).fill(undefined))
+  })
+
   it('collects nothing when off and repairs cache-write totals without extending the stable ledger format', async () => {
     const { usage, rows, root } = await fixture('claude', false)
     usage.claude('thread', claudeFrame('native-message-secret'))
@@ -412,7 +417,7 @@ describe('Owl native numeric projection', () => {
 })
 
 describe('native subscription metadata seam', () => {
-  it.each(['codex', 'claude', 'grok'] as const)('refuses Muse quota reads in the %s adapter without starting native work', async provider => {
+  it.each(['codex', 'claude', 'grok'] as const)('answers other providers quota reads in the %s adapter without starting native work', async provider => {
     const { root } = await fixture(provider)
     const host = provider === 'codex' ? new CodexAppServerHost({ userDataPath: root, usageEnabled: true })
       : provider === 'claude' ? new ClaudeStreamJsonHost({ userDataPath: root, usageEnabled: true })
@@ -423,7 +428,9 @@ describe('native subscription metadata seam', () => {
       ? vi.spyOn((host as unknown as { client: { findExecutable(): Promise<string | null> } }).client, 'findExecutable')
       : vi.spyOn(host as unknown as { readQuota(): Promise<unknown> }, 'readQuota')
     for (const refresh of [false, true]) {
-      await expect(host.readProviderQuota!('muse', refresh)).rejects.toThrow('Usage is not available for this provider.')
+      // OpenCode reports no account limits, so nothing may build a quota result for it; Muse's are its own adapter's to read.
+      await expect(host.readProviderQuota!('opencode', refresh)).rejects.toThrow('Usage reads no limits for this provider.')
+      await expect(host.readProviderQuota!('muse', refresh)).resolves.toMatchObject({ providerId: 'muse', status: 'unavailable', reason: 'unsupported' })
     }
     expect(read).not.toHaveBeenCalled()
     expect(connect).not.toHaveBeenCalled()

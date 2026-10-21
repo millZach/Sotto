@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ProviderId } from '../../shared/agents'
 import {
-  USAGE_QUOTA_WINDOWS_MAX, isUsageProviderId, usageQuotaReadSchema, usageWindowLength,
+  USAGE_QUOTA_WINDOWS_MAX, reportsUsageLimits, usageQuotaReadSchema, usageWindowLength,
   type UsageQuotaRead, type UsageQuotaWindow,
 } from '../../shared/usageDashboard'
 
@@ -75,7 +75,7 @@ function read(providerId: UsageQuotaRead['providerId'], windows: UsageQuotaWindo
 /** Caller-owned connection/read state. Reasons are fixed words, never native exception text. */
 export function unavailableProviderQuota(providerId: ProviderId, reason: NonNullable<UsageQuotaRead['reason']>,
   refreshable = false, observedAt?: string): UsageQuotaRead {
-  if (!isUsageProviderId(providerId)) throw new Error('Usage is not available for this provider.')
+  if (!reportsUsageLimits(providerId)) throw new Error('Usage reads no limits for this provider.')
   const at = timestamp(observedAt)
   return usageQuotaReadSchema.parse({ providerId, status: reason === 'read-failed' ? 'error' : 'unavailable', windows: [],
     refreshable, reason, ...(at ? { observedAt: at } : {}) })
@@ -414,4 +414,40 @@ export function parseGrokQuota(value: unknown, observedAt: string): UsageQuotaRe
     ...(usedPercent !== undefined ? { usedPercent } : {}), ...(resetsAt ? { resetsAt } : {}),
     ...(durationMinutes ? { durationMinutes } : {}), ...(at ? { observedAt: at } : {}) }
   return read('grok', [window], observedAt, true)
+}
+
+/**
+ * Muse's `usage/read` result or `usage/changed` params (MSP Developer Preview, checked live against Muse Code 1.4.9 on
+ * October 21, 2026): the serve host's last-observed subscription window, with a 5-hour-class window, a weekly block, a
+ * tier and the instant the host received it, all in epoch milliseconds and whole percents. `usage` is absent until the host
+ * has seen a model call. Anything unexpected reads as not reported; the tier is the provider's own ID and is never kept.
+ */
+export function parseMuseQuota(value: unknown): UsageQuotaRead | undefined {
+  const envelope = object(value)
+  const usage = object(envelope?.usage) ?? (envelope && Object.hasOwn(envelope, 'observedAtMs') ? envelope : undefined)
+  if (!usage) return undefined
+  const milliseconds = (input: unknown): string | undefined => {
+    const at = finite(input, MAX_UNIX_SECONDS * 1_000)
+    return at !== undefined && Number.isSafeInteger(at) ? new Date(at).toISOString() : undefined
+  }
+  const observedAt = milliseconds(usage.observedAtMs)
+  if (!observedAt) return undefined
+  const windows: UsageQuotaWindow[] = []
+  const block = (raw: unknown, id: string, kind: 'primary' | 'weekly', fallbackMinutes: number | undefined, fallbackLabel: string): void => {
+    const source = object(raw)
+    if (!source) return
+    const usedPercent = finite(source.usedPercent, MAX_PERCENT)
+    const resetsAt = milliseconds(source.resetsAtMs)
+    const durationMinutes = duration(source.windowDurationMins) ?? fallbackMinutes
+    if (usedPercent === undefined && resetsAt === undefined) return
+    windows.push({ id, label: quotaDurationLabel(durationMinutes) ?? fallbackLabel, kind,
+      ...(usedPercent !== undefined ? { usedPercent } : {}), ...(resetsAt ? { resetsAt } : {}),
+      ...(durationMinutes ? { durationMinutes } : {}), observedAt })
+  }
+  block(usage.window, 'muse-window', 'primary', undefined, 'Limit')
+  // MSP calls this the rolling weekly block and gives it no length of its own.
+  block(usage.weekly, 'muse-weekly', 'weekly', 10_080, 'Week')
+  // A window that had already reset when Muse saw it is not what the account holds now.
+  const current = windows.filter(window => !expired(window, observedAt))
+  return read('muse', current, observedAt, true)
 }
