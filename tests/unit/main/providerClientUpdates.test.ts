@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -8,7 +8,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 
 import { clientVersionOf, compareClientVersions } from '../../../src/main/agents/clientVersions'
 import { installerDetail } from '../../../src/main/agents/installerDetail'
-import { clearLeftoverPackage, detectClientChannel, ProviderClients, updateActionFor, type RunLike } from '../../../src/main/agents/providerClients'
+import { clearLeftoverPackage, detectClientChannel, detectClientInstall, npmPrefixOf, ProviderClients, updateActionFor, type RunLike } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -102,7 +102,7 @@ describe('which channel owns an install', () => {
     const prefix = await root('sotto-npm-global-')
     await mkdir(join(prefix, 'node_modules', '@xai-official', 'grok'), { recursive: true })
     await writeFile(join(prefix, 'node_modules', '@xai-official', 'grok', 'package.json'), '{}')
-    expect(await detectClientChannel('grok', join(prefix, 'grok.exe'))).toBe('npm')
+    expect(await detectClientChannel('grok', join(prefix, 'grok.exe'), process.env, 'win32')).toBe('npm')
   })
 
   it('will not drive an install another manager owns', async () => {
@@ -135,16 +135,84 @@ describe('which channel owns an install', () => {
     await mkdir(join(prefix, 'node_modules', '@xai-official', 'grok'), { recursive: true })
     await writeFile(join(prefix, 'node_modules', '@xai-official', 'grok', 'package.json'), '{}')
     const environment = { GROK_HOME: home, npm_config_prefix: prefix }
-    expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), environment)).toBe('npm')
-    const clients = new ProviderClients({ fetchImpl: async () => answer('1.0.40'), npmPath: async () => join(prefix, 'npm.cmd') })
+    expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), environment, 'win32')).toBe('npm')
+    const clients = new ProviderClients({ fetchImpl: async () => answer('1.0.40'), npmPath: async () => join(prefix, 'npm.cmd'), platform: 'win32' })
     expect(await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), environment))
       .toMatchObject({ behind: true, channel: 'npm', canInstall: true, command: 'npm install -g --allow-scripts=@xai-official/grok @xai-official/grok@latest' })
   })
 
   it('lets npm run the install scripts of the one package it installs, which npm 12 skips while still exiting 0', async () => {
-    const action = await updateActionFor('grok', 'npm', undefined, async () => 'npm-cli.js')
-    expect(action).toMatchObject({ asNode: true,
-      args: ['npm-cli.js', 'install', '-g', '--allow-scripts=@xai-official/grok', '@xai-official/grok@latest'] })
+    const action = await updateActionFor('grok', { channel: 'npm', npmPrefix: join('prefix') }, undefined, async () => 'npm-cli.js')
+    expect(action).toMatchObject({ asNode: true, command: 'npm install -g --allow-scripts=@xai-official/grok @xai-official/grok@latest',
+      args: ['npm-cli.js', 'install', '-g', '--prefix', join('prefix'), '--allow-scripts=@xai-official/grok', '@xai-official/grok@latest'] })
+  })
+
+  it('names the prefix npm installed a package under, in each layout npm uses', () => {
+    expect(npmPrefixOf(join('/usr', 'local', 'lib', 'node_modules', '@anthropic-ai', 'claude-code'), '@anthropic-ai/claude-code', 'darwin')).toBe(join('/usr', 'local'))
+    expect(npmPrefixOf(join('C:', 'npm', 'node_modules', '@openai', 'codex'), '@openai/codex', 'win32')).toBe(join('C:', 'npm'))
+    // Windows npm's prefix holds node_modules directly, even in a folder called lib.
+    expect(npmPrefixOf(join('C:', 'tools', 'lib', 'node_modules', '@openai', 'codex'), '@openai/codex', 'win32')).toBe(join('C:', 'tools', 'lib'))
+    // A package in a node_modules that is no global root, like Claude Code's old ~/.claude/local, has no prefix to name.
+    expect(npmPrefixOf(join('/home', 'me', '.claude', 'local', 'node_modules', '@anthropic-ai', 'claude-code'), '@anthropic-ai/claude-code', 'linux')).toBeUndefined()
+  })
+
+  it.skipIf(process.platform === 'win32')('updates an npm install under its own prefix, never under the app that runs npm', async () => {
+    // npm takes its global prefix from the Node running it, so run as this app it installed Claude Code 2.1.306 in
+    // Sotto.app/Contents/lib on macOS and left the copy in use at 2.1.303.
+    const prefix = await root('sotto-npm-own-prefix-')
+    const folder = join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code')
+    await mkdir(join(folder, 'bin'), { recursive: true }); await writeFile(join(folder, 'package.json'), '{}')
+    await writeFile(join(folder, 'bin', 'claude.exe'), '')
+    await mkdir(join(prefix, 'bin')); await symlink(join(folder, 'bin', 'claude.exe'), join(prefix, 'bin', 'claude'))
+    const install = await detectClientInstall('claude', join(prefix, 'bin', 'claude'), {})
+    expect(install).toEqual({ channel: 'npm', npmPrefix: prefix })
+    const ran: (readonly string[])[] = []
+    const clients = new ProviderClients({ fetchImpl: async () => answer('2.1.306'), npmPath: async () => 'npm-cli.js', run: async (_file, args) => { ran.push(args); return { ok: true } } })
+    expect((await clients.install('claude', join(prefix, 'bin', 'claude'), {})).ok).toBe(true)
+    expect(ran).toEqual([['npm-cli.js', 'install', '-g', '--prefix', prefix, '--allow-scripts=@anthropic-ai/claude-code', '@anthropic-ai/claude-code@latest']])
+    // With no prefix to name, nothing is run; the update is left to the command shown.
+    expect(await updateActionFor('claude', 'npm', undefined, async () => 'npm-cli.js')).toBeUndefined()
+    const local = join(prefix, 'local', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+    expect(await clients.install('claude', local, {})).toEqual({ ok: false, detail: 'Sotto cannot tell which npm folder Claude Code is in, so it did not update it. Nothing changed.' })
+  })
+
+  it.skipIf(process.platform === 'win32')('prefers the prefix a linked binary resolves into over an old copy in a global root', async () => {
+    const stale = await root('sotto-npm-stale-global-')
+    const old = join(stale, 'lib', 'node_modules', '@anthropic-ai', 'claude-code')
+    await mkdir(old, { recursive: true }); await writeFile(join(old, 'package.json'), '{}')
+    const environment = { npm_config_prefix: stale }
+    // nvm or fnm: the binary links into its own prefix's package.
+    const nvm = await root('sotto-npm-nvm-')
+    const folder = join(nvm, 'lib', 'node_modules', '@anthropic-ai', 'claude-code')
+    await mkdir(join(folder, 'bin'), { recursive: true }); await writeFile(join(folder, 'package.json'), '{}')
+    await writeFile(join(folder, 'bin', 'claude.exe'), '')
+    await mkdir(join(nvm, 'bin')); await symlink(join(folder, 'bin', 'claude.exe'), join(nvm, 'bin', 'claude'))
+    expect(await detectClientInstall('claude', join(nvm, 'bin', 'claude'), environment)).toEqual({ channel: 'npm', npmPrefix: nvm })
+    // Claude Code's own installer: a link to a version folder no npm root holds.
+    const native = await root('sotto-claude-native-')
+    await mkdir(join(native, 'versions')); await writeFile(join(native, 'versions', '2.1.303'), '')
+    await mkdir(join(native, 'bin')); await symlink(join(native, 'versions', '2.1.303'), join(native, 'bin', 'claude'))
+    expect(await detectClientChannel('claude', join(native, 'bin', 'claude'), environment)).toBe('unknown')
+    // Grok Build's install step links ~/.grok/bin/grok to the versioned program beside it; npm still owns that.
+    const grokRoot = await root('sotto-grok-linked-')
+    const grokPackage = join(grokRoot, 'lib', 'node_modules', '@xai-official', 'grok')
+    await mkdir(grokPackage, { recursive: true }); await writeFile(join(grokPackage, 'package.json'), '{}')
+    const grokBin = join(grokRoot, 'home', 'bin')
+    await mkdir(grokBin, { recursive: true }); await writeFile(join(grokBin, 'grok-1.0.5'), ''); await symlink('grok-1.0.5', join(grokBin, 'grok'))
+    expect(await detectClientInstall('grok', join(grokBin, 'grok'), { GROK_HOME: join(grokRoot, 'home'), npm_config_prefix: grokRoot }))
+      .toEqual({ channel: 'npm', npmPrefix: grokRoot })
+  })
+
+  it.skipIf(process.platform === 'win32')('never lets a package npm left beside a script of the user’s own claim it', async () => {
+    // The machine this was found on: ~/.local/bin/claude is the user's own script that runs another copy, and an old
+    // npm install sits in ~/.local/lib/node_modules. npm there would update the copy nothing runs.
+    const local = await root('sotto-npm-beside-script-')
+    const folder = join(local, 'lib', 'node_modules', '@anthropic-ai', 'claude-code')
+    await mkdir(folder, { recursive: true }); await writeFile(join(folder, 'package.json'), '{}')
+    await mkdir(join(local, 'bin')); await writeFile(join(local, 'bin', 'claude'), '#!/bin/bash\nexec elsewhere "$@"\n')
+    expect(await detectClientChannel('claude', join(local, 'bin', 'claude'), {})).toBe('unknown')
+    // Windows npm writes a launcher beside the package rather than linking it, so there it still counts.
+    expect(await detectClientChannel('claude', join(local, 'bin', 'claude'), {}, 'win32')).toBe('npm')
   })
 
   it('leaves a client it cannot place without a command to press', async () => {
@@ -225,7 +293,8 @@ async function coordinator(host: VersionedHost, run: RunLike, published: string 
 
   const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
-    clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm.cmd'),
+    // The layout is Windows', where npm writes a launcher beside the package rather than linking it.
+    clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm.cmd'), platform: 'win32',
       ...typeof published === 'string' ? { fetchImpl: async () => answer(published) }
         : { fetchImpl: async () => answer(published.version), now: () => published.now } }),
     locateClient: async (provider: ProviderId) => join(prefix, `${provider}.exe`),

@@ -64,7 +64,8 @@ async function coordinator(host: ThreeClients, run: (executable: string, args: r
 
   const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
-    clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm-cli.js'),
+    // Windows' npm layout, a launcher beside the package rather than a link into it.
+    clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm-cli.js'), platform: 'win32',
       fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[IDS.find(id => url.includes(encodeURIComponent(CLIENT_PACKAGES[id]!.split('/')[0]!)))!] }), { status: 200 }) }),
     locateClient: async provider => join(prefix, `${provider}.exe`),
     reasoner: {},
