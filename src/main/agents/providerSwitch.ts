@@ -11,7 +11,7 @@ import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, provide
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
-import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageProviderId, reportsUsageLimits, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
@@ -108,7 +108,7 @@ export class ConfiguredProviderHost implements AgentHost {
       }
     }
     if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh) => {
-      if (!isUsageProviderId(providerId)) throw new Error('Usage is not available for this provider.')
+      if (!reportsUsageLimits(providerId)) throw new Error('Usage reads no limits for this provider.')
       const slot = this.slots.get(providerId), epoch = slot?.epoch
       if (slot?.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
       const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh)

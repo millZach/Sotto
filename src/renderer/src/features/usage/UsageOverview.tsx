@@ -3,7 +3,8 @@ import { ChevronRight } from 'lucide-react'
 import { USAGE_TOKEN_FIELDS, type UsageModelAggregate, type UsageProviderId } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
-import { DailyChart, Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
+import { Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
+import { PerDay, useChartChoice } from './UsagePerDay'
 import type { UsagePage } from './usagePage'
 import {
   PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, nounFor, PROVIDER_NAMES, CLIENT_NAMES, fieldShare, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, joinNames, longDay, midSentence, pct, readAge, resetLong, resetShort, sentFrom, share,
@@ -29,6 +30,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   const [pin, setPin] = useState<string | null>(null)
   const [cell, setCell] = useState<Cell | null>(null)
   const [orientation, setOrientation] = useState<'horizontal' | 'vertical'>('vertical')
+  const [chartChoice, setChartChoice] = useChartChoice()
   const list = useRef<HTMLDivElement>(null)
   const id = useId()
   const { summary, limits } = page
@@ -89,26 +91,12 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
 
   const selected = hover ?? pin
   const day = selected !== null && series?.some(row => row.day === selected) ? selected : null
-  const onChartKey = (metric: 'prompts' | 'tokens') => (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (series === null || series.length === 0) return
-    const index = (value: string | null): number => value === null ? -1 : series.findIndex(row => row.day === value)
-    let current = pin ?? hover
-    const last = series.length - 1
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') current = current === null ? series[last]!.day : series[Math.max(0, Math.min(last, index(current) + (event.key === 'ArrowRight' ? 1 : -1)))]!.day
-    else if (event.key === 'Home') current = series[0]!.day
-    else if (event.key === 'End') current = series[last]!.day
-    else if (event.key === 'Escape' && pin !== null) current = null
-    else return
-    event.preventDefault(); event.stopPropagation(); setHover(null); setPin(current)
-    const row = current === null ? undefined : series.find(item => item.day === current)
-    const amount = current === null ? (metric === 'tokens' ? fieldTokens(totals.tokens.total) : fmtInt(prompts)) : (metric === 'tokens' ? dayTokens(row!) : fmtInt(row!.prompts))
-    page.announce(`${current === null ? 'Whole range' : longDay(current, page.today)}: ${amount} ${metric === 'tokens' ? 'tokens' : 'prompts'}`)
-  }
-  const chart = (metric: 'prompts' | 'tokens', label: string): ReactNode => series === null
+  const split = chartChoice.show !== 'total'
+  /** The Per day block, or why there is none: the controls appear only when there are days to draw. */
+  const perDay = (metric: 'prompts' | 'tokens', when?: ReactNode): ReactNode => series === null
     ? <p className="usage-none">Choose a range of a year or less to see each day. The totals still cover the whole range.</p>
     : series.length === 0 ? <p className="usage-none">No dated activity in this range.</p>
-      : <DailyChart series={series} metric={metric} label={label} today={page.today} selected={day}
-        onHover={setHover} onPin={() => { setPin(hover === null || pin === hover ? null : hover); setHover(null) }} onKey={onChartKey(metric)} />
+      : <PerDay page={page} metric={metric} rows={series} choice={chartChoice} onChoose={setChartChoice} selected={day} hover={hover} pin={pin} setHover={setHover} setPin={setPin}>{when}</PerDay>
   const head = (title: string, right: ReactNode = page.rangeLabel): ReactNode => <div className="usage-stage__head"><h2>{title}</h2>{typeof right === 'string' ? <span>{right}</span> : right}</div>
   const placesNote = page.withoutPlacesNote === null ? null : <p className="usage-note">{page.withoutPlacesNote}</p>
 
@@ -131,12 +119,17 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
             {page.placesKnown ? <p className="usage-note">Subagents: <b>{fmtTok(summary.subAgentTokens)}</b> of these tokens.</p> : null}
             {devin.length > 0 ? <p className="usage-note">Devin doesn't report tokens, so its <b>{fmtInt(devin.reduce((sum, row) => sum + row.prompts.total, 0))}</b> {nounFor(devin.reduce((sum, row) => sum + row.prompts.total, 0), 'prompt')} aren't in these totals.</p> : null}
           </TokenBar>}
-        <div className="usage-stage__sub">
-          <div className="usage-chart-head"><h3>Per day</h3><span className="usage-legend"><span><i className="usage-kind--input" />Input</span><span><i className="usage-kind--out" />Output</span></span></div>
-          <p className="usage-when">{day !== null ? (() => { const row = series!.find(item => item.day === day)!; return <><b>{longDay(day, page.today)}</b> · {!row.tokensKnown ? 'tokens not reported' : row.input + row.output > 0 || row.tokensPartial ? `${row.tokensPartial ? 'at least ' : ''}${fmtTok(row.input)} input, ${fmtTok(row.output)} output` : 'no tokens'}</> })()
-            : prompts > 0 && tokenTotal > 0 ? <>{totals.tokens.total.partial ? 'At least' : 'About'} <b>{fmtTok(tokenTotal / prompts)}</b> tokens per prompt</> : null}</p>
-          {chart('tokens', `Tokens per day, ${page.rangeLabel}.`)}
-        </div>
+        {(() => {
+          const when = <p className="usage-when">{day !== null ? (() => {
+            const row = series!.find(item => item.day === day)!
+            const at = row.tokensPartial ? 'at least ' : ''
+            return <><b>{longDay(day, page.today)}</b> · {!row.tokensKnown ? 'tokens not reported' : row.input + row.output > 0 || row.tokensPartial
+              ? split ? `${at}${fmtTok(row.input + row.output)} tokens in all` : `${at}${fmtTok(row.input)} input, ${fmtTok(row.output)} output` : 'no tokens'}</>
+          })() : prompts > 0 && tokenTotal > 0 ? <>{totals.tokens.total.partial ? 'At least' : 'About'} <b>{fmtTok(tokenTotal / prompts)}</b> tokens per prompt</> : null}</p>
+          return series === null || series.length === 0
+            ? <div className="usage-stage__sub"><div className="usage-chart-head"><h3>Per day</h3></div>{when}{perDay('tokens')}</div>
+            : perDay('tokens', when)
+        })()}
       </>
       break
     }
@@ -248,12 +241,12 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       const byProvider = summary.providers.filter(row => row.prompts.total > 0)
       const clients = sentFrom(summary.clients)
       const peak = series?.reduce<DayValue | undefined>((best, row) => best === undefined || row.prompts > best.prompts ? row : best, undefined)
-      const when = day !== null ? (() => { const row = series!.find(item => item.day === day)!; return <><b>{longDay(day, page.today)}</b> · {fmtInt(row.prompts)} prompt{row.prompts === 1 ? '' : 's'}</> })()
+      const when = day !== null ? (() => { const row = series!.find(item => item.day === day)!; return <><b>{longDay(day, page.today)}</b> · {fmtInt(row.prompts)} prompt{row.prompts === 1 ? '' : 's'}{split ? ' in all' : ''}</> })()
         : peak !== undefined && peak.prompts > 0 ? <>{prompts / series!.length < 0.5 ? <>Under <b>1</b> a day</> : <>About <b>{fmtInt(prompts / series!.length)}</b> a day</>} · most on {shortDay(peak.day)}, <b>{fmtInt(peak.prompts)}</b></> : 'No prompts in this range.'
       stage = <>
         {head('Prompts')}
         <p className="usage-when">{when}</p>
-        {chart('prompts', `Prompts per day, ${page.rangeLabel}.`)}
+        {perDay('prompts')}
         {byProvider.length > 0 ? <div className="usage-split-block"><p className="usage-split-caption">By provider</p><div className="usage-split">{byProvider.map(row => <div key={row.providerId} className="usage-split__item">
           <span><ProviderMark provider={row.providerId} name={PROVIDER_NAMES[row.providerId]} size={14} />{PROVIDER_NAMES[row.providerId]}</span><b>{fmtInt(row.prompts.total)}</b>
         </div>)}</div></div> : null}
@@ -286,9 +279,6 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     <About page={page} />
   </>
 }
-
-/** A day's tokens in words, keeping what was not reported. */
-const dayTokens = (row: DayValue): string => !row.tokensKnown ? 'not reported,' : `${row.tokensPartial ? 'at least ' : ''}${fmtTok(row.input + row.output)}`
 
 /** The days a chart draws: the chosen range, or from the first day with activity for All time. Null when the host left days out. */
 export function daySeries(page: UsagePage): DayValue[] | null {
@@ -365,8 +355,8 @@ export function About({ page }: { readonly page: UsagePage }): ReactNode {
   return <details className="usage-about" onKeyDown={dismissDisclosure}>
     <summary className="tt-focusable"><ChevronRight size={14} aria-hidden="true" />About these numbers</summary>
     <ul>
-      <li>Limits come from each provider and count all use of the account, in Sotto or anywhere else. Two computers' readings are shown side by side, never added.</li>
-      <li>Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build and Devin are counted in Sotto only.</li>
+      <li>Limits come from each provider and count all use of the account, in Sotto or anywhere else. Two computers' readings are shown side by side, never added. OpenCode doesn't report account limits, so it isn't on Subscriptions.</li>
+      <li>Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build, Devin, Muse and OpenCode are counted in Sotto only.</li>
       <li>Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it.</li>
       <li>Total tokens are input plus output. Cache reads and writes are part of input, not extra.</li>
       <li>A dash means the provider didn't report that number. It isn't zero. A ≥ means some records left a number out, so the figure is at least that.</li>

@@ -3,7 +3,9 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import type { UsageTokens } from '../../shared/threadUsage'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -17,6 +19,9 @@ import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSch
 import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
 import { needsPerson, unreadableRequest } from './nativeRequests'
+import { tokenCount } from './nativeUsage'
+import { ObservedUsage } from './observedUsage'
+import { parseMuseQuota, unavailableProviderQuota } from './providerQuota'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -126,6 +131,22 @@ const tokenUsageSchema = z.looseObject({
   usage: z.looseObject({ inputTokens: z.number().default(0), outputTokens: z.number().default(0), cachedTokens: z.number().default(0) }),
   cumulative: z.looseObject({ promptTokens: z.number().default(0), outputTokens: z.number().default(0) }),
 })
+/**
+ * What Usage reads of one `session/tokenUsage`: one model completion (MSP sends one per completion), named by the durable
+ * records Muse folded it from, so a completion seen live and again later is one call. Read apart from `tokenUsageSchema`
+ * and never required, so a shape Usage cannot read leaves the thread's own readout as it was.
+ */
+const tokenCallSchema = z.looseObject({
+  turnId: z.string().min(1).max(256).optional(), promptTokens: z.number().optional(),
+  sourceRange: z.looseObject({ first: z.looseObject({ id: z.string().min(1).max(256) }), last: z.looseObject({ id: z.string().min(1).max(256) }) }).optional(),
+  usage: z.looseObject({ inputTokens: z.number().optional(), outputTokens: z.number().optional(), cachedTokens: z.number().optional(),
+    cacheReadTokens: z.number().optional(), cacheWriteTokens: z.number().optional() }),
+  cumulative: z.looseObject({ promptTokens: z.number().optional(), outputTokens: z.number().optional() }).optional(),
+})
+/** A refusal that says the client has no such method: a Muse from before `usage/read`. */
+const methodMissing = (error: unknown): boolean => error instanceof MuseRejected && (error.code === -32601 || error.kind === 'methodNotFound')
+/** How long Usage waits on one thread host's `usage/read`, a local read that makes no model call. */
+const MUSE_USAGE_READ_MS = 5_000
 const contextUsageSchema = z.looseObject({ sessionId: z.string().min(1), usedTokens: z.number(), windowTokens: z.number().optional() })
 const todoChangedSchema = z.looseObject({
   sessionId: z.string().min(1),
@@ -240,6 +261,8 @@ export interface MuseMspOptions {
   toolWaitSeconds?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** Usage's startup answer (ADR-0083): count this computer's Muse threads and read Muse's subscription window. */
+  usageEnabled?: boolean
 }
 
 /** Muse owns its sign-in, tools and durable sessions. Only alias and origin metadata belongs to Sotto. */
@@ -470,7 +493,31 @@ export class MuseMspHost implements AgentHost {
     connected: false, name: 'Muse', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: true, skills: false, steer: true, compact: true },
   }
+  /** Present only where Usage is on: each model call's tokens, under the thread's own ID. */
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  private readonly observedUsage: ObservedUsage | undefined
+  /**
+   * The freshest subscription window any of this computer's Muse hosts reported. Muse keeps it in each serve host's memory
+   * and reports it after a model call, so Sotto keeps the newest it was told for as long as it runs.
+   */
+  private quota: UsageQuotaRead | undefined
+  private quotaReading: Promise<UsageQuotaRead> | undefined
+  /** When each running turn was seen to start, by MSP turn ID: a live start is what lets its work count after Clear usage. */
+  private readonly usageTurnStarts = new Map<string, string>()
   constructor(private readonly userDataDirectory: string, private readonly options: MuseMspOptions = {}) {
+    if (options.usageEnabled === true) {
+      const observed = new ObservedUsage('muse')
+      this.observedUsage = observed
+      this.subscribeUsage = listener => observed.subscribe(listener)
+      this.readProviderQuota = async (providerId, refresh) => {
+        if (providerId !== 'muse') return unavailableProviderQuota(providerId, 'unsupported')
+        if (!this.state.connected) return unavailableProviderQuota('muse', 'not-connected')
+        if (this.quota && !refresh) return { ...this.quota, refreshable: this.liveHosts().length > 0 }
+        this.quotaReading ??= this.readQuota().finally(() => { this.quotaReading = undefined })
+        return this.quotaReading
+      }
+    }
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'muse-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'muse-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
@@ -755,6 +802,56 @@ export class MuseMspHost implements AgentHost {
   }
   private unsupported(rpc: MuseRpc, frame: MuseFrame): void {
     if (frame.method && frame.id !== undefined) rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Unsupported client method' } })
+  }
+  /** Thread hosts with a session, the only ones that can have seen a model call. */
+  private liveHosts(): ThreadProcess[] {
+    return [...this.processes.values()].filter(entry => entry.sessionId !== undefined && !entry.closing && !entry.lost)
+  }
+  /** A reading replaces the kept one only when it is at least as new: each host reports the same account at its own time. */
+  private keepQuota(value: unknown): void {
+    const quota = parseMuseQuota(value)
+    if (!quota?.observedAt) return
+    if (this.quota?.observedAt && Date.parse(this.quota.observedAt) > Date.parse(quota.observedAt)) return
+    this.quota = quota
+  }
+  /**
+   * Ask every running thread host for the window it last saw (`usage/read`, MSP Developer Preview). It makes no model call
+   * and starts nothing; with no host running, the last reading kept stands. A client without the method is `unsupported`.
+   */
+  private async readQuota(): Promise<UsageQuotaRead> {
+    const hosts = this.liveHosts()
+    const answers = await Promise.all(hosts.map(async entry => {
+      try { this.keepQuota(await entry.rpc.request('usage/read', {}, MUSE_USAGE_READ_MS)); return 'read' as const }
+      catch (error) { return methodMissing(error) ? 'missing' as const : 'failed' as const }
+    }))
+    if (!this.state.connected) return unavailableProviderQuota('muse', 'not-connected')
+    if (this.quota) return { ...this.quota, refreshable: hosts.length > 0 }
+    if (answers.length > 0 && answers.every(answer => answer === 'missing')) return unavailableProviderQuota('muse', 'unsupported')
+    // Nothing seen yet: a host reports the window only after a model call, and only while it runs.
+    return unavailableProviderQuota('muse', 'not-reported', hosts.length > 0)
+  }
+  /** The host that ran a turn has seen the window, which it would take with it when it stops. */
+  private readQuotaAfterTurn(rpc: MuseRpc): void {
+    if (!this.readProviderQuota) return
+    void rpc.request('usage/read', {}, MUSE_USAGE_READ_MS).then(value => this.keepQuota(value), () => undefined)
+  }
+  /** One model completion's tokens for Usage. The thread's own readout is `session/tokenUsage`'s as before. */
+  private observeTokenCall(owner: string, params: unknown, modelId: string | undefined): void {
+    if (!this.observedUsage) return
+    const parsed = tokenCallSchema.safeParse(params)
+    if (!parsed.success) return
+    const call = parsed.data
+    const identity = call.sourceRange ? JSON.stringify(['records', call.sourceRange.first.id, call.sourceRange.last.id])
+      : call.turnId !== undefined && call.cumulative ? JSON.stringify(['turn', call.turnId, call.cumulative.promptTokens ?? null, call.cumulative.outputTokens ?? null]) : undefined
+    // A completion Muse gives no way to recognise again could be counted twice, so it is left out.
+    if (identity === undefined) return
+    const tokens: UsageTokens = {
+      // Prompt tokens are counted once under the provider's cache convention, cache reads among them.
+      input: tokenCount(call.promptTokens) ?? tokenCount(call.usage.inputTokens), output: tokenCount(call.usage.outputTokens),
+      cached: tokenCount(call.usage.cacheReadTokens) ?? tokenCount(call.usage.cachedTokens), cacheWrite: tokenCount(call.usage.cacheWriteTokens),
+    }
+    this.observedUsage.publish(owner, identity, modelId ?? this.threads.get(owner)?.modelId ?? '', tokens,
+      { phase: 'live', at: new Date().toISOString(), ...(call.turnId !== undefined ? { group: call.turnId, groupStartedAt: this.usageTurnStarts.get(call.turnId) } : {}) })
   }
   /**
    * Early start (#769): a thread Muse already has opens its session, as a send would. A thread whose first
@@ -1224,6 +1321,7 @@ export class MuseMspHost implements AgentHost {
           this.fold(owner).viewCursor = parsed.viewCursor
           const messageId = this.fold(owner).turnMessages.get(parsed.turnId)
           this.activeTurns.set(owner, { turnId: parsed.turnId, ...(messageId ? { messageId } : {}) })
+          if (this.observedUsage) this.usageTurnStarts.set(parsed.turnId, new Date().toISOString())
           const thread = this.thread(owner)
           thread.status = 'running'; thread.lastTurn = { id: messageId ?? parsed.turnId, status: 'running' }
           this.markTurn(owner, 'running', messageId)
@@ -1236,6 +1334,7 @@ export class MuseMspHost implements AgentHost {
           entry.turnRevision++
           this.fold(owner).viewCursor = parsed.viewCursor
           const outcome = parsed.terminal === 'completed' ? 'completed' : parsed.terminal === 'cancelled' ? 'interrupted' : 'failed'
+          this.usageTurnStarts.delete(parsed.turnId); this.readQuotaAfterTurn(rpc)
           const said = parsed.error?.kind === 'authRequired' ? 'Muse is not signed in on this machine. Run muse login, then send again.'
             : outcome === 'failed' ? 'Muse could not finish this turn. Nothing else was lost. Send a message to carry on.' : undefined
           this.settleTurn(owner, parsed.turnId, outcome, said)
@@ -1319,6 +1418,7 @@ export class MuseMspHost implements AgentHost {
         case 'session/tokenUsage': {
           const parsed = tokenUsageSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          this.observeTokenCall(owner, frame.params, parsed.modelId)
           const thread = this.thread(owner), before = thread.usage
           thread.usage = {
             latest: { input: parsed.usage.inputTokens, output: parsed.usage.outputTokens, cached: parsed.usage.cachedTokens },
@@ -1331,6 +1431,11 @@ export class MuseMspHost implements AgentHost {
             ...(parsed.modelId ? { modelId: parsed.modelId } : before?.modelId ? { modelId: before.modelId } : {}),
           }
           this.emit(true)
+          return
+        }
+        case 'usage/changed': {
+          // The host's subscription window changed (MSP Developer Preview); Usage reads it when it asks.
+          if (this.readProviderQuota) this.keepQuota(frame.params)
           return
         }
         case 'session/contextUsage': {
@@ -1793,7 +1898,7 @@ export class MuseMspHost implements AgentHost {
     try { this.finishDisconnect() } finally { this.disconnecting = false }
   }
   private finishDisconnect(): void {
-    this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
+    this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear(); this.usageTurnStarts.clear()
     // A pending approval is Muse's to settle when its host ends; Sotto sends no decision for it here.
     this.pending.clear(); this.requestChanges.clear(); this.requestReads.clear(); this.requestRevision = 0
     for (const thread of this.threads.values()) thread.requests = []

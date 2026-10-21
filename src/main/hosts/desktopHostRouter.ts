@@ -27,7 +27,7 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
-import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
+import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
 export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
@@ -295,13 +295,24 @@ export class DesktopHostRouter {
       return { hostId, ...answer }
     } catch { return { hostId, status: connection.available?.() === false ? 'offline' : 'error', quotas: [] } }
   }
+  /**
+   * The providers a Usage read may name on this run. A provider held to Owl has no usage here (ADR-0072), on this computer
+   * or any other, so its rows are not read from a host that counts it.
+   */
+  private usageProviders(providerIds: readonly UsageProviderId[] | undefined): UsageProviderId[] | undefined {
+    if (!usageProviderIdSchema.options.some(id => this.held.has(id))) return providerIds === undefined ? undefined : [...providerIds]
+    return (providerIds ?? usageProviderIdSchema.options).filter(id => !this.held.has(id))
+  }
   async usageRead(input: UsageQuery): Promise<UsageDashboardRead> {
-    const { hostIds, ...query } = usageQuerySchema.parse(input)
+    const { hostIds, providerIds, ...rest } = usageQuerySchema.parse(input)
+    const allowed = this.usageProviders(providerIds)
+    const query = { ...rest, ...(allowed ? { providerIds: allowed } : {}) }
     const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRead!(query)))
     return usageDashboardReadSchema.parse({ hosts })
   }
   async usageRefresh(input: UsageRefreshQuery): Promise<UsageDashboardRead> {
-    const { hostIds, providerIds } = usageRefreshQuerySchema.parse(input)
+    const { hostIds, providerIds: named } = usageRefreshQuerySchema.parse(input)
+    const providerIds = this.usageProviders(named)
     const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRefresh!(providerIds)))
     return usageDashboardReadSchema.parse({ hosts })
   }
