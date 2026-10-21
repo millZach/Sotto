@@ -1350,7 +1350,9 @@ struct HeldDetail {
             let login: [String: Any] = ["id": "login", "hostId": laptop, "projectId": "sotto", "title": "Fix login test", "providerId": "claude",
                 "status": "running", "requests": [Self.fixtureLoginQuestion], "summary": ["lastMessageAt": at(3 * 60), "runningTurnStartedAt": at(22 * 60)]]
             let notes: [String: Any] = ["id": "notes845", "hostId": laptop, "projectId": "sotto", "title": "Babysit #845 release notes",
-                "providerId": "codex", "status": "running", "requests": [], "summary": ["lastMessageAt": at(5 * 60), "runningTurnStartedAt": at(12 * 60)]]
+                "providerId": "codex", "status": "running",
+                "requests": arguments.contains("--ui-watcher-two-cards") ? [Self.fixtureNotesPublish] : [[String: Any]](),
+                "summary": ["lastMessageAt": at(5 * 60), "runningTurnStartedAt": at(12 * 60)]]
             threads[laptop, default: []] += [login, notes]
             fixtureDetails[laptop + "/login"] = decode(ThreadDetail.self, ["threadId": "login", "revision": 1, "messages": [
                 ["id": "brief", "role": "user", "text": "The login test fails about one run in five. Find out why and make it pass every time.", "createdAt": at(22 * 60)],
@@ -1420,9 +1422,13 @@ struct HeldDetail {
                                                asks: arguments.contains("--ui-watcher-asks"),
                                                reasoned: !arguments.contains("--ui-watcher-no-reason"), at: at)
             // With --ui-watcher-keeps-writing, Fix login test's question arrives while Watcher writes, and Watcher goes on
-            // writing above it (#1277).
+            // writing above it (#1277). With --ui-watcher-two-cards too, Babysit #845 release notes asks for a permission
+            // under it, which is answered on the laptop a while later.
             let keepsWriting = arguments.contains("--ui-watcher-keeps-writing")
-            let waiting = page["needsYou"]
+            var waiting = page["needsYou"]
+            if keepsWriting, arguments.contains("--ui-watcher-two-cards"), let cards = waiting as? [[String: Any]] {
+                waiting = cards + [Self.fixtureNotesPermission(laptop: laptop, mayAnswer: watcherAnswers)]
+            }
             if keepsWriting { page["needsYou"] = [[String: Any]]() }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
@@ -1587,6 +1593,20 @@ struct HeldDetail {
         return ["id": "login-account", "kind": "question", "text": "Which account should the login test sign in with?",
                 "options": none, "questions": [question]]
     }
+    /// Babysit #845 release notes asks to publish the notes: a permission, taller than Fix login test's question.
+    private static var fixtureNotesPublish: [String: Any] {
+        let choices: [[String: String]] = [["id": "notes-once", "label": "Allow once", "kind": "allow-once"],
+                                           ["id": "notes-deny", "label": "Deny", "kind": "deny"]]
+        return ["id": "notes-publish", "kind": "permission",
+                "text": "Wants to publish the release notes for #845 to the draft release, replacing the notes already there.",
+                "options": [[String: String]](), "permissionChoices": choices,
+                "context": ["command": "gh release edit v0.84.5 --draft --notes-file docs/release/notes-845.md"]]
+    }
+    /// Babysit #845 release notes's permission as a card in Watcher's page.
+    private static func fixtureNotesPermission(laptop: String, mayAnswer: Bool) -> [String: Any] {
+        ["target": ["hostId": laptop, "threadId": "notes845"], "title": "Babysit #845 release notes", "provider": "codex",
+         "request": fixtureNotesPublish, "connected": true, "mayAnswer": mayAnswer]
+    }
     /// The laptop's Watcher page: a morning's exchange with what Watcher did for each reply, three threads watched until
     /// the user stops them, one it no longer watches, a reply in which Watcher changed two files itself, with its reason
     /// unless `reasoned` is false, and Fix login test's question waiting. Watcher asks before actions. With `asks`,
@@ -1716,7 +1736,8 @@ struct HeldDetail {
                                      "text": "Nothing new needs you. Babysit #845 release notes is still waiting for its checks."], on: hostID)
     }
     /// Watcher writes one long reply a few words at a time, twice a second for two minutes, and `cards` arrive under it a
-    /// moment after it starts, as a worker's question reaches Watcher's page while Watcher writes.
+    /// moment after it starts, as a worker's question reaches Watcher's page while Watcher writes. Babysit #845 release
+    /// notes's permission, when it is among them, is answered on the laptop half a minute later.
     private func keepFixtureWatcherWriting(on hostID: String, then cards: Any?) {
         let id = "writing-" + UUID().uuidString
         appendFixtureWatcherMessage(["id": id, "role": "assistant", "createdAt": ISO8601DateFormatter().string(from: Date()),
@@ -1727,6 +1748,9 @@ struct HeldDetail {
                 guard let self else { return }
                 changeFixtureWatcher(on: hostID) { page in
                     if tick == 3, let cards { page["needsYou"] = cards }
+                    if tick == 60, let cards = page["needsYou"] as? [[String: Any]] {
+                        page["needsYou"] = cards.filter { (($0["request"] as? [String: Any])?["id"] as? String) != "notes-publish" }
+                    }
                     guard var conversation = page["conversation"] as? [String: Any],
                           var messages = conversation["messages"] as? [[String: Any]],
                           let index = messages.firstIndex(where: { $0["id"] as? String == id }) else { return }

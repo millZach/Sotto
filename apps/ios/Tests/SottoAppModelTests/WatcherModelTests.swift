@@ -1418,6 +1418,57 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(reading.following, "A reader of earlier messages is left where they are")
     }
 
+    /// A card the reader sees whole is the one they are on, even with a lower card cut off by the box: holding the lower
+    /// one whole above the box would push the whole one under the header.
+    func testAWholeCardIsHeldOverALowerOneTheBoxCutsOff() {
+        let question = CGRect(x: 16, y: 200, width: 340, height: 260)
+        let permission = CGRect(x: 16, y: 480, width: 340, height: 450)
+        let place = WatcherReaderPlace(newest: 180, end: 990, top: 140, dockTop: 600,
+                                       cards: ["login": question, "notes": permission])
+        XCTAssertEqual(place.heldCard, "login", "The question is whole above the box; the permission under it is cut off")
+        XCTAssertFalse(place.following)
+
+        // With none whole, the one the reader sees most of: 220 points of the question, 120 of the permission.
+        let neitherWhole = WatcherReaderPlace(newest: 60, end: 990, top: 140, dockTop: 600,
+                                              cards: ["login": CGRect(x: 16, y: 100, width: 340, height: 260),
+                                                      "notes": permission])
+        XCTAssertEqual(neitherWhole.heldCard, "login", "With none whole, the one the reader sees most of is kept")
+        let lowerShowsMore = WatcherReaderPlace(newest: 60, end: 990, top: 140, dockTop: 600,
+                                                cards: ["login": CGRect(x: 16, y: -60, width: 340, height: 260),
+                                                        "notes": CGRect(x: 16, y: 300, width: 340, height: 450)])
+        XCTAssertEqual(lowerShowsMore.heldCard, "notes")
+    }
+
+    /// The card the reader is on goes back where they left it when the page changes around it, no lower than keeps it
+    /// whole above the box and never under the header.
+    func testTheHeldCardGoesBackWhereTheReaderLeftIt() throws {
+        // The header ends at 140 and the box starts at 600: 460 points of room. The reader left the card 60 points below
+        // the header.
+        func anchor(_ card: CGRect, offset: CGFloat = 60, dockTop: CGFloat = 600) -> CGFloat? {
+            WatcherReaderPlace.anchor(card: card, offset: offset, top: 140, dockTop: dockTop)
+        }
+        XCTAssertNil(anchor(CGRect(x: 16, y: 200.5, width: 340, height: 260)), "Where the reader left it, nothing moves")
+        // A card under it was removed and the page's bottom carried this one down by 90 points: back to 60 below the
+        // header, which `scrollTo` does by lining up the point 60 / (460 - 260) down the card and the page.
+        let carried = try XCTUnwrap(anchor(CGRect(x: 16, y: 290, width: 340, height: 260)))
+        XCTAssertEqual(carried, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(140 + carried * 460 - carried * 260, 200, accuracy: 0.0001, "The card's top lands where it was")
+        // The keyboard raised the box to 380: the card goes up as far as keeps it whole above the box, and no farther than
+        // the header.
+        XCTAssertEqual(anchor(CGRect(x: 16, y: 200, width: 340, height: 200), dockTop: 380), 1, "Its bottom meets the box")
+        XCTAssertEqual(anchor(CGRect(x: 16, y: 200, width: 340, height: 300), dockTop: 380), 0,
+                       "A card taller than the room comes no lower than the header")
+        // A card taller than the room, its top left 100 points above the header and carried 90 points down: back to 40.
+        let tall = try XCTUnwrap(anchor(CGRect(x: 16, y: 130, width: 340, height: 600), offset: -100))
+        XCTAssertEqual(140 + tall * 460 - tall * 600, 40, accuracy: 0.0001, "The tall card's top lands where it was")
+        // Carried so far up that its bottom left the box: back down only as far as keeps it filling the room.
+        let lifted = try XCTUnwrap(anchor(CGRect(x: 16, y: -300, width: 340, height: 600), offset: -300))
+        XCTAssertEqual(140 + lifted * 460 - lifted * 600, 0, accuracy: 0.0001, "Its bottom meets the box")
+        // Pushed up behind the header, it comes back down.
+        let hidden = try XCTUnwrap(anchor(CGRect(x: 16, y: 40, width: 340, height: 260), offset: 0))
+        XCTAssertEqual(hidden, 0, accuracy: 0.0001)
+    }
+
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {
         XCTAssertEqual(WatcherPermissions.modes.map(WatcherPermissions.name), ["Ask before actions", "Allow edits", "Allow actions", "Full access"])
         XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", computer: "Laptop"), "Codex decides what to ask you about.")

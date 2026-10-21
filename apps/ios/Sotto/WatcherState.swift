@@ -268,8 +268,10 @@ struct WatcherReaderPlace: Equatable {
     /// How near the box, or the header, the newest words or the page's end must be to count as in view, and how much of
     /// a card must show above the box for the reader to be on it.
     static let slack: CGFloat = 56
-    /// The key of the card the reader is on: the lowest one they can see with room to read it. Keeping the lowest whole
-    /// above the box keeps any above it where they are too.
+    /// The key of the card the reader is on: the lowest one they see whole, or with none whole, the one they see most of,
+    /// as long as they see enough of it to read. A whole card wins over a lower one cut off by the box: keeping the
+    /// cut-off one whole above the box would push the whole one under the header. Keeping the lowest whole one where it
+    /// is keeps any above it where they are too.
     let heldCard: String?
     /// The reader sees the newest words, or the page's end, and is on no card, so the page follows Watcher's new words.
     let following: Bool
@@ -280,10 +282,36 @@ struct WatcherReaderPlace: Equatable {
     ///   - cards: each waiting card's frame, by its key.
     init(newest: CGFloat, end: CGFloat, top: CGFloat, dockTop: CGFloat, cards: [String: CGRect]) {
         let slack = Self.slack
-        heldCard = cards.filter { $0.value.minY < dockTop - slack && $0.value.maxY > top }
-            .max { $0.value.minY < $1.value.minY }?.key
+        let seen = cards.filter { $0.value.minY < dockTop - slack && $0.value.maxY > top }
+        let whole = seen.filter { $0.value.minY >= top - 1 && $0.value.maxY <= dockTop + 1 }
+        func shown(_ card: CGRect) -> CGFloat { min(card.maxY, dockTop) - max(card.minY, top) }
+        if whole.isEmpty {
+            heldCard = seen.max(by: { shown($0.value) < shown($1.value) })?.key
+        } else {
+            heldCard = whole.max(by: { $0.value.minY < $1.value.minY })?.key
+        }
         let seesNewest = newest >= top - slack && newest <= dockTop + slack
         following = heldCard == nil && (seesNewest || end <= dockTop + slack)
+    }
+
+    /// Where the card the reader is on goes when the page changes around it: `offset` below the header, where the reader
+    /// left it, but no lower than keeps it whole above the box and never under the header. A card taller than the room
+    /// between them stays where the reader left it as long as it fills that room. Cards removed or added below it, the
+    /// user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page keeps its end
+    /// where it was, which would carry the card off with it (#1277).
+    ///
+    /// Returns the point, as a fraction of the card's height and of the visible page's, that `ScrollViewProxy.scrollTo`
+    /// lines up to put the card's top there, or nil when it is already within a point of there.
+    /// - Parameters:
+    ///   - card: the card's frame now; `offset`, its top's distance below the header where the reader left it.
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat? {
+        let spare = dockTop - top - card.height
+        let wanted = min(max(top + offset, min(top, top + spare)), max(top, top + spare))
+        guard abs(card.minY - wanted) > 1 else { return nil }
+        // A card as tall as the room between the header and the box has its top at the header.
+        guard abs(spare) > 1 else { return 0 }
+        return min(max((wanted - top) / spare, 0), 1)
     }
 }
 

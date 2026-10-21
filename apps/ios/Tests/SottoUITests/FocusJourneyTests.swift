@@ -1092,27 +1092,6 @@ import XCTest
         let before = writing.label
         let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the card")
-        // The band is read before each wait and the wait reads only the card's buttons: on CI's SE each query can take a
-        // second or two. Two looks in a row must find it in place, so a page passing through on its way under the box
-        // doesn't count.
-        let reply = byID("watcher-reply")
-        func stays(_ element: XCUIElement, _ what: String) {
-            let band = watcherBand
-            var seen = "no look found \(what)"
-            var matches = 0
-            let placed = NSPredicate { _, _ in
-                guard element.exists else { seen = "\(what) is missing"; matches = 0; return false }
-                let frame = element.frame
-                guard !frame.isEmpty else { matches = 0; return false }
-                seen = "\(what) \(frame), between \(band.top) and \(band.bottom), the box at \(reply.frame.minY)"
-                let inPlace = frame.minY >= band.top && frame.maxY <= band.bottom && frame.maxY <= reply.frame.minY && element.isHittable
-                matches = inPlace ? matches + 1 : 0
-                return matches >= 2
-            }
-            let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 20)
-            if result != .completed { explain("watcher-card-under-the-box", seen) }
-            XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
-        }
         stays(choice, "The card's answer")
         // More words come, and the card is still where the reader left it.
         let later = writing.label
@@ -1143,6 +1122,58 @@ import XCTest
         if followed != .completed { explain("watcher-not-following-after-answer", seen) }
         XCTAssertEqual(followed, .completed, "Once the card is answered, Watcher's new words are followed again (\(seen))")
         capture("watcher-card-answered-following-dark")
+    }
+
+    /// With two cards waiting, a reader on the whole one is kept on it while Watcher writes, not moved to the lower one the
+    /// box cuts off, and the lower one leaving, answered on the laptop, leaves the whole one where the reader has it
+    /// (#1277).
+    func testAWholeCardStaysAnswerableOverALowerOneWhileWatcherWrites() {
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards"])
+        openWatcher()
+        let writing = text("Checking the threads I watch.")
+        XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
+        let permission = byID("watcher-card-notes845")
+        XCTAssertTrue(permission.waitForExistence(timeout: 15), "Babysit #845 release notes's permission arrives while Watcher writes")
+        // The question from its title to its answers, with the permission under it.
+        revealInWatcher(byID("watcher-card-login"))
+        let choice = app.buttons["A fresh account for each run"]
+        revealInWatcher(choice)
+        let before = writing.label
+        let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the question")
+        stays(choice, "The question's answer")
+        // The permission is answered on the laptop and leaves the page. The question doesn't move with the page's end.
+        XCTAssertTrue(waitUntilGone(permission, timeout: 60), "The permission leaves Watcher's page once the laptop answers it")
+        stays(choice, "The question's answer, once the permission under it has gone,")
+        capture("watcher-two-cards-held-dark")
+        choice.tap()
+        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        let send = app.buttons["watcher-card-send"]
+        stays(send, "Send answer")
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
+    }
+
+    /// Waits for `element` to sit whole above Watcher's box and be pressable, two looks in a row, so a page passing through
+    /// on its way under the box doesn't count. The band is read before the wait and the wait reads only the element and the
+    /// box: on CI's SE each query can take a second or two.
+    private func stays(_ element: XCUIElement, _ what: String) {
+        let reply = byID("watcher-reply")
+        let band = watcherBand
+        var seen = "no look found \(what)"
+        var matches = 0
+        let placed = NSPredicate { _, _ in
+            guard element.exists else { seen = "\(what) is missing"; matches = 0; return false }
+            let frame = element.frame
+            guard !frame.isEmpty else { matches = 0; return false }
+            seen = "\(what) \(frame), between \(band.top) and \(band.bottom), the box at \(reply.frame.minY)"
+            let inPlace = frame.minY >= band.top && frame.maxY <= band.bottom && frame.maxY <= reply.frame.minY && element.isHittable
+            matches = inPlace ? matches + 1 : 0
+            return matches >= 2
+        }
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 20)
+        if result != .completed { explain("watcher-card-under-the-box", seen) }
+        XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
     }
 
     /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,
