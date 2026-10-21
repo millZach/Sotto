@@ -1,0 +1,278 @@
+# Builds the Linux half of a Sotto Owl (ADR-0099): an x64 tarball and the sotto-bin pacman package made from it, from
+# the same source commit and Owl version as the Windows Owl the release lead packaged by hand. Runs only when started
+# by hand; never on a push or a pull request. It publishes nothing and reads no secrets: it attests the tarball and the
+# package and keeps them, with the recipe and receipts, as a workflow artifact that release:owl verifies and attaches to
+# the Owl prerelease. There is no Hyprland launch check here; that stays a stable-release step on forge (ADR-0062).
+name: Sotto Owl for Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The Windows Owl's version, such as 0.1.38-owl.20261021.1
+        required: true
+        type: string
+      source:
+        description: The full source commit the Windows Owl was built from
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One build per Owl version at a time. A second start for the same version waits rather than cancelling the first.
+concurrency:
+  group: owl-linux-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package Sotto Owl (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CI: 'true'
+      # Inputs reach scripts only through the environment, and are checked before anything reads them.
+      VERSION: ${{ inputs.version }}
+      SOURCE: ${{ inputs.source }}
+    steps:
+      - name: Check the version and source commit
+        shell: bash
+        run: |
+          if ! [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The source must be the full 40-character lower-case commit the Windows Owl was built from."; exit 1
+          fi
+          # The same shape as src/shared/releaseTrack.ts: X.Y.Z-owl.YYYYMMDD.N.
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-owl\.[1-9][0-9]{7}\.[1-9][0-9]*$ ]]; then
+            echo "The version must be a full Owl version, such as 0.1.38-owl.20261021.1."; exit 1
+          fi
+          echo "Packaging Sotto Owl $VERSION for Linux from $SOURCE."
+
+      # As in the Mac workflow, the source must be in the history of the branch this run was started from, checked
+      # before anything from the checkout runs, so a run started from main never builds a commit main does not hold.
+      - name: Check out this branch's history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF, the branch this run was started from. Merge it there first. Nothing was built."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Electron 43 has no install script, so npm ci leaves node_modules/electron/dist empty, and the package checks
+      # launch Electron from there.
+      - name: Download Electron
+        run: node node_modules/electron/install.js
+
+      # The package checks launch the app three times on a throwaway profile, so the runner needs a display and the
+      # libraries Electron loads.
+      - name: Install a virtual display and Electron's libraries
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0t64 libnss3 libgbm1 libasound2t64 \
+            libatk-bridge2.0-0t64 libxss1 libnotify4 libsecret-1-0
+
+      # Ubuntu 24.04 stops unprivileged programs making user namespaces, which Chromium's sandbox uses. Arch, and so
+      # Omarchy, allows them, so this lets the app start with its whole sandbox, as it does there, rather than with
+      # --no-sandbox. It changes only this runner, never the packaged files.
+      - name: Let Chromium's sandbox start
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # Refuses unless the checkout is clean, HEAD is the source and the version is this manifest's next Owl. Builds
+      # the x64 tarball, compares it file by file with the unpacked app, launches the app to check its resources and
+      # that every Owl feature is on, and writes the receipt last.
+      - name: Package and verify the Linux Owl
+        run: xvfb-run -a npm run package:owl -- --version "$VERSION" --source "$SOURCE"
+
+      # The receipt names the tarball; this checks it describes this build before the pacman job builds from it.
+      - name: Name the files the receipt lists
+        id: files
+        shell: bash
+        run: |
+          node --input-type=module - <<'SCRIPT'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+          import process from 'node:process'
+          const receipt = JSON.parse(readFileSync('release/owl-linux-package.json', 'utf8'))
+          if (receipt.version !== process.env.VERSION || receipt.sourceCommit !== process.env.SOURCE || receipt.track !== 'owl' || receipt.platform !== 'linux') {
+            throw new Error('The packaging receipt does not describe this Owl.')
+          }
+          const tarball = receipt.files?.tarball?.filename ?? ''
+          if (!/^[A-Za-z0-9._-]+$/u.test(tarball) || !existsSync(`release/${tarball}`)) throw new Error('The receipt lists a tarball that is not in release/.')
+          appendFileSync(process.env.GITHUB_OUTPUT, `upload<<FILES\nrelease/${tarball}\nrelease/owl-linux-package.json\nFILES\n`)
+          SCRIPT
+
+      # Only for the pacman job below; release:owl reads the final artifact.
+      - name: Keep the tarball for the pacman job
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-linux-tarball-${{ inputs.version }}
+          path: ${{ steps.files.outputs.upload }}
+          if-no-files-found: error
+          retention-days: 1
+
+  pacman:
+    name: Build the sotto-bin pacman package (Arch Linux)
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Arch's own makepkg, pacman and vercmp build and check the package, as on forge. The image is pinned; the job
+    # brings it up to date before using it, as Arch is a rolling release.
+    container:
+      image: archlinux:base-devel@sha256:0ccc8b2e55c0c26a6e501e892cc6b1cdea7cfdf77e432941320148b4dabd2bff
+    permissions:
+      contents: read
+    env:
+      CI: 'true'
+      VERSION: ${{ inputs.version }}
+      SOURCE: ${{ inputs.source }}
+    steps:
+      - name: Check the version and source commit
+        shell: bash
+        run: |
+          if ! [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The source must be the full 40-character lower-case commit the Windows Owl was built from."; exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-owl\.[1-9][0-9]{7}\.[1-9][0-9]*$ ]]; then
+            echo "The version must be a full Owl version, such as 0.1.38-owl.20261021.1."; exit 1
+          fi
+
+      - name: Bring the Arch container up to date
+        shell: bash
+        run: |
+          set -euo pipefail
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Sy --noconfirm --needed archlinux-keyring
+          pacman -Su --noconfirm
+          pacman -S --noconfirm --needed git
+
+      - name: Check out this branch's history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF, the branch this run was started from. Merge it there first. Nothing was built."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # The checks read app.asar with @electron/asar. Nothing here is built or run from node_modules' install scripts.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # makepkg checks the recipe's dependencies are installed; it never installs them itself here.
+      - name: Install the recipe's dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t needed < <(bash -c 'source apps/omarchy/PKGBUILD; printf "%s\n" "${depends[@]}" "${makedepends[@]}"' | sed '/^$/d')
+          pacman -S --noconfirm --needed "${needed[@]}"
+
+      - name: Download the tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-linux-tarball-${{ inputs.version }}
+          path: owl-linux-tarball
+
+      # makepkg refuses to run as root, so the package is built by an ordinary user that owns the checkout.
+      - name: Make the builder user
+        shell: bash
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      # Runs pacman's vercmp on every ordering the Owl needs first, then builds from the checked tarball and checks the
+      # file list, chrome-sandbox root:root 4755, the recorded version, the app's version and source, and that the
+      # package carries the tarball's app.asar and setup pieces. Writes owl-linux-pacman.json last.
+      - name: Build and check the pacman package
+        shell: bash
+        run: |
+          sudo -u builder env "PATH=$PATH" "HOME=/home/builder" "CI=$CI" \
+            node scripts/package-owl-linux-pacman.mjs --version "$VERSION" --source "$SOURCE" --tarball owl-linux-tarball --out owl-linux
+
+      # release:owl reads this artifact after `gh run download <run-id> --repo millZach/Sotto --name
+      # sotto-owl-linux-<version> --dir <folder>`. .SRCINFO starts with a dot, so hidden files are included.
+      - name: Retain the Linux Owl files
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-linux-${{ inputs.version }}
+          path: owl-linux/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  # Attesting needs write scopes, so it runs apart from building, and runs nothing from the checkout. It signs the
+  # tarball and pacman package the pacman job kept, with this run's identity, on the public source repository.
+  attest:
+    name: Attest the tarball and pacman package
+    needs: pacman
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE: ${{ inputs.source }}
+    steps:
+      - name: Download the Linux Owl files
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-linux-${{ inputs.version }}
+          path: owl-linux
+
+      - name: Name the files to attest
+        id: files
+        shell: bash
+        run: |
+          node --input-type=module - <<'SCRIPT'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+          import process from 'node:process'
+          const tarball = JSON.parse(readFileSync('owl-linux/owl-linux-package.json', 'utf8'))
+          const pacman = JSON.parse(readFileSync('owl-linux/owl-linux-pacman.json', 'utf8'))
+          for (const receipt of [tarball, pacman]) {
+            if (receipt.version !== process.env.VERSION || receipt.sourceCommit !== process.env.SOURCE || receipt.track !== 'owl') throw new Error('A receipt does not describe this Owl.')
+          }
+          const attest = [tarball.files?.tarball?.filename, pacman.files?.pacman?.filename].map(name => {
+            if (!/^[A-Za-z0-9._-]+$/u.test(name ?? '') || !existsSync(`owl-linux/${name}`)) throw new Error('A receipt lists a file that was not kept.')
+            return `owl-linux/${name}`
+          })
+          appendFileSync(process.env.GITHUB_OUTPUT, `attest<<FILES\n${attest.join('\n')}\nFILES\n`)
+          SCRIPT
+
+      - name: Attest the tarball and pacman package
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.files.outputs.attest }}

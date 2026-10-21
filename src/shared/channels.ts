@@ -43,8 +43,12 @@ export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 export const TRANSCRIPTION_TRANSCRIBE = 'sotto:transcription:transcribe' as const
 export const TRANSCRIPTION_CANCEL = 'sotto:transcription:cancel' as const
 export const SPEECH_MODEL_GET_STATUS = 'sotto:speech-model:get-status' as const
-/** Starts the speech model download, or retries one that failed; answers at once, progress follows on SPEECH_MODEL_STATUS. */
+/** Retries the chosen model: resumes its download or starts it again. Nothing chosen does nothing. Progress follows on SPEECH_MODEL_STATUS. */
 export const SPEECH_MODEL_DOWNLOAD = 'sotto:speech-model:download' as const
+/** Every model the user can choose on this computer, looked for again on each call. */
+export const SPEECH_MODEL_LIST = 'sotto:speech-model:list' as const
+/** Makes a model the one dictation uses; Sotto's own downloads now if it is not here yet. */
+export const SPEECH_MODEL_CHOOSE = 'sotto:speech-model:choose' as const
 export const SPEECH_MODEL_STATUS = 'sotto:speech-model:status' as const
 export const OPENROUTER_CHECK_KEY = 'sotto:openrouter:check-key' as const
 export const MICROPHONE_ENSURE_ACCESS = 'sotto:microphone:ensure-access' as const

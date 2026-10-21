@@ -36,7 +36,9 @@ import {
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
+  SPEECH_MODEL_LIST,
   OPENROUTER_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
@@ -83,7 +85,7 @@ import {
   type WidgetDragPayload,
   type WidgetPresentationPayload,
 } from '../../shared/contracts'
-import type { SpeechModelStatus } from '../../shared/speechModel'
+import { speechModelIdSchema, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
 import {
   settingsSchema,
@@ -157,6 +159,7 @@ const settingKeys = [
   'babysitPullRequests',
   'resumeThreadsAfterRestart',
   'workerRoles',
+  'watcherSettlesFinishedThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',
@@ -165,7 +168,9 @@ const settingKeys = [
 const looseSettingsPatchSchema = settingsSchema
   // `tailnetConnections` is a headless host's own, written by its administrative route; nothing on a desktop sets it,
   // so a payload naming it is refused rather than dropped (ADR-0053).
-  .omit({ hotkey: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true })
+  // The speech model is chosen through SPEECH_MODEL_CHOOSE, which also loads it; a plain save would
+  // change the setting without the model following, so a payload naming it is refused (ADR-0094).
+  .omit({ hotkey: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011). The retired glass and frost settings are
@@ -329,10 +334,12 @@ export interface TranscriptionIpcService {
   cancel(requestId: string): void
 }
 
-/** The speech model on this computer (ADR-0071): where it stands, and a way to start or retry its download. */
+/** The speech model dictation uses: where it stands, a retry, the models on offer and the choice between them. */
 export interface SpeechModelIpcService {
   status(): SpeechModelStatus
   download(): void
+  list(): Promise<SpeechModelOption[]>
+  choose(id: string): Promise<boolean>
 }
 
 export interface OpenRouterKeyIpcService {
@@ -733,6 +740,14 @@ export function registerIpc(
       if (dependencies.speechModel === undefined) return UNAVAILABLE
       dependencies.speechModel.download()
       return OK
+    })
+    register(SPEECH_MODEL_LIST, noPayloadSchema, 0, async (): Promise<SpeechModelOption[]> => {
+      if (dependencies.speechModel === undefined) return []
+      return dependencies.speechModel.list()
+    })
+    register(SPEECH_MODEL_CHOOSE, speechModelIdSchema, 1, async (id): Promise<CommandResult> => {
+      if (dependencies.speechModel === undefined) return UNAVAILABLE
+      return (await dependencies.speechModel.choose(id)) ? OK : UNAVAILABLE
     })
     register(OPENROUTER_CHECK_KEY, noPayloadSchema, 0, async (): Promise<OpenRouterKeyCheck> => {
       if (dependencies.openRouterKey === undefined) return { ok: false, reason: 'unconfigured' }

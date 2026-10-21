@@ -60,6 +60,8 @@ describe('SettingsView', () => {
     await user.tab()
     expect(screen.getByRole('tabpanel', { name: 'Transcription' })).toHaveFocus()
     await user.tab()
+    expect(screen.getByRole('combobox', { name: 'Speech model' })).toHaveFocus()
+    await user.tab()
     expect(screen.getByRole('switch', { name: 'Whitespace formatting' })).toHaveFocus()
     expect(screen.queryByRole('group', { name: 'Press to start and stop' })).not.toBeInTheDocument()
     screen.getByRole('tab', { name: 'Transcription' }).focus()

@@ -1,5 +1,5 @@
 import React, { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react'
-import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw } from 'lucide-react'
+import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw, Users } from 'lucide-react'
 import { enabledThreadProviders, hostForThread, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread, type ProviderId } from '../../../../shared/agents'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
@@ -171,7 +171,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const [orchestrating, ...workers] = reads
   return <section className="worker-roles" aria-labelledby={headingId}>
     <div className="worker-roles__head">
-      <h3 id={headingId}>Worker roles</h3>
+      <h3 id={headingId}><Users size={16} strokeWidth={1.7} aria-hidden="true" />Worker roles</h3>
       <button type="button" className="worker-roles__reset-all tt-focusable" disabled={chosen === 0}
         aria-label={chosen === 0 ? 'Reset all roles to their defaults. Every role is on its defaults' : `Reset all roles to their defaults. ${chosen} ${chosen === 1 ? 'role is' : 'roles are'} your choice`}
         onClick={resetAll}>

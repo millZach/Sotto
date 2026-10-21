@@ -248,6 +248,55 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(record).not.toContain(input.firstPrompt); expect(record).toContain('remoteOrigin')
 })
 
+it('settles several idle threads on a paired host under one request while Watcher works (#1254)', async () => {
+  const f = await master(), targets: { hostId: string, threadId: string }[] = []
+  for (let index = 0; index < 3; index++) {
+    const threadId = randomUUID()
+    expect((await f.socket.command({ type: 'create-thread', threadId, projectId: f.project.id, modelId: f.model.id,
+      title: `Synthetic idle remote review ${index}`, runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+    await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === threadId)).toBe(true)
+    targets.push({ hostId: f.pairing.hostId, threadId })
+  }
+  for (const target of targets) {
+    const settled = await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target })
+    expect(settled, JSON.stringify(settled)).toMatchObject({ status: 'ok' })
+  }
+  expect(f.watcher.state().requests.find(item => item.id === f.requestId)).toMatchObject({ state: 'active' })
+})
+
+it('keeps a closed paired copy stopped when a settle the master sent before its Stop arrives after it (#1254)', async () => {
+  const f = await master(), targets: { hostId: string, threadId: string }[] = []
+  for (let index = 0; index < 2; index++) {
+    const threadId = randomUUID()
+    expect((await f.socket.command({ type: 'create-thread', threadId, projectId: f.project.id, modelId: f.model.id,
+      title: `Synthetic idle remote review ${index}`, runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+    await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === threadId)).toBe(true)
+    targets.push({ hostId: f.pairing.hostId, threadId })
+  }
+  const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  const copy = () => owner.state().requests.find(item => item.id === f.requestId)
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: targets[0] })).toMatchObject({ status: 'ok' })
+  await expect.poll(() => copy()?.state).toBe('closed')
+  // The second settle leaves the master but is held on the way, so the owning host has not seen it.
+  let held: WatcherHostControl | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => { held = packet; throw new Error('held-in-transit') })
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: targets[1] })).toMatchObject({ status: 'refused' })
+  expect(held).toBeDefined()
+  // It arrives just after the owning host hears the Stop, before that read asks after it.
+  const stops = owner as unknown as { stopRemoteRequests(...args: unknown[]): Promise<void> }, stop = stops.stopRemoteRequests.bind(owner)
+  let late: unknown
+  vi.spyOn(stops, 'stopRemoteRequests').mockImplementation(async (...args) => {
+    await stop(...args)
+    late ??= await owner.admitRemote(held!, f.pairing.clientId, () => undefined)
+  })
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+  await expect.poll(() => late).toBeDefined()
+  expect(late).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(copy()?.state).toBe('stopped')
+  expect(copy()?.participants.find(item => item.target.threadId === targets[1]!.threadId)).toBeUndefined()
+})
+
 it('holds a lost acknowledgement through disconnection and reconciles without another send', async () => {
   const f = await master(), input = f.start()
   const original = f.socket.watcherControl.bind(f.socket)

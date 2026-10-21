@@ -6,7 +6,7 @@ import type { HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
-import type { SpeechModelStatus } from './speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from './speechModel'
 import type { SottoPlatform } from './platform'
 import { widgetPaletteSchema } from './themeBranding'
 
@@ -259,8 +259,8 @@ const updateProblemSchema = z.string().min(1).max(240)
 
 /**
  * One observable step of the update lifecycle. `unsupported` is the honest
- * answer for a development run, an E2E run, and the macOS build, none of which
- * ship an update feed. `failed` is a check that could not be completed; a
+ * answer for a development run, an E2E run, stable on a Mac and Linux, none of
+ * which has an update feed it can take. `failed` is a check that could not be completed; a
  * download or install that fails keeps its phase and carries the failure as
  * `problem`, so the offer (or the installer already on disk) is never lost and
  * the same control simply offers to try again.
@@ -423,8 +423,12 @@ export interface SottoBridge {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancelTranscription(requestId: string): Promise<CommandResult>
   getSpeechModelStatus(): Promise<SpeechModelStatus>
-  /** Starts the speech model download, or retries one that failed; progress arrives through onSpeechModelStatus. */
+  /** Retries the chosen model (resumes its download or starts it again); progress arrives through onSpeechModelStatus. */
   downloadSpeechModel(): Promise<CommandResult>
+  /** Every model the user can choose on this computer. */
+  listSpeechModels(): Promise<SpeechModelOption[]>
+  /** Makes a model the one dictation uses; refused for an id that is not on the list. */
+  chooseSpeechModel(id: string): Promise<CommandResult>
   onSpeechModelStatus(listener: (status: SpeechModelStatus) => void): Unsubscribe
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** Asks the operating system for the microphone before Chromium captures. */

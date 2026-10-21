@@ -1,6 +1,6 @@
 // Launch the unpacked Owl app with an isolated profile and check its real preload status.
 // node tools/verify-owl-package.mjs 0.1.37-owl.20261011.1
-// Reads this platform's unpacked app: release/win-unpacked on Windows, release/mac-arm64 on a Mac.
+// Reads this platform's unpacked app: release/win-unpacked on Windows, release/mac-arm64 on a Mac, release/linux-unpacked on Linux.
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'

@@ -2,6 +2,8 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) removes every reply voice and the ONNX runtime assets and manifest described below. Packaging verifies the surviving Claude SDK and terminal assets with `npm run assets:verify`. Linux's dictation, compositor bindings, paste and desktop profile remain unchanged.
 
+October 21, 2026 amendment: [ADR-0099](0099-sotto-owl-also-ships-for-linux.md) ships Sotto Owl for Linux too, built in GitHub Actions from the Windows Owl's commit and version, with no Hyprland check and no updater. "Who cuts it" and the release checks on forge below now describe stable Linux only. The October 12 amendment's "Linux has no Owl build" is historical. The packaging constraints hold for Owl as they do for stable.
+
 ## Status
 
 Accepted October 9, 2026, by the owner. He agreed to the proposals on October 8, answered the three questions marked **Owner** below (the answers follow each question), and approved the merge on October 9. Revised the same day to describe what had been built by then (#847, #848, #856, #858, #868), and to settle the points the Sotto bug review raised on this pull request.

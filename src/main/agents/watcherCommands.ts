@@ -43,6 +43,8 @@ export interface WatcherControlHooks {
    * now says, read once for the whole note from the threads as they stand. Never saved with the news.
    */
   newsDetail?(): (event: WatcherEvent) => string | undefined
+  /** How long a finish held for its work was held before it went by itself, while its thread sits idle (#1263). */
+  newsHeld?(): (event: WatcherEvent) => number | undefined
   /** What a wake-up's note adds after Watcher's conversation was compacted, until Watcher reads its state back (#1189). */
   stateNote?(): string | undefined
   /** Keep local history changed: Watcher's kept words follow it at once (#1189). */

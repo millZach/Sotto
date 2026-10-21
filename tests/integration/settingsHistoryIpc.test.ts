@@ -235,6 +235,8 @@ describe('IPC validation and lifecycle', () => {
     delete fullPatch['launchAtStartup']
     // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
     delete fullPatch['tailnetConnections']
+    // Chosen through its own channel, which loads the model too (ADR-0094).
+    delete fullPatch['speechModel']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
     await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true, microphoneId: 'rejected-microphone' })).rejects.toThrow('Invalid IPC payload')
@@ -298,6 +300,12 @@ describe('IPC validation and lifecycle', () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { babysitPullRequests: false })).resolves.toMatchObject({ babysitPullRequests: false })
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
+    })
+
+  it('persists turning Watcher’s Settle finished threads off through settings IPC', async () => {
+      const { ipc, settings } = createIpcHarness()
+      await expect(ipc.invoke(SETTINGS_UPDATE, { watcherSettlesFinishedThreads: false })).resolves.toMatchObject({ watcherSettlesFinishedThreads: false })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
     })
 
   it('refuses the removed Threads in flight limit, which is no longer on the allow-list (#1183)', async () => {

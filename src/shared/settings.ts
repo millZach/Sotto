@@ -138,6 +138,11 @@ export interface AppSettings {
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
    */
   workerRoles: WorkerRoleChoices
+  /**
+   * Settle finished threads, under Settings, Watcher: on by default, part of Watcher's Owl feature. On, Watcher settles a
+   * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
+   */
+  watcherSettlesFinishedThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -196,6 +201,11 @@ export interface AppSettings {
    */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
+  /**
+   * The model that transcribes dictation, by its picker id, or null until the user chooses one.
+   * Nothing downloads before then. Main writes it when the user chooses on the picker or in setup.
+   */
+  speechModel: string | null
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -305,6 +315,7 @@ const fieldSchemas = {
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
+  watcherSettlesFinishedThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -313,6 +324,7 @@ const fieldSchemas = {
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
+  speechModel: z.string().min(1).max(128).nullable(),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -388,6 +400,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
   workerRoles: {},
+  watcherSettlesFinishedThreads: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -396,6 +409,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
+  speechModel: null,
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -532,6 +546,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
+    watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
@@ -544,6 +559,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
+    speechModel: parseField(persisted, 'speechModel', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),

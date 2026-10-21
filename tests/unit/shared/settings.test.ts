@@ -37,6 +37,7 @@ const customSettings = {
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
+  watcherSettlesFinishedThreads: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
@@ -45,6 +46,7 @@ const customSettings = {
   holdShortcuts: ['Fn', 'Control+Alt'],
   maxRecordingSeconds: 300,
   soundCues: false,
+  speechModel: null,
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -289,6 +291,7 @@ describe('settings', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       workerRoles: {},
+      watcherSettlesFinishedThreads: true,
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
@@ -313,6 +316,7 @@ describe('settings', () => {
       holdShortcuts: [],
       maxRecordingSeconds: 60,
       soundCues: true,
+      speechModel: null,
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,

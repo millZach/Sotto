@@ -1,5 +1,6 @@
 // Windows x64 or Apple silicon macOS: npm run package:owl -- --date 20261009 --number 1
 // Another platform builds the same Owl: npm run package:owl -- --version 0.1.38-owl.20261009.1 --source <full SHA>
+// x64 Linux builds only a pinned Owl, in the Sotto Owl for Linux workflow under xvfb-run (ADR-0099).
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rm, stat, writeFile } from 'node:fs/promises'
@@ -8,16 +9,25 @@ import process from 'node:process'
 import { Arch, build, Platform } from 'electron-builder'
 import { parse } from 'yaml'
 import { checkedOwlVersion, checkOwlSource, owlBuildArguments, owlCheckout, owlPublishConfig } from './owl-release.mjs'
-import { checkOwlMacUpdateManifest, owlMacPackagePlan, owlMacReceipt, updateFileInfo, verifyOwlMacArchive } from './owl-mac-package.mjs'
+import {
+  checkOwlMacUpdateManifest, owlMacPackagePlan, owlMacReceipt, owlMacSigning, updateFileInfo, verifyOwlMacArchive, verifyOwlMacSignature,
+} from './owl-mac-package.mjs'
+import { owlLinuxPackagePlan, owlLinuxReceipt } from './owl-linux-package.mjs'
 
 const mac = process.platform === 'darwin'
-if (!mac && process.platform !== 'win32') throw new Error('Sotto Owl packaging runs on Windows and Apple silicon macOS only.')
+const linux = process.platform === 'linux'
+if (!mac && !linux && process.platform !== 'win32') throw new Error('Sotto Owl packaging runs on Windows, Apple silicon macOS and x64 Linux only.')
 if (mac && process.arch !== 'arm64') throw new Error('Build the Mac Sotto Owl on Apple silicon.')
+if (linux && process.arch !== 'x64') throw new Error('Build the Linux Sotto Owl on x64.')
 const root = resolve(import.meta.dirname, '..')
 const packagePath = resolve(root, 'package.json')
 const originalManifest = await readFile(packagePath)
 const args = owlBuildArguments(process.argv.slice(2))
 const version = checkedOwlVersion(JSON.parse(originalManifest).version, args)
+// The Linux half is always the Windows Owl's twin, so it is never a daily build of its own.
+if (linux && args.sourceCommit === undefined) throw new Error('Build the Linux Owl with --version and --source, from the Windows Owl it joins. Nothing was packaged.')
+// A Mac Owl is always signed and notarized (ADR-0093): a run without the credentials stops before building anything.
+const signing = mac ? owlMacSigning() : undefined
 
 function run(script, args = []) {
   const result = spawnSync(process.execPath, [script, ...args], { cwd: root, stdio: 'inherit', env: process.env })
@@ -69,20 +79,41 @@ async function packageWindows() {
 }
 
 async function packageMac() {
-  const plan = owlMacPackagePlan(root, version)
+  const plan = owlMacPackagePlan(root, version, { signing })
   // Every file the receipt names is made by this run, so a leftover from an earlier one is never vouched for.
   for (const path of [plan.receipt, plan.dmg, plan.dmgBlockmap, plan.zip, plan.zipBlockmap, plan.updateManifest]) await rm(path, { force: true })
+  // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
+  run(resolve(root, 'scripts/build-coreml-asr.mjs'))
   await build({ projectDir: root, targets: Platform.MAC.createTarget(['dmg', 'zip'], Arch.arm64), publish: 'never', config: plan.config })
+  // electron-builder signs, notarizes and staples the app before it makes the disk image and zip from it, so the
+  // zip comparison below also proves the update archive carries this signature and ticket.
+  const signature = await verifyOwlMacSignature(plan.app)
   run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [plan.unpacked, '--installer', plan.dmg])
   const zipApp = await verifyOwlMacArchive(plan.zip, plan.unpacked)
   run(resolve(root, 'scripts/verify-owl-features-package.mjs'), [plan.unpacked, 'owl'])
   const manifest = parse(await readFile(plan.updateManifest, 'utf8'))
   checkOwlMacUpdateManifest(manifest, version, { zip: await updateFileInfo(plan.zip), dmg: await updateFileInfo(plan.dmg) })
   return async provenance => {
-    const receipt = await owlMacReceipt({ version, provenance, plan })
+    const receipt = await owlMacReceipt({ version, provenance, plan, signing: signature })
     await writeFile(plan.receipt, `${JSON.stringify(receipt, null, 2)}\n`)
     const blockmaps = [receipt.files.dmgBlockmap, receipt.files.zipBlockmap].filter(Boolean).map(file => resolve(root, 'release', file.filename))
-    return { version, track: 'owl', installer: plan.dmg, updateArchive: plan.zip, manifest: plan.updateManifest, blockmaps, receipt: plan.receipt, zipApp }
+    return { version, track: 'owl', installer: plan.dmg, updateArchive: plan.zip, manifest: plan.updateManifest, blockmaps, receipt: plan.receipt, zipApp, signing: receipt.signing }
+  }
+}
+
+async function packageLinux() {
+  const plan = owlLinuxPackagePlan(root, version)
+  // The receipt vouches only for files this run made, so a leftover from an earlier one goes first.
+  for (const path of [plan.receipt, plan.tarball]) await rm(path, { force: true })
+  await build({ projectDir: root, targets: Platform.LINUX.createTarget(['tar.gz'], Arch.x64), publish: 'never', config: plan.config })
+  // Extracts the tarball and compares every file with the verified unpacked app, then launches it on a throwaway
+  // profile. The workflow provides the display; stable Linux's nested Hyprland is a forge check, not Owl's.
+  run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [plan.unpacked, '--installer', plan.tarball])
+  run(resolve(root, 'scripts/verify-owl-features-package.mjs'), [plan.unpacked, 'owl'])
+  return async provenance => {
+    const receipt = await owlLinuxReceipt({ version, provenance, plan })
+    await writeFile(plan.receipt, `${JSON.stringify(receipt, null, 2)}\n`)
+    return { version, track: 'owl', installer: plan.tarball, receipt: plan.receipt }
   }
 }
 
@@ -94,11 +125,11 @@ if (mac) run(resolve(root, 'scripts/build-key-listener.mjs'))
 run(resolve(root, 'scripts/write-build-provenance.mjs'))
 await readProvenance()
 checkPin()
-const finish = mac ? await packageMac() : await packageWindows()
+const finish = mac ? await packageMac() : linux ? await packageLinux() : await packageWindows()
 if (!(await readFile(packagePath)).equals(originalManifest)) throw new Error('The source package manifest changed during packaging.')
-// The launch check reads the platform's unpacked app: release/win-unpacked or release/mac-arm64.
+// The launch check reads the platform's unpacked app: release/win-unpacked, release/mac-arm64 or release/linux-unpacked.
 run(resolve(root, 'tools/verify-owl-package.mjs'), [version])
 checkPin()
-// The Mac receipt is written last, so it exists only for a build that passed every check.
+// The Mac and Linux receipts are written last, so they exist only for a build that passed every check.
 const summary = await finish(await readProvenance())
 process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)

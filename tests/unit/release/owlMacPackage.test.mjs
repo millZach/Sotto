@@ -1,13 +1,15 @@
 // @vitest-environment node
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { cp, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 import {
-  checkOwlMacUpdateManifest, compareAppTrees, owlMacPackagePlan, owlMacReceipt, updateFileInfo, verifyOwlMacArchive,
+  checkOwlMacUpdateManifest, compareAppTrees, isSignedAndNotarized, OWL_MAC_SIGNING_ENVIRONMENT, owlMacPackagePlan, owlMacReceipt, owlMacSigning,
+  updateFileInfo, verifyOwlMacArchive, verifyOwlMacSignature,
 } from '../../../scripts/owl-mac-package.mjs'
 import { owlPublishConfig } from '../../../scripts/owl-release.mjs'
 
@@ -37,9 +39,11 @@ describe('Mac Owl package plan', () => {
     expect(plan.updateManifest).toBe(resolve(root, 'release', 'owl-mac.yml'))
     expect(plan.receipt).toBe(resolve(root, 'release', 'owl-mac-package.json'))
     expect(plan.unpacked).toBe(resolve(root, 'release', 'mac-arm64'))
+    expect(plan.app).toBe(resolve(root, 'release', 'mac-arm64', 'Sotto.app'))
     expect(plan.config).toEqual({
       extraMetadata: { version },
       npmRebuild: true,
+      forceCodeSigning: true,
       dmg: { artifactName: 'Sotto-Owl-${version}-${arch}.${ext}' },
       mac: { artifactName: 'Sotto-Owl-${version}-${arch}-mac.${ext}' },
       publish: { provider: 'github', owner: 'millZach', repo: 'Sotto-releases', channel: 'owl', releaseType: 'prerelease' },
@@ -48,10 +52,95 @@ describe('Mac Owl package plan', () => {
     // The Mac plan takes the publisher the Windows Owl uses, not a copy of its own.
     expect(plan.config.publish).toEqual(owlPublishConfig())
   })
-  it('leaves the ad-hoc identity to electron-builder.yml until signing is supplied', () => {
-    expect(owlMacPackagePlan(temporary, version).config.mac).not.toHaveProperty('identity')
-    const signed = owlMacPackagePlan(temporary, version, { signing: { identity: 'Developer ID Application: Example', notarize: true, hardenedRuntime: true } })
-    expect(signed.config.mac).toEqual({ artifactName: 'Sotto-Owl-${version}-${arch}-mac.${ext}', identity: 'Developer ID Application: Example', notarize: true, hardenedRuntime: true })
+  it('merges the signing override into the mac section and forces code signing', () => {
+    const signing = owlMacSigning(signingEnvironment())
+    const plan = owlMacPackagePlan(temporary, version, { signing })
+    expect(plan.config.mac).toEqual({ artifactName: 'Sotto-Owl-${version}-${arch}-mac.${ext}', ...signing })
+    // electron-builder fails rather than leaving the app unsigned when it cannot find the identity.
+    expect(plan.config.forceCodeSigning).toBe(true)
+  })
+})
+
+const identity = 'A1B2C3D4E5F60718293A4B5C6D7E8F9012345678'
+function signingEnvironment(overrides = {}) {
+  return { CSC_KEYCHAIN: '/runner/temp/sotto-owl-signing.keychain-db', SOTTO_OWL_MAC_IDENTITY: identity,
+    APPLE_API_KEY: '/runner/temp/sotto-owl-signing/AuthKey.p8', APPLE_API_KEY_ID: 'KEY1234567', APPLE_API_ISSUER: 'issuer-uuid', ...overrides }
+}
+
+describe('Mac Owl signing override', () => {
+  it('signs with the keychain identity, the hardened runtime and the entitlements stable already names, and notarizes', async () => {
+    const stable = parse(await readFile(resolve(import.meta.dirname, '../../../electron-builder.yml'), 'utf8')).mac
+    expect(owlMacSigning(signingEnvironment())).toEqual({
+      identity, hardenedRuntime: true, notarize: true, entitlements: stable.entitlements, entitlementsInherit: stable.entitlementsInherit,
+    })
+    // Stable's own Mac section stays ad-hoc, without the hardened runtime (ADR-0001).
+    expect(stable.identity).toBe('-')
+    expect(stable.hardenedRuntime).toBe(false)
+    expect(stable).not.toHaveProperty('notarize')
+  })
+  it.each(OWL_MAC_SIGNING_ENVIRONMENT)('refuses to build without %s, naming it', name => {
+    expect(() => owlMacSigning(signingEnvironment({ [name]: '' }))).toThrow(new RegExp(`has no ${name}.*Nothing was packaged`, 'u'))
+  })
+  it('names every missing credential and where they live', () => {
+    expect(() => owlMacSigning({})).toThrow(`has no ${OWL_MAC_SIGNING_ENVIRONMENT.join(', ')}`)
+    expect(() => owlMacSigning({})).toThrow('docs/release/macos-owl-signing.md')
+  })
+  it('refuses an identity that is not a certificate hash', () => {
+    expect(() => owlMacSigning(signingEnvironment({ SOTTO_OWL_MAC_IDENTITY: 'Developer ID Application: Example (ABCDE12345)' }))).toThrow('40-character SHA-1')
+  })
+  it.each(['CSC_LINK', 'CSC_NAME', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_KEYCHAIN_PROFILE'])('refuses %s, which would sign or notarize another way', name => {
+    expect(() => owlMacSigning(signingEnvironment({ [name]: 'set' }))).toThrow(`Unset ${name}`)
+  })
+})
+
+describe('Mac Owl signature check', () => {
+  const app = '/build/release/mac-arm64/Sotto.app'
+  const outputs = {
+    verify: `${app}: valid on disk\n${app}: satisfies its Designated Requirement\n`,
+    display: [
+      `Executable=${app}/Contents/MacOS/Sotto`, 'Identifier=com.sotto.desktop', 'Format=app bundle with Mach-O thin (arm64)',
+      'CodeDirectory v=20500 size=1234 flags=0x10000(runtime) hashes=27+7 location=embedded',
+      'Authority=Developer ID Application: Zach Knudsen (ABCDE12345)', 'Authority=Developer ID Certification Authority', 'Authority=Apple Root CA',
+      'Timestamp=20 Oct 2026 at 10:00:00', 'Notarization Ticket=stapled', 'TeamIdentifier=ABCDE12345', 'Runtime Version=15.0.0',
+    ].join('\n'),
+    assess: `${app}: accepted\nsource=Notarized Developer ID\norigin=Developer ID Application: Zach Knudsen (ABCDE12345)\n`,
+    staple: `Processing: ${app}\nThe validate action worked!\n`,
+  }
+  function tools(changes = {}) {
+    const calls = []
+    const run = async (file, args) => {
+      calls.push([file, ...args])
+      const key = file.endsWith('spctl') ? 'assess' : file.endsWith('xcrun') ? 'staple' : args[0] === '--verify' ? 'verify' : 'display'
+      const output = changes[key] ?? outputs[key]
+      if (output instanceof Error) throw output
+      return output
+    }
+    return { run, calls }
+  }
+  it('runs codesign, Gatekeeper and the stapler on the app and records what the receipt needs', async () => {
+    const { run, calls } = tools()
+    expect(await verifyOwlMacSignature(app, { run })).toEqual({ identity: 'Developer ID Application', teamId: 'ABCDE12345', hardenedRuntime: true, notarized: true, stapled: true })
+    expect(calls).toEqual([
+      ['/usr/bin/codesign', '--verify', '--deep', '--strict', '--verbose=2', app],
+      ['/usr/bin/codesign', '--display', '--verbose=4', app],
+      ['/usr/sbin/spctl', '--assess', '--type', 'execute', '-vvv', app],
+      ['/usr/bin/xcrun', 'stapler', 'validate', app],
+    ])
+  })
+  it.each([
+    ['an ad-hoc signature', { display: outputs.display.replace(/^Authority=.*$/gmu, '').replace('TeamIdentifier=ABCDE12345', 'TeamIdentifier=not set') }, 'not signed by a Developer ID Application'],
+    ['a signer from another team', { display: outputs.display.replace('TeamIdentifier=ABCDE12345', 'TeamIdentifier=ZZZZZ99999') }, 'a team other than'],
+    ['no hardened runtime', { display: outputs.display.replace('flags=0x10000(runtime)', 'flags=0x0(none)') }, 'without the hardened runtime'],
+    ['a Gatekeeper rejection', { assess: `${app}: rejected\nsource=Unnotarized Developer ID\n` }, 'not accepted by Gatekeeper'],
+    ['a Developer ID app that is not notarized', { assess: `${app}: accepted\nsource=Developer ID\n` }, 'not accepted by Gatekeeper'],
+    ['no stapled ticket', { staple: `Processing: ${app}\n${app} does not have a ticket stapled to it.\n` }, 'no notarization ticket'],
+  ])('refuses %s', async (_, changes, message) => {
+    await expect(verifyOwlMacSignature(app, tools(changes))).rejects.toThrow(message)
+  })
+  it('stops at the first tool that fails', async () => {
+    const { run, calls } = tools({ verify: new Error('codesign --verify refused the Mac Owl: a sealed resource is missing or invalid. Nothing was published.') })
+    await expect(verifyOwlMacSignature(app, { run })).rejects.toThrow('sealed resource')
+    expect(calls).toHaveLength(1)
   })
 })
 
@@ -128,6 +217,7 @@ describe('Mac Owl zip check', () => {
 
 describe('Mac Owl receipt', () => {
   const provenance = { version: 2, sourceCommit: 'c'.repeat(40), buildInputsRevision: 'd'.repeat(64), buildSha256: 'e'.repeat(64), artifacts: [] }
+  const signing = { identity: 'Developer ID Application', teamId: 'ABCDE12345', hardenedRuntime: true, notarized: true, stapled: true }
   const entry = (filename, content) => ({ filename, size: Buffer.byteLength(content), sha256: createHash('sha256').update(content).digest('hex') })
   async function outputs({ blockmaps }) {
     const plan = owlMacPackagePlan(temporary, version)
@@ -138,10 +228,10 @@ describe('Mac Owl receipt', () => {
   }
   it('records the source, build inputs and every produced file with its size and SHA-256', async () => {
     const { plan, contents } = await outputs({ blockmaps: true })
-    const receipt = await owlMacReceipt({ version, provenance, plan })
+    const receipt = await owlMacReceipt({ version, provenance, plan, signing })
     expect(receipt).toEqual({
-      kind: 'sotto-owl-mac-package', schemaVersion: 1, version, track: 'owl', platform: 'darwin', arch: 'arm64',
-      sourceCommit: provenance.sourceCommit, buildInputsRevision: provenance.buildInputsRevision,
+      kind: 'sotto-owl-mac-package', schemaVersion: 2, version, track: 'owl', platform: 'darwin', arch: 'arm64',
+      sourceCommit: provenance.sourceCommit, buildInputsRevision: provenance.buildInputsRevision, signing,
       files: {
         dmg: entry(`Sotto-Owl-${version}-arm64.dmg`, contents.dmg),
         dmgBlockmap: entry(`Sotto-Owl-${version}-arm64.dmg.blockmap`, contents.dmgBlockmap),
@@ -153,13 +243,22 @@ describe('Mac Owl receipt', () => {
   })
   it('leaves out blockmaps that were not produced', async () => {
     const { plan } = await outputs({ blockmaps: false })
-    expect(Object.keys((await owlMacReceipt({ version, provenance, plan })).files)).toEqual(['dmg', 'zip', 'updateManifest'])
+    expect(Object.keys((await owlMacReceipt({ version, provenance, plan, signing })).files)).toEqual(['dmg', 'zip', 'updateManifest'])
   })
   it('refuses a missing artifact or an incomplete provenance', async () => {
     const { plan } = await outputs({ blockmaps: false })
-    await expect(owlMacReceipt({ version, provenance: { ...provenance, sourceCommit: 'abc' }, plan })).rejects.toThrow('full source commit')
-    await expect(owlMacReceipt({ version, provenance: { ...provenance, buildInputsRevision: undefined }, plan })).rejects.toThrow('build-input revision')
+    await expect(owlMacReceipt({ version, provenance: { ...provenance, sourceCommit: 'abc' }, plan, signing })).rejects.toThrow('full source commit')
+    await expect(owlMacReceipt({ version, provenance: { ...provenance, buildInputsRevision: undefined }, plan, signing })).rejects.toThrow('build-input revision')
     await rm(plan.zip)
-    await expect(owlMacReceipt({ version, provenance, plan })).rejects.toThrow()
+    await expect(owlMacReceipt({ version, provenance, plan, signing })).rejects.toThrow()
+  })
+  it('is written only for a build that is signed, notarized and stapled', async () => {
+    const { plan } = await outputs({ blockmaps: false })
+    for (const unsigned of [undefined, { ...signing, notarized: false }, { ...signing, stapled: false }, { ...signing, hardenedRuntime: false },
+      { ...signing, identity: '-' }, { ...signing, teamId: 'not set' }]) {
+      expect(isSignedAndNotarized(unsigned)).toBe(false)
+      await expect(owlMacReceipt({ version, provenance, plan, signing: unsigned })).rejects.toThrow('signed, notarized and stapled')
+    }
+    expect(isSignedAndNotarized(signing)).toBe(true)
   })
 })

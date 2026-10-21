@@ -705,6 +705,8 @@ artifacts/watcher-news-turns/*
 !artifacts/watcher-news-turns/news-open-dark-820x560.png
 !artifacts/watcher-news-turns/news-open-light-1280x800.png
 
+# The Core ML speech helper's SwiftPM build (ADR-0071 follow-up)
+native/coreml-asr/.build/
 # macOS key listener helper, built by scripts/build-key-listener.mjs
 native/key-listener/build/
 artifacts/macos-traffic-light-room/*

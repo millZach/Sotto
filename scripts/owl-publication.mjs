@@ -1,13 +1,18 @@
 import { owlReleaseSource } from './stable-promotion.mjs'
 
 /** The notes a prerelease carries when the release lead supplies none. They name only the platforms attached. */
-export function defaultOwlNotes({ mac = false } = {}) {
-  if (!mac) return 'Windows preview. Installs over Sotto and shares its data. Owl features are available in this build.'
+export function defaultOwlNotes({ mac = false, linux = false } = {}) {
+  if (!mac && !linux) return 'Windows preview. Installs over Sotto and shares its data. Owl features are available in this build.'
+  const platforms = mac && linux ? 'Windows, Apple silicon Macs and Linux (Omarchy, x64)' : mac ? 'Windows and Apple silicon Macs' : 'Windows and Linux (Omarchy, x64)'
   return [
-    'A preview of the next Sotto for Windows and Apple silicon Macs. It installs over Sotto and shares its data. Owl features are on in this build.',
-    'The Mac build runs on Apple silicon only. It is not signed by a registered Apple developer yet, so macOS stops it the first time you open it. Open System Settings, choose Privacy & Security, then Open Anyway beside the message about Sotto. Or run this in Terminal once Sotto is in Applications:',
-    '    xattr -dr com.apple.quarantine /Applications/Sotto.app',
-    'On a Mac, Owl does not update itself yet. Download the next one from its release page.',
+    `A preview of the next Sotto for ${platforms}. It installs over Sotto and shares its data. Owl features are on in this build.`,
+    ...(mac ? [
+      "The Mac build runs on Apple silicon only. It is signed with Sotto's Developer ID and notarized by Apple, so macOS opens it like any other app, and it updates itself from the update control, as on Windows.",
+      'If your Mac has an earlier Owl that you had to open with Open Anyway, that one cannot update itself to a signed build. Install this one by hand once: open the disk image and drag Sotto to Applications, replacing the old one. After that, Owl updates itself.',
+    ] : []),
+    ...(linux ? [
+      'On Linux, download the sotto-bin package from this release and install it with sudo pacman -U, which replaces Sotto and keeps its data. It does not update itself: install each new Owl the same way. Installing a stable sotto-bin package returns to stable.',
+    ] : []),
   ].join('\n\n')
 }
 

@@ -18,7 +18,7 @@ import { heldProvidersOption, type HeldProviders } from '../../shared/heldProvid
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
-import { WatcherService } from './watcher'
+import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
@@ -119,6 +119,8 @@ export interface AgentRuntimeOptions {
    * `run` stands a test's scripted gh in for babysitting's reads alone.
    */
   babysitting?: { agentTool?: () => boolean; run?: RunGitCommand }
+  /** What Watcher's Settle finished threads did, as stable event names; never a thread, a title or a pull request. */
+  watcherLog?: (event: WatcherAutoSettleEvent) => void
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
@@ -230,8 +232,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
+      settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
+    agentHost.enableDelegation()
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
   }

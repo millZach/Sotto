@@ -1,6 +1,6 @@
 # Signing the Mac Owl (Stage 2 credentials)
 
-The Mac Owl is signed with Sotto's Developer ID and notarized by Apple in GitHub Actions (ADR-0093). Only Zach can do the steps below: they need the Apple Developer account's Account Holder, and they put secrets into GitHub. Stage 2's code waits for them. Everything here works from the Windows PC in Git Bash; no Mac is needed.
+The Mac Owl is signed with Sotto's Developer ID and notarized by Apple in GitHub Actions (ADR-0093). Only Zach can do the steps below: they need the Apple Developer account's Account Holder, and they put secrets into GitHub. The Sotto Owl for Mac workflow reads them, and fails without them. Everything here works from the Windows PC in Git Bash; no Mac is needed.
 
 Stable on the Mac is not signed and does not use any of this.
 
@@ -21,8 +21,10 @@ The certificate request and its private key are made on the PC, so the key never
 ```sh
 mkdir -p ~/sotto-devid && cd ~/sotto-devid
 openssl genrsa -out devid.key 2048
-openssl req -new -key devid.key -out devid.csr -subj "/emailAddress=<your Apple ID email>/CN=<your name>/C=US"
+MSYS_NO_PATHCONV=1 openssl req -new -key devid.key -out devid.csr -subj "/emailAddress=<your Apple ID email>/CN=<your name>/C=US"
 ```
+
+`MSYS_NO_PATHCONV=1` stops Git Bash from turning the leading `/` of the subject into a Windows path.
 
 1. At <https://developer.apple.com/account/resources/certificates/list>, press **+**.
 2. Choose **Developer ID Application**, then the **G2 Sub-CA** profile, and upload `devid.csr`.
@@ -53,7 +55,7 @@ A separate key from the TestFlight one means either can be revoked without break
 The secrets live in a GitHub environment that only the Mac Owl workflow's job reads, as the `testflight` environment holds the iPhone app's key.
 
 1. At <https://github.com/millZach/Sotto/settings/environments>, press **New environment** and name it `owl-mac`.
-2. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `main`. The workflow then reads the secrets only when started from `main`.
+2. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `main`. The workflow then reads the secrets only when started from `main`, and it refuses a source commit that is not in `main`'s history, so nothing unmerged is signed.
 3. Add the five secrets from Git Bash. `gh` reads each value from the file or prompt, so none of them lands in your shell history:
 
 ```sh

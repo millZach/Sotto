@@ -124,12 +124,15 @@ import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { loadParakeetEngine } from './asr/speechEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
+import { SpeechModelManager } from './asr/speechModelManager'
+import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
+import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
-import type { SpeechModelStatus } from '../shared/speechModel'
+import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
-import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -245,6 +248,7 @@ import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
+import type { WatcherAutoSettleEvent } from './agents/watcher'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
@@ -304,6 +308,7 @@ type NativeDiagnostic =
   | 'worktree-cleanup-skipped'
   | 'thread-auto-settled'
   | 'thread-auto-settle-skipped'
+  | WatcherAutoSettleEvent
   | GitHubRateLimitEvent
   | BabysitEvent
   | ClaudeAdapterEvent
@@ -721,8 +726,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   paintDock()
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  const releaseTrack = getReleaseTrack(appRunningVersion)
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
-  const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
+  const buildName = releaseTrackName(releaseTrack)
+  // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
+  const inAppUpdates = updatesInApp(profile, releaseTrack)
   const terminalFocus = new WeakSet<Electron.WebContents>()
   const windows = new WindowManager({
     title: buildName,
@@ -852,6 +860,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
+    watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
@@ -1115,8 +1124,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    // Updates install only on Windows today, so the macOS app menu leaves the command out.
-    ...(profile.inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
@@ -1238,33 +1247,62 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
-  // Dictation transcribes on this computer (ADR-0071). The speech model downloads once from Sotto's
-  // releases, starts loading when Sotto does and stays loaded. E2E runs never download it: they
-  // report it ready, and the renderer uses its fake transcriber. Each failed segment records why and
-  // how long it was in the transcription diagnostics, never what was said.
+  // Dictation transcribes on this computer (ADR-0071) with the model the user chose (ADR-0094). Nothing
+  // downloads until they choose Sotto's own; on an Apple silicon Mac the Core ML models FluidAudio keeps
+  // are on offer too, run through Sotto's helper. E2E runs never download or look: they report the model
+  // ready, and the renderer uses its fake transcriber. Each failed segment records why and how long it
+  // was in the transcription diagnostics, never what was said.
   const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
-  const speechModelStore = e2eConfiguration === null
-    ? new SpeechModelStore({
-      directory: join(userDataPath, 'speech-models'),
-      loadEngine: loadParakeetEngine,
+  const coreMlHelperPath = app.isPackaged
+    ? join(process.resourcesPath, 'coreml-asr', 'sotto-coreml-asr')
+    : join(__dirname, '../../native/coreml-asr/.build/sotto-coreml-asr')
+  // The settings coordinator is made further down; the choice is saved through it once it exists.
+  let saveSpeechModelChoice: (id: string | null) => Promise<void> = () => Promise.reject(new Error('Settings are not ready yet'))
+  const speechModelManager = e2eConfiguration === null
+    ? new SpeechModelManager({
+      // One folder per model under speech-models; Parakeet v3's is where ADR-0071 put it.
+      stores: SOTTO_SPEECH_MODELS.map((model) => new SpeechModelStore({
+        directory: join(userDataPath, 'speech-models'),
+        model,
+        loadEngine: loadParakeetEngine,
+        onStatus: () => undefined,
+      })),
+      findFluidAudio: () => coreMlHelperAvailable(coreMlHelperPath)
+        ? findFluidAudioModels(fluidAudioModelsRoot(app.getPath('appData')))
+        : Promise.resolve([]),
+      coreMlLoader: (version) => createCoreMlEngineLoader(coreMlHelperPath, version),
+      modelBeforeChoosing: PARAKEET_V3.id,
+      readChoice: () => workingCopySettings.speechModel,
+      saveChoice: (id) => saveSpeechModelChoice(id),
       onStatus: (status) => { windows.sendToMain(SPEECH_MODEL_STATUS, status) },
     })
     : null
   const speechModel = {
-    status: (): SpeechModelStatus => speechModelStore?.get() ?? { state: 'ready' },
-    download: (): void => { void speechModelStore?.ensure() },
+    status: (): SpeechModelStatus => speechModelManager?.status() ?? { state: 'ready' },
+    download: (): void => { speechModelManager?.download() },
+    // E2E runs offer Parakeet v3 as already here and Sotto's other models as downloads, so setup and
+    // Settings show real rows; choosing one only saves the choice, since an E2E model is always ready.
+    list: (): Promise<SpeechModelOption[]> => speechModelManager?.list() ?? Promise.resolve(
+      SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
+    ),
+    choose: async (id: string): Promise<boolean> => {
+      if (speechModelManager !== null) return speechModelManager.choose(id)
+      if (sottoSpeechModel(id) === undefined) return false
+      await saveSpeechModelChoice(id)
+      return true
+    },
   }
-  speechModel.download()
   const transcription = new LocalTranscriptionService({
-    engine: () => speechModelStore?.currentEngine() ?? null,
+    engine: () => speechModelManager?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
   })
 
-  // GitHub Releases is only a real feed for the packaged Windows build: the
-  // macOS disk image ships no update metadata, and a development or E2E run
-  // must never reach the network. Everywhere else the service resolves to the
-  // 'unsupported' phase without constructing electron-updater at all.
-  const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
+  // GitHub Releases is a real feed only for the packaged Windows app and the
+  // packaged Mac Owl: stable's macOS disk image ships no update metadata, and a
+  // development or E2E run must never reach the network. Everywhere else the
+  // service resolves to the 'unsupported' phase without constructing
+  // electron-updater at all.
+  const updatesSupported = app.isPackaged && e2eConfiguration === null && inAppUpdates
   // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
   const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
   const updates = new UpdateService({
@@ -1445,6 +1483,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       worktreeCleanup?.settingsChanged()
+      localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
@@ -1468,6 +1507,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, [cleanRetiredHistory])
     },
   })
+  // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
+  saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
+  void speechModelManager?.start()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
@@ -1479,8 +1521,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     show(): void {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    // Only where a check can answer: the tray is the one menu Windows has.
-    ...(updatesSupported ? { checkForUpdates: requestUpdateCheck } : {}),
+    // Only where a check can answer, and only where the tray is the one menu: a Mac's app menu carries it instead.
+    ...(updatesSupported && profile.applicationMenu === 'none' ? { checkForUpdates: requestUpdateCheck } : {}),
     quit(): void {
       app.quit()
     },
@@ -1839,7 +1881,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so drop what is still being transcribed.
         transcription.dispose()
-        speechModelStore?.dispose()
+        speechModelManager?.dispose()
         updates.dispose()
         desktopWatcher?.dispose()
         cleanup()

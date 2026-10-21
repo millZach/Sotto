@@ -4,6 +4,8 @@ import { fileSha256 } from './release-provenance.mjs'
 import { checkedPromotion, stablePackagePlan } from './stable-package.mjs'
 
 const metadata = ['linux-release-verification.json', 'PKGBUILD', '.SRCINFO', 'SHA256SUMS.txt']
+/** A sotto-bin package makepkg writes: a stable pkgver such as 0.1.38, or a Sotto Owl's such as 0.1.38owl.20261021.1. */
+export const LINUX_PACMAN_PACKAGE = /^sotto-bin-\d+\.\d+\.\d+(?:owl\.\d{8}\.\d+)?-\d+-x86_64\.pkg\.tar\.zst$/u
 
 /** Invalidate the completion marker first; preserve tarballs, archives and other platforms. */
 export async function clearLinuxFinishOutputs(release) {
@@ -12,7 +14,7 @@ export async function clearLinuxFinishOutputs(release) {
   try { names = await readdir(release) }
   catch (error) { if (error.code === 'ENOENT') return; throw error }
   for (const name of names) {
-    if (metadata.includes(name) || /^sotto-bin-\d+\.\d+\.\d+-\d+-x86_64\.pkg\.tar\.zst$/u.test(name)) {
+    if (metadata.includes(name) || LINUX_PACMAN_PACKAGE.test(name)) {
       await rm(join(release, name), { force: true })
     }
   }
