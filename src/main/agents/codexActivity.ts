@@ -71,6 +71,8 @@ type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'st
 const opaque = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex')
 const codexActivityId = (turnId: string, itemId: string): string => `codex-activity-${opaque(turnId, itemId)}`
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
+/** How many of one agent's assignments a conversation remembers having opened, so a reread recognises them. */
+const OPENED_KEPT = 200
 /** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
 const ROOT_PATH = '/root'
 const parentPath = (path: string): string => path.slice(0, path.lastIndexOf('/')) || ROOT_PATH
@@ -114,6 +116,12 @@ export class CodexActivityProjection {
    * makes it the agent's next assignment (#1261).
    */
   private readonly messaged = new WeakMap<ActivityConversation, Map<string, { item: Item; context: Context; senderPath: string; at?: number }>>()
+  /**
+   * The multi-agent v2 assignments each conversation has opened, by native agent ID, newest last and at most
+   * OPENED_KEPT each: a reread of that conversation's history recognises one by these even once its record has left the
+   * bounded activity window (#1261).
+   */
+  private readonly opened = new WeakMap<ActivityConversation, Map<string, Set<string>>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
@@ -313,10 +321,9 @@ export class CodexActivityProjection {
     // History says only what its items say: the agent's live state is evidence for a live item alone, and only in the
     // conversation its notifications reach.
     const working = context.phase !== 'history' && this.owners.get(child)?.thread === thread && this.working.get(thread)?.has(child) === true
-    // A message this conversation already holds as one of the agent's assignments was shown to be work when it came: a
+    // A message this conversation already opened as one of the agent's assignments was shown to be work when it came: a
     // reread of the same history takes it as that assignment again, so its later completion ends it and not the one before.
-    const known = thread.activities?.some(record => record.agents?.some(agent => agent.id === agentId(child) && agent.assignmentId === itemActivityId)) === true
-    if (!held && item.kind === 'interacted' && priorFinished && !working && !known) {
+    if (!held && item.kind === 'interacted' && priorFinished && !working && this.opened.get(thread)?.get(child)?.has(itemActivityId) !== true) {
       const waiting = this.messaged.get(thread) ?? new Map<string, { item: Item; context: Context; senderPath: string; at?: number }>()
       waiting.set(child, { item, context, senderPath, ...context.phase === 'history' ? {} : { at: this.now() } }); this.messaged.set(thread, waiting)
       return
@@ -324,6 +331,12 @@ export class CodexActivityProjection {
     // A start, or work handed to an agent that had finished, is a new assignment; a message to a working agent is not.
     const assignment = prior?.assignmentId !== itemActivityId && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || priorFinished))
     const assignmentId = assignment || !prior?.assignmentId ? itemActivityId : prior.assignmentId
+    if (assignment) {
+      const opened = this.opened.get(thread) ?? new Map<string, Set<string>>(), ids = opened.get(child) ?? new Set<string>()
+      ids.delete(assignmentId); ids.add(assignmentId)
+      while (ids.size > OPENED_KEPT) ids.delete(ids.values().next().value!)
+      opened.set(child, ids); this.opened.set(thread, opened)
+    }
     const record = thread.activities?.find(activity => activity.id === assignmentId)
     // An assignment whose record left the bounded window still reports, under a record of its own.
     const id = record || !this.seen.get(thread)?.has(assignmentId) ? assignmentId : itemActivityId

@@ -186,6 +186,21 @@ describe('observational subagent roster metadata', () => {
       expect(source.activities.filter(record => record.kind === 'subagent')[1]!.agents![0]).toMatchObject({ durationMs: 3_000, message: 'Synthetic failure' })
     })
 
+    it('keeps a follow-up its conversation opened when that history is read again after its record left the activity window', () => {
+      let now = 1_000
+      const projection = new CodexActivityProjection(() => now)
+      const source = conversation('source')
+      read(projection, source, 'completed', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']])
+      projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
+      const first = structuredClone(source.activities.filter(record => record.kind === 'subagent')[0]!.agents![0]!)
+      // Later work pushes the follow-up's record out of the bounded window.
+      source.activities = source.activities.filter(record => record.kind !== 'subagent' || record.agents![0]!.assignmentId === first.assignmentId)
+      read(projection, source, 'history', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']])
+      now = 5_000
+      projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn-2', status: 'failed', durationMs: 3_000, error: { message: 'Synthetic failure' } } })
+      expect(source.activities.filter(record => record.kind === 'subagent')[0]!.agents![0]).toEqual(first)
+    })
+
     it('takes no agent as working once its conversation\'s runtime has ended', () => {
       const projection = new CodexActivityProjection(() => 1_000)
       const source = conversation('source')
