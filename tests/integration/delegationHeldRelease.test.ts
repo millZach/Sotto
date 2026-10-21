@@ -88,4 +88,13 @@ it('does not say "thread idle" of a release sent after the delegated thread star
   await vi.waitFor(() => expect(news()).toHaveLength(2))
   expect(news()[1]!.text).not.toContain('thread idle')
   expect(f.ok(await f.read(parent, (await f.service.views(parent)).made[0]!.id)).delegation.note).not.toContain('thread idle')
+  // The release was not used up: that turn ends with the monitor still running, and twenty idle minutes later it comes.
+  await f.endTurn(parent, 'Synthetic parent reply to the plain news')
+  f.native(child).status = 'idle'; await f.emit(child)
+  advance(19 * 60_000); await f.emit(child)
+  await new Promise(resolve => setTimeout(resolve, 200))
+  expect(news()).toHaveLength(2)
+  advance(2 * 60_000); await f.emit(child)
+  await vi.waitFor(() => expect(news()).toHaveLength(3))
+  expect(news()[2]!.text).toContain('thread idle')
 })

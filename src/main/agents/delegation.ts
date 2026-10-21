@@ -256,6 +256,8 @@ export class DelegationService {
   private newsScheduled = false
   /** The wait for the next held background outcome's release, while one waits (`releaseHeld`). */
   private cancelRelease: (() => void) | undefined
+  /** When each held background outcome's delegated thread was last seen working, so a release waits for twenty idle minutes. */
+  private readonly lastWorking = new Map<string, number>()
   private readonly clock: () => number
   private readonly schedule: NonNullable<DelegationServiceOptions['schedule']>
   /** Delegating threads whose delegations changed since the window was last told, and who listens (#1029). */
@@ -1022,10 +1024,13 @@ export class DelegationService {
     for (const record of this.records) {
       if (record.releasedAt || !record.outcomeAt || this.outcomeOf(record) !== 'background') continue
       const thread = threads.get(record.delegatedThreadId)
-      if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false || isThreadTurnRunning(thread)) continue
-      const due = Date.parse(record.outcomeAt) + WATCHER_QUIET_MS
+      if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
+      if (isThreadTurnRunning(thread)) { this.lastWorking.set(record.id, clock); continue }
+      // Twenty minutes idle: from the outcome, or from when its thread was last seen working, whichever is later.
+      const due = Math.max(Date.parse(record.outcomeAt), this.lastWorking.get(record.id) ?? 0) + WATCHER_QUIET_MS
       if (clock < due) { next = Math.min(next, due); continue }
-      this.update(record.id, saved => { saved.releasedAt = new Date(clock).toISOString() })
+      this.lastWorking.delete(record.id)
+      this.update(record.id, saved => { saved.releasedAt = new Date(clock).toISOString(); delete saved.releaseTold })
       released = true
       this.changed(record.id)
     }
@@ -1158,6 +1163,11 @@ export class DelegationService {
       if (item.heldMinutes === undefined) return item
       const record = this.record(item.delegationId)
       if (record && this.heldNow(record, threads.get(record.delegatedThreadId), false)) return item
+      // Its thread is working again: the release is not used up. It comes again after twenty more idle minutes.
+      if (record?.releasedAt) {
+        this.lastWorking.set(record.id, this.clock())
+        this.update(record.id, saved => { delete saved.releasedAt; delete saved.releaseTold })
+      }
       const { heldMinutes, ...rest } = item; void heldMinutes
       return rest
     }) }
