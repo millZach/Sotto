@@ -107,8 +107,10 @@ describe('owned cached Watcher room inputs', () => {
         }
       }
       expect(room).toHaveBeenCalledTimes(optimized ? 2 : 0)
-      expect(snapshot.mock.calls.length).toBe(optimized ? 0 : 18)
-      expect(shell.mock.calls.length).toBe(optimized ? 0 : 18)
+      // Without the room inputs, each read reads the paired host's state once per thread it finds and once for the host,
+      // rather than again for every target's thread and project (#1231).
+      expect(snapshot.mock.calls.length).toBe(optimized ? 0 : 10)
+      expect(shell.mock.calls.length).toBe(optimized ? 0 : 10)
       if (optimized) expect(room).toHaveBeenCalledWith(remoteId, ['one', 'two', 'missing'])
     } finally { timestamp.mockRestore(); service.close(); legacy.close(); f.close() }
   })
