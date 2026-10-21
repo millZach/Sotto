@@ -2047,7 +2047,11 @@ export class WatcherService implements WatcherControlHooks {
       }
       const turn = turnOf()
       if (imported && request.remoteOrigin) this.checkRemoteAuthority(imported, request.remoteOrigin.master, request.remoteOrigin.clientId, request.standingWatchId)
-      if (request.state !== 'active' && !(imported && this.confirmedWorkerStop(imported, request))) {
+      // This host closes its copy of a paired request once the threads it holds have settled, but cannot see the master's
+      // turn going on to settle more (#1254). A new operation the master admitted opens the copy again, in the change that
+      // records it (ADR-0073). Only Stop makes a copy stopped, and a stopped copy stays stopped.
+      const reopens = Boolean(imported && request.remoteOrigin && request.state === 'closed')
+      if (request.state !== 'active' && !reopens && !(imported && this.confirmedWorkerStop(imported, request))) {
         const stoppedTarget = 'target' in input ? input.target : undefined
         if (stoppedTarget && !record.watches?.some(watch => key(watch.target) === key(stoppedTarget))
           && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
@@ -2174,6 +2178,7 @@ export class WatcherService implements WatcherControlHooks {
         if (turn) next.promptTurns = record.promptTurns
         if (newStandingRequest) next.requests.push(newStandingRequest)
         const owned = next.requests.find(item => item.id === request.id)!
+        if (reopens) { owned.state = 'active'; owned.closedAt = null }
         // A participation the user's message took from a watched thread before standing watches outlasted it, or one whose
         // generation fell behind its watch's, would refuse every send; the watch decides, so both move to one generation.
         // A paired host's thread keeps the generation its own host publishes.
@@ -2792,13 +2797,14 @@ export class WatcherService implements WatcherControlHooks {
       }
       const stoppedIds = new Set(stops.map(item => item.request.id))
       for (const operation of record.operations) if (stoppedIds.has(operation.requestId) && !operation.confirmedStop) operations.add(operation.id)
-      const changed = stops.some(item => !record.requests.some(request => request.id === item.request.id && request.state !== 'active'))
+      // A copy this host closed is stopped as well, so no operation the master sent before its Stop opens it again.
+      const changed = stops.some(item => !record.requests.some(request => request.id === item.request.id && request.state === 'stopped'))
         || record.operations.some(item => operations.has(item.id) && item.deliveryState === 'queued')
       if (changed) await this.options.control.updateWatcher(next => {
         for (const { request, ceiling } of stops) {
           let existing = next.requests.find(item => item.id === request.id)
           if (!existing) { existing = { ...request, state: 'stopped', closedAt: now(), participants: [], remoteOrigin: { clientId, master, creationOperationId: master.creationOperationId, ceiling } }; next.requests.push(existing) }
-          if (existing.state === 'active') { existing.state = 'stopped'; existing.closedAt = now() }
+          if (existing.state !== 'stopped') { existing.state = 'stopped'; existing.closedAt = now() }
           for (const operation of next.operations.filter(item => item.requestId === request.id && !item.confirmedStop)) {
             operations.add(operation.id)
             if (operation.deliveryState === 'queued') this.recordOutcome(next, operation, 'failed', 'REQUEST_NOT_ACTIVE')
