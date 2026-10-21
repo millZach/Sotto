@@ -181,7 +181,7 @@ struct PullRequestSheet: View {
     }
     private func failureWords(_ error: Error) -> String {
         if let refusal = error as? HostRefusal, refusal.failure.code == "unavailable" {
-            return "\(model.name(ref.hostID)) couldn’t read the pull request from GitHub. Check that gh is signed in there, then try again."
+            return PullRequests.readFailureWords(reason: refusal.failure.reason, computer: model.name(ref.hostID))
         }
         return error.localizedDescription
     }

@@ -201,6 +201,26 @@ final class PullRequestTests: XCTestCase {
                        .finished(title: "Nothing to babysit", detail: "It merged into main."))
     }
 
+    // MARK: A read the host could not make
+
+    func testARefusedReadSaysWhatToDoByTheReasonTheHostGave() throws {
+        let refusal = try decode(WireFailure.self, #"{"code":"unavailable","message":"The host could not complete this request. Refresh the thread before trying again.","reason":"gh-signed-out"}"#)
+        XCTAssertEqual(refusal.reason, "gh-signed-out")
+        XCTAssertNil(try decode(WireFailure.self, #"{"code":"unavailable","message":"An older host gives no reason."}"#).reason)
+        let words = { (reason: String?) in PullRequests.readFailureWords(reason: reason, computer: "Studio") }
+        XCTAssertEqual(words("gh-missing"), "GitHub’s command line tool, gh, isn’t installed on Studio, so Sotto couldn’t read the pull request. Nothing was lost. Install gh there and sign in with gh auth login, then try again.")
+        XCTAssertEqual(words("gh-signed-out"), "gh isn’t signed in to GitHub on Studio, so Sotto couldn’t read the pull request. Nothing was lost. Sign in to GitHub on Studio with gh auth login, then try again.")
+        XCTAssertEqual(words("offline"), "GitHub can’t be reached from Studio right now, so Sotto couldn’t read the pull request. Nothing was lost. Try again when it’s back online.")
+        XCTAssertEqual(words("unreadable"), "GitHub didn’t give Studio this pull request. Nothing was lost. Try again in a moment, or open it on GitHub to check it still exists.")
+        // An older host, or a reason a later one adds, gets the words that name every cause.
+        let general = "Sotto couldn’t read the pull request from GitHub on Studio. Nothing was lost. Check that gh is installed and signed in there and can reach GitHub, then try again."
+        XCTAssertEqual(words(nil), general)
+        XCTAssertEqual(words("rate-limited-forever"), general)
+        for reason in ["gh-missing", "gh-signed-out", "offline", "unreadable", nil] {
+            XCTAssertTrue(words(reason).contains("Nothing was lost."), "Every reason says nothing was lost")
+        }
+    }
+
     // MARK: The chip
 
     func testTheChipKnowsWhichPullRequestItOpensAndCanLeaveItOutOfTheRowsWords() throws {

@@ -387,6 +387,23 @@ public enum PullRequests {
         default: return when.map { "Ended at \($0)." } ?? "Ended."
         }
     }
+    /// What the sheet says when `computer` could not read the pull request from GitHub (#1290): what happened, that
+    /// nothing was lost, and what to do next, by the reason the host gave. A host before #1290 gives none, so its words
+    /// name every cause. No sentence starts with the computer's name, which may be "the computer".
+    public static func readFailureWords(reason: String?, computer: String) -> String {
+        switch reason {
+        case "gh-missing":
+            return "GitHub’s command line tool, gh, isn’t installed on \(computer), so Sotto couldn’t read the pull request. Nothing was lost. Install gh there and sign in with gh auth login, then try again."
+        case "gh-signed-out":
+            return "gh isn’t signed in to GitHub on \(computer), so Sotto couldn’t read the pull request. Nothing was lost. Sign in to GitHub on \(computer) with gh auth login, then try again."
+        case "offline":
+            return "GitHub can’t be reached from \(computer) right now, so Sotto couldn’t read the pull request. Nothing was lost. Try again when it’s back online."
+        case "unreadable":
+            return "GitHub didn’t give \(computer) this pull request. Nothing was lost. Try again in a moment, or open it on GitHub to check it still exists."
+        default:
+            return "Sotto couldn’t read the pull request from GitHub on \(computer). Nothing was lost. Check that gh is installed and signed in there and can reach GitHub, then try again."
+        }
+    }
     /// "2:02 PM" today, or "Oct 7, 2:02 PM" before.
     private static func at(_ clock: (Date) -> String, _ date: Date, now: Date) -> String {
         Calendar.current.isDate(date, inSameDayAs: now) ? clock(date) : day.string(from: date) + ", " + clock(date)

@@ -163,6 +163,13 @@ export type GitPullRequestLimited = z.infer<typeof gitPullRequestLimitedSchema>
 export const gitPullRequestResultSchema = z.union([gitPullRequestDetailSchema, gitPullRequestLimitedSchema]).nullable()
 /** What a pull request read answers: the detail, a rate-limit refusal, or null when the thread has none to show. */
 export type GitPullRequestRead = GitPullRequestDetail | GitPullRequestLimited | null
+/**
+ * Why a host could not read a pull request, for a client that says what to do next in its own words (#1290): GitHub's
+ * command line tool is not installed, it is not signed in, the host cannot reach GitHub, or GitHub did not give the
+ * pull request (not found, an answer Sotto could not read, a read that did not finish). Never gh's or GitHub's text.
+ */
+export const GIT_PULL_REQUEST_READ_FAILURES = ['gh-missing', 'gh-signed-out', 'offline', 'unreadable'] as const
+export type GitPullRequestReadFailure = typeof GIT_PULL_REQUEST_READ_FAILURES[number]
 /** Whether a read was held back by GitHub's rate limit rather than answered. */
 export const isPullRequestLimited = (read: GitPullRequestRead): read is GitPullRequestLimited => read !== null && 'limited' in read
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'

@@ -118,7 +118,12 @@ public struct Health: Decodable, Equatable, Sendable {
         guard status == "ready" else { throw ClientError.rejected("Sotto on that computer is still starting. Try again in a moment.") }
     }
 }
-public struct WireFailure: Decodable, Sendable { public let code: String; public let message: String }
+public struct WireFailure: Decodable, Sendable {
+    public let code: String; public let message: String
+    /// Why a pull request read was refused (`gh-missing`, `gh-signed-out`, `offline`, `unreadable`), from a host since
+    /// #1290; nil on every other refusal and from an older host.
+    public let reason: String?
+}
 public struct Receipt: Decodable, Sendable {
     public let status: String; public let error: WireFailure?; public let answerDelivered: Bool?
     public let watcherStop: WatcherStopReceipt?

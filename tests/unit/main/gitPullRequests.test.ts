@@ -5,8 +5,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
-import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests } from '../../../src/main/agents/gitPullRequests'
-import { runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests, pullRequestReadFailureOf } from '../../../src/main/agents/gitPullRequests'
+import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { gitPullRequestDetailSchema, parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
 import { initializeGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 
@@ -209,6 +209,24 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     await expect(service.view('C:/repo', 'feature/branch')).rejects.toThrow('Use a pull request URL, 123, or #123.')
     const outside = scripted(args => reads(() => answerJson({ pull: { url: 'https://git.example.com/o/r/pull/74' } }))(args) ?? '')
     await expect(outside.service.view('C:/repo', '74')).rejects.toThrow('Sotto shows pull requests from GitHub only.')
+  })
+  it('says why gh could not read it in the host protocol’s words, never gh’s, for the iPhone to say what to do next (#1290)', async () => {
+    const failureOf = async (refusal: Error | (() => string)): Promise<unknown> => {
+      const { service } = scripted(args => typeof refusal === 'function' ? reads(refusal)(args) ?? '' : refusal)
+      return pullRequestReadFailureOf(await service.view('C:/repo', URL_74).then(() => new Error('it read'), (error: unknown) => error))
+    }
+    expect(await failureOf(new GitUnavailableError('gh is not installed or is not on PATH.'))).toBe('gh-missing')
+    expect(await failureOf(new Error('To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable.'))).toBe('gh-signed-out')
+    expect(await failureOf(new Error('HTTP 401: Bad credentials (https://api.github.com/graphql)'))).toBe('gh-signed-out')
+    expect(await failureOf(new Error('error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com'))).toBe('offline')
+    expect(await failureOf(new Error('Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host'))).toBe('offline')
+    expect(await failureOf(new Error('GraphQL: Could not resolve to a PullRequest with the number of 74. (repository.pullRequest)'))).toBe('unreadable')
+    expect(await failureOf(Object.assign(new Error('gh did not finish in time.'), { code: 'ETIMEDOUT' }))).toBe('unreadable')
+    expect(await failureOf(() => 'not json')).toBe('unreadable')
+    expect(await failureOf(() => JSON.stringify({ data: { repository: { pullRequest: null } } }))).toBe('unreadable')
+    // Anything that is not the read's own refusal, such as a thread that is gone, is a pull request it could not read.
+    expect(pullRequestReadFailureOf(new Error('No such thread.'))).toBe('unreadable')
+    expect(pullRequestReadFailureOf(new GitPullRequestRefusal('Use a pull request URL, 123, or #123.'))).toBe('unreadable')
   })
   it('reads references the way T3 does', () => {
     expect(parsePullRequestReference('#42')).toBe('42')

@@ -5,7 +5,7 @@ import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmen
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
-import { gitPullRequestRequestSchema } from './gitPullRequests'
+import { gitPullRequestRequestSchema, type GitPullRequestReadFailure } from './gitPullRequests'
 import { hostFoldersRequestSchema } from './hostFolders'
 import { fileListRequestSchema, fileRequestSchema } from './files'
 import { gitReviewRequestSchema } from './gitChanges'
@@ -414,7 +414,11 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never
 export type HostErrorCode = 'unauthenticated' | 'invalid_request' | 'stale_request' | 'forbidden' | 'unavailable' | 'busy' | 'too_large'
-export interface HostProtocolError { code: HostErrorCode; message: string }
+/**
+ * `reason` says why a `git-pull-request` read was refused `unavailable`, in words of the protocol's own (#1290), for a
+ * client to say what to do next; any other refusal, and a host before it, leaves it out. Older readers ignore it.
+ */
+export interface HostProtocolError { code: HostErrorCode; message: string; reason?: GitPullRequestReadFailure | undefined }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
 export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: PhoneTerminal[] | undefined }

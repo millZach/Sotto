@@ -9,6 +9,7 @@ import { desktopWindowClient, type HostService } from '../../src/main/agents/hos
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
+import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
@@ -127,6 +128,38 @@ describe('the iPhone’s pull request sheet (#1281)', () => {
         expect(server.descriptor.features.includes('pull-request-view')).toBe(offered)
       } finally { await server.close() }
     }
+  })
+  it('says why a pull request read failed as a reason beside today’s refusal, and never sends gh’s words (#1290)', async () => {
+    let failure: Error = new Error('unset')
+    const service: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      gitPullRequest: async () => { throw failure }, supportsPullRequestView: true,
+    }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
+    const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      await phone.call('hello', { op: 'hello', accepts: [] })
+      const said = 'gh auth login as octocat at https://token@github.com'
+      const cases: Array<[Error, string]> = [
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'gh-signed-out'), 'gh-signed-out'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'gh-missing'), 'gh-missing'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'offline'), 'offline'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`), 'unreadable'],
+        [new Error(said), 'unreadable'],
+      ]
+      for (const [index, [error, reason]] of cases.entries()) {
+        failure = error
+        const answer = await phone.call(`pr-${index}`, { op: 'git-pull-request', request: { threadId: 'thread-1', reference: 'https://github.com/o/r/pull/42' } })
+        // The code and sentence an older phone reads are today's; the reason is beside them, and nothing gh said is.
+        expect(answer).toMatchObject({ ok: false, error: { code: 'unavailable', message: 'The host could not complete this request. Refresh the thread before trying again.', reason } })
+        expect(JSON.stringify(answer)).not.toMatch(/octocat|token@|gh auth/u)
+      }
+      // Any other refusal carries no reason.
+      const other = await phone.call('host-facts', { op: 'host-facts' }) as { error: Record<string, unknown> }
+      expect(other.error).not.toHaveProperty('reason')
+    } finally { phone.frames.close(); await server.close() }
   })
 })
 

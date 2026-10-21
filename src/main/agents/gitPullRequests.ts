@@ -2,13 +2,35 @@ import { z } from 'zod'
 import {
   parsePullRequestReference, pullRequestAddress, pullRequestKey,
   GIT_PULL_REQUEST_FILES_MAX,
-  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReview,
+  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
-import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
+import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from './gitStatus'
 
-/** Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. */
-export class GitPullRequestRefusal extends Error {}
+/**
+ * Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. A read gh could not make also
+ * carries why, in the host protocol's words, for a phone that cannot be sent the reason itself (#1290).
+ */
+export class GitPullRequestRefusal extends Error {
+  constructor(message: string, readonly failure?: GitPullRequestReadFailure) { super(message) }
+}
+/**
+ * Why a pull request read failed, for the host to tell a phone without gh's or GitHub's words: what the refusal says,
+ * else `unreadable`. Anything that is not a refusal from the read (no such thread, no reader on this host) is `unreadable`.
+ */
+export const pullRequestReadFailureOf = (error: unknown): GitPullRequestReadFailure =>
+  error instanceof GitPullRequestRefusal && error.failure ? error.failure : 'unreadable'
+/**
+ * Why gh could not read a pull request, told apart the way babysitting tells its reads apart (ADR-0061): gh not on
+ * PATH, a sign-in GitHub refused, or GitHub never reached. Anything else is GitHub's answer, and `unreadable`.
+ */
+function ghReadFailure(error: unknown): GitPullRequestReadFailure {
+  if (error instanceof GitUnavailableError) return 'gh-missing'
+  const message = error instanceof Error ? error.message : ''
+  if (isSignInRefusal(message)) return 'gh-signed-out'
+  if (isUnreachableAnswer(message)) return 'offline'
+  return 'unreadable'
+}
 /**
  * A read GitHub's rate limit held back (#820): GitHub refused it, or reported no points left on the sign-in's rate limit.
  * The message says so in plain words for a press; the Pull request surface says it with `retryAt` in its own clock.
@@ -282,7 +304,7 @@ export class GitPullRequests {
       // GitHub can answer the pull request and refuse a part of it (a comparison it cannot make, reviews a token may not
       // read); gh then fails with what it did read on its output, and the rest is shown as unknown.
       const partial = partialAnswer(error)
-      if (!partial) throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim())
+      if (!partial) throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim(), ghReadFailure(error))
       answer = partial
     }
     this.rateLimit.answered(repository.host, asked, answer.data.rateLimit, answer.data.viewer?.login ?? null)
