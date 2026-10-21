@@ -319,7 +319,7 @@ struct WatcherReaderPlace: Equatable {
 
 enum WatcherWords {
     /// The bar's owl, which goes to the top of Watcher's page.
-    static let toTop = "Go to the top, where Watcher’s state is"
+    static let toTop = "Go to the top, where Watcher’s state and permissions are"
     /// What Watcher did, in a word or two.
     static func action(_ action: String) -> String {
         switch action {

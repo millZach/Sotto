@@ -129,8 +129,9 @@ private struct WatcherBar: View {
     }
 }
 
-/// Watcher's name, its state, and its model and computer, at the top of each of its panes, where they scroll away with
-/// the page as a thread's title does (#1275, pick A). The bar's owl brings them back.
+/// Watcher's name, its state, its model and computer, and what it may do without asking, at the top of each of its
+/// panes, where they scroll away with the page as a thread's title does (#1275, #1276, pick A). The bar's owl brings
+/// them back.
 private struct WatcherHero: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -155,6 +156,9 @@ private struct WatcherHero: View {
                 }
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
+            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
+                WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
+            }
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.top, Space.s2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1159,8 +1163,6 @@ private struct WatcherDock: View {
                     .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .accessibilityIdentifier("watcher-send-held")
             }
-            // Put away while the box is being written in, so a small phone keeps room for the conversation over the keyboard.
-            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused { WatcherPermissionChip(hostID: hostID) }
             field
         }
         .padding(.horizontal, Space.s3)
@@ -1251,9 +1253,11 @@ private struct WatcherDock: View {
 
 // MARK: - What Watcher may do without asking (control A)
 
-/// Watcher's permissions over the Ask Watcher box: a chip in this iPhone's own words, after the Threads composer's, that
-/// opens the four modes. A choice shows at once; until Watcher's provider confirms it, the chip's edge is dashed and the
-/// words beside it say what is still in force. A computer that refuses says why in its own words.
+/// Watcher's permissions in its hero, under its model and computer (#1276, pick A): a chip in this iPhone's own words,
+/// after the Threads composer's, that opens the four modes. A choice shows at once; until Watcher's provider confirms
+/// it, the chip's edge is dashed and the words beside it say what is still in force. A computer that refuses says why
+/// in its own words. It left the box so the conversation has the room, and so it no longer comes and goes as the box is
+/// written in.
 private struct WatcherPermissionChip: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1289,7 +1293,9 @@ private struct WatcherPermissionChip: View {
         let edge = StrokeStyle(lineWidth: 1, dash: pending ? [4, 3] : [])
         return Button { choosing = true } label: {
             HStack(spacing: 6) {
-                if busy { ProgressView().controlSize(.mini) }
+                if busy { ProgressView().controlSize(.mini) } else {
+                    Image(systemName: "shield").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
+                }
                 Text(WatcherPermissions.name(mode)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
             }
@@ -1297,7 +1303,7 @@ private struct WatcherPermissionChip: View {
             .foregroundStyle(Palette.ink)
             .padding(.horizontal, Space.s4)
             .frame(minHeight: 44)
-            .glass(in: Capsule())
+            .background(Palette.fillSoft, in: Capsule())
             .overlay(Capsule().strokeBorder(pending ? Palette.accent.opacity(0.7) : Palette.hairline, style: edge))
             .contentShape(Capsule())
         }
