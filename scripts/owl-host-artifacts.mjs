@@ -4,17 +4,13 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, posix, resolve } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { TextDecoder } from 'node:util'
+import { checkedFullOwlVersion } from './owl-release.mjs'
 import { sha256, verifyHostArchive } from './verify-host-archive.mjs'
 
 export const OWL_HOST_ARCHIVE_LIMIT = 512 * 1024 * 1024
-const owlVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-owl\.([1-9]\d{7})\.[1-9]\d*$/u
 const archivePattern = /^Sotto-host-(.+)-(linux|darwin|win32)-([a-z0-9]+)\.tar\.gz$/u
 export function checkedOwlHostVersion(version) {
-  const match = typeof version === 'string' && owlVersionPattern.exec(version)
-  if (!match) throw new Error('Supply a full Sotto Owl host version')
-  const day = match[1], date = new Date(`${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}T00:00:00.000Z`)
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10).replaceAll('-', '') !== day) throw new Error('Supply a valid UTC date in the Owl host version')
-  return version
+  return checkedFullOwlVersion(version, { form: 'Supply a full Sotto Owl host version', date: 'Supply a valid UTC date in the Owl host version' })
 }
 
 function archivePath(value) {

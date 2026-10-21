@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
@@ -13,7 +13,12 @@ import { messageLinks } from './requests/messageLinks'
 import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
+import { threadRequestBlocked, threadRequestOwner } from './requests/threadRequests'
+import { answeredChoices, answerWords } from './requests/answeredChoices'
+import { useWatcherEnabled } from '../state/watcherFeature'
 import { ThreadComposer } from './ThreadComposer'
+import { FailedTurnNotice, failedTurnExplanation } from './FailedTurnNotice'
+import { isThreadFailureText } from '../../../shared/threadFailures'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
@@ -80,20 +85,36 @@ function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTML
  * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
  * A plain question points at the composer; everything the provider structured is answered in place.
  */
-function ThreadRequests({ row, state, command, blocked, onAnswer, kind }: {
-  readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly blocked: string | null; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
+function ThreadRequests({ row, state, command, onAnswer, kind }: {
+  readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
 }): ReactNode {
+  // What this window answered is kept for Watcher's lines alone, so only where Watcher is on (ADR-0072).
+  const watcherOn = useWatcherEnabled()
   const thread = row.thread
   const requests = thread.requests.filter(request => request.kind === kind)
   if (isThreadClosed(thread) || requests.length === 0) return null
+  const blocked = threadRequestBlocked(row, state)
   return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
     return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
       messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
-      draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
+      draftOwner={threadRequestOwner(row, state)}
       onWriteAnswer={onAnswer}
-      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}
-      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => result !== null && result.error === null)} />
+      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
+        // What main took is kept for this window, so Watcher's line for this request can say what was chosen.
+        if (watcherOn && result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
+        return result === null ? null : { error: result.error }
+      })}
+      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => checkedOnConnectedHost(result, thread.id))} />
   })}</div>
+}
+
+/**
+ * Whether Check again read the thread afresh. Main lets a dropped connection pass an observation quietly, so the reply
+ * counts only while the thread's host is still connected.
+ */
+export function checkedOnConnectedHost(result: AgentState | null, threadId: string): boolean {
+  const checked = result?.host.threads.find(item => item.id === threadId)
+  return result !== null && result.error === null && checked !== undefined && hostForThread(result.host, checked).connected
 }
 
 export interface ThreadPaneProps {
@@ -192,11 +213,17 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // A refused answer is told in its request card, where it can be answered again; the banner would say it twice.
   const answerExplains = useSyncExternalStore(requestAnswerStore.subscribe,
     () => error !== null && thread.requests.some(request => requestAnswerStore.get(requestAnswerOwnerKey(thread.id, request,
-      { kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }), request.id).error === error))
+      threadRequestOwner(row, state)), request.id).error === error))
   // A settings change the provider refused or never answered is told under the option chips; the banner would say it twice.
   const settings = usePendingSettings(thread.id)
   const settingsExplains = error !== null && (Object.values(settings.refusals).some(refusal => refusal?.error === error)
     || Object.values(settings.pending).some(pending => pending?.error === error))
+  // Why the last turn failed is said once (ADR-0092): by its line in the transcript when that carries the reason,
+  // otherwise by the notice above the composer. While either explains it, a banner about a thread failing, this one's or
+  // another's, stands down; one about the provider's own health still shows.
+  const failure = failedTurnExplanation(thread, row.provider, row.providerId, error)
+  const turnExplains = error !== null && failure !== null
+    && (failure.kind === 'transcript' && failure.reason === error || isThreadFailureText(error, state.host.threads))
   /** A branch switched in a terminal leaves no activity behind, so a draft that begins re-reads the folder once. */
   const branchRead = useRef<string | null>(null)
   const worktreeReady = thread.worktree?.status === 'ready' || (!thread.worktree && thread.nativeSessionStarted !== false)
@@ -273,14 +300,12 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {settleDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
-    {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
+    {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
-      <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
-        onAnswer={focusAnswerComposer} />
+      <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
     </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot}>
-      <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
-        onAnswer={focusAnswerComposer} />
+      <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
       {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
@@ -295,12 +320,12 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}
+      <FailedTurnNotice explanation={failure} />
       <div className="git-action-notice-slot" ref={setGitNoticeSlot} />
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       {/* Watcher keeps to its own folder; it switches no working copy (ADR-0073). */}
       {ownPane ? null : <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />}
-      <ThreadRequests kind="question" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
-        onAnswer={focusAnswerComposer} />
+      <ThreadRequests kind="question" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
         watcher={ownPane} />
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has

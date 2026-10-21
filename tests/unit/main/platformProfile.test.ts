@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
-import { MAC_TRAY_GUID, platformProfile } from '../../../src/main/platformProfile'
+import { MAC_TRAY_GUID, platformProfile, updatesInApp } from '../../../src/main/platformProfile'
 import { defaultHotkey } from '../../../src/shared/platform'
 
 describe('platformProfile', () => {
@@ -37,11 +37,12 @@ describe('platformProfile', () => {
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
       trayGuid: null,
-      inAppUpdates: true,
+      inAppUpdateTracks: ['stable', 'owl'],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
       defaultHotkey: 'CommandOrControl+Shift+Space',
+      defaultHoldShortcuts: ['CommandOrControl+Super'],
     })
   })
 
@@ -57,11 +58,12 @@ describe('platformProfile', () => {
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
       trayGuid: MAC_TRAY_GUID,
-      inAppUpdates: false,
+      inAppUpdateTracks: ['owl'],
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
       defaultHotkey: 'Control+Shift+Space',
+      defaultHoldShortcuts: ['Fn'],
     })
   })
 
@@ -78,11 +80,12 @@ describe('platformProfile', () => {
       widgetIsPanel: false,
       trayIcon: { kind: 'image', relativePath: 'icon.png' },
       trayGuid: null,
-      inAppUpdates: false,
+      inAppUpdateTracks: [],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
-      defaultHotkey: 'CommandOrControl+Shift+Space',
+      defaultHotkey: 'Super+CommandOrControl+X',
+      defaultHoldShortcuts: ['F9'],
     })
     if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
     expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
@@ -94,6 +97,18 @@ describe('platformProfile', () => {
     // would be a new item to AppKit, with no saved position or visibility.
     expect(MAC_TRAY_GUID).toBe('b51ae4d7-15a7-440a-89e1-f227a7cad4c0')
     expect(MAC_TRAY_GUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  })
+
+  // macOS takes an update only when it is signed by the running app's developer, and only Owl is (ADR-0093).
+  it.each([
+    ['win32', 'stable', true],
+    ['win32', 'owl', true],
+    ['darwin', 'stable', false],
+    ['darwin', 'owl', true],
+    ['linux', 'stable', false],
+    ['linux', 'owl', false],
+  ] as const)('updates in the app on %s %s: %s', (platform, track, expected) => {
+    expect(updatesInApp(platformProfile(platform), track)).toBe(expected)
   })
 
   it.each(['win32', 'darwin', 'linux'] as const)(
@@ -121,6 +136,7 @@ describe('platformProfile', () => {
 
       expect(Object.isFrozen(profile)).toBe(true)
       expect(Object.isFrozen(profile.trayIcon)).toBe(true)
+      expect(Object.isFrozen(profile.inAppUpdateTracks)).toBe(true)
       if (profile.trafficLightPosition !== null) {
         expect(Object.isFrozen(profile.trafficLightPosition)).toBe(true)
       }

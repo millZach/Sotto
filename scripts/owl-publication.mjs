@@ -1,5 +1,21 @@
 import { owlReleaseSource } from './stable-promotion.mjs'
 
+/** The notes a prerelease carries when the release lead supplies none. They name only the platforms attached. */
+export function defaultOwlNotes({ mac = false, linux = false } = {}) {
+  if (!mac && !linux) return 'Windows preview. Installs over Sotto and shares its data. Owl features are available in this build.'
+  const platforms = mac && linux ? 'Windows, Apple silicon Macs and Linux (Omarchy, x64)' : mac ? 'Windows and Apple silicon Macs' : 'Windows and Linux (Omarchy, x64)'
+  return [
+    `A preview of the next Sotto for ${platforms}. It installs over Sotto and shares its data. Owl features are on in this build.`,
+    ...(mac ? [
+      "The Mac build runs on Apple silicon only. It is signed with Sotto's Developer ID and notarized by Apple, so macOS opens it like any other app, and it updates itself from the update control, as on Windows.",
+      'If your Mac has an earlier Owl that you had to open with Open Anyway, that one cannot update itself to a signed build. Install this one by hand once: open the disk image and drag Sotto to Applications, replacing the old one. After that, Owl updates itself.',
+    ] : []),
+    ...(linux ? [
+      'On Linux, download the sotto-bin package from this release and install it with sudo pacman -U, which replaces Sotto and keeps its data. It does not update itself: install each new Owl the same way. Installing a stable sotto-bin package returns to stable.',
+    ] : []),
+  ].join('\n\n')
+}
+
 /** The packaged manifest names the build; provenance, never the release checkout, names its source. */
 export function owlPublication(version, provenance, notes) {
   if (/^Source commit:/mu.test(notes)) throw new Error('Leave Source commit out of custom notes; publication adds the provenance source once.')

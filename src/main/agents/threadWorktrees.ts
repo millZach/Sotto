@@ -1,8 +1,8 @@
-import { execFile, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
 
@@ -30,8 +30,9 @@ export async function parallelCheckout(cwd: string): Promise<string[]> {
 /** The executable and deadline seam lets a real launcher/checkout tree exercise timeout recovery. */
 export function runWorktreeGitProcess(cwd: string, args: string[], options: { executable?: string; prefix?: string[]; timeout?: number; env?: Readonly<Record<string, string>> } = {}): Promise<string> {
   return new Promise((accept, reject) => {
-    const child = spawn(options.executable ?? 'git', [...(options.prefix ?? QUOTE_PATHS), ...args], {
-      cwd, windowsHide: true, shell: false, detached: process.platform !== 'win32',
+    // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
+    const child = launchProcess(options.executable ?? 'git', [...(options.prefix ?? QUOTE_PATHS), ...args], {
+      cwd, detached: process.platform !== 'win32',
       // No optional locks: a status read here never takes the index lock from a commit running beside it.
       env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...options.env },
     })
@@ -41,9 +42,10 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
     const output: Buffer[] = [], errors: Buffer[] = []
     let bytes = 0
     const stop = (): void => {
-      if (!child.pid) return
+      // A launch on the worker has its pid once it has started; a deadline that came first stops it then.
+      if (!child.pid) { child.once('spawn', stop); return }
       stopping = process.platform === 'win32'
-        ? new Promise<void>((done, fail) => { execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, error => error ? fail(error) : done()) })
+        ? runToExit('taskkill', ['/pid', String(child.pid), '/T', '/F'])
         : new Promise<void>((done, fail) => {
           // kill only sends the signal: a killed grandchild can still be finishing a write, and stays in the group
           // until its new parent reaps it. Wait until the whole group is gone; one that outlives the wait keeps the folder.
@@ -70,8 +72,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
       if (bytes <= 2_000_000) target.push(chunk)
       else if (!processError) { processError = new Error('Git returned too much output. Nothing was removed.'); clearTimeout(timer); stop() }
     }
-    child.stdout.on('data', (chunk: Buffer) => collect(output, chunk))
-    child.stderr.on('data', (chunk: Buffer) => collect(errors, chunk))
+    child.stdout.on('data', chunk => collect(output, typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
+    child.stderr.on('data', chunk => collect(errors, typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
     child.on('error', error => { processError = error })
     const timer = setTimeout(() => { timedOut = true; stop() }, options.timeout ?? (isWorktreeAdd(args) ? 300_000 : 30_000))
     // close follows exit and closed pipes; the tree termination command must finish before cleanup can start.
@@ -962,6 +964,28 @@ export class ThreadWorktrees {
   }
 
   /**
+   * What `inspect` reads of a shared folder, as the record it makes of any record of that folder: the reads are the
+   * folder's, not the record's, so threads sharing a folder can share one inspection (the workspace's re-read round).
+   */
+  async inspectSharedFolder(folder: string): Promise<(metadata: AgentWorktree) => AgentWorktree> {
+    const path = await existingWorkingDirectory(folder)
+    let repositoryRoot: string
+    try { repositoryRoot = (await this.git(path, ['rev-parse', '--show-toplevel'])).trim() }
+    catch (error) {
+      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return metadata => ({ ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined })
+      throw error
+    }
+    return this.sharedFolderRecord(path, repositoryRoot)
+  }
+
+  /** The branch and uncommitted changes of a shared folder in `repositoryRoot`, as the record inspection makes of one. */
+  private async sharedFolderRecord(path: string, repositoryRoot: string): Promise<(metadata: AgentWorktree) => AgentWorktree> {
+    const branch = (await this.git(path, ['branch', '--show-current'])).trim() || undefined
+    const dirty = (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0
+    return metadata => ({ ...metadata, repositoryRoot, branch, dirty, status: 'ready', error: undefined })
+  }
+
+  /**
    * What `inspect` would record of a ready record, read from the checkout's own files instead of Git, so a send
    * starts no Git process before its prompt goes out (issue #766): the folder is there, it is the checkout the
    * record names (for a worktree, not reached through a link, and one the original repository's registry lists,
@@ -1015,17 +1039,12 @@ export class ThreadWorktrees {
 
   private async inspectWithin(metadata: AgentWorktree, identity?: RegistryIdentity, observed?: InspectionReads, reclaiming = false): Promise<{ worktree: AgentWorktree; identity?: RegistryIdentity }> {
     if (!metadata.path) throw new Error('The working folder is not allocated. Retry setup.')
-    const path = await existingWorkingDirectory(metadata.path)
     if (metadata.mode === 'shared') {
-      let repositoryRoot = observed?.root
-      try { repositoryRoot ??= (await this.git(path, ['rev-parse', '--show-toplevel'])).trim() }
-      catch (error) {
-        if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return { worktree: { ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined } }
-        throw error
-      }
-      const branch = (await this.git(path, ['branch', '--show-current'])).trim() || undefined
-      return { worktree: { ...metadata, repositoryRoot, branch, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0, status: 'ready', error: undefined } }
+      const repositoryRoot = observed?.root
+      if (repositoryRoot === undefined) return { worktree: (await this.inspectSharedFolder(metadata.path))(metadata) }
+      return { worktree: (await this.sharedFolderRecord(await existingWorkingDirectory(metadata.path), repositoryRoot))(metadata) }
     }
+    const path = await existingWorkingDirectory(metadata.path)
     // Inspection never creates a replacement for a deleted checkout.
     if (!metadata.repositoryRoot) throw new Error('The worktree binding is incomplete.')
     identity ??= await this.registryIdentity(metadata.repositoryRoot)

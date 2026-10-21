@@ -55,7 +55,7 @@ function clockLabel(createdAt: number): { dateTime?: string; time: string; full:
 
 /** Entries kept from before Parakeet (ADR-0071) name the model that transcribed them, or an earlier one. */
 function modelLabel(preset: HistoryEntry['modelPreset']): string {
-  if (preset === 'parakeet') return 'Parakeet v3 model'
+  if (preset === 'parakeet') return 'Parakeet model'
   return preset === 'mai' ? 'MAI-Transcribe-2 model' : 'an earlier model'
 }
 

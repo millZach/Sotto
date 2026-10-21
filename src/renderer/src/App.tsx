@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
-import type { SpeechModelStatus } from '../../shared/speechModel'
+import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
@@ -111,10 +111,19 @@ export function applyDocumentPreferences(
  * beside the sidebar, or the corner of a page that owns its window): what this
  * page keeps. Threads has no foot line, so it says nothing here.
  */
-function FooterStatus({ navigation, settings, historyKept, speechModel }: {
+/** The chosen model's name, for the lines that say it is ready; generic until the list says which. */
+function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choice: string | null): string {
+  const chosen = models?.find((model) => model.id === choice)
+  if (chosen !== undefined) return chosen.name
+  if (choice === null) return PARAKEET_V3.name
+  return sottoSpeechModel(choice)?.name ?? 'The speech model'
+}
+
+function FooterStatus({ navigation, settings, historyKept, speechModel, speechModelName }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
   readonly settings: AppSettings
   readonly speechModel: SpeechModelStatus | null
+  readonly speechModelName: string
   /** Whether History still holds transcripts the user could clear. */
   readonly historyKept: boolean
 }): ReactNode {
@@ -124,7 +133,7 @@ function FooterStatus({ navigation, settings, historyKept, speechModel }: {
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: return speechModelSummary(speechModel)
+    default: return speechModelSummary(speechModel, speechModelName)
   }
 }
 
@@ -134,6 +143,18 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const usageEnabled = useOwlFeature('usage')
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
+  // Set when main refused the last choice, so the picker can say why nothing changed.
+  const [speechModelRefused, setSpeechModelRefused] = useState(false)
+  const chooseSpeechModel = useCallback((id: string): void => {
+    setSpeechModelRefused(false)
+    void app.actions.chooseSpeechModel(id).then(chosen => { setSpeechModelRefused(!chosen) })
+  }, [app.actions])
+  // The models on this computer can change while Sotto runs (another app downloads or deletes one),
+  // so the list is read again whenever a page that offers them opens.
+  const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || app.navigation === 'settings'
+  useEffect(() => {
+    if (offersSpeechModels) void app.actions.refreshSpeechModels()
+  }, [offersSpeechModels, app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
@@ -357,8 +378,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           microphoneLevel={microphoneLevel}
           settings={app.settings}
           onUpdateSettings={app.actions.updateSettings}
+          speechModels={app.speechModels}
+          speechModelChoice={app.speechModelChoice}
           speechModel={app.speechModel}
-          onDownloadSpeechModel={downloadSpeechModel}
+          onChooseSpeechModel={chooseSpeechModel}
+          speechModelRefused={speechModelRefused}
+          onRetrySpeechModel={downloadSpeechModel}
           shortcut={app.settings.hotkey}
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
@@ -387,7 +412,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} settings={app.settings} speechModel={app.speechModel} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
+    const statusText = <FooterStatus navigation={navigation} settings={app.settings} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
     const threadWorkspace = (
       <ThreadWorkspace
         updateControl={updateControl}
@@ -435,12 +460,16 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
+          onReplaceDictationShortcuts={app.actions.replaceDictationShortcuts}
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
           onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
           speechModel={app.speechModel}
           onDownloadSpeechModel={downloadSpeechModel}
+          speechModels={app.speechModels}
+          onChooseSpeechModel={chooseSpeechModel}
+          speechModelRefused={speechModelRefused}
           onCheckForUpdates={updateFlow.check}
           onDownloadUpdate={updateFlow.download}
           // The press opens the same confirmation the footer control uses; the
@@ -449,12 +478,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
+        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
         view = <DictateRoom
           settings={app.settings}
           speechModel={app.speechModel}
+          speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
           entries={app.history}

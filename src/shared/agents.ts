@@ -1,10 +1,12 @@
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
+import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
-import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
@@ -32,6 +34,8 @@ export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
 export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
+/** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
+export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
@@ -58,6 +62,8 @@ export const AGENT_TEXT_MAX = 100_000
 const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
+/** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
+export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
@@ -332,6 +338,19 @@ export const agentMessageSchema = z.object({
    */
   wakeUp: z.literal(true).optional().catch(undefined),
   /**
+   * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
+   * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
+   * shows the wake-up as Sotto's.
+   */
+  hiddenWakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a Watcher wake-up whose news said watched threads waited on the user (ADR-0073, answering in Watcher's
+   * conversation): which thread's which request, text-free, from the host's own record of the send, put on as `wakeUp`
+   * is so it survives the history being read again and a restart. Watcher's pane shows each request's card from it. An
+   * older reader drops the field and shows no card.
+   */
+  watcherAsks: watcherAsksSchema.optional().catch(undefined),
+  /**
    * Set on Watcher's first message after a provider change when the user chose to continue with a handover of the last
    * Watcher (ADR-0073): the message's text is then the user's words, and this is the handover that went ahead of them in
    * the same message, told apart by its recorded provenance rather than its words. An older reader drops the field and
@@ -456,6 +475,9 @@ export const agentThreadSchema = z.object({
   /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
    * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
   wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
+  /** Which of those wake-ups carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026),
+   * from the same record. A row never quotes one. Absent when there are none, and from older hosts. */
+  hiddenWakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -481,6 +503,15 @@ export const agentThreadSchema = z.object({
   /** The thread finished its work while no client showed it, and no client has shown it since (ADR-0046). The host's
    * coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   finishedUnread: z.literal(true).optional(),
+  /** The thread's last turn failed and a client has shown it since, or the user dismissed it (ADR-0092): its row reads Done.
+   * The host's coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
+  failureSeen: z.literal(true).optional(),
+  /** The host's own name for the failure a thread in error stands in (ADR-0092), so Dismiss all can name the failure a row
+   * showed and a later one is not marked seen in its place. Absent while the thread stands in none, and from older hosts. */
+  failureId: z.string().max(64).optional(),
+  /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
+   * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
+  failureReason: z.string().max(600).optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -967,7 +998,7 @@ export function lastWrittenMessage<T extends Pick<AgentMessage, 'id' | 'visual'>
  * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
  * agent's words, so it is left out: sidebar rows and search keep what the agent wrote.
  */
-export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
+export function summarizeThread(thread: { readonly messages: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[] | undefined }): AgentThreadSummary {
   const { activities = [] } = thread
   const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
@@ -991,8 +1022,6 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }),
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
-/** The providers that write Sotto's short text. A provider is named here once it does; one that is not writes none. */
-const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'opencode'])
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
@@ -1002,19 +1031,17 @@ const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['code
  * Zen's free models do, writes nothing, and its threads keep their stand-ins.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
-  return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
+  return providerId === undefined || providerProfile(providerId)?.writesShortText === true
 }
 /**
- * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
- * threads take them only where their host says it gives them (`threadTakesSottoTools`).
+ * Whether this provider can receive Sotto's tool servers, as its profile says. Older unlabelled local hosts retain their
+ * tools. Devin's threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
-/** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
-  return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
+  return providerId === undefined || providerProfile(providerId)?.takesSottoTools === true
 }
 /**
- * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
+ * Whether this thread's agent gets Sotto's tool servers. Every provider whose profile says so takes them: Muse when its client grants
  * session tool servers (ADR-0079), Devin from CLI 3000.11.92, which attaches the servers a session is opened with
  * (ADR-0056), and OpenCode when its thread's server connects every one (ADR-0087). A client that cannot take them marks
  * its threads `sottoToolsWithheld`, and a Devin thread counts only when
@@ -1167,7 +1194,16 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
+   * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
+   * cannot send it: it is not on the remote allow-list. */
+  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100), shownThreadIds: z.array(id).max(100).optional() }).strict(),
+  /** Dismiss all: each named thread reads as seen, as if a client had shown it, when it still stands in the failure its
+   * row showed (ADR-0092); one that failed again since is left as news. It answers no request and grants nothing; a
+   * thread waiting on a permission or a question is never one of them. `failure` is the thread's `failureId`, empty
+   * for a host that names none. */
+  z.object({ type: z.literal('dismiss-failures'), failures: z.array(z.object({ threadId: id, failure: z.string().max(64) }).strict())
+    .min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
   z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than
@@ -1202,6 +1238,8 @@ export interface AgentBridge {
   onState(listener: (state: AgentState) => void): () => void
   /** One viewed thread's messages, for a thread the window opened before main pushed them. */
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
+  /** One record of a remote thread whole, for a row whose body its host sent cut; null for this computer's threads. */
+  activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /**
@@ -1211,6 +1249,9 @@ export interface AgentBridge {
   startHandover?(threadId: string): Promise<AgentStartHandover | null>
 }
 export const agentStartHandoverSchema = z.object({ text: z.string() }).strict()
+/** A window's request for one record whole: the thread by the window's own key, and the record's ID. */
+export const agentActivityBodyRequestSchema = z.object({ threadId: id, activityId: z.string().min(1).max(512) }).strict()
+export type AgentActivityBodyRequest = z.infer<typeof agentActivityBodyRequestSchema>
 export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
 
 /**

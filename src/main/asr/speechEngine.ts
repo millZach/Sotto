@@ -6,6 +6,10 @@ import { TRANSCRIPTION_SAMPLE_RATE } from '../../shared/audio'
 /** A loaded speech model: float samples at 16 kHz in, the words heard out. */
 export interface SpeechEngine {
   transcribe(samples: Float32Array): Promise<string>
+  /** Stops a model that runs in its own process; engines inside main's process leave it out. */
+  dispose?(): void
+  /** Tells `listener` once if a model in its own process stops by itself, so it can be loaded again. */
+  onStopped?(listener: () => void): void
 }
 
 /** Starts the engine on a verified model folder; rejects when the native module or the model will not load. */

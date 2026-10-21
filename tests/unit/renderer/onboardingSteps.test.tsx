@@ -433,8 +433,11 @@ describe('Onboarding forward button labels', () => {
   const base = {
     settings: DEFAULT_SETTINGS,
     onUpdateSettings: vi.fn(async () => true),
+    speechModels: [],
+    speechModelChoice: null,
     speechModel: { state: 'missing' as const },
-    onDownloadSpeechModel: vi.fn(),
+    onChooseSpeechModel: vi.fn(),
+    onRetrySpeechModel: vi.fn(),
     shortcut: 'Ctrl+Shift+Space',
     platform: 'win32' as const,
     onRequestMicrophone: vi.fn(),
@@ -466,13 +469,13 @@ describe('Onboarding forward button labels', () => {
     expect(await screen.findByRole('button', { name: 'Continue' })).toBeVisible()
   })
 
-  it('reads Skip for now on the speech-model step while it has not downloaded', async () => {
+  it('reads Skip for now on the speech-model step while no model is chosen', async () => {
     const user = userEvent.setup()
     render(<Onboarding {...base} microphoneState="ready" />)
     await user.click(screen.getByRole('button', { name: 'Get started' }))
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
-    expect(screen.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
     expect(screen.getByRole('heading', { name: 'One shortcut from speech to text' })).toBeVisible()

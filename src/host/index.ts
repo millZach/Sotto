@@ -106,7 +106,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
-  const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
+  const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
     throw new HostKeyMigrationError('A key saved by an older version of Sotto needs secure storage. Pass --key-file <file> and start the host again. The saved key has not been changed.')

@@ -43,7 +43,7 @@ it.each([1, 6])('copies no private takeover proofs when reading the room with %i
     expect(room.receipts.map(receipt => receipt.id)).toEqual(before.operations.map(operation => operation.id))
     expect(room.watchedThreads.filter(row => row.watched)).toHaveLength(watches)
     expect(room.watchedThreads.filter(row => row.watched).every(row => !row.paused && row.status === 'running')).toBe(true)
-    expect(room).toMatchObject({ inFlight: 0, inFlightLimit: 8 })
+    expect(room).not.toHaveProperty('inFlightLimit')
 
     // A consumer may change its copy. Neither the public records nor their nested targets may alias authority.
     room.current!.target.threadId = 'room-only-current'

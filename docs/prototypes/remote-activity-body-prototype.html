@@ -1,0 +1,811 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: a thread on a remote host ("forge") opens slowly over a slow link because the host
+  sends every activity body with the thread. The plan keeps a body on the host when it is over
+  2 KB (25-45% of rows in a busy thread) and fetches it when its row opens (about 0.2-1 s on that
+  link). Everything else on a row stays as it is today: icon, title, command, status, duration,
+  place in the transcript, nesting, plan counts, the compaction rule and turn errors. Only the body
+  comes late. The host can still send the first 2 KB of a held body with the thread.
+
+  What does a row look like while its body is on the way, when the fetch fails, and when forge is
+  not connected? Three structurally different answers on ?variant=A|B|C, switchable with the
+  floating bar or the Left/Right keys (ignored while focus is in a field, a select or a code block):
+   A  Opens now, one line. The row opens at once. Command and folder show straight away (they
+      came with the thread); where the body goes, one quiet line appears after 200 ms
+      ("Getting output from forge..."). The body replaces the line.
+   B  Waits on the chevron. The row stays shut. After 250 ms its chevron turns into a small
+      spinner, and the row opens only once the body is here, so a fast fetch looks like today.
+      A failure or a lost host leaves the row shut with one note under it.
+   C  Prefix first. The row opens at once with the 2 KB forge already sent: the END of command
+      output, the START of thinking and diffs. A quiet marker says the rest is coming. The whole
+      body replaces the prefix in place: a tail-anchored output block keeps the same lines in
+      view, and nothing above the reader moves.
+
+  Rows on the page: Thinking (held, ~3 KB), a subagent (whole, under 2 KB, so it opens at
+  once in every variant, as most rows will), an Edit (held diff) and npm test (held output).
+  The turn fold's "Changed 1 file" shows the same diff as the Edit row and shares its fetch.
+  Bodies fetched once are kept for the session, so a second open is instant.
+
+  The Prototype panel (top right) forces one row into each state and holds the fetch where it
+  is, so a state can be looked at; or set Fetch time and Result and press rows yourself. The
+  "forge connected" switch drops the host mid-fetch. URL switches for captures: variant=A|B|C,
+  state=closed|opening|loaded|failed|disconnected|reopen, row=cmd|think|edit|changes,
+  theme=light, motion=reduced.
+
+  Faithful to: ThreadActivity.tsx (ActivityRow, ActivityDetails, TurnChangedFiles),
+  threadActivityView.ts (labels, statusText, groupSummary, turnHeadline), ThreadTranscript.tsx
+  (TurnWork fold, message article), activity.css, threads.css, rich-messages.css, global.css
+  focus ring, tokens.css derivations over the Sotto theme's dark and light halves (palettes.ts).
+  Thread content, sizes and times are SAMPLE.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - Activity bodies kept on the host, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-style: normal; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* Theme roles: the Sotto theme, as tokens.css paints it before appearance.ts runs. */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-toolbar: oklch(0.115 0.008 265); --theme-toolbar-border: oklch(0.285 0.02 265);
+  --theme-surface: oklch(0.145 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280); --theme-text-muted: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265); --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092); --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-muted: oklch(0.155 0.008 265); --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228); --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-surface: oklch(0.205 0.014 265); --theme-message-action: oklch(0.714403 0.104089 183.092); --theme-message-action-hover: oklch(0.77 0.1 183);
+  --theme-code-background: oklch(0.155 0.008 265); --theme-code-foreground: oklch(0.985 0.005 280);
+  --theme-terminal-scrollbar: oklch(0.315 0.008 265);
+  --theme-contrast-base: 100%; --theme-contrast-boost: 0%; --theme-contrast-border-boost: 0%; --theme-contrast-target: white;
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-toolbar: oklch(0.978 0.004 85); --theme-toolbar-border: oklch(0.86 0.012 80);
+  --theme-surface: oklch(0.99 0.003 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75); --theme-text-muted: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80); --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186); --theme-accent: oklch(0.53 0.095 186);
+  --theme-muted: oklch(0.945 0.008 85); --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513); --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-surface: oklch(0.93 0.012 85); --theme-message-action: oklch(0.53 0.095 186); --theme-message-action-hover: oklch(0.47 0.09 186);
+  --theme-code-background: oklch(0.96 0.005 85); --theme-code-foreground: oklch(0.235 0.014 75);
+  --theme-terminal-scrollbar: oklch(0.84 0.01 85);
+  --theme-contrast-target: black;
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+}
+/* The --tt-* tokens, derived exactly as tokens.css derives them (trimmed to what this page reads). */
+:root {
+  --tt-canvas: var(--theme-canvas); --tt-surface: var(--theme-surface); --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay); --tt-surface-sunken: var(--theme-muted); --tt-field: var(--theme-surface);
+  --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-border-faint: color-mix(in srgb, color-mix(in srgb, var(--theme-border) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-hairline: var(--tt-border-faint);
+  --tt-field-border: color-mix(in srgb, color-mix(in srgb, var(--theme-input) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-border: color-mix(in srgb, color-mix(in srgb, color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground)) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-warning: color-mix(in oklab, color-mix(in oklab, var(--theme-warning-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-error: color-mix(in oklab, color-mix(in oklab, var(--theme-error-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-code-bg: var(--theme-code-background); --tt-code-border: var(--tt-border-faint);
+  --tt-code-text: color-mix(in oklab, color-mix(in oklab, var(--theme-code-foreground) var(--theme-contrast-base), var(--theme-code-background)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-focus-ring: var(--theme-focus);
+  --tt-primary: var(--theme-message-action); --tt-primary-hover: var(--theme-message-action-hover);
+  --tt-activity: var(--tt-accent-text); --tt-link: var(--tt-accent-text);
+  --tt-toolbar: var(--theme-toolbar);
+  --tt-toolbar-border: color-mix(in srgb, color-mix(in srgb, var(--theme-toolbar-border) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-lg: 14px; --tt-radius-pill: 999px;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* threads.css */
+  --threads-bubble: var(--tt-bubble); --threads-field-border: var(--tt-field-border); --threads-scrollbar: var(--tt-scrollbar);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; -webkit-font-smoothing: antialiased; }
+:focus-visible, .tt-focusable:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+.tt-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+[hidden] { display: none !important; }
+svg.i { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Window: one room under a thin strip. */
+.strip { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 14px; border-bottom: 1px solid var(--tt-toolbar-border); background: var(--tt-toolbar); color: var(--tt-text-muted); font-size: 12px; -webkit-app-region: drag; user-select: none; }
+.pane { display: flex; flex-direction: column; height: calc(100% - 32px); }
+.thread-workspace__head { display: flex; align-items: center; gap: 10px; min-width: 0; height: 44px; padding: 0 24px; border-bottom: 1px solid var(--tt-hairline); }
+.thread-workspace__title { min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.host-badge { display: inline-flex; flex: none; align-items: center; gap: 4px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); padding: 0 7px; color: var(--tt-text-muted); font-size: 11px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+.host-badge > svg { flex: none; color: var(--tt-accent-text); }
+.host-badge[data-down] > svg { color: var(--tt-text-muted); }
+.thread-workspace__provider { flex: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: auto; padding: 28px max(24px, calc((100% - 760px) / 2)) 140px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+@media (max-width: 980px) { .thread-workspace__transcript { padding: 22px 18px 140px; } }
+
+/* threads.css: messages. */
+.thread-message { position: relative; margin: 0 0 28px; }
+.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-message__who { color: var(--tt-text-2); font-weight: 500; }
+.thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.thread-message[data-role='user'] .rich-message { color: var(--tt-text); }
+@media (max-width: 980px) { .thread-message[data-role='user'] { margin-left: 24px; } }
+
+/* rich-messages.css */
+.rich-message {
+  --rich-text: var(--tt-text-2); --rich-strong: var(--tt-text); --rich-muted: var(--tt-text-muted);
+  --rich-rule: var(--tt-code-border, var(--tt-border-faint)); --rich-block: var(--tt-code-bg, var(--tt-surface)); --rich-block-bar: var(--tt-surface-elevated);
+  --rich-code-string: var(--tt-warning); --rich-code-number: var(--tt-error); --rich-code-meta: var(--tt-text-muted); --rich-code-text: var(--tt-code-text, var(--tt-text));
+  min-width: 0; color: var(--rich-text); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
+}
+.rich-message.rich-message p { margin: 0 0 12px; white-space: normal; }
+.rich-message > :last-child, .rich-message.rich-message > p:last-child { margin-bottom: 0; }
+.rich-message :not(pre) > code { padding: 1px 5px; border: 1px solid var(--rich-rule); border-radius: 5px; background: var(--rich-block); color: var(--rich-strong); font-family: var(--tt-font-mono); font-size: .88em; }
+.rich-code { margin: 14px 0; border: 1px solid var(--rich-rule); border-radius: var(--tt-radius-md); background: var(--rich-block); overflow: hidden; }
+.rich-code__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 40px; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--rich-block-bar); }
+.rich-code__language { flex: 1; min-width: 0; overflow: hidden; color: var(--rich-muted); font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.rich-code__status { display: inline-flex; align-items: center; gap: 7px; color: var(--rich-muted); font-size: 13px; }
+.rich-code__copy { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--rich-muted); cursor: pointer; }
+.rich-code__copy:hover { background: var(--tt-hover); color: var(--rich-strong); }
+.rich-code__copy[aria-disabled='true'] { opacity: .5; cursor: default; }
+.rich-code__copy[aria-disabled='true']:hover { background: transparent; color: var(--rich-muted); }
+.rich-code__scroll { margin: 0; padding: 12px 14px 14px; overflow-x: auto; color: var(--rich-code-text); font-family: var(--tt-font-mono); font-size: 13.5px; line-height: 1.6; white-space: pre; overflow-wrap: normal; tab-size: 2; scrollbar-width: thin; }
+.rich-code__scroll:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; }
+.rich-code__scroll code { font: inherit; }
+.rich-code .hljs-addition { color: var(--rich-code-string); }
+.rich-code .hljs-deletion { color: var(--rich-code-number); }
+.rich-code .hljs-meta { color: var(--rich-code-meta); }
+
+/* activity.css */
+.thread-message + .thread-work { margin-top: -8px; }
+.thread-work { margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
+.thread-work__summary { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; margin: 0 0 8px -6px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; }
+.thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-work__body { padding: 8px 0 4px; }
+.thread-work__body > .thread-activity:last-child { margin-bottom: 12px; }
+.thread-message + .thread-activity { margin-top: -14px; }
+.thread-activity { margin: 0 0 24px; }
+.thread-activity__summary { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; margin: 0 0 0 -6px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.thread-activity__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-activity__counts { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-activity__chevron { flex: none; color: var(--tt-text-muted); transition: transform .16s ease; }
+[aria-expanded='true'] > .thread-activity__chevron { transform: rotate(90deg); }
+.thread-activity__rows { margin: 2px 0 0 1px; padding: 0 0 0 10px; border-left: 1px solid var(--tt-hairline); list-style: none; }
+.thread-activity__row { margin: 0; }
+.thread-activity__toggle { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto 14px; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 14px; line-height: 1.4; text-align: left; cursor: pointer; }
+.thread-activity__toggle:hover { background: var(--tt-hover); }
+.thread-activity__icon { color: var(--tt-text-muted); }
+.thread-activity__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-activity__lead { color: var(--tt-text-muted); }
+.thread-activity__subject { color: var(--tt-text-2); }
+.thread-activity__subject--mono { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 13px; }
+.thread-activity__preview { color: var(--tt-text-muted); }
+.thread-activity__meta { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-activity__details { display: grid; gap: 8px; margin: 2px 0 12px 30px; min-width: 0; }
+.thread-activity__details .rich-message { font-size: 14px; line-height: 1.6; }
+.thread-activity__details .rich-code, .thread-changes__list .rich-code { margin: 0; }
+.thread-activity__details .rich-code__scroll, .thread-changes__list .rich-code__scroll { max-height: 320px; overflow: auto; font-size: 13px; }
+.thread-activity__fact { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.thread-activity__fact code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 13px; }
+.thread-changes { margin: -4px 0 8px; }
+.thread-changes__summary { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; margin-left: -6px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.thread-changes__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-changes__list { display: grid; gap: 10px; margin: 4px 0 10px; padding: 0 0 0 20px; list-style: none; min-width: 0; }
+.thread-changes__list li { display: grid; gap: 6px; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .thread-activity__chevron { transition: none; } }
+:root[data-reduced-motion='on'] .thread-activity__chevron { transition: none; }
+
+/* ---- New for a held body. Only theme tokens, as themeTokens.test.ts would ask. ---- */
+/* A: the one line that stands where the body goes. Its height is kept from the first frame; the words
+   appear only after 200 ms, so a fast fetch opens to the body with nothing in between. */
+.remote-wait { display: flex; align-items: center; gap: 8px; min-height: 24px; margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.remote-wait:not([data-shown]) > * { visibility: hidden; }
+/* The quiet beat beside the words. Not the activity pulse: that colour means the agent's own work is running. */
+.remote-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-text-muted); }
+/* What happened and what to do, in body ink rather than error ink: the work did not fail, the fetch did. */
+.remote-problem { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.remote-problem p { margin: 0; }
+.remote-retry { min-height: 24px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13.5px; font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
+/* B: the chevron's place holds a small ring while the body is on its way. */
+.remote-spin { display: block; width: 12px; height: 12px; margin: 1px; border: 1.5px solid var(--tt-hairline); border-top-color: var(--tt-text-2); border-radius: 50%; }
+.thread-activity__toggle[aria-busy='true'], .thread-changes__summary[aria-busy='true'] { cursor: progress; }
+/* B: a note under a row that stayed shut. */
+.remote-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 0 0 10px 30px; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.remote-note p { margin: 0; }
+.thread-changes .remote-note { margin-left: 20px; }
+/* C: the cut between what forge sent and what is still there, and the line under thinking. */
+.remote-cut { color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: 12.5px; }
+.remote-more { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .remote-dot { animation: remote-beat 1.6s ease-in-out infinite; }
+  :root:not([data-reduced-motion='on']) .remote-spin { animation: remote-turn .9s linear infinite; }
+}
+@keyframes remote-beat { 50% { opacity: .3; } }
+@keyframes remote-turn { to { transform: rotate(360deg); } }
+/* Still: no beat, and the ring becomes an ellipsis, which reads as waiting without moving. */
+:root[data-reduced-motion='on'] .remote-dot { display: none; }
+:root[data-reduced-motion='on'] .remote-spin { width: 14px; height: 14px; margin: 0; border: 0; color: var(--tt-text-muted); font-size: 14px; line-height: 12px; text-align: center; }
+:root[data-reduced-motion='on'] .remote-spin::after { content: '\2026'; }
+@media (prefers-reduced-motion: reduce) {
+  .remote-dot { display: none; }
+  .remote-spin { width: 14px; height: 14px; margin: 0; border: 0; color: var(--tt-text-muted); font-size: 14px; line-height: 12px; text-align: center; }
+  .remote-spin::after { content: '\2026'; }
+}
+
+/* ---- Prototype chrome: not part of any design. ---- */
+.proto { position: fixed; top: 88px; right: 14px; z-index: 20; width: 312px; max-height: calc(100% - 170px); overflow: auto; border: 1px dashed var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+.proto > summary { padding: 10px 14px; color: var(--tt-text); font-weight: 650; cursor: pointer; }
+.proto__body { display: grid; gap: 10px; padding: 0 14px 14px; }
+.proto dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+.proto dt { color: var(--tt-text-muted); }
+.proto dd { margin: 0; color: var(--tt-text); }
+.proto h3 { margin: 4px 0 0; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.proto p { margin: 0; }
+.proto .about { color: var(--tt-text-2); }
+.states { display: flex; flex-wrap: wrap; gap: 4px; }
+.states button, .proto select { min-height: 28px; padding: 2px 9px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.states button[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-hover); color: var(--tt-text); font-weight: 600; }
+.proto label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.proto input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--tt-accent); }
+.proto .log { padding: 8px 10px; border-radius: 8px; background: var(--tt-surface); color: var(--tt-text-2); }
+.proto .sizes { color: var(--tt-text-muted); font-size: 12.5px; }
+@media (min-width: 1180px) { body:has(.proto[open]) .pane { margin-right: 336px; } }
+.bar { position: fixed; bottom: 18px; left: 50%; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); transform: translateX(-50%); white-space: nowrap; }
+.bar button { min-height: 30px; padding: 2px 10px; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; cursor: pointer; }
+.bar button:hover { background: var(--tt-hover); }
+.bar button[aria-pressed='true'] { background: var(--tt-hover); }
+.bar__label { min-width: 196px; color: var(--tt-text); font-size: 13px; font-weight: 650; text-align: center; }
+.bar__sep { width: 1px; height: 18px; background: var(--tt-hairline); }
+</style>
+</head>
+<body>
+<div class="strip">Sotto</div>
+<main class="pane">
+  <header class="thread-workspace__head">
+    <h1 class="thread-workspace__title">Make forge threads open fast</h1>
+    <span class="host-badge" id="hostBadge" data-kind="remote" title="Runs on forge">
+      <svg class="i" width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+      <span id="hostBadgeText">forge</span>
+    </span>
+    <span class="thread-workspace__provider">Claude Code</span>
+  </header>
+  <div class="thread-workspace__transcript" id="transcript" tabindex="0" role="log" aria-label="Messages">
+    <article class="thread-message" data-role="user">
+      <header><span class="thread-message__who">You</span><time>14:01</time></header>
+      <div class="rich-message"><p>Opening a forge thread from the hotel takes fifteen seconds. Find out why and make it open fast.</p></div>
+    </article>
+
+    <section class="thread-work" id="turnWork" aria-label="Worked for 4m 12s">
+      <button type="button" class="thread-work__summary tt-focusable" data-fold="turn" aria-expanded="true" aria-controls="turnBody">
+        <span class="thread-work__headline">Worked for 4m 12s</span>
+        <svg class="i thread-activity__chevron" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <div class="thread-changes" id="row-changes" data-row="changes"></div>
+      <div class="thread-work__body" id="turnBody">
+        <article class="thread-message" data-role="assistant">
+          <header><span class="thread-message__who">Claude Code</span><time>14:01</time></header>
+          <div class="rich-message"><p>I’ll measure what forge sends when a thread opens, then look at where the bytes go.</p></div>
+        </article>
+        <section class="thread-activity" id="group" aria-label="Ran 1 command, changed 1 file, 1 agent action, thought once">
+          <button type="button" class="thread-activity__summary tt-focusable" data-fold="group" aria-expanded="true" aria-controls="groupRows" aria-label="Ran 1 command, changed 1 file, 1 agent action, thought once">
+            <svg class="i thread-activity__chevron" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="thread-activity__counts">Ran 1 command, changed 1 file, 1 agent action, thought once</span>
+          </button>
+          <ul class="thread-activity__rows" id="groupRows">
+            <li class="thread-activity__row" id="row-think" data-row="think" data-kind="reasoning"></li>
+            <li class="thread-activity__row" id="row-agent" data-row="agent" data-kind="subagent"></li>
+            <li class="thread-activity__row" id="row-edit" data-row="edit" data-kind="file-change"></li>
+            <li class="thread-activity__row" id="row-cmd" data-row="cmd" data-kind="command"></li>
+          </ul>
+        </section>
+      </div>
+    </section>
+
+    <article class="thread-message" data-role="assistant">
+      <header><span class="thread-message__who">Claude Code</span><time>14:05</time></header>
+      <div class="rich-message"><p>Opening was slow because forge sent every activity body with the thread: 1.9 MB for this one, most of it test output. Bodies over 2 KB now stay on forge until their row opens. The thread opens in under a second on the same link, and <code>npm test</code> passes.</p></div>
+    </article>
+  </div>
+</main>
+
+<details class="proto" id="proto" open>
+  <summary>Prototype</summary>
+  <div class="proto__body">
+    <dl>
+      <dt>Variant</dt><dd id="pVariant"></dd>
+      <dt>State</dt><dd id="pState"></dd>
+      <dt>Now</dt><dd id="pNow"></dd>
+      <dt>Theme</dt><dd id="pTheme"></dd>
+      <dt>Motion</dt><dd id="pMotion"></dd>
+    </dl>
+    <p class="about" id="pAbout"></p>
+    <h3 id="statesLabel">Show one row in a state</h3>
+    <div class="states" role="group" aria-labelledby="statesLabel" id="states">
+      <button type="button" data-state="closed">Closed</button>
+      <button type="button" data-state="opening">Opening</button>
+      <button type="button" data-state="loaded">Loaded</button>
+      <button type="button" data-state="failed">Fetch failed</button>
+      <button type="button" data-state="disconnected">Host disconnected</button>
+      <button type="button" data-state="reopen">Re-open</button>
+    </div>
+    <label>Row
+      <select id="rowSelect">
+        <option value="cmd">npm test (output, end first)</option>
+        <option value="think">Thinking (text, start first)</option>
+        <option value="edit">Edit (diff, start first)</option>
+        <option value="changes">Changed 1 file (same diff)</option>
+      </select>
+    </label>
+    <h3>Or press rows yourself</h3>
+    <label>Fetch time
+      <select id="latency">
+        <option value="200">0.2 s</option>
+        <option value="800" selected>0.8 s</option>
+        <option value="3000">3 s</option>
+        <option value="hold">Hold (never arrives)</option>
+      </select>
+    </label>
+    <label>Result
+      <select id="result">
+        <option value="arrives">Arrives</option>
+        <option value="fails">Fails</option>
+      </select>
+    </label>
+    <label>forge connected <input type="checkbox" id="connected" checked></label>
+    <p class="sizes" id="sizes"></p>
+    <p class="log" id="log" role="status" aria-live="polite"></p>
+  </div>
+</details>
+
+<div class="bar" role="group" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous variant">&#8592;</button>
+  <span class="bar__label" id="barLabel"></span>
+  <button type="button" id="next" aria-label="Next variant">&#8594;</button>
+  <span class="bar__sep" aria-hidden="true"></span>
+  <button type="button" id="themeBtn" aria-pressed="false">Light</button>
+  <button type="button" id="motionBtn" aria-pressed="false">Reduce motion</button>
+</div>
+
+<script>
+'use strict';
+var root = document.documentElement;
+var params = new URLSearchParams(location.search);
+var ORDER = ['A', 'B', 'C'];
+var NAMES = { A: 'A · Opens now, one line', B: 'B · Waits on the chevron', C: 'C · Prefix first' };
+var ABOUT = {
+  A: 'The row opens at once. What came with the thread shows straight away; where the body goes, one quiet line appears after 200 ms. The body replaces it.',
+  B: 'The row stays shut and its chevron waits, turning into a spinner after 250 ms. It opens only once the body is here, so a fast fetch looks like today. A failure leaves the row shut with a note.',
+  C: 'The row opens at once on the 2 KB forge already sent: the end of command output, the start of thinking and diffs. The whole body replaces it in place, with the same lines still in view.',
+};
+var STATE_NAMES = { closed: 'Closed', opening: 'Opening', loaded: 'Loaded', failed: 'Fetch failed', disconnected: 'Host disconnected', reopen: 'Re-open after loading' };
+var PREFIX = 2048, A_DELAY = 200, B_DELAY = 250;
+var HOST = 'forge';
+
+var variant = (params.get('variant') || 'A').toUpperCase(); if (ORDER.indexOf(variant) < 0) variant = 'A';
+var shownState = STATE_NAMES[params.get('state')] ? params.get('state') : 'closed';
+var focusRow = ['cmd', 'think', 'edit', 'changes'].indexOf(params.get('row')) >= 0 ? params.get('row') : 'cmd';
+if (params.get('theme') === 'light') root.dataset.theme = 'light';
+if (params.get('motion') === 'reduced') root.dataset.reducedMotion = 'on';
+var sim = { latency: 800, fails: false, connected: true };
+
+// ---- SAMPLE bodies --------------------------------------------------------------------------
+var seed = 7;
+function rnd(n) { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; }
+function makeOutput() {
+  var areas = ['main/agents', 'main/hosts', 'main/ipc', 'renderer/agents', 'renderer/state', 'renderer/features/settings', 'shared', 'host'];
+  var names = ['codexEvents', 'claudeAdapter', 'threadStore', 'hostRouter', 'socketServer', 'detailDelta', 'publishWindow', 'turnFold', 'activityLabel', 'transcriptCursor', 'eventStore', 'worktreeCleanup', 'branchToolbar', 'settingsSchema', 'hostFacts', 'remoteCommands', 'historyWindow', 'storedActivity', 'compaction', 'composerDraft', 'pairing', 'watcherRoom', 'threadTitle', 'reviewComments'];
+  var lines = ['', '> sotto@0.31.4 test', '> vitest run', '', ' RUN  v3.2.4 /home/zach/code/sotto', ''];
+  for (var i = 0; i < 360; i++) {
+    var file = 'tests/unit/' + areas[rnd(areas.length)] + '/' + names[rnd(names.length)] + (i % 5 ? '' : 'Contract') + '.test.ts';
+    lines.push(' ✓ ' + file + ' (' + (2 + rnd(60)) + ' tests) ' + (4 + rnd(900)) + 'ms');
+    if (i % 47 === 13) lines.push(' ↓ ' + file.replace('.test', '.live.test') + ' (3 tests | 3 skipped)');
+  }
+  lines.push('', ' Test Files  214 passed | 2 skipped (216)', '      Tests  3912 passed | 6 skipped (3918)', '   Start at  14:03:02', '   Duration  47.82s (transform 6.1s, setup 2.4s, collect 31.0s, tests 88.4s, environment 1.2s, prepare 9.8s)', '');
+  return lines.join('\n');
+}
+function makeDiff() {
+  var out = ['--- a/src/main/hosts/hostRouter.ts', '+++ b/src/main/hosts/hostRouter.ts',
+    '@@ -12,6 +12,8 @@ import type { AgentThreadDetail, SottoThreadId } from \'../../shared/agents\'',
+    ' import { HostConnection } from \'./hostConnection\'', ' import { joinShells } from \'./shellJoin\'',
+    '+import { HeldBodies } from \'./heldBodies\'', '+', ' ', ' export class HostRouter {', '   private readonly hosts = new Map<string, HostConnection>()',
+    '+  private readonly bodies = new HeldBodies()'];
+  var methods = ['readDetail', 'openThread', 'refreshThread', 'resumeThread', 'applyDelta', 'onHostDetail', 'onReconnect', 'forgetHost', 'showEarlier', 'loadHistory', 'threadActivity', 'onDisconnect'];
+  var at = 40;
+  methods.forEach(function (name) {
+    out.push('@@ -' + at + ',9 +' + (at + 4) + ',13 @@ export class HostRouter {',
+      '   async ' + name + '(threadId: SottoThreadId): Promise<AgentThreadDetail | undefined> {',
+      '     const host = this.hostFor(threadId)', '     if (!host?.connected) return undefined',
+      '-    const detail = await host.request(\'thread-detail\', { threadId })',
+      '-    return detail',
+      '+    // Bodies over 2 KB stay on the host; the row asks for one when it opens.',
+      '+    const detail = await host.request(\'thread-detail\', { threadId, bodies: \'held\' })',
+      '+    this.bodies.keepWhatIsLoaded(threadId, detail)',
+      '+    return detail', '   }', ' ');
+    at += 31;
+  });
+  out.push('@@ -' + at + ',3 +' + (at + 52) + ',24 @@ export class HostRouter {', '   }', ' ',
+    '+  /** One held body, read from the host that owns the thread, kept for the session. */',
+    '+  async readActivityBody(threadId: SottoThreadId, recordId: string): Promise<ActivityBody> {',
+    '+    const kept = this.bodies.get(threadId, recordId)', '+    if (kept) return kept',
+    '+    const host = this.hostFor(threadId)', '+    if (!host?.connected) throw new HostNotConnected(host?.name)',
+    '+    const body = await host.request(\'activity-body\', { threadId, recordId })',
+    '+    this.bodies.set(threadId, recordId, body)', '+    return body', '+  }', ' }');
+  return out.join('\n');
+}
+var REASONING = [
+  'The user says opening a forge thread takes fifteen seconds from the hotel. The desktop asks the host for one thread’s detail when a pane opens, so the first thing to measure is how big that detail is and where its bytes are.',
+  '`readThreadDetail` on the host builds the detail from the projection and the activity records. The history window keeps it to the newest ten turns, but every activity record in those turns goes out with its whole body: command output, reasoning text, tool input and the diff of every file change. Only the activity summaries feature cuts those fields, and the desktop does not accept it; phone clients do.',
+  'For this thread the detail is 1.9 MB. Messages are 38 KB of it. The rest is activity, and four `npm test` runs alone are 1.2 MB of output. Over a link that moves about 120 KB a second, that is the fifteen seconds.',
+  'Most rows are small. Of the 412 records in the window, 287 are under 2 KB with their bodies. The bytes are in the long tail: test output, build logs, big diffs and long reasoning. Keeping only the long bodies on the host removes most of the cost without changing how the small rows behave.',
+  'The transcript needs some things from every record before anything is opened: kind, status, title, command, exit code, timing, the paths of changed files, nesting and plan step counts. Those all stay in the detail. The body is only read when a row opens, in `ActivityDetails`.',
+  'So the host sends a held body as its first 2 KB and its length, and keeps the rest. The desktop asks for a body by Sotto thread ID and record ID when a row opens, and keeps what it gets for the session. A body that came whole shows as it does today.',
+  'Two things to watch. A detail delta that replaces a record must not drop a body the window already fetched, or a row would empty itself while open. And the turn fold’s changed files read the same diffs, so they share the Edit row’s fetch instead of asking twice.',
+  'What the row shows while a body is on its way is a separate question from how it is fetched. The fetch itself is one request on the connection the desktop already keeps to forge: the thread ID, the record ID, and the body back. No new host is contacted and nothing new is written to disk on either side.',
+  'There is also the case where forge drops while a row is open. The desktop already knows when a host is not connected, so it should not ask at all then, and say so plainly. When forge reconnects, a row that is still open can ask again without the user doing anything.',
+  'And a body that arrives must not move what the reader is looking at. A code block in a row is capped at 320 pixels and scrolls inside itself, so swapping 2 KB of output for 40 KB does not change its height. Only text that is not in a block, like this thinking, grows, and it grows below where the reader is.',
+  'Then run the unit suite and the host service contract, and time the open again over the throttled link.',
+].join('\n\n');
+var AGENT_OUTPUT = 'readThreadDetail has three callers: the IPC handler for the window,\nthe host socket server, and Watcher\'s room. Only the socket server\nsends a detail to another machine. The IPC handler and Watcher read\nit in the same process, so they can keep whole bodies.';
+
+var BODIES = {
+  output: { text: makeOutput(), cut: 'tail', lang: 'output', the: 'this output', rest: 'the rest of this output', getting: 'Getting output from ' + HOST + '…', more: 'Getting earlier lines from ' + HOST + '…', partial: 'End of the output only', status: 'held' },
+  reasoning: { text: REASONING, cut: 'head', lang: '', the: 'this thinking', rest: 'the rest of this thinking', getting: 'Getting the thinking from ' + HOST + '…', more: 'Getting the rest from ' + HOST + '…', partial: '', status: 'held' },
+  diff: { text: makeDiff(), cut: 'head', lang: 'diff', the: 'this diff', rest: 'the rest of this diff', getting: 'Getting the diff from ' + HOST + '…', more: 'Getting the rest from ' + HOST + '…', partial: 'Start of the diff only', status: 'held' },
+};
+function prefixOf(b) {
+  // The host cuts at a line break, so no line is shown half.
+  if (b.cut === 'tail') { var t = b.text.slice(-PREFIX); return t.slice(t.indexOf('\n') + 1); }
+  var h = b.text.slice(0, PREFIX); return h.slice(0, h.lastIndexOf('\n'));
+}
+
+var ROWS = {
+  think: { icon: 'brain', subject: 'Thinking', preview: REASONING.split('\n')[0], meta: '6.4s', body: 'reasoning', note: 'Reported by Claude Code' },
+  agent: { icon: 'bot', subject: 'Check the other callers of readThreadDetail', meta: '22s', body: null, note: 'Reported by Claude Code' },
+  edit: { icon: 'filepen', lead: 'Edited', subject: 'src/main/hosts/hostRouter.ts', mono: true, meta: '', body: 'diff', note: 'Time not recorded' },
+  cmd: { icon: 'terminal', subject: 'npm test', mono: true, meta: '48s', body: 'output', note: 'Timed by Sotto' },
+  changes: { changes: true, label: 'Changed 1 file', body: 'diff' },
+};
+var UI = {};
+Object.keys(ROWS).forEach(function (id) {
+  var r = ROWS[id];
+  r.spoken = r.changes ? r.label : [(r.lead ? r.lead + ' ' : '') + r.subject, r.meta ? 'completed in ' + r.meta : 'completed'].join(', ');
+  UI[id] = { open: false, pressed: false };
+});
+
+// ---- Markup ---------------------------------------------------------------------------------
+var ICON = {
+  terminal: '<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  brain: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>',
+  filepen: '<path d="M12.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v9.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M13.378 15.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+};
+function svg(name, size, cls) { return '<svg class="i ' + (cls || '') + '" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" aria-hidden="true">' + ICON[name] + '</svg>'; }
+var CHEVRON = '<svg class="i thread-activity__chevron" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+var SPIN = '<span class="remote-spin" aria-hidden="true"></span>';
+var DOT = '<span class="remote-dot" aria-hidden="true"></span>';
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function highlight(text, lang) {
+  if (lang !== 'diff') return esc(text);
+  return text.split('\n').map(function (line) {
+    if (/^(\+\+\+|---|@@)/.test(line)) return '<span class="hljs-meta">' + esc(line) + '</span>';
+    if (line[0] === '+') return '<span class="hljs-addition">' + esc(line) + '</span>';
+    if (line[0] === '-') return '<span class="hljs-deletion">' + esc(line) + '</span>';
+    return esc(line);
+  }).join('\n');
+}
+function inline(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>'); }
+function paragraphs(text) { return '<div class="rich-message">' + text.split('\n\n').map(function (p) { return '<p>' + inline(p) + '</p>'; }).join('') + '</div>'; }
+function codeBlock(lang, text, bid, opts) {
+  opts = opts || {};
+  var label = lang || 'Code';
+  var copy = opts.partial
+    ? '<button type="button" class="rich-code__copy tt-focusable" aria-disabled="true" aria-label="Copy ' + label + ' code, once the rest arrives" title="Copy works once the rest arrives">' + svg('copy', 15) + '</button>'
+    : '<button type="button" class="rich-code__copy tt-focusable" aria-label="Copy ' + label + ' code" title="Copy code">' + svg('copy', 15) + '</button>';
+  var code = highlight(text, lang);
+  if (opts.partial === 'tail') code = '<span class="remote-cut">⋯ earlier lines are on ' + HOST + '</span>\n' + code;
+  if (opts.partial === 'head') code = code + '\n<span class="remote-cut">⋯ the rest is on ' + HOST + '</span>';
+  // MessageContent wraps every block in .rich-message, which is where the --rich-* colours live.
+  return '<div class="rich-message"><div class="rich-code" data-language="' + esc(lang) + '">' +
+    '<div class="rich-code__bar"><span class="rich-code__language">' + esc(label) + '</span>' +
+    '<span class="rich-code__status" role="status" aria-live="polite">' + (opts.status || '') + '</span>' + copy + '</div>' +
+    '<pre class="rich-code__scroll" tabindex="0" aria-label="' + esc(label) + ' code block"' + (bid ? ' data-body="' + bid + '"' : '') + (opts.anchorEnd ? ' data-anchor="end"' : '') + '><code>' + code + '</code></pre></div></div>';
+}
+function retryButton(bid) { var b = BODIES[bid]; return '<button type="button" class="remote-retry tt-focusable" data-retry="' + bid + '" aria-label="Try again to get ' + b.the + ' from ' + HOST + '">Try again</button>'; }
+function problem(bid, rest) {
+  var b = BODIES[bid];
+  return '<div class="remote-problem" role="status"><p>Couldn’t get ' + (rest ? b.rest : b.the) + ' from ' + HOST + '. Nothing is lost: it is still there.</p>' + retryButton(bid) + '</div>';
+}
+function offline(bid, rest) {
+  var b = BODIES[bid];
+  var what = rest ? 'The rest shows here when it reconnects.' : cap(b.the.replace('this ', 'the ')) + ' is still there and shows here when ' + HOST + ' reconnects.';
+  return '<p class="remote-problem" role="status">' + HOST + ' is not connected. ' + what + '</p>';
+}
+
+// A full body, as today. In C, command output keeps its end in view, as its prefix did.
+function full(bid) {
+  var b = BODIES[bid];
+  if (bid === 'reasoning') return paragraphs(b.text);
+  return codeBlock(b.lang, b.text, bid, { anchorEnd: variant === 'C' && b.cut === 'tail' });
+}
+function slot(bid) {
+  var b = BODIES[bid];
+  if (b.status === 'loaded') return full(bid);
+  if (variant === 'A') {
+    if (b.status === 'failed') return problem(bid, false);
+    if (b.status === 'disconnected') return offline(bid, false);
+    return '<p class="remote-wait" role="status"' + (b.slow ? ' data-shown' : '') + '>' + DOT + '<span>' + b.getting + '</span></p>';
+  }
+  if (variant === 'C') {
+    var p = prefixOf(b);
+    var waiting = b.status === 'fetching' || b.status === 'held';
+    var after = b.status === 'failed' ? problem(bid, true) : b.status === 'disconnected' ? offline(bid, true) : '';
+    if (bid === 'reasoning') return paragraphs(p) + (waiting ? '<p class="remote-more" role="status">' + DOT + '<span>' + b.more + '</span></p>' : after);
+    var status = waiting ? DOT + '<span>' + b.more + '</span>' : esc(b.partial);
+    return codeBlock(b.lang, p, bid, { partial: b.cut, status: status, anchorEnd: b.cut === 'tail' }) + after;
+  }
+  return ''; // B never opens before the body is here.
+}
+function details(id) {
+  var r = ROWS[id];
+  var note = '<p class="thread-activity__fact">' + r.note + '</p>';
+  if (id === 'cmd') return codeBlock('command', 'npm test') + '<p class="thread-activity__fact">In <code>~/code/sotto</code></p>' + slot('output') + note;
+  if (id === 'think') return slot('reasoning') + note;
+  if (id === 'edit') return slot('diff') + note;
+  return codeBlock('output', AGENT_OUTPUT) + note; // whole: under 2 KB, came with the thread
+}
+// B's note, under a row that stayed shut.
+function bNote(id) {
+  var r = ROWS[id], u = UI[id], b = r.body ? BODIES[r.body] : null;
+  if (variant !== 'B' || !u.pressed || !b) return '';
+  if (b.status === 'failed') return '<div class="remote-note" role="status"><p>Couldn’t get ' + b.the + ' from ' + HOST + '. Nothing is lost: it is still there.</p>' + retryButton(r.body) + '</div>';
+  if (b.status === 'disconnected') return '<p class="remote-note" role="status">' + HOST + ' is not connected. ' + cap(b.the.replace('this ', 'the ')) + ' is still there; this row opens when ' + HOST + ' reconnects.</p>';
+  return '';
+}
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function headerName(id) {
+  var r = ROWS[id], u = UI[id], b = r.body ? BODIES[r.body] : null;
+  if (variant === 'B' && u.pressed && b) {
+    if (b.status === 'fetching') return r.spoken + '. Getting ' + b.the.replace('this ', 'the ') + ' from ' + HOST + '; press to stop';
+    if (b.status === 'failed') return r.spoken + '. Press to try again';
+    if (b.status === 'disconnected') return r.spoken + '. Waiting for ' + HOST + '; press to stop';
+  }
+  return r.spoken;
+}
+function rowHTML(id) {
+  var r = ROWS[id], u = UI[id], b = r.body ? BODIES[r.body] : null;
+  var spinning = variant === 'B' && u.pressed && b && b.status === 'fetching' && b.slow;
+  var busy = variant === 'B' && u.pressed && b && b.status === 'fetching';
+  var attrs = ' aria-expanded="' + u.open + '"' + (u.open ? ' aria-controls="detail-' + id + '"' : '') + (busy ? ' aria-busy="true"' : '') + ' aria-label="' + esc(headerName(id)) + '" data-toggle="' + id + '"';
+  var chevron = spinning ? SPIN : CHEVRON;
+  if (r.changes) {
+    return '<button type="button" class="thread-changes__summary tt-focusable"' + attrs + '>' + svg('filepen', 14, 'thread-activity__icon') + '<span>' + r.label + '</span>' + chevron + '</button>' + bNote(id) +
+      (u.open ? '<ul id="detail-' + id + '" class="thread-changes__list" aria-label="' + r.label + '"><li><p class="thread-activity__fact">Edited <code>src/main/hosts/hostRouter.ts</code></p>' + slot('diff') + '</li></ul>' : '');
+  }
+  var label = '<span class="thread-activity__label">' + (r.lead ? '<span class="thread-activity__lead">' + r.lead + ' </span>' : '') +
+    '<span class="' + (r.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject') + '">' + esc(r.subject) + '</span>' +
+    (r.preview && !u.open ? '<span class="thread-activity__preview"> ' + esc(r.preview) + '</span>' : '') + '</span>';
+  return '<button type="button" class="thread-activity__toggle tt-focusable"' + attrs + '>' + svg(r.icon, 15, 'thread-activity__icon') + label +
+    '<span class="thread-activity__meta" data-status="completed">' + r.meta + '</span>' + chevron + '</button>' + bNote(id) +
+    (u.open ? '<div id="detail-' + id + '" class="thread-activity__open"><div class="thread-activity__details"' + (b && b.status === 'fetching' && variant === 'A' ? ' aria-busy="true"' : '') + '>' + details(id) + '</div></div>' : '');
+}
+
+// Re-draws one row, keeping focus where it was and each code block's place: a block anchored to its end
+// keeps the same distance from the bottom, so the full output lands with the same lines in view.
+function render(id) {
+  var el = document.getElementById('row-' + id);
+  var active = document.activeElement, inside = el.contains(active);
+  var focus = !inside ? null : active.matches('[data-toggle]') ? 'toggle' : active.matches('pre') ? 'pre:' + active.dataset.body : 'toggle';
+  var kept = {};
+  el.querySelectorAll('pre[data-body]').forEach(function (pre) { kept[pre.dataset.body] = { top: pre.scrollTop, fromEnd: pre.scrollHeight - pre.clientHeight - pre.scrollTop }; });
+  el.innerHTML = rowHTML(id);
+  el.toggleAttribute('data-open', UI[id].open);
+  el.querySelectorAll('pre[data-body]').forEach(function (pre) {
+    var k = kept[pre.dataset.body];
+    if (pre.dataset.anchor === 'end') pre.scrollTop = pre.scrollHeight - pre.clientHeight - (k ? k.fromEnd : 0);
+    else if (k) pre.scrollTop = k.top;
+  });
+  if (focus === 'toggle') el.querySelector('[data-toggle]').focus({ preventScroll: true });
+  else if (focus) { var pre = el.querySelector('pre[data-body="' + focus.slice(4) + '"]'); (pre || el.querySelector('[data-toggle]')).focus({ preventScroll: true }); }
+}
+function rowsUsing(bid) { return Object.keys(ROWS).filter(function (id) { return ROWS[id].body === bid; }); }
+function renderBody(bid) { rowsUsing(bid).forEach(render); panel(); }
+function renderAll() { Object.keys(ROWS).forEach(render); panel(); }
+
+// ---- Behaviour ------------------------------------------------------------------------------
+function log(text) { document.getElementById('log').textContent = text; }
+function stopTimers(b) { clearTimeout(b.timer); clearTimeout(b.slowTimer); b.timer = b.slowTimer = 0; }
+function startFetch(bid, held) {
+  var b = BODIES[bid];
+  stopTimers(b);
+  if (!sim.connected) { b.status = 'disconnected'; b.slow = false; renderBody(bid); log(HOST + ' is not connected, so nothing was asked for.'); return; }
+  b.status = 'fetching'; b.slow = !!held; b.t0 = performance.now();
+  if (!held) {
+    b.slowTimer = setTimeout(function () { if (b.status === 'fetching') { b.slow = true; renderBody(bid); } }, variant === 'B' ? B_DELAY : A_DELAY);
+    if (sim.latency !== 'hold') b.timer = setTimeout(function () { finish(bid); }, sim.latency);
+  }
+  renderBody(bid);
+  log(held ? 'Fetch held here so the state can be looked at.' : 'Asked ' + HOST + ' for ' + b.the.replace('this ', 'the ') + (sim.latency === 'hold' ? '. It never arrives (Hold).' : '.'));
+}
+function finish(bid) {
+  var b = BODIES[bid];
+  stopTimers(b); b.slow = false;
+  var ms = Math.round(performance.now() - b.t0);
+  b.status = sim.fails ? 'failed' : 'loaded';
+  if (b.status === 'loaded') rowsUsing(bid).forEach(function (id) { if (UI[id].pressed) { UI[id].pressed = false; UI[id].open = true; } });
+  renderBody(bid);
+  log(b.status === 'loaded' ? 'Body arrived after ' + ms + ' ms and is kept for the session.' + (ms < (variant === 'B' ? B_DELAY : A_DELAY) && variant !== 'C' ? ' Fast enough that no waiting showed.' : '') : 'The fetch failed after ' + ms + ' ms.');
+}
+function toggle(id) {
+  var r = ROWS[id], u = UI[id], b = r.body ? BODIES[r.body] : null;
+  if (u.open) { u.open = false; render(id); panel(); log('Folded.'); return; }
+  if (variant === 'B' && u.pressed) {
+    if (b.status === 'failed') { startFetch(r.body); return; }
+    u.pressed = false; render(id); panel(); log('Stopped waiting. A body that arrives anyway is kept.'); return;
+  }
+  if (!b || b.status === 'loaded') { u.open = true; render(id); panel(); log(b ? 'Opened from the copy kept for this session. Nothing was asked of ' + HOST + '.' : 'Opened at once: this body is under 2 KB, so it came whole with the thread.'); return; }
+  if (variant === 'B') { u.pressed = true; } else { u.open = true; }
+  if (b.status === 'fetching') { render(id); panel(); return; }
+  startFetch(r.body);
+}
+function fold(id) {
+  var u = UI[id];
+  if (!u.open && !u.pressed) return false;
+  u.open = false; u.pressed = false; render(id); panel(); log('Folded with Escape.'); return true;
+}
+function setConnected(on) {
+  sim.connected = on;
+  document.getElementById('connected').checked = on;
+  var badge = document.getElementById('hostBadge');
+  badge.toggleAttribute('data-down', !on);
+  badge.title = on ? 'Runs on ' + HOST : HOST + ' is not connected';
+  Object.keys(BODIES).forEach(function (bid) {
+    var b = BODIES[bid];
+    if (!on && b.status === 'fetching') { stopTimers(b); b.status = 'disconnected'; b.slow = false; renderBody(bid); }
+    if (on && b.status === 'disconnected') {
+      var wanted = rowsUsing(bid).some(function (id) { return UI[id].open || UI[id].pressed; });
+      if (wanted) startFetch(bid); else { b.status = 'held'; renderBody(bid); }
+    }
+  });
+  log(on ? HOST + ' reconnected. Rows still waiting ask again on their own.' : HOST + ' disconnected. A fetch under way stops.');
+  panel();
+}
+
+// Puts one row into a state from a clean start: nothing fetched, everything folded but the turn and group.
+var reopenTimer = 0;
+function applyState(state) {
+  shownState = state;
+  clearTimeout(reopenTimer);
+  Object.keys(BODIES).forEach(function (bid) { var b = BODIES[bid]; stopTimers(b); b.status = 'held'; b.slow = false; });
+  Object.keys(UI).forEach(function (id) { UI[id].open = false; UI[id].pressed = false; });
+  openFold('turn', true); openFold('group', true);
+  sim.connected = true; setConnectedQuiet();
+  var r = ROWS[focusRow], b = BODIES[r.body], u = UI[focusRow];
+  var press = function () { if (variant === 'B') u.pressed = true; else u.open = true; };
+  if (state === 'opening') { press(); b.status = 'fetching'; b.slow = true; b.t0 = performance.now(); }
+  if (state === 'loaded') { b.status = 'loaded'; u.open = true; }
+  if (state === 'failed') { press(); b.status = 'failed'; }
+  if (state === 'disconnected') { sim.connected = false; setConnectedQuiet(); press(); b.status = 'disconnected'; }
+  if (state === 'reopen') { b.status = 'loaded'; }
+  renderAll();
+  var el = document.getElementById('row-' + focusRow);
+  el.scrollIntoView({ block: 'nearest' });
+  if (state === 'reopen') {
+    log('Loaded earlier and folded. It opens again in a moment, with no request and no wait.');
+    reopenTimer = setTimeout(function () { u.open = true; render(focusRow); panel(); log('Opened again from the copy kept for this session. Nothing was asked of ' + HOST + '.'); }, 700);
+  } else {
+    log({ closed: 'Nothing fetched yet. Press the row to open it.', opening: 'Fetch held here so the state can be looked at.', loaded: 'Body here, as today.', failed: 'The fetch failed.', disconnected: HOST + ' is not connected.' }[state]);
+  }
+  var url = new URL(location.href); url.searchParams.set('state', state); url.searchParams.set('row', focusRow); history.replaceState(null, '', url);
+}
+function setConnectedQuiet() {
+  document.getElementById('connected').checked = sim.connected;
+  var badge = document.getElementById('hostBadge');
+  badge.toggleAttribute('data-down', !sim.connected);
+  badge.title = sim.connected ? 'Runs on ' + HOST : HOST + ' is not connected';
+}
+function openFold(name, open) {
+  var button = document.querySelector('[data-fold="' + name + '"]');
+  button.setAttribute('aria-expanded', String(open));
+  if (open) button.setAttribute('aria-controls', button.dataset.controls || button.getAttribute('aria-controls')); else { button.dataset.controls = button.getAttribute('aria-controls') || button.dataset.controls; button.removeAttribute('aria-controls'); }
+  document.getElementById(name === 'turn' ? 'turnBody' : 'groupRows').hidden = !open;
+}
+
+function describe(id) {
+  var r = ROWS[id], u = UI[id], b = BODIES[r.body];
+  if (u.open && b.status === 'loaded') return 'open, body here';
+  if (u.open || u.pressed) return { fetching: variant === 'C' ? 'open on the prefix, rest on the way' : variant === 'B' ? 'shut, waiting on the chevron' : 'open, body on the way', failed: 'fetch failed', disconnected: HOST + ' not connected', held: 'waiting', loaded: 'open' }[b.status];
+  return b.status === 'loaded' ? 'closed, body kept' : 'closed';
+}
+function kb(n) { return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB'; }
+function panel() {
+  document.getElementById('pVariant').textContent = NAMES[variant];
+  document.getElementById('barLabel').textContent = NAMES[variant];
+  document.getElementById('pAbout').textContent = ABOUT[variant];
+  document.getElementById('pState').textContent = STATE_NAMES[shownState] + ' · ' + document.querySelector('#rowSelect option[value="' + focusRow + '"]').textContent;
+  document.getElementById('pNow').textContent = describe(focusRow) + (sim.connected || BODIES[ROWS[focusRow].body].status === 'disconnected' ? '' : ' · ' + HOST + ' disconnected');
+  var light = root.dataset.theme === 'light', still = root.dataset.reducedMotion === 'on';
+  document.getElementById('pTheme').textContent = (light ? 'Light' : 'Dark') + ' (Sotto)';
+  document.getElementById('pMotion').textContent = still ? 'Reduced' : window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'Reduced (system)' : 'Full';
+  document.getElementById('themeBtn').textContent = light ? 'Dark' : 'Light';
+  document.getElementById('themeBtn').setAttribute('aria-label', light ? 'Switch to the dark half' : 'Switch to the light half');
+  document.getElementById('motionBtn').setAttribute('aria-pressed', String(still));
+  document.querySelectorAll('#states button').forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.state === shownState)); });
+  document.getElementById('rowSelect').value = focusRow;
+}
+document.getElementById('sizes').textContent = 'Held on ' + HOST + ': npm test output ' + kb(BODIES.output.text.length) + ', thinking ' + kb(BODIES.reasoning.text.length) + ', diff ' + kb(BODIES.diff.text.length) + ' (the first ' + kb(PREFIX) + ' of each came with the thread). Whole: the subagent result, ' + kb(AGENT_OUTPUT.length) + '.';
+
+// ---- Wiring ---------------------------------------------------------------------------------
+document.addEventListener('click', function (event) {
+  var t = event.target.closest('[data-toggle],[data-retry],[data-fold],[data-state]');
+  if (!t) return;
+  if (t.dataset.toggle) toggle(t.dataset.toggle);
+  else if (t.dataset.retry) {
+    var row = t.closest('[data-row]');
+    startFetch(t.dataset.retry);
+    row.querySelector('[data-toggle]').focus({ preventScroll: true });
+  } else if (t.dataset.fold) openFold(t.dataset.fold, t.getAttribute('aria-expanded') !== 'true');
+  else if (t.dataset.state) applyState(t.dataset.state);
+});
+// Escape folds the innermost open thing and leaves focus on its button, as foldOnEscape does.
+document.getElementById('transcript').addEventListener('keydown', function (event) {
+  if (event.key !== 'Escape' || event.defaultPrevented) return;
+  var row = event.target.closest('[data-row]');
+  if (row && fold(row.dataset.row)) { event.preventDefault(); row.querySelector('[data-toggle]').focus(); return; }
+  var holder = event.target.closest('#group, #turnWork');
+  if (!holder) return;
+  var name = holder.id === 'group' ? 'group' : 'turn';
+  var button = holder.querySelector('[data-fold="' + name + '"]');
+  if (button.getAttribute('aria-expanded') !== 'true') { if (name === 'group') { holder = document.getElementById('turnWork'); name = 'turn'; button = holder.querySelector('[data-fold="turn"]'); } else return; }
+  if (button.getAttribute('aria-expanded') !== 'true') return;
+  event.preventDefault(); openFold(name, false); button.focus();
+});
+document.getElementById('rowSelect').addEventListener('change', function (e) { focusRow = e.target.value; applyState(shownState); });
+document.getElementById('latency').addEventListener('change', function (e) { sim.latency = e.target.value === 'hold' ? 'hold' : Number(e.target.value); });
+document.getElementById('result').addEventListener('change', function (e) { sim.fails = e.target.value === 'fails'; });
+document.getElementById('connected').addEventListener('change', function (e) { setConnected(e.target.checked); });
+function setVariant(v) {
+  variant = v;
+  var url = new URL(location.href); url.searchParams.set('variant', v); history.replaceState(null, '', url);
+  applyState(shownState);
+}
+document.getElementById('prev').addEventListener('click', function () { setVariant(ORDER[(ORDER.indexOf(variant) + 2) % 3]); });
+document.getElementById('next').addEventListener('click', function () { setVariant(ORDER[(ORDER.indexOf(variant) + 1) % 3]); });
+document.getElementById('themeBtn').addEventListener('click', function () {
+  var light = root.dataset.theme === 'light';
+  if (light) delete root.dataset.theme; else root.dataset.theme = 'light';
+  var url = new URL(location.href); if (light) url.searchParams.delete('theme'); else url.searchParams.set('theme', 'light'); history.replaceState(null, '', url);
+  panel();
+});
+document.getElementById('motionBtn').addEventListener('click', function () {
+  var still = root.dataset.reducedMotion === 'on';
+  if (still) delete root.dataset.reducedMotion; else root.dataset.reducedMotion = 'on';
+  var url = new URL(location.href); if (still) url.searchParams.delete('motion'); else url.searchParams.set('motion', 'reduced'); history.replaceState(null, '', url);
+  panel();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  var t = e.target;
+  if (t && (t.closest('input, select, textarea, pre, [contenteditable="true"]'))) return;
+  e.preventDefault();
+  document.getElementById(e.key === 'ArrowLeft' ? 'prev' : 'next').click();
+});
+if (window.innerWidth < 1180) document.getElementById('proto').open = false;
+applyState(shownState);
+</script>
+</body>
+</html>

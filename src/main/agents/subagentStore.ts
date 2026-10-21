@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
 import type { AgentActivity, ObservedAgent } from '../../shared/agentActivity'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, SUBAGENT_ASSIGNMENT_PAGE_SIZE, SUBAGENT_PAGE_SIZE, type SubagentAssignment, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentChange, type SubagentPage, type SubagentPageRequest, type SubagentRow, type SubagentSummary } from '../../shared/subagents'
 
@@ -53,8 +54,11 @@ export class SubagentStore {
     mkdirSync(dirname(this.path), { recursive: true })
     const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
     try {
-      db.exec(`PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;
+      // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); erasing does (`flushedCommits`). The attached
+      // `privacy` file of an ephemeral store keeps SQLite's default, FULL: it holds only erased identities.
+      db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA secure_delete=ON;
         CREATE TABLE IF NOT EXISTS subagent_redactions (identity TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS subagent_flushes (key TEXT PRIMARY KEY, count INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS subagent_classifications (thread_id TEXT NOT NULL, activity_id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread_id, activity_id));
         CREATE TABLE IF NOT EXISTS subagent_threads (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS subagent_rows (thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, sequence INTEGER NOT NULL, status TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread_id, agent_id));
@@ -89,6 +93,9 @@ export class SubagentStore {
     statement.run(privacyIdentity(threadId, agentId))
   }
   private erase(): void {
+    flushedCommits(this.requireOpen(), () => this.eraseFlushed())
+  }
+  private eraseFlushed(): void {
     const db = this.requireOpen()
     const threadIds = this.preserveThread ? db.prepare('SELECT thread_id FROM subagent_threads UNION SELECT thread_id FROM subagent_rows UNION SELECT thread_id FROM subagent_assignments UNION SELECT thread_id FROM subagent_classifications').all().map(row => String(row.thread_id)) : undefined
     const selected = threadIds?.some(id => this.preserveThread!(id)) ? threadIds.filter(id => !this.preserveThread!(id)) : undefined
@@ -127,7 +134,33 @@ export class SubagentStore {
     this.counts.assignmentWrites++
     this.requireOpen().prepare('INSERT INTO subagent_assignments VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(thread_id, agent_id, assignment_id) DO UPDATE SET value=excluded.value, fingerprint=excluded.fingerprint, observed_at=excluded.observed_at').run(threadId, agentId, value.id, value.sequence, JSON.stringify(value), hash, observedAt)
   }
+  /**
+   * A new epoch takes the thread's earlier tasks out, as a rewind does, so that commit waits for the disk: a power cut
+   * that undid it would bring back tasks the rewind removed.
+   */
   ingest(threadId: string, observations: NonNullable<AgentActivity['agents']>, epoch?: string, activities: readonly AgentActivity[] = []): SubagentChange | undefined {
+    const known = epoch === undefined ? undefined
+      : this.requireOpen().prepare("SELECT json_extract(value, '$.epoch') AS epoch FROM subagent_threads WHERE thread_id = ?").get(threadId)?.epoch
+    const resets = epoch !== undefined && known !== undefined && known !== null && epoch !== known
+    return resets ? flushedCommits(this.requireOpen(), () => this.ingestNow(threadId, observations, epoch, activities)) : this.ingestNow(threadId, observations, epoch, activities)
+  }
+  /**
+   * Puts every commit so far on the disk, or throws. One small commit waits for the disk (`flushedCommits`), and that
+   * flushes the log with every commit ahead of it. It counts up, so it always changes the row: SQLite writes nothing,
+   * and flushes nothing, for a write that leaves a row as it was. A checkpoint would not do either: one a reader holds
+   * back reports itself busy without failing, and need not flush anything.
+   */
+  flushToDisk(): void {
+    const db = this.requireOpen()
+    flushedCommits(db, () => {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        db.prepare("INSERT INTO subagent_flushes VALUES ('roster', 1) ON CONFLICT(key) DO UPDATE SET count=count+1").run()
+        db.exec('COMMIT')
+      } catch (error) { db.exec('ROLLBACK'); throw error }
+    })
+  }
+  private ingestNow(threadId: string, observations: NonNullable<AgentActivity['agents']>, epoch?: string, activities: readonly AgentActivity[] = []): SubagentChange | undefined {
     const db = this.requireOpen()
     db.exec('BEGIN IMMEDIATE')
     try {

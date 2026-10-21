@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createWatcherRoomDesktop } from '../../../src/main/agents/watcherRoomDesktop'
 import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
   WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   type WatcherHandoverRead, type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
@@ -12,7 +12,7 @@ import { deferred } from '../../fixtures/deferred'
 
 const at = '2026-10-14T00:00:00.000Z'
 const room = (name: string): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [],
-  watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: name, observedAt: at })
+  watchedThreads: [], receipts: [], recoveryNotice: name, observedAt: at })
 class Clock {
   readonly entries: { run(): void; cancelled: boolean }[] = []
   readonly schedule: PublishScheduler = (run, ms) => {
@@ -41,9 +41,8 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
   }
   const send = vi.fn((state: WatcherRoomState) => { order.push(`send:${state.recoveryNotice}`); return available })
-  const setLimit = vi.fn(async (limit: number) => { current = { ...current, inFlightLimit: limit } })
-  const desktop = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost, watcher: service, setLimit, send, schedule: clock.schedule })
-  return { desktop, service, clock, send, order, off, setLimit,
+  const desktop = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost, watcher: service, send, schedule: clock.schedule })
+  return { desktop, service, clock, send, order, off,
     publish: (state: WatcherRoomState) => listener?.(state), current: (state: WatcherRoomState) => { current = state },
     available: (value: boolean) => { available = value } }
 }
@@ -52,15 +51,15 @@ afterEach(() => vi.restoreAllMocks())
 describe('desktop Watcher room publication', () => {
   it.each([[false, false], [false, true], [true, false], [true, true]])('checks both startup answers (%s, %s) before capture or scheduling', (watcher, cost) => {
     const f = fixture(watcher, cost), state = room('event')
-    const clone = vi.spyOn(globalThis, 'structuredClone')
     try {
       f.publish(state)
       expect(f.service.subscribe).toHaveBeenCalledTimes(watcher ? 1 : 0)
       expect(f.desktop === undefined).toBe(!watcher)
-      expect(clone).toHaveBeenCalledTimes(watcher && cost ? 1 : 0)
       expect(f.clock.entries).toHaveLength(watcher && cost ? 1 : 0)
       expect(f.send).toHaveBeenCalledTimes(watcher ? 1 : 0)
       if (watcher && !cost) expect(f.send.mock.calls[0]![0]).toBe(state)
+      // With the publish window on, the room sends a capture of the state, never the state itself.
+      if (watcher && cost) { expect(f.send.mock.calls[0]![0]).not.toBe(state); expect(f.send.mock.calls[0]![0]).toEqual(state) }
     } finally { f.desktop?.dispose() }
   })
 
@@ -129,10 +128,10 @@ describe('desktop Watcher room publication', () => {
   it('keeps the existing unavailable-host replies without a subscription or scheduler', async () => {
     const clock = new Clock()
     const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true,
-      send: () => { throw new Error('No room exists') }, setLimit: async () => undefined, schedule: clock.schedule })!
+      send: () => { throw new Error('No room exists') }, schedule: clock.schedule })!
     try {
       for (const answer of [desktop.bridge.get(), desktop.bridge.open({ provider: 'codex', modelId: 'model' }),
-        desktop.bridge.prepareStopAll(), desktop.bridge.stopAll({ confirmationId: randomUUID() }), desktop.bridge.setLimit({ limit: 2 }),
+        desktop.bridge.prepareStopAll(), desktop.bridge.stopAll({ confirmationId: randomUUID() }),
         desktop.bridge.setPermission({ runtimeMode: 'full-access' }), desktop.bridge.watchThread({ target: { hostId: randomUUID(), threadId: 'worker' } }),
         desktop.bridge.unwatchThread({ target: { hostId: randomUUID(), threadId: 'worker' } })]) {
         expect(await answer).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
@@ -164,7 +163,7 @@ describe('desktop Watcher room publication', () => {
 
   it.each([
     [WATCHER_GET, undefined], [WATCHER_OPEN, { provider: 'codex', modelId: 'model' }],
-    [WATCHER_PREPARE_STOP_ALL, undefined], [WATCHER_STOP_ALL, { confirmationId: randomUUID() }], [WATCHER_SET_LIMIT, { limit: 3 }],
+    [WATCHER_PREPARE_STOP_ALL, undefined], [WATCHER_STOP_ALL, { confirmationId: randomUUID() }],
   ])('flushes pending room facts before the actual %s IPC answer, including tied timestamps', async (channel, input) => {
     const f = fixture(), ipc = createIpcHarness(); ipc.cleanup()
     const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
@@ -208,7 +207,7 @@ describe('desktop Watcher room publication', () => {
 
   it.each(['open', 'stopAll'] as const)('returns %s own captured result when a newer tied room arrives while it is pending', async operation => {
     const f = fixture(), held = deferred<WatcherRoomResult & { results: [] }>()
-    const own = { status: 'ok' as const, state: { ...room('own result'), inFlightLimit: 2 }, results: [] as [] }
+    const own = { status: 'ok' as const, state: { ...room('own result'), recoveryNotice: 'own result' }, results: [] as [] }
     if (operation === 'open') f.service.open.mockImplementation(() => held.promise)
     else f.service.stopAll.mockImplementation(() => held.promise)
     try {
@@ -222,34 +221,14 @@ describe('desktop Watcher room publication', () => {
     } finally { f.desktop!.dispose() }
   })
 
-  it('awaits the limit update, then flushes before returning its own single complete read', async () => {
-    const f = fixture(), held = deferred<void>()
-    const own: WatcherRoomResult = { status: 'ok', state: { ...room('own limit'), inFlightLimit: 2,
-      currentOptions: { modelId: 'own-model', reasoningEffort: 'high', status: 'idle', connected: true } } }
-    f.setLimit.mockImplementation(async () => held.promise)
-    f.service.get.mockImplementation(() => { f.publish(room('later tied event')); return own })
-    try {
-      f.publish(room('leading')); f.publish(room('old'))
-      const answer = f.desktop!.bridge.setLimit({ limit: 2 })
-      expect(f.service.get).not.toHaveBeenCalled()
-      held.resolve()
-      expect(await answer).toBe(own)
-      expect(f.setLimit).toHaveBeenCalledExactlyOnceWith(2)
-      expect(f.service.get).toHaveBeenCalledOnce()
-      expect(f.order).toEqual(['send:leading', 'send:later tied event'])
-      f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
-    } finally { f.desktop!.dispose() }
-  })
-
-  it.each(['open', 'stopAll', 'setLimit'] as const)('flushes before an awaited %s rejection and preserves the original error', async operation => {
+  it.each(['open', 'stopAll'] as const)('flushes before an awaited %s rejection and preserves the original error', async operation => {
     const f = fixture(), held = deferred<never>(), failure = new Error('Synthetic operation rejection')
     if (operation === 'open') f.service.open.mockImplementation(() => held.promise)
-    else if (operation === 'stopAll') f.service.stopAll.mockImplementation(() => held.promise)
-    else f.setLimit.mockImplementation(() => held.promise)
+    else f.service.stopAll.mockImplementation(() => held.promise)
     try {
       f.publish(room('leading')); f.publish(room('pending'))
       const answer = operation === 'open' ? f.desktop!.bridge.open({ provider: 'codex', modelId: 'model' })
-        : operation === 'stopAll' ? f.desktop!.bridge.stopAll({ confirmationId: randomUUID() }) : f.desktop!.bridge.setLimit({ limit: 2 })
+        : f.desktop!.bridge.stopAll({ confirmationId: randomUUID() })
       const observed = answer.catch(error => { f.order.push('rejected'); return error })
       held.reject(failure)
       expect(await observed).toBe(failure)
@@ -259,17 +238,16 @@ describe('desktop Watcher room publication', () => {
     } finally { f.desktop!.dispose() }
   })
 
-  it.each(['get', 'open', 'prepareStopAll', 'stopAll', 'setLimit'] as const)('flushes before a synchronous %s throw crosses the bridge', async operation => {
+  it.each(['get', 'open', 'prepareStopAll', 'stopAll'] as const)('flushes before a synchronous %s throw crosses the bridge', async operation => {
     const f = fixture(), failure = new Error('Synthetic synchronous operation failure')
     const fail = (): never => { throw failure }
-    if (operation === 'setLimit') f.setLimit.mockImplementation(fail)
-    else f.service[operation].mockImplementation(fail)
+    f.service[operation].mockImplementation(fail)
     try {
       f.publish(room('leading')); f.publish(room('pending'))
       const answer = operation === 'get' ? f.desktop!.bridge.get()
         : operation === 'open' ? f.desktop!.bridge.open({ provider: 'codex', modelId: 'model' })
           : operation === 'prepareStopAll' ? f.desktop!.bridge.prepareStopAll()
-            : operation === 'stopAll' ? f.desktop!.bridge.stopAll({ confirmationId: randomUUID() }) : f.desktop!.bridge.setLimit({ limit: 2 })
+            : f.desktop!.bridge.stopAll({ confirmationId: randomUUID() })
       expect(await answer.catch(error => { f.order.push('rejected'); return error })).toBe(failure)
       expect(f.order).toEqual(['send:leading', 'send:pending', 'rejected'])
       f.clock.tick(); f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)

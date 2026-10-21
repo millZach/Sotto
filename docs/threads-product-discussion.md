@@ -8,6 +8,8 @@ Amended September 24, 2026: the live token, cost and context figures near the co
 
 Amended October 6, 2026: Zach retired standalone Chats, including personal voice and Generate prompt, under ADR-0010. The personal conversation requirements below are historical. Project-bound Threads remain the workspace; existing personal-chat files are retained while Keep local history is on, without reopening conversations, reconnecting providers or migrating them. Turning history off still clears Sotto's retained transcripts and submitted answers.
 
+Amended October 20, 2026: the compaction recommendation is no longer Claude-only. Zach extended it to Codex threads, and to Muse threads once Muse says how full their context is, with T3's size and age rules unchanged ([ADR-0095](adr/0095-one-provider-profile-holds-each-providers-answers.md)).
+
 ## Confirmed direction
 
 - The target is a custom T3-like daily workspace, with Sotto branding, voice, memory and an independent coordinator. Existing provider/coordinator separation remains.

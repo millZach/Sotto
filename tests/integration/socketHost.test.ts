@@ -363,7 +363,10 @@ describe('authenticated host socket', () => {
         })
         expect(response.status).toBe(200)
         await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: allowed } } })
-        await expect.poll(() => peers[1]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
+        // The other client's authority is unchanged. A shell it already has is not pushed again (ADR-0025, October 18
+        // amendment), so it is asked for its shell, and no push it was sent says it may answer.
+        expect(await peers[1]!.call('shell-' + allowed, { op: 'shell' })).toMatchObject({ ok: true, result: { clientCapabilities: { mayAnswer: false } } })
+        expect(peers[1]!.messages.filter(message => message.event === 'shell')).not.toContainEqual(expect.objectContaining({ state: expect.objectContaining({ clientCapabilities: { mayAnswer: true } }) }))
       }
     } finally { for (const peer of peers) peer.frames.close() }
   })

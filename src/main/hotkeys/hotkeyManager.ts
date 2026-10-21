@@ -1,8 +1,11 @@
 import type { HotkeyChangeResult } from '../../shared/contracts'
 import type { WidgetSnapshot } from '../../shared/dictation'
 import type { SottoPlatform } from '../../shared/platform'
+import { chordTokenSet } from './dictationShortcutRouter'
 
 const ESCAPE_ACCELERATOR = 'Escape'
+const RETRY_MS = 5_000
+const RETRY_LIMIT = 12
 
 export interface GlobalShortcutAdapter {
   register(accelerator: string, callback: () => void): boolean
@@ -14,12 +17,17 @@ export class HotkeyManager {
   private accelerator: string | null = null
   private listening = false
   private disposed = false
+  private suspended = false
+  // A restore after a suspension failed: the accelerator is kept for retries but not claimed by current().
+  private dead = false
+  private retryTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(
     private readonly shortcuts: GlobalShortcutAdapter,
     private readonly onToggle: () => void,
     private readonly onCancel: () => void,
     private readonly platform: SottoPlatform = 'win32',
+    private readonly log: (event: 'native-hotkey-registration-failed') => void = () => undefined,
   ) {}
 
   replace(candidate: string): HotkeyChangeResult {
@@ -36,22 +44,36 @@ export class HotkeyManager {
       this.accelerator = next
       return { ok: true }
     }
+    // A replace registers for real, so it ends any suspension and any restore retry.
+    const wasLive = !this.suspended && !this.dead
+    this.suspended = false
+    this.dead = false
+    clearTimeout(this.retryTimer)
     if (next === this.accelerator) {
-      return this.isRegistered(next)
+      return wasLive && this.isRegistered(next)
         ? { ok: true }
         : this.registerWithoutPrior(next)
     }
 
     const previous = this.accelerator
+    // The same chord in another spelling: the OS refuses it while the old spelling holds it, so release first.
+    if (previous !== null && chordTokenSet(next, this.platform) === chordTokenSet(previous, this.platform)) {
+      this.safeUnregister(previous)
+      const respelled = this.registerWithoutPrior(next)
+      if (!respelled.ok) this.ensurePriorRegistration(previous, false)
+      return respelled
+    }
+
     let candidateRegistered: boolean
     try {
       candidateRegistered = this.shortcuts.register(next, this.onToggle)
     } catch {
+      this.ensurePriorRegistration(previous, wasLive)
       return { ok: false, reason: 'unavailable' }
     }
 
     if (!candidateRegistered) {
-      this.ensurePriorRegistration(previous)
+      this.ensurePriorRegistration(previous, wasLive)
       return { ok: false, reason: 'conflict' }
     }
 
@@ -64,13 +86,43 @@ export class HotkeyManager {
     } catch {
       this.safeUnregister(next)
       this.accelerator = previous
-      this.ensurePriorRegistration(previous)
+      this.ensurePriorRegistration(previous, wasLive)
       return { ok: false, reason: 'unavailable' }
     }
   }
 
   current(): string | null {
-    return this.accelerator
+    return this.dead ? null : this.accelerator
+  }
+
+  /** Stands the primary shortcut down while Settings records keys, without forgetting it. */
+  suspend(on: boolean): void {
+    if (this.disposed || this.platform === 'linux' || on === this.suspended) return
+    this.suspended = on
+    clearTimeout(this.retryTimer)
+    const active = this.accelerator
+    if (active === null) return
+    if (on) {
+      this.safeUnregister(active)
+      return
+    }
+    this.restore(active, 0)
+  }
+
+  private restore(accelerator: string, attempt: number): void {
+    let restored: boolean
+    try {
+      restored = this.shortcuts.register(accelerator, this.onToggle)
+    } catch {
+      restored = false
+    }
+    this.dead = !restored
+    if (!restored) this.retryAfterFailure(accelerator, attempt)
+  }
+
+  private retryAfterFailure(accelerator: string, attempt: number): void {
+    if (attempt === 0) this.log('native-hotkey-registration-failed')
+    if (attempt < RETRY_LIMIT) this.retryTimer = setTimeout(() => this.restore(accelerator, attempt + 1), RETRY_MS)
   }
 
   beginListening(): boolean {
@@ -108,6 +160,7 @@ export class HotkeyManager {
       return
     }
     this.disposed = true
+    clearTimeout(this.retryTimer)
     this.releaseEscape()
 
     const active = this.accelerator
@@ -119,31 +172,33 @@ export class HotkeyManager {
 
   private registerWithoutPrior(accelerator: string): HotkeyChangeResult {
     try {
-      if (!this.shortcuts.register(accelerator, this.onToggle)) {
-        return { ok: false, reason: 'conflict' }
+      if (this.shortcuts.register(accelerator, this.onToggle)) {
+        this.accelerator = accelerator
+        return { ok: true }
       }
-      this.accelerator = accelerator
-      return { ok: true }
+      this.lose(accelerator)
+      return { ok: false, reason: 'conflict' }
     } catch {
+      this.lose(accelerator)
       return { ok: false, reason: 'unavailable' }
     }
   }
 
-  private ensurePriorRegistration(previous: string | null): void {
-    if (previous === null || this.isRegistered(previous)) {
-      return
-    }
-    try {
-      if (!this.shortcuts.register(previous, this.onToggle)) {
-        this.accelerator = null
-      }
-    } catch {
-      this.accelerator = null
-    }
+  // The kept primary could not be registered again: never forget it, retry instead.
+  private lose(accelerator: string): void {
+    if (this.accelerator !== accelerator) return
+    this.dead = true
+    this.retryAfterFailure(accelerator, 0)
   }
 
-  private isRegistered(accelerator: string): boolean {
-    return this.shortcuts.isRegistered?.(accelerator) ?? true
+  /** `live`: whether `previous` was registered before this replace, for adapters without isRegistered. */
+  private ensurePriorRegistration(previous: string | null, live: boolean): void {
+    if (previous === null || this.isRegistered(previous, live)) return
+    this.restore(previous, 0)
+  }
+
+  private isRegistered(accelerator: string, fallback = true): boolean {
+    return this.shortcuts.isRegistered?.(accelerator) ?? fallback
   }
 
   private releaseEscape(): void {

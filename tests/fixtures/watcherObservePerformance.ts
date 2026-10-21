@@ -80,7 +80,7 @@ export async function watcherObservePerformance(shape: ObserveShape) {
     const sendsSpy = vi.spyOn(f.control, 'watcherSendRecords').mockReturnValue({ followups: [], deliveries })
     cleanups.push(() => { sendsSpy.mockRestore(); pendingSpy.mockRestore(); snapshotSpy.mockRestore(); hostIdSpy.mockRestore() })
     const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control,
-      historyEnabled: () => false, streamingPublishCost: true, limit: () => 8 })
+      historyEnabled: () => false, streamingPublishCost: true })
     cleanups.push(() => watcher.close())
     const resetReads = () => { reads.id = 0; reads.role = 0 }
     const observe = () => watcher.observe(snapshot, new Set())

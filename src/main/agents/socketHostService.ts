@@ -5,8 +5,8 @@ import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
 import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { watcherRoomInputs } from './watcherRoomInput'
-import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
-import { SocketFrames } from '../../host/socketFrames'
+import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
+import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
@@ -21,7 +21,8 @@ import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../..
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
+import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -150,6 +151,8 @@ export class SocketHostService implements HostService {
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
   private connecting: Promise<HostHello> | undefined
   private observed: string[] = []
+  /** Whether this desktop's window has the focus, so its observed threads are shown (ADR-0046, ADR-0092). */
+  private shown = true
   /** The threads the host confirmed this connection observes: `observed` once its observe was answered, and nothing before. */
   private confirmedObserved: ReadonlySet<string> = new Set()
   private generation = 0
@@ -263,15 +266,20 @@ export class SocketHostService implements HostService {
     this.details.clear(); this.tooLarge.clear(); this.lateDetails.clear(); this.behind.clear(); this.catalog = undefined
     const url = this.endpoint('/v1/socket'), key = randomBytes(16).toString('base64')
     const expected = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
-    this.frames = await new Promise<SocketFrames>((resolve, reject) => {
-      const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, { signal: opening.signal, headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, Authorization: 'Bearer ' + session.session } })
+    const upgrade = (offer: boolean) => new Promise<SocketFrames | 'refused'>((resolve, reject) => {
+      const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, { signal: opening.signal, headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, ...offer ? { 'Sec-WebSocket-Extensions': DEFLATE_OFFER } : {}, Authorization: 'Bearer ' + session.session } })
       request.setTimeout(15000, () => request.destroy(new Error('Host connection timed out.')))
       request.on('error', () => reject(new HostConnectionError('The host connection could not be opened.', 'disconnected')))
       request.on('response', response => { response.resume(); reject(refusal(response.statusCode ?? 503, 'The host refused this connection. Connect again.', 'unavailable')) })
       request.on('upgrade', (response, stream, head) => {
+        // A host from before compression answers without the extension, and its messages are read as they come.
+        const deflate = offer ? deflateAccepted(response.headers['sec-websocket-extensions']) : false
         if (response.headers['sec-websocket-accept'] !== expected) { stream.destroy(); reject(new HostConnectionError('The host did not accept this protocol.', 'invalid_request')); return }
+        // An answer to compression this desktop never offered fails that connection (RFC 7692 section 5); the next one
+        // asks for none, so a host or a proxy that gets the extension wrong still connects, as one from before it does.
+        if (deflate === 'invalid') { stream.destroy(); resolve('refused'); return }
         stream.setTimeout(0)
-        const frames = new SocketFrames(stream, true, text => this.receive(text))
+        const frames = new SocketFrames(stream, true, text => this.receive(text), { deflate })
         frames.onClose(() => this.disconnected(frames))
         frames.startHeartbeat()
         frames.feed(head)
@@ -279,11 +287,15 @@ export class SocketHostService implements HostService {
       })
       request.end()
     })
+    const offered = await upgrade(true)
+    const opened = offered === 'refused' ? await upgrade(false) : offered
+    if (opened === 'refused') throw new HostConnectionError('The host did not accept this protocol.', 'invalid_request')
+    this.frames = opened
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -294,7 +306,7 @@ export class SocketHostService implements HostService {
         let page: HostEventPage = hello
         while (page.hasMore) page = await this.readEvents(this.latestSeq)
       }
-      await this.observe(this.observed)
+      await this.observe(this.observed, this.shown)
       const pickedThreadId = this.options.getSelectedThreadId ? this.options.getSelectedThreadId() : selectedThreadId
       if (this.threadAvailable(pickedThreadId) && pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
         const selected = this.read(protocolAgentStateSchema, await this.call({ op: 'command', command: { type: 'select-thread', threadId: pickedThreadId } }))
@@ -586,7 +598,20 @@ export class SocketHostService implements HostService {
   }
   shell(): AgentState {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')
-    const state = structuredClone(this.cached)
+    return this.withRetained(structuredClone(this.cached))
+  }
+  /**
+   * The shell without a copy of the host's push, for a reader that only reads: the router building what it publishes, a
+   * Watcher read, the host-update check. Each push replaces the cached state and nothing writes into it, and what this
+   * lays over it replaces fields rather than editing them. Each of those readers made a whole structured clone of every
+   * remote host's state on every change of any host (October 19, 2026).
+   */
+  view(): AgentState {
+    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    return this.withRetained({ ...this.cached })
+  }
+  /** The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. */
+  private withRetained(state: AgentState): AgentState {
     state.notice = this.quietConnectionNotices.get(state.notice) ?? state.notice
     for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
       const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
@@ -637,12 +662,14 @@ export class SocketHostService implements HostService {
   async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
-  async observe(threadIds: string[]): Promise<void> {
+  /** `shown`: false while this desktop's window is behind another app (ADR-0092); absent, its threads are shown. */
+  async observe(threadIds: string[], shown = true): Promise<void> {
     threadIds = threadIds.filter(id => this.threadAvailable(id))
     const requested = [...threadIds]
-    this.observed = requested; this.confirmedObserved = new Set()
+    this.observed = requested; this.confirmedObserved = new Set(); this.shown = shown
     for (const id of threadIds) this.tooLarge.delete(id)
-    await this.call({ op: 'observe', threadIds })
+    // A host from before the seen record refuses a field it does not know, and counts every observed thread as shown.
+    await this.call({ op: 'observe', threadIds, ...(!shown && this.features.includes('failure-seen') ? { shown: false as const } : {}) })
     if (this.observed === requested) this.confirmedObserved = new Set(requested)
   }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
@@ -661,7 +688,7 @@ export class SocketHostService implements HostService {
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     guard?.()
-    return watcherToolSchemas[request.call.name].output.parse(await this.call({ op: 'watcher-control', request }))
+    return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(await this.call({ op: 'watcher-control', request })))
   }
   subscribeWatcher(listener: (projection: WatcherHostProjection) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
   cachedWatcherProjection(master: WatcherIdentity): WatcherHostProjection | undefined {
@@ -675,7 +702,7 @@ export class SocketHostService implements HostService {
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     const result = await this.call({ op: 'watcher-read', request })
-    if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)
+    if (request.call) return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(result))
     this.cachedWatcher = watcherHostProjectionSchema.parse(result)
     return this.cachedWatcher
   }
@@ -944,7 +971,7 @@ export class SocketHostService implements HostService {
       if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept on this computer.' }
       if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
     }
-    if (command.type === 'observe-threads') { await this.observe(command.threadIds); return this.state() }
+    if (command.type === 'observe-threads') { await this.observe(command.threadIds, this.shown); return this.state() }
     commandId ??= randomUUID()
     const before = this.shell()
     const thread = command.type === 'answer' ? before.host.threads.find(item => item.id === command.threadId) : undefined
@@ -1141,9 +1168,22 @@ export class SocketHostService implements HostService {
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
+  /** The host lists `failure-seen`: it publishes `failureSeen` and takes `dismiss-failures` (ADR-0092). */
+  get supportsFailureSeen(): boolean { return this.features.includes('failure-seen') }
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     this.offers('thread-starts')
     return this.read(hostStartHandoverSchema, await this.call({ op: 'start-handover', threadId })).handover
+  }
+  /**
+   * One activity record whole, for a row whose body the host sent cut (`activity-bodies`, ADR-0025, October 18 amendment).
+   * Null from a host that never cut one, and for a record the thread no longer has.
+   */
+  async activityBody(threadId: string, activityId: string): Promise<AgentActivity | null> {
+    if (!this.threadAvailable(threadId) || !this.features.includes('activity-bodies')) return null
+    const generation = this.generation
+    const record = this.read(hostActivityBodySchema, await this.call({ op: 'activity-body', threadId, activityId }))
+    this.sameGeneration(generation)
+    return record
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {

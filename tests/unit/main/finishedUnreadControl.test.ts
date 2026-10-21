@@ -111,6 +111,17 @@ describe('the coordinator\'s finished-unread mark', () => {
     expect(marked(published.at(-1)!, 'workshop')).toBeUndefined()
   })
 
+  it('counts only the threads a client says it shows, of those it observes: a paired desktop behind another app (ADR-0092)', async () => {
+    const { host, control, service } = await start()
+    await service.command({ type: 'observe-threads', threadIds: ['workshop', 'docs'], shownThreadIds: ['docs'] }, phones)
+    runTurn(host, 'workshop'); runTurn(host, 'docs')
+    expect(marked(control.shell(), 'workshop')).toBe(true)
+    expect(marked(control.shell(), 'docs')).toBeUndefined()
+    // Saying every observed thread is shown again reads the finish.
+    await service.command({ type: 'observe-threads', threadIds: ['workshop', 'docs'] }, phones)
+    expect(marked(control.shell(), 'workshop')).toBeUndefined()
+  })
+
   it('reads a finish when the window gains the focus only for the threads in its panes', async () => {
     const { host, control, service } = await start()
     service.setWindowFocused(false)

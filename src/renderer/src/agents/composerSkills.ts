@@ -1,5 +1,6 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { hasMentionToken } from '../../../shared/mentions'
+import { providerProfile, type SkillSigil } from '../../../shared/providerProfile'
 import { detectMentionTrigger, mentionMatchScore } from './composerMentions'
 
 export type CatalogSkill = AgentSkillCatalog['skills'][number]
@@ -18,10 +19,9 @@ const MAX_SELECTED_SKILLS = 32
 
 export function skillScopeLabel(scope: CatalogSkill['scope']): string { return SCOPE_LABELS[scope] }
 
-/** How a written skill mention starts. Codex reads only `$name`; Claude and Grok also take their native `/name`. */
-export type SkillSigil = '$' | '/'
+/** How a written skill mention starts, as the provider's profile says; `$name` alone for a provider this build does not know. */
 export function skillSigils(providerId: string | undefined): readonly SkillSigil[] {
-  return providerId === 'claude' || providerId === 'grok' ? ['$', '/'] : ['$']
+  return providerProfile(providerId)?.skillSigils ?? ['$']
 }
 
 /** The token the provider's own interface writes for a skill: its native invocation when the catalog gives one. */

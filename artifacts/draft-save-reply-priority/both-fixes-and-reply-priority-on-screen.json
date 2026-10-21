@@ -1,0 +1,114 @@
+{
+  "run": "both-fixes-and-reply-priority-on-screen",
+  "build": "the same with cbbedcbdc (a draft save's reply as a transition), committed spec",
+  "window": "on screen",
+  "scale": "232 threads on this computer (the spec's default: 230 padding threads, no SOTTO_FREEZE_THREADS override, and the fixture's 2), each with a provider session, and a paired headless host with 40 more, 272 in the sidebar; Watcher's record with 5 standing watches, 160 requests and 150 operations; 256 answer retirements, 40 of them remote",
+  "measured": "October 20, 2026, Windows 11, tests/e2e/main-freeze.spec.ts with SOTTO_PERF_BENCH=1",
+  "cases": [
+    {
+      "name": "baseline (nothing streaming)",
+      "result": {
+        "name": "baseline (nothing streaming)",
+        "streamingThreads": 0,
+        "chunksEmitted": [],
+        "eventLoopDelay": {
+          "maxMs": 19.300351,
+          "meanMs": 10.706962025727828,
+          "p99Ms": 14.729215,
+          "stallCount": 0,
+          "samples": 1477
+        },
+        "keystrokeLatencyMs": {
+          "count": 40,
+          "p50": 9.7,
+          "p95": 26.7,
+          "max": 47
+        },
+        "keyHandlingMs": {
+          "count": 40,
+          "p50": 2.95,
+          "p95": 4.2,
+          "max": 19.3
+        },
+        "window": {
+          "framesPerSecond": 56.8,
+          "stateBroadcastsPerSecond": 7.5,
+          "longTasks": 0,
+          "longTaskMs": 0
+        }
+      }
+    },
+    {
+      "name": "1 thread streaming",
+      "result": {
+        "name": "1 thread streaming",
+        "streamingThreads": 1,
+        "chunksEmitted": [
+          301
+        ],
+        "eventLoopDelay": {
+          "maxMs": 37.748735,
+          "meanMs": 11.38932360390516,
+          "p99Ms": 20.824063,
+          "stallCount": 0,
+          "samples": 1434
+        },
+        "keystrokeLatencyMs": {
+          "count": 40,
+          "p50": 14.55,
+          "p95": 26,
+          "max": 47.1
+        },
+        "keyHandlingMs": {
+          "count": 40,
+          "p50": 2.7,
+          "p95": 3.7,
+          "max": 15.7
+        },
+        "window": {
+          "framesPerSecond": 50.3,
+          "stateBroadcastsPerSecond": 17.5,
+          "longTasks": 1,
+          "longTaskMs": 79
+        }
+      }
+    },
+    {
+      "name": "3 threads streaming",
+      "result": {
+        "name": "3 threads streaming",
+        "streamingThreads": 3,
+        "chunksEmitted": [
+          301,
+          301,
+          301
+        ],
+        "eventLoopDelay": {
+          "maxMs": 182.845439,
+          "meanMs": 11.664823902787706,
+          "p99Ms": 21.331967,
+          "stallCount": 1,
+          "samples": 1399
+        },
+        "keystrokeLatencyMs": {
+          "count": 40,
+          "p50": 5.5,
+          "p95": 24.3,
+          "max": 34.2
+        },
+        "keyHandlingMs": {
+          "count": 40,
+          "p50": 2.9,
+          "p95": 3.6,
+          "max": 16.5
+        },
+        "window": {
+          "framesPerSecond": 48,
+          "stateBroadcastsPerSecond": 17.6,
+          "longTasks": 1,
+          "longTaskMs": 88
+        }
+      }
+    }
+  ]
+}

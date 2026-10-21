@@ -6,6 +6,10 @@ Accepted — 2026-08-03.
 
 Amended 2026-09-18: two constraints below have since changed. Windows has an in-app updater (#103) and a hosted Windows runner runs the gates (#90, `docs/ci.md`). The macOS decisions stand: dmg only, no `latest-mac.yml`, no updater, no macOS CI.
 
+Amended 2026-10-19: [ADR-0093](0093-sotto-owl-also-ships-for-apple-silicon-macs.md) builds the Sotto Owl Mac release in GitHub Actions with a zip beside the disk image, and later signs, notarizes and updates it. Stable on the Mac keeps every decision below.
+
+Amended 2026-10-20: [ADR-0096](0096-stable-mac-builds-in-github-actions.md) builds the stable Mac release in GitHub Actions from the checked main commit and version, with the same `package:mac` command, in place of "Manual builds on the owner's Apple silicon Mac; no CI" below. Building by hand on a Mac remains the fallback. Ad-hoc signing, no notarization, a disk image only and no updater stand.
+
 ## Context
 
 Sotto shipped as a Windows-only app. Adding macOS support raised distribution questions that packaging configuration alone does not explain, and several of the answers look wrong without their reasoning.

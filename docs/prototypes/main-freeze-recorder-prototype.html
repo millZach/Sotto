@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: main freeze notice and Record a minute (#1233)</title>
+<style>
+/* PROTOTYPE, throwaway. Issue #1233. Not app code.
+   Palette: Sotto's default theme roles copied from src/renderer/src/styles/tokens.css (Contrast at 100%),
+   so every colour below the token block comes from a --tt-* token, as the real stylesheets do. */
+@font-face { font-family: 'Figtree'; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); font-weight: 300 900; font-display: swap; }
+
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-warning-surface: oklch(0.315 0.032 80);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-sidebar: oklch(0.235 0.003 265);
+  --theme-sidebar-control-surface: oklch(0.295 0.003 265);
+  --theme-sidebar-row-hover: oklch(0.28 0.003 265);
+  --theme-sidebar-row-active: oklch(0.32 0.025 190);
+  --theme-sidebar-border: oklch(0.355 0.012 265);
+  --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-warning-surface: oklch(0.955 0.018 80);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-sidebar: oklch(0.955 0.008 85);
+  --theme-sidebar-control-surface: oklch(0.995 0.002 85);
+  --theme-sidebar-row-hover: oklch(0.93 0.01 85);
+  --theme-sidebar-row-active: oklch(0.915 0.02 190);
+  --theme-sidebar-border: oklch(0.87 0.012 82);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
+}
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-glass: var(--theme-surface-overlay);
+  --tt-field: var(--theme-surface);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-border: color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-track: color-mix(in srgb, var(--theme-text) 8%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-warning: var(--theme-warning-foreground);
+  --tt-warning-mark: var(--theme-warning);
+  --tt-warning-surface: var(--theme-warning-surface);
+  --tt-warning-on-tint: color-mix(in oklab, var(--theme-warning-foreground) 90%, var(--theme-text));
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-accent-wash: color-mix(in srgb, var(--theme-accent) 14%, transparent);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-sidebar-text-muted: var(--theme-sidebar-muted-foreground);
+  --tt-sidebar-control: var(--theme-sidebar-control-surface);
+  --tt-sidebar-row-hover: var(--theme-sidebar-row-hover);
+  --tt-sidebar-row-active: var(--theme-sidebar-row-active);
+  --tt-sidebar-border: var(--theme-sidebar-border);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-brand-tile: #47b8a9; /* App icon brand: the icon's own teal on the default theme (CONTEXT.md) */
+  --tt-brand-glyph: #0b0f0e;
+  --tt-shadow: 0 18px 50px rgb(0 0 0 / 34%);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, Consolas, monospace;
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-lg: 14px; --tt-radius-pill: 999px;
+}
+:root[data-theme='light'] { --tt-shadow: 0 18px 44px rgb(40 30 10 / 14%); }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--tt-font-ui); font-size: 14px; line-height: 1.45; background: color-mix(in oklab, var(--tt-canvas) 70%, var(--tt-sidebar)); color: var(--tt-text); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.reduce *, .reduce *::before, .reduce *::after { transition: none !important; animation: none !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* ---------- prototype chrome (not part of the mock-up) ---------- */
+.proto { display: grid; grid-template-rows: auto auto 1fr; gap: 0; min-height: 100%; }
+.proto__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 20px; border-bottom: 1px dashed var(--tt-border); background: var(--tt-surface); }
+.proto__tag { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tt-warning); }
+.proto__title { font-weight: 600; margin-right: auto; }
+.proto__group { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }
+.seg { display: inline-flex; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: 999px; gap: 2px; }
+.seg button { min-height: 28px; padding: 2px 12px; border: 0; border-radius: 999px; background: none; color: var(--tt-text-muted); cursor: pointer; font-size: 13px; white-space: nowrap; }
+.seg button[aria-pressed='true'], .seg button[aria-selected='true'] { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.proto__variants { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px 0; }
+.vtab { display: grid; gap: 2px; min-width: 220px; max-width: 360px; padding: 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: none; text-align: left; cursor: pointer; }
+.vtab strong { font-size: 14px; }
+.vtab span { font-size: 12.5px; color: var(--tt-text-muted); }
+.vtab[aria-selected='true'] { border-color: var(--tt-accent); background: var(--tt-accent-wash); }
+.proto__main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding: 14px 20px 30px; align-items: start; }
+@media (max-width: 1100px) { .proto__main { grid-template-columns: minmax(0, 1fr); } }
+.stage { min-width: 0; }
+.stage__frame { position: relative; transform-origin: top left; }
+.stage__caption { margin: 0 0 8px; font-size: 12px; color: var(--tt-text-muted); }
+.notes { display: grid; gap: 14px; font-size: 13px; color: var(--tt-text-2); }
+.notes section { padding: 12px 14px; border: 1px dashed var(--tt-border); border-radius: 12px; background: var(--tt-surface); }
+.notes h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--tt-text-muted); }
+.notes p { margin: 0 0 6px; }
+.notes ol, .notes ul { margin: 0; padding-left: 18px; }
+.notes li + li { margin-top: 5px; }
+.notes code { font-family: var(--tt-font-mono); font-size: 12px; }
+.readout { font-family: var(--tt-font-mono); font-size: 12px; white-space: pre-wrap; color: var(--tt-text); }
+.notes .tt-button { margin: 6px 6px 0 0; }
+.notes label { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--tt-text-2); }
+
+/* ---------- shared Sotto pieces ---------- */
+.tt-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); padding: 0 14px; background: transparent; color: var(--tt-text-2); cursor: pointer; font-size: 13.5px; font-weight: 500; line-height: 1.2; white-space: nowrap; transition: border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.tt-button:hover { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.tt-button--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.tt-button--primary:hover { color: var(--tt-pill-ink); filter: brightness(1.12); }
+.tt-button--ghost { border-color: transparent; color: var(--tt-text-muted); }
+.tt-button--ghost:hover { border-color: transparent; }
+.tt-button--icon { width: 30px; min-height: 30px; padding: 0; border-color: transparent; color: var(--tt-text-muted); border-radius: 7px; }
+.tt-button--icon:hover { background: var(--tt-hover); border-color: transparent; }
+.tt-button--sm { min-height: 30px; padding: 0 12px; font-size: 13px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- the window ---------- */
+.win { container: win / inline-size; position: relative; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-canvas); box-shadow: var(--tt-shadow); }
+.shell { --sbw: 264px; display: grid; grid-template-columns: var(--sbw) minmax(0, 1fr); height: 100%; }
+@container win (max-width: 980px) { .shell { --sbw: 244px; } }
+@container win (max-width: 860px) { .shell { --sbw: 224px; } }
+
+.side { display: flex; flex-direction: column; min-height: 0; background: var(--tt-sidebar); border-right: 1px solid var(--tt-sidebar-border); }
+.side__top { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 12px; }
+.mark { width: 24px; height: 24px; flex: none; }
+.side__top .spacer { flex: 1; }
+.side__search { margin: 4px 10px 8px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 8px; background: var(--tt-sidebar-control); color: var(--tt-sidebar-text-muted); font-size: 13px; }
+.side__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 8px; }
+.side__project { padding: 10px 8px 4px; font-size: 12px; color: var(--tt-sidebar-text-muted); }
+.trow { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 8px; border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; font-size: 13.5px; }
+.trow:hover { background: var(--tt-sidebar-row-hover); }
+.trow[aria-current='true'] { background: var(--tt-sidebar-row-active); }
+.trow span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow small { color: var(--tt-sidebar-text-muted); font-size: 12px; }
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 2px; padding: 8px 6px 10px; border-top: 1px solid var(--tt-sidebar-border); }
+.foot .seg { flex: 1 0 100%; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.foot .seg button { padding: 0; }
+.foot .pages { display: flex; }
+.foot .page { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: none; color: var(--tt-text-muted); cursor: pointer; }
+.foot .page:hover, .foot .page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }
+.foot .update { margin-left: auto; width: 30px; height: 30px; border-radius: 999px; border: 1px solid var(--tt-hairline); background: none; color: var(--tt-text-muted); display: inline-flex; align-items: center; justify-content: center; }
+
+.room { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.winctl { position: absolute; top: 0; right: 0; z-index: 6; height: 44px; display: flex; align-items: center; gap: 0; padding-right: 6px; }
+.winctl button { width: 34px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--tt-text-muted); display: inline-flex; align-items: center; justify-content: center; }
+.winctl button:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* Threads pane */
+.pane-head { flex: none; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 var(--inset, 116px) 0 20px; border-bottom: 1px solid var(--tt-hairline); }
+.pane-head h2 { margin: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { flex: none; padding: 1px 8px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 12px; }
+.msgs { flex: 1; min-height: 0; overflow: auto; padding: 24px clamp(20px, 6cqw, 72px); display: flex; flex-direction: column; gap: 18px; }
+.msg-user { align-self: flex-end; max-width: 72%; padding: 10px 14px; border-radius: 14px; background: var(--tt-bubble); }
+.msg-agent { max-width: 680px; color: var(--tt-text-2); }
+.msg-agent p { margin: 0 0 8px; }
+.composer { flex: none; margin: 0 clamp(16px, 5cqw, 64px) 16px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-border); border-radius: 18px; background: var(--tt-field); display: grid; gap: 8px; }
+.composer__row { display: flex; align-items: center; gap: 8px; }
+.composer__ph { flex: 1; color: var(--tt-text-faint); }
+.composer__send { width: 32px; height: 32px; border-radius: 999px; border: 0; background: var(--tt-pill); color: var(--tt-pill-ink); display: inline-flex; align-items: center; justify-content: center; }
+.attach-chip { justify-self: start; display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 4px 6px 4px 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; font-size: 12.5px; color: var(--tt-text-2); }
+.attach-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip button { width: 22px; height: 22px; border: 0; border-radius: 999px; background: none; color: var(--tt-text-muted); display: inline-flex; align-items: center; justify-content: center; }
+
+/* Variant A: the notice in the title row, beside the window controls */
+.freeze-pill { position: absolute; top: 7px; right: 118px; z-index: 6; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px 0 10px; border: 1px solid color-mix(in srgb, var(--tt-warning-mark) 45%, var(--tt-hairline)); border-radius: 999px; background: var(--tt-warning-surface); color: var(--tt-warning-on-tint); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.freeze-pill[data-tone='quiet'] { border-color: var(--tt-hairline); background: var(--tt-surface-elevated); color: var(--tt-text-2); }
+.freeze-pill .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--tt-warning-mark); }
+.ring { --p: 0; width: 16px; height: 16px; border-radius: 999px; background: conic-gradient(var(--tt-accent) calc(var(--p) * 1turn), var(--tt-track) 0); -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px); mask: radial-gradient(circle, transparent 4px, #000 4.5px); }
+.popover { position: absolute; top: 44px; right: 10px; z-index: 8; width: min(360px, calc(100% - 20px)); padding: 16px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-glass); box-shadow: var(--tt-shadow); }
+.anim { animation: arrive 140ms ease; }
+@keyframes arrive { from { opacity: 0; transform: translateY(-4px); } }
+.popover h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.popover p { margin: 0 0 10px; color: var(--tt-text-2); font-size: 13.5px; }
+
+/* Variant C: banner under the pane header */
+.banner { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 12px clamp(16px, 4cqw, 28px); border-bottom: 1px solid color-mix(in srgb, var(--tt-warning-mark) 30%, var(--tt-hairline)); background: var(--tt-warning-surface); }
+.banner[data-tone='quiet'] { background: var(--tt-surface-elevated); border-bottom-color: var(--tt-hairline); }
+.banner > .i, .banner > .ring { margin-top: 2px; color: var(--tt-warning-mark); }
+.banner__text { min-width: 0; }
+.banner__text strong { font-weight: 600; }
+.banner__text p { margin: 2px 0 0; color: var(--tt-text-2); font-size: 13.5px; }
+.banner__actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+/* Numbers, chart, recording, attach list (shared by A's popover, B's/Settings rows and C's banner) */
+.figs { display: flex; gap: 22px; margin: 4px 0 10px; }
+.fig b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fig span { font-size: 12px; color: var(--tt-text-muted); white-space: nowrap; }
+.fig[data-warn] b { color: var(--tt-warning); }
+.chart { display: block; width: 100%; height: 44px; }
+.chart rect { fill: var(--tt-text-faint); opacity: .55; }
+.chart rect[data-warn] { fill: var(--tt-warning-mark); opacity: 1; }
+.chart-cap { margin: 4px 0 0; font-size: 12px; color: var(--tt-text-muted); }
+.privacy { margin: 10px 0 0; font-size: 12.5px; color: var(--tt-text-muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.progress { height: 6px; border-radius: 999px; background: var(--tt-track); overflow: hidden; margin: 8px 0 6px; }
+.progress > i { display: block; height: 100%; width: calc(var(--p) * 100%); background: var(--tt-accent); border-radius: inherit; transition: width 900ms linear; }
+.count { font-size: 28px; font-weight: 600; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.file { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 10px; font-size: 13px; min-width: 0; }
+.file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file small { margin-left: auto; flex: none; color: var(--tt-text-muted); }
+.pick { margin-top: 10px; }
+.pick > p { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--tt-text); }
+.pick ul { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-glass); }
+.pick li button { display: flex; width: 100%; gap: 8px; align-items: baseline; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 7px; background: none; text-align: left; cursor: pointer; }
+.pick li button:hover, .pick li button:focus-visible { background: var(--tt-accent-wash); }
+.pick li small { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.done-line { margin: 8px 0 0; font-size: 13px; color: var(--tt-accent-text); }
+
+/* Settings */
+.set-col h1 { margin: 6px 0 18px; padding: 0 8px; font-size: 24px; font-weight: 600; letter-spacing: -.7px; }
+.subnav { display: flex; flex-direction: column; gap: 3px; }
+.subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 38px; padding: 8px 12px; border: 0; border-radius: 8px; background: none; color: var(--tt-text-muted); text-align: left; cursor: pointer; font-size: 14px; }
+.subnav button:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-text); }
+.subnav button[aria-selected='true'] { background: var(--tt-sidebar-row-active); color: var(--tt-text); }
+.subnav button[aria-selected='true'] > svg { color: var(--tt-accent); }
+.subnav button > span { flex: 1; }
+.subnav button.gap { margin-top: 26px; }
+.subnav button.gap::before { content: ''; position: absolute; top: -14px; left: 12px; right: 12px; height: 1px; background: var(--tt-sidebar-border); }
+.subnav .warn-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--tt-warning-mark); }
+.set-scroll { flex: 1; min-height: 0; overflow: auto; padding: 42px 6cqw 40px; }
+@container win (max-width: 860px) { .set-scroll { padding: 30px 22px 30px; } }
+.set-form { max-width: 790px; margin: 0 auto; }
+.set-head { margin: 0 0 10px; padding: 0 0 20px; border-bottom: 1px solid var(--tt-hairline); }
+.set-head h2 { margin: 0 0 10px; font-size: 28px; font-weight: 600; letter-spacing: -1px; line-height: 1.2; }
+.set-head p { margin: 0; color: var(--tt-text-muted); font-size: 16px; }
+.srow { padding: 17px 0; border-bottom: 1px solid var(--tt-hairline); }
+.srow:last-child { border-bottom: 0; }
+.srow__grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 22px; align-items: center; }
+.srow__label { font-size: 15px; font-weight: 500; }
+.srow__desc { margin: 2px 0 0; max-width: 46ch; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.srow__desc[data-warn] { color: var(--tt-warning); }
+.srow__wide { margin-top: 12px; }
+.toggle { width: 38px; height: 22px; border-radius: 999px; border: 0; background: var(--tt-accent); position: relative; cursor: pointer; }
+.toggle::after { content: ''; position: absolute; top: 3px; left: 19px; width: 16px; height: 16px; border-radius: 999px; background: var(--tt-pill-ink); transition: left 120ms ease; }
+.toggle[aria-checked='false'] { background: var(--tt-track); }
+.toggle[aria-checked='false']::after { left: 3px; background: var(--tt-text-muted); }
+.owl-tag { display: inline-block; margin-left: 8px; padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--tt-text-muted); vertical-align: 4px; letter-spacing: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="proto__bar">
+    <span class="proto__tag">Prototype, throwaway</span>
+    <span class="proto__title">#1233: notice when main freezes, and Record a minute</span>
+    <span class="proto__group">State
+      <span class="seg" role="group" aria-label="State" id="states"></span>
+    </span>
+    <span class="proto__group">Window
+      <span class="seg" role="group" aria-label="Window size" id="sizes"></span>
+    </span>
+    <span class="proto__group">
+      <span class="seg" role="group" aria-label="Appearance" id="modes"></span>
+    </span>
+  </div>
+  <div class="proto__variants" role="tablist" aria-label="Variant" id="variants"></div>
+  <div class="proto__main">
+    <div class="stage" id="stage">
+      <p class="stage__caption" id="caption"></p>
+      <div class="stage__frame" id="frame"></div>
+    </div>
+    <aside class="notes">
+      <section>
+        <h3>Live state</h3>
+        <div class="readout" id="readout" aria-live="polite"></div>
+        <button class="tt-button tt-button--sm" data-proto="recover">Main recovers</button>
+        <button class="tt-button tt-button--sm" data-proto="freeze">Main freezes again</button>
+        <label><input type="checkbox" id="fast"> Count down 10 times faster</label>
+        <label><input type="checkbox" id="reduce"> Reduce motion</label>
+      </section>
+      <section id="variant-notes"></section>
+      <section>
+        <h3>The same in every variant</h3>
+        <ul>
+          <li>Settings has a Performance section with the numbers and Record a minute. Open it from the gear in the sidebar foot.</li>
+          <li>A recording is two files, main's and the window's: function names and timings only. It is saved on this computer and never sent.</li>
+          <li>Attach to a thread puts the files in that thread's composer and opens the thread. Nothing is sent until you send.</li>
+          <li>Owl only. A Sotto Owl build shows the mark alone in the top row, as here.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Questions for Zach</h3>
+        <ol>
+          <li>"Recording" already means a kept dictation in <code>CONTEXT.md</code>. This calls the file an <b>activity recording</b>. Keep that, or another word?</li>
+          <li>When does main count as frozen? The mock-up assumes blocked for half of the last minute, or one freeze over 1 s.</li>
+          <li>A and C: should Settings be able to turn the notice off (the switch shown in Performance)?</li>
+          <li>Should Attach open the thread, as here, or stay where you are?</li>
+        </ol>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+// PROTOTYPE, throwaway. State lives in memory; nothing is saved.
+const SIZES = { '1600x1000': [1600, 1000], '1280x800': [1280, 800], '820x560': [820, 560] }
+const THREADS = [
+  { id: 't1', title: 'Find the October 20 lag', provider: 'Claude Code', age: '2m' },
+  { id: 't2', title: 'Release 0.1.52', provider: 'Codex', age: '1h' },
+  { id: 't3', title: 'Watcher bots research', provider: 'Grok Build', age: '3h' },
+  { id: 't4', title: 'Settle merged threads', provider: 'Codex', age: 'Yesterday' },
+]
+const VARIANTS = {
+  A: { name: 'A. In the title row', blurb: 'A small notice beside the window controls opens a popover with the numbers and Record a minute.' },
+  B: { name: 'B. Settings only', blurb: 'Settings > Performance shows the live numbers and Record a minute. Nothing else speaks.' },
+  C: { name: 'C. Banner on Threads', blurb: 'While main is frozen, a banner across the top of the Threads page offers Record a minute or Not now.' },
+}
+const NOTES = {
+  A: `<h3>Variant A</h3><p>The notice sits in the title row of whatever page owns the window, left of the window controls, and opts out of dragging. It appears only while main is frozen, a recording runs, or a saved recording waits.</p><p>Press it to open the popover; Escape or a press outside closes it. <b>Not now</b> hides the notice until main freezes again after recovering. While recording, the notice turns quiet and counts down; you can keep working.</p>`,
+  B: `<h3>Variant B</h3><p>The title row and the Threads page never mention freezes. Settings > Performance carries the live numbers, the minute's chart and Record a minute. Inside Settings only, the Performance entry gets a small dot while main is frozen.</p><p>Quietest, but the owner has to think to look. Good if the freeze is rare and the owner is the one hunting it.</p>`,
+  C: `<h3>Variant C</h3><p>A banner under the pane header while main is frozen, in the warning surface. <b>Record a minute</b> turns the same banner into the countdown, then into the saved recording with its two actions. <b>Not now</b> hides it until main freezes again after recovering.</p><p>Hardest to miss, and it costs a row of the thread while it shows. It is on the Threads page only; Settings carries the record control too.</p>`,
+}
+const S = {
+  variant: 'A', blocked: false, rec: 'idle', remaining: 60, page: 'threads', thread: 't1',
+  popover: false, picking: false, attachedTo: null, noticeHidden: false, savedDismissed: false,
+  noticeOn: true, theme: 'dark', size: '1280x800', fast: false, reduce: false, lastAction: 'Opened the prototype',
+}
+let timer = null
+const fresh = new Set()
+let lastBanner = ''
+
+// One bar per second of the last minute: how long main was blocked in it, in ms.
+function series(blocked) {
+  const out = []
+  let seed = blocked ? 7 : 3
+  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 }
+  for (let i = 0; i < 60; i++) {
+    if (!blocked) out.push(Math.round(rnd() < .9 ? rnd() * 40 : 60 + rnd() * 30))
+    else out.push(Math.round(rnd() < .78 ? 650 + rnd() * 350 : rnd() * 200))
+  }
+  if (blocked) { out[41] = 1000; out[42] = 900 }
+  return out
+}
+let bars = series(false)
+const stats = () => S.blocked ? { share: '70%', longest: '1.9 s', count: 23 } : { share: '3%', longest: '90 ms', count: 0 }
+
+const icon = (d, extra = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" ${extra}>${d}</svg>`
+const I = {
+  plus: icon('<path d="M5 12h14M12 5v14"/>'),
+  search: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+  history: icon('<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/>'),
+  gear: icon('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/>'),
+  help: icon('<circle cx="12" cy="12" r="9"/><path d="M9.2 9a3 3 0 0 1 5.7 1c0 2-2.9 2.6-2.9 4M12 17.5h.01"/>'),
+  update: icon('<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/>'),
+  min: icon('<path d="M6 12h12"/>'), max: icon('<rect x="6" y="6" width="12" height="12" rx="1"/>'), x: icon('<path d="M18 6 6 18M6 6l12 12"/>'),
+  warn: icon('<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4M12 17h.01"/>'),
+  folder: icon('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
+  clip: icon('<path d="m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6a4 4 0 1 1 5.7 5.7l-8.6 8.6a2 2 0 0 1-2.8-2.8l8.5-8.5"/>'),
+  file: icon('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'),
+  send: icon('<path d="M12 19V5M5 12l7-7 7 7"/>'),
+  gauge: icon('<path d="m12 14 4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>'),
+  mic: icon('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v3"/>'),
+  audio: icon('<path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/>'),
+  spark: icon('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>'),
+  cmd: icon('<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>'),
+  server: icon('<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/>'),
+  phone: icon('<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 18h.01"/>'),
+  cloud: icon('<path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z"/>'),
+  flow: icon('<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/>'),
+  out: icon('<path d="M7 7h10v10M7 17 17 7"/>'),
+  palette: icon('<circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>'),
+  sliders: icon('<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'),
+  branch: icon('<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>'),
+}
+const MARK = `<svg class="mark" viewBox="0 0 24 24" role="img" aria-label="Sotto Owl"><rect width="24" height="24" rx="6" fill="var(--tt-brand-tile)"/><path d="M5 9c0-3 3-4.5 7-4.5S19 6 19 9v4c0 4-3 6.5-7 6.5S5 17 5 13z" fill="var(--tt-brand-glyph)"/><circle cx="9" cy="11" r="2.1" fill="var(--tt-brand-tile)"/><circle cx="15" cy="11" r="2.1" fill="var(--tt-brand-tile)"/><path d="M11 14h2l-1 2z" fill="var(--tt-brand-tile)"/></svg>`
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+const threadById = id => THREADS.find(t => t.id === id)
+const FILE = 'sotto-activity-2026-10-20-14-32'
+
+// ---------- shared fragments ----------
+function chart() {
+  return `<div class="chart-slot">${chartSvg()}</div>
+    <p class="chart-cap">Each bar is one second of the last minute; taller means main was blocked longer.</p>`
+}
+function chartSvg() {
+  const w = 10, h = 44, s = stats()
+  const rects = bars.map((v, i) => `<rect x="${i * w + 1}" y="${h - Math.max(2, v / 1000 * h)}" width="${w - 2}" height="${Math.max(2, v / 1000 * h)}" rx="1.5" ${v >= 500 ? 'data-warn' : ''}/>`).join('')
+  return `<svg class="chart" viewBox="0 0 600 ${h}" preserveAspectRatio="none" role="img" aria-label="Main was blocked ${s.share} of the last minute; the longest freeze was ${s.longest}.">${rects}</svg>`
+}
+function figs() {
+  const s = stats(), w = S.blocked ? 'data-warn' : ''
+  return `<div class="figs"><div class="fig" ${w}><b>${s.share}</b><span>blocked</span></div><div class="fig" ${w}><b>${s.longest}</b><span>longest freeze</span></div><div class="fig"><b>${s.count}</b><span>freezes over 100 ms</span></div></div>`
+}
+const PRIVACY = 'Record a minute saves the function names and timings of main and the window on this computer. No sound, nothing you dictated or typed, and nothing leaves this computer.'
+function recordingBlock() {
+  const p = (60 - S.remaining) / 60
+  return `<div class="count">${S.remaining} s</div>
+    <div class="progress" role="progressbar" aria-label="Recording" aria-valuemin="0" aria-valuemax="60" aria-valuenow="${60 - S.remaining}" style="--p:${p}"><i></i></div>
+    <p class="srow__desc" style="max-width:none">Recording main and the window. Keep using Sotto as you were, so the minute catches the slowness.</p>`
+}
+function savedBlock() {
+  if (S.attachedTo) return `<div class="file">${I.file}<span>${FILE}</span><small>2 files, 3.4 MB</small></div>
+    <p class="done-line">Added to the composer of "${esc(threadById(S.attachedTo).title)}". It is sent when you send.</p>`
+  return `<div class="file">${I.file}<span>${FILE}</span><small>2 files, 3.4 MB</small></div>
+    <p class="srow__desc" style="max-width:none">Saved on this computer, in Sotto's activity recordings folder.</p>`
+}
+function picker() {
+  return `<div class="pick"><p id="pick-label">Attach to which thread?</p><ul role="listbox" aria-labelledby="pick-label">${THREADS.map(t => `<li><button role="option" data-act="attach:${t.id}">${esc(t.title)}<small>${t.provider}</small></button></li>`).join('')}</ul>
+    <div class="actions"><button class="tt-button tt-button--ghost tt-button--sm" data-act="pick-cancel">Cancel</button></div></div>`
+}
+function savedActions(extra = '') {
+  if (S.picking) return picker()
+  return `<div class="actions"><button class="tt-button tt-button--primary tt-button--sm" data-act="pick">${I.clip}Attach to a thread</button><button class="tt-button tt-button--sm" data-act="folder">${I.folder}Show in folder</button>${extra}</div>`
+}
+
+// ---------- Sidebar (Threads) and Settings column ----------
+function foot(page) {
+  return `<div class="foot">
+    <span class="seg" role="tablist" aria-label="Room"><button role="tab" aria-selected="false" tabindex="-1">Dictate</button><button role="tab" aria-selected="${page === 'threads'}" data-act="go:threads">Threads</button></span>
+    <span class="pages"><button class="page" aria-label="History">${I.history}</button><button class="page" data-act="go:settings" aria-label="Settings" ${page === 'settings' ? 'aria-current="page"' : ''}>${I.gear}</button><button class="page" aria-label="Help">${I.help}</button></span>
+    <button class="update" aria-label="Check for updates">${I.update}</button></div>`
+}
+function threadsSidebar() {
+  return `<nav class="side" aria-label="Threads">
+    <div class="side__top">${MARK}<span class="spacer"></span><button class="tt-button tt-button--icon" aria-label="New thread">${I.plus}</button></div>
+    <div class="side__search">${I.search}Search threads</div>
+    <div class="side__body"><div class="side__project">Sotto</div>
+      ${THREADS.map(t => `<button class="trow" data-act="thread:${t.id}" ${S.page === 'threads' && S.thread === t.id ? 'aria-current="true"' : ''}><span>${esc(t.title)}</span><small>${t.age}</small></button>`).join('')}
+    </div>${foot('threads')}</nav>`
+}
+function settingsColumn() {
+  const items = [['Dictation', I.mic], ['Transcription', I.audio], ['Cleanup', I.spark], ['Providers', I.cmd, 'gap'], ['Hosts', I.server], ['Phones', I.phone], ['Cloud iPhone', I.cloud], ['Agents', I.flow, 'gap'], ['Output', I.out], ['Appearance', I.palette], ['Application', I.sliders], ['Git', I.branch], ['Performance', I.gauge, 'gap']]
+  const dot = S.blocked && S.variant === 'B'
+  return `<nav class="side set-col" aria-label="Settings">
+    <div class="side__top">${MARK}</div>
+    <div class="side__body"><h1>Settings</h1><div class="subnav" role="tablist" aria-orientation="vertical">
+      ${items.map(([n, ic, g]) => `<button role="tab" class="${g || ''}" aria-selected="${n === 'Performance'}" ${n === 'Performance' ? '' : 'tabindex="-1"'}>${ic}<span>${n}</span>${n === 'Performance' && dot ? '<i class="warn-dot" aria-label="Main is slow"></i>' : ''}</button>`).join('')}
+    </div></div>${foot('settings')}</nav>`
+}
+const winctl = `<div class="winctl"><button aria-label="Minimize">${I.min}</button><button aria-label="Maximize">${I.max}</button><button aria-label="Close to tray">${I.x}</button></div>`
+
+// ---------- Variant A: notice and popover ----------
+function aVisible() {
+  if (S.variant !== 'A') return false
+  if (S.rec === 'recording') return true
+  if (S.rec === 'saved' && !S.savedDismissed) return true
+  return S.blocked && !S.noticeHidden && S.noticeOn
+}
+function aPill() {
+  if (!aVisible()) return ''
+  const exp = `aria-expanded="${S.popover}" aria-haspopup="dialog" data-act="pop"`
+  if (S.rec === 'recording') return `<button class="freeze-pill" data-tone="quiet" ${exp} aria-label="Recording a minute, ${S.remaining} seconds left. Show the recording"><span class="ring" style="--p:${(60 - S.remaining) / 60}"></span>Recording, ${S.remaining} s</button>`
+  if (S.rec === 'saved') return `<button class="freeze-pill" data-tone="quiet" ${exp} aria-label="Activity recording saved. Show it">${I.file}Recording saved</button>`
+  return `<button class="freeze-pill" ${exp} aria-label="Main is slow: blocked ${stats().share} of the last minute. Show details"><span class="dot"></span>Main is slow</button>`
+}
+function aPopover() {
+  if (!aVisible() || !S.popover) return ''
+  let body
+  if (S.rec === 'recording') body = `<h3>Recording a minute</h3>${recordingBlock()}<div class="actions"><button class="tt-button tt-button--sm" data-act="discard">Stop without saving</button></div>`
+  else if (S.rec === 'saved') body = `<h3>Activity recording saved</h3>${savedBlock()}${S.attachedTo ? `<div class="actions"><button class="tt-button tt-button--sm" data-act="folder">${I.folder}Show in folder</button><button class="tt-button tt-button--ghost tt-button--sm" data-act="done">Close</button></div>` : savedActions(`<button class="tt-button tt-button--ghost tt-button--sm" data-act="done">Close</button>`)}`
+  else body = `<h3>Sotto's main process is slow</h3><p>It was blocked ${stats().share} of the last minute. The longest freeze was ${stats().longest}. Threads, typing and the window may lag until it recovers.</p>${figs()}${chart()}<p class="privacy">${PRIVACY}</p>
+      <div class="actions"><button class="tt-button tt-button--primary tt-button--sm" data-act="record">Record a minute</button><button class="tt-button tt-button--ghost tt-button--sm" data-act="notnow">Not now</button></div>`
+  return `<div class="popover${fresh.has('pop') ? ' anim' : ''}" role="dialog" aria-label="Main process" data-pop>${body}</div>`
+}
+
+// ---------- Variant C: banner ----------
+function cBanner() {
+  const html = cBannerInner()
+  const kind = (html.match(/data-kind="(\w+)"/) || [])[1] || ''
+  const out = kind && kind !== lastBanner ? html.replace('class="banner"', 'class="banner anim"') : html
+  lastBanner = kind
+  return out
+}
+function cBannerInner() {
+  if (S.variant !== 'C') return ''
+  if (S.rec === 'recording') return `<div class="banner" data-kind="rec" data-tone="quiet" role="status"><span class="ring" style="--p:${(60 - S.remaining) / 60}"></span><div class="banner__text"><strong>Recording a minute, ${S.remaining} s left.</strong><p>Keep using Sotto as you were, so the minute catches the slowness.</p></div><div class="banner__actions"><button class="tt-button tt-button--sm" data-act="discard">Stop without saving</button></div></div>`
+  if (S.rec === 'saved' && !S.savedDismissed) return `<div class="banner" data-kind="saved" data-tone="quiet" role="status">${I.file}<div class="banner__text"><strong>Activity recording saved on this computer.</strong><p>${S.attachedTo ? `Added to the composer of "${esc(threadById(S.attachedTo).title)}". It is sent when you send.` : `${FILE}, 2 files, 3.4 MB.`}</p></div><div class="banner__actions" style="display:block">${S.attachedTo ? `<div class="actions" style="margin:0"><button class="tt-button tt-button--sm" data-act="folder">${I.folder}Show in folder</button><button class="tt-button tt-button--ghost tt-button--sm" data-act="done">Close</button></div>` : savedActions(`<button class="tt-button tt-button--ghost tt-button--sm" data-act="done">Close</button>`).replace('class="actions"', 'class="actions" style="margin:0"')}</div></div>`
+  if (S.blocked && !S.noticeHidden && S.noticeOn) return `<div class="banner" data-kind="frozen" role="status">${I.warn}<div class="banner__text"><strong>Sotto's main process was blocked ${stats().share} of the last minute. The longest freeze was ${stats().longest}.</strong><p>Threads, typing and the window may lag until it recovers. Record a minute saves what main is doing on this computer, for a thread to look at.</p></div><div class="banner__actions"><button class="tt-button tt-button--primary tt-button--sm" data-act="record">Record a minute</button><button class="tt-button tt-button--ghost tt-button--sm" data-act="notnow">Not now</button></div></div>`
+  return ''
+}
+
+// ---------- Pages ----------
+function threadsRoom() {
+  const t = threadById(S.thread)
+  const inset = aVisible() ? (S.rec === 'recording' ? 270 : 262) : 116
+  const chip = S.attachedTo === t.id ? `<span class="attach-chip">${I.clip}<span>${FILE} (2 files)</span><button aria-label="Remove ${FILE} from the message">${I.x}</button></span>` : ''
+  return `<main class="room" aria-label="${esc(t.title)}">
+    <header class="pane-head" style="--inset:${inset}px"><h2>${esc(t.title)}</h2><span class="chip">${t.provider}</span></header>
+    ${cBanner()}
+    <div class="msgs">
+      <div class="msg-user">Sotto lagged again when I switched threads this afternoon. Can you find what main was doing?</div>
+      <div class="msg-agent"><p>I can read a recording of main if you attach one. Without it I can only guess from the code.</p><p>The likeliest suspects are the thread list rebuild and the status read that runs on every update.</p></div>
+    </div>
+    <div class="composer">${chip}<div class="composer__row"><span class="composer__ph" id="ph">Message ${t.provider}</span><button class="composer__send" aria-label="Send">${I.send}</button></div></div>
+    ${aPill()}${winctl}${aPopover()}</main>`
+}
+function settingsRoom() {
+  const s = stats()
+  const statusSentence = S.blocked
+    ? `Main was blocked ${s.share} of the last minute. The longest freeze was ${s.longest}. Threads, typing and the window may lag until it recovers.`
+    : `Main is keeping up. It was blocked ${s.share} of the last minute, and the longest freeze was ${s.longest}.`
+  let recordCtl = '', recordWide = ''
+  if (S.rec === 'idle') recordCtl = `<button class="tt-button" data-act="record">Record a minute</button>`
+  else if (S.rec === 'recording') { recordCtl = `<button class="tt-button" data-act="discard">Stop without saving</button>`; recordWide = recordingBlock() }
+  else { recordCtl = `<button class="tt-button tt-button--ghost" data-act="again">Record another minute</button>`; recordWide = savedBlock() + (S.attachedTo ? `<div class="actions"><button class="tt-button tt-button--sm" data-act="folder">${I.folder}Show in folder</button></div>` : savedActions()) }
+  const noticeRow = S.variant === 'B' ? '' : `<div class="srow"><div class="srow__grid"><div><div class="srow__label" id="lbl-notice">Tell me when main freezes</div><p class="srow__desc">${S.variant === 'A' ? 'Shows a notice beside the window controls while main is blocked for half a minute or more.' : 'Shows a banner on the Threads page while main is blocked for half a minute or more.'}</p></div><button class="toggle" role="switch" aria-checked="${S.noticeOn}" aria-labelledby="lbl-notice" data-act="toggle-notice"></button></div></div>`
+  return `<main class="room" aria-label="Performance">
+    <div class="set-scroll"><div class="set-form">
+      <div class="set-head"><h2>Performance<span class="owl-tag">Owl</span></h2><p>How quickly Sotto's main process answers, on this computer</p></div>
+      <div class="srow"><div class="srow__label">Main process, last minute</div><p class="srow__desc" ${S.blocked ? 'data-warn' : ''} style="max-width:60ch">${statusSentence}</p><div class="srow__wide">${figs()}${chart()}</div></div>
+      <div class="srow"><div class="srow__grid"><div><div class="srow__label">Record a minute of activity</div><p class="srow__desc">${PRIVACY}</p></div>${recordCtl}</div>${recordWide ? `<div class="srow__wide">${recordWide}</div>` : ''}</div>
+      ${noticeRow}
+    </div></div>
+    ${aPill()}${winctl}${aPopover()}</main>`
+}
+
+// ---------- render ----------
+function render() {
+  const active = document.activeElement?.dataset?.act
+  const [w, h] = SIZES[S.size]
+  document.documentElement.dataset.theme = S.theme
+  document.documentElement.classList.toggle('reduce', S.reduce)
+  const frame = document.getElementById('frame')
+  frame.innerHTML = `<div class="win" style="width:${w}px;height:${h}px"><div class="shell">${S.page === 'settings' ? settingsColumn() + settingsRoom() : threadsSidebar() + threadsRoom()}</div></div>`
+  const avail = document.getElementById('stage').clientWidth
+  const scale = Math.min(1, avail / w)
+  frame.style.transform = `scale(${scale})`
+  frame.style.height = `${h * scale}px`
+  document.getElementById('caption').textContent = `${w} x ${h}${scale < 1 ? `, shown at ${Math.round(scale * 100)}%` : ''}${S.size === '820x560' ? ' (the minimum window)' : ''}. Click inside: the buttons work.`
+  document.getElementById('states').innerHTML = [['normal', 'Normal'], ['frozen', 'Frozen notice'], ['recording', 'Recording'], ['saved', 'Saved']].map(([k, n]) => `<button aria-pressed="${phase() === k}" data-proto="state:${k}">${n}</button>`).join('')
+  document.getElementById('sizes').innerHTML = Object.keys(SIZES).map(k => `<button aria-pressed="${S.size === k}" data-proto="size:${k}">${k.replace('x', ' x ')}</button>`).join('')
+  document.getElementById('modes').innerHTML = ['dark', 'light'].map(k => `<button aria-pressed="${S.theme === k}" data-proto="theme:${k}">${k === 'dark' ? 'Dark' : 'Light'}</button>`).join('')
+  document.getElementById('variants').innerHTML = Object.entries(VARIANTS).map(([k, v]) => `<button class="vtab" role="tab" aria-selected="${S.variant === k}" data-proto="variant:${k}"><strong>${v.name}</strong><span>${v.blurb}</span></button>`).join('')
+  document.getElementById('variant-notes').innerHTML = NOTES[S.variant]
+  document.getElementById('readout').textContent = [
+    `variant      ${S.variant}`, `page         ${S.page === 'threads' ? 'Threads: ' + threadById(S.thread).title : 'Settings > Performance'}`,
+    `main         ${S.blocked ? 'frozen, 70% blocked, longest 1.9 s' : 'keeping up, 3% blocked'}`,
+    `recording    ${S.rec === 'recording' ? S.remaining + ' s left' : S.rec}`,
+    `notice       ${S.variant === 'B' ? 'none outside Settings' : !S.noticeOn ? 'switched off in Settings' : S.noticeHidden ? 'hidden (Not now) until the next freeze' : 'shown when frozen'}`,
+    `attached to  ${S.attachedTo ? threadById(S.attachedTo).title : 'nothing'}`, `last action  ${S.lastAction}`,
+  ].join('\n')
+  fresh.clear()
+  if (active) document.querySelector(`.win [data-act="${CSS.escape(active)}"]`)?.focus()
+}
+function phase() { return S.rec !== 'idle' ? S.rec : S.blocked ? 'frozen' : 'normal' }
+
+function startRecording() {
+  clearInterval(timer)
+  S.rec = 'recording'; S.remaining = 60; S.attachedTo = null; S.picking = false; S.savedDismissed = false
+  timer = setInterval(tick, S.fast ? 100 : 1000)
+}
+function tick() {
+  if (S.rec !== 'recording') { clearInterval(timer); return }
+  S.remaining -= 1
+  if (S.remaining <= 0) { clearInterval(timer); S.rec = 'saved'; S.lastAction = 'The minute ended; the activity recording was saved' }
+  render()
+}
+function setState(k) {
+  clearInterval(timer); S.picking = false; S.attachedTo = null; S.savedDismissed = false; S.noticeHidden = false
+  S.blocked = k !== 'normal'; bars = series(S.blocked)
+  if (k === 'recording') { startRecording(); S.popover = S.variant === 'A' }
+  else if (k === 'saved') { S.rec = 'saved'; S.popover = S.variant === 'A' }
+  else { S.rec = 'idle'; S.popover = false }
+  if (S.variant === 'B') S.page = 'settings'
+  S.lastAction = `Jumped to ${k}`
+}
+
+// Live chart: one new second every second.
+setInterval(() => { bars.shift(); bars.push(series(S.blocked)[Math.floor(Math.random() * 40)]); document.querySelectorAll('.chart-slot').forEach(el => { el.innerHTML = chartSvg() }) }, 1000)
+
+document.addEventListener('click', e => {
+  const p = e.target.closest('[data-proto]')
+  if (p) {
+    const [k, v] = p.dataset.proto.split(':')
+    if (k === 'state') setState(v)
+    if (k === 'size') S.size = v
+    if (k === 'theme') S.theme = v
+    if (k === 'variant') { S.variant = v; S.page = v === 'B' ? 'settings' : 'threads'; S.popover = v === 'A' && S.rec !== 'idle' }
+    if (k === 'recover') { S.blocked = false; bars = series(false); S.noticeHidden = false; if (S.rec === 'idle') S.popover = false; S.lastAction = 'Main recovered; the notice goes away' }
+    if (k === 'freeze') { S.blocked = true; bars = series(true); S.lastAction = 'Main froze again' }
+    render(); return
+  }
+  const a = e.target.closest('[data-act]')
+  if (!a) { if (S.popover && !e.target.closest('[data-pop]') && e.target.closest('.win')) { S.popover = false; S.picking = false; render() } return }
+  const [k, v] = a.dataset.act.split(':')
+  switch (k) {
+    case 'go': S.page = v; S.popover = false; S.lastAction = `Opened ${v === 'settings' ? 'Settings' : 'Threads'}`; break
+    case 'thread': S.page = 'threads'; S.thread = v; break
+    case 'pop': S.popover = !S.popover; S.picking = false; if (S.popover) fresh.add('pop'); break
+    case 'record': case 'again': startRecording(); S.lastAction = 'Pressed Record a minute'; break
+    case 'discard': clearInterval(timer); S.rec = 'idle'; S.popover = false; S.lastAction = 'Stopped without saving; nothing was kept'; break
+    case 'notnow': S.noticeHidden = true; S.popover = false; S.lastAction = 'Not now: hidden until main freezes again after recovering'; break
+    case 'pick': S.picking = true; break
+    case 'pick-cancel': S.picking = false; break
+    case 'attach': S.attachedTo = v; S.picking = false; S.page = 'threads'; S.thread = v; S.popover = S.variant === 'A'; S.lastAction = `Attached to "${threadById(v).title}" and opened it`; break
+    case 'folder': S.lastAction = `File Explorer opens on the activity recordings folder, with ${FILE} selected`; break
+    case 'done': S.savedDismissed = true; S.popover = false; S.rec = 'idle'; S.noticeHidden = S.blocked; S.lastAction = 'Closed the saved recording; it stays in the folder'; break
+    case 'toggle-notice': S.noticeOn = !S.noticeOn; S.lastAction = `Turned the notice ${S.noticeOn ? 'on' : 'off'}`; break
+  }
+  render()
+})
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return
+  if (S.picking) { S.picking = false; render(); return }
+  if (S.popover) { S.popover = false; render(); document.querySelector('.win [data-act="pop"]')?.focus() }
+})
+document.getElementById('fast').addEventListener('change', e => { S.fast = e.target.checked; if (S.rec === 'recording') { clearInterval(timer); timer = setInterval(tick, S.fast ? 100 : 1000) } })
+document.getElementById('reduce').addEventListener('change', e => { S.reduce = e.target.checked; render() })
+window.addEventListener('resize', render)
+setState('frozen'); S.lastAction = 'Opened the prototype'
+render()
+</script>
+</body>
+</html>

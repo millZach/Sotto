@@ -61,7 +61,9 @@ const pullRequest = (number: number): BabysitNews => ({ pullRequest: { url: `htt
 const delegation = (): DelegationNews => ({ source: 'delegation', items: [{ delegationId: randomUUID(), threadId: 'delegated', outcome: 'answered' }] })
 const complete = (host: Host) => host.update('workshop', { status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' } })
 const sends = (host: Host) => host.attempts.filter((c): c is Extract<AgentHostCommand, { type: 'send' }> => c.type === 'send')
-const waiting = (control: AgentControl) => (control.get().followups ?? []).map(item => item.wakeUp ? `wake-up: ${item.text.includes('Delegation ') ? 'delegation' : 'pull request'}` : item.text)
+/** The queue as the store holds it: a delegation's news waits hidden (ADR-0081, October 19, 2026), so no window lists it. */
+const waiting = (control: AgentControl) => (control as unknown as { followupStore: { peek(): { items: readonly { wakeUp?: true; text: string }[] } } }).followupStore.peek().items
+  .map(item => item.wakeUp ? `wake-up: ${item.text.includes('Delegation ') ? 'delegation' : 'pull request'}` : item.text)
 
 it('keeps later news out of a delegation\'s waiting wake-up while delegation is off, and sends it', async () => {
   const f = await fixture()
@@ -74,14 +76,18 @@ it('keeps later news out of a delegation\'s waiting wake-up while delegation is 
   // The sent item leaves the queue once its acceptance is saved, a step after the host hears it.
   await expect.poll(() => waiting(f.control)).toEqual(['wake-up: delegation'])
   expect(sends(f.host)).toHaveLength(1)
+  // It waits hidden: no queue panel or phone lists it.
+  expect(f.control.get().followups).toEqual([])
 })
 
-it('sets a delegation\'s news apart from what was folded with it while delegation was on, and sends the rest', async () => {
+it('keeps a delegation\'s hidden news waiting whole once delegation is off, and sends the news beside it', async () => {
   const f = await fixture()
   const unhook = f.control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [],
     messageIdFor: () => undefined, guardFor: () => undefined })
   await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
   await f.control.deliverWakeUp('workshop', pullRequest(1), { tool: false })
+  // Delegation news never folds with other news: it waits in a hidden wake-up of its own, and the window lists the other.
+  expect(waiting(f.control)).toEqual(['wake-up: delegation', 'wake-up: pull request'])
   expect(f.control.get().followups).toHaveLength(1)
   unhook()
   complete(f.host)

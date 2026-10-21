@@ -22,7 +22,7 @@ it('copies nothing per thread while observing an update', async () => {
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, historyEnabled: () => true } })
   const control = f.control
-  const service = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 4 })
+  const service = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); control.dispose(); await control.closed(); await workspace.stop() })

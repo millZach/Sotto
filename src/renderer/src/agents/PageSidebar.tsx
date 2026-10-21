@@ -42,9 +42,9 @@ export function PageSidebar({ now: fixedNow }: {
     [published, drafts, watcherEnabled, roomWatcher])
   const continued = useContinueEnabled()
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
-  // Delegated threads sit under the thread that delegated to them (ADR-0081; Owl only).
-  const nestDelegated = useOwlFeature('thread-delegation')
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, nestDelegated), [state, rows, query, nestDelegated]))
+  // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
+  const delegation = useOwlFeature('thread-delegation')
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, delegation), [state, rows, query, delegation]))
   const navigate = app?.actions.navigate
   const command = agents.command
   const openThread = useCallback((threadId: string): void => {
