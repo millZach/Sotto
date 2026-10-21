@@ -201,6 +201,28 @@ describe('observational subagent roster metadata', () => {
       expect(source.activities.filter(record => record.kind === 'subagent')[0]!.agents![0]).toEqual(first)
     })
 
+    it('keeps the newest follow-up recognised when a reread replays more assignments than a conversation remembers', () => {
+      let now = 1_000
+      const projection = new CodexActivityProjection(() => now)
+      const source = conversation('source')
+      const items: [string, string][] = [['call-spawn', 'started']]
+      read(projection, source, 'completed', [['call-spawn', 'started']])
+      // Two hundred assignments finish; the two hundred and first is running.
+      for (let n = 1; n <= 201; n++) {
+        const done: [string, string] = [`subagent-completed-${n}`, 'completed'], next: [string, string] = [`call-followup-${n}`, 'interacted']
+        read(projection, source, 'completed', [done, next]); items.push(done, next)
+        projection.childNotification('native-child', 'turn/started', { turn: { id: `child-turn-${n}`, status: 'inProgress' } })
+      }
+      const agents = () => source.activities.filter(record => record.kind === 'subagent').map(record => record.agents![0]!)
+      expect(agents().at(-1)!.status).toBe('running')
+      const before = structuredClone(agents().at(-2)!)
+      read(projection, source, 'history', items)
+      now = 5_000
+      projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn-201', status: 'failed', durationMs: 3_000, error: { message: 'Synthetic failure' } } })
+      expect(agents().at(-2)).toEqual(before)
+      expect(agents().at(-1)).toMatchObject({ status: 'failed', message: 'Synthetic failure' })
+    })
+
     it('takes no agent as working once its conversation\'s runtime has ended', () => {
       const projection = new CodexActivityProjection(() => 1_000)
       const source = conversation('source')

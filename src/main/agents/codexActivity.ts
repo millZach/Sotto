@@ -117,9 +117,9 @@ export class CodexActivityProjection {
    */
   private readonly messaged = new WeakMap<ActivityConversation, Map<string, { item: Item; context: Context; senderPath: string; at?: number }>>()
   /**
-   * The multi-agent v2 assignments each conversation has opened, by native agent ID, newest last and at most
+   * The multi-agent v2 assignments each conversation has opened live, by native agent ID, newest last and at most
    * OPENED_KEPT each: a reread of that conversation's history recognises one by these even once its record has left the
-   * bounded activity window (#1261).
+   * bounded activity window (#1261). A history read adds none, so replaying old assignments never pushes out new ones.
    */
   private readonly opened = new WeakMap<ActivityConversation, Map<string, Set<string>>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
@@ -331,7 +331,7 @@ export class CodexActivityProjection {
     // A start, or work handed to an agent that had finished, is a new assignment; a message to a working agent is not.
     const assignment = prior?.assignmentId !== itemActivityId && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || priorFinished))
     const assignmentId = assignment || !prior?.assignmentId ? itemActivityId : prior.assignmentId
-    if (assignment) {
+    if (assignment && context.phase !== 'history') {
       const opened = this.opened.get(thread) ?? new Map<string, Set<string>>(), ids = opened.get(child) ?? new Set<string>()
       ids.delete(assignmentId); ids.add(assignmentId)
       while (ids.size > OPENED_KEPT) ids.delete(ids.values().next().value!)
