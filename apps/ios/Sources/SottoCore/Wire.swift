@@ -223,6 +223,10 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
+    /// The pull requests the thread babysits, and why babysitting each last ended on its own (ADR-0061), for the pull
+    /// request sheet (ADR-0100). Read item by item, so a later host's record never fails the thread. Older hosts send none.
+    public var babysitting: ThreadList<ThreadBabysitting>? = nil
+    public var babysitEnded: ThreadList<ThreadBabysitEnded>? = nil
 }
 /// What the thread page reads from a thread's worktree record (`agentWorktreeSchema` in src/shared/agents.ts): its
 /// mode, its branch and the Git status the host last read there (`gitStatusSchema` in src/shared/gitStatus.ts).

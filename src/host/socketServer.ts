@@ -244,6 +244,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
+    // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
+    && (feature !== 'pull-request-view' || service.supportsPullRequestView === true)
     // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.

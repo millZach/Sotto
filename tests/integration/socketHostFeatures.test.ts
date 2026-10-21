@@ -108,6 +108,28 @@ describe('host facts over the socket (#1031)', () => {
   })
 })
 
+describe('the iPhone’s pull request sheet (#1281)', () => {
+  it('is offered, phones included, only by a host whose Owl answer turns it on, and leaves the pull request read and babysitting as they were', async () => {
+    const base: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      gitPullRequest: async () => null, supportsBabysitting: true,
+    }
+    for (const [service, offered] of [[{ ...base, supportsPullRequestView: true }, true], [base, false], [{ ...base, supportsPullRequestView: false }, false]] as const) {
+      // The desktop's phone listener, which serves phones only.
+      const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+      try {
+        const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
+        const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+        const features = (await client.connect()).features ?? []
+        expect(features.includes('pull-request-view')).toBe(offered)
+        expect(features).toEqual(expect.arrayContaining(['git-pull-request', 'pull-request-babysit']))
+        expect(server.descriptor.features.includes('pull-request-view')).toBe(offered)
+      } finally { await server.close() }
+    }
+  })
+})
+
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>

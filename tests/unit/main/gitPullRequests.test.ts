@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests } from '../../../src/main/agents/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
-import { parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
 import { initializeGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 
 const URL_74 = 'https://github.com/sotto-fixture/owned/pull/74'
@@ -144,6 +144,31 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
       { author: 'mira', state: 'approved', url: 'https://github.com/sotto-fixture/owned/pull/74#pullrequestreview-1' },
       { author: 'ola', state: 'changes_requested', url: null },
     ])
+  })
+  it('reads each check run\'s times and the changed files with their counts, for the iPhone\'s pull request sheet (#1281)', async () => {
+    const body = JSON.parse(answerJson()) as { data: { repository: { pullRequest: Record<string, unknown> & { commits: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<Record<string, unknown>> } } } }> } } } } }
+    const pull = body.data.repository.pullRequest
+    const contexts = pull.commits.nodes[0]!.commit.statusCheckRollup.contexts.nodes
+    Object.assign(contexts[0]!, { startedAt: '2026-10-21T10:00:00Z', completedAt: '2026-10-21T10:14:02Z' })
+    Object.assign(contexts[2]!, { startedAt: '2026-10-21T10:01:00Z', completedAt: null })
+    // A check run sent with a time that does not read as one keeps none; a status another service posted names no times.
+    Object.assign(contexts[1]!, { startedAt: 'soon', completedAt: null })
+    Object.assign(pull, { changedFiles: 3, files: { nodes: [{ path: 'src/a.ts', additions: 12, deletions: 2 }, null, { path: 'README.md', additions: 1, deletions: 0 }] } })
+    const { service, calls } = scripted(args => reads(() => JSON.stringify(body))(args) ?? new Error('unexpected'))
+    const view = await service.view('C:/repo', URL_74)
+    expect(view.checks.map(check => [check.name, check.startedAt, check.completedAt])).toEqual([
+      ['CI / build', '2026-10-21T10:00:00Z', '2026-10-21T10:14:02Z'], ['CI / lint', null, null], ['e2e', '2026-10-21T10:01:00Z', null], ['deploy/preview', undefined, undefined],
+    ])
+    expect(view.checks[3]).not.toHaveProperty('startedAt')
+    expect(view.files).toEqual([{ path: 'src/a.ts', additions: 12, deletions: 2 }, { path: 'README.md', additions: 1, deletions: 0 }])
+    expect(view.changedFiles).toBe(3)
+    for (const field of ['startedAt completedAt', 'changedFiles files(first: 100) { nodes { path additions deletions } }']) expect(query(calls[0])).toContain(field)
+    // A host's answer without them, as GitHub refusing the files leaves it, still reads: the files are unknown, not none.
+    const { service: refused } = scripted(args => reads(() => answerJson({ pull: { files: null, changedFiles: null } }))(args) ?? new Error('unexpected'))
+    const without = await refused.view('C:/repo', URL_74)
+    expect(without).not.toHaveProperty('files')
+    expect(without).not.toHaveProperty('changedFiles')
+    expect(gitPullRequestDetailSchema.parse({ ...without, linked: null, branch: true }).files).toBeUndefined()
   })
   it('keeps the repository\'s merge settings fifteen minutes rather than asking for them with every read', async () => {
     let now = 1_000_000

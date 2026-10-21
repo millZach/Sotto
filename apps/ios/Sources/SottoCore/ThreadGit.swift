@@ -1,7 +1,8 @@
 import Foundation
 
 /// The chips under a thread's title: its branch, the folder's changed lines and its pull request, from the Git status
-/// the host keeps on the thread's worktree record. A chip with nothing to say is left out; checks are not shown yet.
+/// the host keeps on the thread's worktree record. A chip with nothing to say is left out. The pull request chip opens
+/// the pull request sheet where the computer offers it (ADR-0100), and says its checks once the sheet has read them.
 public struct GitChips: Equatable, Sendable {
     public struct Changes: Equatable, Sendable {
         public let files: Int
@@ -17,6 +18,8 @@ public struct GitChips: Equatable, Sendable {
     public let branch: String?
     public let changes: Changes?
     public let pullRequest: PullRequest?
+    /// The pull request's GitHub URL, which the sheet reads it by; nil when the host's record names none that is one.
+    public let pullRequestURL: String?
 
     public init(_ worktree: ThreadWorktree?) {
         let git = worktree?.git
@@ -38,15 +41,19 @@ public struct GitChips: Equatable, Sendable {
             default: state = request.draft == true ? "draft" : "open"
             }
             pullRequest = PullRequest(number: number, state: state)
+            pullRequestURL = request.url.flatMap { PullRequests.address($0) != nil ? $0 : nil }
         } else {
             pullRequest = nil
+            pullRequestURL = nil
         }
     }
 
     public var isEmpty: Bool { branch == nil && changes == nil && pullRequest == nil }
 
     /// The row as VoiceOver reads it.
-    public var spoken: String {
+    public var spoken: String { spoken(includingPullRequest: true) }
+    /// The row as VoiceOver reads it, leaving the pull request out when its chip is a button of its own.
+    public func spoken(includingPullRequest: Bool) -> String {
         var parts: [String] = []
         if let branch { parts.append("Branch \(branch)") }
         if let changes {
@@ -54,7 +61,7 @@ public struct GitChips: Equatable, Sendable {
             let added = changes.insertions == 1 ? "1 line added" : "\(changes.insertions) lines added"
             parts.append("\(files), \(added), \(changes.deletions) removed")
         }
-        if let pullRequest { parts.append("Pull request \(pullRequest.number), \(pullRequest.state)") }
+        if includingPullRequest, let pullRequest { parts.append("Pull request \(pullRequest.number), \(pullRequest.state)") }
         return parts.joined(separator: ". ")
     }
 }
