@@ -125,6 +125,17 @@ public struct SubagentAssignmentsPage: Decodable, Sendable {
     }
 }
 
+/// How many monitors a thread's provider runs (`agentMonitoringSchema` in src/shared/agentMonitoring.ts), counted
+/// without reading them. Anything but a list reads as none, and the record never fails its thread.
+public struct MonitorCount: Decodable, Equatable, Sendable {
+    public let count: Int
+    public init(_ count: Int = 0) { self.count = count }
+    public init(from decoder: Decoder) throws {
+        let list = try? decoder.unkeyedContainer()
+        count = list?.count ?? 0
+    }
+}
+
 /// What delegation's record knows of one delegated thread (`hostDelegatedThreadSchema` in src/shared/agentsView.ts):
 /// the thread that delegated to it, the kind of work, when it started, its newest outcome and the start of its brief.
 /// Never its reply. `outcome` stays a string, so one this build doesn't know still shows a row.
@@ -300,6 +311,21 @@ public enum AgentsRoster {
             }
         }
         return result
+    }
+
+    /// What the thread list says of a thread's agents, as one value: when it changes, the sheet reads them again. Each
+    /// delegated thread's status, requests, background work, monitors and own agents are in it, so one whose outcome moves
+    /// from Background work to Answered while it stays idle and asks nothing is read again, as when its last monitor
+    /// ends (`watcherTurnOutcome` in src/main/agents/watcherOutcomes.ts). The thread's own agent counts are in it too.
+    public static func refreshSignal(_ owner: ThreadSummary, in threads: [ThreadSummary]) -> String {
+        func agents(_ summary: SubagentSummary?) -> String { summary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? "" }
+        let below = delegated(below: owner.id, in: threads).map { item in
+            let thread = item.thread
+            let background = (thread.backgroundWork ?? []).map(\.type).joined(separator: ",")
+            return [thread.id, thread.status, String(thread.requests.count), background, String(thread.monitoring?.count ?? 0),
+                    agents(thread.subagentSummary)].joined(separator: ":")
+        }
+        return (below + [agents(owner.subagentSummary)]).joined(separator: "|")
     }
 
     /// The top bar's count, from the thread list alone: delegated threads, both levels, and the provider's sub-agents.

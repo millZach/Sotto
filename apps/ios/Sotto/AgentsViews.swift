@@ -172,24 +172,10 @@ private struct AgentsSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .refreshable { await refresh() }
-        .task(id: signal(source)) { await load() }
+        .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
         .presentationBackground { SheetBackdrop(wash: false) }
         .presentationCornerRadius(Radius.xl)
         .accessibilityAction(.escape) { dismiss() }
-    }
-
-    /// What the thread list says of the thread's agents: a change here reads them again. A delegated thread's background
-    /// work and its own agents are in it, so one that goes from Background work to Answered while idle and asking nothing
-    /// is read again too.
-    private func signal(_ source: AgentsSource?) -> String {
-        guard let source else { return "" }
-        func agents(_ summary: SubagentSummary?) -> String { summary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? "" }
-        let below = AgentsRoster.delegated(below: ref.threadID, in: source.threads).map { item in
-            let thread = item.thread
-            let background = (thread.backgroundWork ?? []).map(\.type).joined(separator: ",")
-            return "\(thread.id):\(thread.status):\(thread.requests.count):\(background):\(agents(thread.subagentSummary))"
-        }
-        return (below + [agents(source.owner.subagentSummary)]).joined(separator: "|")
     }
 
     /// The user's own refresh: the list, and every opened agent's task and result with it.

@@ -183,6 +183,24 @@ final class AgentsRosterTests: XCTestCase {
                        running.detailsKey)
     }
 
+    func testTheSheetReadsAgainWhenADelegatedThreadsLastMonitorEnds() throws {
+        let owner = try thread("owner")
+        let watching = try thread("claude", #", "delegatedBy":"owner", "monitoring":[{"id":"00000000-0000-4000-8000-000000000009","label":"Watch CI"}]"#)
+        let ended = try thread("claude", #", "delegatedBy":"owner", "monitoring":[]"#)
+        let gone = try thread("claude", #", "delegatedBy":"owner""#)
+        XCTAssertEqual(watching.monitoring, MonitorCount(1))
+        XCTAssertEqual(ended.monitoring, MonitorCount(0))
+        XCTAssertNil(gone.monitoring)
+        XCTAssertEqual(try thread("odd", #", "monitoring":"one""#).monitoring, MonitorCount(0), "A record of another shape never fails its thread")
+        // Idle, asking nothing, with no background work or agents: only the monitor moves its outcome to Answered.
+        XCTAssertNotEqual(AgentsRoster.refreshSignal(owner, in: [owner, watching]), AgentsRoster.refreshSignal(owner, in: [owner, gone]))
+        XCTAssertEqual(AgentsRoster.refreshSignal(owner, in: [owner, ended]), AgentsRoster.refreshSignal(owner, in: [owner, gone]))
+        let background = try thread("claude", #", "delegatedBy":"owner", "backgroundWork":[{"type":"subagent"}]"#)
+        let agents = try thread("claude", #", "delegatedBy":"owner", "subagentSummary":{"total":1,"working":1}"#)
+        XCTAssertNotEqual(AgentsRoster.refreshSignal(owner, in: [owner, background]), AgentsRoster.refreshSignal(owner, in: [owner, gone]))
+        XCTAssertNotEqual(AgentsRoster.refreshSignal(owner, in: [owner, agents]), AgentsRoster.refreshSignal(owner, in: [owner, gone]))
+    }
+
     func testNestedAgentsKeepEveryRowOnceWhateverTheirParents() {
         let rows = [SubagentRow(id: "a", title: "A", status: "running"), SubagentRow(id: "b", parentId: "a", title: "B", status: "running"),
                     SubagentRow(id: "c", parentId: "missing", title: "C", status: "running"), SubagentRow(id: "d", parentId: "e", title: "D", status: "running"),

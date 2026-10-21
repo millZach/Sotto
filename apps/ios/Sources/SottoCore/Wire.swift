@@ -217,6 +217,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// The computer's word that the thread's last turn failed and a client has shown it since, or Dismiss all named it
     /// (ADR-0092). Only a computer that lists `failure-seen` sends it; the Agents view reads it (ADR-0101).
     public var failureSeen: Bool? = nil
+    /// How many monitors the thread's provider runs. Never work on its own (`ThreadState`), but its end can move a
+    /// delegated thread's outcome from Background work to Answered, so the Agents sheet reads again (ADR-0101).
+    public var monitoring: MonitorCount? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
