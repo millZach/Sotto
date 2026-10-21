@@ -1874,6 +1874,31 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   expect(read.kept.decisions).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
 })
 
+it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {
+  const f = await fixture(), targets: string[] = []
+  for (let at = 0; at < 6; at++) {
+    const started = await f.call('start_thread', f.start())
+    if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+    targets.push(started.target.threadId)
+  }
+  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } } }).state.snapshot
+  targets.forEach((threadId, at) => {
+    const links = Array.from({ length: 20 }, (_, index) => ({ url: `https://github.com/synthetic/project/pull/${at * 20 + index + 1}`, number: at * 20 + index + 1,
+      title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }))
+    record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  })
+  for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,
+    observedAt: new Date(Date.now() + number * 1_000).toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  const first = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (first.status !== 'ok' || first.nextCursor === null) throw new Error('expected a second page')
+  const second = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: first.nextCursor }))
+  if (second.status !== 'ok') throw new Error('read refused')
+  expect(second.nextCursor).toBeNull()
+  expect([...first.mergeQueue, ...second.mergeQueue].map(item => item.pullRequest.number)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
+  expect(first.mergeQueue).toHaveLength(100)
+})
+
 it('saves none of Watcher’s kept words with Keep local history off', async () => {
   const f = await fixture(false)
   await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })

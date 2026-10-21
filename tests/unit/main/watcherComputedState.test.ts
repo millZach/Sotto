@@ -13,7 +13,9 @@ it('queues open pull requests that are not drafts and whose checks passed, oldes
     { target: target('a'), title: 'Login fix', open: [
       { summary: { number: 12, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z' },
       { summary: { number: 13, state: 'open', checks: 'pending' }, draft: false },
-      { summary: { number: 14, state: 'open', checks: 'passed' }, draft: true, checksPassedAt: '2026-10-21T09:00:00.000Z' }] },
+      { summary: { number: 14, state: 'open', checks: 'passed' }, draft: true, checksPassedAt: '2026-10-21T09:00:00.000Z' },
+      // Read only from evidence, which does not say whether it is a draft: not queued.
+      { summary: { number: 15, state: 'open', checks: 'passed' }, draft: undefined, checksPassedAt: '2026-10-21T08:30:00.000Z' }] },
     { target: target('b'), title: 'Docs pass', open: [
       { summary: { number: 9, state: 'open', checks: 'passed', approved: true }, draft: false, checksPassedAt: '2026-10-21T10:00:00.000Z' },
       { summary: { number: 8, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z' },
@@ -37,6 +39,8 @@ const threads: WatcherKnownThread[] = [
   { target: target('22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), title: 'Flaky e2e hunt', settled: false, watched: false },
   { target: target('33333333-cccc-4ccc-8ccc-cccccccccccc'), title: 'Login timeout fix', settled: false, watched: true },
   { target: target('44444444-dddd-4ddd-8ddd-dddddddddddd'), title: 'Fix', settled: true, watched: false },
+  // Two words name a thread whatever their length.
+  { target: target('77777777-1111-4111-8111-111111111111'), title: 'Fix CI', settled: true, watched: false },
   { target: target('55555555-eeee-4eee-8eee-eeeeeeeeeeee'), title: 'New thread', settled: true, watched: false },
   // A title a watched, unsettled thread shares names that thread, so it flags nothing.
   { target: target('66666666-ffff-4fff-8fff-ffffffffffff'), title: 'Login timeout fix', settled: true, watched: false },
@@ -54,7 +58,9 @@ it('flags a kept note that names a settled or unwatched thread, by title or ID, 
   const stale = watcherStaleNotes({
     decisions: ['Merge #40 once CI is green?', 'Ask about PR 41 and pull request #42', 'Merge https://github.com/o/r/pull/40/files after review'],
     rules: ['Leave the release notes draft alone', 'Thread 22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb needs a look', 'Keep the Login timeout fix moving'],
-    issues: ['#43 Watcher keeps stale notes', '#9999 not a pull request Sotto knows', 'Fix the new thread button'],
+    issues: ['#43 Watcher keeps stale notes', '#9999 not a pull request Sotto knows', 'Fix the new thread button',
+      // Two links with one number name two pull requests: the merged one flags, whichever comes first.
+      'Compare https://github.com/o/s/pull/43 with https://github.com/o/r/pull/43', 'Look at fix ci again'],
   }, threads, pullRequests)
   expect(stale).toEqual([
     { list: 'decisions', index: 0, reasons: ['Names pull request #40, which is merged.'] },
@@ -62,6 +68,8 @@ it('flags a kept note that names a settled or unwatched thread, by title or ID, 
     { list: 'decisions', index: 2, reasons: ['Names pull request #40, which is merged.'] },
     { list: 'rules', index: 0, reasons: ['Names the thread “Release notes draft”, which is settled.'] },
     { list: 'rules', index: 1, reasons: ['Names the thread “Flaky e2e hunt”, which Watcher does not watch.'] },
+    { list: 'issues', index: 3, reasons: ['Names pull request #43, which is merged.'] },
+    { list: 'issues', index: 4, reasons: ['Names the thread “Fix CI”, which is settled.'] },
   ])
 })
 

@@ -13,8 +13,8 @@ import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '.
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
-  type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, WATCHER_STATE_COMPUTED_MAX, type WatcherKeptState,
-  type WatcherPendingSettle, type WatcherStaleNote } from '../../shared/watcher'
+  type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
+  type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -212,6 +212,8 @@ function threadPullRequests(thread: AgentThread): { number: number; url: string;
   })
 }
 const withSince = (checksPassedAt: string | undefined) => checksPassedAt === undefined ? {} : { checksPassedAt }
+/** One row of read_state's pages: the watched thread, merge queue item and pending settle at the same place in each list. */
+interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined; readonly settle: WatcherPendingSettle | undefined }
 
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
@@ -929,24 +931,27 @@ export class WatcherService implements WatcherControlHooks {
       const open: WatcherOpenPullRequest[] = thread
         ? watcherOpenPullRequests(threadPullRequests(thread), evidence).filter(item => item.summary.state === 'open')
           .map(({ pr, summary }) => ({ summary, draft: pr.draft, ...withSince(since(pr.url)) }))
-        : watcherPullRequestSummaries(evidence).filter(summary => summary.state === 'open').map(summary => ({ summary, draft: false, ...withSince(since(summary.url)) }))
+        // Evidence does not say whether a pull request is a draft, so one read only from it is never queued.
+        : watcherPullRequestSummaries(evidence).filter(summary => summary.state === 'open').map(summary => ({ summary, draft: undefined, ...withSince(since(summary.url)) }))
       return { ...row, open }
     })
   }
+  /** Whether Settle finished threads settles anything here: its setting is on, on a computer that settles its watches. */
+  private settlesFinishedThreads(): boolean { return !this.options.workerHost && this.options.settleFinished?.() === true }
   /** The watched threads Settle finished threads waits to settle and what holds each, while it is on (#1274). */
-  private pendingSettles(titles: ReadonlyMap<string, string>): { settlesFinishedThreads: boolean; pendingSettles: WatcherPendingSettle[] } {
-    if (this.options.workerHost || this.options.settleFinished?.() !== true) return { settlesFinishedThreads: false, pendingSettles: [] }
+  private pendingSettles(titles: ReadonlyMap<string, string>): WatcherPendingSettle[] {
+    if (!this.settlesFinishedThreads()) return []
     const look = this.finishedLook()
     // A thread already tried for its turn waits for another turn, so it is not pending.
-    return { settlesFinishedThreads: true, pendingSettles: [...look.watches.values()].flatMap(watch => {
+    return [...look.watches.values()].flatMap(watch => {
       const hold = this.settleHold(watch.target, look)
       return !hold || this.settleTried.get(key(watch.target)) === hold.turnId ? []
         : [{ target: watch.target, title: titles.get(key(watch.target)) ?? 'Unavailable thread', settlesWhen: watcherSettlesWhen(hold) }]
-    }).slice(0, WATCHER_STATE_COMPUTED_MAX) }
+    })
   }
   /**
    * The kept notes that name a thread that is settled or not watched, or a pull request that is merged or closed (#1274):
-   * every thread Sotto lists, and every pull request linked to one, with GitHub's own read of a watched thread's first.
+   * every thread Sotto lists, and every pull request linked to one, with GitHub's own read of it first where Sotto has one.
    */
   private staleNotes(kept: WatcherKeptState, watching: readonly { readonly target: WatcherThreadTarget }[]): WatcherStaleNote[] {
     const watched = new Set(watching.map(row => key(row.target))), watcher = this.view().current?.target
@@ -961,7 +966,7 @@ export class WatcherService implements WatcherControlHooks {
       const prKey = pullRequestKey(pr.url) ?? pr.url
       if (!pullRequests.has(prKey)) pullRequests.set(prKey, { url: pr.url, number: pr.number, state: pr.state })
     }
-    for (const row of watching) for (const summary of watcherPullRequestSummaries(this.wakes.evidence.read(row.target))) {
+    for (const { target } of all) for (const summary of watcherPullRequestSummaries(this.wakes.evidence.read(target))) {
       if (summary.url === undefined || summary.state === undefined) continue
       const prKey = pullRequestKey(summary.url) ?? summary.url, number = pullRequests.get(prKey)?.number ?? summary.number
       if (number !== undefined) pullRequests.set(prKey, { url: summary.url, number, state: summary.state })
@@ -2191,15 +2196,22 @@ export class WatcherService implements WatcherControlHooks {
         const kept = await this.kept.current()
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
-        const input = parsed.data as WatcherToolInput<'read_state'>, threads = this.stateThreads()
-        const page = this.page('state', threads.map(({ open, ...row }) => ({ ...row, pullRequests: open.map(item => item.summary) })), input.cursor, 100)
-        // Computed from live data at each read (#1274), never kept, so none of it can go stale.
-        const computed = { mergeQueue: watcherMergeQueue(threads), ...this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))),
-          staleNotes: this.staleNotes(kept, threads) }
+        const input = parsed.data as WatcherToolInput<'read_state'>, first = !input.cursor || input.cursor === 'restart'
+        // Computed from live data at each read (#1274), never kept, so none of it can go stale. The watched threads, the
+        // merge queue and the pending settles are read once, at the first page, and paged together, a hundred of each to a
+        // page; a later page reads on from what the first one found.
+        const threads = first ? this.stateThreads() : [], settles = first ? this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))) : []
+        const watching = threads.map(({ open, ...row }) => ({ ...row, pullRequests: open.map(item => item.summary) })), queue = watcherMergeQueue(threads)
+        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, settles.length) },
+          (_, at) => ({ watching: watching[at], queue: queue[at], settle: settles[at] }))
+        const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
+        const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
         // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder. The look
         // comes first, so a reminder owed but not yet noticed is not raised again after this read.
         this.lookAtState(); this.stateOwed = false
-        return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, ...computed, kept,
+        return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
+          mergeQueue: shown.flatMap(row => row.queue ?? []), settlesFinishedThreads: this.settlesFinishedThreads(),
+          pendingSettles: shown.flatMap(row => row.settle ?? []), kept, staleNotes,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }

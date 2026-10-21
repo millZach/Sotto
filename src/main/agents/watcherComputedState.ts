@@ -1,5 +1,5 @@
-import { pullRequestKey } from '../../shared/gitPullRequests'
-import { WATCHER_STATE_COMPUTED_MAX, type WatcherKeptState, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote,
+import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
+import { type WatcherKeptState, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote,
   type WatcherThreadTarget } from '../../shared/watcher'
 
 /**
@@ -9,22 +9,20 @@ import { WATCHER_STATE_COMPUTED_MAX, type WatcherKeptState, type WatcherMergeQue
  * flagged, so a stale note is seen rather than trusted. Every sentence here is Sotto's; nothing a thread said reaches it.
  */
 
-/** One open pull request of a watched thread, with what the merge queue reads of it. */
-export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSummary; readonly draft: boolean; readonly checksPassedAt?: string }
+/** One open pull request of a watched thread, with what the merge queue reads of it; `draft` undefined when Sotto cannot say. */
+export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSummary; readonly draft: boolean | undefined; readonly checksPassedAt?: string }
 
 /**
  * The merge queue: every open pull request of a watched thread that is not a draft and whose checks passed, in the order
- * Sotto first saw them pass, oldest first, by number when two passed at once.
+ * Sotto first saw them pass, oldest first, by number when two passed at once. One not known to be a draft or not is left out.
  */
 export function watcherMergeQueue(threads: readonly { readonly target: WatcherThreadTarget; readonly title: string; readonly open: readonly WatcherOpenPullRequest[] }[]): WatcherMergeQueueItem[] {
-  return threads.flatMap(thread => thread.open.flatMap(pr => pr.summary.state === 'open' && pr.summary.checks === 'passed' && !pr.draft && pr.checksPassedAt
+  return threads.flatMap(thread => thread.open.flatMap(pr => pr.summary.state === 'open' && pr.summary.checks === 'passed' && pr.draft === false && pr.checksPassedAt
     ? [{ target: thread.target, title: thread.title, pullRequest: pr.summary, checksPassedAt: pr.checksPassedAt }] : []))
     .sort((a, b) => Date.parse(a.checksPassedAt) - Date.parse(b.checksPassedAt) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
-    .slice(0, WATCHER_STATE_COMPUTED_MAX)
 }
 
-const NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/u
-const numbered = (url: string) => { const number = NUMBER.exec(url)?.[1]; return number ? `#${number}` : 'its link' }
+const numbered = (url: string) => { const number = pullRequestAddress(url)?.number; return number ? `#${number}` : 'its link' }
 const listed = (items: readonly string[]) => items.length < 3 ? items.join(' and ') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
 
 /**
@@ -42,7 +40,10 @@ export interface WatcherKnownThread { readonly target: WatcherThreadTarget; read
 /** A pull request a kept note may name, as Sotto last read it. */
 export interface WatcherKnownPullRequest { readonly url: string; readonly number: number; readonly state: 'open' | 'closed' | 'merged' }
 
-/** A title shorter than this, or the stand-in a thread has before it is named, says too little to be told apart in a note. */
+/**
+ * A one-word title shorter than this, or the stand-in a thread has before it is named, says too little to be told apart in
+ * a note; a title of two words or more, as "Fix CI", is named whatever its length.
+ */
 const TITLE_MIN = 8
 const STAND_IN_TITLES: ReadonlySet<string> = new Set(['new thread'])
 const ID_MIN = 8
@@ -81,21 +82,23 @@ export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'ru
     const text = fold(note), reasons: string[] = []
     for (const thread of over) {
       const title = fold(thread.title)
-      const byTitle = title.length >= TITLE_MIN && !STAND_IN_TITLES.has(title) && !live.has(title) && names(text, title)
+      const byTitle = (title.length >= TITLE_MIN || title.includes(' ')) && !STAND_IN_TITLES.has(title) && !live.has(title) && names(text, title)
       const byId = thread.target.threadId.length >= ID_MIN && text.includes(thread.target.threadId.toLowerCase())
       if (byTitle || byId) reasons.push(`Names the thread “${shown(thread.title)}”, which ${thread.settled ? 'is settled' : 'Watcher does not watch'}.`)
     }
-    const said = new Set<string>()
+    // A link names one pull request; a number its link already named, or said once, is not read again.
+    const linked = new Set<string>(), numbers = new Set<number>()
     for (const match of note.matchAll(URLS)) {
-      const pr = byKey.get(pullRequestKey(match[0]) ?? match[0])
-      if (!pr || said.has(String(pr.number))) continue
-      said.add(String(pr.number))
+      const prKey = pullRequestKey(match[0]) ?? match[0], pr = byKey.get(prKey), number = pullRequestAddress(match[0])?.number
+      if (number !== undefined) numbers.add(number)
+      if (!pr || linked.has(prKey)) continue
+      linked.add(prKey)
       if (pr.state !== 'open') reasons.push(`Names pull request #${pr.number}, which is ${pr.state}.`)
     }
     for (const match of note.matchAll(NUMBERS)) {
       const number = Number(match[1]), known = byNumber.get(number) ?? []
-      if (said.has(String(number)) || !known.length || known.some(pr => pr.state === 'open')) continue
-      said.add(String(number))
+      if (numbers.has(number) || !known.length || known.some(pr => pr.state === 'open')) continue
+      numbers.add(number)
       reasons.push(`Names pull request #${number}, which is ${known.every(pr => pr.state === 'merged') ? 'merged' : known.every(pr => pr.state === 'closed') ? 'closed' : 'merged or closed'}.`)
     }
     if (reasons.length) notes.push({ list, index, reasons: reasons.slice(0, 5) })

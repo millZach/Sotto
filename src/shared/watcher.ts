@@ -288,7 +288,8 @@ export const watcherToolSchemas = {
   read_state: {
     // A hundred watched threads to a page; nextCursor reads the rest.
     input: z.object({ cursor: cursor.optional() }).strict(),
-    // Computed from live data at each read (#1274); the merge queue and pending settles are whole on every page.
+    // Computed from live data at each read (#1274). The merge queue and pending settles page with the watched threads, a
+    // hundred of each to a page; staleNotes is whole on every page.
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settlesFinishedThreads: z.boolean(),
       pendingSettles: z.array(watcherPendingSettleSchema).max(WATCHER_STATE_COMPUTED_MAX), kept: watcherKeptStateSchema,
