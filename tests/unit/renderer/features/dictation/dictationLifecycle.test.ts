@@ -350,6 +350,7 @@ describe('DictationController', () => {
       text: 'hello world',
       autoPaste: false,
       pasteDelayMs: 320,
+      dictationId: 'session',
     })
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'parakeet' }))
   })

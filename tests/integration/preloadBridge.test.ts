@@ -18,6 +18,7 @@ import {
   EXTERNAL_LINK_OPEN,
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
+  DICTATION_RECORDS_LIST,
   QUESTION_PAGE_OPEN,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
@@ -159,6 +160,7 @@ describe('typed preload bridge', () => {
         'hideApp',
         'hosts',
         'installUpdate',
+        'listDictationRecords',
         'listHistory',
         'listRecoveryNotices',
         'listSpeechModels',
@@ -646,6 +648,20 @@ describe('typed preload bridge', () => {
       WIDGET_PUBLISH,
       idleWidgetSnapshot,
     )
+  })
+
+  it('reads dictation records strictly, so nothing but numbers and an app name reaches the window', async () => {
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
+    const records = [{ id: 'one', createdAt: 1, durationMs: 2, words: 3, app: 'Outlook' }, { id: 'two', createdAt: 0, durationMs: 0, words: 0 }]
+    electronMock.ipcRenderer.invoke
+      .mockResolvedValueOnce(records)
+      .mockResolvedValueOnce([{ ...records[0], text: 'private words' }])
+      .mockResolvedValueOnce([{ ...records[0], words: -1 }])
+
+    await expect(bridge.listDictationRecords()).resolves.toEqual(records)
+    await expect(bridge.listDictationRecords()).rejects.toThrow()
+    await expect(bridge.listDictationRecords()).rejects.toThrow()
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(1, DICTATION_RECORDS_LIST)
   })
 
   it('forwards a PNG to copy on its own fixed channel', async () => {

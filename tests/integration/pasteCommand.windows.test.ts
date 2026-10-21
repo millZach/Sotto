@@ -370,6 +370,8 @@ describe.runIf(shouldRun)("Windows native paste integration (requires SOTTO_NATI
         targetMarkers.waitFor(['READY', 'HARNESS_FOCUS_FAILED']),
       ).resolves.toBe('READY')
 
+      // The delivered app is the foreground window's process, named from its file description (ADR-0100).
+      await expect(adapter.readForegroundApp()).resolves.toBe('Windows PowerShell')
       // The warm helper pastes within milliseconds; give the target window the
       // same focus-settle time OutputService provides via pasteDelayMs.
       await new Promise((resolve) => setTimeout(resolve, 150))

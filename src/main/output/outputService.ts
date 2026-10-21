@@ -1,5 +1,6 @@
 import type { OutputOutcome } from '../../shared/contracts'
 import type { PasteInvocation } from './pasteCommand'
+import { deliveredAppName } from '../../shared/dictationRecord'
 
 export interface ClipboardAdapter {
   writeText(text: string): void | Promise<void>
@@ -23,6 +24,18 @@ export interface OutputServiceDependencies {
   readonly buildPasteInvocation: () => PasteInvocation | null
   readonly keepWidgetVisibleDuringPaste?: boolean
   readonly preparePasteText?: (text: string) => string
+  /**
+   * Reads the delivered app: the display name of the app that has focus, never a window title or anything read from
+   * the app (ADR-0100). Null when it cannot be read. Unset where nothing can read it.
+   */
+  readonly readFocusedApp?: () => Promise<string | null>
+  readonly log?: (event: 'delivered-app-unreadable') => void
+}
+
+/** A dictation's delivery: what happened, and the app it went into when Sotto could read one. */
+export interface DictationDelivery {
+  readonly outcome: OutputOutcome
+  readonly app: string | null
 }
 
 interface DeliveryOptions {
@@ -123,6 +136,40 @@ export class OutputService {
 
     const snapshot = { ...options }
     return this.afterDeliveries(() => this.deliverImmediately(text, snapshot))
+  }
+
+  /**
+   * Delivers a dictation as `deliver` does and reads the delivered app as delivery starts, before the widget hides,
+   * on the copy-only path as well as the paste path. The app is kept only when the text was pasted or copied.
+   */
+  async deliverDictation(text: string, options: DeliveryOptions): Promise<DictationDelivery> {
+    if (options.autoPaste && this.dependencies.preparePasteText) {
+      text = this.dependencies.preparePasteText(text)
+    }
+    if (text.trim().length === 0) {
+      return { outcome: 'empty', app: null }
+    }
+
+    const snapshot = { ...options }
+    return this.afterDeliveries(async () => {
+      const app = this.readFocusedApp()
+      const outcome = await this.deliverImmediately(text, snapshot).catch(async (error: unknown) => {
+        await app
+        throw error
+      })
+      return { outcome, app: outcome === 'pasted' || outcome === 'copied' ? await app : null }
+    })
+  }
+
+  private async readFocusedApp(): Promise<string | null> {
+    const read = this.dependencies.readFocusedApp
+    if (read === undefined) return null
+    try {
+      return deliveredAppName(await read())
+    } catch {
+      this.dependencies.log?.('delivered-app-unreadable')
+      return null
+    }
   }
 
   /** Runs `work` once every delivery before it has finished, so another clipboard write cannot replace text waiting to be pasted. */

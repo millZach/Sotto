@@ -80,7 +80,10 @@ it('retains failed dictation across navigation and later dictation, and copies w
   await dictate()
   await waitFor(() => expect(transcribe).toHaveBeenCalledTimes(3))
   expect(screen.getAllByRole('textbox', { name: 'Completed dictation text' })).toHaveLength(2)
-  expect(bridge.addHistory).not.toHaveBeenCalled()
+  // History is off: each dictation is still reported, so main keeps its record and no text.
+  expect(bridge.addHistory).toHaveBeenCalledTimes(3)
+  // The records are read at start and again after each dictation.
+  await waitFor(() => expect(bridge.listDictationRecords).toHaveBeenCalledTimes(4))
   await user.click(screen.getAllByRole('button', { name: 'Dismiss text' })[0]!)
   expect(screen.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue('Completed words 2')
 })
@@ -88,16 +91,18 @@ it('retains failed dictation across navigation and later dictation, and copies w
 it('keeps cached history and reports failure when deletion is refused while history is off', async () => {
   const entry = { id: 'retained', text: 'Retained transcript', createdAt: 1, durationMs: 10, language: 'en', modelPreset: 'balanced' as const }
   const otherEntry = { ...entry, id: 'other-retained', text: 'Another retained transcript' }
+  const records = [{ id: 'retained', createdAt: 1, durationMs: 10, words: 2 }, { id: 'other-retained', createdAt: 1, durationMs: 10, words: 3 }]
   const bridge = createBridge({
     listHistory: vi.fn(async () => [entry, otherEntry]),
     deleteHistory: vi.fn(async () => false),
+    listDictationRecords: vi.fn(async () => records),
   })
   const { result } = renderHook(() => useApp(), {
     wrapper: ({ children }) => <AppProvider bridge={bridge} createController={createController}>{children}</AppProvider>,
   })
   await waitFor(() => expect(result.current.history).toEqual([entry, otherEntry]))
+  await waitFor(() => expect(result.current.dictationRecords).toEqual(records))
   await act(async () => { await result.current.actions.updateSettings({ historyEnabled: false }) })
-  vi.mocked(bridge.listHistory).mockResolvedValue([])
 
   let deleted: boolean | undefined
   await act(async () => { deleted = await result.current.actions.deleteHistory(entry.id) })
@@ -107,17 +112,39 @@ it('keeps cached history and reports failure when deletion is refused while hist
   expect(result.current.failure).toBe('HISTORY_UPDATE_FAILED')
   expect(bridge.listHistory).toHaveBeenCalledOnce()
 
+  // With history off, main still lists the transcripts kept from before, and a delete takes the record with it.
   vi.mocked(bridge.deleteHistory).mockResolvedValue(true)
+  vi.mocked(bridge.listHistory).mockResolvedValue([otherEntry])
+  vi.mocked(bridge.listDictationRecords).mockResolvedValue([records[1]!])
   await act(async () => { deleted = await result.current.actions.deleteHistory(entry.id) })
   expect(deleted).toBe(true)
   expect(result.current.history).toEqual([otherEntry])
   expect(result.current.historyStatus).toBe('ready')
+  await waitFor(() => expect(result.current.dictationRecords).toEqual([records[1]]))
+  vi.mocked(bridge.listHistory).mockResolvedValue([])
+  vi.mocked(bridge.listDictationRecords).mockResolvedValue([])
   await act(async () => { deleted = await result.current.actions.deleteHistory(otherEntry.id) })
   expect(deleted).toBe(true)
   expect(result.current.history).toEqual([])
   expect(result.current.historyStatus).toBe('ready')
+  await waitFor(() => expect(result.current.dictationRecords).toEqual([]))
   expect(bridge.deleteHistory).toHaveBeenNthCalledWith(3, otherEntry.id)
-  expect(bridge.listHistory).toHaveBeenCalledOnce()
+})
+
+it('reads the dictation records at start and after Clear history, keeping the last ones when a read fails', async () => {
+  const record = { id: 'session', createdAt: 1, durationMs: 500, words: 2, app: 'Sotto' }
+  const bridge = createBridge({ listDictationRecords: vi.fn(async () => []) })
+  const { result } = renderHook(() => useApp(), {
+    wrapper: ({ children }) => <AppProvider bridge={bridge} createController={createProductionDictationController}>{children}</AppProvider>,
+  })
+  await waitFor(() => expect(bridge.listDictationRecords).toHaveBeenCalledOnce())
+  vi.mocked(bridge.listDictationRecords).mockResolvedValue([record])
+  await act(async () => { await result.current.actions.clearHistory() })
+  await waitFor(() => expect(result.current.dictationRecords).toEqual([record]))
+  vi.mocked(bridge.listDictationRecords).mockRejectedValue(new Error('private path'))
+  await act(async () => { await result.current.actions.clearHistory() })
+  expect(bridge.listDictationRecords).toHaveBeenCalledTimes(3)
+  expect(result.current.dictationRecords).toEqual([record])
 })
 
 describe('Sotto application onboarding integration', () => {

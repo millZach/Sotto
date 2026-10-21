@@ -11,6 +11,8 @@ export const HISTORY_ADD = 'sotto:history:add' as const
 export const HISTORY_SEARCH = 'sotto:history:search' as const
 export const HISTORY_DELETE = 'sotto:history:delete' as const
 export const HISTORY_CLEAR = 'sotto:history:clear' as const
+/** Every dictation record (ADR-0100), for the window to count from. */
+export const DICTATION_RECORDS_LIST = 'sotto:dictation-records:list' as const
 
 export const HOTKEY_GET = 'sotto:hotkey:get' as const
 export const HOTKEY_REPLACE = 'sotto:hotkey:replace' as const

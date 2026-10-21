@@ -24,6 +24,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     searchHistory: vi.fn(async () => []),
     deleteHistory: vi.fn(async () => true),
     clearHistory: vi.fn(async () => undefined),
+    listDictationRecords: vi.fn(async () => []),
     getHotkey: vi.fn(async () => DEFAULT_SETTINGS.hotkey),
     replaceHotkey: vi.fn(async () => OK),
     requestDictation: vi.fn(async () => OK),

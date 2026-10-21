@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path'
 import { ZodError } from 'zod'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { HistoryRepository } from '../../../src/main/storage/historyRepository'
+import { HistoryRepository, type HistoryLogEvent } from '../../../src/main/storage/historyRepository'
 import { createStorageRepositories } from '../../../src/main/storage/repositories'
 import { RecoveryNoticeCenter } from '../../../src/main/storage/recoveryNoticeCenter'
 import type { HistoryEntry } from '../../../src/shared/history'
@@ -36,7 +36,7 @@ function createEntry(id: string, createdAt: number, text = `Transcript ${id}`): 
 
 async function createRepository(
   now: () => number = Date.now,
-  log?: (event: 'history-temp-cleanup-failed') => void,
+  log?: (event: HistoryLogEvent) => void,
 ): Promise<{ filePath: string; repository: HistoryRepository }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-history-repository-'))
   roots.push(root)
@@ -136,7 +136,7 @@ describe('HistoryRepository', () => {
 
     await repository.initialize()
 
-    expect((await readdir(dirname(filePath))).sort()).toEqual(['history.json', 'history.json.corrupt-backup', 'history.json.tmp-user-note'])
+    expect((await readdir(dirname(filePath))).sort()).toEqual(['dictation-records.jsonl', 'history.json', 'history.json.corrupt-backup', 'history.json.tmp-user-note'])
     expect(await repository.list()).toEqual([saved])
   })
 
@@ -174,7 +174,7 @@ describe('HistoryRepository', () => {
     expect(await repository.exists()).toBe(false)
   })
 
-  it('does not expose or rewrite existing history when history is disabled', async () => {
+  it('answers the transcripts kept from before without rewriting them when history is disabled', async () => {
     const { filePath, repository } = await createRepository()
     await repository.add(createEntry('1', 1), { enabled: true, retention: 'unlimited' })
     const beforeBytes = await readFile(filePath)
@@ -185,7 +185,7 @@ describe('HistoryRepository', () => {
       retention: 'unlimited',
     })
 
-    expect(entries).toEqual([])
+    expect(entries).toEqual([createEntry('1', 1)])
     expect(await readFile(filePath)).toEqual(beforeBytes)
     expect((await stat(filePath)).ino).toBe(beforeStat.ino)
   })
@@ -205,8 +205,9 @@ describe('HistoryRepository', () => {
     options.enabled = true
     options.retention = 0
 
-    await expect(pending).resolves.toEqual([])
+    await expect(pending).resolves.toEqual([seededEntry])
     expect(await readFile(filePath)).toEqual(seededBytes)
+    expect(await repository.listRecords()).toEqual([{ id: 'candidate', createdAt: 2, durationMs: 500, words: 2 }])
   })
 
   it('persists an invocation-time entry and retention snapshot when history is enabled', async () => {
@@ -239,7 +240,7 @@ describe('HistoryRepository', () => {
     })
 
     expect(entries).toEqual([])
-    expect(await readdir(dirname(filePath))).toEqual(['history.json'])
+    expect((await readdir(dirname(filePath))).sort()).toEqual(['dictation-records.jsonl', 'history.json'])
     expect(await readFile(filePath)).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(true)
   })
@@ -263,7 +264,7 @@ describe('HistoryRepository', () => {
 
     expect(recoveries).toEqual([])
     expect(await readFile(filePath)).toEqual(corruptBytes)
-    expect(await readdir(root)).toEqual(['history.json'])
+    expect((await readdir(root)).sort()).toEqual(['dictation-records.jsonl', 'history.json'])
   })
 
   it('lists persisted entries newest first with an ascending id tie-break', async () => {
@@ -377,7 +378,7 @@ describe('HistoryRepository', () => {
 
     expect(JSON.parse(await readFile(filePath, 'utf8'))).toEqual([kept])
     expect(await new HistoryRepository(filePath).list()).toEqual([kept])
-    expect(await repository.list({ enabled: false })).toEqual([])
+    expect(await repository.list()).toEqual([kept])
   })
 
   it('persists an empty list when clearing an existing history file', async () => {

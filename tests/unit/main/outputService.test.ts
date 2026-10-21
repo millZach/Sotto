@@ -616,3 +616,50 @@ describe('createSpawnProcessAdapter', () => {
     }
   })
 })
+
+describe('OutputService dictation delivery', () => {
+  it('reads the delivered app as delivery starts, before the widget hides for the paste', async () => {
+    const harness: ReturnType<typeof createHarness> = createHarness({
+      readFocusedApp: async () => { harness.events.push('app'); return 'Microsoft Outlook' },
+    })
+    await expect(harness.service.deliverDictation('hello', { autoPaste: true, pasteDelayMs: 0 })).resolves.toEqual({ outcome: 'pasted', app: 'Microsoft Outlook' })
+    expect(harness.events.slice(0, 4)).toEqual(['app', 'clipboard', 'hide', 'delay:0'])
+  })
+
+  it('reads the delivered app on the copy-only path too', async () => {
+    const readFocusedApp = vi.fn(async () => 'Windows Terminal')
+    const harness = createHarness({ readFocusedApp })
+    await expect(harness.service.deliverDictation('hello', { autoPaste: false, pasteDelayMs: 0 })).resolves.toEqual({ outcome: 'copied', app: 'Windows Terminal' })
+    expect(harness.events).toEqual(['clipboard'])
+    expect(readFocusedApp).toHaveBeenCalledOnce()
+  })
+
+  it('keeps no app for empty text, an undelivered dictation, or one whose app cannot be read', async () => {
+    const readFocusedApp = vi.fn(async (): Promise<string | null> => 'Slack')
+    const log = vi.fn()
+    const empty = createHarness({ readFocusedApp, log })
+    await expect(empty.service.deliverDictation('   ', { autoPaste: false, pasteDelayMs: 0 })).resolves.toEqual({ outcome: 'empty', app: null })
+    expect(readFocusedApp).not.toHaveBeenCalled()
+
+    const unavailable = createHarness({ readFocusedApp, log, clipboard: { writeText: vi.fn(), canPaste: () => false } })
+    await expect(unavailable.service.deliverDictation('hello', { autoPaste: true, pasteDelayMs: 0 })).resolves.toEqual({ outcome: 'clipboard-unavailable', app: null })
+
+    const failing = createHarness({ readFocusedApp, log, clipboard: { writeText: () => { throw new Error('busy') } } })
+    await expect(failing.service.deliverDictation('hello', { autoPaste: false, pasteDelayMs: 0 })).rejects.toBeInstanceOf(OutputClipboardError)
+
+    readFocusedApp.mockRejectedValueOnce(new Error('private title'))
+    const unreadable = createHarness({ readFocusedApp, log })
+    await expect(unreadable.service.deliverDictation('hello', { autoPaste: false, pasteDelayMs: 0 })).resolves.toEqual({ outcome: 'copied', app: null })
+    expect(log.mock.calls).toEqual([['delivered-app-unreadable']])
+
+    const none = createHarness({})
+    await expect(none.service.deliverDictation('hello', { autoPaste: false, pasteDelayMs: 0 })).resolves.toEqual({ outcome: 'copied', app: null })
+  })
+
+  it('never reads an app for a plain delivery', async () => {
+    const readFocusedApp = vi.fn(async () => 'Slack')
+    const harness = createHarness({ readFocusedApp })
+    await expect(harness.service.deliver('hello', { autoPaste: true, pasteDelayMs: 0 })).resolves.toBe('pasted')
+    expect(readFocusedApp).not.toHaveBeenCalled()
+  })
+})
