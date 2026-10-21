@@ -37,6 +37,19 @@ describe('Sotto Owl for Mac workflow signing (ADR-0093)', () => {
     expect(check.run).toContain('docs/release/macos-owl-signing.md')
     expect(index('Check the signing credentials')).toBeLessThan(index('Install dependencies'))
   })
+  it('builds only a source in the history of the branch the environment admitted, checked before anything runs', () => {
+    const history = steps[index("Check out this branch's history")]
+    const source = index("Check out the source commit, if this branch's history holds it")
+    expect(history.with).toMatchObject({ ref: '${{ github.sha }}', 'fetch-depth': 0, 'persist-credentials': false })
+    expect(steps.filter(step => step.uses?.startsWith('actions/checkout@'))).toEqual([history])
+    expect(steps[source].run).toContain('git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA"')
+    expect(steps[source].run).toContain('Nothing was built.')
+    expect(steps[source].run.indexOf('--is-ancestor')).toBeLessThan(steps[source].run.indexOf('git checkout'))
+    expect(index("Check out this branch's history")).toBe(source - 1)
+    expect(source).toBeLessThan(index('Set up Node.js'))
+    expect(source).toBeLessThan(index('Install dependencies'))
+    expect(source).toBeLessThan(index('Prepare the signing keychain and notary key'))
+  })
   it('puts the certificate on the runner only after npm ci, and removes it whatever happens', () => {
     const prepare = index('Prepare the signing keychain and notary key')
     const pack = index('Package, sign, notarize and verify the Mac Owl')

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -40,10 +41,19 @@ const asarAt = into => join(into, 'Sotto.app', 'Contents', 'Resources', 'app.asa
 const fakeExtract = options => async (_zip, into) => appAsar(asarAt(into), options)
 
 /** The folder `gh run download` leaves: the receipt and every file it lists. */
-async function macFolder({ receipt: change = receipt => receipt, blockmaps = true, zipBytes = 'zip bytes' } = {}) {
+/** The feed electron-builder writes: the zip first and as the legacy path, then the disk image. */
+function macFeed(names, { dmg, zip }, change = entries => entries) {
+  const entry = (url, body) => ({ url, sha512: createHash('sha512').update(body).digest('base64'), size: Buffer.byteLength(body) })
+  const files = change([entry(names.zip, zip), entry(names.dmg, dmg)])
+  return [`version: ${version}`, 'files:', ...files.flatMap(file => [`  - url: ${file.url}`, `    sha512: ${file.sha512}`, `    size: ${file.size}`]),
+    `path: ${names.zip}`, `sha512: ${files[0].sha512}`, ''].join('\n')
+}
+
+async function macFolder({ receipt: change = receipt => receipt, blockmaps = true, zipBytes = 'zip bytes', feed } = {}) {
   const root = await directory(), folder = join(root, 'mac'); await mkdir(folder)
   const names = owlMacFileNames(version)
-  const bodies = { dmg: 'disk image bytes', zip: zipBytes, updateManifest: `version: ${version}\n` }
+  const bodies = { dmg: 'disk image bytes', zip: zipBytes }
+  bodies.updateManifest = macFeed(names, bodies, feed)
   if (blockmaps) Object.assign(bodies, { dmgBlockmap: 'dmg blockmap', zipBlockmap: 'zip blockmap' })
   const files = {}
   for (const [role, body] of Object.entries(bodies)) {
@@ -88,6 +98,16 @@ describe('Mac Owl files from the workflow run', () => {
     const failure = await verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar: fakeExtract() }).catch(error => error)
     expect(failure.message).toContain('signed with Sotto\'s Developer ID, notarized and stapled')
     expect(failure.message).toContain('Sotto Owl for Mac workflow from main')
+  })
+  it.each([
+    ['points the zip somewhere else', ([zip, dmg]) => [{ ...zip, url: 'Sotto-Owl-elsewhere-arm64-mac.zip' }, dmg]],
+    ['carries another zip\'s digest', ([zip, dmg]) => [{ ...zip, sha512: createHash('sha512').update('other zip').digest('base64') }, dmg]],
+    ['lists the disk image first', ([zip, dmg]) => [dmg, zip]],
+    ['gives the disk image the wrong size', ([zip, dmg]) => [zip, { ...dmg, size: dmg.size + 1 }]],
+  ])('refuses a feed that %s, even with a receipt that matches it', async (_, feed) => {
+    // macFolder writes the receipt from the files as written, so the receipt agrees with the altered feed.
+    const { folder } = await macFolder({ feed })
+    await expect(verifyOwlMacArtifacts(folder, { version, sourceCommit }, { extractAsar: fakeExtract() })).rejects.toThrow('does not match the verified zip and disk image')
   })
   it('refuses bytes that differ from the receipt and files the receipt does not list', async () => {
     const changed = await macFolder()

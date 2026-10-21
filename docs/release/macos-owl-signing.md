@@ -55,7 +55,7 @@ A separate key from the TestFlight one means either can be revoked without break
 The secrets live in a GitHub environment that only the Mac Owl workflow's job reads, as the `testflight` environment holds the iPhone app's key.
 
 1. At <https://github.com/millZach/Sotto/settings/environments>, press **New environment** and name it `owl-mac`.
-2. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `main`. The workflow then reads the secrets only when started from `main`.
+2. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `main`. The workflow then reads the secrets only when started from `main`, and it refuses a source commit that is not in `main`'s history, so nothing unmerged is signed.
 3. Add the five secrets from Git Bash. `gh` reads each value from the file or prompt, so none of them lands in your shell history:
 
 ```sh

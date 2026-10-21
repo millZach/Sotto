@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
+import { parse } from 'yaml'
 import { readAsarText } from './asar-entries.mjs'
-import { isSignedAndNotarized } from './owl-mac-package.mjs'
+import { checkOwlMacUpdateManifest, isSignedAndNotarized, updateFileInfo } from './owl-mac-package.mjs'
 import { checkedFullOwlVersion, digestFile } from './owl-release.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -112,6 +113,12 @@ export async function verifyOwlMacArtifacts(directory, { version, sourceCommit }
       // The receipt says the app is signed and notarized, so its update feed, owl-mac.yml, is attached beside owl.yml.
       files.push({ path, filename: file.filename, role: file.role, sha256: hashed.digest })
     }
+    // The feed is what a Mac's updater trusts, so it must name the zip and disk image these bytes are, not only match
+    // the receipt: a feed and receipt changed together would otherwise pass.
+    const byRole = Object.fromEntries(files.map(file => [file.role, file]))
+    let feed
+    try { feed = parse(await readFile(byRole.updateManifest.path, 'utf8')) } catch { throw new Error('The Mac Owl update feed, owl-mac.yml, is not valid YAML. Download the artifact again.') }
+    checkOwlMacUpdateManifest(feed, version, { zip: { ...await updateFileInfo(zip), url: byRole.zip.filename }, dmg: await updateFileInfo(byRole.dmg.path) })
     await mkdir(unpacked)
     await extractAsar(zip, unpacked)
     const asar = join(unpacked, ...APP_ASAR.split('/'))

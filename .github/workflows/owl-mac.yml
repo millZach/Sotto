@@ -75,11 +75,25 @@ jobs:
             exit 1
           fi
 
-      - name: Check out the source commit
+      # The owl-mac environment admits a run by the branch it was started from, not by the commit it builds. Without the
+      # check below, a run started from main could sign any commit, merged or not. So the branch's full history comes
+      # down first, as the stable Mac workflow fetches it, and the source must be in it before anything from the
+      # checkout runs.
+      - name: Check out this branch's history
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF, the branch this run was started from. Merge it there first. Nothing was built."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
