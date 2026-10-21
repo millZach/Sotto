@@ -27,14 +27,7 @@ function count(kind: string, value: unknown): void {
   if (threads && threads.length >= counter.threads) { counter.whole++; counter.kinds.set(kind, (counter.kinds.get(kind) ?? 0) + 1) }
 }
 /** The objects a copy made: those in the copy that are not the very objects of what it copied. Shared trees cost nothing. */
-const fresh = vi.hoisted(() => function fresh(copy: unknown, original: unknown, seen = new Set<object>()): number {
-  if (copy === null || typeof copy !== 'object' || copy === original || seen.has(copy)) return 0
-  seen.add(copy)
-  let made = 1
-  const from = original !== null && typeof original === 'object' ? original as Record<string, unknown> : undefined
-  for (const [key, field] of Object.entries(copy)) made += fresh(field, from?.[key], seen)
-  return made
-})
+const { fresh } = await vi.hoisted(() => import('./support/copyAccounting'))
 /** Every copier main has, counted where it makes the objects, so a copy made inside another is counted once. */
 const made = vi.hoisted(() => (kind: string, copy: unknown, original: unknown): void => {
   if (!counter.measuring) return
