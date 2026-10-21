@@ -248,6 +248,22 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(record).not.toContain(input.firstPrompt); expect(record).toContain('remoteOrigin')
 })
 
+it('settles several idle threads on a paired host under one request while Watcher works (#1254)', async () => {
+  const f = await master(), targets: { hostId: string, threadId: string }[] = []
+  for (let index = 0; index < 3; index++) {
+    const threadId = randomUUID()
+    expect((await f.socket.command({ type: 'create-thread', threadId, projectId: f.project.id, modelId: f.model.id,
+      title: `Synthetic idle remote review ${index}`, runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+    await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === threadId)).toBe(true)
+    targets.push({ hostId: f.pairing.hostId, threadId })
+  }
+  for (const target of targets) {
+    const settled = await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target })
+    expect(settled, JSON.stringify(settled)).toMatchObject({ status: 'ok' })
+  }
+  expect(f.watcher.state().requests.find(item => item.id === f.requestId)).toMatchObject({ state: 'active' })
+})
+
 it('holds a lost acknowledgement through disconnection and reconciles without another send', async () => {
   const f = await master(), input = f.start()
   const original = f.socket.watcherControl.bind(f.socket)
