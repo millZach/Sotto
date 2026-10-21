@@ -1,0 +1,841 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE · a richer Dictate room, after Wispr Flow's home and Insights pages.
+     Question: How much should the Dictate room say about your dictation, and how should it lay that out?
+     Three variants, switched with ?variant=A|B|C, the floating bar, or Left and Right:
+     A · Quiet room: today's room, with a line of four figures and the last five transcripts.
+     B · Insights: a compact Dictate bar over a full page of stats, with a period menu. One transcript.
+     C · Journal: every transcript by day with search and an app filter, and the stats in a column beside it.
+     Zach's answers on Oct 21, 2026: record the app that had focus when Sotto pasted (new; kept on this computer
+     with the transcript), try speed, totals and time saved, streak and calendar, and when you dictate, vary the
+     amount of history per variant, and ship to stable. The data is generated in this file: 126 days of made-up
+     dictations. Nothing is read from Sotto, sent anywhere or stored. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto · Dictate room with stats (prototype)</title>
+<style>
+@font-face { font-family: Figtree; font-style: normal; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* Theme roles: Sotto's own palette, dark half Ink and light half paper (copied from the usage prototype). */
+:root, :root[data-theme='dark'] {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-overlay: oklch(0.215 0.008 265);
+  --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-muted: oklch(0.72 0.014 265);
+  --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-border: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-focus: oklch(0.714403 0.104089 183.092);
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-on-accent: oklch(0.16 0.02 185);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-sidebar-text: oklch(0.985 0.005 280);
+  --tt-sidebar-muted: oklch(0.72 0.014 265);
+  --tt-sidebar-border: oklch(0.355 0.012 265);
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+  --tt-seg-bg: var(--tt-surface-sunken);
+  --tt-seg-on: var(--tt-surface-overlay);
+  --tt-shadow-soft: rgb(0 0 0 / 32%);
+  --tt-shadow-pop: rgb(0 0 0 / 55%);
+  --tt-chart-mid-mix: 56%;
+  --tt-chart-soft-mix: 30%;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-surface-overlay: oklch(0.945 0.007 85);
+  --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-muted: oklch(0.5 0.014 75);
+  --tt-text-faint: oklch(0.525 0.015 78);
+  --tt-border: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.8 0.016 80);
+  --tt-focus: oklch(0.53 0.095 186);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.43 0.08 186);
+  --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-sidebar-text: oklch(0.235 0.014 75);
+  --tt-sidebar-muted: oklch(0.5 0.014 75);
+  --tt-sidebar-border: oklch(0.87 0.012 82);
+  --tt-provider-codex: #8a9099;
+  --tt-provider-claude: #b9773f;
+  --tt-provider-grok: #7d68d8;
+  --tt-seg-bg: oklch(0.93 0.01 85);
+  --tt-seg-on: var(--tt-surface);
+  --tt-shadow-soft: rgb(20 24 22 / 12%);
+  --tt-shadow-pop: rgb(20 24 22 / 18%);
+  --tt-chart-mid-mix: 62%;
+  --tt-chart-soft-mix: 36%;
+}
+:root {
+  --tt-text-2: color-mix(in oklab, var(--tt-text) 55%, var(--tt-text-muted));
+  --tt-hairline: var(--tt-border);
+  --tt-hover: color-mix(in srgb, var(--tt-accent-surface) 70%, transparent);
+  --tt-hover-soft: color-mix(in srgb, var(--tt-accent-surface) 38%, transparent);
+  --tt-chart-strong: var(--tt-accent);
+  --tt-chart-mid: color-mix(in oklab, var(--tt-accent) var(--tt-chart-mid-mix), var(--tt-canvas));
+  --tt-chart-soft: color-mix(in oklab, var(--tt-accent) var(--tt-chart-soft-mix), var(--tt-canvas));
+  --tt-chart-track: color-mix(in oklab, var(--tt-text) 11%, var(--tt-canvas));
+  --tt-chart-grid: color-mix(in oklab, var(--tt-text) 9%, var(--tt-canvas));
+  --tt-ramp-1: var(--tt-accent);
+  --tt-ramp-2: color-mix(in oklab, var(--tt-accent) 70%, var(--tt-canvas));
+  --tt-ramp-3: color-mix(in oklab, var(--tt-accent) 48%, var(--tt-canvas));
+  --tt-ramp-4: color-mix(in oklab, var(--tt-accent) 28%, var(--tt-canvas));
+  --tt-radius-sm: 6px;
+  --tt-radius-md: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.45 Figtree, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: 2px; }
+svg { display: block; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- Shell: the Threads sidebar beside the room ---------- */
+.app { display: grid; grid-template-columns: var(--side, 280px) minmax(0, 1fr); grid-template-rows: 40px minmax(0, 1fr) 28px; height: 100vh; }
+.app[data-collapsed] { --side: 56px; }
+.side { grid-row: 1 / -1; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--tt-sidebar-border); background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.side__top { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; -webkit-app-region: drag; }
+.side__mark { display: grid; place-items: center; width: 24px; height: 24px; margin-right: auto; border-radius: 7px; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 700; font-size: 13px; }
+.nav-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-sidebar-muted); -webkit-app-region: no-drag; }
+.nav-btn:hover { background: var(--tt-hover); color: var(--tt-sidebar-text); }
+.side__scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 12px; }
+.side__folder { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 4px; color: var(--tt-text-2); font-size: 13.5px; font-weight: 500; }
+.side__folder span { color: var(--tt-sidebar-muted); font-size: 12px; font-weight: 400; }
+.side__row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 9px; align-items: center; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); text-align: left; }
+.side__row:hover { background: var(--tt-hover); }
+.side__row b { overflow: hidden; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.side__row small { color: var(--tt-sidebar-muted); font-size: 12px; }
+.ring { width: 10px; height: 10px; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.ring[data-p='claude'] { border-color: var(--tt-provider-claude); }
+.ring[data-p='codex'] { border-color: var(--tt-provider-codex); }
+.ring[data-p='grok'] { border-color: var(--tt-provider-grok); }
+.side__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 2px; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
+.switch { display: grid; flex: 1 0 100%; grid-template-columns: 1fr 1fr; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.switch button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-sidebar-muted); font-size: 12.5px; }
+.switch button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-sidebar-text); box-shadow: 0 1px 2px var(--tt-shadow-soft); }
+.page-link { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-sidebar-muted); }
+.page-link:hover { background: var(--tt-hover); color: var(--tt-sidebar-text); }
+.app[data-collapsed] .side__scroll, .app[data-collapsed] .side__foot .switch span { display: none; }
+.app[data-collapsed] .side__scroll { display: block; visibility: hidden; }
+.app[data-collapsed] .side__foot { flex-direction: column; }
+.app[data-collapsed] .switch { grid-template-columns: 1fr; flex-basis: auto; }
+.app[data-collapsed] .side__mark { display: none; }
+
+.room-top { grid-row: 1; grid-column: 2; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; -webkit-app-region: drag; }
+.win-ctl { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+.win-ctl button { display: grid; place-items: center; width: 34px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); }
+.win-ctl button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.room { grid-row: 2; grid-column: 2; min-height: 0; overflow: auto; scroll-padding-bottom: 70px; container: room / inline-size; scrollbar-width: thin; scrollbar-color: var(--tt-chart-track) transparent; }
+.room-foot { grid-row: 3; grid-column: 2; display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; color: var(--tt-text-faint); font-size: 12px; }
+
+/* ---------- Shared pieces ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 0 13px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.btn:hover { background: var(--tt-hover-soft); color: var(--tt-text); }
+.btn--primary { border-color: transparent; border-radius: 999px; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; }
+.btn--primary:hover { background: var(--tt-accent); color: var(--tt-on-accent); filter: brightness(1.06); }
+[data-status='listening'] .btn--primary { border-color: var(--tt-hairline); background: transparent; color: var(--tt-text); }
+.btn--hero { min-height: 46px; padding: 0 24px; font-size: 15px; }
+.btn--ghost { border-color: transparent; }
+.link { padding: 0; border: 0; background: none; color: var(--tt-accent-text); font-size: 13px; }
+.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+kbd { display: inline-block; min-width: 22px; padding: 2px 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); color: var(--tt-text-2); font: 500 12px/1.5 Figtree, system-ui, sans-serif; text-align: center; }
+.hint { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--tt-text-faint); font-size: 14px; }
+.muted { color: var(--tt-text-muted); }
+.up { color: var(--tt-accent-text); }
+.h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
+.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--tt-seg-bg); }
+.seg button { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.seg button:hover { color: var(--tt-text); }
+.seg button[aria-pressed='true'] { background: var(--tt-seg-on); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-soft); }
+.seg--sm { padding: 2px; border-radius: 8px; }
+.seg--sm button { height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12.5px; }
+.mono { display: inline-grid; flex: none; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: var(--tt-surface-overlay); color: var(--tt-text-2); font-size: 10.5px; font-weight: 600; }
+
+/* The seven-bar wave. Hero geometry is the room's: 14 wide, 12 apart, 130 at the peak. */
+.wave { display: flex; align-items: center; justify-content: center; gap: var(--gap); height: var(--peak); }
+.wave i { display: block; width: var(--w); height: var(--h); border-radius: 999px; background: var(--tt-accent); transition: height .3s ease; }
+.wave--hero { --w: 14px; --gap: 12px; --peak: 130px; }
+.wave--small { --w: 4px; --gap: 4px; --peak: 30px; }
+.wave--mid { --w: 8px; --gap: 7px; --peak: 72px; }
+[data-status='listening'] .wave i { animation: wave .9s ease-in-out infinite; }
+.wave i:nth-child(2) { animation-delay: .12s; } .wave i:nth-child(3) { animation-delay: .24s; } .wave i:nth-child(4) { animation-delay: .36s; }
+.wave i:nth-child(5) { animation-delay: .48s; } .wave i:nth-child(6) { animation-delay: .6s; } .wave i:nth-child(7) { animation-delay: .72s; }
+@keyframes wave { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(var(--lift, 3)); } }
+@media (prefers-reduced-motion: reduce) { [data-status='listening'] .wave i { animation: none; height: calc(var(--h) * 2.2); } * { transition: none !important; } }
+
+/* Charts take their colour from the theme's accent and text only. */
+.cell { fill: var(--tt-chart-track); }
+.cell[data-l='1'] { fill: var(--tt-ramp-4); } .cell[data-l='2'] { fill: var(--tt-ramp-3); }
+.cell[data-l='3'] { fill: var(--tt-ramp-2); } .cell[data-l='4'] { fill: var(--tt-ramp-1); }
+.cell[data-today] { stroke: var(--tt-text); stroke-width: 1.2; }
+.axis { fill: var(--tt-text-faint); font: 11px Figtree, system-ui, sans-serif; }
+.gridline { stroke: var(--tt-chart-grid); stroke-dasharray: 3 4; }
+.line { fill: none; stroke: var(--tt-chart-strong); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.area { fill: color-mix(in srgb, var(--tt-accent) 14%, transparent); }
+.dot { fill: var(--tt-chart-strong); }
+.dot--avg { stroke: var(--tt-text-muted); stroke-dasharray: 4 4; }
+.bar { fill: var(--tt-chart-mid); }
+.bar[data-top] { fill: var(--tt-chart-strong); }
+.legend { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-faint); font-size: 12px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--tt-chart-track); }
+.legend i[data-l='1'] { background: var(--tt-ramp-4); } .legend i[data-l='2'] { background: var(--tt-ramp-3); }
+.legend i[data-l='3'] { background: var(--tt-ramp-2); } .legend i[data-l='4'] { background: var(--tt-ramp-1); }
+.meter { height: 6px; overflow: hidden; border-radius: 6px; background: var(--tt-chart-track); }
+.meter i { display: block; width: calc(var(--v) * 100%); height: 100%; border-radius: inherit; background: var(--tt-chart-strong); }
+
+/* ---------- A · Quiet room ---------- */
+.va { display: grid; min-height: 100%; grid-template-rows: minmax(330px, 1fr) auto auto; padding: 0 24px 80px; }
+.hero { display: grid; align-content: center; justify-items: center; gap: 22px; padding-bottom: 30px; text-align: center; }
+.hero .wave { margin-bottom: -10px; }
+.sentence { margin: 0; font-size: 44px; font-weight: 500; letter-spacing: -1.2px; line-height: 1.05; }
+.sentence time { margin-left: 14px; color: var(--tt-text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 18px; }
+.va-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(760px, 100%); justify-self: center; margin: 0; padding: 20px 0; border-top: 1px solid var(--tt-hairline); }
+.va-fig { padding: 0 18px; border-left: 1px solid var(--tt-hairline); }
+.va-fig:first-child { padding-left: 0; border-left: 0; }
+.va-fig dt { order: 2; color: var(--tt-text-muted); font-size: 12.5px; }
+.va-fig dd { margin: 0 0 2px; font-size: 24px; font-weight: 500; letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
+.va-fig { display: flex; flex-direction: column; }
+.va-fig small { order: 3; margin-top: 2px; color: var(--tt-text-faint); font-size: 12px; }
+.va-list { width: min(760px, 100%); justify-self: center; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--tt-hairline); }
+.va-head { display: flex; align-items: baseline; justify-content: space-between; width: min(760px, 100%); justify-self: center; padding: 18px 0 6px; }
+.row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 0 22px; align-items: start; padding: 16px 0; border-bottom: 1px solid var(--tt-hairline); }
+.row:last-child { border-bottom: 0; }
+.row[data-new] { animation: arrive .5s ease-out; }
+@keyframes arrive { from { background: var(--tt-hover-soft); } }
+.when { padding-top: 3px; color: var(--tt-text-faint); font-size: 12.5px; line-height: 1.45; }
+.when b { display: block; color: var(--tt-text-2); font-weight: 500; font-size: 13px; }
+.when .app-name { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--tt-text-muted); }
+.text { display: -webkit-box; margin: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; font-size: 16px; line-height: 1.5; }
+.meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.facts { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+@container room (max-width: 640px) {
+  .va-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 16px; }
+  .va-fig:nth-child(3) { padding-left: 0; border-left: 0; }
+  .row { grid-template-columns: minmax(0, 1fr) auto; }
+  .row .when { grid-column: 1 / -1; display: flex; gap: 10px; padding: 0 0 6px; }
+  .row .when b { display: inline; }
+  .row .when .app-name { margin: 0; }
+  .sentence { font-size: 34px; }
+}
+@container room (max-height: 0px) { .x { } }
+
+/* ---------- B · Insights ---------- */
+.vb { max-width: 1120px; margin: 0 auto; padding: 4px clamp(20px, 4cqi, 48px) 80px; }
+.vb-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 16px 20px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface); }
+.vb-bar h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.3px; }
+.vb-bar h1 time { margin-left: 8px; color: var(--tt-text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.vb-bar p { margin: 2px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.vb-bar .hint { font-size: 13px; }
+.vb-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 34px 0 16px; }
+.vb-title h2 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.6px; }
+.vb-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+.panel { grid-column: span 3; min-width: 0; padding: 20px 22px 22px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface); }
+.panel--wide { grid-column: 1 / -1; }
+.panel--third { grid-column: span 2; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 12px; }
+.big b { font-size: 40px; font-weight: 500; letter-spacing: -1.2px; line-height: 1; font-variant-numeric: tabular-nums; }
+.big span { color: var(--tt-text-muted); font-size: 14px; }
+.sub { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.sub b { color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
+.chart { width: 100%; height: auto; margin-top: 16px; overflow: visible; }
+.totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.totals div { padding-top: 12px; border-top: 1px solid var(--tt-hairline); }
+.totals b { display: block; font-size: 24px; font-weight: 500; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.totals span { color: var(--tt-text-muted); font-size: 12.5px; }
+.saved { margin-top: 18px; }
+.saved-row { display: grid; grid-template-columns: 118px minmax(0, 1fr) 70px; align-items: center; gap: 10px; margin-top: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.saved-row .meter i { background: var(--tt-chart-mid); }
+.saved-row:first-child .meter i { background: var(--tt-chart-strong); }
+.saved-row span:last-child { text-align: right; color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+.apps { display: grid; gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }
+.apps li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; }
+.apps .name { display: flex; align-items: center; gap: 9px; min-width: 0; font-weight: 500; }
+.apps .name span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.apps .val { color: var(--tt-text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.apps .val small { margin-left: 6px; color: var(--tt-text-muted); }
+.apps .meter { grid-column: 1 / -1; }
+.cal-wrap { display: grid; grid-template-columns: minmax(170px, auto) minmax(0, 1fr); gap: 28px; align-items: start; margin-top: 10px; }
+.cal-facts b { display: block; font-size: 40px; font-weight: 500; letter-spacing: -1.2px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.cal-facts p { margin: 4px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.cal-facts dl { display: grid; gap: 8px; margin: 18px 0 0; }
+.cal-facts dl div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.cal-facts dt { color: var(--tt-text-muted); }
+.cal-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.cal-foot { display: flex; justify-content: flex-end; margin-top: 8px; }
+.vb-last { margin-top: 28px; }
+.vb-last .row { border-top: 1px solid var(--tt-hairline); border-bottom: 0; }
+@container room (max-width: 820px) {
+  .panel, .panel--third { grid-column: 1 / -1; }
+  .cal-wrap { grid-template-columns: 1fr; gap: 12px; }
+}
+@container room (max-width: 600px) {
+  .vb-bar { grid-template-columns: auto minmax(0, 1fr); }
+  .vb-bar .vb-act { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .totals b { font-size: 20px; }
+}
+
+/* ---------- C · Journal ---------- */
+.vc { display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-areas: 'dict rail' 'feed rail'; grid-template-rows: auto 1fr; gap: 0 40px; max-width: 1180px; margin: 0 auto; padding: 4px clamp(20px, 4cqi, 48px) 48px; }
+.vc-dict { grid-area: dict; }
+.vc-main { grid-area: feed; min-width: 0; }
+.rail { grid-area: rail; }
+.vc-dict { display: flex; align-items: center; gap: 16px; padding: 14px 16px 14px 20px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface); }
+.vc-dict > div:not(.wave) { flex: 1; min-width: 0; }
+.vc-dict .wave { flex: none; }
+.vc-dict b { display: block; font-size: 17px; font-weight: 500; }
+.vc-dict b time { margin-left: 8px; color: var(--tt-text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.vc-dict .hint { font-size: 12.5px; }
+.vc-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 28px 0 4px; }
+.search { position: relative; flex: 1 1 220px; }
+.search svg { position: absolute; top: 50%; left: 10px; translate: 0 -50%; color: var(--tt-text-muted); pointer-events: none; }
+.search input { width: 100%; height: 34px; padding: 0 12px 0 34px; border: 1px solid var(--tt-field-border); border-radius: 9px; background: transparent; font-size: 13.5px; outline: none; }
+.search input::placeholder { color: var(--tt-text-faint); }
+.search input:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: -1px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; }
+.chip:hover { color: var(--tt-text); background: var(--tt-hover-soft); }
+.chip[aria-pressed='true'] { border-color: transparent; background: var(--tt-accent-surface); color: var(--tt-accent-text); }
+.day { margin-top: 26px; }
+.day-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--tt-hairline); }
+.day-head h3 { margin: 0; color: var(--tt-text-2); font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
+.day-head span { color: var(--tt-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.entry { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 4px 18px; padding: 14px 0; border-bottom: 1px solid var(--tt-hairline); }
+.entry time { padding-top: 2px; color: var(--tt-text-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.entry p { margin: 0; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.entry .meta { grid-column: 2; display: flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.entry .btn { grid-row: 1; grid-column: 3; opacity: 0; }
+.entry:hover .btn, .entry:focus-within .btn { opacity: 1; }
+.entry[data-new] { animation: arrive .5s ease-out; }
+.empty { margin: 26px 0 0; color: var(--tt-text-muted); }
+.more { margin-top: 20px; }
+.rail { position: sticky; top: 4px; align-self: start; display: grid; gap: 26px; padding-top: 6px; }
+.rail section + section { padding-top: 22px; border-top: 1px solid var(--tt-hairline); }
+.rail h2 { margin: 0 0 10px; color: var(--tt-text-2); font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.pair b { display: block; font-size: 28px; font-weight: 500; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pair span { color: var(--tt-text-muted); font-size: 12.5px; }
+.rail .apps { margin-top: 4px; gap: 11px; }
+.rail .apps .name { font-size: 13.5px; }
+@container room (max-width: 900px) {
+  .vc { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'dict' 'rail' 'feed'; }
+  .rail { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; margin-top: 22px; }
+  .rail section + section { padding-top: 0; border-top: 0; }
+  .rail [data-wide] { display: none; }
+}
+@container room (max-width: 560px) {
+  .entry { grid-template-columns: minmax(0, 1fr) auto; }
+  .entry time { grid-column: 1; }
+  .entry p, .entry .meta { grid-column: 1 / -1; }
+  .entry .btn { grid-row: 1; grid-column: 2; opacity: 1; }
+}
+
+/* ---------- The prototype bar: not part of the design ---------- */
+.proto { position: fixed; white-space: nowrap; bottom: 14px; left: 50%; z-index: 100; display: flex; align-items: center; gap: 4px; padding: 5px; translate: -50% 0; border-radius: 999px; background: #111; color: #f4f4f4; box-shadow: 0 10px 30px rgb(0 0 0 / 45%); font: 13px/1 system-ui, sans-serif; }
+.proto button { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: inherit; }
+.proto button:hover { background: #2a2a2a; }
+.proto .arrow { width: 30px; padding: 0; }
+.proto .label { min-width: 140px; text-align: center; font-weight: 600; }
+.proto .sep { width: 1px; height: 18px; margin: 0 4px; background: #444; }
+.proto button[aria-pressed='true'] { background: #f4f4f4; color: #111; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side" aria-label="Threads">
+    <div class="side__top">
+      <span class="side__mark" aria-hidden="true">S</span>
+      <button class="nav-btn" type="button" aria-label="New thread" title="New thread"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+      <button class="nav-btn" type="button" id="collapse" aria-label="Collapse sidebar" title="Collapse sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg></button>
+    </div>
+    <div class="side__scroll">
+      <div class="side__folder">Sotto <span>4</span></div>
+      <button class="side__row" type="button"><span class="ring" data-p="claude"></span><b>Fix paste focus on Windows</b><small>12m</small></button>
+      <button class="side__row" type="button"><span class="ring" data-p="codex"></span><b>Release 0.48.2</b><small>1h</small></button>
+      <button class="side__row" type="button"><span class="ring" data-p="claude"></span><b>History rows open in place</b><small>3h</small></button>
+      <button class="side__row" type="button"><span class="ring" data-p="grok"></span><b>Look at the host update journey</b><small>Mon</small></button>
+      <div class="side__folder">Boiler 3 controls <span>2</span></div>
+      <button class="side__row" type="button"><span class="ring" data-p="codex"></span><b>Check I/O list against L5X</b><small>Tue</small></button>
+      <button class="side__row" type="button"><span class="ring" data-p="claude"></span><b>Feed pump sequence notes</b><small>Oct 14</small></button>
+    </div>
+    <div class="side__foot">
+      <div class="switch" role="tablist" aria-label="Room">
+        <button type="button" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="9" width="2.4" height="6" rx="1.2"/><rect x="7.4" y="6" width="2.4" height="12" rx="1.2"/><rect x="11.8" y="3" width="2.4" height="18" rx="1.2"/><rect x="16.2" y="6" width="2.4" height="12" rx="1.2"/></svg><span>Dictate</span></button>
+        <button type="button" role="tab" aria-selected="false" tabindex="-1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Threads</span></button>
+      </div>
+      <button class="page-link" type="button" aria-label="Open History" title="History"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></button>
+      <button class="page-link" type="button" aria-label="Open Settings" title="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button class="page-link" type="button" aria-label="Open Help" title="Help"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+    </div>
+  </aside>
+  <div class="room-top">
+    <div class="win-ctl">
+      <button type="button" aria-label="Minimize"><svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor"><path d="M1 6h10"/></svg></button>
+      <button type="button" aria-label="Maximize"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="9" height="9"/></svg></button>
+      <button type="button" aria-label="Close"><svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9"/></svg></button>
+    </div>
+  </div>
+  <main class="room" id="room" aria-label="Dictation"></main>
+  <footer class="room-foot"><span>Speech model ready. Transcripts and stats are kept on this computer only.</span></footer>
+</div>
+
+<div class="proto" role="toolbar" aria-label="Prototype controls">
+  <button class="arrow" type="button" id="prev" aria-label="Previous variant">&#8592;</button>
+  <span class="label" id="vlabel"></span>
+  <button class="arrow" type="button" id="next" aria-label="Next variant">&#8594;</button>
+  <span class="sep"></span>
+  <button type="button" data-state="idle" aria-pressed="true">Ready</button>
+  <button type="button" data-state="listening" aria-pressed="false">Listening</button>
+  <button type="button" data-state="done" aria-pressed="false">Just pasted</button>
+  <span class="sep"></span>
+  <button type="button" id="theme">Light</button>
+</div>
+
+<script>
+/* ---------- Made-up data: 126 days of dictations ending Wed Oct 21, 2026, 4:20 pm ---------- */
+let seed = 11
+const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
+const NOW = new Date(2026, 9, 21, 16, 20).getTime()
+const DAY = 86400000
+const TYPING_WPM = 40
+const KINDS = { ai: 'AI prompts', email: 'Email', chat: 'Work chat', doc: 'Documents', web: 'Web' }
+const APPS = [
+  { name: 'Sotto', kind: 'ai', w: 30 },
+  { name: 'Windows Terminal', kind: 'ai', w: 16 },
+  { name: 'Outlook', kind: 'email', w: 15 },
+  { name: 'Microsoft Teams', kind: 'chat', w: 14 },
+  { name: 'Google Chrome', kind: 'web', w: 9 },
+  { name: 'Word', kind: 'doc', w: 7 },
+  { name: 'Slack', kind: 'chat', w: 5 },
+  { name: 'Notepad', kind: 'doc', w: 4 },
+]
+const TEXTS = {
+  ai: [
+    "Look at the widget's paste path on Windows and tell me why the text lands in the wrong window when focus changes during transcription. Don't change anything yet, just report back what you find.",
+    'Okay, that looks good. Run the typecheck and the unit suite, and if they pass, open a pull request against main with a plain English title.',
+    'Can you make the History rows open in place instead of navigating away, and keep keyboard focus on the row that was opened?',
+    'Write a short note in docs verification about how you checked this in the running app, with the screenshots it names.',
+    'Merge main in, fix the conflict in the settings schema, and wait for CI again.',
+    'Go through the tag export and list every tag that is in the I/O list but has no matching address in the program.',
+    'That is close. Make the calendar start on Sunday and give today a ring so I can find it.',
+    'Why is the host update journey timing out on the second client? Read the log first.',
+  ],
+  email: [
+    "A question I wanted to clarify is whether we want to use tray or conduit. Given the size of the motor we'll need parallel 4/0 per phase and a number 2 ground. I think two 2-inch conduits back to the VFD is the cleanest path. Let me know your thoughts.",
+    'Hi Darren, attached are the updated loop drawings for the boiler feed pumps. The only change from last week is the added flow transmitter on the recirculation line. Let me know if you want to walk it Thursday.',
+    "Thanks for sending the checkout sheets over. I'll have the remaining I/O verified by end of day Friday and will send the punch list once it's done.",
+    "We're going to use the spare 800 amp feeder breaker in the switchgear to supply the new MCC. I'll confirm the coordination study covers it before we order anything.",
+  ],
+  chat: [
+    'Running about ten minutes late, still at the switchgear.',
+    'Yep, the spare 800 amp breaker should work for the new feeder.',
+    'Can someone confirm the panel schedule for MCC-2 is the latest revision?',
+    'Heading to site now, back online around two.',
+    'Pushed the fix. It should be in tomorrow morning\'s build.',
+  ],
+  doc: [
+    'Scope of work. Furnish and install a new VFD for the induced draft fan, including line reactor, bypass contactor, and all associated conduit and wire from MCC-3.',
+    'Commissioning notes. Verified rotation on P-101 and P-102, both bumped clockwise as marked. Flow switch FS-210 needs to be readjusted; it trips early at low flow.',
+    'Punch list for Thursday: label the new junction boxes, torque the lugs in the VFD cabinet, and update the as-builts.',
+  ],
+  web: [
+    'conduit fill for parallel 4/0 copper with a number 2 ground',
+    'Electron global shortcut not firing when a fullscreen app has focus',
+    'Explain the difference between a line reactor and a load reactor for a VFD in plain terms.',
+  ],
+}
+const HOUR_W = [0, 0, 0, 0, 0, 0, 1, 3, 6, 9, 10, 8, 4, 6, 9, 10, 8, 5, 3, 3, 4, 4, 2, 1]
+const pick = (list, weight) => { const total = list.reduce((s, x) => s + weight(x), 0); let r = rnd() * total; for (const x of list) { r -= weight(x); if (r <= 0) return x } return list[list.length - 1] }
+const countWords = t => t.trim() === '' ? 0 : t.trim().split(/\s+/u).length
+const startOfDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime() }
+const today0 = startOfDay(NOW)
+const dayStart = d => { const x = new Date(today0); x.setDate(x.getDate() - d); return x.getTime() }
+
+const ENTRIES = []
+for (let d = 125; d >= 0; d--) {
+  const start = dayStart(d)
+  const wd = new Date(start).getDay()
+  const weekend = wd === 0 || wd === 6
+  let active
+  if (d <= 5) active = true
+  else if (d === 6 || d === 59 || d === 74) active = false
+  else if (d >= 60 && d <= 73) active = true
+  else active = rnd() < (weekend ? 0.28 : 0.8)
+  if (!active) continue
+  const n = d === 0 ? 7 : weekend ? 1 + Math.floor(rnd() * 4) : 3 + Math.floor(rnd() * 11)
+  for (let i = 0; i < n; i++) {
+    const hours = d === 0 ? HOUR_W.map((w, h) => ({ h, w: h < 16 ? w : 0 })) : HOUR_W.map((w, h) => ({ h, w }))
+    const hour = pick(hours, x => x.w).h
+    const app = pick(APPS, a => a.w)
+    const pool = TEXTS[app.kind]
+    const text = pool[Math.floor(rnd() * pool.length)]
+    const noise = (rnd() + rnd() + rnd() - 1.5) * 2
+    const wpm = Math.max(72, Math.min(176, 104 + 24 * (1 - d / 125) + noise * 14))
+    const words = countWords(text)
+    ENTRIES.push({ id: `${d}-${i}`, text, app: app.name, kind: app.kind, words, wpm: Math.round(wpm), durationMs: Math.round(words / wpm * 60000), createdAt: start + hour * 3600000 + Math.floor(rnd() * 3600000) })
+  }
+}
+ENTRIES.sort((a, b) => b.createdAt - a.createdAt)
+const JUST = { id: 'just', text: "Hi Darren, quick update from site. Both feed pumps are wired and rotation is checked. I'd like to run them on the new VFDs Thursday morning if operations can give us the boiler for an hour. Let me know.", app: 'Outlook', kind: 'email' }
+JUST.words = countWords(JUST.text); JUST.wpm = 136; JUST.durationMs = Math.round(JUST.words / JUST.wpm * 60000); JUST.createdAt = NOW - 20000
+
+/* ---------- Stats ---------- */
+const fmt = n => n.toLocaleString('en-US')
+function fmtMinutes(min) {
+  const m = Math.round(min)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60), r = m % 60
+  return r === 0 ? `${h} h` : `${h} h ${r} min`
+}
+function fmtSeconds(ms) { const s = Math.round(ms / 1000); return s < 60 ? `${s} seconds` : `${Math.floor(s / 60)} min ${s % 60} s` }
+function clock(t) { return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s?([AP]M)$/u, (_, p) => ' ' + p.toLowerCase()) }
+function stamp(t) {
+  if (t >= today0) return clock(t)
+  if (t >= dayStart(1)) return 'Yesterday'
+  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+function dayLabel(t) {
+  if (t >= today0) return 'Today'
+  if (t >= dayStart(1)) return 'Yesterday'
+  return new Date(t).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+}
+function within(list, days) { return days === Infinity ? list : list.filter(e => e.createdAt >= dayStart(days - 1)) }
+function summary(list) {
+  const words = list.reduce((s, e) => s + e.words, 0)
+  const ms = list.reduce((s, e) => s + e.durationMs, 0)
+  const minutes = ms / 60000
+  return { count: list.length, words, minutes, wpm: minutes > 0 ? Math.round(words / minutes) : 0, saved: Math.max(0, words / TYPING_WPM - minutes), typing: words / TYPING_WPM }
+}
+function byDay(list) { const m = new Map(); for (const e of list) { const k = startOfDay(e.createdAt); m.set(k, (m.get(k) ?? 0) + e.words) } return m }
+function streaks(list) {
+  const days = byDay(list)
+  let current = 0
+  for (let d = 0; days.has(dayStart(d)); d++) current++
+  let longest = 0, run = 0
+  for (let d = 130; d >= 0; d--) { if (days.has(dayStart(d))) { run++; longest = Math.max(longest, run) } else run = 0 }
+  return { current, longest, activeDays: days.size }
+}
+function byApp(list) {
+  const m = new Map()
+  for (const e of list) { const v = m.get(e.app) ?? { name: e.app, kind: e.kind, words: 0, count: 0 }; v.words += e.words; v.count++; m.set(e.app, v) }
+  return [...m.values()].sort((a, b) => b.words - a.words)
+}
+function byKind(list) {
+  const m = new Map()
+  for (const e of list) { const v = m.get(e.kind) ?? { name: KINDS[e.kind], kind: e.kind, words: 0, count: 0, apps: new Set() }; v.words += e.words; v.count++; v.apps.add(e.app); m.set(e.kind, v) }
+  return [...m.values()].sort((a, b) => b.words - a.words)
+}
+function byHour(list) { const h = Array(24).fill(0); for (const e of list) h[new Date(e.createdAt).getHours()]++; return h }
+function median(xs) { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? 0 : s[Math.floor(s.length / 2)] }
+function fastest(list) { return list.filter(e => e.words >= 15).reduce((b, e) => b === null || e.wpm > b.wpm ? e : b, null) }
+function speedSeries(list, days) {
+  if (days <= 30) {
+    const out = []
+    for (let d = days - 1; d >= 0; d--) { const s = dayStart(d); const sum = summary(list.filter(e => e.createdAt >= s && e.createdAt < s + DAY)); out.push({ t: s, v: sum.count ? sum.wpm : null }) }
+    return out
+  }
+  const weeks = days === Infinity ? 18 : 13, out = []
+  for (let w = weeks - 1; w >= 0; w--) { const s = dayStart(w * 7 + 6), e = s + 7 * DAY; const sum = summary(list.filter(x => x.createdAt >= s && x.createdAt < e)); out.push({ t: s, v: sum.count ? sum.wpm : null }) }
+  return out
+}
+function busiestDay(list) {
+  const names = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'], c = Array(7).fill(0)
+  for (const e of list) c[new Date(e.createdAt).getDay()] += e.words
+  return names[c.indexOf(Math.max(...c))]
+}
+function hourLabel(h) { return h === 0 ? '12 am' : h < 12 ? `${h} am` : h === 12 ? '12 pm' : `${h - 12} pm` }
+function busiestHours(hours) { let best = 0, at = 0; for (let h = 0; h < 23; h++) { const v = hours[h] + hours[h + 1]; if (v > best) { best = v; at = h } } return `${hourLabel(at)} to ${hourLabel(at + 2)}` }
+
+/* ---------- Charts ---------- */
+function level(words) { return words === 0 ? 0 : words < 150 ? 1 : words < 400 ? 2 : words < 800 ? 3 : 4 }
+function calendar(list, weeks, cell = 12, gap = 3) {
+  const days = byDay(list)
+  const todayDow = new Date(today0).getDay()
+  const left = 26, top = 18
+  const w = left + weeks * (cell + gap), h = top + 7 * (cell + gap)
+  let out = `<svg class="chart" style="max-width:${Math.round(w * 1.25)}px;margin-left:auto" viewBox="0 0 ${w} ${h}" role="img" aria-label="Calendar of the last ${weeks} weeks, darker on days with more words"><title>Words dictated each day</title>`
+  ;['', 'Mon', '', 'Wed', '', 'Fri', ''].forEach((n, i) => { if (n) out += `<text class="axis" x="0" y="${top + i * (cell + gap) + cell - 2}">${n}</text>` })
+  let lastMonth = -1
+  for (let col = 0; col < weeks; col++) {
+    for (let row = 0; row < 7; row++) {
+      const back = (weeks - 1 - col) * 7 + (todayDow - row)
+      if (back < 0) continue
+      const t = dayStart(back), words = days.get(t) ?? 0
+      const date = new Date(t)
+      if (row === 0 && date.getDate() <= 7 && date.getMonth() !== lastMonth) { out += `<text class="axis" x="${left + col * (cell + gap)}" y="11">${date.toLocaleDateString('en-US', { month: 'short' })}</text>`; lastMonth = date.getMonth() }
+      out += `<rect class="cell" data-l="${level(words)}"${back === 0 ? ' data-today' : ''} x="${left + col * (cell + gap)}" y="${top + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2.5"><title>${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}: ${words ? fmt(words) + ' words' : 'no dictation'}</title></rect>`
+    }
+  }
+  return out + '</svg>'
+}
+const LEGEND = '<span class="legend">Less <i></i><i data-l="1"></i><i data-l="2"></i><i data-l="3"></i><i data-l="4"></i> More</span>'
+function lineChart(series, avg, w = 520, h = 150) {
+  const pts = series.filter(p => p.v !== null)
+  const vals = pts.map(p => p.v).concat(avg)
+  const lo = Math.floor((Math.min(...vals) - 8) / 10) * 10, hi = Math.ceil((Math.max(...vals) + 8) / 10) * 10
+  const L = 30, B = 20, T = 6
+  const x = i => L + (series.length === 1 ? 0 : i * (w - L - 4) / (series.length - 1))
+  const y = v => T + (hi - v) / (hi - lo) * (h - T - B)
+  let out = `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Words per minute over the period, against your average of ${avg}">`
+  for (const g of [lo, Math.round((lo + hi) / 2), hi]) out += `<line class="gridline" x1="${L}" x2="${w}" y1="${y(g)}" y2="${y(g)}"/><text class="axis" x="0" y="${y(g) + 4}">${g}</text>`
+  out += `<line class="dot--avg" x1="${L}" x2="${w}" y1="${y(avg)}" y2="${y(avg)}"/>`
+  let d = '', a = '', first = null, lastX = 0
+  series.forEach((p, i) => { if (p.v === null) return; const cmd = d === '' ? 'M' : 'L'; d += `${cmd}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`; if (first === null) first = x(i); lastX = x(i) })
+  a = `${d}L${lastX.toFixed(1)},${h - B}L${first.toFixed(1)},${h - B}Z`
+  out += `<path class="area" d="${a}"/><path class="line" d="${d}"/>`
+  series.forEach((p, i) => { if (p.v !== null) out += `<circle class="dot" cx="${x(i)}" cy="${y(p.v)}" r="2.6"><title>${new Date(p.t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${p.v} wpm</title></circle>` })
+  const ticks = [0, Math.floor((series.length - 1) / 2), series.length - 1]
+  ticks.forEach((i, k) => out += `<text class="axis" x="${x(i)}" y="${h - 4}" text-anchor="${k === 0 ? 'start' : k === 2 ? 'end' : 'middle'}">${new Date(series[i].t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</text>`)
+  return out + '</svg>'
+}
+function hourChart(hours, w = 520, h = 110) {
+  const max = Math.max(...hours, 1), B = 18, bw = (w - 4) / 24
+  const topTwo = [...hours].sort((a, b) => b - a).slice(0, 3)
+  let out = `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Dictations by hour of day">`
+  hours.forEach((v, i) => { const bh = v === 0 ? 0 : Math.max(2, v / max * (h - B - 4)); out += `<rect class="bar"${topTwo.includes(v) && v > 0 ? ' data-top' : ''} x="${2 + i * bw + 1.5}" y="${h - B - bh}" width="${bw - 3}" height="${bh}" rx="2"><title>${hourLabel(i)}: ${v} dictations</title></rect>` })
+  ;[[0, '12 am'], [6, '6 am'], [12, '12 pm'], [18, '6 pm']].forEach(([i, l]) => out += `<text class="axis" x="${2 + i * bw}" y="${h - 3}">${l}</text>`)
+  return out + '</svg>'
+}
+function appList(items, limit, total, showKind) {
+  return `<ul class="apps">${items.slice(0, limit).map(a => {
+    const share = total ? a.words / total : 0
+    const sub = showKind === 'apps' ? [...a.apps].join(', ') : KINDS[a.kind]
+    return `<li><span class="name"><span class="mono" aria-hidden="true">${a.name[0]}</span><span>${a.name}</span></span><span class="val">${Math.round(share * 100)}%<small>${fmt(a.words)} words</small></span><span class="meter" title="${sub}"><i style="--v:${share / (items[0].words / total)}"></i></span></li>`
+  }).join('')}</ul>`
+}
+function wave(size) {
+  const rest = { hero: 14, mid: 8, small: 4 }[size], peak = { hero: 130, mid: 72, small: 30 }[size]
+  const prof = [0, 0.1, 0.2, 0.28, 0.2, 0.1, 0]
+  const lift = { hero: 3.4, mid: 3, small: 2.6 }[size]
+  return `<div class="wave wave--${size}" style="--lift:${lift}" aria-hidden="true">${prof.map(p => `<i style="--h:${Math.round(rest + p * (peak - rest) * (size === 'hero' ? 1 : 0.9))}px"></i>`).join('')}</div>`
+}
+
+/* ---------- Page state ---------- */
+const VARIANTS = { A: 'A · Quiet room', B: 'B · Insights', C: 'C · Journal' }
+const state = { variant: new URLSearchParams(location.search).get('variant')?.toUpperCase() ?? 'A', status: 'idle', startedAt: 0, range: 30, appsBy: 'apps', query: '', app: 'All', daysShown: 7 }
+if (!VARIANTS[state.variant]) state.variant = 'A'
+const entries = () => state.status === 'done' ? [JUST, ...ENTRIES] : ENTRIES
+const SHORTCUT = '<kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd>'
+function elapsed() { const s = Math.floor((Date.now() - state.startedAt) / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` }
+function said() {
+  if (state.status === 'listening') return { sentence: 'Listening.', time: true, action: 'Stop' }
+  if (state.status === 'done') return { sentence: 'Pasted.', action: 'Start dictation' }
+  return { sentence: 'Ready when you are.', action: 'Start dictation' }
+}
+function hintText() { return state.status === 'listening' ? `or press ${SHORTCUT} again` : `or press ${SHORTCUT} in any app` }
+function timeTag() { return `<time class="js-timer" aria-label="Recording time">${elapsed()}</time>` }
+function justFacts(avg) {
+  const diff = JUST.wpm - avg
+  return `Pasted into ${JUST.app}. ${JUST.words} words in ${fmtSeconds(JUST.durationMs)}, ${JUST.wpm} wpm: ${diff > 0 ? `${diff} faster than` : diff < 0 ? `${-diff} slower than` : 'the same as'} your usual ${avg}.`
+}
+function copyBtn(id, label = 'Copy') { return `<button class="btn" type="button" data-copy="${id}" aria-label="Copy transcript">${label}</button>` }
+
+/* ---------- A · Quiet room ---------- */
+function renderA() {
+  const list = entries(), s = said()
+  const today = summary(within(list, 1)), week = summary(within(list, 7)), usual = summary(within(list, 90)), month = summary(within(list, 30))
+  const st = streaks(list), diff = week.wpm - usual.wpm
+  const recent = list.slice(0, 5)
+  return `<section class="va" data-status="${state.status}">
+    <div class="hero">
+      ${wave('hero')}
+      <div aria-live="polite" aria-atomic="true"><h1 class="sentence">${s.sentence}${s.time ? timeTag() : ''}</h1></div>
+      <div class="actions"><button class="btn btn--primary btn--hero" type="button" data-act>${s.action}</button><span class="hint">${hintText()}</span></div>
+    </div>
+    <dl class="va-figs" aria-label="Your dictation">
+      <div class="va-fig"><dt>words today</dt><dd>${fmt(today.words)}</dd><small>${today.count} dictations</small></div>
+      <div class="va-fig"><dt>wpm this week</dt><dd>${week.wpm}</dd><small class="${diff > 0 ? 'up' : ''}">${diff === 0 ? 'Same as your usual' : `${diff > 0 ? '+' : ''}${diff} on your usual ${usual.wpm}`}</small></div>
+      <div class="va-fig"><dt>days in a row</dt><dd>${st.current}</dd><small>Longest ${st.longest} days</small></div>
+      <div class="va-fig"><dt>saved this month</dt><dd>${fmtMinutes(month.saved)}</dd><small>Against typing at ${TYPING_WPM} wpm</small></div>
+    </dl>
+    <div class="va-head"><h2 class="h2">Recent</h2><button class="link" type="button">Open History</button></div>
+    <ol class="va-list">${recent.map(e => `<li class="row"${e.id === 'just' ? ' data-new' : ''}>
+      <div class="when"><b>${stamp(e.createdAt)}</b></div>
+      <div><p class="text">${e.text}</p>${e.id === 'just' ? `<p class="facts">${justFacts(usual.wpm)}</p>` : `<p class="meta-line"><span class="mono" aria-hidden="true">${e.app[0]}</span>${e.app} · <span class="num">${e.words} words · ${e.wpm} wpm</span></p>`}</div>
+      ${copyBtn(e.id)}
+    </li>`).join('')}</ol>
+  </section>`
+}
+
+/* ---------- B · Insights ---------- */
+function renderB() {
+  const all = entries(), s = said()
+  const list = within(all, state.range), sum = summary(list), usual = summary(within(all, 90))
+  const prevList = state.range === Infinity ? [] : all.filter(e => e.createdAt >= dayStart(state.range * 2 - 1) && e.createdAt < dayStart(state.range - 1))
+  const prev = summary(prevList), change = prev.count ? sum.wpm - prev.wpm : null
+  const fast = fastest(list), st = streaks(all), hours = byHour(list)
+  const groups = state.appsBy === 'apps' ? byApp(list) : byKind(list)
+  const rangeName = { 7: 'last 7 days', 30: 'last 30 days', 90: 'last 90 days', Infinity: 'all time' }[state.range]
+  const prevName = { 7: 'the week before', 30: 'the 30 days before', 90: 'the 90 days before' }[state.range]
+  const latest = all[0]
+  const sentence = state.status === 'done' ? `Pasted into ${JUST.app}.` : s.sentence
+  const sub = state.status === 'done' ? `${JUST.words} words at ${JUST.wpm} wpm, ${JUST.wpm - usual.wpm} faster than your usual.` : state.status === 'listening' ? 'Speak normally. Sotto pastes where your cursor is.' : `Last dictation ${stamp(latest.createdAt) === clock(latest.createdAt) ? 'at ' + clock(latest.createdAt) : stamp(latest.createdAt)}, into ${latest.app}.`
+  return `<section class="vb" data-status="${state.status}">
+    <div class="vb-bar">
+      ${wave('small')}
+      <div aria-live="polite" aria-atomic="true"><h1>${sentence}${s.time ? timeTag() : ''}</h1><p>${sub}</p></div>
+      <div class="vb-act" style="display:flex;align-items:center;gap:14px"><span class="hint">${state.status === 'listening' ? `${SHORTCUT} again` : SHORTCUT}</span><button class="btn btn--primary" type="button" data-act style="min-height:38px;padding:0 18px">${s.action}</button></div>
+    </div>
+    <div class="vb-title"><h2>Your dictation</h2>
+      <div class="seg" role="group" aria-label="Period">${[[7, '7 days'], [30, '30 days'], [90, '90 days'], [Infinity, 'All time']].map(([v, l]) => `<button type="button" data-range="${v}" aria-pressed="${state.range === v}">${l}</button>`).join('')}</div>
+    </div>
+    <div class="vb-grid">
+      <article class="panel" aria-labelledby="speed-h">
+        <div class="panel-head"><h3 class="h2" id="speed-h">Speed</h3><span class="muted" style="font-size:12.5px">Dashed line: your usual over 90 days</span></div>
+        <div class="big"><b>${sum.wpm}</b><span>words per minute</span></div>
+        <p class="sub">${change === null ? 'Your average across ' + rangeName + '.' : `<span class="${change > 0 ? 'up' : ''}">${change > 0 ? '+' : ''}${change} wpm</span> on ${prevName}.`}${fast ? ` Fastest: <b>${fast.wpm} wpm</b> on ${new Date(fast.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, into ${fast.app}.` : ''}</p>
+        ${lineChart(speedSeries(all, state.range), usual.wpm)}
+      </article>
+      <article class="panel" aria-labelledby="tot-h">
+        <div class="panel-head"><h3 class="h2" id="tot-h">Totals</h3><span class="muted" style="font-size:12.5px">${rangeName[0].toUpperCase() + rangeName.slice(1)}</span></div>
+        <div class="totals">
+          <div><b>${fmt(sum.words)}</b><span>words dictated</span></div>
+          <div><b>${fmt(sum.count)}</b><span>dictations</span></div>
+          <div><b>${fmtMinutes(sum.minutes)}</b><span>spent talking</span></div>
+        </div>
+        <div class="big" style="margin-top:22px"><b>${fmtMinutes(sum.saved)}</b><span>saved against typing</span></div>
+        <div class="saved" aria-hidden="true">
+          <div class="saved-row"><span>Talking</span><span class="meter"><i style="--v:${sum.minutes / sum.typing}"></i></span><span>${fmtMinutes(sum.minutes)}</span></div>
+          <div class="saved-row"><span>Typing at ${TYPING_WPM} wpm</span><span class="meter"><i style="--v:1"></i></span><span>${fmtMinutes(sum.typing)}</span></div>
+        </div>
+      </article>
+      <article class="panel" aria-labelledby="where-h">
+        <div class="panel-head"><h3 class="h2" id="where-h">Where you dictate</h3>
+          <div class="seg seg--sm" role="group" aria-label="Group by">${[['apps', 'By app'], ['kinds', 'By kind']].map(([v, l]) => `<button type="button" data-by="${v}" aria-pressed="${state.appsBy === v}">${l}</button>`).join('')}</div></div>
+        ${appList(groups, 6, sum.words, state.appsBy === 'apps' ? 'kind' : 'apps')}
+        <p class="sub">${state.appsBy === 'apps' ? `${groups.length} apps. Sotto notes the app it pasted into; it never reads the app.` : groups.map(g => `${g.name}: ${[...g.apps].join(', ')}`).slice(0, 2).join('. ') + '.'}</p>
+      </article>
+      <article class="panel" aria-labelledby="when-h">
+        <div class="panel-head"><h3 class="h2" id="when-h">When you dictate</h3></div>
+        <p class="sub" style="margin-top:12px">Busiest from <b>${busiestHours(hours)}</b>, most of all on <b>${busiestDay(list)}</b>.</p>
+        ${hourChart(hours)}
+        <div class="totals" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+          <div><b>${fmtSeconds(median(list.map(e => e.durationMs)))}</b><span>a typical dictation</span></div>
+          <div><b>${median(list.map(e => e.words))} words</b><span>in a typical dictation</span></div>
+        </div>
+      </article>
+      <article class="panel panel--wide" aria-labelledby="streak-h">
+        <div class="panel-head"><h3 class="h2" id="streak-h">Streak</h3><span class="muted" style="font-size:12.5px">Last 18 weeks, whatever the period</span></div>
+        <div class="cal-wrap">
+          <div class="cal-facts"><b>${st.current} days</b><p>in a row, today included</p>
+            <dl><div><dt>Longest streak</dt><dd>${st.longest} days</dd></div><div><dt>Days with dictation</dt><dd>${st.activeDays}</dd></div><div><dt>Best day</dt><dd>${(() => { const m = byDay(all); let b = 0, t = 0; m.forEach((v, k) => { if (v > b) { b = v; t = k } }); return `${fmt(b)} words, ${new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` })()}</dd></div></dl></div>
+          <div>${calendar(all, 18, 18, 4)}<div class="cal-foot">${LEGEND}</div></div>
+        </div>
+      </article>
+    </div>
+    <div class="vb-last">
+      <div class="va-head" style="width:100%"><h2 class="h2">Last transcript</h2><button class="link" type="button">Open History</button></div>
+      <div class="row"${latest.id === 'just' ? ' data-new' : ''}><div class="when"><b>${stamp(latest.createdAt)}</b></div><div><p class="text">${latest.text}</p><p class="meta-line"><span class="mono" aria-hidden="true">${latest.app[0]}</span>${latest.app} · <span class="num">${latest.words} words · ${latest.wpm} wpm</span></p></div>${copyBtn(latest.id)}</div>
+    </div>
+  </section>`
+}
+
+/* ---------- C · Journal ---------- */
+function renderC() {
+  const all = entries(), s = said()
+  const today = summary(within(all, 1)), usual = summary(within(all, 90)), month = summary(within(all, 30)), st = streaks(all)
+  const appsHere = byApp(within(all, 30))
+  const q = state.query.trim().toLowerCase()
+  const filtered = all.filter(e => (state.app === 'All' || e.app === state.app) && (q === '' || e.text.toLowerCase().includes(q)))
+  const cutoff = dayStart(state.daysShown - 1)
+  const shown = q === '' && state.app === 'All' ? filtered.filter(e => e.createdAt >= cutoff) : filtered.slice(0, 60)
+  const groups = []
+  for (const e of shown) { const k = startOfDay(e.createdAt); let g = groups[groups.length - 1]; if (!g || g.k !== k) { g = { k, items: [] }; groups.push(g) } g.items.push(e) }
+  const remaining = q === '' && state.app === 'All' && filtered.some(e => e.createdAt < cutoff)
+  const sentence = state.status === 'done' ? `Pasted into ${JUST.app}.` : s.sentence
+  const thisWeek = speedSeries(all, 30)
+  return `<section class="vc" data-status="${state.status}">
+    <div class="vc-dict">${wave('small')}<div aria-live="polite" aria-atomic="true"><b>${sentence}${s.time ? timeTag() : ''}</b><span class="hint">${state.status === 'done' ? `${JUST.words} words at ${JUST.wpm} wpm` : hintText()}</span></div><button class="btn btn--primary" type="button" data-act style="min-height:38px;padding:0 18px">${s.action}</button></div>
+    <div class="vc-main">
+      <div class="vc-tools">
+        <label class="search"><span class="vh">Search transcripts</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="q" type="search" placeholder="Search transcripts" value="${state.query.replace(/"/g, '&quot;')}"></label>
+        <div class="chips" role="group" aria-label="Show transcripts from">${['All', ...appsHere.slice(0, 5).map(a => a.name)].map(n => `<button class="chip" type="button" data-app="${n}" aria-pressed="${state.app === n}">${n}</button>`).join('')}</div>
+      </div>
+      ${groups.length === 0 ? '<p class="empty">No transcripts match. Clear the search or choose All.</p>' : groups.map(g => {
+        const gs = summary(g.items)
+        return `<section class="day" aria-label="${dayLabel(g.k)}"><div class="day-head"><h3>${dayLabel(g.k)}</h3><span>${fmt(gs.words)} words · ${gs.wpm} wpm</span></div>
+          ${g.items.map(e => `<article class="entry"${e.id === 'just' ? ' data-new' : ''}><time>${clock(e.createdAt)}</time><p>${e.text}</p>${copyBtn(e.id)}<div class="meta"><span class="mono" aria-hidden="true">${e.app[0]}</span>${e.app} · <span class="num">${e.words} words · ${e.wpm} wpm</span></div></article>`).join('')}</section>`
+      }).join('')}
+      ${remaining ? '<button class="btn more" type="button" id="more">Show the 7 days before</button>' : ''}
+    </div>
+    <aside class="rail" aria-label="Your dictation">
+      <section><h2>Today</h2><div class="pair"><div><b>${fmt(today.words)}</b><span>words in ${today.count} dictations</span></div><div><b>${today.wpm}</b><span>wpm, usual ${usual.wpm}</span></div></div></section>
+      <section data-wide><h2>Speed, last 30 days</h2>${lineChart(thisWeek, usual.wpm, 300, 120)}</section>
+      <section data-wide><h2>${st.current}-day streak</h2>${calendar(all, 13, 14, 4)}<div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted" style="font-size:12.5px">Longest ${st.longest} days</span>${LEGEND}</div></section>
+      <section data-wide><h2>Where, last 30 days</h2>${appList(appsHere, 4, month.words, 'kind')}</section>
+      <section><h2>This month</h2><div class="pair"><div><b>${fmtMinutes(month.saved)}</b><span>saved against typing at ${TYPING_WPM} wpm</span></div><div><b>${busiestHours(byHour(within(all, 30))).split(' to ')[0]}</b><span>your busiest hour starts</span></div></div></section>
+    </aside>
+  </section>`
+}
+
+/* ---------- Wiring ---------- */
+const room = document.getElementById('room')
+let timer = null
+function render(keepFocus) {
+  const focusId = keepFocus ? document.activeElement?.id : null
+  const caret = focusId === 'q' ? document.activeElement.selectionStart : null
+  room.innerHTML = { A: renderA, B: renderB, C: renderC }[state.variant]()
+  document.getElementById('vlabel').textContent = VARIANTS[state.variant]
+  document.querySelectorAll('[data-state]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === state.status)))
+  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus(); if (caret !== null) el.setSelectionRange(caret, caret) } }
+}
+function setStatus(status) {
+  state.status = status
+  clearInterval(timer)
+  if (status === 'listening') { state.startedAt = Date.now(); timer = setInterval(() => document.querySelectorAll('.js-timer').forEach(t => t.textContent = elapsed()), 250) }
+  render()
+}
+function go(step) {
+  const keys = Object.keys(VARIANTS)
+  state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]
+  const url = new URL(location.href); url.searchParams.set('variant', state.variant); history.replaceState(null, '', url)
+  room.scrollTop = 0
+  render()
+}
+document.getElementById('prev').onclick = () => go(-1)
+document.getElementById('next').onclick = () => go(1)
+document.querySelectorAll('[data-state]').forEach(b => b.onclick = () => setStatus(b.dataset.state))
+document.getElementById('theme').onclick = e => { const root = document.documentElement; const dark = root.dataset.theme === 'dark'; root.dataset.theme = dark ? 'light' : 'dark'; e.target.textContent = dark ? 'Dark' : 'Light' }
+document.getElementById('collapse').onclick = () => document.getElementById('app').toggleAttribute('data-collapsed')
+room.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return
+  if (t.hasAttribute('data-act')) setStatus(state.status === 'listening' ? 'done' : 'listening')
+  else if (t.dataset.range) { state.range = t.dataset.range === 'Infinity' ? Infinity : Number(t.dataset.range); render() }
+  else if (t.dataset.by) { state.appsBy = t.dataset.by; render() }
+  else if (t.dataset.app) { state.app = t.dataset.app; render() }
+  else if (t.id === 'more') { state.daysShown += 7; render() }
+  else if (t.dataset.copy) {
+    const entry = entries().find(x => x.id === t.dataset.copy)
+    navigator.clipboard?.writeText(entry.text).catch(() => {})
+    t.textContent = 'Copied'; setTimeout(() => { t.textContent = 'Copy' }, 1600)
+  }
+})
+room.addEventListener('input', e => { if (e.target.id === 'q') { state.query = e.target.value; render(true) } })
+window.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable="true"]')) { if (e.key === 'Escape' && e.target.id === 'q') { state.query = ''; render(true) } return }
+  if (e.key === 'ArrowLeft') go(-1)
+  if (e.key === 'ArrowRight') go(1)
+})
+render()
+</script>
+</body>
+</html>
