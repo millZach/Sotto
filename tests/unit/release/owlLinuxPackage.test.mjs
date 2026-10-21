@@ -10,7 +10,7 @@ import { rewriteLinuxPkgbuild, rewriteOwlLinuxPkgbuild } from '../../../scripts/
 import { clearLinuxFinishOutputs, LINUX_PACMAN_PACKAGE } from '../../../scripts/linux-release-files.mjs'
 import {
   checkedOwlLinuxPacmanReceipt, checkedOwlLinuxReceipt, owlLinuxFileNames, owlLinuxPackagePlan, owlLinuxPacmanReceipt, owlLinuxPkgver,
-  owlLinuxReceipt, owlPkgverOrderingCases, owlVersionFromPkgver,
+  owlLinuxReceipt, owlPkgverOrderingCases,
 } from '../../../scripts/owl-linux-package.mjs'
 import { checkOwlPkgverOrdering, owlLinuxPacmanArguments } from '../../../scripts/package-owl-linux-pacman.mjs'
 import { owlPublishConfig } from '../../../scripts/owl-release.mjs'
@@ -39,10 +39,9 @@ const changedLines = (before, after) => {
 }
 
 describe('the Owl\'s pacman version', () => {
-  it('drops the hyphen pacman cannot hold and maps back', () => {
+  it('drops the hyphen pacman cannot hold, and takes only a full Owl version', () => {
     expect(owlLinuxPkgver(version)).toBe('0.1.38owl.20261021.1')
-    expect(owlVersionFromPkgver('0.1.38owl.20261021.1')).toBe(version)
-    for (const wrong of ['0.1.38', '0.1.38~owl.20261021.1', '0.1.38owl.20260230.1', '0.1.38owl.20261021.1-1']) expect(owlVersionFromPkgver(wrong)).toBeUndefined()
+    expect(owlLinuxPkgver('2.10.0-owl.20270101.12')).toBe('2.10.0owl.20270101.12')
     for (const wrong of ['0.1.38', '0.1.38-owl.20260230.1', '0.1.38-owl.20261021.0']) expect(() => owlLinuxPkgver(wrong)).toThrow()
   })
   it('the vercmp port agrees with pacman\'s own documented order, tilde included', () => {

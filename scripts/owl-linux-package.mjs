@@ -19,14 +19,6 @@ export function owlLinuxPkgver(version) {
   return version.replace('-owl.', 'owl.')
 }
 
-/** The Owl version a pacman version names, or undefined when it is not an Owl's. */
-export function owlVersionFromPkgver(pkgver) {
-  if (typeof pkgver !== 'string' || !/^\d+\.\d+\.\d+owl\.\d{8}\.\d+$/u.test(pkgver)) return undefined
-  const version = pkgver.replace('owl.', '-owl.')
-  try { checkedFullOwlVersion(version, versionMessages) } catch { return undefined }
-  return version
-}
-
 /** Every file an Owl's Linux half names. The pacman file name is the one makepkg writes for pkgrel 1. */
 export function owlLinuxFileNames(version) {
   const pkgver = owlLinuxPkgver(version)
