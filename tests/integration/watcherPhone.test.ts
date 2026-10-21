@@ -763,8 +763,9 @@ it('queues a phone message to go next when Watcher’s provider takes no steer, 
   // Its request is the phone's, as one its own send opened would be.
   expect(own).toMatchObject({ state: 'active', phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
   expect(own.id).not.toBe(asked.id)
-  expect(f.phone.state(false, true, true).followups).toEqual([])
-  expect(f.phone.state(false).draftDeliveries).toContainEqual({ draftId: nextDraft, status: 'accepted' })
+  // The queue lets the item go once the provider has acknowledged it, which can come after the adapter has the words.
+  await vi.waitFor(() => expect(f.phone.state(false, true, true).followups).toEqual([]), { timeout: 30_000 })
+  await vi.waitFor(() => expect(f.phone.state(false).draftDeliveries).toContainEqual({ draftId: nextDraft, status: 'accepted' }))
   // The desktop is never sent the phone's client ID with its queue.
   expect(JSON.stringify(f.control.shell().followups ?? [])).not.toContain(clientId)
 })
