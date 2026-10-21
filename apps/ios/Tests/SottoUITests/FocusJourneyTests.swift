@@ -1126,7 +1126,8 @@ import XCTest
 
     /// With two cards waiting, a reader on the whole one is kept on it while Watcher writes, not moved to the lower one the
     /// box cuts off, and the lower one leaving, answered on the laptop, leaves the whole one where the reader has it
-    /// (#1277).
+    /// (#1277). The journey has the laptop answer only once the reader is held on the question with the permission still
+    /// under it, and the permission leaves with no change to Watcher's conversation, so only the page's height moves.
     func testAWholeCardStaysAnswerableOverALowerOneWhileWatcherWrites() {
         launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards"])
         openWatcher()
@@ -1142,8 +1143,11 @@ import XCTest
         let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the question")
         stays(choice, "The question's answer")
+        XCTAssertTrue(permission.exists, "The permission is still under the question the reader is held on")
         // The permission is answered on the laptop and leaves the page. The question doesn't move with the page's end.
-        XCTAssertTrue(waitUntilGone(permission, timeout: 60), "The permission leaves Watcher's page once the laptop answers it")
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName("app.sotto.ui.watcher-notes-answered" as CFString), nil, nil, true)
+        XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
         stays(choice, "The question's answer, once the permission under it has gone,")
         capture("watcher-two-cards-held-dark")
         choice.tap()
