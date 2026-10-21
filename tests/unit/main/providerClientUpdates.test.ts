@@ -137,6 +137,8 @@ describe('which channel owns an install', () => {
     const environment = { GROK_HOME: home, npm_config_prefix: prefix }
     expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), environment, 'win32')).toBe('npm')
     const clients = new ProviderClients({ fetchImpl: async () => answer('1.0.40'), npmPath: async () => join(prefix, 'npm.cmd'), platform: 'win32' })
+    // The temporary folder holds nothing a shell would expand, so the command names it.
+    expect(shellArgument(prefix, process.platform)).toBeDefined()
     expect(await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), environment))
       .toMatchObject({ behind: true, channel: 'npm', canInstall: true, command: `npm install -g --prefix ${shellArgument(prefix, process.platform)} --allow-scripts=@xai-official/grok @xai-official/grok@latest` })
   })
@@ -155,10 +157,10 @@ describe('which channel owns an install', () => {
     expect(byHandFor('codex', { channel: 'npm' }, 'win32')).toEqual(['npm install -g --allow-scripts=@openai/codex @openai/codex@latest'])
     // A backslash is literal only inside single quotes in a POSIX shell.
     expect(shellArgument('/tmp/node\\tools', 'linux')).toBe("'/tmp/node\\tools'")
-    // PowerShell expands $( ) and backticks inside double quotes, and cmd expands %VAR% and !VAR!, so such a Windows
-    // prefix is left out of the line rather than written so that it means another folder.
+    // PowerShell expands $( ) and backticks inside double quotes, and cmd expands %VAR% and !VAR!. Such a Windows prefix
+    // gets no line at all: written, it would name another folder, and left out, npm would update its own default.
     for (const prefix of ['C:\\node $(1+1)', 'C:\\node`n', 'C:\\%USERNAME%\\npm', 'C:\\!npm!']) {
-      expect(byHandFor('codex', { channel: 'npm', npmPrefix: prefix }, 'win32')).toEqual(['npm install -g --allow-scripts=@openai/codex @openai/codex@latest'])
+      expect(byHandFor('codex', { channel: 'npm', npmPrefix: prefix }, 'win32')).toBeUndefined()
     }
   })
 

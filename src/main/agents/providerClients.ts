@@ -379,8 +379,9 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
   switch (install.channel) {
     case 'npm': {
       if (!packageName) return undefined
-      // A Windows prefix no shell there would keep literal is left out, as it was before prefixes were named.
+      // A Windows prefix no shell there would keep literal gets no line at all: without it npm would update another folder.
       const prefix = install.npmPrefix === undefined ? undefined : shellArgument(install.npmPrefix, platform)
+      if (install.npmPrefix !== undefined && prefix === undefined) return undefined
       return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
     }
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
