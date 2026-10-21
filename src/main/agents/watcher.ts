@@ -6,7 +6,7 @@ import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
 import { resolveModel } from '../../shared/modelCatalog'
 import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
-import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
 import { rebuildReservations } from './watcherRecords'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
@@ -1657,16 +1657,21 @@ export class WatcherService implements WatcherControlHooks {
     if (this.answeredWithoutWorkers(record, snapshot).length) return false
     return !record.requests.some(request => this.requestDone(request, record, snapshot, threads))
   }
-  /** Whether an active request is done: every thread taking part has settled, and nothing is left queued to Watcher or to them. */
+  /**
+   * Whether an active request is done: every thread taking part has settled, Watcher's turn has ended, and nothing is left
+   * queued to Watcher or to them. A settle relinquishes its thread at once, so a turn settling several threads would
+   * otherwise close its own request after the first (#1254).
+   */
   private requestDone(request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord>, snapshot: AgentHostSnapshot, threads: ReadonlyMap<string, AgentThread>): boolean {
-    return request.state === 'active' && request.participants.length > 0 && request.participants.every(item => {
+    const local = request.watcher.hostId === this.hostId(), master = local ? threads.get(request.watcher.threadId) : undefined
+    return request.state === 'active' && request.participants.length > 0 && !(master && isThreadTurnRunning(master)) && request.participants.every(item => {
       if (item.state !== 'participating') return true
       const local = item.target.hostId === this.hostId(), owner = local ? snapshot : this.owningSnapshot(item.target.hostId)
       const thread = local ? threads.get(item.target.threadId) : owner?.threads.find(thread => thread.id === item.target.threadId)
       return Boolean(owner?.connected && thread && this.connected(thread)
         && isWorkspaceThreadSettled(thread, owner.projects.find(project => project.id === thread.projectId)))
     })
-      && (request.watcher.hostId !== this.hostId() || !this.options.control.hasPendingThreadWork(request.watcher.threadId))
+      && (!local || !this.options.control.hasPendingThreadWork(request.watcher.threadId))
       && !record.operations.some(item => item.requestId === request.id && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))
   }
   /**
