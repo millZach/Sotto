@@ -1116,9 +1116,11 @@ import XCTest
     /// With the bar away, the reader sees the strip it uncovered under the status bar. A card they have there stays put
     /// while Watcher writes above it, rather than being pushed down to where the bar was (#1278). Then the permission under
     /// it is answered on the laptop and leaves: the page's end carries the card down, and the page puts it back in the
-    /// strip by lining its top up with a point above the scroll view's own top.
+    /// strip by lining its top up with a point above the scroll view's own top. Ten of the user's follow-ups wait under the
+    /// cards, so the page has enough under the card, once the permission has gone, to scroll it back there on any phone.
     func testACardInTheStripTheBarUncoversStaysPutWhileWatcherWrites() {
-        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards"])
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards",
+                               "--ui-watcher-queued-below"])
         openWatcher()
         let writing = text("Checking the threads I watch.")
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")

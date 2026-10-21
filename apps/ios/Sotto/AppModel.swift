@@ -1430,6 +1430,14 @@ struct HeldDetail {
                 waiting = cards + [Self.fixtureNotesPermission(laptop: laptop, mayAnswer: watcherAnswers)]
             }
             if keepsWriting { page["needsYou"] = [[String: Any]]() }
+            // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue under the cards, so a
+            // card held near the top of the screen has page enough under it to stay there when a card under it leaves.
+            if arguments.contains("--ui-watcher-queued-below") {
+                page["followups"] = (1...10).map { n -> [String: Any] in
+                    ["itemId": "queued-\(n)", "draftId": "queued-draft-\(n)", "text": "Look at #845’s checks again, \(n) of 10",
+                     "status": "queued"]
+                }
+            }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
             if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }
