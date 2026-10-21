@@ -254,6 +254,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/threadChips.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
+      'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/branchToolbar.css',
       'src/renderer/src/agents/gitActionButton.css',
