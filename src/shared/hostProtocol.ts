@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
+import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
@@ -197,8 +197,12 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * (`failureReason`), one that some client has shown or Dismiss all named carries `failureSeen`, and the host takes
  * `dismiss-failures`, which names each thread with the failure its row showed (ADR-0092). A desktop sends Dismiss all
  * only to a host that lists it, and says to update any other whose threads it named.
+ * `watcher-phone-steer`: offered with `watcher-phone` on the Owl desktop's phone listener. A phone that accepts it may send
+ * `watcher-phone-send` with `delivery: 'steer'`, which steers into Watcher's running turn, or queues the message to go next
+ * when Watcher's provider takes no steer or the turn ended first; its page carries `current.steers` and `followups`, the
+ * user's follow-ups waiting for Watcher; and `watcher-phone-remove-followup` takes one out of the queue (#1229).
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -340,6 +344,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('watcher-phone-watch'), request: watcherPhoneWatchSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-unwatch'), request: watcherPhoneWatchSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-send'), request: watcherPhoneSendSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-remove-followup'), request: watcherPhoneRemoveFollowupSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-answer'), request: watcherPhoneAnswerSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-prepare-stop-all') }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-stop-all'), confirmationId: z.uuid() }).strict(),

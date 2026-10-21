@@ -15,10 +15,22 @@ export const WATCHER_PHONE_LEGACY_LIMIT = 8
 export const WATCHER_PHONE_FEATURE = 'watcher-phone' as const
 export const WATCHER_PHONE_STOP_FEATURE = 'watcher-phone-stop-all' as const
 export const WATCHER_PHONE_MANAGE_FEATURE = 'watcher-phone-manage' as const
+/**
+ * The phone steers Watcher while it works (#1229): a send may say `delivery: 'steer'`, the page lists the user's follow-ups
+ * waiting for Watcher, and `watcher-phone-remove-followup` takes one out of the queue.
+ */
+export const WATCHER_PHONE_STEER_FEATURE = 'watcher-phone-steer' as const
+/** How many of the user's follow-ups waiting for Watcher a phone's page carries, the first in line. */
+export const WATCHER_PHONE_FOLLOWUPS_MAX = 50
 export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherPhoneWatchSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
-  draftId: z.uuid(), text: z.string().min(1).max(20_000).refine(text => text.trim().length > 0) }).strict()
+  draftId: z.uuid(), text: z.string().min(1).max(20_000).refine(text => text.trim().length > 0),
+  // Only from a phone that negotiated WATCHER_PHONE_STEER_FEATURE: while Watcher works the message steers into its turn,
+  // or goes next as its own turn when it cannot. Absent, a send while Watcher works is refused, as before (#1229).
+  delivery: z.literal('steer').optional() }).strict()
+/** Takes one of the user's follow-ups out of Watcher's queue, by its queue item ID, before it goes (#1229). */
+export const watcherPhoneRemoveFollowupSchema = z.object({ target: watcherThreadTargetSchema, itemId: z.uuid() }).strict()
 const id = z.string().min(1).max(512)
 const answer = z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: z.string().max(20_000),
   approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict()
@@ -35,7 +47,9 @@ const requestCard = z.object({ target: watcherThreadTargetSchema, title: z.strin
 export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   current: z.object({ target: watcherThreadTargetSchema, provider: providerIdSchema, modelId: z.string(),
     runtimeMode: agentRuntimeModeSchema.optional(),
-    reasoningEffort: z.string().nullable(), status: z.enum(['idle', 'running', 'error']), connected: z.boolean() }).strict().nullable(),
+    reasoningEffort: z.string().nullable(), status: z.enum(['idle', 'running', 'error']), connected: z.boolean(),
+    // For a phone that negotiated steering: whether Watcher's provider takes a steer into its running turn (#1229).
+    steers: z.boolean().optional() }).strict().nullable(),
   conversation: z.object({ messages: z.array(agentMessageSchema), earlierAvailable: z.boolean(), revision: z.number().int().nonnegative() }).strict(),
   runtimeMode: agentRuntimeModeSchema.optional(), standingWatches: z.array(watcherStandingWatchSchema).optional(),
   ownChanges: z.array(watcherOwnChangeSchema).optional(),
@@ -53,6 +67,12 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
    * its title as the room shows it and when. Optional for older phones, which ignore it (protocol version 1, additive).
    */
   takeovers: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(), at: z.string() }).strict()).max(WATCHER_PHONE_TAKEOVERS_MAX).optional(),
+  /**
+   * The user's own follow-ups waiting in Watcher's queue, from this phone or the desktop, first in line first: what goes
+   * next, after Watcher's turn. Never a wake-up or Sotto's news. Only for a phone that negotiated steering (#1229).
+   */
+  followups: z.array(z.object({ itemId: z.uuid(), draftId: z.uuid(), text: z.string(),
+    status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']) }).strict()).max(WATCHER_PHONE_FOLLOWUPS_MAX).optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])
@@ -70,6 +90,7 @@ export const watcherPhonePrepareStopResultSchema = z.union([watcherPhoneStopPrev
 export type WatcherPhoneState = z.infer<typeof watcherPhoneStateSchema>
 export type WatcherPhoneOrigin = z.infer<typeof watcherPhoneOriginSchema>
 export type WatcherPhoneSend = z.infer<typeof watcherPhoneSendSchema>
+export type WatcherPhoneRemoveFollowup = z.infer<typeof watcherPhoneRemoveFollowupSchema>
 export type WatcherPhoneAnswer = z.infer<typeof watcherPhoneAnswerSchema>
 export type WatcherPhoneResult = z.infer<typeof watcherPhoneResultSchema>
 export type WatcherPhoneSendResult = z.infer<typeof watcherPhoneSendResultSchema>
