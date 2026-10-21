@@ -244,6 +244,20 @@ describe('observational subagent roster metadata', () => {
       expect(agents()[1]).toMatchObject({ status: 'failed', message: 'Synthetic failure' })
     })
 
+    it('opens a follow-up held live from a history read that reaches it and then its completion, after the runtime ended', () => {
+      const projection = new CodexActivityProjection(() => 1_000)
+      const source = conversation('source')
+      read(projection, source, 'completed', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']])
+      // The app-server stops before the agent's own start is heard; history read again shows the follow-up ran and ended.
+      projection.runtimeEnded(source)
+      read(projection, source, 'history', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted'], ['subagent-completed-2', 'completed']])
+      const agents = source.activities.filter(record => record.kind === 'subagent').map(record => record.agents![0]!)
+      expect(agents.map(agent => agent.status)).toEqual(['completed', 'completed'])
+      expect(new Set(agents.map(agent => agent.assignmentId)).size).toBe(2)
+      // It is timed from when the message came, which the live read saw.
+      expect(agents[1]!.startedAt).toBe(new Date(1_000).toISOString())
+    })
+
     it('takes no agent as working once its conversation\'s runtime has ended', () => {
       const projection = new CodexActivityProjection(() => 1_000)
       const source = conversation('source')

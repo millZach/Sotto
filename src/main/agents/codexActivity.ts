@@ -329,8 +329,12 @@ export class CodexActivityProjection {
     // reread of the same history takes it as that assignment again, so its later completion ends it and not the one before.
     if (!held && item.kind === 'interacted' && priorFinished && !working && this.opened.get(thread)?.get(child)?.has(itemActivityId) !== true) {
       const waiting = this.messaged.get(thread) ?? new Map<string, { item: Item; context: Context; senderPath: string; at?: number }>()
-      // A history read never replaces a message held live, which keeps when it came.
-      if (context.phase !== 'history' || waiting.get(child)?.context.phase !== 'completed' && waiting.get(child)?.context.phase !== 'started') waiting.set(child, { item, context, senderPath, ...context.phase === 'history' ? {} : { at: this.now() } })
+      const existing = waiting.get(child)
+      // A history read never replaces a message held live with an older one. Reaching that same message, it takes the
+      // message over, keeping when it came, so the history's own later completion can end it, as after a runtime ended.
+      if (context.phase === 'history' && existing && existing.context.phase !== 'history') {
+        if (existing.item.id === item.id) waiting.set(child, { ...existing, context })
+      } else waiting.set(child, { item, context, senderPath, ...context.phase === 'history' ? {} : { at: this.now() } })
       this.messaged.set(thread, waiting)
       return
     }
