@@ -94,16 +94,22 @@ it('waits while Watcher\'s own turn runs, and settles nothing while the setting 
   expect(f.watching(target.threadId)).toBe(false)
 })
 
-it('leaves a thread with an open card, a running turn or background work alone', async () => {
-  const f = await fixture(), carded = await f.watched(), busy = await f.watched()
+it('leaves a thread with an open card, background work or sub-agents it cannot see the end of alone', async () => {
+  const f = await fixture(), carded = await f.watched(), busy = await f.watched(), unknown = await f.watched()
   f.native(carded.threadId).requests = [{ id: randomUUID(), kind: 'question', title: 'Synthetic question', body: 'Which one?', options: [] } as unknown as AgentThread['requests'][number]]
   await f.endTurn(carded.threadId)
   f.native(busy.threadId).backgroundWork = [{ id: randomUUID(), kind: 'shell', title: 'Synthetic watcher', startedAt: new Date().toISOString() }] as unknown as AgentThread['backgroundWork']
   await f.endTurn(busy.threadId)
+  // A sub-agent a restart could not see end may still be running: unknown work is not none.
+  const summaries = f.workspace.host as unknown as { subagentSummaries: Map<string, NonNullable<AgentThread['subagentSummary']>> }
+  summaries.subagentSummaries.set(unknown.threadId, { total: 1, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 1 })
+  await f.endTurn(unknown.threadId)
   await f.watcherHears()
   await new Promise(resolve => setTimeout(resolve, 300))
   expect(f.settled(carded.threadId)).toBe(false)
   expect(f.settled(busy.threadId)).toBe(false)
+  expect(f.thread(unknown.threadId).subagentSummary?.unknown).toBe(1)
+  expect(f.settled(unknown.threadId)).toBe(false)
   expect(f.watching(carded.threadId)).toBe(true)
   expect(f.watching(busy.threadId)).toBe(true)
 })
@@ -166,8 +172,35 @@ it('leaves a finished thread alone while a thread it delegated to still works, a
   expect(f.thread(child.threadId).status).toBe('running')
   expect(f.settled(parent.threadId)).toBe(false)
   expect(f.watching(parent.threadId)).toBe(true)
-  // The delegated thread finishes, and the parent, with nothing new for Watcher to hear, is settled.
+  // The delegated thread finishes with a pull request open, which would be settled with its parent: still not done.
+  const links = f.workspace.host as unknown as { linkPullRequestRecord(threadId: string, pullRequest: { number: number; url: string; title: string; state: string }, source: string): unknown }
+  const pullRequest = { url: 'https://github.com/example/synthetic/pull/9', number: 9, title: 'Synthetic delegated change', state: 'open' }
+  links.linkPullRequestRecord(child.threadId, pullRequest, 'agent')
   await f.endTurn(child.threadId)
+  await new Promise(resolve => setTimeout(resolve, 300))
+  expect(f.settled(parent.threadId)).toBe(false)
+  // Once it merges, the parent, with nothing new for Watcher to hear, is settled.
+  links.linkPullRequestRecord(child.threadId, { ...pullRequest, state: 'merged' }, 'agent')
+  await f.emit()
   await vi.waitFor(() => expect(f.settled(parent.threadId)).toBe(true), { timeout: 15_000 })
   expect(f.watching(parent.threadId)).toBe(false)
+})
+
+it('does not count news as heard while its wake-up is still being saved to Watcher\u2019s queue', async () => {
+  const f = await fixture(), target = await f.watched()
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const deliver = f.control.deliverWakeUp.bind(f.control)
+  const saving = vi.spyOn(f.control, 'deliverWakeUp').mockImplementation(async (...args) => { await held; return deliver(...args) })
+  await f.endTurn(target.threadId)
+  await vi.waitFor(() => expect(saving).toHaveBeenCalled(), { timeout: 15_000 })
+  // The news has left the waiting list but has not reached Watcher's queue: Watcher has not heard it.
+  const turnId = f.native(target.threadId).lastTurn!.id
+  expect(f.service.wakes.heardAllOf(target, turnId)).toBe(false)
+  f.service.settingsChanged()
+  await new Promise(resolve => setTimeout(resolve, 200))
+  expect(f.settled(target.threadId)).toBe(false)
+  release()
+  await f.watcherHears()
+  await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
 })

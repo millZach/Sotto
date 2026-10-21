@@ -659,6 +659,9 @@ export class WatcherWakeUp {
     const ready = due.filter(event => !stays(event))
     const events = this.worthTelling(ready) ? ready : []
     if (events.length) this.pending = due.filter(stays)
+    // On its way from here until its wake-up leaves Watcher's queue, or goes back to waiting.
+    for (const event of events) this.carrying.set(event.id, targetKey(event.target))
+    while (this.carrying.size > 1_000) this.carrying.delete(this.carrying.keys().next().value!)
     if (this.closed) return
     // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
     if (!events.length && !this.rememberPending.size) { if (held.size) this.batch(); return }
@@ -667,7 +670,7 @@ export class WatcherWakeUp {
     const retries = this.retries
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
-      let failed = false
+      let failed = false, delivered = false
       // A fresh pass after the wait: the state may have moved, but one recheck reads it once for every event.
       const valid = news && { ...news, events: this.withPassReads(() => this.stillDue(news.events)) }
       // What went stale while it waited may leave a thread's own facts alone, which wake no one: they wait with the rest.
@@ -685,8 +688,7 @@ export class WatcherWakeUp {
             for (const event of valid.events) if (event.kind === 'evidence-changed') { this.toldLocalAs(event); this.carriedAttention.set(event.id, this.evidence.attention(event.target)) }
             while (this.carriedAttention.size > 2_000) this.carriedAttention.delete(this.carriedAttention.keys().next().value!)
             for (const event of valid.events) this.rememberPending.add(event.id)
-            for (const event of valid.events) this.carrying.set(event.id, targetKey(event.target))
-            while (this.carrying.size > 1_000) this.carrying.delete(this.carrying.keys().next().value!)
+            delivered = true
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
           } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
         } catch {
@@ -696,6 +698,8 @@ export class WatcherWakeUp {
           failed = this.canDeliver()
         }
       }
+      // What did not go is waiting again or no longer true; only a wake-up that went is still on its way.
+      for (const event of events) if (!delivered || !valid!.events.some(item => item.id === event.id)) this.carrying.delete(event.id)
       const ids = [...this.rememberPending]
       if (ids.length) {
         try {

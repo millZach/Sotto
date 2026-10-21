@@ -33,7 +33,10 @@ against the new section. Stable still shows no Watcher section.
 - A watched thread that finishes is not settled until Watcher's news turn about it has ended. Then it is settled and no
   longer watched. No notice is set and nothing more is sent to Watcher.
 - While the setting is off, nothing is settled. Turned on, a thread that already qualifies is settled at once.
-- A thread with an open question card, or with background work running, is left watched and unsettled.
+- A thread with an open question card, background work running, or a sub-agent whose end it could not see is left
+  watched and unsettled.
+- A thread whose delegated thread still works, or has a pull request open, is left alone until that ends.
+- News still being saved to Watcher's queue does not count as heard.
 - A thread with an open pull request is left alone, and is settled once that pull request is merged.
 - A refused settle is tried once. Later updates don't ask again; the thread's next finished turn does, a turn the user
   sent included.
@@ -42,6 +45,6 @@ against the new section. Stable still shows no Watcher section.
 
 The fake provider doesn't end Watcher's turns the way a real provider does, so a second wake-up to Watcher never goes in
 that harness. Where a test needs Watcher to hear a second piece of news, it stands in for "Watcher has heard". The
-settle of a paired host's thread goes through the same command the desktop's Settle sends there. It was not run against
-a live host. macOS and Linux were not checked. The design captures don't cover Settings → Watcher, so no baseline
+settle of a paired host's thread goes through the same command the desktop's Settle sends there, after a second look,
+and restores the watch if it fails. No automated test or live host covers that path. macOS and Linux were not checked. The design captures don't cover Settings → Watcher, so no baseline
 changes.
