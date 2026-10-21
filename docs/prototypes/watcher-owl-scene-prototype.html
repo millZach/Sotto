@@ -316,7 +316,7 @@ function layoutScene() {
   const comp = roomRect(document.querySelector('.prompt'))
   const intro = ui.state === 'first' && !('started' in room.dataset) ? roomRect($('intro')) : null
   const headH = 48, dockH = 54
-  const s = clamp(Math.min(W / 1600, H / 1000) * 2.7, 1.5, 2.8)
+  const s = clamp(Math.min(W / 1600, H / 1000) * 2.025, 1.125, 2.1) // 25% smaller than first approved (Zach, October 21)
   const groundY = comp.y + comp.h * 0.55
   const sky = groundY - headH
   const lt = { x: Math.max(52, W * 0.055), y: groundY + 4, h: sky * 0.78 }
