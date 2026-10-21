@@ -20,14 +20,16 @@ seconds - it measures two things at once:
   with p50, p95 and max milliseconds from each keydown to the next animation frame after the composer's text
   updates.
 
-It prints one `main freeze: {...}` line per case and asserts only that each case collected samples, never a time
-budget; a stopwatch budget would be `SOTTO_PERF_ASSERT=1`'s, which this benchmark does not use.
+It prints one `main freeze: {...}` line per case. Without `SOTTO_PERF_ASSERT=1` it asserts only that each case collected
+samples, never a time. With it, the switch every stopwatch budget takes, it also fails when main stalls past the spec's
+`FREEZE_LIMITS`; the nightly Main freeze workflow runs it that way (`docs/ci.md`).
 
 ## Reproduce
 
 On an idle machine, after a build, with the window left on screen: Chromium draws a minimized or covered window
-about once a second, and the spec fails a case that drew fewer than 5 frames a second rather than report keystrokes
-that wait for it (`docs/perf/2026-10-20-main-lag.md`, Keystrokes).
+about once a second, so its keystrokes wait for that frame (`docs/perf/2026-10-20-main-lag.md`, Keystrokes). A case
+that drew fewer than 5 frames a second prints `"valid": false` and the reason; with `SOTTO_PERF_ASSERT=1` it fails
+instead.
 
 ```powershell
 $env:SOTTO_PERF_BENCH = '1'; npm run build; npx playwright test tests/e2e/main-freeze.spec.ts
