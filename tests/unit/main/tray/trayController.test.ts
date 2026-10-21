@@ -42,8 +42,7 @@ describe('TrayController', () => {
     const activeMenu = setMenu.mock.calls.at(-1)?.[0]
     expect(activeMenu?.[0]?.label).toBe('Stop Dictation')
     expect(activeMenu?.[3]).toMatchObject({ type: 'checkbox', checked: false })
-    // State changes only swap the menu: the menu bar item, and the identity System Settings
-    // keys its switch on, lives until dispose.
+    // State changes only swap the menu: the tray, and the identity it was made with, lives until dispose.
     expect(destroy).not.toHaveBeenCalled()
 
     controller.dispose()
