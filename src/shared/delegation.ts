@@ -226,10 +226,12 @@ export const delegatingThreadOf = (thread: Pick<AgentThread, 'delegatedBy'> | un
  * A shell without its threads' delegation links, as a host sends it while the Owl feature `thread-delegation` is off
  * (ADR-0072). A thread delegated while the feature was on keeps `delegatedBy` in its record, so turning the feature on
  * again restores every link; until then no client hides it under the thread that delegated to it. The same state when no
- * thread names one, so a host that never delegated sends what it always did.
+ * thread names one, so a host that never delegated sends what it always did. A shell of a shape this build cannot read
+ * passes through untouched, so the peer still learns why it cannot read it.
  */
 export function stateWithoutDelegation<T extends AgentState>(state: T): T {
-  if (!state.host.threads.some(thread => thread.delegatedBy !== undefined)) return state
+  const listed: unknown = (state.host as Partial<AgentState['host']> | undefined)?.threads
+  if (!Array.isArray(listed) || !state.host.threads.some(thread => thread.delegatedBy !== undefined)) return state
   const threads = state.host.threads.map(thread => {
     if (thread.delegatedBy === undefined) return thread
     const { delegatedBy, ...rest } = thread
