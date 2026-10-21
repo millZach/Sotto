@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
+import { parse } from 'yaml'
 import { readAsarText } from './asar-entries.mjs'
+import { checkOwlMacUpdateManifest, isSignedAndNotarized, updateFileInfo } from './owl-mac-package.mjs'
 import { checkedFullOwlVersion, digestFile } from './owl-release.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -20,12 +22,19 @@ export function owlMacFileNames(version) {
 }
 const requiredRoles = ['dmg', 'zip', 'updateManifest']
 
-/** Check a packaging receipt's shape and claims. It says what to expect; the bytes are checked separately. */
+/**
+ * Check a packaging receipt's shape and claims. It says what to expect; the bytes are checked separately. A receipt
+ * that does not say the app is signed with Sotto's Developer ID, notarized and stapled is refused: an unsigned Mac Owl
+ * on the Owl feed would be offered to signed Owls that cannot accept it.
+ */
 export function checkedOwlMacReceipt(receipt, { version, sourceCommit }) {
   const fail = message => { throw new Error(`The Mac Owl receipt ${message}. Download the artifact again from the workflow run for this Owl.`) }
   if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) fail('is not a packaging receipt')
-  if (receipt.kind !== 'sotto-owl-mac-package' || receipt.schemaVersion !== 1 || receipt.track !== 'owl' ||
-    receipt.platform !== 'darwin' || receipt.arch !== 'arm64') fail('is not for an Apple silicon Owl')
+  if (receipt.kind !== 'sotto-owl-mac-package' || receipt.track !== 'owl' || receipt.platform !== 'darwin' || receipt.arch !== 'arm64') fail('is not for an Apple silicon Owl')
+  if (receipt.schemaVersion !== 2 || !isSignedAndNotarized(receipt.signing)) {
+    throw new Error('The Mac Owl receipt does not say the app is signed with Sotto\'s Developer ID, notarized and stapled, so it cannot join the Owl release. ' +
+      'Build it again with the Sotto Owl for Mac workflow from main, which signs it. Nothing was published.')
+  }
   if (receipt.version !== version) fail(`is for ${String(receipt.version)}, not the Windows Owl ${version}`)
   if (receipt.sourceCommit !== sourceCommit) fail('names a different source commit from the Windows Owl')
   if (!/^[a-f0-9]{64}$/u.test(receipt.buildInputsRevision ?? '')) fail('has no build-input revision')
@@ -39,7 +48,7 @@ export function checkedOwlMacReceipt(receipt, { version, sourceCommit }) {
       !/^[a-f0-9]{64}$/u.test(file.sha256 ?? '')) fail(`has an invalid entry for ${names[role]}`)
     checked.push({ role, filename: file.filename, size: file.size, sha256: file.sha256 })
   }
-  return { buildInputsRevision: receipt.buildInputsRevision, files: checked }
+  return { buildInputsRevision: receipt.buildInputsRevision, signing: { ...receipt.signing }, files: checked }
 }
 
 /** A tar that reads zip files: libarchive's bsdtar, which Windows 10 and later and macOS ship. */
@@ -101,10 +110,15 @@ export async function verifyOwlMacArtifacts(directory, { version, sourceCommit }
       if (file.role === 'zip') await copyFile(path, zip)
       const hashed = await digestFile(file.role === 'zip' ? zip : path)
       if (size !== file.size || hashed.size !== file.size || hashed.digest !== file.sha256) throw new Error(`${file.filename} does not match the Mac Owl receipt. Download the artifact again.`)
-      // macOS's updater refuses an update that is not signed by the same developer as the running app, so the Mac
-      // update feed waits for Developer ID signing (Stage 2). Until then owl-mac.yml is checked but never attached.
-      files.push({ path, filename: file.filename, role: file.role, sha256: hashed.digest, attach: file.role !== 'updateManifest' })
+      // The receipt says the app is signed and notarized, so its update feed, owl-mac.yml, is attached beside owl.yml.
+      files.push({ path, filename: file.filename, role: file.role, sha256: hashed.digest })
     }
+    // The feed is what a Mac's updater trusts, so it must name the zip and disk image these bytes are, not only match
+    // the receipt: a feed and receipt changed together would otherwise pass.
+    const byRole = Object.fromEntries(files.map(file => [file.role, file]))
+    let feed
+    try { feed = parse(await readFile(byRole.updateManifest.path, 'utf8')) } catch { throw new Error('The Mac Owl update feed, owl-mac.yml, is not valid YAML. Download the artifact again.') }
+    checkOwlMacUpdateManifest(feed, version, { zip: { ...await updateFileInfo(zip), url: byRole.zip.filename }, dmg: await updateFileInfo(byRole.dmg.path) })
     await mkdir(unpacked)
     await extractAsar(zip, unpacked)
     const asar = join(unpacked, ...APP_ASAR.split('/'))
@@ -118,5 +132,5 @@ export async function verifyOwlMacArtifacts(directory, { version, sourceCommit }
     if (provenance.buildInputsRevision !== checked.buildInputsRevision) throw new Error('The Mac Owl app\'s build inputs differ from its receipt.')
     if (packagedVersion !== version) throw new Error(`The Mac Owl app is version ${String(packagedVersion)}, not ${version}.`)
   } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) }
-  return { directory: folder, version, sourceCommit, buildInputsRevision: checked.buildInputsRevision, files }
+  return { directory: folder, version, sourceCommit, buildInputsRevision: checked.buildInputsRevision, signing: checked.signing, files }
 }

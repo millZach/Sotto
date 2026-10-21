@@ -60,7 +60,7 @@ export async function prepareOwlRelease({ rootDirectory = root, args = [], deskt
     // The Mac build's input revision is not compared with this one: Git checks text files out with CRLF on this
     // Windows PC and LF on the macOS runner, so the same commit hashes differently. Source and version must agree.
     const mac = await verifyMac(resolve(rootDirectory, options.macArtifacts), { version, sourceCommit: provenance.sourceCommit })
-    for (const file of mac.files.filter(file => file.attach)) {
+    for (const file of mac.files) {
       verifiedDigests.set(file.path, file.sha256); files.push(file.path)
       if (file.role === 'dmg' || file.role === 'zip') attested.push(file.path)
     }

@@ -132,7 +132,7 @@ import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOpt
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
-import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -724,8 +724,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   paintDock()
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  const releaseTrack = getReleaseTrack(appRunningVersion)
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
-  const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
+  const buildName = releaseTrackName(releaseTrack)
+  // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
+  const inAppUpdates = updatesInApp(profile, releaseTrack)
   const terminalFocus = new WeakSet<Electron.WebContents>()
   const windows = new WindowManager({
     title: buildName,
@@ -1118,8 +1121,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    // Updates install only on Windows today, so the macOS app menu leaves the command out.
-    ...(profile.inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
@@ -1291,11 +1294,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onFailure: transcriptionDiagnostics,
   })
 
-  // GitHub Releases is only a real feed for the packaged Windows build: the
-  // macOS disk image ships no update metadata, and a development or E2E run
-  // must never reach the network. Everywhere else the service resolves to the
-  // 'unsupported' phase without constructing electron-updater at all.
-  const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
+  // GitHub Releases is a real feed only for the packaged Windows app and the
+  // packaged Mac Owl: stable's macOS disk image ships no update metadata, and a
+  // development or E2E run must never reach the network. Everywhere else the
+  // service resolves to the 'unsupported' phase without constructing
+  // electron-updater at all.
+  const updatesSupported = app.isPackaged && e2eConfiguration === null && inAppUpdates
   // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
   const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
   const updates = new UpdateService({
@@ -1513,8 +1517,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     show(): void {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    // Only where a check can answer: the tray is the one menu Windows has.
-    ...(updatesSupported ? { checkForUpdates: requestUpdateCheck } : {}),
+    // Only where a check can answer, and only where the tray is the one menu: a Mac's app menu carries it instead.
+    ...(updatesSupported && profile.applicationMenu === 'none' ? { checkForUpdates: requestUpdateCheck } : {}),
     quit(): void {
       app.quit()
     },

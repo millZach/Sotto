@@ -5,9 +5,8 @@ export function defaultOwlNotes({ mac = false } = {}) {
   if (!mac) return 'Windows preview. Installs over Sotto and shares its data. Owl features are available in this build.'
   return [
     'A preview of the next Sotto for Windows and Apple silicon Macs. It installs over Sotto and shares its data. Owl features are on in this build.',
-    'The Mac build runs on Apple silicon only. It is not signed by a registered Apple developer yet, so macOS stops it the first time you open it. Open System Settings, choose Privacy & Security, then Open Anyway beside the message about Sotto. Or run this in Terminal once Sotto is in Applications:',
-    '    xattr -dr com.apple.quarantine /Applications/Sotto.app',
-    'On a Mac, Owl does not update itself yet. Download the next one from its release page.',
+    "The Mac build runs on Apple silicon only. It is signed with Sotto's Developer ID and notarized by Apple, so macOS opens it like any other app, and it updates itself from the update control, as on Windows.",
+    'If your Mac has an earlier Owl that you had to open with Open Anyway, that one cannot update itself to a signed build. Install this one by hand once: open the disk image and drag Sotto to Applications, replacing the old one. After that, Owl updates itself.',
   ].join('\n\n')
 }
 

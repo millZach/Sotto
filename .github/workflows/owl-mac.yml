@@ -1,8 +1,9 @@
 # Builds the Apple silicon Mac half of a Sotto Owl (ADR-0072, ADR-0093) from the same source commit and Owl version as the
 # Windows Owl the release lead packaged by hand. Runs only when started by hand; never on a push or a pull request.
 # It publishes nothing: it attests the disk image and zip and keeps them as a workflow artifact, which release:owl
-# verifies and attaches to the Owl prerelease. The build is ad-hoc signed until Developer ID signing arrives, and
-# it uses no secrets.
+# verifies and attaches to the Owl prerelease. The app is signed with Sotto's Developer ID, notarized and stapled,
+# with the certificate and App Store Connect key from the `owl-mac` environment, which only this job reads and which
+# allows only main. A run without them fails; there is no unsigned Mac Owl.
 name: Sotto Owl for Mac
 
 on:
@@ -30,6 +31,7 @@ jobs:
     name: Package Sotto Owl (Apple silicon)
     runs-on: macos-26
     timeout-minutes: 60
+    environment: owl-mac
     # The attestation signs with this run's identity and records it on the public source repository.
     permissions:
       contents: read
@@ -53,11 +55,45 @@ jobs:
           fi
           echo "Packaging Sotto Owl $VERSION from $SOURCE."
 
-      - name: Check out the source commit
+      # Fails before any work when the owl-mac environment is missing a secret. It names them, never their values.
+      - name: Check the signing credentials
+        shell: bash
+        env:
+          MAC_DEVELOPER_ID_P12: ${{ secrets.MAC_DEVELOPER_ID_P12 }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          missing=()
+          for name in MAC_DEVELOPER_ID_P12 MAC_DEVELOPER_ID_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "The owl-mac environment has no ${missing[*]}, so the Mac Owl cannot be signed and notarized. Nothing was built."
+            echo "Add the secrets as docs/release/macos-owl-signing.md says, and start this workflow from main."
+            exit 1
+          fi
+
+      # The owl-mac environment admits a run by the branch it was started from, not by the commit it builds. Without the
+      # check below, a run started from main could sign any commit, merged or not. So the branch's full history comes
+      # down first, as the stable Mac workflow fetches it, and the source must be in it before anything from the
+      # checkout runs.
+      - name: Check out this branch's history
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF, the branch this run was started from. Merge it there first. Nothing was built."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -73,9 +109,58 @@ jobs:
       - name: Download Electron
         run: node node_modules/electron/install.js
 
-      # Refuses unless the checkout is clean, HEAD is the source and the version is this manifest's next Owl.
-      - name: Package and verify the Mac Owl
+      # After npm ci, so no install script runs while the certificate is on the runner. The keychain and the key file
+      # live under the runner's temporary folder, and the step after packaging removes them whatever happens.
+      - name: Prepare the signing keychain and notary key
+        shell: bash
+        env:
+          MAC_DEVELOPER_ID_P12: ${{ secrets.MAC_DEVELOPER_ID_P12 }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          folder="$RUNNER_TEMP/sotto-owl-signing"
+          keychain="$RUNNER_TEMP/sotto-owl-signing.keychain-db"
+          mkdir -p "$folder"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$MAC_DEVELOPER_ID_P12" | base64 --decode > "$folder/developer-id.p12"
+          security import "$folder/developer-id.p12" -k "$keychain" -P "$MAC_DEVELOPER_ID_P12_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$folder/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          # codesign builds the certificate's chain from the search list, so the keychain joins it beside the login keychain.
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identities="$(security find-identity -v -p codesigning "$keychain" | grep '"Developer ID Application: ' || true)"
+          if [ "$(printf '%s' "$identities" | grep -c . || true)" -ne 1 ]; then
+            echo "MAC_DEVELOPER_ID_P12 must hold exactly one valid Developer ID Application identity. Nothing was built."
+            exit 1
+          fi
+          identity="$(printf '%s' "$identities" | awk '{ print $2 }')"
+          printf '%s\n' "$APPLE_NOTARY_KEY_P8" > "$folder/AuthKey.p8"
+          {
+            echo "CSC_KEYCHAIN=$keychain"
+            echo "SOTTO_OWL_MAC_IDENTITY=$identity"
+            echo "APPLE_API_KEY=$folder/AuthKey.p8"
+          } >> "$GITHUB_ENV"
+
+      # Refuses unless the checkout is clean, HEAD is the source and the version is this manifest's next Owl. Signs with
+      # the keychain's Developer ID, notarizes and staples, then checks codesign, Gatekeeper and the stapled ticket.
+      - name: Package, sign, notarize and verify the Mac Owl
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: npm run package:owl -- --version "$VERSION" --source "$SOURCE"
+
+      - name: Remove the signing keychain and notary key
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/sotto-owl-signing.keychain-db" 2> /dev/null || true
+          rm -rf "$RUNNER_TEMP/sotto-owl-signing"
 
       # The receipt names the files; this checks it describes this build and lists them for the next two steps.
       - name: Name the files the receipt lists
@@ -88,6 +173,10 @@ jobs:
           const receipt = JSON.parse(readFileSync('release/owl-mac-package.json', 'utf8'))
           if (receipt.version !== process.env.VERSION || receipt.sourceCommit !== process.env.SOURCE || receipt.track !== 'owl') {
             throw new Error('The packaging receipt does not describe this Owl.')
+          }
+          const signing = receipt.signing ?? {}
+          if (signing.identity !== 'Developer ID Application' || signing.notarized !== true || signing.stapled !== true) {
+            throw new Error('The packaging receipt does not say the Mac Owl is signed, notarized and stapled.')
           }
           const files = Object.entries(receipt.files ?? {})
           for (const [, file] of files) {

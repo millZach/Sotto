@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
-import { platformProfile } from '../../../src/main/platformProfile'
+import { platformProfile, updatesInApp } from '../../../src/main/platformProfile'
 import { defaultHotkey } from '../../../src/shared/platform'
 
 describe('platformProfile', () => {
@@ -36,7 +36,7 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
-      inAppUpdates: true,
+      inAppUpdateTracks: ['stable', 'owl'],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
@@ -56,7 +56,7 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: true,
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
-      inAppUpdates: false,
+      inAppUpdateTracks: ['owl'],
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
@@ -77,7 +77,7 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'image', relativePath: 'icon.png' },
-      inAppUpdates: false,
+      inAppUpdateTracks: [],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
@@ -87,6 +87,18 @@ describe('platformProfile', () => {
     if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
     expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
     expect(createPasteCommands('linux').oneShot()).toEqual({ executable: 'hyprctl', args: ['activewindow', '-j'] })
+  })
+
+  // macOS takes an update only when it is signed by the running app's developer, and only Owl is (ADR-0093).
+  it.each([
+    ['win32', 'stable', true],
+    ['win32', 'owl', true],
+    ['darwin', 'stable', false],
+    ['darwin', 'owl', true],
+    ['linux', 'stable', false],
+    ['linux', 'owl', false],
+  ] as const)('updates in the app on %s %s: %s', (platform, track, expected) => {
+    expect(updatesInApp(platformProfile(platform), track)).toBe(expected)
   })
 
   it.each(['win32', 'darwin', 'linux'] as const)(
@@ -114,6 +126,7 @@ describe('platformProfile', () => {
 
       expect(Object.isFrozen(profile)).toBe(true)
       expect(Object.isFrozen(profile.trayIcon)).toBe(true)
+      expect(Object.isFrozen(profile.inAppUpdateTracks)).toBe(true)
       if (profile.trafficLightPosition !== null) {
         expect(Object.isFrozen(profile.trafficLightPosition)).toBe(true)
       }

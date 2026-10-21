@@ -8,7 +8,9 @@ import process from 'node:process'
 import { Arch, build, Platform } from 'electron-builder'
 import { parse } from 'yaml'
 import { checkedOwlVersion, checkOwlSource, owlBuildArguments, owlCheckout, owlPublishConfig } from './owl-release.mjs'
-import { checkOwlMacUpdateManifest, owlMacPackagePlan, owlMacReceipt, updateFileInfo, verifyOwlMacArchive } from './owl-mac-package.mjs'
+import {
+  checkOwlMacUpdateManifest, owlMacPackagePlan, owlMacReceipt, owlMacSigning, updateFileInfo, verifyOwlMacArchive, verifyOwlMacSignature,
+} from './owl-mac-package.mjs'
 
 const mac = process.platform === 'darwin'
 if (!mac && process.platform !== 'win32') throw new Error('Sotto Owl packaging runs on Windows and Apple silicon macOS only.')
@@ -18,6 +20,8 @@ const packagePath = resolve(root, 'package.json')
 const originalManifest = await readFile(packagePath)
 const args = owlBuildArguments(process.argv.slice(2))
 const version = checkedOwlVersion(JSON.parse(originalManifest).version, args)
+// A Mac Owl is always signed and notarized (ADR-0093): a run without the credentials stops before building anything.
+const signing = mac ? owlMacSigning() : undefined
 
 function run(script, args = []) {
   const result = spawnSync(process.execPath, [script, ...args], { cwd: root, stdio: 'inherit', env: process.env })
@@ -69,22 +73,25 @@ async function packageWindows() {
 }
 
 async function packageMac() {
-  const plan = owlMacPackagePlan(root, version)
+  const plan = owlMacPackagePlan(root, version, { signing })
   // Every file the receipt names is made by this run, so a leftover from an earlier one is never vouched for.
   for (const path of [plan.receipt, plan.dmg, plan.dmgBlockmap, plan.zip, plan.zipBlockmap, plan.updateManifest]) await rm(path, { force: true })
   // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
   run(resolve(root, 'scripts/build-coreml-asr.mjs'))
   await build({ projectDir: root, targets: Platform.MAC.createTarget(['dmg', 'zip'], Arch.arm64), publish: 'never', config: plan.config })
+  // electron-builder signs, notarizes and staples the app before it makes the disk image and zip from it, so the
+  // zip comparison below also proves the update archive carries this signature and ticket.
+  const signature = await verifyOwlMacSignature(plan.app)
   run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [plan.unpacked, '--installer', plan.dmg])
   const zipApp = await verifyOwlMacArchive(plan.zip, plan.unpacked)
   run(resolve(root, 'scripts/verify-owl-features-package.mjs'), [plan.unpacked, 'owl'])
   const manifest = parse(await readFile(plan.updateManifest, 'utf8'))
   checkOwlMacUpdateManifest(manifest, version, { zip: await updateFileInfo(plan.zip), dmg: await updateFileInfo(plan.dmg) })
   return async provenance => {
-    const receipt = await owlMacReceipt({ version, provenance, plan })
+    const receipt = await owlMacReceipt({ version, provenance, plan, signing: signature })
     await writeFile(plan.receipt, `${JSON.stringify(receipt, null, 2)}\n`)
     const blockmaps = [receipt.files.dmgBlockmap, receipt.files.zipBlockmap].filter(Boolean).map(file => resolve(root, 'release', file.filename))
-    return { version, track: 'owl', installer: plan.dmg, updateArchive: plan.zip, manifest: plan.updateManifest, blockmaps, receipt: plan.receipt, zipApp }
+    return { version, track: 'owl', installer: plan.dmg, updateArchive: plan.zip, manifest: plan.updateManifest, blockmaps, receipt: plan.receipt, zipApp, signing: receipt.signing }
   }
 }
 
