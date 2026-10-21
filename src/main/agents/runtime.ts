@@ -141,10 +141,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) })),
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
-    muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox })),
+    muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true })),
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
-    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held } : { heldProviders: held, openExternal: options.openExternal })),
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true })),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,

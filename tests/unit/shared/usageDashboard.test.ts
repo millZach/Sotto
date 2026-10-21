@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { providerIdSchema } from '../../../src/shared/agents'
 import {
-  USAGE_CLIENT_ROWS_MAX, USAGE_CLIENTS, USAGE_MODEL_ROWS_MAX, usageClientSchema, usageHistoryCursorSchema, usageHistoryPromptSchema, usageHistoryStatusSchema,
+  USAGE_CLIENT_ROWS_MAX, USAGE_CLIENTS, USAGE_LIMIT_PROVIDERS, USAGE_MODEL_ROWS_MAX, usageClientSchema, usageHistoryCursorSchema, usageHistoryPromptSchema, usageHistoryStatusSchema,
   usageHostReadSchema, usageHourlyAggregateSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageLocalReadSchema, usagePromptSubmissionSchema,
   usageProviderIdSchema, usageQuerySchema, usageQuotaReadSchema, usageTimeZoneSchema, usageTokenObservationSchema,
 } from '../../../src/shared/usageDashboard'
@@ -15,13 +15,18 @@ describe('usage dashboard boundaries', () => {
   it('accepts known zeros and keeps missing fields unknown without loading provider runtime code', () => {
     const parsed = usageTokenObservationSchema.parse(observation)
     expect(parsed.tokens).toEqual({ input: 0, cached: 0 })
-    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin'])
-    expect(providerIdSchema.options).toContain('muse')
-    expect(usageProviderIdSchema.safeParse('muse').success).toBe(false)
-    expect(usageTokenObservationSchema.safeParse({ ...observation, providerId: 'muse' }).success).toBe(false)
-    expect(usageQuerySchema.safeParse({ providerIds: ['muse'] }).success).toBe(false)
-    expect(usagePromptSubmissionSchema.safeParse({ providerId: 'muse', threadId: 'sotto-thread', messageId: 'message',
-      modelId: 'muse-model', at: '2026-10-12T12:00:00.000Z', kind: 'user', inputKind: 'send' }).success).toBe(false)
+    // Muse and OpenCode are counted in Sotto threads (October 21, 2026); OpenCode reports no account limits.
+    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+    expect(usageProviderIdSchema.options.every(id => providerIdSchema.options.includes(id))).toBe(true)
+    for (const providerId of ['muse', 'opencode'] as const) {
+      expect(usageTokenObservationSchema.safeParse({ ...observation, providerId }).success).toBe(true)
+      expect(usageQuerySchema.safeParse({ providerIds: [providerId] }).success).toBe(true)
+      expect(usagePromptSubmissionSchema.safeParse({ providerId, threadId: 'sotto-thread', messageId: 'message',
+        modelId: `${providerId}-model`, at: '2026-10-12T12:00:00.000Z', kind: 'user', inputKind: 'send' }).success).toBe(true)
+    }
+    expect(USAGE_LIMIT_PROVIDERS).toEqual(['codex', 'claude', 'grok', 'devin', 'muse'])
+    expect(usageQuotaReadSchema.safeParse({ providerId: 'muse', status: 'unavailable', windows: [], refreshable: false, reason: 'not-reported' }).success).toBe(true)
+    expect(usageQuotaReadSchema.safeParse({ providerId: 'opencode', status: 'unavailable', windows: [], refreshable: false, reason: 'unsupported' }).success).toBe(false)
   })
 
   it.each([

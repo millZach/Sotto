@@ -83,4 +83,50 @@ describe('optional Owl usage over frozen host v1', () => {
       }
     } finally { raw?.frames.close(); await client?.close(); await server.close(); await rm(directory, { recursive: true, force: true }) }
   })
+  it('reads and answers a desktop from before Muse and OpenCode were counted only for the providers it knows', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-usage-wire-'))
+    const pairing = new PairedClients(directory); await pairing.load()
+    const state = emptyDesktopState('11111111-1111-4111-8111-111111111111')
+    const base = localActivity()
+    const museRow = { ...base.providers[1]!, providerId: 'muse' as const }
+    const activity = { ...base,
+      providers: [...base.providers, museRow, { ...museRow, providerId: 'opencode' as const }],
+      models: [...base.models, { ...museRow, modelId: 'muse-wonder-full-1.0' }, { ...museRow, providerId: 'opencode' as const, modelId: 'anthropic/claude-sonnet-4-5' }],
+      clients: [{ ...base.clients![0]!, providerIds: ['claude' as const, 'muse' as const, 'opencode' as const] }, { ...base.clients![1]!, providerIds: ['muse' as const] }, ...base.clients!.slice(2)] }
+    const result: UsageLocalHostRead = { status: 'ready', activity, quotas: [
+      { providerId: 'codex', status: 'unavailable', refreshable: false, reason: 'not-read', windows: [] },
+      { providerId: 'muse', status: 'available', refreshable: true, observedAt: '2026-10-21T12:00:00.000Z', windows: [{ id: 'muse-window', kind: 'primary', label: '5 hours', usedPercent: 12, durationMinutes: 300 }] },
+    ] }
+    const metadata = { startedAt: '2026-10-12T12:00:00.000Z', revision: 4, generation: 0, legacySeedCompleted: true }
+    const usage: HostUsageReads = { read: vi.fn(async () => result), refresh: vi.fn(async () => result), clear: vi.fn(async () => ({ status: 'stale' as const, metadata })) }
+    const control = { get: () => state, shell: () => state, threadDetail: () => null, subscribe: () => () => undefined, commandShell: vi.fn(async () => state) }
+    const server = await startSocketServer({ service: new LocalHostService({ control, usage, mayClearUsage: () => false }), pairing, mayAnswer: () => false })
+    let client: SocketHostService | undefined
+    let raw: Awaited<ReturnType<typeof rawPeer>> | undefined
+    try {
+      const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Desktop')
+      client = new SocketHostService({ url: `http://127.0.0.1:${server.descriptor.port}`, token: paired.token, catchUpEvents: false })
+      expect((await client.connect()).features).toContain('usage-muse-opencode')
+      // A desktop that counts them is read for every provider it names and sent their rows.
+      expect(await client.usageRead({ providerIds: ['muse', 'opencode'] })).toEqual(result)
+      expect(usage.read).toHaveBeenLastCalledWith({ providerIds: ['muse', 'opencode'] })
+      // One from before them accepts history but not this feature, and refuses a whole read naming a provider it does not know.
+      raw = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId))
+      expect(await raw.call('hello', { op: 'hello', accepts: ['client-liveness', 'usage-history'] })).toMatchObject({ ok: true })
+      const read = await raw.call('older-read', { op: 'usage-read', query: { timeZone: 'UTC' } }) as { ok: boolean; result: UsageLocalHostRead }
+      expect(usage.read).toHaveBeenLastCalledWith({ timeZone: 'UTC', providerIds: ['codex', 'claude', 'grok', 'devin'] })
+      const refreshed = await raw.call('older-refresh', { op: 'usage-refresh' }) as { ok: boolean; result: UsageLocalHostRead }
+      expect(usage.refresh).toHaveBeenLastCalledWith(['codex', 'claude', 'grok', 'devin'])
+      for (const answer of [read, refreshed]) {
+        expect(answer.ok).toBe(true)
+        expect(JSON.stringify(answer.result)).not.toMatch(/"muse"|"opencode"/u)
+        expect(answer.result.quotas.map(quota => quota.providerId)).toEqual(['codex'])
+        expect(answer.result.activity!.providers.map(row => row.providerId)).toEqual(['claude', 'codex'])
+        expect(answer.result.activity!.models.map(row => row.modelId)).toEqual(base.models.map(row => row.modelId))
+        // A place row that held only Muse's work is left out; one that held others keeps them.
+        expect(answer.result.activity!.clients!.map(row => row.providerIds)).toEqual([['claude'], ...base.clients!.slice(2).map(row => row.providerIds)])
+        expect(answer.result.activity!.totals).toEqual(result.activity!.totals)
+      }
+    } finally { raw?.frames.close(); await client?.close(); await server.close(); await rm(directory, { recursive: true, force: true }) }
+  })
 })
