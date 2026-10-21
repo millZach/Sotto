@@ -1,5 +1,6 @@
 // Invented Usage reads for the renderer tests and the Usage capture page: numbers only, no real figures.
-import { USAGE_TOKEN_FIELDS, type UsageActivityAggregate, type UsageBridge, type UsageClientAggregate, type UsageDashboardRead, type UsageFieldTotal, type UsageHostRead, type UsageLocalRead, type UsageQuery, type UsageQuotaRead, type UsageTokenTotals } from '../../../src/shared/usageDashboard'
+import { USAGE_TOKEN_FIELDS, type UsageActivityAggregate, type UsageBridge, type UsageClientAggregate, type UsageDailyAggregate, type UsageDashboardRead, type UsageFieldTotal, type UsageHostRead, type UsageLocalRead, type UsageModelAggregate, type UsageProviderAggregate, type UsageProviderId, type UsageQuery, type UsageQuotaRead, type UsageTokenTotals } from '../../../src/shared/usageDashboard'
+import { sumActivity } from '../../../src/renderer/src/features/usage/usagePresentation'
 
 /** 10:40 AM on Wednesday, October 14, 2026 in Los Angeles. */
 export const USAGE_NOW = new Date('2026-10-14T17:40:00Z')
@@ -114,5 +115,58 @@ export function fixtureBridge(read: UsageDashboardRead): UsageBridge & { readonl
     },
     refresh: async query => ({ hosts: pick(query) }),
     clear: async query => query.hosts.map(host => ({ hostId: host.hostId, status: 'cleared' as const })),
+  }
+}
+
+/** One model's prompts on each of the last seven days, October 8 to 14, and its tokens per prompt (none for Devin). */
+const SPLIT_MODELS: ReadonlyArray<readonly [UsageProviderId, string, readonly number[], number | undefined]> = [
+  ['claude', 'claude-opus-5-5', [10, 12, 8, 0, 9, 11, 6], 200_000],
+  ['codex', 'gpt-6.1-sol', [5, 6, 4, 0, 5, 7, 3], 150_000],
+  ['claude', 'claude-sonnet-5-5', [3, 4, 2, 0, 3, 2, 1], 100_000],
+  ['grok', 'grok-code-2', [2, 0, 1, 0, 2, 1, 1], 80_000],
+  ['codex', 'gpt-6-mini', [1, 1, 1, 0, 1, 1, 0], 40_000],
+  ['claude', 'claude-haiku-4-5', [0, 1, 0, 0, 1, 0, 1], 3_000_000],
+  ['devin', 'swe-1', [1, 0, 0, 0, 0, 1, 0], undefined],
+]
+const SPLIT_DAYS = ['2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14']
+function splitDaily(rows: typeof SPLIT_MODELS): UsageDailyAggregate[] {
+  return SPLIT_DAYS.map((day, index) => ({ ...sumActivity(rows.map(([, , prompts, perPrompt]) => {
+    const count = prompts[index]!
+    return activityRow(count, 0, 0, perPrompt === undefined ? tokens() : tokens(count * perPrompt, count * perPrompt / 100))
+  })), day }))
+}
+
+/** This computer with seven models across four providers, so the Per day chart can be split by provider and by model. */
+export function splitHost(): UsageHostRead {
+  const daily = splitDaily(SPLIT_MODELS)
+  const totals = sumActivity(daily)
+  const models: UsageModelAggregate[] = SPLIT_MODELS.map(row => ({ ...sumActivity(splitDaily([row])), providerId: row[0], modelId: row[1] }))
+  const providers: UsageProviderAggregate[] = [...new Set(SPLIT_MODELS.map(row => row[0]))].map(providerId => ({ ...sumActivity(splitDaily(SPLIT_MODELS.filter(row => row[0] === providerId))), providerId }))
+  return { hostId: 'laptop', status: 'ready', persistence: 'saved', quotas: [], activity: {
+    metadata: { startedAt: '2026-04-21T00:00:00Z', revision: 9, generation: 0, legacySeedCompleted: true, history: { status: 'complete' } },
+    totals, timeZone: USAGE_ZONE, providers, models, modelCount: models.length, modelsTruncated: false, daily, dailyCoverage: 'complete', hourly: [],
+    clients: [client('sotto', 'sotto', false, totals)],
+  } }
+}
+
+/**
+ * A bridge for `splitHost`: a read filtered by provider or model answers with only those models' days. `filtered`
+ * runs before each filtered answer, so a test can hold or fail it.
+ */
+export function splitBridge(filtered: (query: UsageQuery) => Promise<void> = async () => undefined): UsageBridge & { readonly reads: UsageQuery[] } {
+  const reads: UsageQuery[] = []
+  return {
+    reads,
+    read: async query => {
+      reads.push(query)
+      const host = splitHost()
+      if (query.providerIds === undefined && query.modelIds === undefined) return { hosts: [host] }
+      await filtered(query)
+      const rows = SPLIT_MODELS.filter(([providerId, modelId]) => (query.providerIds?.includes(providerId) ?? true)
+        && (query.modelIds === undefined || query.modelIds.some(id => id === modelId || id.endsWith(`:model:${modelId}`))))
+      return { hosts: [{ ...host, activity: { ...host.activity!, daily: splitDaily(rows) } }] }
+    },
+    refresh: async () => ({ hosts: [splitHost()] }),
+    clear: async query => query.hosts.map(item => ({ hostId: item.hostId, status: 'cleared' as const })),
   }
 }

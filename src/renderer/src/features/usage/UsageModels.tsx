@@ -1,12 +1,11 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { publicProviderEntityId } from '../../../../shared/agents'
 import type { UsageDailyAggregate, UsageModelAggregate } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
 import { CompositionBar, Dash, Spark } from './UsageCharts'
 import { About, EmptyUsage } from './UsageOverview'
 import type { UsagePage } from './usagePage'
-import { NO_TOKENS, cacheShare, fieldTokens, nounFor, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, sumActivity } from './usagePresentation'
+import { NO_TOKENS, cacheShare, fieldTokens, modelSpellings, nounFor, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, sumActivity } from './usagePresentation'
 
 const SORTS = [['prompts', 'Prompts'], ['tokens', 'Tokens'], ['cache', 'Cache']] as const
 type Sort = typeof SORTS[number][0]
@@ -85,7 +84,7 @@ function useModelDaily(page: UsagePage, row: UsageModelAggregate | undefined): U
   const [found, setFound] = useState<{ key: string; daily: UsageDailyAggregate[] } | undefined>(undefined)
   const { bridge, query, hostIds } = page
   // An older host filters by the spelling it stored, which may be a public or dated ID the row was joined from.
-  const modelIds = row === undefined ? [] : [...new Set([row.modelId, publicProviderEntityId(row.providerId, 'model', row.modelId), ...(page.summary.modelIds.get(keyOf(row)) ?? [])])]
+  const modelIds = row === undefined ? [] : modelSpellings(page.summary, row)
   const key = row === undefined ? null : JSON.stringify([keyOf(row), modelIds, query, hostIds])
   useEffect(() => {
     if (bridge === undefined || row === undefined || key === null) return
