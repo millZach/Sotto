@@ -278,7 +278,8 @@ struct WatcherReaderPlace: Equatable {
 
     /// - Parameters:
     ///   - newest: the bottom of the newest words; `end`, the bottom of the page.
-    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    ///   - top: the top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away
+    ///     (#1278); `dockTop`, the top of the box.
     ///   - cards: each waiting card's frame, by its key.
     init(newest: CGFloat, end: CGFloat, top: CGFloat, dockTop: CGFloat, cards: [String: CGRect]) {
         let slack = Self.slack
@@ -300,18 +301,25 @@ struct WatcherReaderPlace: Equatable {
     /// user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page keeps its end
     /// where it was, which would carry the card off with it (#1277).
     ///
-    /// Returns the point, as a fraction of the card's height and of the visible page's, that `ScrollViewProxy.scrollTo`
-    /// lines up to put the card's top there, or nil when it is already within a point of there.
+    /// Returns the point, as a fraction of the card's height and of the scroll view's visible page, that
+    /// `ScrollViewProxy.scrollTo` lines up to put the card's top there, or nil when it is already within a point of there.
+    /// The scroll view's visible page starts at `viewTop`, the bottom of the bar's place, even while the bar is away and
+    /// the reader sees the strip above it (#1278). A card the reader has in that strip lines up at a point above the
+    /// visible page's top, a fraction below 0.
     /// - Parameters:
-    ///   - card: the card's frame now; `offset`, its top's distance below the header where the reader left it.
-    ///   - top: the bottom of the header; `dockTop`, the top of the box.
-    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat? {
+    ///   - card: the card's frame now; `offset`, its top's distance below `top` where the reader left it.
+    ///   - top: the top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away;
+    ///     `dockTop`, the top of the box.
+    ///   - viewTop: the top of the scroll view's visible page, which `scrollTo` lines up within; `top` when nil.
+    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat, viewTop: CGFloat? = nil) -> CGFloat? {
         let spare = dockTop - top - card.height
         let wanted = min(max(top + offset, min(top, top + spare)), max(top, top + spare))
         guard abs(card.minY - wanted) > 1 else { return nil }
-        // A card as tall as the room between the header and the box has its top at the header.
-        guard abs(spare) > 1 else { return 0 }
-        return min(max((wanted - top) / spare, 0), 1)
+        let viewTop = viewTop ?? top
+        let room = dockTop - viewTop - card.height
+        // A card as tall as the scroll view's visible page has its top at that page's top, whatever point lines up.
+        guard abs(room) > 1 else { return 0 }
+        return (wanted - viewTop) / room
     }
 }
 

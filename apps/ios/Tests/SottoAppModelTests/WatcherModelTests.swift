@@ -1491,6 +1491,33 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(slide.moved(to: -40, counts: true), false, "And past it, pulling to read the page again")
     }
 
+    /// With the bar away, the reader sees the strip it uncovered, between the status bar and the bar's place (#1278). A card
+    /// there is seen whole, so it is held over a lower one the box cuts off, and it stays where the reader has it rather
+    /// than being pushed down to the bar's place. `scrollTo` still lines up within the scroll view's visible page, which
+    /// starts at the bar's place, so putting it back after the page moved it lines up a point above that page's top.
+    func testACardInTheStripTheBarUncoversIsHeldWhereTheReaderHasIt() throws {
+        // The status bar ends at 59, the bar's place at 123, and the box starts at 700.
+        let question = CGRect(x: 16, y: 80, width: 340, height: 220)
+        let permission = CGRect(x: 16, y: 320, width: 340, height: 580)
+        let cards = ["login": question, "notes": permission]
+        let seen = WatcherReaderPlace(newest: 40, end: 990, top: 59, dockTop: 700, cards: cards)
+        XCTAssertEqual(seen.heldCard, "login", "The question is whole in what the reader sees")
+        let measuredFromThePlace = WatcherReaderPlace(newest: 40, end: 990, top: 123, dockTop: 700, cards: cards)
+        XCTAssertEqual(measuredFromThePlace.heldCard, "notes",
+                       "Measured from the bar's place, the question's top would count as covered and the permission would win")
+
+        // Where the reader left it, 21 points below the status bar, nothing moves.
+        XCTAssertNil(WatcherReaderPlace.anchor(card: question, offset: 21, top: 59, dockTop: 700, viewTop: 123))
+        XCTAssertNotNil(WatcherReaderPlace.anchor(card: question, offset: -43, top: 123, dockTop: 700),
+                        "Measured from the bar's place, the question would be pushed down to it")
+        // The page carried it 30 points down: back to 80, which `scrollTo` does by lining up a point above the visible
+        // page's top.
+        let carried = try XCTUnwrap(WatcherReaderPlace.anchor(card: question.offsetBy(dx: 0, dy: 30), offset: 21, top: 59,
+                                                              dockTop: 700, viewTop: 123))
+        XCTAssertLessThan(carried, 0)
+        XCTAssertEqual(123 + carried * (700 - 123) - carried * 220, 80, accuracy: 0.0001, "The question's top lands where it was")
+    }
+
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {
         XCTAssertEqual(WatcherPermissions.modes.map(WatcherPermissions.name), ["Ask before actions", "Allow edits", "Allow actions", "Full access"])
         XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", computer: "Laptop"), "Codex decides what to ask you about.")

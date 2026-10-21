@@ -1113,6 +1113,58 @@ import XCTest
         XCTAssertTrue(reply.waitForExistence(timeout: 5), "Conversation opens from the bar")
     }
 
+    /// With the bar away, the reader sees the strip it uncovered under the status bar. A card they have there stays put
+    /// while Watcher writes above it, rather than being pushed down to where the bar was (#1278).
+    func testACardInTheStripTheBarUncoversStaysPutWhileWatcherWrites() {
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing"])
+        openWatcher()
+        let writing = text("Checking the threads I watch.")
+        XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
+        // The card's top is the line over it that says where its answer goes; its foot is Send answer.
+        let lead = text("The thread’s own card. Your answer goes to Fix login test")
+        XCTAssertTrue(lead.waitForExistence(timeout: 15), "Fix login test's question arrives while Watcher writes")
+        let card = byID("watcher-card-login")
+        revealInWatcher(card)
+        // The strip the bar uncovers runs from the status bar, 4 points above the owl, to the bar's bottom, 8 below it.
+        showWatcherBar()
+        let owl = app.buttons["watcher-to-top"].frame
+        let strip = (top: owl.minY - 4, bottom: owl.maxY + 8)
+        let target = (strip.top + strip.bottom) / 2
+        let conversation = app.buttons["watcher-section-conversation"]
+        let reply = byID("watcher-reply")
+        let windowTop = app.windows.firstMatch.frame.minY
+        var steps: [String] = []
+        // Reads the page down, with the bar going away, until the card's top sits in the strip and its foot above the box.
+        func inStrip() -> Bool {
+            let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
+            let away = !conversation.exists || conversation.frame.maxY <= windowTop + 1
+            steps.append("card \(top) to \(foot), strip \(strip.top) to \(strip.bottom), box at \(box), bar away \(away)")
+            return away && top >= strip.top + 4 && top <= strip.bottom - 8 && foot <= box
+        }
+        for _ in 0..<8 where !inStrip() {
+            let off = lead.frame.minY - target
+            if off > 30 { dragWatcher(down: true, by: min(off + 8, 220)) } else { dragWatcher(down: false, by: 80) }
+            _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
+        }
+        let placed = inStrip()
+        if !placed { explain("watcher-card-not-in-strip", steps.joined(separator: "\n")) }
+        XCTAssertTrue(placed, "The card's top sits in the strip the bar uncovered (\(steps.last ?? ""))")
+        let start = lead.frame.minY
+        // Watcher's words grow above the card, twice, and the card stays where the reader has it, with the bar still away.
+        for _ in 0..<2 {
+            let before = writing.label
+            let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher keeps writing")
+            _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
+            let now = lead.frame.minY
+            if abs(now - start) > 2 { explain("watcher-card-left-the-strip", "card top \(now), was \(start), strip \(strip.top) to \(strip.bottom)") }
+            XCTAssertEqual(now, start, accuracy: 2, "The card stays where the reader has it in the strip the bar uncovered")
+        }
+        waitForWatcherBar(away: true, "The bar stays away while Watcher writes")
+        XCTAssertTrue(app.buttons["A fresh account for each run"].isHittable, "The card's answers can be pressed")
+        capture("watcher-card-in-uncovered-strip-dark")
+    }
+
     /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and
     /// the line saying what watching means in its reply box.
     func testAReceiptRowOpensItsThread() {
