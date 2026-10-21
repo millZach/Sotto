@@ -60,7 +60,8 @@ describe('finding OpenCode 2 on Windows', () => {
     await writeFile(join(npm, 'node_modules', '@opencode', 'cli', 'package.json'), '{}')
     const found = await find('win32', { APPDATA: join(home, 'AppData', 'Roaming') })
     expect(found).toBe(program)
-    expect(await channel(found)).toEqual({ channel: 'npm', npmPrefix: npm })
+    // `channel` reads this runner's platform, and only Windows' npm keeps a prefix's packages straight under it.
+    expect(await channel(found)).toEqual({ channel: 'npm', ...process.platform === 'win32' ? { npmPrefix: npm } : {} })
   })
 
   it('passes over the stand-in an install without scripts leaves, for the program package npm nested inside it', async () => {
@@ -72,7 +73,8 @@ describe('finding OpenCode 2 on Windows', () => {
     const program = await file(join(cli, 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe'), MZ)
     const found = await find('win32', { APPDATA: join(home, 'AppData', 'Roaming') })
     expect(found).toBe(program)
-    expect(await channel(found)).toEqual({ channel: 'npm', npmPrefix: npm })
+    // `channel` reads this runner's platform, and only Windows' npm keeps a prefix's packages straight under it.
+    expect(await channel(found)).toEqual({ channel: 'npm', ...process.platform === 'win32' ? { npmPrefix: npm } : {} })
   })
 
   it('takes the ARM64 program package on Windows ARM, and the x64 one only when it is all there is', async () => {
