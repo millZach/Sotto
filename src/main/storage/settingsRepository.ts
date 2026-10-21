@@ -5,7 +5,13 @@ import { AtomicJsonStore } from './atomicJsonStore'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 
 export interface SettingsRepositoryOptions {
-  watcherEnabled?: boolean
+  /**
+   * The Owl list's answer for worker roles (#1041), read once at start. Off, the saved rows stay as they are: a save or a
+   * reset keeps them, and a patch that would change them is refused. Absent keeps today's behaviour, as in tests.
+   */
+  workerRolesEnabled?: boolean
+  /** The Owl list's answer for extra and hold dictation shortcuts, read once at start. Off, a save or a reset keeps the saved lists. */
+  dictationHoldShortcutsEnabled?: boolean
   now?: () => number
   store?: AtomicJsonStore<AppSettings>
   onRecovery?: (notice: RecoveryNotice) => void
@@ -22,11 +28,13 @@ export class SettingsRepository {
   private readonly defaults: AppSettings
   private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
   private readonly shellPillInUse: (() => boolean) | undefined
-  private readonly watcherEnabled: boolean
+  private readonly workerRolesEnabled: boolean
+  private readonly dictationHoldShortcutsEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
-    this.watcherEnabled = options.watcherEnabled ?? true
+    this.workerRolesEnabled = options.workerRolesEnabled ?? true
+    this.dictationHoldShortcutsEnabled = options.dictationHoldShortcutsEnabled ?? true
     this.omarchyTheme = options.omarchyTheme
     this.shellPillInUse = options.shellPillInUse
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
@@ -50,7 +58,7 @@ export class SettingsRepository {
   async save(input: unknown): Promise<AppSettings> {
     const parsed = this.parse(input)
     return this.enqueueMutation(async () => {
-      const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
+      const settings = await this.keepHeld(parsed)
       await this.writeSettings(settings)
       return this.project(settings)
     })
@@ -60,10 +68,10 @@ export class SettingsRepository {
     const patchSnapshot = { ...patch }
     return this.enqueueMutation(async () => {
       const current = await this.readSettings()
-      if (!this.watcherEnabled && patchSnapshot.watcherInFlightLimit !== undefined && patchSnapshot.watcherInFlightLimit !== current.watcherInFlightLimit) {
-        throw new Error('Watcher settings are available in Sotto Owl. Nothing was changed.')
+      if (!this.workerRolesEnabled && patchSnapshot.workerRoles !== undefined && JSON.stringify(patchSnapshot.workerRoles) !== JSON.stringify(current.workerRoles)) {
+        throw new Error('Worker roles are available in Sotto Owl. Nothing was changed.')
       }
-      if (!this.watcherEnabled) delete patchSnapshot.watcherInFlightLimit
+      if (!this.workerRolesEnabled) delete patchSnapshot.workerRoles
       const settings = this.parse({ ...current, ...patchSnapshot })
       await this.writeSettings(settings)
       return this.project(settings)
@@ -73,10 +81,19 @@ export class SettingsRepository {
   async reset(): Promise<AppSettings> {
     const parsed = this.parse(this.defaults)
     return this.enqueueMutation(async () => {
-      const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
+      // The speech model stays chosen, as Settings promises: it is what is on this computer, not a preference.
+      const settings = { ...(await this.keepHeld(parsed)), speechModel: (await this.readSettings()).speechModel }
       await this.writeSettings(settings)
       return this.project(settings)
     })
+  }
+
+  /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
+  private async keepHeld(settings: AppSettings): Promise<AppSettings> {
+    if (this.workerRolesEnabled && this.dictationHoldShortcutsEnabled) return settings
+    const saved = await this.readSettings()
+    return { ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
+      ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }) }
   }
 
   async exists(): Promise<boolean> {

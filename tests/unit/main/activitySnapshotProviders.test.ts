@@ -49,7 +49,7 @@ it('keeps certified activity identity through Sotto IDs and provider aggregation
   const codex = new SharedProvider()
   codex.state.threads[0]!.activities = [activity('First')]
   const host = new ConfiguredProviderHost({
-    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() },
+    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() },
     provider: () => 'codex', enabledProviders: () => ['codex'], threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -86,7 +86,7 @@ it('copies mutable legacy activity on each arrival, including edits within one a
   const legacy = new MutableLegacyProvider()
   legacy.state.threads[0]!.activities = [activity('First')]
   const host = new ConfiguredProviderHost({
-    hosts: { codex: legacy, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() },
+    hosts: { codex: legacy, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() },
     provider: () => 'codex', enabledProviders: () => ['codex'],
   })
   cleanup.push(async () => { host.disconnect(); await rm(root, { recursive: true, force: true }) })
@@ -138,7 +138,7 @@ async function askedSwitch(claude: AskedProvider) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-activity-asked-'))
   const registry = new ThreadRegistry(root)
   const host = new ConfiguredProviderHost({
-    hosts: { codex: new FakeProviderHost(), claude: new SottoThreadHost('claude', claude, registry), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() },
+    hosts: { codex: new FakeProviderHost(), claude: new SottoThreadHost('claude', claude, registry), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() },
     provider: () => 'claude', enabledProviders: () => ['claude'],
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -206,7 +206,7 @@ async function switched(codex: FakeProviderHost) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-activity-provider-'))
   const registry = new ThreadRegistry(root)
   const host = new ConfiguredProviderHost({
-    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() },
+    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() },
     provider: () => 'codex', enabledProviders: () => ['codex'], threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })

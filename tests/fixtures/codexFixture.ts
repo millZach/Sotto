@@ -37,7 +37,7 @@ export function aroundTurnStart(requests: readonly RecordedRpc[]): { before: Rec
   return { before: requests.slice(0, start), after: requests.slice(start) }
 }
 // The deadline also covers the fake app server's process start; see the note on claudeFixture.
-export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & Pick<CodexAppServerHostOptions, 'pollIntervalMs'> = {}) {
+export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & Pick<CodexAppServerHostOptions, 'pollIntervalMs' | 'logEvent'> = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-codex-'))
   const adapter = new CodexAppServerHost({ userDataPath: root, executable: process.execPath,
     args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...session })
@@ -76,7 +76,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
     await writeFile(path, rolloutLine(0, { id: codexThreadId }, 'session_meta'), { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
     await appendFile(path, rolloutLine(Date.now(), { type: 'item_completed', item: { type: 'UserMessage', id: randomUUID(), content: [{ type: 'text', text }] } }))
   }
-  const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId, typeUnseen, skips: codexFixtureSkips,
+  const fixture = { root, adapter, registry, host, providerId: 'codex' as const, projectId: 'project', modelId: 'fixture-model', script, realId, typeUnseen, skips: codexFixtureSkips,
     // A settings change comes back with the snapshot Codex's confirmation produced; a delayed reply loses it (#318).
     settings: { snapshot: true, loseConfirmation: () => script({ delay: { method: 'thread/settings/update', ms: requestTimeoutMs + 1000 }, suppressNotifications: true }) },
     // Every app-server started from now on answers `initialize` as the newer client.

@@ -63,7 +63,8 @@ describe('Muse in provider settings', () => {
     expect(screen.getByText(/Muse uses its own release feed; the other clients use the npm registry/)).toBeVisible()
     const support = screen.getByText('Threads with Muse').closest('details')!
     fireEvent.click(within(support).getByText('Threads with Muse'))
-    expect(within(support).getByText(/Sotto's browser tools, Watcher and skills are unavailable/)).toBeInTheDocument()
+    expect(within(support).getByText(/On Muse 1\.4\.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse\. Skills are unavailable\./)).toBeInTheDocument()
+    expect(within(support).queryByText(/browser tools, Watcher and skills are unavailable/)).toBeNull()
     expect(within(support).getByText(/Muse does not write thread titles, branch names, commit messages or pull request drafts/)).toBeInTheDocument()
     const models = screen.getByRole('tab', { name: 'Models' })
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Configuration' }), { key: 'ArrowRight' })
@@ -123,6 +124,57 @@ describe('Muse in provider settings', () => {
     fireEvent.click(within(steps).getByText('Installation steps'))
     expect(within(steps).getByText('mise upgrade muse', { selector: 'code' })).toBeInTheDocument()
     expect(within(steps).getByRole('button', { name: 'Open Muse installation guide' })).toBeInTheDocument()
+  })
+
+  it('saves the shell sandbox switch through configure, starting from on', async () => {
+    const { command } = await mount()
+    const sandbox = screen.getByRole('switch', { name: 'Shell sandbox' })
+    expect(sandbox).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(sandbox)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { museDisableSandbox: true } }))
+  })
+
+  it('says so when the shell sandbox switch was not saved', async () => {
+    const { command, state } = await mount()
+    command.mockResolvedValueOnce({ ...state, error: 'This action is not allowed from this device. Check its permission policy or complete the action on the host.' })
+    fireEvent.click(screen.getByRole('switch', { name: 'Shell sandbox' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This action is not allowed from this device.')
+    command.mockRejectedValueOnce(new Error('lost'))
+    fireEvent.click(screen.getByRole('switch', { name: 'Shell sandbox' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The shell sandbox setting was not saved, so Muse keeps the one it had. Try again.')
+  })
+
+  it('offers reconnect only while the saved sandbox switch and the running hosts disagree', async () => {
+    const state = fixture()
+    state.configuration.museDisableSandbox = true
+    state.host.providers = state.host.providers!.map(provider => provider.id === 'muse' ? { ...provider, sandboxDisabled: false } : provider)
+    const { command } = await mount(state)
+    expect(screen.getByText(/Reconnect Muse to apply the change/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Muse to apply the shell sandbox setting' }))
+    await waitFor(() => expect(command).toHaveBeenCalledTimes(2))
+    expect(command).toHaveBeenNthCalledWith(1, { type: 'disconnect', provider: 'muse' })
+    expect(command).toHaveBeenNthCalledWith(2, { type: 'connect', provider: 'muse', notice: false })
+  })
+
+  it('reads and changes this computer’s shell sandbox when another host is selected for new work', async () => {
+    const LOCAL = '00000000-0000-4000-8000-000000000001', FORGE = '00000000-0000-4000-8000-000000000002'
+    const base = fixture()
+    // The selected host's own saved switch is on and its Muse is sandboxed; this computer's is off and still running sandboxed.
+    const here = base.host.providers!.map(provider => provider.id === 'muse' ? { ...provider, sandboxDisabled: false } : provider)
+    const state: AgentState = { ...base, hostId: FORGE, connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, clientHosts: [
+        { hostId: LOCAL, connected: true, models: base.host.models, capabilities, providers: here, enabledProviders: ['codex', 'muse'], checkClientUpdates: true, museDisableSandbox: true },
+        { hostId: FORGE, connected: true, models: [], capabilities, providers: [] },
+      ] } }
+    const { command } = await mount(state)
+    const sandbox = screen.getByRole('switch', { name: 'Shell sandbox' })
+    expect(sandbox).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByText(/Muse is still running with its sandbox on/)).toBeVisible()
+    fireEvent.click(sandbox)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { museDisableSandbox: false }, hostId: LOCAL }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Muse to apply the shell sandbox setting' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'muse', hostId: LOCAL, notice: false }))
+    expect(command).toHaveBeenCalledWith({ type: 'disconnect', provider: 'muse', hostId: LOCAL })
   })
 
   it('offers no update when the check switch is off', async () => {

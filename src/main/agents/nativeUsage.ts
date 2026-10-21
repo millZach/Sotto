@@ -79,6 +79,12 @@ export class NativeUsage {
   private readonly streaming = new Map<string, string>()
   private writing: Promise<void> | undefined
   private readonly dirty = new Set<string>()
+  /**
+   * Each ledger as the file last held it, by the ledger object. The ledger is written whole about once a second while a
+   * reply streams, and one thread's ledger changes in that time; serializing every thread's every request again was about
+   * a second of a busy minute (October 19, 2026). Every change to a ledger goes through `ledger()` or ends in `save()`, and each forgets it.
+   */
+  private serializedLedgers = new WeakMap<Ledger, string>()
   private readonly failed = new Set<string>()
   /** When the last write started, by the monotonic clock: a wall clock set back must not hold writes back. */
   private lastWriteAt = Number.NEGATIVE_INFINITY
@@ -240,7 +246,9 @@ export class NativeUsage {
     this.save(id, changed, true)
   }
   private ledger(id: string): Ledger {
-    return this.data[id] ??= { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
+    const known = this.data[id]
+    if (known) { this.serializedLedgers.delete(known); return known }
+    return this.data[id] = { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
   }
   private summarize(ledger: Ledger): void {
     const entries = Object.values(ledger.entries)
@@ -258,6 +266,8 @@ export class NativeUsage {
   }
   /** `now`: a turn ended, so this is written without waiting out the interval. */
   private save(id: string, changed = true, now = false): void {
+    const ledger = this.data[id]
+    if (ledger) this.serializedLedgers.delete(ledger)
     if (changed) {
       this.summarize(this.data[id]!)
       this.dirty.add(id)
@@ -309,8 +319,16 @@ export class NativeUsage {
   private serialized(): string {
     const flagged = Object.values(this.data).filter(ledger => ledger.view.persistenceError)
     for (const ledger of flagged) delete ledger.view.persistenceError
-    try { return JSON.stringify(this.data) }
-    finally { for (const ledger of flagged) ledger.view.persistenceError = true }
+    try {
+      // The same text `JSON.stringify(this.data)` gives, with the ledgers nothing changed since the last write kept as they were.
+      const parts: string[] = []
+      for (const [id, ledger] of Object.entries(this.data)) {
+        let text = this.serializedLedgers.get(ledger)
+        if (text === undefined) { text = JSON.stringify(ledger); this.serializedLedgers.set(ledger, text) }
+        parts.push(`${JSON.stringify(id)}:${text}`)
+      }
+      return `{${parts.join(',')}}`
+    } finally { for (const ledger of flagged) ledger.view.persistenceError = true }
   }
   private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens, reported?: { readonly usd: number; readonly rate: string }): boolean {
     if (model === SYNTHETIC || !Object.values(tokens).some(value => value !== undefined)) return false

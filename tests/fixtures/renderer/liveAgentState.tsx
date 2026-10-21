@@ -79,6 +79,9 @@ export function liveAgentState(initial: AgentState, options: {
     })
   }
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => {
+    if (request.type === 'set-aside-send') {
+      return publish({ deliveries: setDelivery(request.threadId, request.draftId, 'uncertain', { setAside: true }), error: null })
+    }
     if (request.type === 'queue-followup') {
       if (!options.holdQueue) return admit(request)
       const pending = deferred<AgentState | null>(); heldQueue.push({ command: request, finish: (error = null) => pending.resolve(admit(request, error)) }); return pending.promise
@@ -105,7 +108,7 @@ export function liveAgentState(initial: AgentState, options: {
       const pending = deferred<AgentState | null>(); heldSaves.push({ command: request, finish: (error = null) => pending.resolve(saveDraft(request, error)) }); return pending.promise
     }
     if (request.type === 'manual-send' || request.type === 'steer') {
-      const pending = current.deliveries!.some(item => item.threadId === request.threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))
+      const pending = current.deliveries!.some(item => item.threadId === request.threadId && !item.setAside && ['queued', 'submitting', 'uncertain'].includes(item.status))
       if (!pending) publish({ threadDrafts: putDraft({ ...request, draftId: request.draftId! }), deliveries: setDelivery(request.threadId, request.draftId!, 'queued') })
       return (() => { const pending = deferred<AgentState | null>(); sends.set(`${request.threadId}\n${request.draftId}`, pending.resolve); return pending.promise })()
     }

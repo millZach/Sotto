@@ -1,8 +1,8 @@
 import React, { useId, useState, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
-import { PROVIDER_LABELS, type ProviderId } from '../../../../shared/agents'
+import { PROVIDER_LABELS } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
-import { HOST_PROVIDER_JOB_WORDS, hostProviderJobTitle, type HostProviderJobCase } from '../../../../shared/hostProviders'
+import { HOST_PROVIDER_JOB_WORDS, hostProviderJobTitle, type HostProviderId, type HostProviderJobCase } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { HostsModal } from './HostsModal'
 import { SetupModelSelect } from './HostSetupView'
@@ -16,7 +16,7 @@ const clean = (failure: unknown, fallback: string): string =>
  * starting on the one used most, and names the thread and the project it goes in. Start closes it onto the working tile.
  */
 export function HostProviderAgent({ host, provider, jobCase, choice, bridge, onClose }: {
-  readonly host: HostStatus; readonly provider: ProviderId; readonly jobCase: HostProviderJobCase
+  readonly host: HostStatus; readonly provider: HostProviderId; readonly jobCase: HostProviderJobCase
   readonly choice: HostSetupChoice | undefined; readonly bridge: HostsBridge; readonly onClose: () => void
 }): ReactNode {
   const name = PROVIDER_LABELS[provider]

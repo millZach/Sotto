@@ -406,6 +406,28 @@
   .onboarding-agent {
     padding-block: 4px;
   }
+
+  .onboarding-speech-models__intro {
+    display: none;
+  }
+
+  .onboarding-speech-models {
+    gap: 6px;
+  }
+
+  .onboarding-card .onboarding-speech-model {
+    padding: 4px 12px;
+  }
+
+  /* Settings → Cleanup says the same; four models need the room. */
+  .onboarding-speech-model__aside {
+    display: none;
+  }
+
+  .onboarding-speech-model .tt-button {
+    min-height: 32px;
+    padding-block: 4px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -424,4 +446,36 @@
   .onboarding-phone > li:first-child > div {
     grid-column: 2;
   }
+}
+
+.onboarding-speech-models__intro {
+  margin: 0 0 8px;
+  color: var(--tt-text-muted);
+}
+
+.onboarding-speech-models {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-speech-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-md);
+  background: var(--tt-surface);
+}
+
+.onboarding-speech-model[data-chosen] {
+  border-color: var(--tt-accent);
+}
+
+.onboarding-speech-model .tt-field__description {
+  margin: 2px 0 0;
 }

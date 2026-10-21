@@ -1,14 +1,17 @@
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { accessSync, constants as fsConstants, existsSync, readFileSync } from 'node:fs'
 import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { inflateSync } from 'node:zlib'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
 
 import { _electron as electron } from '@playwright/test'
 
+import { DOCK_COVERAGE_BYTES } from '../src/main/dock/coverage.mjs'
 import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
@@ -158,6 +161,17 @@ export async function verifyPackagedMemoryStore(target) {
   }
 }
 
+// The Mac app runs FluidAudio's Core ML speech models through this helper; it must answer protocol 1.
+export function verifyCoreMlHelper(resources) {
+  const helper = join(resources, 'coreml-asr', 'sotto-coreml-asr')
+  if (!existsSync(helper)) fail('missing coreml-asr/sotto-coreml-asr')
+  try { accessSync(helper, fsConstants.X_OK) } catch { fail('coreml-asr/sotto-coreml-asr is not executable') }
+  const result = spawnSync(helper, ['--version'], { encoding: 'utf8', timeout: 30_000 })
+  if (result.status !== 0 || result.stdout.trim() !== '{"protocol":1}') {
+    fail(`coreml-asr/sotto-coreml-asr --version did not print {"protocol":1} (exit ${result.status ?? result.signal ?? result.error?.message})`)
+  }
+}
+
 async function verifyNormalPackagedLaunch(target) {
   const executable = profile.executablePath(target)
   const smokeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
@@ -238,16 +252,24 @@ export async function verifyPackagedResources(input, options = {}) {
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
   await verifyClaudeSdkAssets(join(resources, 'claude-sdk'))
+  // The Dock icon's coverage (src/main/dock/coverage.mjs), at its inflated length.
+  if (profile.key === 'darwin') {
+    const coveragePath = join(resources, 'dock', 'mark-coverage.bin')
+    let coverageBytes = -1
+    try { coverageBytes = inflateSync(readFileSync(coveragePath)).length } catch { /* reported below */ }
+    if (coverageBytes !== DOCK_COVERAGE_BYTES) fail('dock/mark-coverage.bin is missing or is not the Dock icon coverage')
+  }
   if (existsSync(join(resources, 'runtime'))) fail('retired voice runtime must not be bundled')
   for (const required of [
     profile.executablePath(target),
     asarPath,
     join(resources, 'README.md'),
     join(resources, 'THIRD_PARTY_NOTICES.md'),
-    // The menu-bar template icons are macOS-only extraResources.
+    // The menu-bar template icons and the Dock icon's coverage are macOS-only extraResources; the key listener ships per platform (none on Linux).
     ...(profile.key === 'darwin'
-      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png')]
+      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png'), join(resources, 'dock', 'mark-coverage.bin'), join(resources, 'native', 'sotto-key-listener')]
       : []),
+    ...(profile.key === 'win32' ? [join(resources, 'native', 'win32.cs')] : []),
     ...(profile.key === 'linux' ? [
       join(resources, 'omarchy', 'bindings.lua'),
       join(resources, 'omarchy', 'sotto.json.tpl'),
@@ -259,11 +281,17 @@ export async function verifyPackagedResources(input, options = {}) {
   ]) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
   }
+  if (profile.key === 'darwin') {
+    verifyCoreMlHelper(resources)
+    const keyListener = join(resources, 'native', 'sotto-key-listener')
+    if (((await stat(keyListener)).mode & 0o111) === 0) fail(`${relative(target, keyListener)} is not executable`)
+  }
 
   const entries = listAsarEntries(asarPath)
   for (const required of [
     'out/main/index.js',
     'out/main/terminalAgentHook.js',
+    'out/main/gitLauncherWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/visual.js',

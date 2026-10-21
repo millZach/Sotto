@@ -4,8 +4,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { ActivitySubscribers, cloneActivitySnapshot, immutableModels, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { cloneHostSnapshot, clonePlainData } from './cloneHostSnapshot'
+import { ActivitySubscribers, cloneActivitySnapshot, immutableModels, isActivityPublication, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -14,7 +14,7 @@ import { sameSnapshot } from './sameSnapshot'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -125,6 +125,9 @@ export class ConfiguredProviderHost implements AgentHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadTools?.(tools)
   }
+  useWorkerRoles(roles: WorkerRoleSource): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useWorkerRoles?.(roles)
+  }
   useThreadHistory(source: ThreadHistorySource): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
   }
@@ -147,10 +150,14 @@ export class ConfiguredProviderHost implements AgentHost {
     return provider === this.legacyProjectProvider ? id : providerEntityId(provider, 'project', id)
   }
   createProjectId(provider: ProviderId): string { return this.projectId(provider, randomUUID()) }
-  private accept(id: ProviderId, snapshot: AgentHostSnapshot): void {
+  /**
+   * `published`: the snapshot is a publication of the provider's activity subscription, already copied for its
+   * subscribers, so the slot keeps it as it is. The switch never writes into what a slot holds; it replaces it.
+   */
+  private accept(id: ProviderId, snapshot: AgentHostSnapshot, published = false): void {
     const slot = this.slots.get(id)!
     // A transport disappearing must not discard the identities and recovery material it already supplied.
-    const owned = cloneActivitySnapshot(snapshot)
+    const owned = published ? snapshot : cloneActivitySnapshot(snapshot)
     slot.snapshot = snapshot.connected ? owned : { ...slot.snapshot, ...owned,
       threads: owned.threads.length ? owned.threads : slot.snapshot.threads,
       projects: owned.projects.length ? owned.projects : slot.snapshot.projects,
@@ -159,12 +166,15 @@ export class ConfiguredProviderHost implements AgentHost {
       capabilities: owned.connected ? owned.capabilities : slot.status.capabilities,
       connection: snapshot.connected ? 'connected' : snapshot.error ? 'error' : slot.connecting ? 'connecting' : 'disconnected',
       ...(snapshot.verifiedVersion ? { verifiedVersion: snapshot.verifiedVersion } : {}),
+      ...(snapshot.connected && snapshot.sandboxDisabled !== undefined ? { sandboxDisabled: snapshot.sandboxDisabled } : {}),
       ...(snapshot.error ? { error: snapshot.error } : {}),
       // What the Hosts page's tile decides on (ADR-0037): why it is not connected, or what it is signed in with.
       ...(!snapshot.connected && snapshot.error && snapshot.problem ? { problem: snapshot.problem } : {}),
       ...(!snapshot.connected && snapshot.error && snapshot.problem === 'too-old' && snapshot.requiredVersion ? { requiredVersion: snapshot.requiredVersion } : {}),
       ...(snapshot.connected && snapshot.account ? { account: snapshot.account } : {}) }
   }
+  /** A slot's snapshot as no longer connected. It may be a provider's publication, which is never written into. */
+  private markDisconnected(slot: Slot): void { slot.snapshot = { ...slot.snapshot, connected: false } }
   private failed(id: ProviderId, error: unknown): void {
     const slot = this.slots.get(id)!
     const named = providerProblemOf(error)
@@ -172,10 +182,10 @@ export class ConfiguredProviderHost implements AgentHost {
     slot.status = { ...status, connection: 'error', error: error instanceof Error ? error.message : 'Provider connection failed.',
       ...(named ? { problem: named.problem } : {}), ...(named?.version ? { version: named.version } : {}),
       ...(named?.problem === 'too-old' && named.requiredVersion ? { requiredVersion: named.requiredVersion } : {}) }
-    slot.snapshot.connected = false
+    this.markDisconnected(slot)
   }
   private aggregate(): AgentHostSnapshot {
-    const providers = [...this.slots.values()].map(slot => structuredClone(slot.status))
+    const providers = [...this.slots.values()].map(slot => clonePlainData(slot.status))
     const capabilities = { ...EMPTY_AGENT_HOST.capabilities }
     for (const provider of providers.filter(provider => provider.connection === 'connected')) {
       for (const key of Object.keys(provider.capabilities) as (keyof AgentCapabilities)[]) if (provider.capabilities[key]) capabilities[key] = true
@@ -215,11 +225,15 @@ export class ConfiguredProviderHost implements AgentHost {
     this.namedModels.set(provider, { source: slot.snapshot.models, connected, models })
     return models
   }
+  /**
+   * The aggregate is built afresh for each publish over what the slots hold, which is replaced and never edited, so the
+   * activity subscribers share it as it is. An ordinary subscriber still gets a copy of its own.
+   */
   private publish(): void {
     if (!this.listeners.size && !this.activityListeners.size) return
     const snapshot = this.aggregate()
     for (const listener of this.listeners) listener(cloneHostSnapshot(snapshot))
-    this.activityListeners.publish(() => snapshot)
+    this.activityListeners.publish(() => snapshot, true)
   }
   async connect(provider?: ProviderId): Promise<AgentHostSnapshot> {
     const requested = (provider ? [provider] : this.options.enabledProviders?.() ?? [this.options.provider()]).map(id => ({ id, epoch: this.slots.get(id)!.epoch }))
@@ -270,7 +284,7 @@ export class ConfiguredProviderHost implements AgentHost {
     slot.historyFromEvents = historyFromEvents
     slot.unsubscribeSnapshot = subscribeActivitySnapshots(this.options.hosts[id], snapshot => {
       if (!slot.wanted || slot.epoch !== epoch) return
-      this.accept(id, snapshot)
+      this.accept(id, snapshot, isActivityPublication(snapshot))
       this.publish()
     }, { historyFromEvents })
   }
@@ -354,6 +368,18 @@ export class ConfiguredProviderHost implements AgentHost {
     const host = this.options.hosts[provider]
     if (!host.rollbackThread) throw new Error('This provider does not support conversation rewind.')
     return host.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+  }
+  /**
+   * A fork is its source's provider's own copy (#1028), so it goes to the provider that owns the source thread, on one of
+   * that provider's models; no other provider is asked in its place.
+   */
+  async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    const provider = this.owner(request.source.threadId); this.requireConnected(provider)
+    const host = this.options.hosts[provider]
+    if (!host.forkThread) throw new Error(`${PROVIDER_LABELS[provider]} has no fork of its own, so nothing was made.`)
+    const model = resolveModel(this.aggregate().models, this.resolveModelId(request.modelId))
+    if (!model?.ready || model.providerId !== provider) throw new Error(`Choose a ready ${PROVIDER_LABELS[provider]} model: a fork stays with its source’s provider. Nothing was made.`)
+    return host.forkThread({ ...request, modelId: nativeEntityId(provider, 'model', model.id) })
   }
   /**
    * The thread's own provider writes or nothing does (ADR-0026). A client that is not connected is not
@@ -489,7 +515,7 @@ export class ConfiguredProviderHost implements AgentHost {
       const slot = this.slots.get(id)!; slot.wanted = false; ++slot.epoch; slot.connecting = undefined
       slot.unsubscribeSnapshot?.(); slot.unsubscribeEvents?.(); slot.unsubscribeUsage?.()
       slot.unsubscribeSnapshot = undefined; slot.unsubscribeEvents = undefined; slot.unsubscribeUsage = undefined
-      this.options.hosts[id].disconnect(); slot.snapshot.connected = false
+      this.options.hosts[id].disconnect(); this.markDisconnected(slot)
       slot.status = { ...slot.status, connection: 'disconnected' }; delete slot.status.error; delete slot.status.problem; delete slot.status.requiredVersion; delete slot.status.account
     }
     this.publish()

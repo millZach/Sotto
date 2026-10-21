@@ -58,7 +58,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
     history.messages.push({ id: randomUUID(), role: 'user', text, timestamp: new Date().toISOString() })
     await writeFile(file, JSON.stringify(history))
   }
-  return { host: adapter, adapter, root, projectId: 'project', modelId: 'fixture-model', realId, script, action, skips: devinFixtureSkips,
+  return { host: adapter, adapter, root, providerId: 'devin' as const, projectId: 'project', modelId: 'fixture-model', realId, script, action, skips: devinFixtureSkips,
     restartStatus: 'idle' as const,
     // A permission change comes back with the snapshot that records it (#318).
     settings: { snapshot: true },

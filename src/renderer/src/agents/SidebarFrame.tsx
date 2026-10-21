@@ -185,6 +185,12 @@ export interface SidebarFrameProps {
   /** A refusal from outside Add project, shown in the same place: an instant thread's creation, refused. */
   readonly extraError?: string | null | undefined
   readonly onDismissExtraError?: (() => void) | undefined
+  /** A quiet line under search and any refusal, in the open sidebar only: the Threads sidebar's working threads line. */
+  readonly notice?: ReactNode
+  /** What a project chosen with Add project opens in: the mode's own New action, there. */
+  readonly onProjectAdded?: ((projectId: string) => void) | undefined
+  /** A line directly under the search, above the list: the Threads sidebar's Needs attention count. */
+  readonly afterSearch?: ReactNode
 }
 
 /**
@@ -193,9 +199,9 @@ export interface SidebarFrameProps {
  * top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
-export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
-  const addProject = useAddProject(state, command)
+  const addProject = useAddProject(state, command, { onAdded: onProjectAdded })
   const mac = (platform ?? app?.platform) === 'darwin'
   const size = useSidebarSize()
   const [resizing, setResizing] = useState(false)
@@ -228,9 +234,11 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
         onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); onQuery('') } }} />
       {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label="Clear search" title="Clear search" onClick={() => onQuery('')}><X size={14} /></button> : null}
     </label>
+    {afterSearch}
     {addProject.dialog}
     {addProject.error ? <p className="thread-nav__error" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
     {extraError ? <p className="thread-nav__error" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
+    {notice}
     <div className="thread-nav__scroll">{children}</div>
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>

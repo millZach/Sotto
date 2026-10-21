@@ -1,5 +1,6 @@
 /* Delegation between threads (#1029, design A): cards in the delegating thread's transcript, "Delegated by" under a
-   delegated thread's header, and the line under the composer. Every colour is a theme role. */
+   delegated thread's header, and the line under the composer. Every colour is a theme role. Delegated threads have no
+   sidebar row; they are listed in Tools › Agents (agentsSurface.css). */
 
 /* The cards of one turn sit under its reply, in the transcript's column. */
 .delegation-cards { display: grid; gap: 8px; margin: -12px 0 28px; }
@@ -61,10 +62,3 @@
 .delegation-note > svg { flex: none; }
 .delegation-note > span { min-width: 0; }
 
-/* Delegated threads in the sidebar, under the thread that delegated to them, with a guide down their left. */
-.thread-nav__row[data-delegation-level] { margin-left: 22px; }
-.thread-nav__row[data-delegation-level='2'] { margin-left: 44px; }
-.thread-nav__row[data-delegation-level]::before { content: ''; position: absolute; top: -1px; bottom: -1px; left: -9px; border-left: 1px solid var(--tt-hairline); }
-.thread-nav__row[data-delegation-level] .thread-nav__title { font-weight: 400; }
-/* The machine badge says This computer whole where the row has room, and gives way before the status does. */
-.thread-nav__metadata .host-badge { flex: 0 1 auto; max-width: none; }

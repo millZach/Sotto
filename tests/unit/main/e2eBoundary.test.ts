@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createE2EGlobalShortcuts,
@@ -72,5 +72,16 @@ describe('development-only E2E admission', () => {
     expect(candidate).toBe('CommandOrControl+Alt+9')
     expect(shortcuts.register(candidate!, callback)).toBe(false)
     expect(shortcuts.isRegistered?.(previous)).toBe(true)
+  })
+
+  it('treats one chord in any order or spelling as one shortcut, like Electron', () => {
+    const shortcuts = createE2EGlobalShortcuts('hotkey-conflict')
+    const callback = vi.fn()
+    expect(shortcuts.register('Shift+CommandOrControl+Space', callback)).toBe(true)
+    expect(shortcuts.register('CommandOrControl+Shift+Space', callback)).toBe(false)
+    expect(shortcuts.trigger('ctrl+space+shift')).toBe(true)
+    expect(shortcuts.register('Alt+Ctrl+9', callback)).toBe(false)
+    shortcuts.unregister('Space+Shift+CommandOrControl')
+    expect(shortcuts.isRegistered?.('CommandOrControl+Shift+Space')).toBe(false)
   })
 })

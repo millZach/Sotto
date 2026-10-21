@@ -237,13 +237,13 @@ describe('thread store', () => {
     expect(reopened.store.readMessages('thread').messages).toEqual([])
   })
 
-  it('keeps committed history durable with synchronous=FULL', () => {
+  it('saves history at synchronous=NORMAL, flushing only what the user takes out (ADR-0016)', () => {
     const db = new DatabaseSync(':memory:')
     try {
       prepareThreadDatabase(db)
       // synchronous is per-connection, so it reads back here even though the memory
       // database's journal_mode reports 'memory' rather than 'wal'.
-      expect(db.prepare('PRAGMA synchronous').get()?.synchronous).toBe(2)
+      expect(db.prepare('PRAGMA synchronous').get()?.synchronous).toBe(1)
     } finally {
       db.close()
     }
@@ -310,5 +310,45 @@ describe('wake-ups in the thread store', () => {
     reopened.store.forget('thread')
     expect(reopened.store.wakeUps('thread').size).toBe(0)
     expect([...reopened.store.wakeUps('other')]).toEqual(['wake-0'])
+  })
+})
+
+describe('Watcher wake-up asks in the thread store', () => {
+  const HOST = '6c0f8f0e-7b1e-4d5a-9a43-1f4f0f3b2a10'
+  const ask = (threadId: string, requestCardId: string) => ({ target: { hostId: HOST, threadId }, requestCardId, kind: 'question' as const })
+
+  it('keeps the requests a Watcher wake-up named with it, as identities alone, through a messages-reset and a reopen', async () => {
+    const f = await store()
+    f.store.addWakeUp('watcher', 'wake-asks', [ask('footer', 'card-1'), ask('login', 'card-2')])
+    f.store.addWakeUp('watcher', 'wake-plain')
+    f.store.addWakeUps('watcher', ['wake-seeded', 'wake-asks'], new Map([['wake-seeded', [ask('docs', 'card-3')]]]))
+    f.store.replaceThreadMessages('watcher', [message('wake-asks', 'user', 'Sotto has news of watched threads.')], 'rebuilt')
+    f.store.rebuild()
+    f.store.close()
+    const reopened = await store(f.root)
+    const asks = reopened.store.wakeUpAsks('watcher')
+    expect([...asks.keys()].sort()).toEqual(['wake-asks', 'wake-seeded'])
+    expect(asks.get('wake-asks')).toEqual([ask('footer', 'card-1'), ask('login', 'card-2')])
+    expect(reopened.store.wakeUps('watcher')).toEqual(new Set(['wake-asks', 'wake-plain', 'wake-seeded']))
+    // Only identities are kept: no request's, thread's or answer's words.
+    const db = new DatabaseSync(f.path)
+    try { expect(JSON.parse(String(db.prepare('SELECT watcher_asks FROM wake_ups WHERE message_id = ?').get('wake-asks')!.watcher_asks))).toEqual(asks.get('wake-asks')) }
+    finally { db.close() }
+    reopened.store.forget('watcher')
+    expect(reopened.store.wakeUpAsks('watcher').size).toBe(0)
+  })
+
+  it('migrates a database whose wake-ups predate asks, keeping every wake-up and adding asks to one already kept', async () => {
+    const older = await store()
+    older.store.addWakeUp('watcher', 'wake-old')
+    older.store.close()
+    const db = new DatabaseSync(older.path)
+    try { db.exec('ALTER TABLE wake_ups DROP COLUMN watcher_asks; DELETE FROM schema_migrations WHERE version = 8') }
+    finally { db.close() }
+    const f = await store(older.root)
+    expect(f.store.wakeUps('watcher')).toEqual(new Set(['wake-old']))
+    expect(f.store.wakeUpAsks('watcher').size).toBe(0)
+    f.store.addWakeUp('watcher', 'wake-old', [ask('footer', 'card-1')])
+    expect(f.store.wakeUpAsks('watcher').get('wake-old')).toEqual([ask('footer', 'card-1')])
   })
 })

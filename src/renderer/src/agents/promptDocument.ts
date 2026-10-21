@@ -2,7 +2,7 @@ import type { JSONContent } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { AgentSkillReference } from '../../../shared/agentSkills'
 import { MENTION_CLOSERS } from '../../../shared/mentions'
-import type { SkillSigil } from './composerSkills'
+import type { SkillSigil } from '../../../shared/providerProfile'
 
 /** One paragraph with hard breaks: even a final newline has its own node. */
 export function textToPromptDoc(text: string, skills: readonly AgentSkillReference[] = [], sigils: readonly SkillSigil[] = ['$']): JSONContent {

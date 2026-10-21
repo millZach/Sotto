@@ -16,10 +16,11 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
+import { museFixture } from '../fixtures/museFixture'
 
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
 
-const factories = { claude: claudeFixture, codex: codexFixture, grok: () => grokFixture(undefined, 2000, 60000), devin: devinFixture }
+const factories = { claude: claudeFixture, codex: codexFixture, grok: () => grokFixture(undefined, 2000, 60000), devin: devinFixture, muse: () => museFixture(undefined, 10_000) }
 const cleanups: (() => Promise<void>)[] = []
 async function nativePid(provider: keyof typeof factories, f: { root: string; realId(id: string): Promise<string> }, adapterId: string): Promise<number> {
   const sessionId = await f.realId(adapterId)
@@ -34,13 +35,13 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`${provider} ordinary profile isolation`, () => {
+for (const provider of ['claude', 'codex', 'grok', 'devin', 'muse'] as const) describe(`${provider} ordinary profile isolation`, () => {
   it('reads unchanged agents.json once across workspace send, early start and read', async () => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const directory = join(f.root, 'workspace')
     await fs.mkdir(directory); await fs.writeFile(join(directory, 'agents.json'), '{}')
     const reads = vi.spyOn(fs, 'readFile')
-    const host = new WorkspaceHost(f.host, directory, undefined, undefined, true)
+    const host = new WorkspaceHost(f.host, directory, undefined, undefined, true, provider === 'muse')
     cleanups.push(() => host.close())
     const snapshot = await host.connect(provider)
     const modelId = snapshot.models[0]!.id
@@ -104,11 +105,11 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     const directory = join(f.root, 'workspace')
     await fs.mkdir(directory); await fs.writeFile(join(directory, 'agents.json'), '{}')
     const registry = new ThreadRegistry(directory)
-    const hosts = { claude: new FakeProviderHost(), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() }
+    const hosts = { claude: new FakeProviderHost(), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }
     const native = new ConfiguredProviderHost({ directory, provider: () => provider, enabledProviders: () => [provider],
       threadProvider: id => registry.byThread(id)?.provider,
       hosts: { ...hosts, [provider]: new SottoThreadHost(provider, f.host, registry) } })
-    const host = new WorkspaceHost(native, directory, undefined, undefined, true)
+    const host = new WorkspaceHost(native, directory, undefined, undefined, true, provider === 'muse')
     cleanups.push(async () => { await host.close(); await registry.flush() })
     const snapshot = await host.connect(provider)
     const modelId = snapshot.models.find(model => model.providerId === provider)!.id
@@ -171,7 +172,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     await expect.poll(() => {
       try { process.kill(pid, 0); return false } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
     }).toBe(true)
-    const promptMethod = provider === 'claude' ? 'user' : provider === 'codex' ? 'turn/start' : 'session/prompt'
+    const promptMethod = provider === 'claude' ? 'user' : provider === 'codex' || provider === 'muse' ? 'turn/start' : 'session/prompt'
     expect((await f.driver.requests()).filter(request => request.method === promptMethod)).toHaveLength(1)
   })
 })
@@ -185,7 +186,7 @@ it.each(['send', 'refresh', 'skills', 'short text', 'rollback'] as const)('stops
   const native = new ConfiguredProviderHost({ directory, provider: () => 'claude', enabledProviders: () => ['claude', 'codex'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', claude.host, registry), codex: new SottoThreadHost('codex', codex.host, registry),
-      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() } })
+      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() } })
   const host = new WorkspaceHost(native, directory, undefined, undefined, true)
   cleanups.push(async () => { await host.close(); await registry.flush() })
   await host.connect('claude')

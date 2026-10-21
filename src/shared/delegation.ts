@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
+import { workerKindSchema } from './workerRoles'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -20,8 +21,11 @@ export const DELEGATION_LEVELS_MAX = 2
 export const DELEGATION_BRIEF_MAX = 32_000
 export const DELEGATION_TITLE_MAX = 120
 
-/** The kind of work a delegation is for; once worker roles land (#1041), Sotto fills in the model from it (decision 9). */
-export const delegationWorkSchema = z.enum(['building', 'ui', 'code-review', 'research', 'computer-use'])
+/**
+ * The kind of work a delegation is for: one of the worker roles (#1041), from which Sotto fills in what the call leaves
+ * out while that Owl feature is on (decision 9).
+ */
+export const delegationWorkSchema = workerKindSchema
 export type DelegationWork = z.infer<typeof delegationWorkSchema>
 export const DELEGATION_WORK_TITLES: Record<DelegationWork, string> = {
   building: 'Building', ui: 'UI work', 'code-review': 'Code review', research: 'Research', 'computer-use': 'Computer use',
@@ -48,9 +52,12 @@ export const readDelegationInputSchema = z.object({
 }).strict()
 export const cancelDelegationInputSchema = z.object({ delegation: z.uuid().describe('The delegation to cancel.') }).strict()
 
+// IN_FLIGHT_LIMIT is no longer refused (#1183, no limit on threads working). It stays so a refusal recorded before then still reads.
 export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST',
-  'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING'])
+  'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING',
+  // The delegated thread's own queue holds its next prompt until the user resumes, clears or checks it there (October 19, 2026).
+  'QUEUE_HELD'])
 export type DelegationRefusalCode = z.infer<typeof delegationRefusalCodeSchema>
 /**
  * A refusal, and the delegation it is recorded as when the call was a delegation main refused under its rules: the
@@ -63,7 +70,7 @@ export interface DelegationRefusal { readonly status: 'refused'; readonly code: 
  * refuses without one, since no delegation was asked for that the rules turned down.
  */
 export const RECORDED_REFUSALS: ReadonlySet<DelegationRefusalCode> = new Set(['NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
-  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD'])
+  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD', 'QUEUE_HELD'])
 
 /**
  * Where a delegation stands (CONTEXT.md, Outcome): Watcher's outcomes (ADR-0073), and `refused`, a delegation main
@@ -98,8 +105,9 @@ export interface DelegationRead {
 }
 
 /**
- * A delegation's news as a waiting wake-up keeps it (ADR-0081 decision 7): identities only, never the delegated
- * thread's words, which travel only when the delegating thread asks with `read_delegation`.
+ * A delegation's news as a waiting wake-up keeps it (ADR-0081 decision 7): identities only, never the delegated thread's
+ * words. Since October 19, 2026 an answered delegation's reply goes with the news as it is sent, read from delegation's
+ * own record then (`delegationNewsText`), so the queue still holds none of it.
  */
 export const DELEGATION_NEWS_MAX = 50
 export const delegationNewsSchema = z.object({
@@ -191,10 +199,21 @@ export const delegationsReadSchema = z.object({ threadId: id,
 }).strict()
 export type DelegationsRead = z.infer<typeof delegationsReadSchema>
 export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(10_000) }).strict()
+/**
+ * The newest brief a delegated thread was sent, in full, as Tools › Agents shows it when its row is opened (October 17,
+ * 2026): the user message the delegation record names in that thread, and nothing else of it, never a reply. Read only
+ * when a row is opened; null when Sotto no longer holds it.
+ */
+export const DELEGATION_BRIEF_READ = 'sotto:delegations:brief'
+export const delegationBriefRequestSchema = z.object({ threadId: id }).strict()
+export type DelegationBriefRequest = z.infer<typeof delegationBriefRequestSchema>
+export const delegationBriefSchema = z.object({ threadId: id, text: z.string().max(DELEGATION_BRIEF_MAX) }).strict().nullable()
+export type DelegationBrief = z.infer<typeof delegationBriefSchema>
 export type DelegationsChanged = z.infer<typeof delegationsChangedSchema>
 /** What the main window's preload offers while delegation is on. */
 export interface DelegationsBridge {
   read(request: DelegationsRequest): Promise<DelegationsRead>
+  brief(request: DelegationBriefRequest): Promise<DelegationBrief>
   onChanged(listener: (change: DelegationsChanged) => void): () => void
 }
 

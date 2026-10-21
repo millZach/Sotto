@@ -1,17 +1,17 @@
 import type { AgentCommand, AgentThread } from '../../shared/agents'
-import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
+import { WATCHER_PHONE_LEGACY_LIMIT, WATCHER_PHONE_TAKEOVERS_MAX, watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
   type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult } from '../../shared/watcherPhone'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
-import { isWatchedRow, takesPartInActiveRequest, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
+import { isWatchedRow, takesPartInActiveRequest, watcherTakeovers, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
   constructor(private readonly control: AgentControl, private readonly watcher: WatcherService) {}
   /** `standing`: whether this phone negotiated Watcher management, and with it knows standing watches. */
   state(mayAnswer: boolean, standing = true): WatcherPhoneState {
-    const room = this.watcher.state(), snapshot = this.watcher.phoneSnapshot()
+    const room = this.watcher.state(), snapshot = this.watcher.phoneSnapshot(), starts = this.watcher.startsInFlight()
     const thread = (target: { hostId: string; threadId: string }): AgentThread | undefined => snapshot.threads.find(row =>
       (row.hostId ?? snapshot.hostId) === target.hostId && row.id === target.threadId)
     const current = room.current && thread(room.current.target)
@@ -76,8 +76,20 @@ export class WatcherPhoneService {
     // The deliveries alone, read without copying every thread: this runs for each phone on every update.
     draftDeliveries: this.control.watcherSendRecords().deliveries.filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
     runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,
-    receiptGroups, watchedThreads, needsYou, inFlight: room.inFlight, inFlightLimit: room.inFlightLimit,
-    working: room.currentOptions?.status === 'running' || room.inFlight > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
+    // Host protocol version 1 requires a count and a limit of one to eight. The limit is gone (#1183): an iPhone that
+    // negotiated Watcher management shows neither, and an older one draws them as "3 of 8 watched" and how many more
+    // can start. It is sent the highest limit it accepts and the true count up to one below it, so its meter stays right
+    // for seven or fewer and never says Watcher starts nothing new.
+    receiptGroups, watchedThreads, needsYou, inFlight: Math.min(starts, WATCHER_PHONE_LEGACY_LIMIT - 1), inFlightLimit: WATCHER_PHONE_LEGACY_LIMIT,
+    takeovers: this.takeovers(room, snapshot),
+    working: room.currentOptions?.status === 'running' || starts > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
+  }
+  /** The newest takeover lines, as many as the page carries receipts, each titled from one index of the threads. */
+  private takeovers(room: ReturnType<WatcherService['state']>, snapshot: ReturnType<WatcherService['phoneSnapshot']>): NonNullable<WatcherPhoneState['takeovers']> {
+    const lines = watcherTakeovers(room).slice(-WATCHER_PHONE_TAKEOVERS_MAX)
+    if (lines.length === 0) return []
+    const titles = new Map(snapshot.threads.map(row => [JSON.stringify([row.hostId ?? snapshot.hostId, row.id]), row.title] as const))
+    return lines.map(line => ({ target: line.target, title: titles.get(JSON.stringify([line.target.hostId, line.target.threadId])) ?? 'Unavailable thread', at: line.at }))
   }
   async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true): Promise<WatcherPhoneSendResult> {
     if (request.origin.clientId !== client.clientId || request.origin.hostId !== this.control.hostId() || client.transport !== 'socket') {

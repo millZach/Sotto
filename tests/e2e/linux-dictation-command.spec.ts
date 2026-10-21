@@ -50,8 +50,9 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await expect(page.getByText(/Hold F9 to talk after installing/)).toBeVisible()
     await checkOnboardingLayout(page, /Hold F9 to talk after installing/, 'Get started')
     await reachFirstRunStep(page, 'speech-model', { microphone: 'skip' })
-    // An E2E run reports the speech model ready without downloading it.
-    await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+    // An E2E run offers Sotto's own model as already here and reports it ready without downloading it.
+    await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+    await page.getByRole('button', { name: 'Use Parakeet v3' }).click()
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await expect(page.getByText(/Install Sotto’s compositor bindings in Hyprland/)).toBeVisible()
     await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, /^(Continue|Skip for now)$/)

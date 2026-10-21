@@ -1,12 +1,16 @@
-import { clientUpdateEnumerationUsesMuse, commandUsesMuse, modelsWithoutMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from '../agents/museGate'
+import type { AgentActivity } from '../../shared/agentActivity'
+import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
+import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
+import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
-import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
-import { parsePublicProviderEntityId } from '../../shared/agents'
+import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
+import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
-import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
+import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
+import { agentCommandSchema, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { clientAgentState, clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -30,7 +34,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsHostFacts' | 'hostFacts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -45,7 +49,11 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   offersClientUpdates?(): boolean
   /** Whether this host babysits pull requests: only then does the window offer Babysit pull request on its threads (ADR-0061). */
   offersBabysitting?(): boolean
-  observe?(threadIds: string[]): Promise<unknown>
+  /** `shown`: false while the desktop's window is behind another app, so the host does not count these threads as shown
+   * (ADR-0092). Absent, they are shown. */
+  observe?(threadIds: string[], shown?: boolean): Promise<unknown>
+  /** One activity record whole, by the host's own thread ID, for a row whose body the host sent cut; absent on this computer. */
+  activityBody?(threadId: string, activityId: string): Promise<AgentActivity | null>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
   /** What a question page's token opens on this computer's own host (ADR-0085). */
@@ -58,9 +66,29 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
 export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string } | { readonly kind: 'url'; readonly url: string }
 
 /** Creation opens its result unless the window selected something else while it ran. */
-const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project'])
+const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project', 'continue-agent', 'fork-thread'])
+/** The commands that may name the machine they act on, which the router reads and never sends on. */
+const HOST_NAMED_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['connect', 'disconnect', 'refresh', 'check-client-updates', 'update-client', 'queue-client-updates'])
+/**
+ * A read the window made on its own, when it regained focus or a pane opened, not anything the user pressed. A host that
+ * cannot answer one is already shown as disconnected or reconnecting, so it answers with the shell rather than a failure.
+ */
+const windowRead = (command: AgentCommand): boolean => command.type === 'refresh-thread-worktree' && command.background === true
+/** The connection to a host closed under a request; the host itself refused nothing. */
+const droppedConnection = (error: unknown): boolean => error instanceof HostConnectionError && error.code === 'disconnected'
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
+/**
+ * What Dismiss all says when a host kept its failed threads as they were: one that predates the seen record, or one that
+ * is out of reach or did not answer. Its threads still say Needs attention; nothing else was touched.
+ */
+function dismissLeft(left: readonly { readonly name: string; readonly older: boolean }[]): string {
+  const [first] = left
+  if (left.length === 1 && first) return first.older
+    ? `${first.name} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts, then press Dismiss all again.`
+    : `${first.name} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.`
+  return `${left.map(item => item.name).join(', ')} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts, then press Dismiss all again.`
+}
 function withoutClientUpdates(state: AgentState): AgentState {
   const { clientUpdates: _updates, clientUpdateRun: _run, clientUpdatesDismissedAt: _dismissed, ...rest } = state
   void _updates; void _run; void _dismissed
@@ -118,32 +146,35 @@ export class DesktopHostRouter {
       if (!entry || entry.kind !== 'remote' || this.reconnecting.has(id) || entry.available?.() === false) throw new Error('Watcher host is disconnected.')
       return entry
     }
-    const museHeld = (host: DesktopHostConnection, request: WatcherHostRead | WatcherHostControl) => this.options.museEnabled !== true
-      && watcherRequestUsesMuse(request, host.service.shell().host, this.dormantMuseIds.get(host.hostId))
+    const heldProvider = (host: DesktopHostConnection, request: WatcherHostRead | WatcherHostControl) => this.held.size
+      ? heldProviderOfWatcherRequest(request, this.held, readView(host.service).host, this.dormantProviderIds.get(host.hostId)) : undefined
     return {
       ...this.options.watcherEnabled === true && this.options.streamingPublishCost === true ? { roomThreads: (id: string, ids: readonly string[]) => {
         const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
         const connected = !this.reconnecting.has(id) && entry.available?.() !== false
         if (!entry.service.watcherRoomThreads) {
-          const snapshot = this.visibleState(entry.service.shell(), id).host
-          return watcherRoomInputs(snapshot, ids, this.options.museEnabled === true, this.dormantMuseIds.get(id))
+          const snapshot = this.visibleState(readView(entry.service), id).host
+          return watcherRoomInputs(snapshot, ids, this.held, this.dormantProviderIds.get(id))
             .map(thread => ({ ...thread, connected: connected && thread.connected }))
         }
         return entry.service.watcherRoomThreads(ids)
-          .filter(thread => this.options.museEnabled === true || !this.dormantMuseIds.get(id)?.has(thread.id))
+          .filter(thread => !this.held.size || !this.dormantProviderIds.get(id)?.has(thread.id))
           .map(thread => ({ ...thread, connected: connected && thread.connected }))
       } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, name: host.name, facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
+        muse: host.service.supportsWatcherMuse === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
-        // Read only when asked: the shell read copies the host's whole cached shell, and Watcher lists hosts on every pass (#1023).
-        get permissionCeiling() { return host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' } })),
+        // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023). The host's own stored default
+        // is not the user's: Settings keeps that on this computer (ADR-0074). What the host limits is whether this computer
+        // may answer there, and so give a thread a mode that acts without asking.
+        get permissionCeiling() { return (readView(host.service) as HostClientShell).clientCapabilities?.mayAnswer === true ? 'full-access' as const : 'approval-required' as const } })),
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
-        const snapshot = this.visibleState(entry.service.shell(), id).host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
+        const snapshot = this.visibleState(readView(entry.service), id).host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
         return { ...snapshot, hostId: id, connected: snapshot.connected && connected,
           threads: snapshot.threads.map(thread => ({ ...thread, hostId: id, ...!connected ? { clientConnected: false } : {} })) }
       },
@@ -151,15 +182,18 @@ export class DesktopHostRouter {
       read: async (id, request) => {
         const host = connection(id)
         if (!host.service.supportsWatcherReads) throw new Error('Watcher reads are unavailable.')
-        if (museHeld(host, request)) return museWatcherRefusal()
+        const held = heldProvider(host, request)
+        if (held) return heldWatcherRefusal(held)
         return host.service.watcherRead!(request, desktopWindowClient())
       },
       control: async (id, request) => {
         const host = connection(id)
         if (!host.service.supportsWatcherControl || !host.service.supportsWatcherReads) throw new Error('Watcher control is unavailable.')
-        if (museHeld(host, request)) return museWatcherRefusal()
+        const held = heldProvider(host, request)
+        if (held) return heldWatcherRefusal(held)
         return host.service.watcherControl!(request, desktopWindowClient(), () => {
-          if (museHeld(connection(id), request)) throw new Error(museWatcherRefusal().message)
+          const late = heldProvider(connection(id), request)
+          if (late) throw new Error(heldWatcherRefusal(late).message)
         })
       },
       subscribe: listener => { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) },
@@ -170,11 +204,28 @@ export class DesktopHostRouter {
     }
   }
   private watcherChanged(hostId?: string, force = true): void { for (const listener of this.watcherListeners) listener(hostId, force) }
-  private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
+  /** `run` numbers each connection a host was added with, so a rename, which replaces the connection object, keeps it. */
+  private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[]; run: number }>()
+  private runs = 0
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
+  /**
+   * Each remote thread's revisions as the window is given them. A host counts a thread's revisions in memory, so after
+   * it restarts they start again from one, and a window that held the thread at a higher revision threw every newer
+   * history away until the count caught up (#1098). A connection's first whole detail of a thread moves that
+   * connection's revisions past the last one the window was given; within a connection they all move by that amount.
+   * Only numbers are kept, so a host's old connections and their histories are not held here.
+   */
+  private readonly windowRevisions = new Map<string, { run: number; offset: number; last: number }>()
   private selectedHostId: string | undefined
+  /**
+   * Whether this computer's window has the focus. Its panes show their threads only while it does (ADR-0046), on a
+   * remote host as on this one: each remote host is told with the threads it observes for the window (ADR-0092).
+   */
+  private windowFocused = true
+  /** The threads the window last observed on each host, by the host's own IDs, to send again when the focus moves. */
+  private readonly observedOn = new Map<string, string[]>()
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
   private notice: RouterNotice | undefined
@@ -185,7 +236,9 @@ export class DesktopHostRouter {
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
   /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
-  private readonly dormantMuseIds = new Map<string, Map<string, string>>()
+  private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
+  /** The providers held to Owl on this run, read once at start (ADR-0072). */
+  private readonly held: HeldProviders
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
   private selections = 0
   /** Receipt reads share a connection and owner state; no answer is replayed or held draft released. */
@@ -199,7 +252,11 @@ export class DesktopHostRouter {
   private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean; museEnabled?: boolean; streamingPublishCost?: boolean } = {}) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
+    /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
+    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean } = {}) {
+    this.held = heldProvidersOption(options)
+  }
 
   setUsageSavedHosts(hostIds: readonly string[]): void { this.usageSavedHostIds = [...new Set(hostIds)].slice(0, USAGE_HOSTS_MAX) }
   private usageHostIds(requested?: string[]): string[] {
@@ -258,7 +315,7 @@ export class DesktopHostRouter {
    * every detail a streaming thread sends (#917); a host that cannot answer more cheaply is still read that way. */
   private watcherAvailable(connection: DesktopHostConnection, id: string | undefined): boolean {
     if (!id || id === '_') return true
-    if (this.options.museEnabled !== true && this.dormantMuseIds.get(connection.hostId)?.has(id)) return false
+    if (this.held.size && this.dormantProviderIds.get(connection.hostId)?.has(id)) return false
     if (this.options.watcherEnabled === true) return true
     const kind = connection.service.threadKind ? connection.service.threadKind(id) : connection.service.shell().host.threads.find(thread => thread.id === id)?.kind
     return kind !== 'watcher' && kind !== 'watcher-history'
@@ -296,41 +353,42 @@ export class DesktopHostRouter {
   preservesDormantThread(threadId: string): boolean | undefined {
     const key = parseHostEntityKey(threadId)
     if (!key) return false
-    const thread = this.hosts.get(key.hostId)?.connection.service.shell().host.threads.find(thread => thread.id === key.id)
-    return thread ? this.options.museEnabled !== true && thread.providerId === 'muse' || this.options.watcherEnabled !== true && (thread.kind === 'watcher' || thread.kind === 'watcher-history') : undefined
+    // Read in place: the answer store asks this for owners it has not classified yet, and a copy of the host's shell
+    // for each was a whole-state copy per answered question (#1230).
+    const connection = this.hosts.get(key.hostId)?.connection
+    const thread = connection ? readView(connection.service).host.threads.find(thread => thread.id === key.id) : undefined
+    return thread ? thread.providerId !== undefined && this.held.has(thread.providerId) || this.options.watcherEnabled !== true && (thread.kind === 'watcher' || thread.kind === 'watcher-history') : undefined
   }
-  private rememberMuseThreads(state: AgentState, hostId: string): Map<string, string> {
-    const hidden = this.dormantMuseIds.get(hostId) ?? new Map<string, string>()
-    for (const thread of state.host.threads) {
-      if (threadUsesMuse(thread, state.host)) hidden.set(thread.id, thread.projectId)
-    }
-    this.dormantMuseIds.set(hostId, hidden)
+  private rememberDormantProviderThreads(state: AgentState, hostId: string): Map<string, DormantProviderThread> {
+    const hidden = rememberDormantProviderThreads(this.dormantProviderIds.get(hostId) ?? new Map<string, DormantProviderThread>(), state.host, this.held)
+    this.dormantProviderIds.set(hostId, hidden)
     return hidden
+  }
+  /** A host's default provider as the window is given it: one held to Owl gives way to the first that is not. */
+  private visibleProvider(provider: ProviderId): ProviderId {
+    return this.held.has(provider) ? providerIdSchema.options.find(item => !this.held.has(item)) ?? 'codex' : provider
   }
   private visibleState(state: AgentState, hostId: string): AgentState {
     const watched = visibleWatcherState(state, this.options.watcherEnabled === true)
-    if (this.options.museEnabled === true) return watched
-    const hidden = this.rememberMuseThreads(state, hostId)
+    if (!this.held.size) return watched
+    const held = this.held
+    const hidden = this.rememberDormantProviderThreads(state, hostId)
     const visible = withoutThreads(watched, new Set(hidden.keys()))
-    return { ...visible, configuration: { ...visible.configuration,
-      provider: visible.configuration.provider === 'muse' ? 'codex' : visible.configuration.provider,
-      ...(visible.configuration.enabledProviders ? { enabledProviders: visible.configuration.enabledProviders.filter(provider => provider !== 'muse') } : {}),
-      defaultModelId: parsePublicProviderEntityId(visible.configuration.defaultModelId)?.provider === 'muse' ? '' : visible.configuration.defaultModelId,
-      newThreadModelId: parsePublicProviderEntityId(visible.configuration.newThreadModelId)?.provider === 'muse' ? '' : visible.configuration.newThreadModelId },
-      host: { ...visible.host,
-        models: modelsWithoutMuse(visible.host.models),
-        projects: visible.host.projects.filter(project => project.providerId !== 'muse' && parsePublicProviderEntityId(project.id)?.provider !== 'muse'),
-        ...(visible.host.providers ? { providers: visible.host.providers.filter(provider => provider.id !== 'muse') } : {}) },
-      ...(visible.installedProviders ? { installedProviders: visible.installedProviders.filter(provider => provider !== 'muse') } : {}),
-      ...(visible.clientUpdates ? { clientUpdates: visible.clientUpdates.filter(update => update.id !== 'muse') } : {}),
-      ...(visible.clientUpdateRun?.line ? { clientUpdateRun: { ...visible.clientUpdateRun, line: visible.clientUpdateRun.line.filter(provider => provider !== 'muse') } } : {}) }
+    const heldModel = (id: string): boolean => { const provider = parsePublicProviderEntityId(id)?.provider; return provider !== undefined && held.has(provider) }
+    return { ...visible, configuration: { ...visible.configuration, provider: this.visibleProvider(visible.configuration.provider),
+      ...(visible.configuration.enabledProviders ? { enabledProviders: visible.configuration.enabledProviders.filter(provider => !held.has(provider)) } : {}),
+      defaultModelId: heldModel(visible.configuration.defaultModelId) ? '' : visible.configuration.defaultModelId,
+      newThreadModelId: heldModel(visible.configuration.newThreadModelId) ? '' : visible.configuration.newThreadModelId },
+      host: { ...visible.host, ...catalogWithoutHeld(visible.host, held) },
+      ...(visible.installedProviders ? { installedProviders: visible.installedProviders.filter(provider => !held.has(provider)) } : {}),
+      ...(visible.clientUpdates ? { clientUpdates: visible.clientUpdates.filter(update => !held.has(update.id)) } : {}),
+      ...(visible.clientUpdateRun?.line ? { clientUpdateRun: { ...visible.clientUpdateRun, line: visible.clientUpdateRun.line.filter(provider => !held.has(provider)) } } : {}) }
   }
 
   requiresManagementUpdate(hostId: string): boolean {
     const connection = this.hosts.get(hostId)?.connection
     if (connection?.kind !== 'remote') return false
-    const state = connection.service.shell()
-    return state.legacyManagement === true
+    return readView(connection.service).legacyManagement === true
   }
 
   /**
@@ -340,7 +398,7 @@ export class DesktopHostRouter {
    */
   private watch(connection: DesktopHostConnection): (() => void)[] {
     const signature = (state: AgentState) => {
-      if (this.options.museEnabled !== true) this.rememberMuseThreads(state, connection.hostId)
+      if (this.held.size) this.rememberDormantProviderThreads(state, connection.hostId)
       return JSON.stringify([state.stale === true, state.host.connected, connection.service.supportsWatcherControl, connection.service.supportsWatcherReads, connection.service.supportsWatcherStandingWatch])
     }
     let last = signature(connection.service.shell())
@@ -352,15 +410,15 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
-      const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
-      for (const listener of this.detailListeners) listener(scoped)
+      const scoped = this.toWindowRevisions(connection, this.hosts.get(connection.hostId)?.run, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
+      if (scoped) for (const listener of this.detailListeners) listener(scoped)
     }))
     return off
   }
   add(connection: DesktopHostConnection): void {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
     const off = this.watch(connection)
-    this.hosts.set(connection.hostId, { connection, off })
+    this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
     this.watcherChanged(connection.hostId)
     this.selectedHostId ??= connection.hostId
     this.emit()
@@ -374,7 +432,7 @@ export class DesktopHostRouter {
     if (!entry) { this.add(connection); return }
     entry.off.forEach(off => off())
     const off = this.watch(connection)
-    this.hosts.set(connection.hostId, { connection, off })
+    this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
     this.reconnecting.delete(connection.hostId)
     this.watcherChanged(connection.hostId)
     this.emit()
@@ -389,12 +447,27 @@ export class DesktopHostRouter {
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
-    this.dormantMuseIds.delete(hostId)
+    this.dormantProviderIds.delete(hostId)
+    this.observedOn.delete(hostId)
     this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
+  }
+  /**
+   * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
+   * window observes there, so a thread in a pane behind another app neither reads its finish nor sees its failure; this
+   * computer's own host hears it from main directly.
+   */
+  setWindowFocused(focused: boolean): void {
+    if (focused === this.windowFocused) return
+    this.windowFocused = focused
+    for (const { connection } of this.hosts.values()) {
+      if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsFailureSeen !== true || !connection.observe) continue
+      const ids = this.observedOn.get(connection.hostId) ?? []
+      void (focused ? connection.observe(ids) : connection.observe(ids, false)).catch(() => undefined)
+    }
   }
   select(hostId: string): void {
     if (!this.hosts.has(hostId)) throw new Error('Connect this host before selecting it.')
@@ -457,11 +530,10 @@ export class DesktopHostRouter {
     const base = selected?.connection.kind === 'remote' ? withoutClientUpdates(named) : named
     const multiple = entries.length > 1
     const threads = entries.flatMap(({ connection, original, state }) => state.host.threads.map((thread, index) => {
-      const available = connection.available?.() !== false
       return {
         ...thread, hostId: connection.hostId, hostLabel: multiple ? connection.name : undefined, remoteHost: connection.kind === 'remote',
-        clientConnected: available && isThreadProviderConnected(original.host, original.host.threads[index]!),
-        ...(!available && this.reconnecting.has(connection.hostId) ? { clientReconnecting: true } : {}),
+        clientConnected: windowConnected(connection, original.host, original.host.threads[index]!),
+        ...(connection.available?.() === false && this.reconnecting.has(connection.hostId) ? { clientReconnecting: true } : {}),
       }
     }))
     return {
@@ -474,13 +546,17 @@ export class DesktopHostRouter {
         clientHosts: entries.map(({ connection, original, state }) => ({ hostId: connection.hostId,
           connected: connection.available?.() !== false && original.host.connected,
           models: state.host.models, capabilities: original.host.capabilities,
-          ...(original.host.providers ? { providers: original.host.providers } : {}),
+          ...(original.host.providers ? { providers: this.namedProviders(connection, original.host.providers) } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
           projectsDirectory: original.configuration.projectsDirectory,
           // This computer may always answer its own host; a remote one says so in the shell it sends this client.
           mayAnswer: connection.kind === 'local' || (original as HostClientShell).clientCapabilities?.mayAnswer === true,
+          // Settings > Providers is this computer's own page, whichever host is selected for new work.
+          ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates,
+            museDisableSandbox: original.configuration.museDisableSandbox,
+            agentModelId: defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts) } : {}),
         })),
       },
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
@@ -506,23 +582,93 @@ export class DesktopHostRouter {
   }
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     const { connection, id } = this.target(threadId)
+    const run = this.hosts.get(connection.hostId)?.run
     const detail = await connection.detail(id!)
-    return detail ? mapHostReferences(detail, value => hostEntityKey(connection.hostId, value)) : null
+    // An answer from a connection a reconnect has since replaced is that connection's history, not the new one's.
+    if (run !== this.hosts.get(connection.hostId)?.run) return null
+    return detail ? this.toWindowRevisions(connection, run, mapHostReferences(detail, value => hostEntityKey(connection.hostId, value))) : null
+  }
+  /**
+   * A remote thread's detail or delta from connection `run` with its revisions as the window is given them, or null for a
+   * delta no whole detail from that connection came before; this computer's go as they are.
+   */
+  private toWindowRevisions<T extends AgentThreadDetailUpdate>(connection: DesktopHostConnection, run: number | undefined, update: T): T | null {
+    if (connection.kind !== 'remote' || run === undefined) return update
+    let line = this.windowRevisions.get(update.threadId)
+    if (isAgentThreadDetailDelta(update)) {
+      // A delta follows a whole detail on its own connection. One that arrives first is measured from a revision the
+      // window cannot tell from the old connection's, so it goes no further; the whole detail that follows carries it.
+      if (!line || line.run !== run) return null
+      line.last = Math.max(line.last, update.revision + line.offset)
+      return line.offset === 0 ? update : { ...update, baseRevision: update.baseRevision + line.offset, revision: update.revision + line.offset }
+    }
+    if (!line) this.windowRevisions.set(update.threadId, line = { run, offset: 0, last: update.revision })
+    else if (line.run !== run) {
+      line.run = run
+      if (update.revision + line.offset <= line.last) line.offset = line.last + 1 - update.revision
+    }
+    line.last = Math.max(line.last, update.revision + line.offset)
+    return line.offset === 0 ? update : { ...update, revision: update.revision + line.offset }
   }
   requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
     const { connection, id } = this.target(threadId)
     return connection.service.requestAnswerRecovery?.(id!, providerId) ?? { uncertainRequestIds: [], completed: [] }
   }
+  /**
+   * One thread the window is given, found on its own host's view in place: the thread as that host sent it, whether the
+   * window shows it connected and whether the host counts it busy, each as `shell()` would give them. The answer store
+   * looked up its threads in every host's state built afresh, once for every answered question on every save, and that
+   * was half of main's time with a few hundred answered (#1230).
+   */
+  private windowThread(connection: DesktopHostConnection, ownerId: string): { thread: AgentThread | undefined; clientConnected: boolean | undefined; busy: boolean } {
+    const state = readView(connection.service)
+    const own = state.hostId ?? state.host.hostId
+    const busy = state.busyThreadIds?.some(id => clientThreadId(own, id) === ownerId) === true
+    const thread = state.host.threads.find(item => clientThreadId(own, item.id, item.hostId) === ownerId)
+    // What `visibleState` leaves out of the window: Watcher while it is off, and a provider held to Owl.
+    if (!thread || !watcherThreadVisible(thread, this.options.watcherEnabled === true)
+      || this.held.size && this.rememberDormantProviderThreads(state, connection.hostId).has(thread.id)) return { thread: undefined, clientConnected: undefined, busy }
+    return { thread, clientConnected: windowConnected(connection, state.host, thread), busy }
+  }
+  /**
+   * The provider the window gives a thread that names none: from the selected host's catalog and default, as `shell()`
+   * has them, read on that one host in place. A recovery pass asks this for every held answer of such a thread.
+   */
+  private windowProvider(thread: AgentThread): ProviderId {
+    const connection = this.selectedHostId === undefined ? undefined : this.hosts.get(this.selectedHostId)?.connection
+    if (!connection) { const empty = this.empty(); return requestDraftProvider(empty.host, thread, empty.configuration.provider) }
+    const state = readView(connection.service)
+    return requestDraftProvider({ models: modelsWithoutHeld(state.host.models, this.held) }, thread, this.visibleProvider(state.configuration.provider))
+  }
+  /**
+   * Every remote thread the answer store could keep as Watcher or dormant, under each ID a saved owner of it may carry:
+   * a Watcher thread, or one of a provider held to Owl. Read in place on each host.
+   */
+  requestDraftWatcherOwnerIds(): string[] {
+    const ids: string[] = []
+    for (const { connection } of this.hosts.values()) {
+      if (connection.kind === 'local') continue
+      const state = readView(connection.service), own = state.hostId ?? state.host.hostId
+      for (const thread of state.host.threads) {
+        if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && !(thread.providerId !== undefined && this.held.has(thread.providerId))) continue
+        const stored = hostEntityKey(connection.hostId, thread.id), shown = clientThreadId(own, thread.id, thread.hostId)
+        ids.push(stored)
+        if (shown !== stored) ids.push(shown)
+      }
+    }
+    return ids
+  }
   /** The same owning-host projection is used for remote draft saves and recovery. */
   requestDraftState(owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
     const key = parseHostEntityKey(owner.ownerId)
-    if (!key || !this.hosts.has(key.hostId) || !this.watcherAvailable(this.hosts.get(key.hostId)!.connection, key.id)) return undefined
-    const state = this.shell()
+    const connection = key ? this.hosts.get(key.hostId)?.connection : undefined
+    if (!key || !connection || !this.watcherAvailable(connection, key.id)) return undefined
     const recovery = this.requestAnswerRecovery(owner.ownerId, owner.providerId)
-    const thread = state.host.threads.find(item => item.id === owner.ownerId
-      && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    return thread ? { connected: isThreadProviderConnected(state.host, thread),
-      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests,
+    const found = this.windowThread(connection, owner.ownerId)
+    const thread = found.thread && (found.thread.providerId ?? this.windowProvider(found.thread)) === owner.providerId ? found.thread : undefined
+    // Only the requests handed back are copied, as they are for this computer's own threads.
+    return thread ? { connected: found.clientConnected === true,
+      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: structuredClone(thread.requests),
       ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery }
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
@@ -558,7 +704,6 @@ export class DesktopHostRouter {
   private async issueRequestDraftChecks(drafts: RequestDraftRecovery): Promise<Promise<void>[]> {
     // Already-known local, personal and remote acceptance must not wait for a socket read.
     await drafts.reconcile()
-    let state: AgentState | undefined
     const pending: Promise<void>[] = []
     for (const draft of await drafts.heldThreadAnswers()) {
       const owner = draft.target
@@ -577,15 +722,13 @@ export class DesktopHostRouter {
       const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
       if (completed?.some(item => item.decisionId === decisionId && item.requestId === owner.requestId
         && item.questionsDigest === questionsDigest)) continue
-      // Every host's threads, built once a held answer still needs its receipt and not before.
-      state ??= this.shell()
-      const thread = state.host.threads.find(item => item.id === owner.ownerId)
-      const request = thread?.requests.find(item => item.id === owner.requestId)
+      // The held answer's own thread, read on its host in place, once it still needs its receipt and not before.
+      const found = this.windowThread(connection, owner.ownerId)
+      const request = found.thread?.requests.find(item => item.id === owner.requestId)
       // A negative receipt is checked again when its provider reconnects or the original request
       // changes delivery/liveness or its answer lane finishes. Unrelated streaming updates keep the same read.
       const key = JSON.stringify([owner.ownerId, owner.providerId, owner.requestId, questionsDigest, decisionId,
-        thread?.clientConnected, thread?.historyStatus, request?.id ?? null, request?.delivery ?? null,
-        state.busyThreadIds?.includes(owner.ownerId) ?? false])
+        found.clientConnected, found.thread?.historyStatus, request?.id ?? null, request?.delivery ?? null, found.busy])
       let check = checks.get(key)
       if (!check) {
         // Keep both negative memo entries and queued reads bounded. Never evict an in-flight
@@ -686,6 +829,23 @@ export class DesktopHostRouter {
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its pull requests.')
     return connection.gitPullRequest({ ...request, threadId: id! })
   }
+  /** The words of a started thread's handover, read on the thread's own host when the user asks to read them (#1028). */
+  async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
+    const { connection, id } = this.target(threadId)
+    if (connection.service.supportsThreadStarts !== true || !connection.service.startHandover) throw new Error(THREAD_STARTS_UNSUPPORTED)
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read the handover. Nothing was sent.')
+    return connection.service.startHandover(id!)
+  }
+  /**
+   * One record of a remote thread whole, read on its host when its row opens (ADR-0025, October 18 amendment). This
+   * computer's own threads never carry a cut body, so a thread here answers null.
+   */
+  async activityBody(request: { readonly threadId: string; readonly activityId: string }): Promise<AgentActivity | null> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.activityBody) return null
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing is lost. The rest shows when it reconnects.')
+    return connection.activityBody(id!, request.activityId)
+  }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {
     const entry = this.hosts.get(request.hostId)
@@ -742,20 +902,43 @@ export class DesktopHostRouter {
     const priorNotice = this.notice
     this.notice = undefined
     const type = input && typeof input === 'object' && 'type' in input ? input.type : undefined
-    if (type === 'observe-threads') {
+    // Showing threads and Dismiss all both name threads on every host: each host hears only its own (ADR-0046, ADR-0092).
+    if (type === 'observe-threads' || type === 'dismiss-failures') {
       const parsed = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-      if (parsed.type !== 'observe-threads') throw new Error('The viewed threads could not be read.')
-      const rawIds = (input as { threadIds: string[] }).threadIds
+      if (parsed.type !== type) throw new Error(type === 'observe-threads' ? 'The viewed threads could not be read.' : 'The threads to dismiss could not be read.')
+      // Dismiss all names each thread with the failure its row showed; showing names threads alone.
+      const raw = type === 'observe-threads' ? (input as { threadIds: string[] }).threadIds.map(threadId => ({ threadId, failure: '' }))
+        : (input as { failures: { threadId: string; failure: string }[] }).failures
+      const left: { name: string; older: boolean }[] = []
       await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
+        const mine = raw.filter(item => (parseHostEntityKey(item.threadId)?.hostId ?? this.selectedHostId) === connection.hostId)
+          .map(item => ({ ...item, threadId: parseHostEntityKey(item.threadId)?.id ?? item.threadId }))
+          .filter(item => this.watcherAvailable(connection, item.threadId))
+        const visibleIds = mine.map(item => item.threadId)
+        if (type === 'dismiss-failures') {
+          if (!mine.length) return
+          if (connection.available?.() === false || connection.kind === 'remote' && connection.service.supportsFailureSeen !== true) {
+            left.push({ name: connection.name, older: connection.available?.() !== false }); return
+          }
+          const answer = await connection.service.command({ type: 'dismiss-failures', failures: mine }, client).catch(() => null)
+          if (answer === null || answer.error) left.push({ name: connection.name, older: false })
+          return
+        }
         if (connection.available?.() === false) return
-        const ids = rawIds.filter(id => (parseHostEntityKey(id)?.hostId ?? this.selectedHostId) === connection.hostId).map(id => parseHostEntityKey(id)?.id ?? id)
-        const visibleIds = ids.filter(id => this.watcherAvailable(connection, id))
-        if (connection.observe) await connection.observe(visibleIds)
-        else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
+        this.observedOn.set(connection.hostId, visibleIds)
+        try {
+          if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(visibleIds, false) : connection.observe(visibleIds))
+          else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
+        } catch (error) {
+          // A connection that drops while the open panes are read is no one's action to report: the host reads the
+          // same panes again when it reconnects, and its threads read Reconnecting until then.
+          if (!droppedConnection(error)) throw error
+        }
       }))
+      if (left.length) this.notice = { message: dismissLeft(left) }
       return this.shell()
     }
-    const { connection, command } = this.route(input)
+    const { connection, command, hostNamed } = this.route(input)
     if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
     }
@@ -777,7 +960,11 @@ export class DesktopHostRouter {
       }
       this.emit(); return this.shell()
     }
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again before sending. No command was sent.')
+    if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.shell(), error: 'Continue with a new message on the desktop that owns this thread. Nothing was changed.' }
+    if (connection.available?.() === false) {
+      if (windowRead(command)) return this.shell()
+      throw new Error(`${connection.name} is disconnected. Nothing was sent. Try again once it reconnects.`)
+    }
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
     if (command.type === 'preview-reclaim-thread-worktree') {
       try {
@@ -794,6 +981,8 @@ export class DesktopHostRouter {
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
     let refused = false
     let repeatedUnsupportedCompose = false
+    // Continuing an agent or forking at a reply answers where it was asked (#1028): its refusal is this command's alone.
+    let inPlace: string | undefined
     try {
       let decisionId: string | undefined
       let answerTarget: HostAnswerTarget | undefined
@@ -811,9 +1000,12 @@ export class DesktopHostRouter {
           request.questions?.length ? command.questionAnswers : { [request.id]: { optionIds: [command.answer] } })
         }
       }
-      const result = await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
-        : connection.service.command(command as AgentCommand, client))
-      if (result.error) {
+      // A host from before continuing agents (#1028) would refuse the command as unknown; it is told why here instead.
+      const result = startsThread(command) && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
+        : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
+          : connection.service.command(command as AgentCommand, client))
+      if (result.error && startsThread(command)) { refused = true; inPlace = this.refusal(connection, result.error) }
+      else if (result.error) {
         refused = true
         const unsupportedCompose = command.type === 'compose' && command.threadId !== undefined
           && connection.kind === 'remote' && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false) && result.error === REMOTE_COMPOSE_UNSAVED
@@ -825,11 +1017,14 @@ export class DesktopHostRouter {
           ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
       }
     } catch (error) {
+      if (windowRead(command) && droppedConnection(error)) return this.shell()
       // The host refused this action before dispatch. Return its account through the same state error
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
       // A dropped connection is still uncertain and must keep the renderer's recovery path.
       if (connection.kind !== 'remote' || !(error instanceof HostConnectionError) || error.code !== 'forbidden') throw error
-      refused = true; this.notice = { message: this.refusal(connection, error.message) }
+      refused = true
+      if (startsThread(command)) inPlace = this.refusal(connection, error.message)
+      else this.notice = { message: this.refusal(connection, error.message) }
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
@@ -838,38 +1033,46 @@ export class DesktopHostRouter {
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
       await this.openCreated(connection, command.threadId, client)
     }
+    if (startsThread(command) && connection.kind === 'remote' && !refused && unmoved) await this.openCreated(connection, command.newThreadId, client)
     if (!repeatedUnsupportedCompose) this.emit()
     const shell = agentShell(this.shell())
-    // A settings save may go to a host other than the selected one, so it answers with its own outcome, never with the
-    // selected host's last error, which belongs to some other command (ADR-0074).
-    return command.type === 'configure' ? { ...shell, error: refused ? this.notice?.message ?? null : null } : shell
+    // A settings save, or a command that named its host, may go to a host other than the selected one, so it answers with
+    // its own outcome, never with the selected host's last error, which belongs to some other command (ADR-0074). Continue
+    // as a thread answers in the agent's row with its own refusal alone (#1028).
+    return command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
+      : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
+  }
+  /** Refuses, before it is sent, a command that chooses, owns or would enumerate a held provider on that host. */
+  private refuseHeld(command: AgentCommand, connection: DesktopHostConnection): void {
+    if (!this.held.size) return
+    const held = heldProviderRefusedBy(command, this.held, connection.service.shell().host)
+    if (held) throw new Error(heldProviderRefusal(held))
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
-  private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand } {
+  private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand; hostNamed?: true } {
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-    if (this.options.museEnabled !== true && commandUsesMuse(command)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const named = heldProviderOfCommand(command, this.held)
+    if (named) throw new Error(heldProviderRefusal(named))
     if (command.type === 'configure') {
       const routed = this.configurationRoute(command)
-      if (this.options.museEnabled !== true && (commandUsesMuse(routed.command, routed.connection.service.shell().host)
-        || clientUpdateEnumerationUsesMuse(routed.command, routed.connection.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+      this.refuseHeld(routed.command, routed.connection)
       return routed
     }
-    // Update all names the machine whose clients it updates, which need not be the selected one (ADR-0077).
-    if (command.type === 'queue-client-updates' && command.hostId !== undefined) {
+    // Update all names the machine whose clients it updates, which need not be the selected one (ADR-0077), and
+    // Settings > Providers names this computer for its own clients.
+    if (HOST_NAMED_COMMANDS.has(command.type) && 'hostId' in command && command.hostId !== undefined) {
       const { hostId, ...forwarded } = command
       const named = this.hosts.get(hostId)?.connection
       if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
-      if (this.options.museEnabled !== true && (commandUsesMuse(forwarded, named.service.shell().host)
-        || clientUpdateEnumerationUsesMuse(forwarded, named.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
-      return { connection: named, command: forwarded }
+      this.refuseHeld(forwarded, named)
+      return { connection: named, command: forwarded, hostNamed: true }
     }
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
-    if (this.options.museEnabled !== true && (commandUsesMuse(command, connection.service.shell().host)
-      || clientUpdateEnumerationUsesMuse(command, connection.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    this.refuseHeld(command, connection)
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
     const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)
@@ -952,7 +1155,14 @@ export class DesktopHostRouter {
     return connection.kind === 'remote' ? nameHostInRefusal(message, connection.name) : message
   }
   private named(connection: DesktopHostConnection, state: AgentState): AgentState {
-    return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
+    const providers = this.namedProviders(connection, state.host.providers)
+    const withProviders = providers === state.host.providers ? state : { ...state, host: { ...state.host, providers } }
+    return withProviders.error ? { ...withProviders, error: this.refusal(connection, withProviders.error) } : withProviders
+  }
+  /** A remote host's provider errors with the host named, the way its refusals are (#459). */
+  private namedProviders<T extends AgentState['host']['providers']>(connection: DesktopHostConnection, providers: T): T {
+    if (connection.kind !== 'remote' || !providers?.some(provider => provider.error)) return providers
+    return providers.map(provider => provider.error ? { ...provider, error: this.refusal(connection, provider.error) } : provider) as T
   }
   /**
    * Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. Only
@@ -961,7 +1171,8 @@ export class DesktopHostRouter {
    */
   private emit(broadcast?: { hostId: string; state: AgentState }): void {
     if (this.listeners.size) {
-      const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : connection.service.shell())
+      // Built from each host's state as it is, without a copy: what is published is read, never written into.
+      const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : readView(connection.service))
       this.published = state
       for (const listener of this.listeners) listener(state)
     } else {
@@ -977,4 +1188,11 @@ export class DesktopHostRouter {
     this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear()
     this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
   }
+}
+
+/** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */
+function readView(service: Pick<HostService, 'shell' | 'view'>): AgentState { return service.view?.() ?? service.shell() }
+/** Whether the window shows a thread's provider connected: the host's connection is up and the host says its provider is. */
+function windowConnected(connection: DesktopHostConnection, host: AgentState['host'], thread: AgentThread): boolean {
+  return connection.available?.() !== false && isThreadProviderConnected(host, thread)
 }

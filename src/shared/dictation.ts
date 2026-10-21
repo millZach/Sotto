@@ -82,10 +82,10 @@ export const TRANSCRIPTION_KEPT_DETAIL: Readonly<Record<TranscriptionErrorCode, 
 
 /**
  * What every surface says when dictation starts before the speech model is
- * ready: nothing is recorded, and the one place that shows the download says
- * how far along it is.
+ * ready: nothing is recorded, and the one place to choose a model says where
+ * the chosen one stands.
  */
-export const SPEECH_MODEL_NOT_READY_DETAIL = 'The speech model is not ready yet, so nothing was recorded. Settings → Transcription shows where its download stands.'
+export const SPEECH_MODEL_NOT_READY_DETAIL = 'The speech model is not ready yet, so nothing was recorded. Choose one, or see where it stands, in Settings → Transcription.'
 
 /**
  * What every surface says when setup was finished without a microphone. The

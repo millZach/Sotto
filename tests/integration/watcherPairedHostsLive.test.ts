@@ -108,8 +108,12 @@ it.skipIf(!enabled)('proves a Windows native Watcher against isolated current an
       providers: { codex: adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
     const control = runtime.agentControl, watcher = runtime.watcher!
     watcher.useRemoteHosts(router.watcherHosts())
-    const invoke = watcher.invoke.bind(watcher)
-    vi.spyOn(watcher, 'invoke').mockImplementation(async (id, name, args) => { const result = await invoke(id, name, args) as { status: string; code?: string }; evidence.toolCalls.push({ name, status: result.status, ...result.code ? { code: result.code } : {} }); await save(); return result })
+    // The tool server starts each call through startCall, which answers and later settles.
+    const startCall = watcher.startCall.bind(watcher)
+    vi.spyOn(watcher, 'startCall').mockImplementation((id, name, args, context) => {
+      const call = startCall(id, name, args, context)
+      return { ...call, answer: call.answer.then(async answer => { const result = answer as { status: string; code?: string }; evidence.toolCalls.push({ name, status: result.status, ...result.code ? { code: result.code } : {} }); await save(); return answer }) }
+    })
     await control.commandShell({ type: 'connect', provider: 'codex' })
     evidence.phase = 'desktop-open'; await save()
     const model = control.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!

@@ -1,0 +1,215 @@
+{
+  "lowest": 6.06,
+  "contrasts": [
+    {
+      "surface": "tile state",
+      "appearance": "dark",
+      "ratio": 17.84
+    },
+    {
+      "surface": "tile detail",
+      "appearance": "dark",
+      "ratio": 8.65
+    },
+    {
+      "surface": "model source",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "model count",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "tile state",
+      "appearance": "light",
+      "ratio": 14.69
+    },
+    {
+      "surface": "tile detail",
+      "appearance": "light",
+      "ratio": 6.27
+    },
+    {
+      "surface": "model source",
+      "appearance": "light",
+      "ratio": 6.72
+    },
+    {
+      "surface": "model count",
+      "appearance": "light",
+      "ratio": 6.72
+    },
+    {
+      "surface": "tile state",
+      "appearance": "dark",
+      "ratio": 17.84
+    },
+    {
+      "surface": "tile detail",
+      "appearance": "dark",
+      "ratio": 8.65
+    },
+    {
+      "surface": "model source",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "model count",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "tile state",
+      "appearance": "light",
+      "ratio": 14.69
+    },
+    {
+      "surface": "tile detail",
+      "appearance": "light",
+      "ratio": 6.27
+    },
+    {
+      "surface": "model source",
+      "appearance": "light",
+      "ratio": 6.72
+    },
+    {
+      "surface": "model count",
+      "appearance": "light",
+      "ratio": 6.72
+    },
+    {
+      "surface": "tile state",
+      "appearance": "dark",
+      "ratio": 17.84
+    },
+    {
+      "surface": "tile detail",
+      "appearance": "dark",
+      "ratio": 8.65
+    },
+    {
+      "surface": "model source",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "model count",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "tile state",
+      "appearance": "light",
+      "ratio": 14.69
+    },
+    {
+      "surface": "tile detail",
+      "appearance": "light",
+      "ratio": 6.27
+    },
+    {
+      "surface": "model source",
+      "appearance": "light",
+      "ratio": 6.72
+    },
+    {
+      "surface": "model count",
+      "appearance": "light",
+      "ratio": 6.72
+    },
+    {
+      "surface": "dialog description",
+      "appearance": "dark",
+      "ratio": 8.17
+    },
+    {
+      "surface": "source name",
+      "appearance": "dark",
+      "ratio": 11.71
+    },
+    {
+      "surface": "dialog description",
+      "appearance": "light",
+      "ratio": 6.06
+    },
+    {
+      "surface": "source name",
+      "appearance": "light",
+      "ratio": 9.42
+    },
+    {
+      "surface": "dialog description",
+      "appearance": "dark",
+      "ratio": 8.17
+    },
+    {
+      "surface": "source name",
+      "appearance": "dark",
+      "ratio": 11.71
+    },
+    {
+      "surface": "dialog description",
+      "appearance": "light",
+      "ratio": 6.06
+    },
+    {
+      "surface": "source name",
+      "appearance": "light",
+      "ratio": 9.42
+    },
+    {
+      "surface": "key sentence",
+      "appearance": "dark",
+      "ratio": 8.17
+    },
+    {
+      "surface": "key sentence",
+      "appearance": "light",
+      "ratio": 6.06
+    },
+    {
+      "surface": "key sentence",
+      "appearance": "dark",
+      "ratio": 8.17
+    },
+    {
+      "surface": "key sentence",
+      "appearance": "light",
+      "ratio": 6.06
+    },
+    {
+      "surface": "waiting line",
+      "appearance": "dark",
+      "ratio": 9.2
+    },
+    {
+      "surface": "waiting line",
+      "appearance": "light",
+      "ratio": 6.95
+    },
+    {
+      "surface": "waiting line",
+      "appearance": "dark",
+      "ratio": 9.2
+    },
+    {
+      "surface": "waiting line",
+      "appearance": "light",
+      "ratio": 6.95
+    },
+    {
+      "surface": "refusal",
+      "appearance": "dark",
+      "ratio": 9.48
+    },
+    {
+      "surface": "refusal",
+      "appearance": "light",
+      "ratio": 6.72
+    }
+  ]
+}

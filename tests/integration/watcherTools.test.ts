@@ -1,19 +1,29 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
-import type { ProviderId } from '../../src/shared/agents'
+import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
+import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
+import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
+import { RESUME_NOTE } from '../../src/shared/restartResume'
+import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherToolSchemas } from '../../src/shared/watcher'
+import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
+import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
+import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
+import { FollowupStore } from '../../src/main/agents/followups'
+
+/** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
+const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -22,9 +32,8 @@ async function fixture(history = true) {
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
-  let limit = 4
-  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control,
-    historyEnabled: () => history, limit: () => limit })
+  const service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control,
+    historyEnabled: () => history })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -36,6 +45,8 @@ async function fixture(history = true) {
   const opened = await service.open({ provider: 'codex', modelId: model.id })
   expect(opened).toMatchObject({ status: 'ok' })
   const id = service.state().current!.target.threadId
+  // A new Watcher is asked to read its state first (#1189); these tests start from one that has.
+  await tools.call(id, 'read_state', {})
   const user = await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic Watcher user request' })
   expect(user.error).toBeNull()
   const requestId = service.state().requests.at(-1)!.id
@@ -45,8 +56,12 @@ async function fixture(history = true) {
     const result = await tools.call(id, name, input)
     return watcherToolSchemas[name].output.parse(result.structuredContent)
   }
-  return { ...f, workspace, service, tools, id, requestId, model, project, start, call,
-    setLimit: (value: number) => { limit = value }, finish: async (threadId: string) => {
+  const native = (threadId: string) => {
+    const binding = workspace.registry.byThread(threadId)!
+    return workspace.adapters[binding.provider as keyof typeof workspace.adapters].state.threads.find(item => item.id === binding.sessionId)!
+  }
+  return { ...f, workspace, service, tools, id, requestId, model, project, start, call, native,
+    finish: async (threadId: string) => {
       const binding = workspace.registry.byThread(threadId)!
       const native = workspace.adapters[binding.provider as keyof typeof workspace.adapters]
       const thread = native.state.threads.find(item => item.id === binding.sessionId)!
@@ -65,8 +80,7 @@ it('projects the local room and complete get without copying a coordinator shell
     const room = f.service.state(), complete = f.service.get()
     expect(shell).not.toHaveBeenCalled()
     expect(room).toMatchObject({ current: before.current, currentOptions: before.currentOptions,
-      watchedThreads: before.watchedThreads, requests: before.requests, receipts: before.receipts,
-      inFlight: before.inFlight, inFlightLimit: before.inFlightLimit })
+      watchedThreads: before.watchedThreads, requests: before.requests, receipts: before.receipts })
     expect(complete).toMatchObject({ status: 'ok', state: { current: before.current,
       currentOptions: before.currentOptions, requests: before.requests, receipts: before.receipts } })
   } finally { shell.mockRestore() }
@@ -107,6 +121,7 @@ it('lists host-setup jobs as protected and readable while refusing their mutatio
   const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
   const unread = f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread
   expect(await f.call('list_threads', {})).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
+  expect(await f.call('list_threads', { detail: 'full' })).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
   expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok', messages: [{ text: 'Synthetic host setup progress' }] })
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   for (const name of ['send_to_thread', 'stop_thread', 'settle_thread'] as const) {
@@ -123,11 +138,12 @@ it('lists host-setup jobs as protected and readable while refusing their mutatio
   expect(f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread).toBe(unread)
 })
 
-it('enforces distinct target capacity from the current main setting and four prompts per target without replenishing retries', async () => {
-  const f = await fixture(); f.setLimit(1)
+it('starts past the old Threads in flight limit and keeps four prompts per target without replenishing retries (#1183)', async () => {
+  const f = await fixture()
   const first = await f.call('start_thread', f.start())
   expect(first.status).toBe('ok')
-  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  // The old limit was one to eight; nothing refuses a start now, whatever is working.
+  for (let more = 0; more < 8; more++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   await f.finish(first.target.threadId)
   for (let count = 2; count <= 4; count++) {
@@ -139,6 +155,68 @@ it('enforces distinct target capacity from the current main setting and four pro
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic exhausted' }))
     .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
 })
+
+it('says in a start’s result, and only there, once more than ten threads are working on this computer (#1183)', async () => {
+  const f = await fixture()
+  const working = () => countWorkingThreads(f.control.watcherSnapshot().threads)
+  // Watcher's own thread is working on the user's request, and is not counted.
+  expect(working()).toBe(0)
+  for (let started = 1; started <= 10; started++) {
+    const result = await f.call('start_thread', f.start())
+    expect(result).toMatchObject({ status: 'ok' })
+    expect(result).not.toHaveProperty('warning')
+    expect(working()).toBe(started)
+  }
+  const input = f.start(), eleventh = await f.call('start_thread', input)
+  expect(eleventh).toMatchObject({ status: 'ok', warning: '11 threads are working. This computer may slow down or use its battery faster.' })
+  if (eleventh.status !== 'ok' || !('target' in eleventh)) throw new Error('start refused')
+  expect((eleventh as unknown as { limits: object }).limits).toEqual({ promptCount: 1, promptLimit: 4 })
+  // A retry reads the receipt again and says nothing of the count, even with ten others still working: its own thread
+  // has finished, and counting it again would invent an eleventh.
+  await f.finish(eleventh.target.threadId)
+  expect(working()).toBe(10)
+  const retried = await f.call('start_thread', input)
+  expect(retried).toMatchObject({ status: 'ok', receipt: { operationId: (eleventh as unknown as { receipt: { operationId: string } }).receipt.operationId } })
+  expect(retried).not.toHaveProperty('warning')
+  // A send is not a start, and says nothing of it.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: eleventh.target, delivery: 'now', text: 'Synthetic follow-up' }))
+    .not.toHaveProperty('warning')
+})
+
+it('saves at most eight reservations, so a build from before #1183 still reads the file, and rebuilds the rest on load', async () => {
+  const f = await fixture()
+  for (let started = 1; started <= 11; started++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  expect(f.service.startsInFlight()).toBe(11)
+  expect(f.control.watcherRecordView().reservations).toHaveLength(11)
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  // The Watcher record schema before #1183 is this one with at most eight reservations. A record it could not read would
+  // cost that build all of agents.json.
+  const older = watcherRecordSchema.refine(record => record.reservations.length <= 8)
+  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: unknown }
+  expect(older.safeParse(saved.watcher).success).toBe(true)
+  // This build puts back what the file left off, for the threads still working.
+  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(service.startsInFlight()).toBe(11)
+}, 40_000)
+
+it('rebuilds the reservations the file left off even when a saved one is pruned before Watcher recovers (#1183)', async () => {
+  const f = await fixture()
+  for (let started = 1; started <= 11; started++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: { reservations: { target: { threadId: string } }[] } }
+  expect(saved.watcher.reservations).toHaveLength(8)
+  // While Sotto is closed, one thread the file kept finishes: the threads observed at start prune its reservation before
+  // Watcher recovers, leaving seven in the record.
+  const finished = f.workspace.registry.byThread(saved.watcher.reservations[0]!.target.threadId)!
+  const native = f.workspace.adapters.codex.state.threads.find(item => item.id === finished.sessionId)!
+  native.status = 'idle'; native.lastTurn = { id: native.lastTurn?.id ?? randomUUID(), status: 'completed' }
+  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(service.startsInFlight()).toBe(10)
+}, 40_000)
 
 it('opens an unchanged busy Watcher and keeps a queued user follow-up in its original request with a new turn budget', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
@@ -171,17 +249,19 @@ it('refuses pending requests for all delivery modes, refuses wider permissions a
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'answer')).toBe(false)
 })
 
-it('fences a queued machine prompt before a direct user send and preserves user input', async () => {
+it('fences a queued machine prompt before a direct user send, preserves user input and keeps the thread watched', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'synthetic_machine_queued' })).toMatchObject({ status: 'ok' })
   await f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'synthetic_direct_user' })
   await f.finish(first.target.threadId)
-  expect(f.service.state().watchedThreads[0]!.participation[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-send' } })
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
+  // The user's prompt goes from the queue once Watcher's turn ends; Watcher sends again once the user's own turn has ended.
   await f.finish(f.id)
+  await vi.waitFor(async () => { await f.finish(first.target.threadId); expect(f.service.state().watchedThreads[0]!.paused).toBe(false) })
   await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic new request' })
   const nextRequest = f.service.state().requests.at(-1)!.id
-  expect(await f.call('send_to_thread', { requestId: nextRequest, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'synthetic_after_takeover' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  expect(await f.call('send_to_thread', { requestId: nextRequest, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'synthetic_after_user' })).toMatchObject({ status: 'ok' })
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_machine_queued')).toBe(false)
   expect(f.control.shell().followups?.some(item => item.text === 'synthetic_direct_user') || f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_direct_user')).toBe(true)
 })
@@ -200,7 +280,7 @@ it('rechecks takeover after the read before send without dispatching the machine
   const user = f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'synthetic_racing_user' })
   release.resolve(); await machine; await user; spy.mockRestore()
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_racing_machine')).toBe(false)
-  expect(f.service.state().watchedThreads[0]!.participation[0]!.state).toBe('taken-over')
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
 })
 
 it('writes no Watcher drafts, machine queues or worker message words with history off', async () => {
@@ -309,7 +389,7 @@ it('refuses a Stop all preview when its eligible ownership changes without stopp
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
 })
 
-it('refuses Stop all after a previewed worker is taken over without changing its saved record', async () => {
+it('refuses Stop all after the user sends to a previewed worker without changing its saved record', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   const preview = f.service.prepareStopAll()
@@ -334,7 +414,7 @@ it('keeps an existing-thread acknowledgement uncertain without consuming start c
   const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'synthetic_lost_ack' }
   const result = await f.call('send_to_thread', input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' } })
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).watcher.operations.at(-1).deliveryState).toBe('uncertain')
   const count = spy.mock.calls.length
   expect(await f.call('send_to_thread', input)).toEqual(result)
@@ -364,7 +444,7 @@ it('refuses a request appearing during the read without consuming new-thread sta
     .toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
   spy.mockRestore()
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_request_race')).toBe(false)
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
 })
 
 it('fences an admitted send still waiting on a read before targeted Stop', async () => {
@@ -401,7 +481,7 @@ it('reports the original reserved creation receipt after process loss before the
   const before = f.workspace.adapters.codex.commands.length
   expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { operationId, target, deliveryState: 'queued' } })
   expect(f.workspace.adapters.codex.commands).toHaveLength(before)
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
 })
 
 it('serves structured MCP results through a thread-bound loopback token and revokes it', async () => {
@@ -416,23 +496,152 @@ it('serves structured MCP results through a thread-bound loopback token and revo
 })
 
 
-it('keeps stopped user continuations scoped without replenishing the request budget', async () => {
+it('delivers a continuation queued before a stop under a request of its own, which may start threads (#1184)', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   expect(started.status).toBe('ok')
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic stopped continuation' })).error).toBeNull()
+  const draftId = f.control.shell().followups!.find(item => item.threadId === f.id)!.draftId
+  expect(f.service.state().requests[0]).toMatchObject({ id: f.requestId, userFollowups: [{ draftId }] })
   const preview = f.service.prepareStopAll()
   if (preview.status !== 'ok') throw new Error('preview refused')
   expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok' })
-  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic stopped continuation' })).error).toBeNull()
-  const draftId = f.control.shell().followups!.find(item => item.threadId === f.id)!.draftId
   await f.finish(f.id)
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith('Synthetic stopped continuation'))).toBe(true))
-  expect(f.service.state().requests).toHaveLength(1)
-  expect(f.service.state().requests[0]).toMatchObject({ id: f.requestId, state: 'stopped', userFollowups: [{ draftId, messageId: expect.any(String) }] })
+  // The stopped request stays stopped, and keeps nothing of the instruction; the instruction's own request is active.
+  const stopped = f.service.state().requests.find(item => item.id === f.requestId), fresh = f.service.state().requests.find(item => item.id !== f.requestId)
+  expect(f.service.state().requests).toHaveLength(2)
+  expect(stopped).toMatchObject({ id: f.requestId, state: 'stopped', userFollowups: [] })
+  expect(fresh).toMatchObject({ state: 'active', userFollowups: [{ draftId, messageId: expect.any(String) }] })
+  expect(fresh!.rootUserMessageId).toBe(fresh!.userFollowups![0]!.messageId)
+  const sent = f.workspace.adapters.codex.commands.find(item => item.type === 'send' && item.text.startsWith('Synthetic stopped continuation'))
+  expect(sent).toMatchObject({ watcherRequestNote: expect.stringContaining(fresh!.id) })
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(await f.call('start_thread', { ...f.start(), requestId: fresh!.id })).toMatchObject({ status: 'ok' })
+})
+
+it('delivers a continuation under its own request when the request it was queued for closed while it waited (#1184)', async () => {
+  const f = await fixture()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic continuation of a closed request' })).error).toBeNull()
+  await f.control.updateWatcher(record => { const request = record.requests.find(item => item.id === f.requestId)!; request.state = 'closed'; request.closedAt = new Date().toISOString() })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith('Synthetic continuation of a closed request'))).toBe(true))
+  const fresh = f.service.state().requests.find(item => item.id !== f.requestId)!
+  expect(fresh).toMatchObject({ state: 'active' })
+  expect(await f.call('start_thread', { ...f.start(), requestId: fresh.id })).toMatchObject({ status: 'ok' })
+})
+
+it('gives a continuation whose tries never reached the provider a request of its own, rooted in the message that went, after a Stop (#1184)', async () => {
+  const f = await fixture(), text = 'Synthetic refused continuation'
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  let refusals = 1
+  vi.spyOn(codex, 'execute').mockImplementation(async command => command.type === 'send' && command.text.startsWith(text) && refusals-- > 0
+    ? { accepted: false, error: 'Synthetic definite refusal.' } : execute(command))
+  const failed = () => f.control.shell().followups!.find(item => item.text === text)?.status
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text })).error).toBeNull()
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(failed()).toBe('failed'), { timeout: 30_000 })
+  // The user stops Watcher while the message waits for review: its request is over.
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  expect(f.service.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+  // Resumed, the message starts a request of its own; that delivery is refused too, and the request goes with it.
+  refusals = 1
+  expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(failed()).toBe('failed'), { timeout: 30_000 })
+  expect(f.service.state().requests.filter(item => item.id !== f.requestId)).toEqual([])
+  expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(codex.commands.filter(command => command.type === 'send' && command.text.startsWith(text))).toHaveLength(1), { timeout: 30_000 })
+  const sent = codex.commands.find(command => command.type === 'send' && command.text.startsWith(text))
+  if (sent?.type !== 'send') throw new Error('The message was not sent')
+  const fresh = f.service.state().requests.filter(item => item.id !== f.requestId)
+  expect(fresh).toHaveLength(1)
+  expect(fresh[0]).toMatchObject({ state: 'active', rootUserMessageId: sent.messageId })
+  expect(sent).toMatchObject({ watcherRequestNote: expect.stringContaining(fresh[0]!.id) })
+  expect(await f.call('start_thread', { ...f.start(), requestId: fresh[0]!.id })).toMatchObject({ status: 'ok' })
+})
+
+it('queues the next message under the request a resumed one started, though it sits before the stopped request (#1184)', async () => {
+  const f = await fixture(), first = 'Synthetic continuation after a stop', second = 'Synthetic message while the new request works'
+  expect((await f.call('start_thread', f.start())).status).toBe('ok')
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: first })).error).toBeNull()
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok' })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith(first))).toBe(true))
+  const fresh = f.service.state().requests.find(item => item.id !== f.requestId)!
+  // It took the stopped request's place among takeovers, so it comes first in the record.
+  const ids = f.service.state().requests.map(item => item.id)
+  expect(ids.indexOf(fresh.id)).toBeLessThan(ids.indexOf(f.requestId))
+  expect(await f.call('start_thread', { ...f.start(), requestId: fresh.id })).toMatchObject({ status: 'ok' })
+  // While Watcher answers it, the user queues another message: it continues the newer request, not the stopped one.
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId, text: second })).error).toBeNull()
+  expect(f.service.state().requests.find(item => item.id === fresh.id)!.userFollowups).toContainEqual(expect.objectContaining({ draftId }))
+  expect(f.service.state().requests.find(item => item.id === f.requestId)!.userFollowups ?? []).not.toContainEqual(expect.objectContaining({ draftId }))
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith(second))).toBe(true))
+  const sent = f.workspace.adapters.codex.commands.find(item => item.type === 'send' && item.text.startsWith(second))
+  expect(sent).toMatchObject({ watcherRequestNote: expect.stringContaining(fresh.id) })
+  expect(f.service.state().requests).toHaveLength(2)
+})
+
+it('gives a continuation an older build left holding its refused message a request of its own after a Stop (#1184)', async () => {
+  const f = await fixture(), text = 'Synthetic continuation an older build refused'
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  let refusals = 1
+  vi.spyOn(codex, 'execute').mockImplementation(async command => command.type === 'send' && command.text.startsWith(text) && refusals-- > 0
+    ? { accepted: false, error: 'Synthetic definite refusal.' } : execute(command))
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId, text })).error).toBeNull()
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.control.shell().followups!.find(item => item.text === text)?.status).toBe('failed'), { timeout: 30_000 })
+  // A build from before #1184 kept the refused message on the continuation; this one clears it, so it is put back.
+  const refused = randomUUID()
+  await f.control.updateWatcher(record => { record.requests.find(item => item.id === f.requestId)!.userFollowups!.find(item => item.draftId === draftId)!.messageId = refused })
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  expect(f.service.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+  expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(codex.commands.some(command => command.type === 'send' && command.text.startsWith(text))).toBe(true), { timeout: 30_000 })
+  const sent = codex.commands.find(command => command.type === 'send' && command.text.startsWith(text))
+  if (sent?.type !== 'send') throw new Error('The message was not sent')
+  expect(sent.messageId).not.toBe(refused)
+  const fresh = f.service.state().requests.find(item => item.rootUserMessageId === sent.messageId)!
+  expect(fresh).toMatchObject({ state: 'active' })
+  expect(fresh.id).not.toBe(f.requestId)
+  expect(sent).toMatchObject({ watcherRequestNote: expect.stringContaining(fresh.id) })
+  expect(f.service.state().requests.find(item => item.id === f.requestId)!.userFollowups ?? []).not.toContainEqual(expect.objectContaining({ draftId }))
+})
+
+it('keeps a refused delivery’s request that a takeover took as its boundary meanwhile, so later requests are not fenced (#1184)', async () => {
+  const f = await fixture(), text = 'Synthetic refused after a takeover'
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  vi.spyOn(codex, 'execute').mockImplementation(async command => {
+    if (command.type !== 'send' || !command.text.startsWith(text)) return execute(command)
+    // While the send is on its way, a takeover of a watched thread records the newest request as its boundary.
+    const newest = f.control.watcherRecord().requests.find(item => item.rootUserMessageId === command.messageId)!.id
+    await f.control.updateWatcher(record => { record.localTakeovers = [...record.localTakeovers ?? [], { target: { hostId: f.control.hostId()!, threadId: randomUUID() }, at: new Date().toISOString(), lastRequestId: newest }] })
+    return { accepted: false, error: 'Synthetic definite refusal.' }
+  })
+  await f.control.updateWatcher(record => { const request = record.requests.find(item => item.id === f.requestId)!; request.state = 'stopped'; request.closedAt = new Date().toISOString() })
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text })).error).toBeNull()
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.control.shell().followups!.find(item => item.text === text)?.status).toBe('failed'), { timeout: 30_000 })
+  const anchored = f.control.watcherRecord().localTakeovers!.at(-1)!.lastRequestId
+  expect(anchored).not.toBe(f.requestId)
+  expect(f.control.watcherRecord().requests.some(item => item.id === anchored)).toBe(true)
+})
+
+it('keeps a continuation delivered while its request is active on that request', async () => {
+  const f = await fixture()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic live continuation' })).error).toBeNull()
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith('Synthetic live continuation'))).toBe(true))
+  expect(f.service.state().requests).toHaveLength(1)
+  expect(f.service.state().requests[0]).toMatchObject({ id: f.requestId, state: 'active', userFollowups: [{ messageId: expect.any(String) }] })
 })
 
 it('retains an uncertain existing delivery through takeover while admitting an unrelated new start', async () => {
-  const f = await fixture(); f.setLimit(1)
+  const f = await fixture()
   const first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   await f.finish(first.target.threadId)
@@ -445,18 +654,18 @@ it('retains an uncertain existing delivery through takeover while admitting an u
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic unknown delivery' }))
     .toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' } })
   await f.control.commandShell({ type: 'queue-followup', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic takeover continuation' })
-  expect(f.service.state().watchedThreads[0]!.participation[0]!.state).toBe('taken-over')
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, paused: true, participation: [{ state: 'participating' }] })
+  expect(f.service.startsInFlight()).toBe(0)
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
   await original(written!)
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
 })
 
 it('releases a definitively failed creation reservation and refunds its pre-writer prompt', async () => {
-  const f = await fixture(); f.setLimit(1)
+  const f = await fixture()
   expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' } })).toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(0)
   expect(f.service.state().receipts[0]!.deliveryState).toBe('failed')
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
@@ -476,15 +685,13 @@ it('detects a Sotto user instruction sent while the Watcher service was dormant'
   f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.control.watcherSnapshot().threads.find(item => item.id === first.target.threadId)!.lastUserMessageId).not.toBe(baseline)
-  const recovered = new WatcherService({ directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true, limit: () => 4 })
+  const recovered = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true })
   cleanups.push(async () => { recovered.close() })
   await recovered.recover()
   expect(recovered.state().recoveryNotice).toBeNull()
-  expect(recovered.state().watchedThreads[0]!.participation[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'native-user-send' } })
-  await f.finish(f.id)
-  await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic later root request' })
-  expect(await recovered.invoke(f.id, 'send_to_thread', { requestId: recovered.state().requests.at(-1)!.id, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic rejected resumption' }))
-    .toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  // The instruction fences what Watcher had prepared, and the thread stays watched.
+  expect(f.control.watcherRecord().watches![0]!.generation).toBeGreaterThan(0)
+  expect(recovered.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
 })
 
 it('refuses reads and new instructions during provider replacement before changing identity', async () => {
@@ -510,12 +717,16 @@ it('refuses reads and new instructions during provider replacement before changi
 it('fences remove-followup and branch controls as user reconfiguration', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const generation = (threadId: string) => f.control.watcherRecord().watches!.find(watch => watch.target.threadId === threadId)!.generation
+  const before = generation(first.target.threadId)
   f.service.userCommand({ type: 'remove-followup', threadId: first.target.threadId, itemId: randomUUID() }, first.target.threadId, false)
-  expect(f.service.state().watchedThreads[0]!.participation[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-reconfigure' } })
+  expect(generation(first.target.threadId)).toBeGreaterThan(before)
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
   const other = await f.call('start_thread', f.start())
   if (other.status !== 'ok' || !('target' in other)) throw new Error('start refused')
+  const otherBefore = generation(other.target.threadId)
   f.service.userCommand({ type: 'git-switch-branch', threadId: other.target.threadId, ref: 'synthetic-branch' }, other.target.threadId, false)
-  expect(f.service.state().watchedThreads.find(item => item.target.threadId === other.target.threadId)!.participation[0]!.state).toBe('taken-over')
+  expect(generation(other.target.threadId)).toBeGreaterThan(otherBefore)
 })
 
 it('keeps preexisting user queues intact when machine Stop interrupts their thread', async () => {
@@ -609,11 +820,11 @@ it('waits for active worker slots before replacing the master provider', async (
   await f.finish(f.id)
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const model = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
   expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   expect(f.service.state().current!.target.threadId).toBe(f.id)
   await f.finish(first.target.threadId)
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'ok' })
 })
 
@@ -636,12 +847,19 @@ it('keeps an unacknowledged native Stop uncertain in its original receipt', asyn
   vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => command.type === 'interrupt' ? { accepted: false, uncertain: true } : native(command))
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target }))
     .toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' }, stopRequested: true })
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
   await f.finish(first.target.threadId)
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.service.state().receipts.at(-1)!.deliveryState).toBe('accepted')
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
 })
+
+/** Sotto's wake-ups for Watcher are shown nowhere, so these read the coordinator's own queue and the news its send carries. */
+const queued = (f: Awaited<ReturnType<typeof fixture>>) => storedFollowups(f.control)
+const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined => {
+  const item = queued(f).find(candidate => candidate.threadId === f.id && candidate.wakeUp)
+  return item && (watcherWakeUpNote(item.news ?? []) ?? '')
+}
 
 it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
   const f = await fixture(false), started = await f.call('start_thread', f.start())
@@ -652,41 +870,423 @@ it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-
   if (kind === 'question') native.requests = [{ id: 'private-card', kind: 'question', text: 'private_worker_question_82ac', options: [] }]
   else { native.status = kind === 'failure' ? 'error' : 'idle'; native.lastTurn = { id: 'wake-proof-turn', status: kind === 'failure' ? 'failed' : 'completed' }; if (kind === 'failure') native.activities = [{ id: 'native-error', turnId: 'wake-proof-turn', sequence: 0, kind: 'turn', status: 'failed', title: 'private_worker_error_73ff' }] }
   f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(true), { timeout: 15_000 })
-  const queued = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp)!
-  const expected = kind === 'finish' ? 'foreground turn finished' : kind === 'failure' ? 'turn failed' : 'Open this thread to answer'
-  expect(queued.text).toContain(expected)
-  expect(queued.text).not.toMatch(/private_worker_(question|error)/)
+  await vi.waitFor(() => expect(waitingNews(f)).toBeDefined(), { timeout: 15_000 })
+  const expected = kind === 'finish' ? 'foreground turn finished' : kind === 'failure' ? 'turn failed' : 'waits on the user to answer'
+  expect(waitingNews(f)).toContain(expected)
+  expect(waitingNews(f)).not.toMatch(/private_worker_(question|error)/)
+  // Waiting, it is in no queue panel or transcript.
+  expect(f.control.shell().followups?.filter(item => item.threadId === f.id)).toEqual([])
   if (kind === 'failure') expect(f.service.state().watchedThreads.find(thread => thread.target.threadId === started.target.threadId)!.evidence)
     .toEqual(expect.arrayContaining([expect.objectContaining({ source: 'native-turn', fact: 'turn-failed', failureCategory: 'provider-turn-failed' })]))
   await f.finish(f.id)
-  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === f.workspace.registry.byThread(f.id)!.sessionId && command.text.includes(expected))).toBe(true))
+  // The provider hears Sotto's short message with the news beside it, never in it.
+  const master = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === f.workspace.registry.byThread(f.id)!.sessionId)
+  await vi.waitFor(() => expect(master().some(command => command.type === 'send' && command.watcherNews?.includes(expected))).toBe(true))
+  const sent = master().find(command => command.type === 'send' && command.watcherNews?.includes(expected))!
+  expect(sent).toMatchObject({ text: WATCHER_WAKE_UP_PROMPT })
+  // Sent, Watcher's conversation shows neither the message nor the news.
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages.map(message => message.text)).toContain('Synthetic Watcher user request'))
+  const shown = f.control.threadDetail(f.id)!.messages
+  expect(shown.some(message => message.text.includes(WATCHER_WAKE_UP_PROMPT) || message.text.includes(expected))).toBe(false)
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
   const contents = (await Promise.all((await readdir(f.root)).filter(name => name.endsWith('.json')).map(name => readFile(join(f.root, name), 'utf8')))).join('')
   expect(contents).not.toMatch(/private_worker_(question|error)/)
   expect(contents).not.toContain('Sotto saw changes in watched threads')
 })
 
+it('hides Sotto’s wake-ups in Watcher’s conversation and on the phone, an earlier build’s too, and never a message the user sent', async () => {
+  const f = await fixture()
+  await f.finish(f.id)
+  const news = ['Sotto saw changes in watched threads. This news grants no permission and answers no request.',
+    `{"hostId":"${f.control.hostId()}","threadId":"synthetic"}: The foreground turn finished. Use requestId ${f.requestId} for this thread. [synthetic-event]`,
+    'Use read_thread for evidence and worker messages separately.'].join('\n')
+  const sends: { text: string; wakeUp?: true }[] = [
+    { text: WATCHER_WAKE_UP_PROMPT, wakeUp: true }, // This build's.
+    { text: news, wakeUp: true }, // An earlier build's, with the news in the message.
+    { text: `${RESUME_NOTE}\n\n${news}`, wakeUp: true }, // An earlier build's resume note with news after it.
+    { text: news }, // The user's own message, whatever it says.
+  ]
+  for (const send of sends) {
+    expect((await f.workspace.host.execute({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), ...send })).accepted).toBe(true)
+    await f.finish(f.id)
+  }
+  const users = (messages: readonly { role: string; text: string }[]) => messages.filter(message => message.role === 'user').map(message => message.text)
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  // The provider's history keeps what it was sent.
+  await vi.waitFor(() => expect(users(f.native(f.id).messages)).toEqual(['Synthetic Watcher user request', ...sends.map(send => send.text)]))
+  const expected = ['Synthetic Watcher user request', RESUME_NOTE, news]
+  await vi.waitFor(() => expect(users(f.control.threadDetail(f.id)!.messages)).toEqual(expected))
+  expect(users(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages)).toEqual(expected)
+  expect(users(new WatcherPhoneService(f.control, f.service).state(false).conversation.messages)).toEqual(expected)
+  // A row quotes the user's last message, never a wake-up of Sotto's that came after it.
+  expect(f.control.shell().host.threads.find(thread => thread.id === f.id)!.summary?.lastUser?.text).toBe(news)
+  expect((await f.workspace.host.execute({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, wakeUp: true })).accepted).toBe(true)
+  await f.finish(f.id); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(users(f.native(f.id).messages).at(-1)).toBe(WATCHER_WAKE_UP_PROMPT))
+  await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.wakeUpMessageIds?.length).toBe(4))
+  for (const thread of [f.control.shell(), f.control.get()].map(state => state.host.threads.find(item => item.id === f.id)!)) {
+    expect(thread.summary?.lastUser?.text ?? '').not.toContain(WATCHER_WAKE_UP_PROMPT)
+  }
+  // An unchanged history is presented as the same array on every publish, so nothing downstream copies or rebuilds it.
+  const presented = (thread: AgentThread) => (f.control as unknown as { presentedMessages(item: AgentThread): readonly unknown[] }).presentedMessages(thread)
+  const watcher = f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
+  const first = presented(watcher)
+  expect(first).not.toBe(watcher.messages)
+  expect(presented(watcher)).toBe(first)
+})
+
+/** Watcher's wake-up queued behind its own running turn, holding a worker's question. */
+async function heldQuestion(f: Awaited<ReturnType<typeof fixture>>) {
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const worker = f.native(started.target.threadId)
+  worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('waits on the user to answer'), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const sends = (words?: string) => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews !== undefined && (words === undefined || command.watcherNews.includes(words)))
+  return { started, worker, master, sends, hidden: () => queued(f).filter(item => item.threadId === f.id && item.wakeUp) }
+}
+/** The provider refuses Watcher's wake-ups, every one or the first `times`. */
+function refuseWakeUps(f: Awaited<ReturnType<typeof fixture>>, master: string, times = Infinity) {
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex), refused = { count: 0 }
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.threadId === master && command.watcherNews && refused.count < times) { refused.count++; throw new Error('Synthetic native pre-write failure') }
+    return execute(command)
+  })
+  return refused
+}
+
+it('lets a Stop of Watcher hold its wake-up no one is shown without pausing it, and sends the news once Watcher next comes to rest', async () => {
+  const f = await fixture(), { sends, hidden } = await heldQuestion(f)
+  // The user stops Watcher. The wake-up is never paused, since no one is shown it to resume: it leaves unsent, its news kept.
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(hidden()).toEqual([]), { timeout: 15_000 })
+  expect(f.control.shell().followups?.filter(item => item.threadId === f.id)).toEqual([])
+  await new Promise(resolve => setTimeout(resolve, 3_000))
+  expect(sends()).toHaveLength(0)
+  // The user asks Watcher something; when that turn ends, Watcher rests, and the news goes.
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic second request' })).error).toBeNull()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(sends('waits on the user to answer')).toHaveLength(1), { timeout: 15_000 })
+}, 40_000)
+
+it('records the request its news says waits on the user with the wake-up, and places its card in the room, without Watcher answering it', async () => {
+  const f = await fixture(), { started, sends } = await heldQuestion(f)
+  const execute = f.workspace.host.execute.bind(f.workspace.host), recorded: unknown[] = []
+  vi.spyOn(f.workspace.host, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.threadId === f.id && command.wakeUp) recorded.push(command.watcherAsks)
+    return execute(command)
+  })
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(sends('waits on the user to answer')).toHaveLength(1), { timeout: 15_000 })
+  const ask = { target: started.target, requestCardId: 'held-card', kind: 'question' }
+  expect(recorded).toEqual([[ask]])
+  // The provider hears the news beside its message, never the asks, and the room places the card from the host's record.
+  expect(sends().every(command => !('watcherAsks' in command))).toBe(true)
+  // While the turn the wake-up began still runs with no reply, the card waits for it; once the turn ends it is placed.
+  expect(f.service.state().asks).toEqual([])
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.service.state().asks).toEqual([expect.objectContaining(ask)]), { timeout: 15_000 })
+  // Nothing answered the worker's request: only the user's own answer from its card does that.
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toEqual([])
+}, 40_000)
+
+/** The wake-up IDs the coordinator's saved state remembers as told, read from disk as a restart would read them. */
+async function savedTold(root: string): Promise<string[]> {
+  const saved = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')) as { watcher?: { wakeEventIds?: string[] } }
+  return saved.watcher?.wakeEventIds ?? []
+}
+
+it('saves a refused wake-up’s news as untold before the wake-up leaves the queue, so a crash between loses nothing (review P1)', async () => {
+  const f = await fixture(), { master, hidden } = await heldQuestion(f)
+  const events = hidden()[0]!.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
+  await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
+  // Were Sotto to stop at the moment the wake-up leaves, what would the next start read?
+  const store = followupStoreOf(f.control), remove = store.removeWakeUp.bind(store), atRemoval: string[][] = []
+  vi.spyOn(store, 'removeWakeUp').mockImplementation(async (...ids) => { atRemoval.push(await savedTold(f.root)); return remove(...ids) })
+  const refused = refuseWakeUps(f, master, 1)
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(refused.count).toBe(1), { timeout: 15_000 })
+  await vi.waitFor(() => expect(hidden()).toEqual([]))
+  expect(atRemoval).toHaveLength(1)
+  for (const id of events) expect(atRemoval[0]).not.toContain(id)
+}, 40_000)
+
+it('settles a hidden wake-up once when two settles overlap, so a crash while the first saves its news as untold loses nothing (review P1)', async () => {
+  const f = await fixture(), { hidden } = await heldQuestion(f)
+  const item = hidden()[0]!, events = item.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
+  await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
+  // The save of agents.json that forgets the wake-up's news is held open, as a slow disk holds it.
+  const inner = (f.control as unknown as { store: { write: (...args: unknown[]) => Promise<void> } }).store, write = inner.write.bind(inner)
+  const entered = deferred<void>(), release = deferred<void>()
+  vi.spyOn(inner, 'write').mockImplementation(async (...args) => { entered.resolve(); await release.promise; return write(...args) })
+  const settle = (f.control as unknown as { settleWatcherWakeUp: (item: unknown, outcome: string) => Promise<void> }).settleWatcherWakeUp.bind(f.control)
+  try {
+    // The pump withdraws the wake-up, and advisory pruning settles it again while the first save is on its way.
+    const first = settle(item, 'withdrawn')
+    await entered.promise
+    const second = settle(item, 'withdrawn')
+    await Promise.race([second, new Promise(resolve => setTimeout(resolve, 1_000))])
+    // Sotto stops here. The next start reads both files: the wake-up is still queued, so its news is dropped and observed afresh.
+    const saved = JSON.parse(await readFile(join(f.root, 'followups.json'), 'utf8')) as { items: { id: string }[] }
+    expect(saved.items.map(entry => entry.id)).toContain(item.id)
+    expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events))
+    release.resolve(); await Promise.all([first, second])
+  } finally { release.resolve() }
+  expect(hidden()).toEqual([])
+  for (const id of events) expect(await savedTold(f.root)).not.toContain(id)
+}, 40_000)
+
+it('saves the news of a hidden wake-up as untold again on the next settle when the first save failed, so a crash after loses nothing (review P1)', async () => {
+  const f = await fixture(), { hidden } = await heldQuestion(f)
+  const item = hidden()[0]!, events = item.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
+  await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
+  // The save of agents.json that forgets the wake-up's news fails once; memory has forgotten it, the disk has not.
+  const inner = (f.control as unknown as { store: { write: (...args: unknown[]) => Promise<void> } }).store, write = inner.write.bind(inner)
+  let failNext = true
+  vi.spyOn(inner, 'write').mockImplementation(async (...args) => { if (failNext) { failNext = false; throw new Error('Synthetic disk failure') } return write(...args) })
+  const settle = (f.control as unknown as { settleWatcherWakeUp: (item: unknown, outcome: string) => Promise<void> }).settleWatcherWakeUp.bind(f.control)
+  await expect(settle(item, 'withdrawn')).rejects.toThrow('Synthetic disk failure')
+  expect(hidden().map(entry => entry.id)).toEqual([item.id])
+  // A later settle takes it out. Sotto then stops: the next start reads its news as untold, or the wake-up still queued.
+  await settle(item, 'withdrawn')
+  const saved = JSON.parse(await readFile(join(f.root, 'followups.json'), 'utf8')) as { items: { id: string }[] }
+  expect(saved.items.map(entry => entry.id)).not.toContain(item.id)
+  for (const id of events) expect(await savedTold(f.root)).not.toContain(id)
+}, 40_000)
+
+it('asks a provider that refused a wake-up no one is shown again only with news that needs Watcher, and sends both then', async () => {
+  const f = await fixture(), { worker, master, sends, hidden } = await heldQuestion(f)
+  const refused = refuseWakeUps(f, master, 1)
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(refused.count).toBe(1), { timeout: 15_000 })
+  await vi.waitFor(() => expect(hidden()).toEqual([]))
+  // Nothing new: the provider is not asked again, and nothing is written for it.
+  await new Promise(resolve => setTimeout(resolve, 4_000))
+  expect(refused.count).toBe(1); expect(hidden()).toEqual([])
+  // The worker's turn fails, its question still open: news that needs Watcher, and the question goes with it.
+  worker.status = 'error'; worker.lastTurn = { id: 'stranded-turn', status: 'failed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(sends().some(command => command.type === 'send' && command.watcherNews!.includes('turn failed')
+    && command.watcherNews!.includes('waits on the user to answer'))).toBe(true), { timeout: 15_000 })
+  expect(refused.count).toBe(1)
+}, 40_000)
+
+it('never changes a wake-up no one is shown while it is sent: news that comes then is the next one, and a refusing provider is asked a bounded number of times', async () => {
+  const f = await fixture(), { worker, master, hidden } = await heldQuestion(f)
+  const refused = refuseWakeUps(f, master)
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    const sending = hidden()
+    expect(sending).toMatchObject([{ status: 'dispatching' }])
+    // News that needs Watcher arrives while the wake-up is being sent: it waits for the next one and changes nothing.
+    worker.status = 'error'; worker.lastTurn = { id: 'later-turn', status: 'failed' }
+    f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 3_000))
+    expect(hidden()).toEqual(sending)
+    release.resolve(); await finishing
+  } finally { release.resolve() }
+  // Refused: the news that came is news the send did not carry, so the next goes with it. Refused again, nothing new: it waits.
+  await vi.waitFor(() => expect(refused.count).toBe(2), { timeout: 15_000 })
+  const asked = f.workspace.adapters.codex.execute as unknown as { mock: { calls: [{ type: string; watcherNews?: string }][] } }
+  expect(asked.mock.calls.map(([command]) => command).filter(command => command.watcherNews).at(-1)!.watcherNews).toContain('turn failed')
+  await new Promise(resolve => setTimeout(resolve, 7_000))
+  expect(refused.count).toBe(2)
+  expect(hidden()).toEqual([])
+}, 60_000)
+
+it('never makes a wake-up no one is shown of a thread’s own facts, and sends them with news that needs Watcher', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  await f.finish(f.id)
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
+  // The worker's working copy moves again and again while its turn runs: no wake-up is made, and nothing is saved for it.
+  for (let n = 1; n <= 3; n++) {
+    f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(), availability: 'available', changedFiles: n })
+    await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 1_500))
+  }
+  expect(queued(f).filter(item => item.threadId === f.id)).toEqual([])
+  expect(sends()).toHaveLength(0)
+  f.native(started.target.threadId).requests = [{ id: 'card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(sends()).toHaveLength(1), { timeout: 15_000 })
+}, 40_000)
+
+it('publishes nothing for a wake-up no one is shown', async () => {
+  const f = await fixture(), { hidden } = await heldQuestion(f)
+  const news = hidden()[0]!.news!.find(item => 'events' in item)!
+  if (!('events' in news)) throw new Error('Expected Watcher news')
+  await followupStoreOf(f.control).removeWakeUp(hidden()[0]!.id)
+  let published = 0
+  const off = f.control.subscribe(() => { published++ })
+  try {
+    // Watcher's news is saved as its hidden wake-up, and nothing any window or phone shows changed.
+    await f.control.deliverWakeUp(f.id, news, { tool: false })
+    expect(hidden()).toHaveLength(1)
+    expect(published).toBe(0)
+    // A second is refused while it is there.
+    await expect(f.control.deliverWakeUp(f.id, news, { tool: false })).rejects.toThrow('Watcher already has news on its way.')
+    // A follow-up of the user's own is shown, and is published.
+    await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user follow-up' })
+    expect(published).toBeGreaterThan(0)
+  } finally { off() }
+})
+
+it('lets a hidden wake-up whose send is unknown go, and tells its news afresh rather than losing it', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('waits on the user to answer'), { timeout: 15_000 })
+  // Its send began and Sotto cannot say whether it landed: no outbox entry and no echo are left to reconcile it.
+  const store = followupStoreOf(f.control), unknown = queued(f).find(item => item.threadId === f.id && item.wakeUp)!
+  await store.claim(unknown.id); await store.settle(unknown.id, 'uncertain', 'Synthetic unknown send')
+  await f.finish(f.id)
+  // It is never sent twice; the question it named, still open, is told in a wake-up of its own.
+  await vi.waitFor(() => expect(queued(f).some(item => item.id === unknown.id)).toBe(false), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('waits on the user to answer'))).toBe(true), { timeout: 15_000 })
+}, 40_000)
+
+/**
+ * Resolves when the provider hears Watcher's wake-up. The fake provider acknowledges a send when the turn it starts
+ * ends, so until the test ends that turn, the wake-up is heard and not yet acknowledged.
+ */
+function heardWakeUp(f: Awaited<ReturnType<typeof fixture>>, master: string): Promise<void> {
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex), heard = deferred<void>()
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.threadId === master && command.watcherNews) heard.resolve()
+    return execute(command)
+  })
+  return heard.promise
+}
+it('never sends a thread’s own facts alone after a pull request’s wake-up they changed under was acknowledged (finding 1)', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
+  const moves = async (count: number) => {
+    for (let n = 0; n < count; n++) {
+      f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(), availability: 'available', changedFiles: n + 2 })
+      await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  const heard = heardWakeUp(f, master)
+  await f.finish(f.id); await heard
+  expect(told()).toHaveLength(1)
+  // The worker's working copy moves after the provider heard the wake-up and before it is acknowledged, as Watcher's turn ends.
+  await moves(2)
+  await f.finish(f.id)
+  // It keeps moving while the worker works. None of it wakes Watcher by itself.
+  await moves(4)
+  await new Promise(resolve => setTimeout(resolve, 5_000))
+  expect(told()).toHaveLength(1)
+}, 40_000)
+
+it('loses no news that came while a wake-up was sent when saving its acknowledgement fails (finding 3)', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const worker = f.native(started.target.threadId)
+  worker.status = 'idle'; worker.lastTurn = { id: 'first-turn', status: 'completed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('foreground turn finished'), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const inner = (followupStoreOf(f.control) as unknown as { store: { write: (value: unknown) => Promise<void> } }).store
+  const write = inner.write.bind(inner)
+  let failNext = false
+  vi.spyOn(inner, 'write').mockImplementation(async value => { if (failNext) { failNext = false; throw new Error('Synthetic disk failure') } return write(value) })
+  // Sotto reads Watcher's conversation, so its send names the message it follows as the provider has it.
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    // GitHub reads the worker's pull request while the wake-up is being sent, and the save that records the send then fails once.
+    f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
+    await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 3_000))
+    failNext = true
+    release.resolve(); await finishing
+  } finally { release.resolve() }
+  // Watcher's turn on that wake-up ends; the pull request's news, which it did not carry, goes next.
+  await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp && item.status === 'dispatching')).toBe(false))
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 20_000 })
+}, 40_000)
+
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === f.workspace.registry.byThread(started.target.threadId)!.sessionId)!
   native.requests = [{ id: 'answer-before-delivery', kind: 'permission', text: 'private args', options: [] }]; f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('waits on the user to answer'), { timeout: 15_000 })
   await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'User continuation first' })
-  const items = f.control.shell().followups!.filter(item => item.threadId === f.id)
+  const items = queued(f).filter(item => item.threadId === f.id)
   expect(items[0]!.text).toBe('User continuation first'); expect(items.at(-1)!.wakeUp).toBe(true)
+  // The user's own follow-up shows; Sotto's wake-up behind it does not.
+  expect(f.control.shell().followups!.filter(item => item.threadId === f.id).map(item => item.text)).toEqual(['User continuation first'])
   native.requests = []; f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(false))
+  await vi.waitFor(() => expect(waitingNews(f) ?? '').not.toContain('waits on the user to answer'))
   expect(f.control.shell().followups!.some(item => item.text === 'User continuation first')).toBe(true)
 })
+
+it('starts Watcher’s news afresh after a restart: wake-ups an earlier build saved go, and what is still true is told anew', async () => {
+  const f = await fixture(), { started } = await heldQuestion(f)
+  const saved = queued(f).find(item => item.threadId === f.id && item.wakeUp)!
+  const question = saved.news!.flatMap(news => 'events' in news ? news.events : [])
+  expect(f.control.watcherRecord().wakeEventIds).toEqual(expect.arrayContaining(question.map(event => event.id)))
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  // An earlier build saved two for this Watcher, without what this one keeps beside them: one whose send was unknown, with
+  // the news in its words, and one waiting behind it.
+  const path = join(f.root, 'followups.json'), file = JSON.parse(await readFile(path, 'utf8')) as { items: Record<string, unknown>[] }
+  const finish = { ...question[0]!, id: randomUUID(), kind: 'turn-finished', turnId: 'synthetic-earlier-turn' }
+  file.items = file.items.flatMap(item => item.id !== saved.id ? [item] : [
+    { ...item, status: 'uncertain', commandId: randomUUID(), messageId: randomUUID(), text: watcherNewsText(saved.news![0] as Parameters<typeof watcherNewsText>[0]) },
+    { ...item, id: randomUUID(), draftId: randomUUID(), news: [{ ...saved.news![0], events: [finish] }] }])
+  await writeFile(path, JSON.stringify(file))
+  const restored = f.create(), service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
+  f.workspace.host.useWatcherTools(new WatcherToolServer(service))
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  // They leave the queue only once their news is saved as untold, so a crash in between leaves them to be observed afresh.
+  const drop = vi.spyOn(FollowupStore.prototype, 'dropWatcherNews'), beforeDrop: string[][] = []
+  drop.mockImplementation(async function (this: FollowupStore, word) { beforeDrop.push(await savedTold(f.root)); drop.mockRestore(); return this.dropWatcherNews(word) })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(beforeDrop).toHaveLength(1)
+  expect(beforeDrop[0]).not.toContain(question[0]!.id)
+  // Both are gone, and so is the record that their news was told.
+  expect(storedFollowups(restored).filter(item => item.threadId === f.id)).toEqual([])
+  expect(restored.watcherRecord().wakeEventIds ?? []).not.toEqual(expect.arrayContaining([question[0]!.id]))
+  expect(restored.watcherRecord().wakeEventIds ?? []).not.toContain(finish.id)
+  // The question is still open, so it is observed afresh and reaches Watcher once it rests.
+  await restored.commandShell({ type: 'refresh', provider: 'codex' })
+  const native = f.native(f.id); native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }
+  f.workspace.adapters.codex.emit(); await restored.commandShell({ type: 'refresh', provider: 'codex' })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('waits on the user to answer'))).toBe(true), { timeout: 20_000 })
+  void started
+}, 40_000)
 
 it('rechecks answered news after checkpoint preparation and before the provider writer', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === f.workspace.registry.byThread(started.target.threadId)!.sessionId)!
   native.requests = [{ id: 'late-answer', kind: 'question', text: 'private question', options: [] }]; f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('waits on the user to answer'), { timeout: 15_000 })
   const entered = deferred<void>(), release = deferred<void>()
   f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
@@ -699,9 +1299,9 @@ it('rechecks answered news after checkpoint preparation and before the provider 
     await vi.waitFor(() => expect(f.control.watcherSnapshot().threads.find(thread => thread.id === started.target.threadId)!.requests).toHaveLength(0))
     release.resolve()
     await finishing
-    await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(false))
+    await vi.waitFor(() => expect(waitingNews(f) ?? '').not.toContain('waits on the user to answer'))
     expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master).slice(before)
-      .some(command => command.type === 'send' && command.text.includes('Open this thread to answer'))).toBe(false)
+      .some(command => command.type === 'send' && (command.text + (command.watcherNews ?? '')).includes('waits on the user to answer'))).toBe(false)
   } finally { release.resolve() }
 })
 
@@ -738,6 +1338,11 @@ it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after 
   expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
   expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === input.text)).toBe(false)
+  // The failed item still waits in the queue, and every snapshot reads it again: that changes nothing, so the record stays
+  // the same object and Watcher's pass is not run again for it.
+  const kept = f.control.watcherRecordView()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.control.watcherRecordView()).toBe(kept)
   spy.mockRestore()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
@@ -773,10 +1378,10 @@ it('keeps the roster readable after more than one hundred requests address a wor
           ...(index === 99 ? { takeover: { reason: 'user-send', at: original.createdAt } } : {}) })) })
     }
   })
-  const result = await f.call('list_threads', { includeSettled: true })
+  const result = await f.call('list_threads', { includeSettled: true, detail: 'full' })
   expect(result.status).toBe('ok')
   if (result.status !== 'ok' || !('rows' in result)) throw new Error('roster refused')
-  const row = result.rows.find(item => item.target.threadId === first.target.threadId)!
+  const row = result.rows.find(item => item.target.threadId === first.target.threadId)! as Extract<(typeof result.rows)[number], { participation: unknown }>
   expect(row.participation).toHaveLength(100)
   expect(row.participation.at(-1)).toMatchObject({ requestId: latestRequestId, state: 'taken-over', takeover: { reason: 'user-send' } })
   expect(f.control.watcherRecord().requests).toHaveLength(101)
@@ -784,8 +1389,8 @@ it('keeps the roster readable after more than one hundred requests address a wor
 
 
 it.each([
-  { delivery: 'now', limit: 4 }, { delivery: 'queue', limit: 4 }, { delivery: 'steer', limit: 4 }, { delivery: 'now', limit: 1 },
-])('refuses $delivery to a settled participant before admission with capacity $limit', async ({ delivery, limit }) => {
+  { delivery: 'now' }, { delivery: 'queue' }, { delivery: 'steer' },
+])('refuses $delivery to a settled participant before admission', async ({ delivery }) => {
   const f = await fixture(), first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok') throw new Error('start refused')
   await f.finish(first.target.threadId)
@@ -793,7 +1398,6 @@ it.each([
   expect(f.service.state().requests[0]).toMatchObject({ state: 'active', participants: [
     { target: first.target, state: 'relinquished', promptCount: 1 }, { state: 'participating', promptCount: 1 },
   ] })
-  f.setLimit(limit)
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target,
     delivery, text: 'Synthetic send after settle' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE',
@@ -1068,7 +1672,18 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
 })
 
-it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as const)('holds checkpoint news for a %s master and queues it after recovery', async unavailable => {
+/** A worker's linked pull request and GitHub's read of its checks: news that wakes Watcher on its own. */
+function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: string) {
+  const url = 'https://github.com/synthetic/project/pull/5'
+  const links = [{ url, number: 5, title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
+  // The workspace's record holds a thread's links, so a later snapshot keeps them; the coordinator's copy shows them now.
+  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
+  record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+  f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  return { url, read: { url, head: 'synthetic-head', observedAt: new Date().toISOString(), availability: 'available' as const, checks: 'failed' as const, checkCount: 1 } }
+}
+
+it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as const)('holds pull request news for a %s master and queues it after recovery', async unavailable => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const target = f.service.state().current!.target
@@ -1081,14 +1696,14 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = false
   expect(f.control.canDeliverWatcherNews(target)).toBe(false)
   const deliver = vi.spyOn(f.control, 'deliverWakeUp')
-  f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: 'held-capture', observedAt: new Date().toISOString(), availability: 'available' })
+  f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
   await f.service.wakes.drained()
   expect(deliver).not.toHaveBeenCalled()
   delete master.workspaceSettledAt; delete master.archivedAt
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = true
   if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)
   f.service.wakes.observe()
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(true), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingNews(f)).toBeDefined(), { timeout: 15_000 })
   expect(deliver).toHaveBeenCalledTimes(1)
   await f.service.wakes.drained()
   const saved = deliver.mock.calls[0]![1]
@@ -1098,24 +1713,207 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })
 
-it('keeps durably waiting checkpoint news through Watcher recovery and same-fact replay', async () => {
+it('tells pull request news again when the thread’s own facts change while its wake-up is being sent', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  const read = { threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(),
-    availability: 'available' as const, changedFiles: 1 }
-  f.service.checkpointObserved(read)
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 15_000 })
+  f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
   await f.service.wakes.drained()
-  const waiting = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp)!
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('Sotto observed changed evidence'))
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    // The wake-up is claimed when the worker's working copy moves: the news it carries names evidence that is no longer current.
+    expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'dispatching' })
+    f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(), availability: 'available', changedFiles: 3 })
+    await f.service.wakes.drained()
+    release.resolve()
+    await finishing
+    // The stale copy is withdrawn at the writer, and the pull request's news still reaches Watcher, as it stands now.
+    await vi.waitFor(() => expect(told()).not.toHaveLength(0), { timeout: 10_000 })
+  } finally { release.resolve() }
+}, 30_000)
+
+it('keeps durably waiting pull request news through Watcher recovery and same-fact replay', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const { read } = pullRequestNews(f, started.target.threadId)
+  f.service.pullRequestObserved(read)
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await f.service.wakes.drained()
+  const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!, news = waitingNews(f)
   const ids = f.control.watcherRecord().wakeEventIds
   f.service.close()
-  const restarted = new WatcherService({ directory: f.root, control: f.control, host: f.workspace.host,
-    historyEnabled: () => true, limit: () => 4 })
+  const restarted = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: f.control, host: f.workspace.host,
+    historyEnabled: () => true })
   cleanups.push(async () => restarted.close())
   await restarted.recover(); await restarted.wakes.drained()
-  expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
-  restarted.checkpointObserved({ ...read, observedAt: new Date().toISOString() }); await restarted.wakes.drained()
-  expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
+  expect(queued(f).find(item => item.id === waiting.id) && waitingNews(f)).toBe(news)
+  restarted.pullRequestObserved({ ...read, observedAt: new Date().toISOString() }); await restarted.wakes.drained()
+  expect(queued(f).find(item => item.id === waiting.id) && waitingNews(f)).toBe(news)
   expect(f.control.watcherRecord().wakeEventIds).toEqual(ids)
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+})
+
+// #1189: Watcher's state, kept through compaction, and compacting its conversation when it grows.
+it('keeps the decisions, rules and issues Watcher gives, list by list, and reads them back with what each watched thread waits on', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  expect(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
+    .toMatchObject({ status: 'ok', kept: { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'], issues: [] } })
+  // A list left out stays as it was.
+  await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
+  const read = await f.call('read_state', {})
+  expect(read).toMatchObject({ status: 'ok', compactAtTokens: 400_000, kept: { decisions: ['Merge #1186 once CI is green?'],
+    rules: ['Full test suites run in CI, not on the laptop.'], issues: ['#1189 Watcher: auto-compact its conversation'] } })
+  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: expect.any(String) }))
+  expect(f.service.state().state?.kept.rules).toEqual(['Full test suites run in CI, not on the laptop.'])
+  // With Keep local history on, the kept words are saved beside the control record.
+  expect(await readFile(join(f.root, 'watcher-state.json'), 'utf8')).toContain('Full test suites run in CI')
+})
+
+it('says a watched thread waits on the card of a thread it delegated to, as list_threads does', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real(), parent = snapshot.threads.find(thread => thread.id === started.target.threadId)!
+    return { ...snapshot, threads: [...snapshot.threads, { ...structuredClone(parent), id: 'synthetic-delegated', title: 'Delegated', delegatedBy: parent.id, status: 'idle',
+      requests: [{ id: 'card', kind: 'permission', text: 'synthetic private command', options: [] }] }] }
+  })
+  const read = await f.call('read_state', {})
+  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: 'The user’s answer to a permission request in a thread it delegated to.' }))
+  expect(JSON.stringify(read)).not.toContain('synthetic private command')
+})
+
+it('saves none of Watcher’s kept words with Keep local history off', async () => {
+  const f = await fixture(false)
+  await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })
+  expect(await f.call('read_state', {})).toMatchObject({ kept: { rules: ['synthetic_private_rule_51c2'] } })
+  const saved = await readFile(join(f.root, 'watcher-state.json'), 'utf8').catch(() => '')
+  expect(saved).not.toContain('synthetic_private_rule_51c2')
+})
+
+it('compacts Watcher once its conversation passes 400K tokens while it rests, and tells it to read its state after', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let watcher: Partial<AgentThread> = { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
+    usage: { contextUsed: 400_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
+      ...snapshot.providers ? { providers: snapshot.providers.map(provider => ({ ...provider, capabilities: { ...provider.capabilities, compact: true } })) } : {},
+      threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, ...watcher } : thread) }
+  })
+  vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
+  vi.spyOn(f.control, 'watcherWakeUpQueued').mockReturnValue(false)
+  const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
+  const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  // Sotto sends Watcher a message, here a wake-up, which starts its next turn.
+  const sent = () => f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), text: 'synthetic news', wakeUp: true }, undefined)
+  await nudge()
+  // At the point, not past it.
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
+  expect(f.service.state().context).toMatchObject({ tokens: 400_000, compactAt: 400_000, canCompact: true, compacting: false })
+  // Past the point, but Watcher's turn is running: it waits for Watcher to rest.
+  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 412_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
+  await nudge()
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
+  watcher = { ...watcher, status: 'idle' }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toEqual([[{ type: 'compact-thread', threadId: f.id }]])
+  expect(f.service.stateNote()).toBeUndefined()
+  // The compaction finished: the next turn's note says to read the state back, until Watcher does.
+  watcher = { ...watcher, compaction: { commandId: 'synthetic-compaction', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 31_000, contextUpdatedAt: '2026-10-19T10:02:00.000Z' } }
+  await nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+  await f.call('read_state', {})
+  expect(f.service.stateNote()).toBeUndefined()
+  // A reading after the compaction that still says past the point, before Watcher's next turn reports, compacts nothing again.
+  watcher = { ...watcher, usage: { ...watcher.usage!, contextUsed: 405_000, contextUpdatedAt: '2026-10-19T10:03:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(1)
+  // Watcher's next turn still past it: one more try.
+  sent()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 406_000, contextUpdatedAt: '2026-10-19T10:04:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  // It fails, and the provider reported the compaction as a turn of its own, as Codex does, or reports that turn only
+  // after the compaction finished, as Claude Code does: no try until Sotto sends Watcher its next message.
+  watcher = { ...watcher, compaction: { commandId: 'synthetic-compaction-2', status: 'failed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:00.000Z' } }
+  await nudge()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-compaction-turn', status: 'failed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:05:30.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(2)
+  sent()
+  watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-3', status: 'completed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:06:00.000Z' } }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(3)
+})
+
+it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let tokens = 300_000
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, usage: { contextUsed: tokens, contextUpdatedAt: `2026-10-19T10:00:0${tokens > 200_000 ? 0 : 1}.000Z`,
+      rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+  })
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toBeUndefined()
+  tokens = 40_000
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toContain('call read_state')
+})
+
+it.each([true, false])('takes a smaller context on another model for another conversation’s size, not a compaction (reading names its model: %s)', async named => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let reading: { tokens: number; modelId: string; at: string | undefined } = { tokens: 300_000, modelId: 'synthetic-model-a', at: '2026-10-19T10:00:00.000Z' }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, modelId: reading.modelId, usage: { contextUsed: reading.tokens,
+      ...named ? { modelId: reading.modelId } : {}, ...reading.at ? { contextUpdatedAt: reading.at } : {}, rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+  })
+  const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await nudge()
+  // The model changes before its first reading comes. A token update that keeps the old size and drops its time, as
+  // Muse's does, is not the new model's either. Then the new model's own reading is far smaller.
+  reading = { ...reading, modelId: 'synthetic-model-b' }
+  await nudge()
+  reading = { ...reading, at: undefined }
+  await nudge()
+  reading = { ...reading, tokens: 40_000, at: '2026-10-19T10:01:00.000Z' }
+  await nudge()
+  expect(f.service.stateNote()).toBeUndefined()
+  // A drop on the new model is still a compaction.
+  reading = { ...reading, tokens: 120_000, at: '2026-10-19T10:02:00.000Z' }
+  await nudge()
+  reading = { ...reading, tokens: 30_000, at: '2026-10-19T10:03:00.000Z' }
+  await nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+})
+
+it('asks Watcher to read its state after any Compact context for its conversation, whatever the provider reports', async () => {
+  const f = await fixture()
+  expect(f.service.stateNote()).toBeUndefined()
+  // Asked for, it owes nothing yet: control may still refuse it.
+  f.service.userCommand({ type: 'compact-thread', threadId: f.id }, f.id, false)
+  expect(f.service.stateNote()).toBeUndefined()
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
+  expect(f.service.stateNote()).toContain('call read_state')
+  // A refused read, as for an expired cursor, has not read the state back, so the reminder stays.
+  expect(await f.call('read_state', { cursor: `${randomUUID()}:100` })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED' })
+  expect(f.service.stateNote()).toContain('call read_state')
+  await f.call('read_state', {})
+  expect(f.service.stateNote()).toBeUndefined()
 })

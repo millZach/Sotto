@@ -327,28 +327,33 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
 
   it('restarts the unit on the data folder the saved host has now, after Edit connection changed it', async () => {
     const configuration = await installed()
-    const unitHost = (await descriptor(configuration)).pid
+    const unitHost = await descriptor(configuration)
     const moved = { ...configuration, dataDirectory: join(configuration.directory, "moved data's folder") }
     const before = (await systemd!.calls()).length
     const launch = await run(moved, { op: 'launch' })
     expect(launch.result).toMatchObject({ type: 'ready', owned: true, bootStart: { enabled: true, active: true } })
-    expect(alive(unitHost)).toBe(false)
-    expect(await descriptor(moved)).toMatchObject({ pid: launch.result.pid, startedBy: 'boot' })
+    expect(await systemd!.stops()).toContainEqual({ pid: unitHost.pid, exited: true })
+    const restarted = await descriptor(moved)
+    expect(restarted).toMatchObject({ pid: launch.result.pid, startedBy: 'boot' })
+    expect(restarted.instance).not.toBe(unitHost.instance)
     expect(await changes(before)).toEqual(['systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
     expect(await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')).toContain(`data='${moved.dataDirectory.split("'").join("'\\''")}'`)
   })
 
   it('turns start at boot off when linger is off, stops the unit\'s host and spawns one detached host in its place', async () => {
     const configuration = await installed()
-    const unitHost = (await descriptor(configuration)).pid
+    const unitHost = await descriptor(configuration)
     await systemd!.set({ linger: false })
     const before = (await systemd!.calls()).length
     const launch = await run(configuration, { op: 'launch' })
     expect(launch.result).toMatchObject({ type: 'ready', owned: true,
       bootStart: { installed: true, enabled: false, active: false, linger: false, fix: `sudo loginctl enable-linger ${userInfo().username}` } })
     expect(await changes(before)).toEqual(['systemctl disable --now sotto-host'])
-    expect(alive(unitHost)).toBe(false)
-    expect(await descriptor(configuration)).toMatchObject({ pid: launch.result.pid, startedBy: 'launch-script' })
+    // The fake user manager observed this host exit before starting its replacement. A later PID probe can name a new process.
+    expect(await systemd!.stops()).toContainEqual({ pid: unitHost.pid, exited: true })
+    const restarted = await descriptor(configuration)
+    expect(restarted).toMatchObject({ pid: launch.result.pid, startedBy: 'launch-script' })
+    expect(restarted.instance).not.toBe(unitHost.instance)
     // The unit's files stay, disabled, for Start at boot to enable again once linger is on.
     await expect(readFile(configuration.systemd.unitPath, 'utf8')).resolves.toContain('[Install]')
     await expect(readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')).resolves.toContain('exec "$node"')
@@ -399,13 +404,13 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
 
     it('starts one detached host in place of the unit\'s for a host that is switched on', async () => {
       const configuration = await installed()
-      const unitHost = (await descriptor(configuration)).pid
+      const unitHost = await descriptor(configuration)
       const remove = await run(configuration, { op: 'boot-remove', restart: true })
       expect(remove.result).toMatchObject({ type: 'boot-removed', stopped: true, bootStart: { installed: false } })
-      // The unit's own stop ended its host before the replacement started; probing the PID alone can race its exit.
-      expect(await systemd!.stops()).toContainEqual({ pid: unitHost, exited: true })
-      await expect.poll(() => alive(unitHost)).toBe(false)
-      expect(await descriptor(configuration)).toMatchObject({ pid: remove.result.pid, startedBy: 'launch-script' })
+      expect(await systemd!.stops()).toContainEqual({ pid: unitHost.pid, exited: true })
+      const restarted = await descriptor(configuration)
+      expect(restarted).toMatchObject({ pid: remove.result.pid, startedBy: 'launch-script' })
+      expect(restarted.instance).not.toBe(unitHost.instance)
     })
 
     it('goes with Forget\'s admin connection when the host is stopped, which still finds no host and starts none', async () => {

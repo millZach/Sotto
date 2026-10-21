@@ -11,13 +11,14 @@ import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/rendere
 import type { WatcherOwnChange } from '../../src/shared/watcher'
 import type { WatcherRoomState } from '../../src/shared/watcherRoom'
 import type { AgentMessage } from '../../src/shared/agents'
+import type { AgentActivity } from '../../src/shared/agentActivity'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
@@ -36,6 +37,14 @@ const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
 const permissionEvidence = evidenceDirectory('artifacts/watcher-permission')
 /** The handover after a provider change (ADR-0073, #1026): captures for its note. */
 const handoverEvidence = evidenceDirectory('artifacts/watcher-handover')
+/** Receipt cards, the takeover line and Stop all (#1120): captures for their note. */
+const polishEvidence = evidenceDirectory('artifacts/watcher-room-polish')
+/** Answering a watched thread's request in Watcher's conversation (October 19, 2026): captures for its note. */
+const answerEvidence = evidenceDirectory('artifacts/watcher-answer')
+/** Watcher's replies to news in place, their work in the reply's header (Zach's pick on October 19, 2026): captures for their note. */
+const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
+/** Watcher's header in the macOS layout, clear of the traffic lights in a narrow pane (#1214): captures for its note. */
+const macEvidence = evidenceDirectory('artifacts/macos-traffic-light-room')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -61,7 +70,10 @@ function launchOptions(theme: string, appearance: 'dark' | 'light', motion: 'nor
  * each row marked watched, and Watcher's own changes. `permissionConfirms: false` holds a permission change unconfirmed.
  */
 async function seedRoom(page: Page, options: { readonly current: boolean; readonly history?: boolean; readonly permissionConfirms?: boolean
-  readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[] }): Promise<void> {
+  readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[]
+  /** More of the projection, from the host's ID and the request's: receipts and takeovers. */
+  readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
+  readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -78,19 +90,26 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
       requests: options.current ? [{ id: requestId, watcher: identity.target, rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }] : [],
       watchedThreads: options.current ? participants.map(part => ({ target: part.target, title: part.target.threadId, watched: true, paused: false, status: 'running' as const, connected: true,
         settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })) : [],
-      inFlight: options.current ? 2 : 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at(0),
+      receipts: [], recoveryNotice: null, observedAt: at(0),
     },
     created: identity,
     ...options.permissionConfirms === false ? { permissionConfirms: false } : {},
+    ...options.stopResults ? { stopResults: options.stopResults } : {},
+    ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
   }
-  await page.evaluate(async ({ key, seed, master, history, extra }) => {
+  if (options.more) {
+    const more = options.more(hostId!, requestId)
+    seed.state = { ...seed.state, ...more, ...more.requests ? {} : { requests: seed.state.requests },
+      ...more.watchedThreads ? {} : { watchedThreads: seed.state.watchedThreads } }
+  }
+  await page.evaluate(async ({ key, seed, master, history, extra, activities }) => {
     localStorage.setItem(key, JSON.stringify(seed))
     if (history) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: [
       { id: 'watcher-ask', role: 'user', text: 'Find why the visual gate flakes and fix the footer links. Keep an eye on both.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 29)).toISOString() },
       { id: 'watcher-reply', role: 'assistant', text: 'Started Visual gate flake on Claude Code and Footer links on Codex, and I am watching both. Visual gate flake is asking to run the unit suite. Only you can allow that, in its own pane.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 33)).toISOString() },
       ...extra,
-    ] })
-  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false, extra: [...options.messages ?? []] })
+    ], ...activities.length ? { activities } : {} })
+  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false, extra: [...options.messages ?? []], activities: [...options.activities ?? []] })
   await page.reload()
   await openThreads(page)
 }
@@ -106,6 +125,74 @@ async function openRoom(page: Page): Promise<void> {
   await expect(page.locator('.watcher-dock')).toBeVisible()
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
 }
+
+test('an unconfirmed prompt has a recovery in the actual Watcher room', async () => {
+  await onReleaseTrack('owl', () => withSotto({ ...launchOptions('t3-code', 'dark'), scenario: 'phase3-workspace' }, async launched => {
+    const { page } = launched
+    await seedRoom(page, { current: true, history: false })
+    await openRoom(page)
+    const prompt = page.getByRole('textbox', { name: 'Watcher message', exact: true })
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId, text: '' }), CURRENT)
+    await prompt.fill('The prompt whose delivery could not be confirmed.')
+    await prompt.press('Enter')
+    await expect(page.getByLabel('Pending message')).toContainText('Unconfirmed')
+    // The provider cannot recover the original echo: repeated checks cannot settle its delivery.
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'history', threadId, text: '', messages: [], status: 'idle' }), CURRENT)
+    await prompt.fill('hello')
+    await page.reload()
+    await openRoom(page)
+    await expect(prompt).toHaveText('hello')
+    await page.getByRole('button', { name: 'Check again', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Continue with a new message', exact: true })).toBeEnabled()
+    const evidence = evidenceDirectory('artifacts/unconfirmed-send')
+    await mkdir(evidence, { recursive: true })
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height, [800, 540])
+        await settle(page)
+        expect(await pageBoundProblems(page)).toEqual([])
+        await page.screenshot({ path: join(evidence, `watcher-recovery-${appearance}-${width}x${height}.png`), animations: 'disabled' })
+        const contrast = await roomContrast(page)
+        expect(contrast.filter(item => item.ratio < 4.5)).toEqual([])
+      }
+    }
+    const recovery = page.getByRole('button', { name: 'Continue with a new message', exact: true })
+    await recovery.focus()
+    await page.keyboard.press('Enter')
+    await expect(prompt).toBeFocused()
+    await expect(prompt).toHaveText('hello')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await expect(page.getByLabel('Pending message')).toContainText('Set aside · Unconfirmed')
+    await page.screenshot({ path: join(evidence, 'watcher-set-aside-light-820x560.png'), animations: 'disabled' })
+    await page.reload()
+    await openRoom(page)
+    await expect(prompt).toHaveText('hello')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await prompt.press('Enter')
+    await expect(prompt).toHaveText('')
+    await expect.poll(() => userMessageTexts(page, CURRENT)).toEqual(['hello'])
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).deliveries?.filter(item => item.setAside)
+      .map(item => ({ status: item.status, updatesResumed: item.updatesResumed })))).toEqual([{ status: 'uncertain', updatesResumed: true }])
+    await prompt.fill('A new follow-up after recovery')
+    await expect(page.getByRole('button', { name: 'Queue prompt', exact: true })).toBeEnabled()
+    await prompt.press('Enter')
+    await expect(prompt).toHaveText('')
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: 'The new turn finished.' }), CURRENT)
+    await expect.poll(() => userMessageTexts(page, CURRENT)).toEqual(['hello', 'A new follow-up after recovery'])
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'permission', threadId, requestId: 'recovered-permission', text: 'Allow the next step?', status: 'running' }), CURRENT)
+    const deny = page.getByRole('button', { name: 'Deny', exact: true })
+    await deny.click()
+    await expect(deny).toHaveCount(0)
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'question', threadId, requestId: 'recovered-question', text: 'Which step comes next?' }), CURRENT)
+    const answer = page.getByRole('textbox', { name: 'Your answer', exact: true })
+    await answer.fill('Use the next step')
+    await answer.press('Enter')
+    await expect(answer).toHaveCount(0)
+    expect(await userMessageTexts(page, CURRENT)).toEqual(['hello', 'A new follow-up after recovery'])
+  }))
+})
 
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
@@ -184,7 +271,12 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
-      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose']
+      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
+      '.thread-message__work', '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
+      '.watcher-ask__title', '.watcher-ask__meta', '.watcher-ask__kind', '.watcher-ask__open', '.watcher-ask__toggle', '.watcher-ask__said-body', '.watcher-ask-receipt__words',
+      '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
+      '.watcher-stop .tt-button',
+      '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
@@ -278,13 +370,21 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
-  test.beforeAll(async () => { await mkdir(evidenceRoot, { recursive: true }); await mkdir(permissionEvidence, { recursive: true }); await mkdir(handoverEvidence, { recursive: true }) })
+  test.beforeAll(async () => {
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence]) await mkdir(folder, { recursive: true })
+  })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
     const note = /^(permissions|own-changes|threads-watch|room-watched|list-watch)-/u
     const handover = /^handover-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key))], [permissionEvidence, [...recorded].filter(([key]) => note.test(key))],
-      [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))]] as const
+    const polish = /^polish-/u
+    const news = /^news-/u
+    const answer = /^answer-/u
+    const mac = /^mac-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key))],
+      [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
+      [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
+      [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -524,6 +624,88 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
+  test('in the macOS layout, Watcher’s header keeps its controls apart and clear of the traffic lights in a narrow pane', async () => {
+    // A Windows run has no traffic lights; the room's own macOS layout is what moves the header clear of them.
+    const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
+      const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
+      const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
+      // Shown, and not only to assistive technology (the name, below 450 pixels off macOS).
+      const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'), head.querySelector('.watcher-tabs'),
+        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const style = getComputedStyle(head)
+      return {
+        pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
+        head: { ...rect(head), right: head.getBoundingClientRect().right - parseFloat(style.paddingRight), height: head.getBoundingClientRect().height },
+        parts: parts.map(node => ({ name: named(node), ...rect(node) })),
+        // A label or count cut off by its own control.
+        clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+          .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
+      }
+    })
+    const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
+      a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
+    // The divider's Home key gives Watcher its 400-pixel minimum; each Arrow Right after it adds 5 per cent of the room.
+    const SPOTS = [[1280, 800, 0], [820, 560, 0], [1600, 1000, 1], [1600, 1000, 2], [1600, 1000, 3], [1600, 1000, 4]] as const
+    const result: Record<string, unknown> = {}
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+        await expect(beside(page)).toBeVisible()
+        for (const platform of ['win32', 'darwin'] as const) {
+          await page.locator('.watcher-room').evaluate((room, mac) => {
+            room.classList.toggle('threads-view--mac', mac)
+            // macOS draws its own traffic lights and has none of Sotto's window controls.
+            room.querySelector<HTMLElement>('.threads-view__winctl')?.style.setProperty('display', mac ? 'none' : '')
+          }, platform === 'darwin')
+          // Off macOS this checks the two narrowest panes, which this change leaves as they were.
+          for (const [width, height, steps] of platform === 'darwin' ? SPOTS : SPOTS.slice(0, 2)) {
+            await resizeContentWindow(launched, width, height)
+            await settle(page)
+            const divider = page.getByRole('separator', { name: 'Resize panes' })
+            await divider.focus()
+            await page.keyboard.press('Home')
+            for (let step = 0; step < steps; step += 1) await page.keyboard.press('ArrowRight')
+            await settle(page)
+            const reading = await read(page)
+            const where = `${platform}, ${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}`
+            if (steps === 0) expect(reading.pane, where).toBeLessThan(410)
+            for (const [index, part] of reading.parts.entries()) {
+              for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
+              expect.soft(part.right, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.right + 0.5)
+              expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
+            }
+            expect.soft(reading.clipped, where).toEqual([])
+            if (platform === 'darwin') {
+              // Nothing of the header's in the traffic lights' row where they are drawn, 16 to about 76 pixels in.
+              for (const part of reading.parts.filter(candidate => candidate.top < 38)) expect.soft(part.left, `${part.name} clear of the traffic lights, ${where}`).toBeGreaterThanOrEqual(84)
+            } else expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+            result[`mac-header-${platform}-${appearance}-${Math.round(reading.pane)}px-${width}x${height}`] = reading
+            if (platform === 'darwin') {
+              // The capture draws the traffic lights in where macOS 26 puts them (16 pixels in and down, about 60 across),
+              // so the picture shows the room they keep.
+              await page.evaluate(() => {
+                const lights = document.body.appendChild(document.createElement('div'))
+                lights.id = 'e2e-mac-lights'
+                lights.setAttribute('aria-hidden', 'true')
+                lights.style.cssText = 'position: fixed; top: 16px; left: 16px; z-index: 99999; display: flex; gap: 9px; pointer-events: none;'
+                for (const colour of ['#ff5f57', '#febc2e', '#28c840']) lights.appendChild(document.createElement('span')).style.cssText = `width: 14px; height: 14px; border-radius: 50%; background: ${colour};`
+              })
+              await captureInto(macEvidence, launched, `mac-header-${appearance}-${Math.round(reading.pane)}px-${width}x${height}.png`)
+              await page.evaluate(() => document.getElementById('e2e-mac-lights')?.remove())
+            }
+          }
+        }
+      })
+    })
+    recorded.set('mac-header', result)
+  })
+
   test('the floating switch answers the keyboard, and Tab follows the eye through the room', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
@@ -551,7 +733,8 @@ test.describe("Watcher's room on the built app", () => {
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (its tabs, one stop on the one shown, then More Watcher actions), the needs-you
+      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run;
+      // with no limit to set, nothing follows it), the needs-you
       // line, the conversation, the composer, then the floating switch's row.
       await allThreads(page).focus()
       const order: string[] = []
@@ -561,8 +744,9 @@ test.describe("Watcher's room on the built app", () => {
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 2)).toEqual(['Conversation', 'More Watcher actions'])
-      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('More Watcher actions'))
+      expect(order.slice(0, 2)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads'])
+      expect(order).not.toContain('More Watcher actions')
+      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('Stop all threads Watcher started, 2 threads'))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
       expect(indexOf('History')).toBeGreaterThan(indexOf('Watcher message'))
       expect(order.slice(indexOf('History'), indexOf('History') + 6)).toEqual(['History', 'Usage', 'Settings', 'Help', 'Watcher', 'Check for updates'])
@@ -576,7 +760,7 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('badges and Threads in flight, with Watcher kept out of Threads', async () => {
+  test('badges, and no Threads in flight to set, with Watcher kept out of Threads', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -613,18 +797,9 @@ test.describe("Watcher's room on the built app", () => {
       await expect(watchedRow.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toHaveAccessibleDescription(/Watched by Watcher/)
       await page.keyboard.press('Escape')
 
-      // Threads in flight saves the real setting.
-      const more = pane.getByRole('button', { name: 'More Watcher actions' })
-      await more.click()
-      const limit = page.getByRole('dialog', { name: 'Watcher settings' }).getByRole('combobox', { name: 'Threads in flight' })
-      await expect(limit).toBeFocused()
-      await limit.selectOption('3')
-      await expect(limit).toHaveValue('3')
-      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit)).toBe(3)
-      await page.keyboard.press('Escape')
-      await expect(page.getByRole('dialog', { name: 'Watcher settings' })).toHaveCount(0)
-      await expect(more).toBeFocused()
-      recorded.set('limit', { saved: await page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit) })
+      // There is no Threads in flight limit to set (#1183), so the header has no More Watcher actions.
+      await expect(page.getByRole('button', { name: 'More Watcher actions' })).toHaveCount(0)
+      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveCount(0)
     }))
   })
 
@@ -846,6 +1021,380 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
+  test('Watcher’s replies to news sit in place, their work in the reply’s header, nothing stacked under the last reply', async () => {
+    // What main hands the window (watcherWakeUpsAsShown): Watcher's replies without the news wake-ups that began their
+    // turns, whose work still names them. Times follow Zach's Watcher thread of October 19, 2026.
+    const clock = (minute: number, second: number): string => new Date(Date.UTC(2026, 6, 12, 19, minute, 0) + second * 1000).toISOString()
+    const said = (id: string, role: AgentMessage['role'], minute: number, second: number, text: string): AgentMessage => ({ id, role, text, createdAt: clock(minute, second) })
+    let sequence = 100
+    const work = (turnId: string, from: readonly [number, number], to: readonly [number, number], tools: readonly string[], status: AgentActivity['status'] = 'completed'): AgentActivity[] => [
+      { id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: 'turn', status, title: 'Turn', startedAt: clock(...from), completedAt: clock(...to) },
+      ...tools.map((title): AgentActivity => ({ id: `${turnId}-${sequence}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: title === 'Thinking' ? 'reasoning' : 'tool',
+        status: 'completed', title, startedAt: clock(...from), completedAt: clock(...to) })),
+    ]
+    const messages: AgentMessage[] = [
+      said('watcher-news-reply-1', 'assistant', 35, 7, 'Visual gate flake asked to run the unit suite. Only you can allow that, in its own pane.'),
+      said('watcher-news-reply-2', 'assistant', 36, 30, 'Footer links finished its turn and pushed its branch. CI is running; I will look again when it ends.'),
+      said('watcher-ask-2', 'user', 38, 0, 'Merge Footer links once CI is green.'),
+      said('watcher-merge', 'assistant', 38, 27, 'Sent Footer links the merge. It merges once its required checks pass.'),
+      said('watcher-news-reply-3', 'assistant', 39, 45, 'Footer links merged.'),
+    ]
+    const activities = [
+      ...work('watcher-ask', [29, 1], [33, 0], ['Thinking', 'list_projects', 'start_thread', 'start_thread']),
+      ...work('news-1', [35, 0], [35, 7.1], ['Thinking', 'read_thread', 'read_operation']),
+      ...work('news-2', [36, 23], [36, 30.4], ['read_operation', 'Thinking']),
+      ...work('news-silent', [37, 10], [37, 13], ['list_threads']),
+      ...work('watcher-ask-2', [38, 1], [38, 28], ['Thinking', 'send_thread']),
+      ...work('news-3', [39, 40], [39, 45.5], ['read_operation']),
+    ]
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, messages, activities })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const pane = watcherPane(page)
+        const transcript = pane.locator('.thread-transcript__content')
+        await expect(pane.locator('[data-message-id="watcher-news-reply-3"]')).toBeVisible()
+        // Every turn in time order: the work of each comes before its reply, and the newest reply is the last thing drawn.
+        const words = await transcript.evaluate(element => element.textContent ?? '')
+        const order = ['Find why the visual gate flakes', 'Started Visual gate flake', 'After news · 7.1s', 'asked to run the unit suite', 'After news · 7.4s', 'pushed its branch',
+          'Merge Footer links once CI is green.', 'Sent Footer links the merge.', 'After news · 5.5s', 'Footer links merged.']
+        expect(order.map(text => words.indexOf(text)).every((index, n, all) => index >= 0 && (n === 0 || index > all[n - 1]!)), words).toBe(true)
+        expect(await transcript.locator('.thread-activity').count(), 'no stacked rows of news work').toBe(0)
+        // The news turn that wrote nothing shows nothing; your turns keep their Worked for lines.
+        await expect(transcript.locator('[data-turn-id="news-silent"]')).toHaveCount(0)
+        await expect(transcript.getByRole('button', { name: /^Worked for/u })).toHaveCount(2)
+        // The work opens from the keyboard under the reply's header, and Escape folds it back.
+        const reply = pane.locator('[data-message-id="watcher-news-reply-1"]')
+        const press = reply.getByRole('button', { name: 'After news · 7.1s' })
+        await press.focus()
+        await page.keyboard.press('Enter')
+        await expect(press).toHaveAttribute('aria-expanded', 'true')
+        await expect(reply.locator('.thread-message__work-body')).toContainText('Used 2 tools, thought once')
+        for (const [width, height] of appearance === 'dark' ? SIZES : [[1280, 800]] as const) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await reply.scrollIntoViewIfNeeded()
+          expect(await pageBoundProblems(page), `news replies at ${width}x${height}`).toEqual([])
+          await captureInto(newsEvidence, launched, `news-open-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `news-${appearance}-${width}x${height}`)
+        }
+        await press.focus()
+        await page.keyboard.press('Escape')
+        await expect(press).toHaveAttribute('aria-expanded', 'false')
+        await expect(press).toBeFocused()
+        await resizeContentWindow(launched, 1280, 800)
+        await settle(page)
+        await pane.locator('[data-message-id="watcher-news-reply-3"]').scrollIntoViewIfNeeded()
+        await captureInto(newsEvidence, launched, `news-folded-${appearance}-1280x800.png`)
+      })
+    })
+  })
+
+  test('receipt cards, the takeover line and Stop all, from the keyboard at every size', async () => {
+    // Watcher started Visual gate flake and Footer links and stopped Grok voice previews in its reply; the user then sent
+    // in Weekly note, which Watcher was driving.
+    const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
+      const target = (threadId: string) => ({ hostId, threadId })
+      const operation = (threadId: string, action: 'start' | 'stop') => ({ id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action, target: target(threadId),
+        generation: 0, deliveryState: 'accepted' as const, createdAt: at(8), updatedAt: at(8), receiptId: randomUUID(), cardId: randomUUID() })
+      const receipts = [operation('visual-gate', 'start'), operation('footer-links', 'start'), operation('grok-previews', 'stop')]
+      const participant = (threadId: string) => ({ requestId, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target(threadId), promptCount: 1 })
+      const taken = { ...participant('weekly-note'), generation: 1, state: 'taken-over' as const, takeover: { reason: 'user-send' as const, at: new Date(Date.UTC(2026, 6, 12, 19, 36)).toISOString() } }
+      const participants = [...WATCHED.map(participant), taken]
+      return { receipts, receiptReplies: receipts.map(item => ({ operationId: item.id, messageId: 'watcher-reply' })),
+        requests: [{ id: requestId, watcher: target(CURRENT), rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }],
+        watchedThreads: participants.map(part => ({ target: part.target, title: part.target.threadId, watched: part.state === 'participating', paused: false,
+          status: 'running' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })) }
+    }
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, more, stopResults: { 'visual-gate': { status: 'requested', message: 'Stop requested.' } } })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const pane = watcherPane(page)
+        // One card per action under the reply that took it; a name is a link only on its card.
+        const cards = pane.getByRole('list', { name: 'What Watcher did' }).getByRole('listitem')
+        await expect(cards).toHaveCount(3)
+        await expect(cards.nth(0)).toContainText('Started')
+        await expect(cards.nth(0).getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toBeVisible()
+        await expect(cards.nth(0)).toContainText('This computer')
+        await expect(cards.nth(2)).toContainText('Stopped')
+        await expect(pane.locator('[data-message-id="watcher-reply"] .thread-message__text').getByRole('button')).toHaveCount(0)
+        const line = pane.locator('.sotto-line')
+        await expect(line.locator('p')).toHaveText('You took over Weekly note. Watcher stopped sending to it.')
+        // Stop all, for the two threads Watcher started that still run, never the one the user took over.
+        const stopAll = page.getByRole('button', { name: 'Stop all threads Watcher started, 2 threads' })
+        await expect(stopAll).toBeVisible()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await line.scrollIntoViewIfNeeded()
+          expect(await pageBoundProblems(page), `receipts at ${width}x${height}`).toEqual([])
+          await captureInto(polishEvidence, launched, `polish-receipts-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `polish-receipts-${appearance}-${width}x${height}`)
+        }
+        // From the keyboard: Stop all asks first, with Cancel taking focus, and Escape returns to it.
+        await resizeContentWindow(launched, 1280, 800)
+        await stopAll.focus()
+        await page.keyboard.press('Enter')
+        const ask = page.getByRole('dialog', { name: 'Stop the 2 threads Watcher started?' })
+        await expect(ask).toContainText('Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.')
+        await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          expect(await pageBoundProblems(page), `Stop all at ${width}x${height}`).toEqual([])
+          await captureInto(polishEvidence, launched, `polish-stop-ask-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `polish-stop-ask-${appearance}-${width}x${height}`)
+        }
+        await page.keyboard.press('Escape')
+        await expect(ask).toHaveCount(0)
+        await expect(stopAll).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(ask.getByRole('button', { name: 'Stop 2 threads' })).toBeFocused()
+        await page.keyboard.press('Enter')
+        const done = page.getByRole('dialog', { name: 'Stopped 1 of 2. One is waiting to confirm.' })
+        await expect(done).toContainText('Stopped.')
+        await expect(done).toContainText('Stop requested. Waiting for it to confirm.')
+        await expect(done.getByRole('button', { name: 'Close' })).toBeFocused()
+        await captureInto(polishEvidence, launched, `polish-stop-done-${appearance}-${SIZES[2][0]}x${SIZES[2][1]}.png`)
+        await contrastHolds(page, `polish-stop-done-${appearance}`)
+        await page.keyboard.press('Escape')
+        // Visual gate flake is still running, so Stop all stays, now for it alone.
+        await expect(page.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeFocused()
+      })
+    })
+  })
+
+  test('a watched thread’s permission is answered on its card in Watcher’s conversation, which then says what was chosen', async () => {
+    for (const [appearance, motion] of [['dark', 'normal'], ['light', 'reduced']] as const) await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', appearance, motion), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      // Visual gate flake waits on a permission; the wake-up that told Watcher so placed its card under Watcher's reply.
+      const requestCardId = 'visual-gate-permission'
+      await seedRoom(page, { current: true, more: hostId => ({ asks: [{ target: { hostId, threadId: 'visual-gate' }, requestCardId, kind: 'permission',
+        messageId: 'watcher-reply', wakeUpMessageId: 'wake-visual-gate' }] }) })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const pane = watcherPane(page)
+      const card = pane.getByRole('region', { name: 'Permission request from Visual gate flake' })
+      await expect(card).toBeVisible()
+      await expect(card).toContainText('This computer')
+      // The needs-you line goes to the card and focuses it, rather than open the thread.
+      await page.getByRole('button', { name: 'Go to the permission from Visual gate flake in this conversation' }).click()
+      await expect(card).toBeFocused()
+      await expect(beside(page)).toHaveCount(0)
+      // The thread's last reply is folded until asked for; Escape folds it again onto its toggle.
+      await page.keyboard.press('Tab')
+      await expect(card.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      const said = card.getByRole('button', { name: 'Show what it said' })
+      await expect(said).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(card.getByRole('group', { name: 'What Visual gate flake said last' })).toBeVisible()
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await card.scrollIntoViewIfNeeded()
+        expect(await pageBoundProblems(page), `the card at ${width}x${height}`).toEqual([])
+        await captureInto(answerEvidence, launched, `answer-card-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `answer-card-${appearance}-${width}x${height}`)
+      }
+      await resizeContentWindow(launched, 1280, 800)
+      await card.getByRole('button', { name: 'Hide what it said' }).focus()
+      await page.keyboard.press('Escape')
+      await expect(card.getByRole('group', { name: 'What Visual gate flake said last' })).toHaveCount(0)
+      await expect(card.getByRole('button', { name: 'Show what it said' })).toBeFocused()
+      // The user's own answer, from the card, to Visual gate flake's request.
+      const choice = card.locator('.agent-request__actions button').first()
+      const label = (await choice.textContent())!.trim()
+      await choice.click()
+      await expect(card).toHaveCount(0)
+      const line = pane.locator('.watcher-ask-receipt')
+      await expect(line.locator('.watcher-ask-receipt__words')).toHaveText(`You answered Visual gate flake: ${label}.`)
+      await expect(line.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toBeVisible()
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await line.scrollIntoViewIfNeeded()
+        expect(await pageBoundProblems(page), `the answered line at ${width}x${height}`).toEqual([])
+        await captureInto(answerEvidence, launched, `answer-line-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `answer-line-${appearance}-${width}x${height}`)
+      }
+      // With no card left, the needs-you name opens the thread as before.
+      await expect(page.getByRole('button', { name: /^Go to the permission from Visual gate flake/ })).toHaveCount(0)
+    }))
+  })
+
+  test('Stop all, confirmed from the keyboard, answers Escape while its stop is still going and keeps what came of it', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, stopResults: {}, stopDelayMs: 4_000 })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const stopAll = page.getByRole('button', { name: 'Stop all threads Watcher started, 2 threads' })
+      await stopAll.focus()
+      await page.keyboard.press('Enter')
+      const ask = page.getByRole('dialog', { name: 'Stop the 2 threads Watcher started?' })
+      await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(ask.getByRole('button', { name: 'Stop 2 threads' })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(ask.getByRole('button', { name: 'Stopping…' })).toBeVisible()
+      // The stop is still going and focus is still in the popover, so Escape reaches it.
+      expect(await page.evaluate(() => document.querySelector('.watcher-stop')?.contains(document.activeElement) === true)).toBe(true)
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Stop all, show its progress' })).toBeFocused()
+      // What came of it waits for the button.
+      const show = page.getByRole('button', { name: 'Stop all, show what it did' })
+      await expect(show).toBeVisible({ timeout: 15_000 })
+      await show.press('Enter')
+      await expect(page.getByRole('dialog', { name: 'Stopped 2 threads.' })).toBeVisible()
+    }))
+  })
+
+  test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
+    // The header off macOS: the tile, the name, All threads, the tabs, then Stop all (while it shows) and More Watcher
+    // actions, on one row. On macOS the header starts past the traffic lights and takes two rows in a narrow pane, which
+    // its own journey checks.
+    test.skip(process.platform === 'darwin', 'The macOS header has its own journey')
+    const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
+      const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
+      const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
+      // Shown, and not only to assistive technology (the name, below 450 pixels).
+      const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'), ...head.querySelectorAll('.watcher-tabs__tab'),
+        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const style = getComputedStyle(head)
+      const box = head.getBoundingClientRect()
+      const present = (selector: string) => { const node = head.querySelector(selector); return node !== null && shown(node) }
+      const labels = ['.watcher-head__list-text', '.watcher-stop-all__text'].map(selector => head.querySelector(selector)).filter((node): node is Element => node !== null && shown(node))
+      return {
+        pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
+        head: { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight), top: box.top, bottom: box.bottom, height: box.height },
+        parts: parts.map(node => ({ name: named(node), ...rect(node) })),
+        labels: labels.map(node => node.textContent ?? ''),
+        present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), conversation: present('[data-tab="conversation"]'),
+          watched: present('[data-tab="watched"]'), stopAll: present('.watcher-stop-all__button'), more: present('.watcher-actions > button') },
+        // A label or count cut off by its own control, or the name cut to an ellipsis.
+        clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+          .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
+      }
+    })
+    const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
+      a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
+    const round = (value: number) => Math.round(value * 10) / 10
+    // watcher.css: while Stop all shows, Watcher's name gives way below this width.
+    const NAME_FROM = 500
+    // The narrowest pane that shows All threads' label beside Stop all, captured with three-digit counts.
+    const CAPTURE_100 = 570
+    const evidence = evidenceDirectory('artifacts/watcher-header-overlap')
+    await mkdir(evidence, { recursive: true })
+    const readings: Record<string, unknown> = {}
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        for (const stopAll of [true, false] as const) {
+          // Without Stop all, the two threads Watcher started have finished their turns.
+          await seedRoom(page, { current: true, ...stopAll ? {} : { more: (hostId, requestId) => ({ watchedThreads: WATCHED.map(threadId => {
+            const target = { hostId, threadId }
+            return { target, title: threadId, watched: true, paused: false, status: 'idle' as const, connected: true, settled: true, backgroundWorkCount: 0, waitsOn: [],
+              participation: [{ requestId, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target, promptCount: 1 }] }
+          }) }) } })
+          await resizeContentWindow(launched, 1280, 800)
+          await openRoom(page)
+          await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+          await expect(beside(page)).toBeVisible()
+          await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
+          for (const counts of ['seeded', 'three-digit'] as const) {
+            // The counts are uncapped. The second pass draws both as 100, the widest three digits in tabular figures, at the
+            // window sizes whose panes span the sweep.
+            if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
+              for (const count of head.querySelectorAll('.watcher-head__count, .watcher-tabs__count')) count.textContent = '100'
+            })
+            for (const [width, height] of counts === 'seeded' ? SIZES : [SIZES[1], SIZES[2]]) {
+              await resizeContentWindow(launched, width, height)
+              await settle(page)
+              const divider = page.getByRole('separator', { name: 'Resize panes' })
+              // Watcher's pane is the divider's offset in the room; each pane keeps 400 pixels, so the widest is the room less 409.
+              const room = await divider.evaluate(node => node.parentElement!.getBoundingClientRect())
+              const widest = Math.floor(room.width - 409)
+              const targets = [...new Set([...Array.from({ length: 41 }, (_, index) => 400 + index * 10).filter(target => target < widest), Math.min(widest, 800)])]
+              for (const target of targets) {
+                // Dragged, as a pointer would, to the pixel; a drag whose last move a busy machine dropped is dragged again.
+                await expect(async () => {
+                  const handle = await box(divider)
+                  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+                  await page.mouse.down()
+                  await page.mouse.move(room.left + target + 4.5, handle.y + handle.height / 2, { steps: 2 })
+                  await page.mouse.up()
+                  await settle(page)
+                  const pane = await page.locator('.watcher-pane').evaluate(node => node.getBoundingClientRect().width)
+                  expect(Math.abs(pane - target), `the divider moved to ${target}px`).toBeLessThanOrEqual(1)
+                }).toPass({ timeout: 15_000 })
+                const reading = await read(page)
+                const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all, ${counts} counts`
+                expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
+                // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
+                // styles keep it (from NAME_FROM pixels with Stop all, 450 without).
+                const { name, ...always } = reading.present
+                expect.soft(always, where).toEqual({ tile: true, list: true, conversation: true, watched: true, stopAll, more: true })
+                if (reading.pane >= (stopAll ? NAME_FROM : 450) + 1) expect.soft(name, `the name shown, ${where}`).toBe(true)
+                for (const [index, part] of reading.parts.entries()) {
+                  for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
+                  expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
+                  expect.soft(part.right, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.right + 0.5)
+                  expect.soft(part.top, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.top - 0.5)
+                  expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
+                }
+                expect.soft(reading.clipped, where).toEqual([])
+                expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+                readings[`${appearance}-${stopAll ? 'stop-all' : 'no-stop-all'}-${counts === 'seeded' ? '' : 'counts-100-'}${width}x${height}-${Math.round(reading.pane)}px`] = {
+                  pane: round(reading.pane), head: [round(reading.head.left), round(reading.head.right)], labels: reading.labels, clipped: reading.clipped,
+                  parts: reading.parts.map(part => [part.name, round(part.left), round(part.right)]),
+                }
+                // In the band that overlapped before this change (470 to 581 pixels with Stop all), where a 1100-pixel window’s even split lands.
+                if (target === 540 && width === 1280 && counts === 'seeded') await captureInto(evidence, launched, `header-${stopAll ? 'stop-all' : 'no-stop-all'}-${appearance}-540px-1280x800.png`)
+                if (target === CAPTURE_100 && width === 1280 && counts === 'three-digit' && stopAll) await captureInto(evidence, launched, `header-stop-all-counts-100-${appearance}-${CAPTURE_100}px-1280x800.png`)
+              }
+            }
+          }
+        }
+      })
+    })
+    // One reading to a line: 516 of them pretty-printed would be thousands of lines of committed evidence.
+    const lines = Object.entries(readings).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
+    await writeFile(resolve(evidence, 'readings.json'), `{\n${lines.join(',\n')}\n}\n`, 'utf8')
+  })
+
+  test('the receipt cards hold still with reduced motion', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark', 'reduced'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, more: (hostId, requestId) => {
+        const receipt = { id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action: 'start' as const, target: { hostId, threadId: 'footer-links' },
+          generation: 0, deliveryState: 'accepted' as const, createdAt: at(8), updatedAt: at(8), receiptId: randomUUID(), cardId: randomUUID() }
+        return { receipts: [receipt], receiptReplies: [{ operationId: receipt.id, messageId: 'watcher-reply' }] }
+      } })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const ring = watcherPane(page).locator('.receipt-outcome > .watcher-row__ring[data-tone="working"]')
+      await expect(ring).toHaveCount(1)
+      expect(await ring.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+      await captureInto(polishEvidence, launched, 'polish-receipts-dark-1280x800-reduced-motion.png')
+    }))
+  })
+
   test('Watch from a pane header and a row, and the Watched view, from the keyboard', async () => {
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
@@ -1043,7 +1592,7 @@ test.describe("Watcher's room on the built app", () => {
         .toMatchObject({ status: 'ok', state: { runtimeMode: 'approval-required', currentOptions: { runtimeMode: 'approval-required' } } })
       const worker = await createWorker(page, join(root, 'worker'), 'Standing watch worker')
       expect(await page.evaluate(async target => window.sotto!.watcher!.watchThread!({ target }), worker.target))
-        .toMatchObject({ status: 'ok', state: { inFlight: 0, standingWatches: [expect.objectContaining({ target: worker.target })] } })
+        .toMatchObject({ status: 'ok', state: { standingWatches: [expect.objectContaining({ target: worker.target })] } })
       const detail = await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), worker.id)
       expect(detail?.messages).toHaveLength(0)
       expect(await page.evaluate(async target => window.sotto!.watcher!.unwatchThread!({ target }), worker.target))
@@ -1052,26 +1601,10 @@ test.describe("Watcher's room on the built app", () => {
       await switchTab(page, 'Threads').click()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByText('Watcher', { exact: true })).toHaveCount(0)
-      // Threads in flight saves through main's own setLimit.
+      // A fresh renderer recovers the prompt. Get and notifications may both participate.
       await switchTab(page, 'Watcher').click()
-      await page.getByRole('button', { name: 'More Watcher actions' }).click()
-      await page.getByRole('combobox', { name: 'Threads in flight' }).selectOption('3')
-      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('3')
-      await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
-      // Ordinary Settings updates supply no room reply. The populated room's limit overrides the Settings fallback,
-      // so this select needs the final quiet notification rather than a test get() flushing the desktop publisher.
-      await page.evaluate(async () => {
-        await window.sotto!.updateSettings({ watcherInFlightLimit: 1 })
-        await window.sotto!.updateSettings({ watcherInFlightLimit: 2 })
-      })
-      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('2')
-      await page.keyboard.press('Escape')
-      // A fresh renderer recovers the current limit and prompt. Get and notifications may both participate.
       await page.reload()
       await openRoom(page)
-      await page.getByRole('button', { name: 'More Watcher actions' }).click()
-      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('2')
-      await page.keyboard.press('Escape')
       await expect(watcherPane(page).locator('[data-role="user"] .rich-message')).toHaveText(original)
       await settle(page)
       expect(await pageBoundProblems(page)).toEqual([])
@@ -1177,13 +1710,20 @@ test.describe("Watcher's room on the built app", () => {
       await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Claude Watcher here. I have the handover.' }))
       await resizeContentWindow(launched, 1280, 800)
       await openRoom(page)
+      // This journey starts on Codex explicitly; role defaults may choose Claude when both fixtures are ready.
+      await page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' }).click()
+      const firstPicker = page.getByRole('dialog', { name: 'Choose model' })
+      await firstPicker.getByRole('tab', { name: /Codex/ }).click()
+      await firstPicker.getByRole('option').first().click()
       await page.getByRole('textbox', { name: 'Watcher message' }).click()
       await page.keyboard.type('Check the release notes and tell me what is missing.')
       await page.getByRole('button', { name: 'Start Watcher and send' }).click()
       const pane = watcherPane(page)
+      await expect.poll(async () => (await mainRoom(page)).current?.provider).toBe('codex')
       await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. Release notes is missing the install line.')
       await expect.poll(async () => (await mainRoom(page)).currentOptions?.status).toBe('idle')
       const codex = (await mainRoom(page)).current!
+      expect(codex.provider).toBe('codex')
       expect((await mainRoom(page)).handover ?? null).toBeNull()
 
       // Another provider's model in Watcher's own picker is a new Watcher there.

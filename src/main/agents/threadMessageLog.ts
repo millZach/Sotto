@@ -1,9 +1,8 @@
-import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
+import { summarizeThread, withKeptMessageMetadata, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, type ThreadEvent } from '../../shared/threadEvents'
 import type { StoredMessageIdentity, ThreadHostEvent } from './host'
 import { isImmutableActivities } from './activitySnapshots'
-import { withKeptWatcherChanges } from './watcherOwnChanges'
 
 /** Activity facts are independent of message text. Only certified immutable inputs may be reused. */
 const activitySummaries = new WeakMap<readonly AgentActivity[], AgentThreadSummary>()
@@ -24,6 +23,8 @@ type Published = { id: string; messages: AgentMessage[]; activities?: AgentActiv
 
 /** The per-message facts the log keeps once a thread's messages are put away. */
 interface Track {
+  /** Proven turn anchors, alongside the text-free message identities, retained when a window is released. */
+  readonly replyOwners: Map<string, string>
   /** The messages the adapter is working with, or undefined once they are put away. */
   messages: AgentMessage[] | undefined
   /** Every message recorded for this thread by ID, with a mark of the text, so a re-read of a provider's
@@ -50,7 +51,7 @@ interface Track {
 }
 
 function freshTrack(): Track {
-  return { messages: [], ids: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
+  return { messages: [], ids: new Map(), replyOwners: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
     lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Map(), growing: undefined }
 }
 
@@ -81,7 +82,7 @@ function said(text: string): boolean { return text.trim().length > 0 }
 
 /** True when the two messages differ in anything but their text. */
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
-  return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId
+  return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId || previous.turnMessageId !== next.turnMessageId
     || JSON.stringify(previous.attachments ?? []) !== JSON.stringify(next.attachments ?? [])
     || JSON.stringify(previous.watcherOwnChange) !== JSON.stringify(next.watcherOwnChange)
     || JSON.stringify(previous.watcherObservedChanges) !== JSON.stringify(next.watcherObservedChanges)
@@ -234,6 +235,7 @@ export class ThreadMessageLog {
       track.ids.set(identity.id, message ? mark(message.text) : UNREAD)
       track.order.push(identity.id)
       if (identity.role === 'user') track.userIds.push(identity.id)
+      else if (identity.turnMessageId !== undefined) track.replyOwners.set(identity.id, identity.turnMessageId)
       if (message) {
         if (message.role === 'user') track.lastUser = { ...message }
         else track.lastAssistant = { ...message }
@@ -258,7 +260,14 @@ export class ThreadMessageLog {
     const track = this.track(threadId)
     const existing = held ? held.get(message.id) : heldMessage(track, message.id)
     const retained = existing ?? (track.lastAssistant?.id === message.id ? track.lastAssistant : track.lastUser?.id === message.id ? track.lastUser : undefined)
-    message = withKeptWatcherChanges(message, retained)
+    message = withKeptMessageMetadata(message, retained)
+    if (message.role === 'assistant') {
+      const owner = track.replyOwners.get(message.id) ?? message.turnMessageId
+      if (owner !== undefined) {
+        track.replyOwners.set(message.id, owner)
+        if (message.turnMessageId !== owner) message = { ...message, turnMessageId: owner }
+      }
+    }
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
         if (!said(message.text)) { track.empty.set(message.id, message.text); if (existing) Object.assign(existing, message); return }
@@ -338,7 +347,7 @@ export class ThreadMessageLog {
     // Only a list that covers everything the log knows is also what the window should hold.
     const current = this.track(threadId)
     if (!this.wanted(threadId)) { current.messages = undefined; return }
-    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...withKeptWatcherChanges(message, held.get(message.id)) }))
+    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...withKeptMessageMetadata(message, held.get(message.id)) }))
   }
 
   /**
@@ -372,6 +381,7 @@ export class ThreadMessageLog {
     if (track.last?.id === messageId && !last || track.lastUser?.id === messageId && !lastUser
       || track.lastAssistant?.id === messageId && !lastAssistant) return
     track.ids.delete(messageId)
+    track.replyOwners.delete(messageId)
     track.growing = undefined
     track.order = order
     track.userIds = userIds
@@ -388,6 +398,7 @@ export class ThreadMessageLog {
     const track = this.tracks.get(threadId)
     if (!track?.empty.size) return
     if (track.messages) track.messages = track.messages.filter(message => !track.empty.has(message.id))
+    for (const messageId of track.empty.keys()) track.replyOwners.delete(messageId)
     track.empty.clear()
   }
 

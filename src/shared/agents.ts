@@ -1,9 +1,12 @@
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
+import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
+import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
-import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
@@ -29,8 +32,13 @@ export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 /** Asked for by the window when it opens a thread whose detail it has not been sent. */
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin', 'muse'])
-export type ProviderId = z.infer<typeof providerIdSchema>
+/** The words of a started thread's handover, read only when the user asks to read them (#1028). */
+export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
+/** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
+export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
+export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+/** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
+export const PROVIDER_COUNT = providerIdSchema.options.length
 /** Absent on older live snapshots; ordinary threads have the project kind. */
 export const agentThreadKindSchema = z.enum(['project', 'watcher', 'watcher-history'])
 export type AgentThreadKind = z.infer<typeof agentThreadKindSchema>
@@ -54,6 +62,8 @@ export const AGENT_TEXT_MAX = 100_000
 const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
+/** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
+export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
@@ -73,9 +83,15 @@ const DRAFT_KEPT = ' Your draft is saved.'
 export function noProviderRefusal(where: 'host' | 'desktop', draftKept: boolean): string {
   return (where === 'host' ? `${NO_PROVIDER_ON_HOST} Connect one in Settings > Hosts.` : `${NO_PROVIDER_HERE} Connect one in Settings > Providers.`) + (draftKept ? DRAFT_KEPT : '')
 }
-/** A host's refusal as the desktop shows it: "this host" becomes the name the user saved the host under. */
+/**
+ * A host's refusal as the desktop shows it: "this host" and "this machine" become the name the user saved the host
+ * under, so a provider's "Sign in to Muse on this machine" never reads as this computer's when it is forge's.
+ */
 export function nameHostInRefusal(message: string, name: string): string {
-  return message.startsWith(NO_PROVIDER_ON_HOST) && name.trim() ? `No provider is connected on ${name.trim()}.${message.slice(NO_PROVIDER_ON_HOST.length)}` : message
+  const host = name.trim()
+  if (!host) return message
+  const named = message.startsWith(NO_PROVIDER_ON_HOST) ? `No provider is connected on ${host}.${message.slice(NO_PROVIDER_ON_HOST.length)}` : message
+  return named.replaceAll(' on this machine', () => ` on ${host}`)
 }
 /** What a host from before staged images (ADR-0031) is refused with when asked to keep one. */
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
@@ -210,7 +226,15 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
+  /**
+   * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
+   * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
+   * thread provider's own label, so a model from Anthropic on OpenCode never reads as Claude Code.
+   */
+  source: id.optional(),
 })
+/** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
+export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
 export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 /** How many pages one question carries at most (ADR-0085). */
 export const QUESTION_PAGES_MAX = 8
@@ -248,10 +272,56 @@ export type HandoverCounts = z.infer<typeof handoverCountsSchema>
 /** The handover a user message carried ahead of the user's own words: its words as sent, and the provider of the thread it came from. */
 export const agentMessageHandoverSchema = z.object({ text: z.string(), provider: providerIdSchema, counts: handoverCountsSchema }).strict()
 export type AgentMessageHandover = z.infer<typeof agentMessageHandoverSchema>
+/**
+ * Text-free proof that a continued thread's first message began with a handover of the thread it continues (ADR-0089):
+ * how many characters were the handover and their digest, and what it carried, never any of the words. Every
+ * user-facing copy shows the handover apart from the user's words by this record alone.
+ */
+export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  prefixDigest: z.string().regex(/^[0-9a-f]{64}$/u), counts: handoverCountsSchema,
+  /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
+  messageId: id.optional() }).strict()
+export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/**
+ * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
+ * handover its first message carried, once that message was sent.
+ */
+export const threadContinuedFromSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime(),
+  handover: threadHandoverProofSchema.optional() }).strict()
+export type ThreadContinuedFrom = z.infer<typeof threadContinuedFromSchema>
+/** One thread that continues this one on another provider (ADR-0089): its Sotto thread ID, its provider and when. */
+export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime() }).strict()
+export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
+/** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
+export const THREAD_CONTINUED_IN_MAX = 100
+/**
+ * Where a thread began when it began from another thread rather than empty (#1028): one of that thread's agents continued
+ * as a thread of its own (`agent`), or that thread forked at one of its replies (`turn`). The source is named by its Sotto
+ * thread ID alone (ADR-0002). A `fork` is the provider's own copy of the conversation, bound to this thread when it was
+ * made; a `handover` goes ahead of this thread's first message, and `handover.sent` names that message once it has gone.
+ */
+export const agentThreadStartSchema = z.object({
+  threadId: id,
+  from: z.enum(['agent', 'turn']),
+  route: z.enum(['fork', 'handover']),
+  at: z.string().datetime(),
+  /** The agent's title as its roster showed it, for an agent. */
+  agentTitle: z.string().max(240).optional(),
+  /** The agent's observational identity and the assignment a handover carries, for an agent. Never a provider address. */
+  agentId: id.optional(), assignmentId: id.optional(),
+  /** The reply a fork carries the conversation up to, for a turn. */
+  messageId: id.optional(),
+  /** What a handover carries, as counts only: `thin` when it holds an agent's task and result alone. */
+  handover: z.object({ thin: z.boolean(), counts: handoverCountsSchema,
+    sent: z.object({ messageId: id, prefixLength: z.number().int().positive(), prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional() }).strict().optional(),
+}).strict()
+export type AgentThreadStart = z.infer<typeof agentThreadStartSchema>
 export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
   commandId: z.string().optional(),
+  /** The Sotto user message that began this reply's turn, proved by the adapter while it was live. */
+  turnMessageId: z.string().min(1).max(512).optional().catch(undefined),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
   watcherOwnChange: watcherOwnChangeSchema.optional().catch(undefined),
   watcherObservedChanges: watcherObservedChangesSchema.optional().catch(undefined),
@@ -267,6 +337,19 @@ export const agentMessageSchema = z.object({
    * shows the message as the user's.
    */
   wakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
+   * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
+   * shows the wake-up as Sotto's.
+   */
+  hiddenWakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a Watcher wake-up whose news said watched threads waited on the user (ADR-0073, answering in Watcher's
+   * conversation): which thread's which request, text-free, from the host's own record of the send, put on as `wakeUp`
+   * is so it survives the history being read again and a restart. Watcher's pane shows each request's card from it. An
+   * older reader drops the field and shows no card.
+   */
+  watcherAsks: watcherAsksSchema.optional().catch(undefined),
   /**
    * Set on Watcher's first message after a provider change when the user chose to continue with a handover of the last
    * Watcher (ADR-0073): the message's text is then the user's words, and this is the handover that went ahead of them in
@@ -351,6 +434,18 @@ export const agentThreadSchema = z.object({
    * the thread's own record so it survives a restart; absent on every thread no other thread started, and from older hosts.
    */
   delegatedBy: id.optional(),
+  /**
+   * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.
+   * Sotto's record, kept on each thread's own record so the links survive a restart; absent on every other thread, and
+   * from older hosts. A value this build cannot read drops the link rather than the thread.
+   */
+  continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
+  /**
+   * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's
+   * record, kept on the thread's own record; absent on every other thread, and from older hosts.
+   */
+  startedFrom: agentThreadStartSchema.optional().catch(undefined),
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
@@ -380,6 +475,9 @@ export const agentThreadSchema = z.object({
   /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
    * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
   wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
+  /** Which of those wake-ups carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026),
+   * from the same record. A row never quotes one. Absent when there are none, and from older hosts. */
+  hiddenWakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -388,8 +486,12 @@ export const agentThreadSchema = z.object({
    * send does not start it. Absent while it is stopped or not started yet, and from hosts that predate it. Never saved. */
   providerSessionOpen: z.literal(true).optional(),
   /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
-   * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
+   * session tool servers (ADR-0079), or an OpenCode thread's server that refused them or did not connect them (ADR-0087).
+   * Absent otherwise, and from hosts that predate it. Never saved. */
   sottoToolsWithheld: z.literal(true).optional(),
+  /** A Devin thread whose host gives Devin Sotto's tool servers, from Devin CLI 3000.11.92 (#1040). Absent from hosts that
+   * predate it, whose Devin threads have none, so a Devin thread without it is read as having none. Never saved. */
+  sottoToolsGiven: z.literal(true).optional(),
   /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
   updatedAt: z.string().optional(),
   /** Explicit lifecycle metadata. Null clears a prior value; omission means unknown. */
@@ -401,6 +503,15 @@ export const agentThreadSchema = z.object({
   /** The thread finished its work while no client showed it, and no client has shown it since (ADR-0046). The host's
    * coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   finishedUnread: z.literal(true).optional(),
+  /** The thread's last turn failed and a client has shown it since, or the user dismissed it (ADR-0092): its row reads Done.
+   * The host's coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
+  failureSeen: z.literal(true).optional(),
+  /** The host's own name for the failure a thread in error stands in (ADR-0092), so Dismiss all can name the failure a row
+   * showed and a later one is not marked seen in its place. Absent while the thread stands in none, and from older hosts. */
+  failureId: z.string().max(64).optional(),
+  /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
+   * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
+  failureReason: z.string().max(600).optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -445,6 +556,8 @@ export const agentProviderStatusSchema = z.object({
   name: z.string(), version: z.string(), error: z.string().optional(), capabilities: agentCapabilitiesSchema,
   /** Set when the connected client is newer than the version Sotto's adapter was checked against. */
   verifiedVersion: z.string().max(64).optional(),
+  /** Muse only, while connected: whether its running `muse serve` hosts were started without the shell sandbox. */
+  sandboxDisabled: z.boolean().optional(),
   /** Why it is not connected, when its last connect failed for a reason the adapter could name (ADR-0037). */
   problem: providerProblemSchema.optional(),
   /** With `too-old`: the oldest version Sotto accepts, when the adapter's floor is a version (ADR-0035). */
@@ -520,13 +633,20 @@ export type ClientUpdateRun = z.infer<typeof clientUpdateRunSchema>
 export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
   capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional(),
   /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0042). */
-  clientUpdates: z.array(providerClientUpdateSchema).max(5).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
+  clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
   /** Where a new project goes on this host, in its own format, for Settings → Agents' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
   /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
-  mayAnswer: z.boolean().optional() })
+  mayAnswer: z.boolean().optional(),
+  /**
+   * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
+   * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
+   * Models tab's "Agent setting".
+   */
+  enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
+  agentModelId: z.string().max(512).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -538,6 +658,8 @@ export const agentHostSnapshotSchema = z.object({
   /** Set when the connected client is newer than the version this adapter was checked against. */
   verifiedVersion: z.string().max(64).optional(),
   error: z.string().optional(),
+  /** Muse only, while connected: whether its running `muse serve` hosts were started without the shell sandbox. */
+  sandboxDisabled: z.boolean().optional(),
   /** One adapter's own snapshot: why it is not connected, and what it is signed in with (ADR-0037). */
   problem: providerProblemSchema.optional(),
   requiredVersion: z.string().max(64).optional(),
@@ -550,6 +672,16 @@ export type AgentModel = z.infer<typeof agentModelSchema>
 export type AgentProject = z.infer<typeof agentProjectSchema>
 export type AgentRequest = z.infer<typeof agentRequestSchema>
 export type AgentMessage = z.infer<typeof agentMessageSchema>
+
+/** A provider's fresh read cannot erase Sotto's metadata or reassign a reply whose turn was already proved. */
+export function withKeptMessageMetadata(message: AgentMessage, kept: AgentMessage | undefined): AgentMessage {
+  const ownChange = message.watcherOwnChange === undefined ? kept?.watcherOwnChange : undefined
+  const observed = message.watcherObservedChanges === undefined ? kept?.watcherObservedChanges : undefined
+  const owner = message.role === 'assistant' && kept?.role === 'assistant' ? kept.turnMessageId : undefined
+  return ownChange || observed || owner !== undefined && owner !== message.turnMessageId
+    ? { ...message, ...(ownChange ? { watcherOwnChange: ownChange } : {}), ...(observed ? { watcherObservedChanges: observed } : {}),
+      ...(owner === undefined ? {} : { turnMessageId: owner }) } : message
+}
 export type AgentThread = z.infer<typeof agentThreadSchema>
 /**
  * What a thread says about its provider only while the host that said it is connected: its monitors, its background
@@ -585,7 +717,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -603,14 +735,14 @@ export function providerIdOfLabel(label: string): ProviderId | undefined {
 }
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
-  enabledProviders: z.array(providerIdSchema).max(5).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
+  enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   /**
    * The providers the user turned off: each one disconnected by name, or left out of a changed enabled set, and not
    * connected again since. A headless host connects every other provider that is installed and signed in when it
    * starts, so this is what keeps a turned-off one off across restarts; `enabledProviders` alone cannot tell
    * "never asked" from "turned off" (ADR-0036). Absent until the user turns one off.
    */
-  disconnectedProviders: z.array(providerIdSchema).max(5).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
+  disconnectedProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
   defaultModelId: z.string().max(6_144),
@@ -618,6 +750,12 @@ export const agentConfigurationSchema = z.object({
   reasoningModel: z.string().max(512),
   reasoningEffort: z.string().max(64).default(''),
   checkClientUpdates: z.boolean().default(true),
+  /**
+   * Whether Muse's `muse serve` hosts on this machine start with `--disable-sandbox` (ADR-0079 amendment).
+   * Off unless turned on in Settings → Providers → Muse, for a machine where Muse's sandbox cannot be
+   * set up. Captured when Muse connects; a change applies on the next connect, never mid-host.
+   */
+  museDisableSandbox: z.boolean().default(false),
   /**
    * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
@@ -635,7 +773,7 @@ export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
+  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true, museDisableSandbox: false,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -668,6 +806,10 @@ export const agentDeliverySchema = z.object({
   commandId: id.optional(), messageId: id.optional(),
   /** The exact stable Send packet this delivery belongs to; evidence, never authority. */
   packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  /** The user released the composer; the original delivery is still unconfirmed. */
+  setAside: z.boolean().optional(),
+  /** A later explicit prompt was confirmed; normal automatic updates may resume without replaying this one. */
+  updatesResumed: z.boolean().optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
@@ -682,7 +824,7 @@ export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
   providerUpgrade: providerUpgradeSchema.nullable().optional(),
-  clientUpdates: z.array(providerClientUpdateSchema).max(5).optional(),
+  clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(),
   clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The card stays down until the next check finds something else. */
   clientUpdatesDismissedAt: z.string().optional(),
@@ -690,7 +832,7 @@ export const agentStateSchema = z.object({
    * The thread clients the last Connect providers press found installed on this machine: presence only, no sign-in.
    * Absent until a press looks, and on a machine that cannot look. Setup reads it to tell Not installed from off.
    */
-  installedProviders: z.array(providerIdSchema).max(5).optional(),
+  installedProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(),
@@ -856,7 +998,7 @@ export function lastWrittenMessage<T extends Pick<AgentMessage, 'id' | 'visual'>
  * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
  * agent's words, so it is left out: sidebar rows and search keep what the agent wrote.
  */
-export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
+export function summarizeThread(thread: { readonly messages: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[] | undefined }): AgentThreadSummary {
   const { activities = [] } = thread
   const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
@@ -883,22 +1025,32 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads keep their first-message title
- * or stand-in and are offered no Regenerate that could do nothing.
+ * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads, and a provider's that has not said it
+ * writes them, keep their first-message title or stand-in and are offered no Regenerate that could do nothing.
+ * OpenCode writes them through its stateless generation route (ADR-0087); a model source that refuses it, as OpenCode
+ * Zen's free models do, writes nothing, and its threads keep their stand-ins.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
-  return providerId !== 'devin' && providerId !== 'muse'
+  return providerId === undefined || providerProfile(providerId)?.writesShortText === true
 }
 /**
- * Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. Muse takes them
- * when its client grants session tool servers (ADR-0079); Devin's client ignores them.
+ * Whether this provider can receive Sotto's tool servers, as its profile says. Older unlabelled local hosts retain their
+ * tools. Devin's threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
-  return providerId !== 'devin'
+  return providerId === undefined || providerProfile(providerId)?.takesSottoTools === true
 }
-/** Whether this thread's agent gets Sotto's tool servers: its provider takes them and its client did not withhold them. */
-export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld'> | undefined): boolean {
-  return providerTakesSottoTools(thread?.providerId) && thread?.sottoToolsWithheld !== true
+/**
+ * Whether this thread's agent gets Sotto's tool servers. Every provider whose profile says so takes them: Muse when its client grants
+ * session tool servers (ADR-0079), Devin from CLI 3000.11.92, which attaches the servers a session is opened with
+ * (ADR-0056), and OpenCode when its thread's server connects every one (ADR-0087). A client that cannot take them marks
+ * its threads `sottoToolsWithheld`, and a Devin thread counts only when
+ * its host says it gives them (`sottoToolsGiven`).
+ */
+export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld' | 'sottoToolsGiven'> | undefined): boolean {
+  if (!providerTakesSottoTools(thread?.providerId) || thread?.sottoToolsWithheld === true) return false
+  // A host older than Devin taking Sotto's tools never says either way, and its Devin threads have none (#1086).
+  return thread?.providerId !== 'devin' || thread.sottoToolsGiven === true
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
@@ -922,25 +1074,27 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // `newThreadRuntimeMode: null` puts the default back to the provider's own: unlike undefined, JSON carries it to a host.
   // `hostId` is the desktop window's alone: the connected host whose own settings the patch changes, which the router
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
     newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
-  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional() }).strict(),
-  z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
-  z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
+  // `hostId` on a provider command is the desktop window's alone, like Update all's: Settings > Providers names this
+  // computer, so its buttons never reach whichever host is selected for new work. The router reads it and never sends it on.
+  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional(), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional(), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional(), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
-  z.object({ type: z.literal('check-client-updates') }).strict(),
-  z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('check-client-updates'), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional(), hostId: z.uuid().optional() }).strict(),
   /**
    * Puts clients in the machine's one-at-a-time update line and answers at once; each client's reading says how it went.
    * `hostId` names the machine for Update all (ADR-0077), which need not be the selected one; the desktop's router reads it
    * and never sends it on.
    */
-  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(5), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(PROVIDER_COUNT), hostId: z.uuid().optional() }).strict(),
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
-  z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(5) }).strict(),
+  z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(PROVIDER_COUNT) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),
   z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
@@ -953,6 +1107,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     binding: z.object({ requestId: id.nullable(), questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable() }).strict()
       .refine(value => (value.requestId === null) === (value.questionsDigest === null), 'Use a question ID with its form digest, or neither.').optional(),
   }).strict().optional() }).strict(),
+  z.object({ type: z.literal('set-aside-send'), threadId: id, draftId: z.uuid() }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
@@ -980,6 +1135,22 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
+  /**
+   * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes
+   * to that thread's host, and `newThreadId` the thread to make, which the window mints. A Codex agent is forked by Codex
+   * itself; a Claude Code agent, or a Codex agent with `handover`, starts from a thin handover of its task and result that
+   * goes with the new thread's first message. Nothing is sent to any provider until that message.
+   */
+  z.object({ type: z.literal('continue-agent'), threadId: id, agentId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
+    handover: z.literal(true).optional(), workingCopy: z.enum(['independent', 'shared']).optional(),
+    baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
+  /**
+   * Fork from here (#1028, E5b): a new thread with `threadId`'s conversation up to its reply `messageId`. Codex and Claude
+   * Code copy it themselves; any other provider starts the new thread from a handover of it that goes with its first
+   * message. `newThreadId` is the thread to make, which the window mints. Nothing is sent to any provider until then.
+   */
+  z.object({ type: z.literal('fork-thread'), threadId: id, messageId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
+    workingCopy: z.enum(['independent', 'shared']).optional(), baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
    * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
@@ -1023,7 +1194,16 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
+   * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
+   * cannot send it: it is not on the remote allow-list. */
+  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100), shownThreadIds: z.array(id).max(100).optional() }).strict(),
+  /** Dismiss all: each named thread reads as seen, as if a client had shown it, when it still stands in the failure its
+   * row showed (ADR-0092); one that failed again since is left as news. It answers no request and grants nothing; a
+   * thread waiting on a permission or a question is never one of them. `failure` is the thread's `failureId`, empty
+   * for a host that names none. */
+  z.object({ type: z.literal('dismiss-failures'), failures: z.array(z.object({ threadId: id, failure: z.string().max(64) }).strict())
+    .min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
   z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than
@@ -1058,9 +1238,21 @@ export interface AgentBridge {
   onState(listener: (state: AgentState) => void): () => void
   /** One viewed thread's messages, for a thread the window opened before main pushed them. */
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
+  /** One record of a remote thread whole, for a row whose body its host sent cut; null for this computer's threads. */
+  activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
+  /**
+   * The words of the handover a thread that began from another goes with on its first message, as its provider will read
+   * them, or null once it has none (#1028). Read on the thread's own host, and only when the user asks.
+   */
+  startHandover?(threadId: string): Promise<AgentStartHandover | null>
 }
+export const agentStartHandoverSchema = z.object({ text: z.string() }).strict()
+/** A window's request for one record whole: the thread by the window's own key, and the record's ID. */
+export const agentActivityBodyRequestSchema = z.object({ threadId: id, activityId: z.string().min(1).max(512) }).strict()
+export type AgentActivityBodyRequest = z.infer<typeof agentActivityBodyRequestSchema>
+export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
 
 /**
  * The agent bridge as the preload exposes it (`window.sotto.agents`): what
@@ -1088,7 +1280,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok', 'devin', 'muse'] as const
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays
@@ -1117,6 +1309,10 @@ export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThre
 /** Public model and project IDs; only the provider boundary reverses them. */
 export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
   return `native:${provider}:${kind}:${encodeURIComponent(value)}`
+}
+/** A thread's provider as a host holds it: its own, or for a thread that names none, its model's public identity's. */
+export function threadProviderOf(thread: Pick<AgentThread, 'providerId' | 'modelId'>): ProviderId | undefined {
+  return thread.providerId ?? parsePublicProviderEntityId(thread.modelId)?.provider
 }
 /** The provider, kind and native value a public ID names, or null for any other ID or one whose value will not decode. */
 export function parsePublicProviderEntityId(id: string): { readonly provider: ProviderId; readonly kind: 'model' | 'project'; readonly value: string } | null {

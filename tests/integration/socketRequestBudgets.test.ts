@@ -124,12 +124,13 @@ describe('request budgets', () => {
       peer.messages.length = 0
       rows.push({ seq: 3, threadId: 'synthetic', event: { kind: 'messages-reset', at: new Date().toISOString() } })
       expect(await peer.call('events', { op: 'events', afterSeq: 2 })).toMatchObject({ ok: true, result: { events: [rows[2]], latestSeq: 3 } })
+      // The same shell with no events after the cursor is not pushed again (ADR-0025, October 18 amendment), so the push
+      // that shows the events read moved the cursor is the next one, which carries the event after them and nothing else.
       publish()
-      await expect.poll(() => peer.messages.find(item => item.event === 'shell')).toMatchObject({ eventPage: { events: [], latestSeq: 3 } })
-      peer.messages.length = 0
       rows.push({ seq: 4, threadId: 'synthetic', event: { kind: 'messages-reset', at: new Date().toISOString() } })
       publish()
       await expect.poll(() => peer.messages.find(item => item.event === 'shell')).toMatchObject({ eventPage: { events: [rows[3]], latestSeq: 4 } })
+      expect(peer.messages.filter(item => item.event === 'shell')).toHaveLength(1)
     } finally { peer.frames.close(); await server.close() }
   })
 

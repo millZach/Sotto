@@ -33,7 +33,7 @@ const VERB: Record<WatcherRoomState['receipts'][number]['action'], string> = { s
  * the user's own turn runs, its latest action and how it went, or how long it has watched with nothing sent.
  */
 export function watchedDoing(row: WatchedRow, room: WatcherRoomState): string | null {
-  if (row.paused === true) return 'You sent here yourself. Watcher waits until that turn ends.'
+  if (row.paused === true) return 'You sent here yourself. Until that turn ends, Watcher can only steer it.'
   const last = room.receipts.filter(receipt => same(receipt.target, row.target)).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0]
   if (last !== undefined) {
     const at = clockLabel(Date.parse(last.updatedAt))
@@ -62,7 +62,7 @@ export function watchedLead(count: number, standing: number): string {
 }
 
 /** A watched thread this window does not list (its host is out of reach): its status as the room last saw it. */
-function unlistedStatus(row: WatchedRow): string {
+export function unlistedStatus(row: WatchedRow): string {
   if (!row.connected || row.status === 'unavailable') return 'Can’t reach it'
   return row.status === 'running' ? 'Working' : row.status === 'error' ? 'Last turn failed' : 'Idle'
 }

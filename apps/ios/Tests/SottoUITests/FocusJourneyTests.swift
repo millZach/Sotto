@@ -9,8 +9,7 @@ import XCTest
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
-        launch(Self.fixture)
-        waitForRenderedOrientation(landscape: false)
+        // Each journey launches the fixture it uses; CPU journeys can skip before starting the app.
     }
 
     override func tearDownWithError() throws {
@@ -35,6 +34,7 @@ import XCTest
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Sotto must come to the foreground after launch")
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20))
+        waitForRenderedOrientation(landscape: false)
     }
 
     private func row(_ id: String) -> XCUIElement { app.buttons["thread-\(laptop)/\(id)"] }
@@ -349,6 +349,7 @@ import XCTest
     // MARK: Journeys
 
     func testCreateThreadInAKnownProject() {
+        launch(Self.fixture)
         app.buttons["new-thread"].tap()
         let offline = app.buttons["new-thread-computer-22222222-2222-4222-8222-222222222222"]
         XCTAssertTrue(offline.waitForExistence(timeout: 5))
@@ -369,9 +370,13 @@ import XCTest
         capture("new-thread-conversation-dark")
     }
 
-    func testCreateThreadByBrowsingANewFolder() { browseANewFolder() }
+    func testCreateThreadByBrowsingANewFolder() {
+        launch(Self.fixture)
+        browseANewFolder()
+    }
     /// Return closes search's keyboard on Threads, where the page's looping lights and wash run in Core Animation.
     func testSearchClosesOnReturn() {
+        launch(Self.fixture)
         let search = app.textFields["thread-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
@@ -431,6 +436,7 @@ import XCTest
     }
 
     func testFocusSearchAndNavigation() {
+        launch(Self.fixture)
         XCTAssertTrue(app.tabBars.buttons["Threads"].isSelected)
         XCTAssertFalse(app.tabBars.buttons["Needs you"].exists)
         XCTAssertTrue(app.tabBars.buttons["Computers"].exists)
@@ -571,6 +577,7 @@ import XCTest
     /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
     /// title block and Git chips scroll away with it; messages read as Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
+        launch(Self.fixture)
         let thread = row("iphone")
         reveal(thread)
         thread.tap()
@@ -639,6 +646,7 @@ import XCTest
     /// Each run of steps between two messages is one line. The working run names the step running now; a finished run
     /// says how many steps it had and how long they took. A press opens a run's steps in place and another folds them.
     func testARunOfStepsOpensInPlaceAndFoldsAgain() {
+        launch(Self.fixture)
         let thread = row("iphone")
         reveal(thread)
         thread.tap()
@@ -747,6 +755,11 @@ import XCTest
         XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
         return tab
     }
+    /// Where every drag on Watcher's page runs: down its leading margin, clear of bubbles, cards and rows. Not the trailing
+    /// margin, where iOS draws the page's scroll indicator: a touch that lands on the indicator while it shows takes hold
+    /// of it and scrubs the page. On CI's Pro Max, every third drag up Watched met the indicator on its way down the track
+    /// and threw the page back to its top, so Stop watching never came within reach in forty drags.
+    private let watcherDragX: CGFloat = 8
     /// Puts the keyboard away the way Watcher's conversation lets it go, as a thread's does: a drag that starts in the
     /// conversation and carries on down into the keyboard, which follows it off the screen. A swipe that ends above the
     /// keyboard leaves it up, which is how the journey's first swipe failed on CI.
@@ -755,7 +768,7 @@ import XCTest
         guard keyboard.exists else { return }
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        let x = window.frame.width - 8
+        let x = watcherDragX
         for _ in 0..<3 where keyboard.exists {
             let band = watcherBand
             let from = origin.withOffset(CGVector(dx: x, dy: (band.top + band.bottom) / 2 - window.frame.minY))
@@ -779,22 +792,56 @@ import XCTest
     /// anything the box carries over it. XCTest calls a row under the header hittable, but a press there lands on the
     /// header (on CI it opened Watched instead of a card's Review question).
     private var watcherBand: (top: CGFloat, bottom: CGFloat) {
-        let header = byID("watcher-section-conversation")
+        // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
+        // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
+        let snapshot: any XCUIElementSnapshot
+        do {
+            snapshot = try app.snapshot()
+        } catch {
+            XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
+            return (.infinity, -.infinity)
+        }
+        var elements: [any XCUIElementSnapshot] = []
+        func collect(_ parent: any XCUIElementSnapshot) {
+            for child in parent.children {
+                elements.append(child)
+                collect(child)
+            }
+        }
+        collect(snapshot)
+        func element(_ identifier: String, type: XCUIElement.ElementType = .any) -> (any XCUIElementSnapshot)? {
+            // Like matching(identifier:), keep the first descendant of the requested type whose identifying
+            // attributes match. All of these attributes belong to the captured snapshot, with no further UI query.
+            elements.first {
+                (type == .any || $0.elementType == type) &&
+                ($0.identifier == identifier || $0.title == identifier || $0.label == identifier ||
+                 ($0.value as? String) == identifier || $0.placeholderValue == identifier)
+            }
+        }
+        guard let window = elements.first(where: { $0.elementType == .window }) else {
+            XCTFail("Watcher's visible bounds must include its window")
+            return (.infinity, -.infinity)
+        }
+        let header = element("watcher-section-conversation")
         // The header's glass ends the switch's own padding and the header's bottom padding below Conversation | Watched.
-        let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 16
-        let tabs = app.tabBars.firstMatch
-        var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
+        let top = (header?.frame.maxY ?? window.frame.minY) + 16
+        let tabs = elements.first { $0.elementType == .tabBar }
+        var bottom = tabs?.frame.minY ?? window.frame.maxY
         // The box's glass starts above its text; a held line, a message or Watcher's permissions sit above the box, and
         // on Watched, what a Stop watching press did sits over the tab bar.
-        let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
-                                              (app.buttons["Dismiss message"].firstMatch, 8), (app.buttons["watcher-permissions"], 8),
-                                              (byID("watch-toast"), 8)]
-        for (element, gap) in dock where element.exists { bottom = min(bottom, element.frame.minY - gap) }
+        let dock: [((any XCUIElementSnapshot)?, CGFloat)] = [(element("watcher-reply"), 20), (element("watcher-send-held"), 8),
+                                                             (element("Dismiss message", type: .button), 8),
+                                                             (element("watcher-permissions", type: .button), 8),
+                                                             (element("watch-toast"), 8)]
+        // Presence and frame come from the same instant, including a toast that may leave between separate queries.
+        for (element, gap) in dock {
+            if let element { bottom = min(bottom, element.frame.minY - gap) }
+        }
         return (top, bottom)
     }
     /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
-    /// its top does. Each drag runs down the page's trailing margin, clear of cards and rows, and moves the page no
-    /// farther than the target needs, so it settles rather than passing back and forth.
+    /// its top does. Each drag runs down the page's leading margin (`watcherDragX`), clear of cards, rows and the scroll
+    /// indicator, and moves the page no farther than the target needs, so it settles rather than passing back and forth.
     private func revealInWatcher(_ target: XCUIElement) {
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
@@ -832,7 +879,7 @@ import XCTest
             }
             let distance = min(220, (band.bottom - band.top) * 0.45, max(needed + 16, 40))
             let direction: CGFloat = down ? 1 : -1
-            let x = window.frame.width - 8
+            let x = watcherDragX
             let middle = (band.top + band.bottom) / 2 - window.frame.minY
             let start = origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
             let end = origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2))
@@ -874,10 +921,19 @@ import XCTest
         XCTAssertTrue(text("How is the release notes thread doing?").waitForExistence(timeout: 5), "The message joins the conversation")
         let answer = text("On it.")
         XCTAssertTrue(answer.waitForExistence(timeout: 10), "Watcher's answer arrives under it")
-        // The page already had a row for the release notes thread; Watcher's answer carries one more.
+        // The page already had a row for the release notes thread; Watcher's answer carries one more. Counting rows reads
+        // the whole of Watcher's long page, not just a first match. On CI's SE the first count took over four seconds and
+        // XCTest asked twice more, so a five-second wait ran out within one look and failed with the answer's row on screen
+        // in its recording. A deadline that is never reached costs nothing.
         let rows = app.buttons.matching(identifier: "watcher-receipt-\(laptop)/notes845")
-        let added = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: rows)
-        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed, "With what it did")
+        var counted = 0
+        let twoRows = NSPredicate { _, _ in
+            counted = rows.count
+            return counted == 2
+        }
+        let added = XCTNSPredicateExpectation(predicate: twoRows, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 30), .completed,
+                       "With what it did (\(counted) rows for the release notes thread)")
         // The answer's end is on screen between the header and the box, not left under the card still waiting below.
         // The band is read before the wait and again after it, and the wait reads only the answer. On CI's SE each query
         // can take a second or two: reading the header, tab bar and box inside a ten-second wait left time for one
@@ -886,11 +942,14 @@ import XCTest
             frame.maxY > band.top && frame.maxY <= band.bottom + 1
         }
         let band = watcherBand
-        var seen = ""
+        var seen = "no look found the answer's frame"
         var matches = 0
         let shown = NSPredicate { _, _ in
             guard answer.exists else { seen = "the answer is missing"; matches = 0; return false }
             let frame = answer.frame
+            // A look that lost the answer between its two reads gets no frame; keep the last frame a look did read, which
+            // is what a failure needs to say. Writing the empty one over it once hid an answer left under the box.
+            guard !frame.isEmpty else { matches = 0; return false }
             seen = "answer \(frame), between \(band.top) and \(band.bottom)"
             matches = inBand(frame, band) ? matches + 1 : 0
             return matches >= 2
@@ -946,8 +1005,9 @@ import XCTest
     private func pullWatcherToRefresh(_ band: (top: CGFloat, bottom: CGFloat)) {
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        // Down the trailing margin, clear of bubbles and cards, from under the header to near the screen's foot.
-        let x = window.frame.width - 8
+        // Down the leading margin, clear of bubbles, cards and the scroll indicator, which sits at the top of the trailing
+        // margin at the conversation's start, from under the header to near the screen's foot.
+        let x = watcherDragX
         let from = origin.withOffset(CGVector(dx: x, dy: band.top + 8 - window.frame.minY))
         let to = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 40))
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.6)
@@ -1265,10 +1325,12 @@ import XCTest
         XCTAssertEqual(stop.label, "Stop watching Add keyboard shortcuts")
         capture("watcher-watched-card-dark")
         stop.tap()
-        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
-        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["watch-undo"].exists, "With Undo")
+        // What a press did is said for eight seconds, so it is read straight after the press: on a loaded simulator the
+        // waits that follow it have outlasted it.
+        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["watch-undo"].waitForExistence(timeout: 8), "With Undo")
         capture("watcher-watched-stopped-dark")
+        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
         // Watch a thread offers it again.
         let add = app.buttons["watcher-watch-a-thread"]
         revealInWatcher(add)
@@ -1282,9 +1344,9 @@ import XCTest
         XCTAssertEqual(pick.label, "Watch Add keyboard shortcuts")
         capture("watcher-watch-a-thread-dark")
         pick.tap()
+        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").waitForExistence(timeout: 8), "What the press did is said at once")
         XCTAssertTrue(waitUntilGone(pick), "Choosing one closes the list")
         XCTAssertTrue(card.waitForExistence(timeout: 5), "And Watcher watches it")
-        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
         watcherInLight()
         app.buttons["watcher-section-watched"].tap()
         revealInWatcher(app.buttons["watched-stop-\(laptop)/shortcuts"])
@@ -1293,6 +1355,7 @@ import XCTest
 
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
+        launch(Self.fixture)
         app.tabBars.buttons["Settings"].tap()
         let dark = app.buttons["setting-dark"]
         XCTAssertTrue(dark.waitForExistence(timeout: 5))
@@ -1347,6 +1410,7 @@ import XCTest
 
     /// New thread's fields open from anywhere in their box, and New worktree can be chosen.
     func testNewThreadFieldsOpenFromTheirWholeBox() {
+        launch(Self.fixture)
         app.buttons["new-thread"].tap()
         let computer = app.buttons["new-thread-computer-\(laptop)"]
         XCTAssertTrue(computer.waitForExistence(timeout: 5))
@@ -1386,7 +1450,7 @@ import XCTest
     /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
     private func idleCPU(_ arguments: [String], openThread: Bool) throws {
         try skipUnlessMeasuring()
-        if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
+        launch(Self.fixture + arguments)
         measureCPUForThreeSeconds(openThread: openThread)
     }
     func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
@@ -1396,6 +1460,7 @@ import XCTest
     /// The same still thread with the reply keyboard open and nothing typed: the page must not keep itself busy there either.
     func testIdleCPUInAThreadWithTheKeyboardOpen() throws {
         try skipUnlessMeasuring()
+        launch(Self.fixture)
         openWorkingThread()
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
@@ -1468,6 +1533,7 @@ import XCTest
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
+        launch(Self.fixture)
         let counts = byID("thread-counts")
         XCTAssertTrue(counts.exists)
         XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
@@ -1562,6 +1628,7 @@ import XCTest
     }
 
     func testAppearanceAndLargerTextPersist() {
+        launch(Self.fixture)
         app.tabBars.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
         XCTAssertTrue(light.waitForExistence(timeout: 5))
@@ -1589,6 +1656,7 @@ import XCTest
     }
 
     func testComputerScopePreservesSearchAndLandscape() {
+        launch(Self.fixture)
         let filter = app.buttons["computer-filter"]
         let search = app.textFields["thread-search"]
         let lighting = app.buttons["thread-22222222-2222-4222-8222-222222222222/lighting"]

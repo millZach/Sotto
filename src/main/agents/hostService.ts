@@ -1,6 +1,8 @@
+import { startHandoverPrefix } from '../../shared/threadStarts'
+import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
-import type { WatcherIdentity } from '../../shared/watcher'
+import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watcher'
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
@@ -80,11 +82,13 @@ export interface HostService {
   readonly supportsWatcherWorkSettled?: boolean
   /** The host's exact operation reads carry a delegation's outcome and reply; without it a desktop reads them as unknown. */
   readonly supportsWatcherOutcomes?: boolean
+  /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
+  readonly supportsWatcherMuse?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
-  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
-  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
+  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown>
+  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection
   /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
   readonly supportsAtomicSend?: boolean
@@ -95,15 +99,36 @@ export interface HostService {
   /** The host reports its machine's host facts and how many of its threads are running (#1031); without it they read unknown. */
   readonly supportsHostFacts?: boolean
   hostFacts?(): Promise<HostMachineReport>
+  /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
+  readonly supportsThreadStarts?: boolean
+  /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
+   * threads say Needs attention until their next turn. */
+  readonly supportsFailureSeen?: boolean
+  /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
+  startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
   /** One thread's kind as the host holds it now, read without copying any state (#917). Undefined for an unknown thread. */
   threadKind?(threadId: string): AgentThread['kind']
+  /** One thread's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown thread. */
+  threadProvider?(threadId: string): ProviderId | undefined
+  /** One project's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown project. */
+  projectProvider?(projectId: string): ProviderId | undefined
+  /**
+   * One activity record of a thread whole, read without copying the thread's history, for `activity-body`. Never edited by
+   * the caller. Without it, the host reads the record from the thread's detail.
+   */
+  threadActivity?(threadId: string, activityId: string): AgentActivity | null
   /** The whole published state, history included. */
   state(): AgentState
   /** The published state without any thread's history: what every client needs on every frame. */
   shell(): AgentState
+  /**
+   * The shell as the host last published it or would publish it now, for a caller that only reads it: no copy of the
+   * host's own state is made for it, so what it holds must never be written into. Absent, read `shell()`.
+   */
+  view?(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell, without history. A socket answer's returned
    * error is its own command outcome; it is independent of the published shell's shared error. */
@@ -174,7 +199,12 @@ export interface LocalHostControl {
   get(): AgentState
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
+  /** The shell a broadcast carries: its thread records hold the coordinator's own, so it is read and never written into. */
+  broadcastShell?(): AgentState
   threadKind?(threadId: string): AgentThread['kind']
+  threadProvider?(threadId: string): ProviderId | undefined
+  projectProvider?(projectId: string): ProviderId | undefined
+  threadActivity?(threadId: string, activityId: string): AgentActivity | null
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
@@ -207,13 +237,16 @@ export class LocalHostService implements HostService {
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
-  watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
-  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
+  // Answered as host protocol version 1 has them, so a desktop from before #1183 still reads them.
+  async watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.admitRemote(request, client.clientId, guard, mayAnswer)) }
+  async watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.readRemote(request, client.clientId, guard, mayAnswer)) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true
   readonly supportsBabysitting: boolean
   private readonly observations = new Map<string, string[]>()
+  /** Of each client's observed threads, the ones it shows, where it said that is fewer (`shownThreadIds`). */
+  private readonly shownBy = new Map<string, string[]>()
   /**
    * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a
    * thread that finishes behind another app, minimised or hidden to the tray is finished unread. A host with no window
@@ -228,7 +261,9 @@ export class LocalHostService implements HostService {
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
   /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource }) {
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
+    /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
+    threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined } }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -239,6 +274,14 @@ export class LocalHostService implements HostService {
   }
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
+  get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
+  readonly supportsFailureSeen = true
+  async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
+    if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
+    const built = this.options.threadStarts.startHandover(threadId)
+    return built ? { text: startHandoverPrefix(built.text).trimEnd() } : null
+  }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
     return hostMachineReport(this.options.facts, this.control.shell().host.threads)
@@ -250,7 +293,7 @@ export class LocalHostService implements HostService {
   }
   usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(4).parse(providerIds))
+    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds))
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
@@ -274,7 +317,7 @@ export class LocalHostService implements HostService {
       changedAt = ++sequence
       if (waiting) return
       waiting = true
-      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.shell()) })
+      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.view()) })
     }
     const watcherOff = this.options.watcher?.subscribe(forward)
     const phoneOff = this.watcherPhone?.subscribe(forward)
@@ -282,10 +325,17 @@ export class LocalHostService implements HostService {
   }
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
+  /** What a broadcast would carry now. A Watcher change handed on with a whole copy of the shell cost what a broadcast did. */
+  view(): AgentState { return this.control.broadcastShell?.() ?? this.control.shell() }
   threadKind(threadId: string): AgentThread['kind'] {
     return this.control.threadKind ? this.control.threadKind(threadId) : this.control.shell().host.threads.find(thread => thread.id === threadId)?.kind
   }
+  threadProvider(threadId: string): ProviderId | undefined { return this.control.threadProvider?.(threadId) }
+  projectProvider(projectId: string): ProviderId | undefined { return this.control.projectProvider?.(projectId) }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
+  threadActivity(threadId: string, activityId: string): AgentActivity | null {
+    return this.control.threadActivity ? this.control.threadActivity(threadId, activityId) : this.control.threadDetail(threadId)?.activities?.find(record => record.id === activityId) ?? null
+  }
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
     if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')
     await this.control.checkRequestAnswer(target, client)
@@ -331,6 +381,8 @@ export class LocalHostService implements HostService {
     if (command.type !== 'observe-threads') return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
     if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
     else this.observations.delete(client.clientId)
+    if (command.threadIds.length && command.shownThreadIds !== undefined) this.shownBy.set(client.clientId, command.shownThreadIds)
+    else this.shownBy.delete(client.clientId)
     // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
     const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
     return this.control.showThreads?.(this.shownThreads()) ? this.control.shell() : state
@@ -341,8 +393,12 @@ export class LocalHostService implements HostService {
     this.windowFocused = focused
     this.control.showThreads?.(this.shownThreads())
   }
-  /** The threads some client shows: every client's observed threads, the window's only while it has the focus. */
+  /**
+   * The threads some client shows: every client's observed threads, the window's only while it has the focus, and a
+   * client that said which of its threads it shows (the socket server, for paired desktops behind another app) only those.
+   */
   private shownThreads(): string[] {
-    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? [] : ids))]
+    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? []
+      : this.shownBy.get(clientId) ?? ids))]
   }
 }

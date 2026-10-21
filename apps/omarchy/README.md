@@ -37,9 +37,11 @@ mise exec node@24.21.0 -- npm run build
 
 Open Sotto. The Omarchy step follows Welcome in first-run setup. Press **Set up all three** to give Sotto F9 and Super+Ctrl+X, put the owl in the bar and follow Omarchy’s theme. An existing install has the same three rows in **Settings → Dictation**. **Show the files it changes** lists each path before you press.
 
-Setup checks each piece first. Files set up by hand count as done; Sotto never replaces, updates or removes them. Voxtype keeps running without the two keys. If a different action holds F9 or Super+Ctrl+X, choose **Give F9 to Sotto** or **Leave my keys alone**. Leaving the keys alone still lets the owl and theme be installed. No key picker is added.
+Setup checks each piece first. Files set up by hand count as done; Sotto never replaces, updates or removes them. Voxtype keeps running without the two keys. If a different action holds F9 or Super+Ctrl+X, choose **Give F9 to Sotto** or **Leave my keys alone**. Leaving the keys alone still lets the owl and theme be installed.
 
 Sotto saves `bindings.lua.bak.<epoch>` beside your keys, copies its snippet to `~/.config/hypr/sotto-bindings.lua` and adds its require once. It checks both Lua files with `luac -p`, reloads Hyprland and compares configuration errors. A new error restores your files and shows Hyprland’s line in the row. That line never enters a log. Fix it, then press **Try again**. The snippet runs only while `sotto` is on PATH: after package removal, Voxtype’s defaults keep F9 and Super+Ctrl+X.
+
+Once the keys are set up, **Settings → Dictation** changes them: press a shortcut, hold the new keys and let go. Sotto rewrites only `~/.config/hypr/sotto-bindings.lua` from this snippet, binding a press shortcut to `toggle` and a hold shortcut to `start` on press and `stop` on release, and unbinding exactly the keys it binds. It checks the snippet with `luac -p`, refuses keys Hyprland already binds, reloads Hyprland and checks the new keys are loaded. A new error puts the previous snippet back and shows Hyprland’s line in the row only. `bindings.lua` and its backup are left as they are; the snippet it replaces is kept as `sotto-bindings.lua.bak`. A hold shortcut is one F key on its own. A snippet changed by hand is left alone, and so are keys set up by hand.
 
 With the Omarchy shell stopped, owl setup copies nothing. Start the shell, then retry that row. Running setup twice skips completed pieces. The button names only what is left, such as **Set up the owl**.
 

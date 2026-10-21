@@ -9,6 +9,7 @@ import { compareClientVersions, isComparableVersion } from './clientVersions'
 import { installerDetail, installerOutput } from './installerDetail'
 import { findDevinExecutable } from './devinRpc'
 import { findMuseExecutable } from './museRpc'
+import { findOpenCodeExecutable, opencodeEnvironment, opencodePassword, type OpenCodeFolders } from './opencodeServer'
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
@@ -18,6 +19,8 @@ import { findExecutable as findCodexExecutable } from './subscriptionCodex'
 /** The package whose `latest` tag says what each client has published. Devin ships inside its own app. */
 export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
   claude: '@anthropic-ai/claude-code', codex: '@openai/codex', grok: '@xai-official/grok',
+  // OpenCode 2's package; OpenCode 1 is `opencode-ai`, and Sotto never moves an install between them (ADR-0087).
+  opencode: '@opencode/cli',
 }
 const REGISTRY = 'https://registry.npmjs.org'
 const PUBLISHED_CACHE_MS = 60 * 60 * 1000
@@ -45,12 +48,18 @@ export type RunLike = (executable: string, args: readonly string[], asNode?: boo
 // A client a version manager installed is that manager's to update: npm here would install a second copy elsewhere.
 // mise is read before these, and only its installs folder makes a client mise's (see `miseToolOf`).
 const MANAGED_ELSEWHERE = [`${sep}.bun${sep}`, `${sep}pnpm${sep}`, `${sep}.pnpm${sep}`, `${sep}.volta${sep}`, `${sep}.mise${sep}`, `${sep}mise${sep}installs${sep}`, `${sep}.asdf${sep}`, 'homebrew', 'linuxbrew']
+/** The managers above that are not Homebrew, whose own Node may hold an npm global root of its own. */
+const OTHER_PACKAGE_MANAGERS = MANAGED_ELSEWHERE.filter(marker => marker !== 'homebrew' && marker !== 'linuxbrew')
+/** yarn classic's global packages (`%LOCALAPPDATA%\Yarn\Data\global`, `~/.config/yarn/global`), which the OpenCode lookup searches. */
+const YARN_GLOBAL = [`${sep}yarn${sep}data${sep}global${sep}`, `${sep}yarn${sep}global${sep}`, `${sep}.yarn${sep}`]
 
 /** The client's own home, when its own installer owns the binary there: `~/.local/bin/claude.exe`. */
 function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly string[] {
   const home = homedir()
   if (provider === 'claude') return [join(home, '.local', 'bin'), join(home, '.claude')]
   if (provider === 'grok') return [grokBin(environment)]
+  // OpenCode 2's install script (`opencode.ai/v2/install`) puts it here, and `opencode upgrade` updates it in place.
+  if (provider === 'opencode') return [join(home, '.opencode', 'bin')]
   return []
 }
 function grokBin(environment: NodeJS.ProcessEnv): string {
@@ -71,13 +80,16 @@ function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
     join(home, '.npm-global', 'lib', 'node_modules'), join(home, '.local', 'share', 'npm', 'lib', 'node_modules'),
   ]
 }
-/** The folder npm installed a client's package in: the one the binary sits inside, else one in a global root. */
-async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv): Promise<string | undefined> {
+/**
+ * The folder npm installed a client's package in: the one the binary sits inside, else one in a global root. With no
+ * environment only the binary's own prefix is looked in, so a package elsewhere on the machine cannot claim it.
+ */
+async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv | undefined): Promise<string | undefined> {
   const parts = executable.split(sep), names = packageName.split('/')
   const inside = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules'
     && names.every((name, offset) => parts[index + 1 + offset]?.toLowerCase() === name.toLowerCase()))
   const bin = dirname(executable)
-  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...npmGlobalRoots(environment),
+  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...environment ? npmGlobalRoots(environment) : [],
     join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
   for (const root of roots) {
     const folder = join(root, ...names)
@@ -196,7 +208,57 @@ export async function miseToolOf(provider: ProviderId, executable: string, envir
 }
 
 /** The channel that owns an install, and for mise the tool it is installed as. */
-export interface ClientInstall { readonly channel: ClientChannel; readonly miseTool?: string; readonly muse?: MuseMakerInstall }
+export interface ClientInstall {
+  readonly channel: ClientChannel; readonly miseTool?: string; readonly muse?: MuseMakerInstall
+  /** For a copy another package manager owns, the command that manager updates it with, which Sotto shows and never runs. */
+  readonly byHand?: readonly string[]
+}
+
+const MANAGER_NAME = /^[A-Za-z0-9@][A-Za-z0-9@._+-]{0,63}$/u
+/**
+ * The package manager that owns an OpenCode copy, and its own update command (ADR-0087): Homebrew by the Cellar formula
+ * the program lives in (`opencode` in core, `opencode-v2` in the tap), scoop by its app folder, pacman by the package
+ * whose record names the program. Each is named, never driven, as ADR-0042 has it for every manager Sotto does not run.
+ */
+export async function opencodeManager(executable: string, platform: NodeJS.Platform = process.platform,
+  pacmanRecords = '/var/lib/pacman/local'): Promise<readonly string[] | undefined> {
+  const real = await realpath(executable).catch(() => executable)
+  // npm's copy under a manager's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`) is npm's, not the manager's.
+  if ([real, executable].some(path => path.toLowerCase().split(/[\\/]/u).includes('node_modules'))) return undefined
+  for (const path of [real, executable]) {
+    const parts = path.split(/[\\/]/u), lower = parts.map(part => part.toLowerCase())
+    const cellar = lower.indexOf('cellar')
+    if (cellar >= 0 && parts[cellar + 1] && MANAGER_NAME.test(parts[cellar + 1]!)) return [`brew upgrade ${parts[cellar + 1]}`]
+    if (lower.some(part => part === 'homebrew' || part === 'linuxbrew' || part === '.linuxbrew')) return ['brew upgrade opencode']
+    const scoop = lower.findIndex((part, index) => part === 'apps' && lower[index - 1] === 'scoop')
+    if (scoop >= 0 && parts[scoop + 1] && MANAGER_NAME.test(parts[scoop + 1]!)) return [`scoop update ${parts[scoop + 1]}`]
+    const shims = lower.findIndex((part, index) => part === 'shims' && lower[index - 1] === 'scoop')
+    if (shims >= 0) {
+      // A scoop shim names the program it runs in a `.shim` file beside it: `path = "...\\scoop\\apps\\opencode2\\current\\opencode.exe"`.
+      const shim = await readFile(path.replace(/\.(?:exe|cmd|ps1)$/iu, '') + '.shim', 'utf8').catch(() => '')
+      const app = /[\\/]scoop[\\/]apps[\\/]([^\\/]+)[\\/]/iu.exec(shim)?.[1]
+      return [`scoop update ${app && MANAGER_NAME.test(app) ? app : 'opencode2'}`]
+    }
+  }
+  if (platform !== 'linux' || !real.startsWith('/usr/')) return undefined
+  for (const record of await readdir(pacmanRecords).catch(() => [] as string[])) {
+    const name = /^(.+)-[^-]+-[^-]+$/u.exec(record)?.[1]
+    if (!name || !name.toLowerCase().startsWith('opencode') || !MANAGER_NAME.test(name)) continue
+    const files = await readFile(join(pacmanRecords, record, 'files'), 'utf8').catch(() => '')
+    if (files.split(/\r?\n/u).includes(real.slice(1))) return [name === 'opencode' ? 'sudo pacman -Syu opencode' : `paru -Syu ${name}`]
+  }
+  return undefined
+}
+
+/**
+ * npm may hoist OpenCode's program package (`@opencode/cli-<target>`, which the install script also downloads) beside
+ * `@opencode/cli`: a program there stands for the `@opencode/cli` beside it, which is what npm updates.
+ */
+function opencodePlatformPackage(path: string): string[] {
+  const parts = path.split(sep)
+  const at = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules' && parts[index + 1]?.toLowerCase() === '@opencode' && /^cli-/iu.test(parts[index + 2] ?? ''))
+  return at < 0 ? [] : [join(parts.slice(0, at + 2).join(sep), 'cli', 'bin', basename(path))]
+}
 
 /**
  * Which channel owns this install, from the path it was found at and from what is installed where.
@@ -220,6 +282,24 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
   if (!inOwnHome) {
     const miseTool = await miseToolOf(provider, executable, environment)
     if (miseTool) return { channel: 'mise', miseTool }
+  }
+  if (provider === 'opencode') {
+    const real = await realpath(executable).catch(() => executable)
+    // bun, pnpm, yarn, Volta and asdf lay a global package out the way npm does, so they are asked before npm: `npm install -g`
+    // over their copy would install a second one and leave theirs as it was (ADR-0042).
+    if ([executable, real].some(path => [...OTHER_PACKAGE_MANAGERS, ...YARN_GLOBAL].some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
+    // bun and pnpm can live anywhere their own variable says, which the OpenCode lookup searches too.
+    const managerHomes = ['BUN_INSTALL', 'PNPM_HOME'].map(name => environment[name]).filter((value): value is string => Boolean(value) && isAbsolute(value!))
+    if ([executable, real].some(path => managerHomes.some(directory => within(path, directory)))) return { channel: 'unknown' }
+    // npm's copy is npm's even under Homebrew's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`), so npm is asked
+    // before Homebrew (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
+    // machine never claims a copy Homebrew, the install script or a system package put there.
+    for (const path of new Set([executable, real, ...[executable, real].flatMap(opencodePlatformPackage)])) {
+      if (await npmPackageFolder(CLIENT_PACKAGES.opencode!, path, undefined)) return { channel: 'npm' }
+    }
+    const byHand = await opencodeManager(executable)
+    if (byHand) return { channel: 'unknown', byHand }
+    return inOwnHome ? { channel: 'self-update' } : { channel: 'unknown' }
   }
   if (MANAGED_ELSEWHERE.some(marker => lower.includes(marker))) return { channel: 'unknown' }
   if (provider === 'muse') {
@@ -250,7 +330,8 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
     case 'npm': return packageName ? [`npm install -g --allow-scripts=${packageName} ${packageName}@latest`] : undefined
-    case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`] : undefined
+    case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
+      : provider === 'opencode' ? ['opencode upgrade'] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
       const command = `mise upgrade ${install.miseTool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
@@ -261,7 +342,7 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       return needsInstallStep(provider, install.miseTool) && packageName
         ? [upgrade, `cd "$(mise where ${install.miseTool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : [upgrade]
     }
-    default: return undefined
+    default: return install.byHand?.length ? [...install.byHand] : undefined
   }
 }
 const needsInstallStep = (provider: ProviderId, miseTool: string): boolean => provider === 'grok' && miseTool === `npm:${CLIENT_PACKAGES.grok}`
@@ -302,7 +383,7 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     if (!cli) return undefined
     return { command: byHand[0]!, byHand, executable: process.execPath, args: [cli, 'install', '-g', allowScripts, `${packageName}@latest`], asNode: true }
   }
-  if (found.channel === 'self-update' && provider !== 'muse' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: ['update'] }
+  if (found.channel === 'self-update' && provider !== 'muse' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: [provider === 'opencode' ? 'upgrade' : 'update'] }
   if (found.channel === 'mise' && found.miseTool && byHand) {
     const mise = await misePath()
     if (!mise) return undefined
@@ -403,6 +484,8 @@ export interface ProviderClientsOptions {
   readonly miseReleaseAgeFlag?: (executable: string) => Promise<boolean>
   /** The Node that runs Grok Build's install step: this process's own, by default. */
   readonly nodePath?: string
+  /** Sotto's own OpenCode folders: `opencode upgrade` runs with them, never with the user's own OpenCode folders (ADR-0087). */
+  readonly opencodeFolders?: OpenCodeFolders
 }
 
 /**
@@ -419,6 +502,7 @@ export class ProviderClients {
   private readonly misePath: () => Promise<string | undefined>
   private readonly miseReleaseAgeFlag: (executable: string) => Promise<boolean>
   private readonly nodePath: string
+  private readonly opencodeFolders: OpenCodeFolders | undefined
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
     this.run = options.run ?? defaultRun
@@ -427,6 +511,7 @@ export class ProviderClients {
     this.misePath = options.misePath ?? defaultMisePath
     this.miseReleaseAgeFlag = options.miseReleaseAgeFlag ?? defaultMiseReleaseAgeFlag
     this.nodePath = options.nodePath ?? process.execPath
+    this.opencodeFolders = options.opencodeFolders
   }
 
   /** The published version, or undefined when the registry cannot be read. A failed check is not a finding. */
@@ -516,8 +601,12 @@ export class ProviderClients {
       const folder = await npmPackageFolder(packageName, executable, environment)
       if (folder) await clearLeftoverPackage(folder)
     }
-    const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env
-      ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}) } : undefined)
+    // OpenCode's own updater reads its config folder, so it runs on Sotto's OpenCode folders and the shared allow-list,
+    // never the user's own OpenCode folders or other providers' keys.
+    const opencodeOwn = provider === 'opencode' && install.channel === 'self-update' && this.opencodeFolders
+      ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) } : {}
+    const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env || opencodeOwn.environment
+      ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}), ...opencodeOwn } : undefined)
     if (!upgrade.ok) return { ...upgrade, step: 1, failure: DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '') ? 'download' : 'installer' }
     if (!action.installStep) return upgrade
     onStep?.(2)
@@ -553,5 +642,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'grok': return findGrokExecutable()
     case 'devin': return findDevinExecutable()
     case 'muse': return findMuseExecutable()
+    case 'opencode': return findOpenCodeExecutable()
   }
 }

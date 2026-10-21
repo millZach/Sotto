@@ -36,6 +36,8 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     getSpeechModelStatus: vi.fn(async () => ({ state: 'ready' as const })),
     downloadSpeechModel: vi.fn(async () => OK),
     onSpeechModelStatus: vi.fn(() => () => undefined),
+    listSpeechModels: vi.fn(async () => []),
+    chooseSpeechModel: vi.fn(async () => OK),
     ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
@@ -135,7 +137,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /test microphone/i }))
   await waitFor(() => expect(screen.getByText(/Sotto heard you/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByText(/download the speech model/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByRole('heading', { name: /choose a speech model/i })).toBeVisible())
   await finishRemainingSteps(user)
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
 }

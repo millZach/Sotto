@@ -26,24 +26,57 @@ afterEach(async () => {
 })
 
 describe('SettingsRepository', () => {
-  it('keeps dormant Watcher settings through stable writes and reset, then restores Owl edits', async () => {
+  it('loads a settings file that still holds the Threads in flight limit and drops it at the next save (#1183)', async () => {
+    const { filePath, repository } = await createRepository()
+    await writeFile(filePath, JSON.stringify({ ...DEFAULT_SETTINGS, hotkey: 'Alt+D', watcherInFlightLimit: 6 }), 'utf8')
+    const loaded = await repository.get()
+    expect(loaded).toEqual({ ...DEFAULT_SETTINGS, hotkey: 'Alt+D' })
+    expect('watcherInFlightLimit' in loaded).toBe(false)
+    await repository.update({ autoPaste: false })
+    const saved = JSON.parse(await readFile(filePath, 'utf8')) as Record<string, unknown>
+    expect(saved).toMatchObject({ hotkey: 'Alt+D', autoPaste: false })
+    expect('watcherInFlightLimit' in saved).toBe(false)
+  })
+  it('keeps saved worker roles whole through a build without them, then restores Owl edits (#1041)', async () => {
     const { filePath, repository: owl } = await createRepository()
-    await owl.update({ watcherInFlightLimit: 6, hotkey: 'Alt+D', autoPaste: false })
-    const stable = new SettingsRepository(filePath, { watcherEnabled: false })
-    expect((await stable.save({ hotkey: 'Alt+F8' })).watcherInFlightLimit).toBe(6)
-    expect((await stable.get()).hotkey).toBe('Alt+F8')
-    expect((await stable.update({ hotkey: 'Alt+F9' })).watcherInFlightLimit).toBe(6)
-    const unsetCapacity: Partial<AppSettings> = { hotkey: 'Alt+F9' }
-    Reflect.set(unsetCapacity, 'watcherInFlightLimit', undefined)
-    expect((await stable.update(unsetCapacity)).watcherInFlightLimit).toBe(6)
+    const rows: AppSettings['workerRoles'] = { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } }
+    await owl.update({ workerRoles: rows, autoPaste: false })
+    const stable = new SettingsRepository(filePath, { workerRolesEnabled: false })
+    expect((await stable.save({ ...DEFAULT_SETTINGS, hotkey: 'Alt+F8' })).workerRoles).toEqual(rows)
+    expect((await stable.update({ hotkey: 'Alt+F9' })).workerRoles).toEqual(rows)
     const before = await readFile(filePath, 'utf8')
-    await expect(stable.update({ watcherInFlightLimit: 2 })).rejects.toThrow('Sotto Owl')
+    await expect(stable.update({ workerRoles: {} })).rejects.toThrow('Sotto Owl')
     expect(await readFile(filePath, 'utf8')).toBe(before)
-    expect(await stable.reset()).toEqual({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
-    const reopened = new SettingsRepository(filePath, { watcherEnabled: true })
-    expect(await reopened.get()).toEqual({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
-    expect((await reopened.update({ watcherInFlightLimit: 8 })).watcherInFlightLimit).toBe(8)
-    expect((await reopened.reset()).watcherInFlightLimit).toBe(DEFAULT_SETTINGS.watcherInFlightLimit)
+    expect((await stable.reset()).workerRoles).toEqual(rows)
+    const reopened = new SettingsRepository(filePath, { workerRolesEnabled: true })
+    expect((await reopened.get()).workerRoles).toEqual(rows)
+    expect((await reopened.update({ workerRoles: {} })).workerRoles).toEqual({})
+  })
+  it('keeps saved extra and hold dictation shortcuts whole through a build without them', async () => {
+    const { filePath, repository: owl } = await createRepository()
+    await owl.update({ pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn'] })
+    const stable = new SettingsRepository(filePath, { dictationHoldShortcutsEnabled: false })
+    const saved = await stable.save({ ...DEFAULT_SETTINGS, hotkey: 'Alt+F8' })
+    expect([saved.hotkey, saved.pressShortcuts, saved.holdShortcuts]).toEqual(['Alt+F8', ['Alt+Shift+D'], ['Fn']])
+    const reset = await stable.reset()
+    expect([reset.hotkey, reset.pressShortcuts, reset.holdShortcuts]).toEqual([DEFAULT_SETTINGS.hotkey, ['Alt+Shift+D'], ['Fn']])
+    const reopened = new SettingsRepository(filePath, { dictationHoldShortcutsEnabled: true })
+    expect((await reopened.get()).pressShortcuts).toEqual(['Alt+Shift+D'])
+    expect((await reopened.reset()).pressShortcuts).toEqual(DEFAULT_SETTINGS.pressShortcuts)
+  })
+  it('reads saved worker roles row by row, dropping only a damaged or unknown row', async () => {
+    const { filePath, repository } = await createRepository()
+    await writeFile(filePath, JSON.stringify({ ...DEFAULT_SETTINGS, workerRoles: {
+      ui: { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' },
+      research: { modelId: '', reasoningEffort: null },
+      painting: { modelId: 'native:claude:model:opus', reasoningEffort: null },
+      orchestrating: { modelId: 'native:claude:model:opus', reasoningEffort: 'high', runtimeMode: 'full-access' },
+    } }), 'utf8')
+    expect((await repository.get()).workerRoles).toEqual({
+      ui: { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' },
+      // Watcher's permission is its own, never a role's.
+      orchestrating: { modelId: 'native:claude:model:opus', reasoningEffort: 'high' },
+    })
   })
   it('canonically removes the voice gate without changing dictation or memory settings', async () => {
     const { filePath, repository } = await createRepository()
@@ -214,6 +247,14 @@ describe('SettingsRepository', () => {
 
     expect(updated.theme).toBe(DEFAULT_SETTINGS.theme)
     expect(updated.maxRecordingSeconds).toBe(DEFAULT_SETTINGS.maxRecordingSeconds)
+  })
+
+  it('keeps the chosen speech model through a reset, as Settings promises (ADR-0094)', async () => {
+    const { repository } = await createRepository()
+    await repository.update({ speechModel: 'fluidaudio:parakeet-ultra', soundCues: false })
+    const reset = await repository.reset()
+    expect(reset.speechModel).toBe('fluidaudio:parakeet-ultra')
+    expect(reset.soundCues).toBe(DEFAULT_SETTINGS.soundCues)
   })
 
   it('resets persisted settings to a fresh default value', async () => {
