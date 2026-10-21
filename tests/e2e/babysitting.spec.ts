@@ -253,8 +253,8 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await pass()
     await changeState(state => { state.pulls[0]!.checks = [check('Owned build', 'COMPLETED', 'FAILURE')] })
     await pass()
-    // Wake-ups the provider has, as against the echo of one still waiting in the queue.
-    const sentWakeUps = pane(page).locator('.thread-message[data-from="sotto"]:not(.thread-message--pending)')
+    // Wake-ups the provider has; one still waiting is in the queue, not the transcript.
+    const sentWakeUps = pane(page).locator('.thread-message[data-from="sotto"]')
     const wakeUp = sentWakeUps.first()
     await expect(sentWakeUps).toHaveCount(1, { timeout: 30_000 })
     await expect(wakeUp.locator('header')).toContainText('SottoWake-up')
