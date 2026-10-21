@@ -23,7 +23,16 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     public let runtimeMode: String?
     public let standingWatches: [StandingWatch]?
     public let ownChanges: [OwnChange]?
+    /// The user's own follow-ups waiting in Watcher's queue, first in line first: what goes next, after Watcher's turn.
+    /// Nil from a computer that doesn't take a steer from this iPhone (#1229).
+    public let followups: [Followup]?
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
+    /// One follow-up waiting for Watcher: its queue item, the draft it went with, its words, and `queued`, `dispatching`,
+    /// `uncertain`, `failed` or `paused`.
+    public struct Followup: Decodable, Equatable, Identifiable, Sendable {
+        public let itemId: String; public var id: String { itemId }
+        public let draftId: String; public let text: String; public let status: String
+    }
     public struct StandingWatch: Decodable, Equatable, Sendable {
         public let id: String; public let target: WatcherTarget; public let createdAt: String; public let generation: Int
         public let pausedByUserMessageId: String?; public let lastUserMessageId: String?
@@ -37,6 +46,8 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let provider: String; public let modelId: String
         public let reasoningEffort: String?; public let status: String; public let connected: Bool
         public let runtimeMode: String?
+        /// Whether Watcher's provider takes a steer into its running turn. Nil from a computer that doesn't say (#1229).
+        public let steers: Bool?
     }
     public struct Conversation: Decodable, Equatable, Sendable {
         public let messages: [Message]; public let earlierAvailable: Bool; public let revision: Int
@@ -165,10 +176,13 @@ public enum WatcherWire {
     public static let feature = "watcher-phone"
     public static let stopFeature = "watcher-phone-stop-all"
     public static let manageFeature = "watcher-phone-manage"
-    /// Views opt in to management only when they can present the controls and recover mutation receipts.
+    /// Send steers into Watcher's running turn, or the message goes next, and a follow-up waiting for Watcher can be removed (#1229).
+    public static let steerFeature = "watcher-phone-steer"
+    /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
+    /// with it: its Remove recovers its outcome from the same receipt.
     public static var managementHello: [String: JSONValue] {
         var result = hello
-        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature)]) }
+        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature)]) }
         return result
     }
     public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {
@@ -188,11 +202,20 @@ public enum WatcherWire {
     }
     public static let read: [String: JSONValue] = ["op": .string("watcher-phone-read")]
     public static let prepareStop: [String: JSONValue] = ["op": .string("watcher-phone-prepare-stop-all")]
-    public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String) -> [String: JSONValue] {
-        ["op": .string("watcher-phone-send"), "request": .object([
+    /// With `steer`, only to a computer that offers `steerFeature`: while Watcher works the words steer into its turn, or
+    /// go next as their own turn when they can't.
+    public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false) -> [String: JSONValue] {
+        var request: [String: JSONValue] = [
             "origin": .object(["kind": .string("phone"), "hostId": .string(target.hostId), "clientId": .string(clientID)]),
             "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
-            "draftId": .string(draftID), "text": .string(text)])]
+            "draftId": .string(draftID), "text": .string(text)]
+        if steer { request["delivery"] = .string("steer") }
+        return ["op": .string("watcher-phone-send"), "request": .object(request)]
+    }
+    /// Takes a follow-up out of Watcher's queue before it goes, by its queue item.
+    public static func removeFollowup(target: WatcherTarget, itemID: String) -> [String: JSONValue] {
+        ["op": .string("watcher-phone-remove-followup"), "request": .object([
+            "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]), "itemId": .string(itemID)])]
     }
     public static func answer(target: WatcherTarget, command: [String: JSONValue]) throws -> [String: JSONValue] {
         guard command["type"] == .string("answer"), command["threadId"] == .string(target.threadId) else { throw ClientError.invalidRequest }

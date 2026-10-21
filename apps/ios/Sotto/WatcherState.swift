@@ -53,6 +53,10 @@ extension WatcherPhoneState {
     func delivery(of draftID: String) -> String? {
         draftDeliveries?.first { $0.draftId.lowercased() == draftID.lowercased() }?.status
     }
+    /// The follow-up a draft this iPhone sent became, while it waits in Watcher's queue to go next (#1229).
+    func followup(of draftID: String) -> Followup? {
+        followups?.first { $0.draftId.lowercased() == draftID.lowercased() }
+    }
     /// Older than `other`, by when the computer read it. A page read before another one already shown is left unshown.
     func isOlder(than other: WatcherPhoneState) -> Bool {
         guard let mine = Stamp.date(observedAt), let theirs = Stamp.date(other.observedAt) else { return false }
@@ -107,7 +111,8 @@ struct WatcherDrafts: Equatable, Sendable {
             unresolved[index].ended = true
         }
     }
-    /// Lets go of the drafts a page says Watcher took, and returns them, oldest first. With `proof`, the drafts whose send
+    /// Lets go of the drafts a page says Watcher took, or that wait in its queue to go next, and returns them, oldest
+    /// first. With `proof`, the drafts whose send
     /// had ended when the page was asked for (`endedSends`), it also lets go of those it no longer shows on their way,
     /// unless they have been sent again since. Watcher's computer lists
     /// a draft from the moment it reads its send until Watcher took it or it failed, and won't take again one whose result
@@ -116,7 +121,7 @@ struct WatcherDrafts: Equatable, Sendable {
     /// may have made it before it read the send, and a page that says nothing of drafts is no proof either.
     mutating func retire(after page: WatcherPage, proof: [String: Int]) -> [Sent] {
         guard page.draftDeliveries != nil else { return [] }
-        let taken = unresolved.filter { page.delivery(of: $0.draftID) == "accepted" }
+        let taken = unresolved.filter { page.delivery(of: $0.draftID) == "accepted" || page.followup(of: $0.draftID) != nil }
         let gone = unresolved.filter { sent in
             guard sent.ended, proof[sent.draftID.lowercased()] == sent.sends else { return false }
             switch page.delivery(of: sent.draftID) {
@@ -372,6 +377,38 @@ enum WatcherWords {
     }
     static func permissionUnconfirmed(_ computer: String) -> String {
         "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again."
+    }
+
+    // Steering Watcher while it works (#1229, Zach's pick B): Send steers into Watcher's turn, or the words go next.
+
+    /// A computer on an older Sotto refuses a message while Watcher works. The words stay in the box.
+    static func updateToSteer(_ computer: String) -> String {
+        "Update Sotto on \(computer) to send to Watcher while it works. Your message is still here."
+    }
+    static func removeUnconfirmed(_ computer: String) -> String {
+        "\(computer) didn’t confirm that your message was removed. Check Watcher’s conversation before you send it again."
+    }
+    /// What a follow-up waiting for Watcher says over its words.
+    static func followup(_ status: String) -> String {
+        switch status {
+        case "dispatching": return "Going to Watcher now"
+        case "uncertain": return "Watcher didn’t confirm this message"
+        case "failed": return "Didn’t reach Watcher"
+        case "paused": return "Held after a stop"
+        default: return "Goes next, after this turn"
+        }
+    }
+    /// The line under its words, when there's more to say: why it didn't steer, or what to do next.
+    static func followupNote(_ status: String, page: WatcherPage, computer: String) -> String? {
+        switch status {
+        case "queued":
+            guard let current = page.current, current.steers == false else { return nil }
+            return "\(AgentNames.name(current.provider)) can’t take a steer."
+        case "uncertain": return "Check the conversation before you send it again."
+        case "failed": return "Remove it, then send it again."
+        case "paused": return "Resume Watcher’s queue in Sotto on \(computer), or remove it."
+        default: return nil
+        }
     }
 
     // Watcher's own changes (mark B): Sotto's count of what the provider changed, and Watcher's reason in its own words.

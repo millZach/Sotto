@@ -113,6 +113,8 @@ describe('remote command allow-list', () => {
       'watcher-phone-read', 'watcher-phone-send', 'watcher-phone-answer', 'watcher-phone-prepare-stop-all', 'watcher-phone-stop-all',
       // Optional phone management: pairing admits watching; permissive mode changes recheck Can answer.
       'watcher-phone-set-permission', 'watcher-phone-watch', 'watcher-phone-unwatch',
+      // Optional phone steering: removing the user's own follow-up for Watcher, by its queue item, needs only the pairing (#1229).
+      'watcher-phone-remove-followup',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).

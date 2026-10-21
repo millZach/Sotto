@@ -56,7 +56,7 @@ async function fixture(on = true) {
     await vi.waitFor(() => expect(native(watcherId).status).toBe('running'), { timeout: 15_000 })
     await endTurn(watcherId)
   }
-  return { ...f, workspace, service, setting, log, native, emit, endTurn, watched, thread, settled, watching, watcherHears, watcherId }
+  return { ...f, workspace, service, tools, setting, log, native, emit, endTurn, watched, thread, settled, watching, watcherHears, watcherId }
 }
 
 it('settles a finished watched thread once Watcher has heard and rested, then stops watching it, quietly', async () => {
@@ -132,6 +132,22 @@ it('leaves a thread whose pull request is still open alone, and settles it once 
   await f.emit()
   await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
   expect(f.watching(target.threadId)).toBe(false)
+})
+
+it('says in read_state which finished threads wait to be settled and on what, and nothing while the setting is off', async () => {
+  const f = await fixture(), target = await f.watched()
+  const links = f.workspace.host as unknown as { linkPullRequestRecord(threadId: string, pullRequest: { number: number; url: string; title: string; state: string; draft?: boolean }, source: string): unknown }
+  links.linkPullRequestRecord(target.threadId, { url: 'https://github.com/example/synthetic/pull/7', number: 7, title: 'Synthetic change', state: 'open' }, 'agent')
+  await f.endTurn(target.threadId)
+  await f.watcherHears()
+  const read = async () => {
+    const result = await f.tools.call(f.watcherId, 'read_state', {})
+    return result.structuredContent as { settlesFinishedThreads: boolean; pendingSettles: { target: typeof target; settlesWhen: string }[] }
+  }
+  await vi.waitFor(async () => expect((await read()).pendingSettles).toEqual([{ target, title: 'Synthetic worker', settlesWhen: 'Its pull request #7 merges or closes.' }]), { timeout: 15_000 })
+  expect(f.settled(target.threadId)).toBe(false)
+  f.setting.on = false
+  expect(await read()).toMatchObject({ settlesFinishedThreads: false, pendingSettles: [] })
 })
 
 it('tries a refused settle once, and again only after the thread finishes another turn', async () => {
