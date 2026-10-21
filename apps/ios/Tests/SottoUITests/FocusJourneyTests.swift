@@ -1114,9 +1114,11 @@ import XCTest
     }
 
     /// With the bar away, the reader sees the strip it uncovered under the status bar. A card they have there stays put
-    /// while Watcher writes above it, rather than being pushed down to where the bar was (#1278).
+    /// while Watcher writes above it, rather than being pushed down to where the bar was (#1278). Then the permission under
+    /// it is answered on the laptop and leaves: the page's end carries the card down, and the page puts it back in the
+    /// strip by lining its top up with a point above the scroll view's own top.
     func testACardInTheStripTheBarUncoversStaysPutWhileWatcherWrites() {
-        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing"])
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards"])
         openWatcher()
         let writing = text("Checking the threads I watch.")
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
@@ -1163,6 +1165,20 @@ import XCTest
         waitForWatcherBar(away: true, "The bar stays away while Watcher writes")
         XCTAssertTrue(app.buttons["A fresh account for each run"].isHittable, "The card's answers can be pressed")
         capture("watcher-card-in-uncovered-strip-dark")
+        // Babysit #845 release notes's permission, under the card, is answered on the laptop and leaves the page.
+        let permission = byID("watcher-card-notes845")
+        XCTAssertTrue(permission.exists, "The permission is still under the card the reader has in the strip")
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName("app.sotto.ui.watcher-notes-answered" as CFString), nil, nil, true)
+        XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
+        let back = NSPredicate { _, _ in lead.exists && abs(lead.frame.minY - start) <= 2 }
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: back, object: nil)], timeout: 5)
+        let after = lead.frame.minY
+        if abs(after - start) > 2 { explain("watcher-card-left-the-strip-after-removal", "card top \(after), was \(start), strip \(strip.top) to \(strip.bottom)") }
+        XCTAssertEqual(after, start, accuracy: 2, "Once the permission under it has gone, the card is back where the reader has it in the strip")
+        waitForWatcherBar(away: true, "The bar stays away as the page puts the card back")
+        XCTAssertTrue(app.buttons["A fresh account for each run"].isHittable, "The card's answers can still be pressed")
+        capture("watcher-card-in-uncovered-strip-after-removal-dark")
     }
 
     /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and

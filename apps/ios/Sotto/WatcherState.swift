@@ -295,16 +295,17 @@ struct WatcherReaderPlace: Equatable {
         following = heldCard == nil && (seesNewest || end <= dockTop + slack)
     }
 
-    /// Where the card the reader is on goes when the page changes around it: `offset` below the header, where the reader
-    /// left it, but no lower than keeps it whole above the box and never under the header. A card taller than the room
-    /// between them stays where the reader left it as long as it fills that room. Cards removed or added below it, the
-    /// user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page keeps its end
-    /// where it was, which would carry the card off with it (#1277).
+    /// Where the card the reader is on goes when the page changes around it: `offset` below the top of what the reader
+    /// sees, where they left it, but no lower than keeps it whole above the box and never above that top. A card taller
+    /// than the room between them stays where the reader left it as long as it fills that room. Cards removed or added
+    /// below it, the user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page
+    /// keeps its end where it was, which would carry the card off with it (#1277).
     ///
-    /// Returns the point, as a fraction of the card's height and of the scroll view's visible page, that
-    /// `ScrollViewProxy.scrollTo` lines up to put the card's top there, or nil when it is already within a point of there.
-    /// The scroll view's visible page starts at `viewTop`, the bottom of the bar's place, even while the bar is away and
-    /// the reader sees the strip above it (#1278). A card the reader has in that strip lines up at a point above the
+    /// Returns the point, as a fraction of the scroll view's visible page, that `ScrollViewProxy.scrollTo` lines the card's
+    /// top up with, or nil when it is already within a point of where it goes. The page scrolls to a mark with no height at
+    /// the card's top rather than to the card, so the point is the same for a card of any height, even one exactly as tall
+    /// as the visible page. That page starts at `viewTop`, the bottom of the bar's place, even while the bar is away and
+    /// the reader sees the strip above it (#1278): a card the reader has in that strip lines up at a point above the
     /// visible page's top, a fraction below 0.
     /// - Parameters:
     ///   - card: the card's frame now; `offset`, its top's distance below `top` where the reader left it.
@@ -312,14 +313,29 @@ struct WatcherReaderPlace: Equatable {
     ///     `dockTop`, the top of the box.
     ///   - viewTop: the top of the scroll view's visible page, which `scrollTo` lines up within; `top` when nil.
     static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat, viewTop: CGFloat? = nil) -> CGFloat? {
-        let spare = dockTop - top - card.height
-        let wanted = min(max(top + offset, min(top, top + spare)), max(top, top + spare))
+        let wanted = top + kept(offset, height: card.height, top: top, dockTop: dockTop)
         guard abs(card.minY - wanted) > 1 else { return nil }
         let viewTop = viewTop ?? top
-        let room = dockTop - viewTop - card.height
-        // A card as tall as the scroll view's visible page has its top at that page's top, whatever point lines up.
-        guard abs(room) > 1 else { return 0 }
-        return (wanted - viewTop) / room
+        let page = dockTop - viewTop
+        guard page > 1 else { return nil }
+        return (wanted - viewTop) / page
+    }
+
+    /// The held card's offset once the top of what the reader sees moves from `before` to `top`, as it does when the bar
+    /// slides away or comes back (#1278): the card stays where it is on the screen, measured from the new top, unless that
+    /// puts it under the bar that came back or under the box, where it comes only as far as keeps it in view.
+    /// - Parameters:
+    ///   - offset: the card's top's distance below `before` where the reader left it; `height`, the card's.
+    ///   - top: the new top of what the reader sees; `dockTop`, the top of the box.
+    static func offset(_ offset: CGFloat, from before: CGFloat, height: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat {
+        kept(before + offset - top, height: height, top: top, dockTop: dockTop)
+    }
+
+    /// `offset` below `top`, kept so a card `height` tall stays whole between `top` and the box or, taller than the room
+    /// between them, fills that room.
+    private static func kept(_ offset: CGFloat, height: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat {
+        let spare = dockTop - top - height
+        return min(max(offset, min(0, spare)), max(0, spare))
     }
 }
 
