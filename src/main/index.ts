@@ -1265,6 +1265,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         ? findFluidAudioModels(fluidAudioModelsRoot(app.getPath('appData')))
         : Promise.resolve([]),
       coreMlLoader: (version) => createCoreMlEngineLoader(coreMlHelperPath, version),
+      modelBeforeChoosing: PARAKEET_V3.id,
       readChoice: () => workingCopySettings.speechModel,
       saveChoice: (id) => saveSpeechModelChoice(id),
       onStatus: (status) => { windows.sendToMain(SPEECH_MODEL_STATUS, status) },

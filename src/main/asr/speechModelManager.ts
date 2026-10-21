@@ -10,6 +10,11 @@ export interface SpeechModelManagerDependencies {
   /** The FluidAudio models this computer can run; empty off Apple silicon or without the helper. */
   readonly findFluidAudio: () => Promise<readonly FluidAudioModel[]>
   readonly coreMlLoader: (version: CoreMlModelVersion) => SpeechEngineLoader
+  /**
+   * The model Sotto downloaded by itself before choosing existed (Parakeet v3, ADR-0071). With nothing
+   * chosen, an install that has it keeps it, ahead of any other already here, whatever the picker's order.
+   */
+  readonly modelBeforeChoosing: string
   readonly readChoice: () => string | null
   readonly saveChoice: (id: string | null) => Promise<void>
   readonly onStatus: (status: SpeechModelStatus) => void
@@ -18,8 +23,8 @@ export interface SpeechModelManagerDependencies {
 const MISSING: SpeechModelStatus = { state: 'missing' }
 
 /**
- * Runs the speech model the user chose for dictation: one of Sotto's downloads (Parakeet v3, Parakeet
- * Ultra, Parakeet v2) through its store, or a Core ML model FluidAudio keeps on this Mac through Sotto's
+ * Runs the speech model the user chose for dictation: one of Sotto's downloads (Parakeet Ultra, Parakeet
+ * v3, Parakeet v2) through its store, or a Core ML model FluidAudio keeps on this Mac through Sotto's
  * helper. Nothing downloads unless the user picks one of Sotto's models; an install that already has
  * one verified keeps it, so dictation works as before. While one of Sotto's models is chosen its status
  * is its store's; otherwise the manager reports its own.
@@ -225,9 +230,14 @@ export class SpeechModelManager {
     return this.dependencies.stores.find((store) => store.model.id === id)
   }
 
-  /** The first of Sotto's models already downloaded and verified, in the picker's order. */
+  /**
+   * The first of Sotto's models already downloaded and verified: the model an install had before
+   * choosing existed, then the rest in the picker's order.
+   */
   private async firstDownloaded(): Promise<SpeechModelStore | undefined> {
-    for (const store of this.dependencies.stores) {
+    const earlier = this.storeFor(this.dependencies.modelBeforeChoosing)
+    const stores = earlier === undefined ? this.dependencies.stores : [earlier, ...this.dependencies.stores.filter((store) => store !== earlier)]
+    for (const store of stores) {
       if (await store.isDownloaded()) return store
     }
     return undefined

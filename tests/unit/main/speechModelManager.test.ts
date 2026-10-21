@@ -17,7 +17,7 @@ const sottoModel = (id: string, name: string, languages = '25 European languages
   id, name, maker: 'NVIDIA', languages, releaseTag: `speech-model-${id}-1`,
   files: [{ name: 'tokens.txt', bytes: DATA.length, sha256: createHash('sha256').update(DATA).digest('hex') }],
 })
-/** Stand-ins for Sotto's three downloads, each one small file. */
+/** Stand-ins for Sotto's three downloads, each one small file. MODEL is v3, the one an older install has. */
 const MODEL = sottoModel('test-v3', 'Parakeet v3')
 const SOTTO_ULTRA = sottoModel('test-ultra', 'Parakeet Ultra')
 const SOTTO_V2 = sottoModel('test-v2', 'Parakeet v2', 'English only')
@@ -40,11 +40,12 @@ describe('SpeechModelManager', () => {
     const fetchFn = vi.fn(async () => new Response(new Uint8Array(DATA), { status: 200, headers: { 'content-length': String(DATA.length) } }))
     const sottoEngine = engineNamed('sotto')
     const loadEngine = vi.fn(async (modelDirectory: string) => modelDirectory.endsWith(MODEL.id) ? sottoEngine : engineNamed(modelDirectory))
-    const stores = [MODEL, SOTTO_ULTRA, SOTTO_V2].map((model) => new SpeechModelStore({
+    // In the picker's order, as main makes them: Ultra, v3, v2.
+    const stores = [SOTTO_ULTRA, MODEL, SOTTO_V2].map((model) => new SpeechModelStore({
       directory, model, fetchFn, loadEngine, onStatus: () => undefined,
       fileUrl: () => 'https://release-assets.githubusercontent.com/assets/tokens.txt',
     }))
-    const store = stores[0]!
+    const store = stores[1]!
     let models = options.models ?? []
     let choice = options.choice ?? null
     const pending: { version: CoreMlModelVersion; directory: string; resolve: (engine: SpeechEngine) => void; reject: (error: Error) => void }[] = []
@@ -60,6 +61,7 @@ describe('SpeechModelManager', () => {
       stores,
       findFluidAudio: async () => models,
       coreMlLoader,
+      modelBeforeChoosing: MODEL.id,
       readChoice: () => choice,
       saveChoice,
       onStatus: (status) => statuses.push(status),
@@ -225,15 +227,15 @@ describe('SpeechModelManager', () => {
     expect(manager.status()).toEqual({ state: 'missing' })
   })
 
-  it('lists Sotto\'s three models as downloads where there is no FluidAudio folder (Windows, Linux)', async () => {
+  it('lists Sotto\'s three models as downloads where there is no FluidAudio folder (Windows, Linux), Ultra first', async () => {
     const { manager } = setup()
     const options = await manager.list()
     expect(options.map((option) => [option.id, option.source, option.installed])).toEqual([
-      [MODEL.id, 'sotto', false],
       [SOTTO_ULTRA.id, 'sotto', false],
+      [MODEL.id, 'sotto', false],
       [SOTTO_V2.id, 'sotto', false],
     ])
-    expect(options[0]).toMatchObject({ name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', bytes: MODEL_BYTES })
+    expect(options[1]).toMatchObject({ name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', bytes: MODEL_BYTES })
     expect(options[2]).toMatchObject({ name: 'Parakeet v2', languages: 'English only' })
   })
 
@@ -274,13 +276,13 @@ describe('SpeechModelManager', () => {
     expect(ultra).not.toBeNull()
 
     expect(await manager.choose(SOTTO_V2.id)).toBe(true)
-    expect(stores[1]!.get()).toEqual({ state: 'missing' })
+    expect(stores[0]!.get()).toEqual({ state: 'missing' })
     await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
     expect(loadEngine).toHaveBeenLastCalledWith(join(directory, SOTTO_V2.id))
     expect(manager.currentEngine()).not.toBe(ultra)
     expect(fetchFn).toHaveBeenCalledTimes(2)
-    expect(await stores[1]!.isDownloaded()).toBe(true)
-    expect(await stores[0]!.isDownloaded()).toBe(false)
+    expect(await stores[0]!.isDownloaded()).toBe(true)
+    expect(await stores[1]!.isDownloaded()).toBe(false)
   })
 
   it('keeps whichever of Sotto\'s models is already downloaded when nothing is chosen', async () => {
@@ -289,6 +291,18 @@ describe('SpeechModelManager', () => {
     await manager.start()
     expect(choice()).toBe(SOTTO_V2.id)
     expect(manager.status()).toEqual({ state: 'ready' })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('keeps Parakeet v3 for an install with nothing chosen, even with Ultra, the suggestion, here too', async () => {
+    const here = setup()
+    await here.stores[0]!.ensure()
+    await here.store.ensure()
+    const { manager, choice, loadEngine, sottoEngine, fetchFn } = setup()
+    await manager.start()
+    expect(choice()).toBe(MODEL.id)
+    expect(manager.currentEngine()).toBe(sottoEngine)
+    expect(loadEngine).toHaveBeenCalledExactlyOnceWith(join(directory, MODEL.id))
     expect(fetchFn).not.toHaveBeenCalled()
   })
 

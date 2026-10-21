@@ -13,10 +13,10 @@ import {
 } from '../../../src/shared/speechModel'
 
 describe("Sotto's speech models", () => {
-  it('offers Parakeet v3, Parakeet Ultra and Parakeet v2, in that order', () => {
+  it('offers Parakeet Ultra first, as the suggestion, then Parakeet v3 and Parakeet v2', () => {
     expect(SOTTO_SPEECH_MODELS.map((model) => [model.name, model.maker, model.languages])).toEqual([
-      ['Parakeet v3', 'NVIDIA', '25 European languages'],
       ['Parakeet Ultra', 'Moondream', '25 European languages'],
+      ['Parakeet v3', 'NVIDIA', '25 European languages'],
       ['Parakeet v2', 'NVIDIA', 'English only'],
     ])
     expect(new Set(SOTTO_SPEECH_MODELS.map((model) => model.id)).size).toBe(3)
