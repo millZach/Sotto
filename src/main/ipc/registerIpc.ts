@@ -159,6 +159,7 @@ const settingKeys = [
   'babysitPullRequests',
   'resumeThreadsAfterRestart',
   'workerRoles',
+  'watcherSettlesFinishedThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',

@@ -163,6 +163,10 @@ export class WatcherWakeUp {
   private readonly toldAttention = new Map<string, ReadonlySet<string>>()
   /** What each made wake-up's evidence carried of its pull requests, which Watcher has been told once it is acknowledged. */
   private readonly carriedAttention = new Map<string, ReadonlySet<string>>()
+  /** Each watched thread's finished turn as the last pass saw it, so its turn-end news has been made (Settle finished threads). */
+  private readonly turnsEnded = new Map<string, string>()
+  /** Events in a wake-up that has not yet left Watcher's queue, by ID, with their thread's key. */
+  private readonly carrying = new Map<string, string>()
   /** Busy finishes whose ripening has counted as news that needs Watcher, once each. */
   private readonly ripened = new Set<string>()
   /** Set while evidenceChanged makes an event: the pull request facts evidence does not hold, as one digest. */
@@ -413,6 +417,7 @@ export class WatcherWakeUp {
    */
   settled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
     if (!this.started || this.closed) return
+    for (const event of events) this.carrying.delete(event.id)
     if (outcome !== 'told') for (const event of events) this.rememberPending.delete(event.id)
     for (const event of events) {
       const carried = this.carriedAttention.get(event.id)
@@ -654,6 +659,9 @@ export class WatcherWakeUp {
     const ready = due.filter(event => !stays(event))
     const events = this.worthTelling(ready) ? ready : []
     if (events.length) this.pending = due.filter(stays)
+    // On its way from here until its wake-up leaves Watcher's queue, or goes back to waiting.
+    for (const event of events) this.carrying.set(event.id, targetKey(event.target))
+    while (this.carrying.size > 1_000) this.carrying.delete(this.carrying.keys().next().value!)
     if (this.closed) return
     // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
     if (!events.length && !this.rememberPending.size) { if (held.size) this.batch(); return }
@@ -662,7 +670,7 @@ export class WatcherWakeUp {
     const retries = this.retries
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
-      let failed = false
+      let failed = false, delivered = false
       // A fresh pass after the wait: the state may have moved, but one recheck reads it once for every event.
       const valid = news && { ...news, events: this.withPassReads(() => this.stillDue(news.events)) }
       // What went stale while it waited may leave a thread's own facts alone, which wake no one: they wait with the rest.
@@ -680,6 +688,7 @@ export class WatcherWakeUp {
             for (const event of valid.events) if (event.kind === 'evidence-changed') { this.toldLocalAs(event); this.carriedAttention.set(event.id, this.evidence.attention(event.target)) }
             while (this.carriedAttention.size > 2_000) this.carriedAttention.delete(this.carriedAttention.keys().next().value!)
             for (const event of valid.events) this.rememberPending.add(event.id)
+            delivered = true
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
           } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
         } catch {
@@ -689,6 +698,8 @@ export class WatcherWakeUp {
           failed = this.canDeliver()
         }
       }
+      // What did not go is waiting again or no longer true; only a wake-up that went is still on its way.
+      for (const event of events) if (!delivered || !valid!.events.some(item => item.id === event.id)) this.carrying.delete(event.id)
       const ids = [...this.rememberPending]
       if (ids.length) {
         try {
@@ -809,6 +820,7 @@ export class WatcherWakeUp {
           const endsBefore = new Set(ends())
           let settles = false
           if (finished) {
+            this.turnsEnded.set(key, finished.id)
             // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
             const operationId = this.options.answers?.(target, thread, this.record())
             const answers = operationId ? { operationId } : {}
@@ -871,6 +883,7 @@ export class WatcherWakeUp {
     }
     this.lookedAt = lookedAt; this.sawThreads = targets; this.threadKeys = keys
     for (const [key, progress] of this.progress) if (!targets.has(key)) { progress.cancel?.(); this.progress.delete(key) }
+    for (const key of this.turnsEnded.keys()) if (!watched.has(key)) this.turnsEnded.delete(key)
     this.evidence.removeMissing(targets)
     for (const { participant, key } of this.workers(true)) if (participant.state === 'taken-over') this.event('taken-over', participant.target, participant.takeover, {}, key)
     // A receipt for Watcher's own send wakes it only when the send did not plainly go: failed, refused or uncertain.
@@ -1023,6 +1036,18 @@ export class WatcherWakeUp {
    * Whether each of these events may still go, asked as one pass: main prunes its queued wake-ups after every pass, and
    * asking for each queued event alone read the merged snapshot and the record once per event (#1070).
    */
+  /**
+   * Whether Watcher has heard all there is of a watched thread's finished turn, for Settle finished threads: a pass saw
+   * that turn end, so its news was made, and none of the thread's news that needs Watcher still waits to go or rides a
+   * wake-up that has not left Watcher's queue. A thread's own facts alone wake no one, so they hold nothing back.
+   */
+  heardAllOf(target: WatcherThreadTarget, turnId: string): boolean {
+    if (!this.started || this.closed) return false
+    const key = targetKey(target)
+    if (this.turnsEnded.get(key) !== turnId) return false
+    for (const carried of this.carrying.values()) if (carried === key) return false
+    return !this.withPassReads(() => this.pending.some(event => targetKey(event.target) === key && (event.kind !== 'evidence-changed' || this.attends(event))))
+  }
   dueAll(events: readonly WatcherEvent[]): boolean[] { return this.withPassReads(() => events.map(event => this.due(event))) }
   due(event: WatcherEvent): boolean {
     if (!this.started || this.closed) return false
@@ -1071,6 +1096,6 @@ export class WatcherWakeUp {
     if (busyFinish(event) && thread.lastTurn && thread.lastTurn.id !== event.turnId) return true
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
-  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
+  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear(); this.carrying.clear() }
   async drained(): Promise<void> { await this.tail }
 }

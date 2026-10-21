@@ -1,9 +1,11 @@
 /* Settings, under Watcher: a card per worker role (#1041), the prototype's variant C. Each card picks a model, an effort
    and a permission with the New thread dialog's field-style controls, and lists its defaults in order. Orchestrating is
    a wide card beside a drawing of Watcher's composer chips. Two columns, one in a narrow window. */
-.worker-roles { display: grid; gap: 10px; margin-top: 6px; container-type: inline-size; }
-.worker-roles__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
-.worker-roles__head h3 { margin: 0; color: var(--tt-text); font-size: 15px; font-weight: 600; }
+/* Its heading is a Settings group heading, as Watched threads' above it is, with Reset all on the same line. */
+.worker-roles { display: grid; gap: 10px; margin-top: 26px; container-type: inline-size; }
+.worker-roles__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding-bottom: 6px; border-bottom: 1px solid var(--tt-hairline); }
+.worker-roles__head h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.worker-roles__head h3 > svg { flex: none; color: var(--tt-text-muted); }
 .worker-roles__reset-all { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; border-radius: 4px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .worker-roles__reset-all:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
 .worker-roles__reset-all:disabled { color: var(--tt-text-muted); cursor: default; }

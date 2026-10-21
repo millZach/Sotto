@@ -248,6 +248,7 @@ import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
+import type { WatcherAutoSettleEvent } from './agents/watcher'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
@@ -307,6 +308,7 @@ type NativeDiagnostic =
   | 'worktree-cleanup-skipped'
   | 'thread-auto-settled'
   | 'thread-auto-settle-skipped'
+  | WatcherAutoSettleEvent
   | GitHubRateLimitEvent
   | BabysitEvent
   | ClaudeAdapterEvent
@@ -858,6 +860,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
+    watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
@@ -1480,6 +1483,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       worktreeCleanup?.settingsChanged()
+      localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
