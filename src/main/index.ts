@@ -1254,7 +1254,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           return platform === 'linux' ? icon.resize({ width: 44, height: 44 }) : icon
         },
         markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
-        createTray: (icon) => new Tray(icon),
+        guid: profile.trayGuid,
+        createTray: (icon, guid) => guid === null ? new Tray(icon) : new Tray(icon, guid),
         tooltip: buildName,
       })
     : { setContextMenu: () => undefined, destroy: () => undefined }
