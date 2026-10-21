@@ -71,10 +71,12 @@ export const PARAKEET_V2: SottoSpeechModel = {
 }
 
 /**
- * Every model Sotto downloads, in the order the picker offers them. Parakeet v3 stays first: it is
- * the one an existing install already has.
+ * Every model Sotto downloads, in the order the picker offers them. Parakeet Ultra comes first, so
+ * setup suggests it to someone choosing (ADR-0094); it is v3 trained further, with the same
+ * languages, and more accurate. An install that already has v3 keeps it: the order only changes
+ * what is suggested, never what is chosen.
  */
-export const SOTTO_SPEECH_MODELS: readonly SottoSpeechModel[] = [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2]
+export const SOTTO_SPEECH_MODELS: readonly SottoSpeechModel[] = [PARAKEET_ULTRA, PARAKEET_V3, PARAKEET_V2]
 
 /** The Sotto model with this id, or undefined for a model already on this computer or one not offered. */
 export function sottoSpeechModel(id: string | null): SottoSpeechModel | undefined {

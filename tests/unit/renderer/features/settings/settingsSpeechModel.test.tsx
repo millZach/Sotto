@@ -5,11 +5,11 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
-import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, sottoSpeechModelOption } from '../../../../../src/shared/speechModel'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModelOption } from '../../../../../src/shared/speechModel'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
 
 const picker = (): HTMLSelectElement => screen.getByRole('combobox', { name: 'Speech model' })
-const DOWNLOADS = [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2].map((model) => sottoSpeechModelOption(model, false))
+const DOWNLOADS = SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, false))
 const groups = (): string[] => [...picker().querySelectorAll('optgroup')].map(group => group.label)
 const options = (): string[] => within(screen.getByRole('combobox', { name: 'Speech model' })).getAllByRole('option').map(option => option.textContent ?? '')
 
@@ -57,13 +57,13 @@ describe('Settings → Transcription speech model', () => {
   it.each(['win32', 'linux'] as const)('offers Sotto\'s three models as downloads with their sizes on %s', async (platform) => {
     render(<SettingsView {...baseProps({ platform, speechModel: { state: 'missing' }, speechModels: DOWNLOADS, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: null } })} />)
     await selectCategory('Transcription')
-    expect(options()).toEqual(['Choose a model', 'Parakeet v3, 670 MB', 'Parakeet Ultra, 671 MB', 'Parakeet v2, 661 MB'])
+    expect(options()).toEqual(['Choose a model', 'Parakeet Ultra, 671 MB', 'Parakeet v3, 670 MB', 'Parakeet v2, 661 MB'])
     expect(groups()).toEqual(['Download'])
   })
 
   it('offers what is on a Mac first and a download only of models it does not have', async () => {
     const coreMl = { ...ULTRA_MODEL, name: 'Parakeet Ultra (Core ML)' }
-    render(<SettingsView {...baseProps({ platform: 'darwin', speechModels: [coreMl, DOWNLOADS[0]!, DOWNLOADS[2]!], settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: coreMl.id } })} />)
+    render(<SettingsView {...baseProps({ platform: 'darwin', speechModels: [coreMl, DOWNLOADS[1]!, DOWNLOADS[2]!], settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: coreMl.id } })} />)
     await selectCategory('Transcription')
     expect(options()).toEqual(['Parakeet Ultra (Core ML)', 'Parakeet v3, 670 MB', 'Parakeet v2, 661 MB'])
     expect(groups()).toEqual(['Already on this computer', 'Download'])
@@ -81,11 +81,13 @@ describe('Settings → Transcription speech model', () => {
       const onChooseSpeechModel = await renderPicker()
       // The key's own change is stopped, so the list never fires a change of its own.
       expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(false)
-      expect(picker()).toHaveValue(PARAKEET_V3.id)
-      expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(false)
       expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
+      expect(fireEvent.keyDown(picker(), { key: 'ArrowDown' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_V3.id)
       expect(fireEvent.keyDown(picker(), { key: 'End' })).toBe(false)
       expect(picker()).toHaveValue(PARAKEET_V2.id)
+      expect(fireEvent.keyDown(picker(), { key: 'ArrowUp' })).toBe(false)
+      expect(picker()).toHaveValue(PARAKEET_V3.id)
       expect(fireEvent.keyDown(picker(), { key: 'ArrowUp' })).toBe(false)
       expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
       expect(screen.getByText('Press Enter to download Parakeet Ultra, 671 MB, and switch dictation to it.')).toBeVisible()
@@ -97,7 +99,7 @@ describe('Settings → Transcription speech model', () => {
       fireEvent.keyDown(picker(), { key: 'ArrowDown' })
       fireEvent.keyDown(picker(), { key: 'ArrowDown' })
       expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(false)
-      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
+      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_V3.id)
     })
 
     it('goes back to the chosen model on Escape or on leaving the list', async () => {
@@ -115,9 +117,9 @@ describe('Settings → Transcription speech model', () => {
     it('goes to a model by its first letter without choosing it', async () => {
       const onChooseSpeechModel = await renderPicker()
       expect(fireEvent.keyDown(picker(), { key: 'p' })).toBe(false)
-      expect(picker()).toHaveValue(PARAKEET_V3.id)
-      fireEvent.keyDown(picker(), { key: 'p' })
       expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
+      fireEvent.keyDown(picker(), { key: 'p' })
+      expect(picker()).toHaveValue(PARAKEET_V3.id)
       expect(onChooseSpeechModel).not.toHaveBeenCalled()
     })
 
@@ -127,8 +129,8 @@ describe('Settings → Transcription speech model', () => {
       fireEvent.keyDown(picker(), { key: 'ArrowDown' })
       fireEvent.mouseDown(picker())
       expect(picker()).toHaveValue('')
-      await userEvent.selectOptions(picker(), 'Parakeet Ultra, 671 MB')
-      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
+      await userEvent.selectOptions(picker(), 'Parakeet v3, 670 MB')
+      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_V3.id)
     })
 
     it('goes back to the chosen model when a key opens the list', async () => {
@@ -156,9 +158,9 @@ describe('Settings → Transcription speech model', () => {
     expect(picker()).toHaveValue('')
     expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(true)
     expect(fireEvent.keyDown(picker(), { key: 'p' })).toBe(false)
-    expect(picker()).toHaveValue(PARAKEET_V3.id)
+    expect(picker()).toHaveValue(PARAKEET_ULTRA.id)
     expect(onChooseSpeechModel).not.toHaveBeenCalled()
     expect(fireEvent.keyDown(picker(), { key: 'Enter' })).toBe(false)
-    expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_V3.id)
+    expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
   })
 })
