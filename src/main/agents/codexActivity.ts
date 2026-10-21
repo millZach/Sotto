@@ -73,6 +73,8 @@ const codexActivityId = (turnId: string, itemId: string): string => `codex-activ
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
 /** How many of one agent's assignments a conversation remembers having opened, so a reread recognises them. */
 const OPENED_KEPT = 200
+/** How many messages held live a conversation remembers the time of. */
+const MESSAGES_TIMED = 200
 /** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
 const ROOT_PATH = '/root'
 const parentPath = (path: string): string => path.slice(0, path.lastIndexOf('/')) || ROOT_PATH
@@ -122,6 +124,11 @@ export class CodexActivityProjection {
    * bounded activity window (#1261). A history read adds none, so replaying old assignments never pushes out new ones.
    */
   private readonly opened = new WeakMap<ActivityConversation, Map<string, Set<string>>>()
+  /**
+   * When each message held live came, by its item's activity ID, per conversation, the newest MESSAGES_TIMED kept: however
+   * often history is read again before the agent starts, its assignment is timed from the message.
+   */
+  private readonly messageTimes = new WeakMap<ActivityConversation, Map<string, number>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
@@ -334,7 +341,16 @@ export class CodexActivityProjection {
       // message over, keeping when it came, so the history's own later completion can end it, as after a runtime ended.
       if (context.phase === 'history' && existing && existing.context.phase !== 'history') {
         if (existing.item.id === item.id) waiting.set(child, { ...existing, context })
-      } else waiting.set(child, { item, context, senderPath, ...context.phase === 'history' ? {} : { at: this.now() } })
+      } else {
+        const times = this.messageTimes.get(thread) ?? new Map<string, number>()
+        if (context.phase !== 'history') {
+          times.delete(itemActivityId); times.set(itemActivityId, this.now())
+          while (times.size > MESSAGES_TIMED) times.delete(times.keys().next().value!)
+          this.messageTimes.set(thread, times)
+        }
+        const at = times.get(itemActivityId)
+        waiting.set(child, { item, context, senderPath, ...at !== undefined ? { at } : {} })
+      }
       this.messaged.set(thread, waiting)
       return
     }

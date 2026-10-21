@@ -229,7 +229,8 @@ describe('observational subagent roster metadata', () => {
       const source = conversation('source')
       const items = [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']] as const
       read(projection, source, 'completed', items)
-      // A reread lands between the follow-up and the agent's own start.
+      // Two rereads land between the follow-up and the agent's own start.
+      read(projection, source, 'history', items)
       read(projection, source, 'history', items)
       now = 2_000
       projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
