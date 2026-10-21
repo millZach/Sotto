@@ -18,7 +18,7 @@ import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import type { WatcherRecord } from '../../src/shared/watcher'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import { addWatcherHistory, OWNER_SCALE, ownerRequestDrafts } from '../fixtures/ownerScale'
-import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * `docs/perf/2026-10-15-main-freeze.md`: a live profile of the owner's Sotto, with 232 threads in the
@@ -36,7 +36,8 @@ import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto 
  * With `SOTTO_PERF_ASSERT=1` as well, the switch every stopwatch budget takes, it fails when main stalls past
  * `FREEZE_LIMITS`; the nightly Main freeze workflow runs it that way. Each case also reports what the window did: frames
  * drawn, state broadcasts main sent it, time spent handling each key and in long tasks. `SOTTO_FREEZE_PROFILE` names a
- * folder to write a CPU profile of the window per case into. The window must stay on screen: one minimized, covered or
+ * folder to write a CPU profile of the window per case into, and `SOTTO_FREEZE_SCREENSHOTS` one for a screenshot of it at
+ * 1280x800 halfway through each case's typing. The window must stay on screen: one minimized, covered or
  * behind a locked screen draws about one frame a second, and every keystroke then reads as half a second (October 20,
  * 2026). A case that drew too few frames is marked invalid in what it prints, and with `SOTTO_PERF_ASSERT=1` it fails.
  * `SOTTO_FREEZE_THREADS` sets the padding, and scales the rest of the history with it, for a quick check of the setup. `docs/perf/2026-10-15-main-freeze.md` has what the numbers mean and where to record a run's results.
@@ -49,6 +50,8 @@ const PADDING_THREADS = Number(process.env.SOTTO_FREEZE_THREADS ?? 230)
 const history = (count: number): number => Math.max(1, Math.round(count * PADDING_THREADS / 230))
 /** Stopwatch limits are opt-in through the switch every stopwatch budget takes (`docs/ci.md`, `tests/fixtures/perfBudget.ts`). */
 const PERF_ASSERT = process.env.SOTTO_PERF_ASSERT === '1'
+/** A folder for a screenshot of the window halfway through each case's typing, at 1280x800, for a verification note. */
+const SCREENSHOTS = process.env.SOTTO_FREEZE_SCREENSHOTS
 /**
  * The most main may stall in a case, by how many threads stream, before the nightly run fails on a GitHub-hosted Windows
  * runner: the longest stretch without going idle, and how many stretches of 100 ms or more in its 15 seconds. First set
@@ -330,6 +333,7 @@ async function runCase(launched: LaunchedSotto, composer: Locator, bareStreamIds
     streamReplies(launched.page, bareStreamIds, STREAM_DURATION_MS),
     // A frozen main holds every key, so typing may take far longer than the stream; the limits below say so, not a timeout.
     composer.pressSequentially(SYNTHETIC_TEXT, { delay: KEY_DELAY_MS, timeout: 10 * STREAM_DURATION_MS }),
+    SCREENSHOTS ? setTimeout(STREAM_DURATION_MS / 2).then(() => launched.page.screenshot({ path: join(SCREENSHOTS, `${name.replace(/[^a-z0-9]+/giu, '-').replace(/-$/u, '')}-1280x800.png`) })) : undefined,
   ])
   const freeze = await endFreezeMonitor(launched)
   const window = await endWindowProbe(launched, probe, name)
@@ -387,6 +391,7 @@ test('main stays responsive while threads stream with the owner\'s history', asy
       const launched = await launchSotto('success', profile)
       const { page } = launched
       try {
+        if (SCREENSHOTS) await resizeWindow(launched, 1280, 800)
         // The fixture's provider keeps its sessions only while the app runs, so each thread starts one now. Watcher's own
         // takes no message from the window: main refuses a send to it without the launch profile a real Watcher has.
         await registerThreads(page, paddingThreadIds.filter(id => bareEntityId(id) !== watcherThread))

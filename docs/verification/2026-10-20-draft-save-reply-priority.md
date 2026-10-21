@@ -7,10 +7,12 @@ this note records the runs that prove it in the running app.
 
 ## How it was measured
 
-`tests/e2e/main-freeze.spec.ts` with `SOTTO_PERF_BENCH=1`, at the owner's scale: 272 threads on this computer with
-provider sessions, Watcher's record (5 standing watches, 160 requests, 150 operations), 256 answer retirements and a
-paired headless host with 40 threads. Each case types 40 keys into an idle thread's composer over 15 seconds, with
-nothing streaming, then one thread, then three. Builds ran one at a time, with 7 to 9 GB of memory free.
+`tests/e2e/main-freeze.spec.ts` with `SOTTO_PERF_BENCH=1` and its default scale, with no `SOTTO_FREEZE_THREADS`
+override: 232 threads on this computer (230 padding threads and the fixture's 2), each with a provider session, and a
+paired headless host with 40 more, so 272 in the sidebar. Watcher's record held 5 standing watches, 160 requests and 150
+operations, and `request-drafts.json` 256 answer retirements, 40 of them on the paired host. Each case types 40 keys into
+an idle thread's composer over 15 seconds, with nothing streaming, then one thread, then three. Builds ran one at a
+time, with 7 to 9 GB of memory free.
 
 - Keystroke latency: keydown to the next animation frame after the composer's input event.
 - Long tasks: the window's own `longtask` entries during the case.
@@ -38,6 +40,16 @@ main and with the fixes.
 
 With the change, the window drew 57, 50 and 48 frames a second in the three cases; without it, 55, 37 and 26.
 
+A later run with this change, #1230 from `main` and #1231 at its newest commit (c5bde672c, PR #1243), a current Watcher
+in the record and the window at 1280x800, with `SOTTO_PERF_ASSERT=1` and a screenshot halfway through each case's
+typing, passed in 2.5 minutes: no stall of 100 ms or more in any case, keystrokes p50 / p95 of 7 / 28, 22 / 31 and
+11 / 25 ms, and 0, 2 and 2 long tasks.
+
+![Typing in Docs at 1280x800 while three threads stream at the owner's scale](../../artifacts/draft-save-reply-priority/typing-three-threads-streaming-1280x800.png)
+
+The window halfway through the three-thread case: the three streaming threads working at the top of the sidebar, and
+the synthetic text being typed into Docs' composer.
+
 What it shows:
 
 - With main no longer freezing, every draft save's reply reached the window, and each urgent commit rendered the whole
@@ -57,6 +69,7 @@ The console output of each run, as JSON per case (counts and timings only), is i
 - `both-fixes-and-reply-priority-on-screen.json`
 - `both-fixes-minimized.json`
 - `gate-alone-minimized.json`
+- `screenshot-run-on-screen.json`, the run the screenshot comes from, with `typing-three-threads-streaming-1280x800.png`
 
 The runs without the change used the keys lane's diagnostic build of the spec, which also printed each case's IPC
 counts (`ipc`), the split of each key's time (`keySplit`) and frames drawn (`frames`). The run with the change used the

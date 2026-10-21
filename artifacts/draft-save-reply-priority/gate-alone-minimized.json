@@ -2,7 +2,7 @@
   "run": "gate-alone-minimized",
   "build": "origin/main at 9376061ef with the gate",
   "window": "minimized",
-  "scale": "272 threads with Watcher's record, a 40-thread remote host and 256 answer retirements",
+  "scale": "232 threads on this computer (the spec's default: 230 padding threads, no SOTTO_FREEZE_THREADS override, and the fixture's 2), each with a provider session, and a paired headless host with 40 more, 272 in the sidebar; Watcher's record with 5 standing watches, 160 requests and 150 operations; 256 answer retirements, 40 of them remote",
   "measured": "October 20, 2026, Windows 11, tests/e2e/main-freeze.spec.ts with SOTTO_PERF_BENCH=1",
   "cases": [
     {
