@@ -29,13 +29,14 @@ import { z } from 'zod'
 import { AgentControl } from '../../src/main/agents/control'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import type { AgentHostSnapshot, AgentState } from '../../src/shared/agents'
+import type { WatcherThreadTarget } from '../../src/shared/watcher'
 import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from '../fixtures/ownerScalePipeline'
 import type { OwnerScale } from '../fixtures/ownerScale'
 
 /** The kinds of work counted. Each is per update while streaming, and per action for the user's actions. */
 const KINDS = ['copies', 'copiedObjects', 'wholeStateCopies', 'wholeCopyThreads', 'wholeCopyObjects', 'unsharedPublications', 'routerShellBuilds',
-  'coordinatorShellBuilds', 'threadVisits', 'watcherRecordCopies', 'watcherRecordObjects', 'watcherRecordComparisons', 'ownerLookups', 'stringifies',
-  'providerIdParses', 'schemaErrors'] as const
+  'coordinatorShellBuilds', 'threadVisits', 'watcherRecordCopies', 'watcherRecordObjects', 'watcherRecordComparisons', 'unwatchedThreadPasses', 'ownerLookups',
+  'stringifies', 'providerIdParses', 'schemaErrors'] as const
 type Kind = typeof KINDS[number]
 type Counts = Record<Kind, number>
 
@@ -211,6 +212,13 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
   if (pipeline.watcher) {
     if (!('observedAt' in pipeline.watcher.wakes)) throw new Error('Watcher\'s wake-up pass no longer keeps observedAt; hold its pass to every update another way.')
     Object.defineProperty(pipeline.watcher.wakes, 'observedAt', { get: () => -Infinity, set: () => undefined })
+    // The pass asks `progress` for each thread it works through. It works through the threads Watcher watches and skips the
+    // rest; working out news for every thread was #1062's cost.
+    const wakes = pipeline.watcher.wakes as unknown as { options?: { progress?: (target: WatcherThreadTarget) => string | undefined } }
+    const progress = wakes.options?.progress
+    if (!wakes.options || typeof progress !== 'function') throw new Error('Watcher\'s wake-up pass no longer asks options.progress for each thread it works through; count the threads it works through another way.')
+    const watched = (target: WatcherThreadTarget): boolean => pipeline.control.watcherRecordView().watches?.some(watch => watch.target.hostId === target.hostId && watch.target.threadId === target.threadId) === true
+    wakes.options.progress = target => { if (counter.measuring && !watched(target)) bump('unwatchedThreadPasses'); return progress(target) }
   }
   try {
     await pass(SETTLE_MS)
@@ -265,6 +273,7 @@ const NAMES: Record<Kind, string> = {
   watcherRecordCopies: 'copies of Watcher\'s whole record',
   watcherRecordObjects: 'objects copied out of Watcher\'s record',
   watcherRecordComparisons: 'comparisons of Watcher\'s whole record',
+  unwatchedThreadPasses: 'threads Watcher\'s wake-up pass worked through that it does not watch',
   ownerLookups: 'look-ups of an answer\'s thread by the answer-draft store',
   stringifies: 'JSON.stringify calls',
   providerIdParses: 'reads of a provider out of a public model or project ID (how stable filters the providers it holds)',
@@ -295,14 +304,16 @@ const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'whole
  * its budget to the new count.
  */
 const KNOWN_HISTORY_GROWTH: readonly { readonly track: OwnerScaleTrack; readonly kind: Kind; readonly growth: Partial<Record<Scenario, number>>; readonly why: string }[] = [
-  { track: 'owl', kind: 'threadVisits', growth: { '1 streaming': 1.28, '3 streaming': 1.282, saveAnswerDraft: 1.212, typeInComposer: 1.32, openThread: 1.249, send: 1.223 },
+  { track: 'owl', kind: 'threadVisits', growth: { '1 streaming': 1.256, '3 streaming': 1.258, saveAnswerDraft: 1.2, typeInComposer: 1.29, openThread: 1.232, send: 1.209 },
     why: "Watcher's room reading every thread once for each watched thread, on every room update" },
-  { track: 'owl', kind: 'copiedObjects', growth: { '1 streaming': 1.578, '3 streaming': 1.422, saveAnswerDraft: 1.297, typeInComposer: 1.427, openThread: 1.249, send: 1.257 },
+  { track: 'owl', kind: 'copiedObjects', growth: { '1 streaming': 1.579, '3 streaming': 1.423, saveAnswerDraft: 1.298, typeInComposer: 1.428, openThread: 1.249, send: 1.258 },
     why: "Watcher's room copying its requests, operations and watches for every publish, and a command copying Watcher's whole record" },
-  { track: 'owl', kind: 'stringifies', growth: { saveAnswerDraft: 2.752 }, why: 'the answer-draft store building a key for every retirement on every save' },
+  { track: 'owl', kind: 'stringifies', growth: { '1 streaming': 1.122, '3 streaming': 1.119, typeInComposer: 1.756, openThread: 2.326 },
+    why: "Watcher's wake-up pass building each watched thread's keys afresh, about eleven times on every update" },
+  { track: 'owl', kind: 'stringifies', growth: { saveAnswerDraft: 2.93 }, why: 'the answer-draft store building a key for every retirement on every save' },
   { track: 'stable', kind: 'stringifies', growth: { saveAnswerDraft: 3.583 }, why: 'the answer-draft store building a key for every retirement on every save' },
   { track: 'stable', kind: 'stringifies', growth: { typeInComposer: 1.429, openThread: 1.632 }, why: 'the answer-recovery pass building a key for every remote retirement' },
-  { track: 'owl', kind: 'stringifies', growth: { send: 1.415 }, why: "each save of agents.json checking Watcher's whole record" },
+  { track: 'owl', kind: 'stringifies', growth: { send: 1.499 }, why: "each save of agents.json checking Watcher's whole record" },
   { track: 'stable', kind: 'stringifies', growth: { send: 1.517 }, why: "each save of agents.json checking Watcher's whole record" },
   { track: 'owl', kind: 'watcherRecordObjects', growth: { typeInComposer: 3.885, openThread: 3.885, send: 3.885 }, why: "a command copying Watcher's whole record" },
 ]
@@ -316,20 +327,20 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  */
 const BUDGET: Record<OwnerScaleTrack, Record<Scenario, Counts>> = {
   owl: {
-    '1 streaming': { copies: 13, copiedObjects: 8094.54, wholeStateCopies: 2.04, wholeCopyThreads: 508.8, wholeCopyObjects: 4410.25, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 5499.77, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 489, providerIdParses: 0, schemaErrors: 0 },
-    '3 streaming': { copies: 16.16, copiedObjects: 9990.23, wholeStateCopies: 2.04, wholeCopyThreads: 511, wholeCopyObjects: 4864.71, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 5529.54, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 511.25, providerIdParses: 0, schemaErrors: 0 },
-    saveAnswerDraft: { copies: 21, copiedObjects: 25_896, wholeStateCopies: 5, wholeCopyThreads: 1114, wholeCopyObjects: 16_382, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 13_999, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 5, stringifies: 831, providerIdParses: 0, schemaErrors: 0 },
-    typeInComposer: { copies: 26, copiedObjects: 27_316, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 13_188, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 10_594, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, ownerLookups: 2, stringifies: 47, providerIdParses: 0, schemaErrors: 0 },
-    openThread: { copies: 40, copiedObjects: 42_436, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 29_806, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 12_936, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 70, providerIdParses: 0, schemaErrors: 0 },
-    send: { copies: 156, copiedObjects: 104_510, wholeStateCopies: 21, wholeCopyThreads: 5040, wholeCopyObjects: 72_429, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 34_077, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 3365, providerIdParses: 0, schemaErrors: 0 },
+    '1 streaming': { copies: 13, copiedObjects: 8099.54, wholeStateCopies: 2.04, wholeCopyThreads: 508.8, wholeCopyObjects: 4410.25, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 6041.77, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 509.54, providerIdParses: 0, schemaErrors: 0 },
+    '3 streaming': { copies: 16.16, copiedObjects: 9995.23, wholeStateCopies: 2.04, wholeCopyThreads: 511, wholeCopyObjects: 4864.71, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 6073.54, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 529.77, providerIdParses: 0, schemaErrors: 0 },
+    saveAnswerDraft: { copies: 21, copiedObjects: 25_906, wholeStateCopies: 5, wholeCopyThreads: 1114, wholeCopyObjects: 16_382, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 15_087, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 961, providerIdParses: 0, schemaErrors: 0 },
+    typeInComposer: { copies: 26, copiedObjects: 27_326, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 13_188, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 11_682, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 172, providerIdParses: 0, schemaErrors: 0 },
+    openThread: { copies: 40, copiedObjects: 42_446, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 29_806, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 14_024, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 193, providerIdParses: 0, schemaErrors: 0 },
+    send: { copies: 156, copiedObjects: 104_535, wholeStateCopies: 21, wholeCopyThreads: 5040, wholeCopyObjects: 72_429, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 36_801, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 3692, providerIdParses: 0, schemaErrors: 0 },
   },
   stable: {
-    '1 streaming': { copies: 10.64, copiedObjects: 4903.17, wholeStateCopies: 2.12, wholeCopyThreads: 527.09, wholeCopyObjects: 4556.48, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3850.09, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 515.17, providerIdParses: 5, schemaErrors: 0 },
-    '3 streaming': { copies: 14.05, copiedObjects: 6808.59, wholeStateCopies: 2.04, wholeCopyThreads: 509.9, wholeCopyObjects: 4853.89, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3850.26, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 0, stringifies: 486.12, providerIdParses: 5, schemaErrors: 0 },
-    saveAnswerDraft: { copies: 21, copiedObjects: 33_657, wholeStateCopies: 5, wholeCopyThreads: 1109, wholeCopyObjects: 16_342, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 9265, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0 },
-    typeInComposer: { copies: 21, copiedObjects: 21_754, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 16_968, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 10_331, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0 },
-    openThread: { copies: 36, copiedObjects: 38_345, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 33_545, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_979, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0 },
-    send: { copies: 143, copiedObjects: 97_440, wholeStateCopies: 22, wholeCopyThreads: 5302, wholeCopyObjects: 76_106, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 26_110, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, ownerLookups: 3, stringifies: 2876, providerIdParses: 31, schemaErrors: 0 },
+    '1 streaming': { copies: 10.64, copiedObjects: 4903.17, wholeStateCopies: 2.12, wholeCopyThreads: 527.09, wholeCopyObjects: 4556.48, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3850.09, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 515.17, providerIdParses: 5, schemaErrors: 0 },
+    '3 streaming': { copies: 14.05, copiedObjects: 6808.59, wholeStateCopies: 2.04, wholeCopyThreads: 509.9, wholeCopyObjects: 4853.89, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3850.26, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 486.12, providerIdParses: 5, schemaErrors: 0 },
+    saveAnswerDraft: { copies: 21, copiedObjects: 33_657, wholeStateCopies: 5, wholeCopyThreads: 1109, wholeCopyObjects: 16_342, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 9265, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0 },
+    typeInComposer: { copies: 21, copiedObjects: 21_754, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 16_968, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 10_331, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0 },
+    openThread: { copies: 36, copiedObjects: 38_345, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 33_545, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_979, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0 },
+    send: { copies: 143, copiedObjects: 97_440, wholeStateCopies: 22, wholeCopyThreads: 5302, wholeCopyObjects: 76_106, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 26_110, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 2876, providerIdParses: 31, schemaErrors: 0 },
   },
 }
 
@@ -417,19 +428,20 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
       if (all[kind] <= (growth === undefined ? few[kind] * SLACK.ratio + SLACK.plus : few[kind] * growth)) return []
       return [`${NAMES[kind]} grew from ${few[kind]} to ${all[kind]}${held ? `, more than the ${growth} times #1248 holds it to for ${held.why}` : ''}${grewAt(kind, quarterHistory.sites[scenario], owner.sites[scenario])}`]
     })
-    expect(history, `${what}, the work grew with the history (the owner's ${owner.threads} threads on this computer held, a quarter of their history ${show(few)}, all of it ${show(all)}): ${history.join('; ')}. Do work bounded by what changed, and read state without copying it.${WHERE}`).toEqual([])
+    // All three checks report, so a failure names everything that grew, along either line and against the budget.
+    expect.soft(history, `${what}, the work grew with the history (the owner's ${owner.threads} threads on this computer held, a quarter of their history ${show(few)}, all of it ${show(all)}): ${history.join('; ')}. Do work bounded by what changed, and read state without copying it.${WHERE}`).toEqual([])
     const ratio = owner.threads / quarterThreads.threads
     const threads = KINDS.flatMap(kind => {
       const allowed = (PER_THREAD.has(kind) ? fewThreads[kind] * ratio : fewThreads[kind]) * SLACK.ratio + SLACK.plus
       if (all[kind] <= allowed) return []
       return [`${NAMES[kind]} grew ${PER_THREAD.has(kind) ? 'faster than' : 'with'} the threads, from ${fewThreads[kind]} with ${quarterThreads.threads} threads to ${all[kind]} with ${owner.threads}${grewAt(kind, quarterThreads.sites[scenario], owner.sites[scenario])}`]
     })
-    expect(threads, `${what}, the work grew faster than the threads (the owner's history held, ${quarterThreads.threads} threads ${show(fewThreads)}, ${owner.threads} threads ${show(all)}): ${threads.join('; ')}. Work per thread must not depend on how many threads there are.${WHERE}`).toEqual([])
+    expect.soft(threads, `${what}, the work grew faster than the threads (the owner's history held, ${quarterThreads.threads} threads ${show(fewThreads)}, ${owner.threads} threads ${show(all)}): ${threads.join('; ')}. Work per thread must not depend on how many threads there are.${WHERE}`).toEqual([])
     const budget = BUDGET[track]?.[scenario]
     const over = budget ? KINDS.filter(kind => all[kind] > budget[kind]).map(kind => {
       const held = known(track, scenario, kind)
       return `${NAMES[kind]}: ${all[kind]}, budget ${budget[kind]}${held ? ` (today's count, held there until #1248 stops ${held.why})` : ''}`
     }) : ['no budget']
-    expect(over, `${what}, at the owner's scale the work is over its budget (${show(all)}): ${over.join('; ')}.`).toEqual([])
+    expect.soft(over, `${what}, at the owner's scale the work is over its budget (${show(all)}): ${over.join('; ')}.`).toEqual([])
   })
 })

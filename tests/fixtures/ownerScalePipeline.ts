@@ -10,6 +10,7 @@ import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from '../../src/main/agents/requestDraftOwners'
 import { RequestDraftService } from '../../src/main/agents/requestDrafts'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
+import { UsageService } from '../../src/main/agents/usageService'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
@@ -106,7 +107,7 @@ export interface OwnerScalePipeline {
 
 /**
  * Main at the owner's scale, wired as `src/main/index.ts` wires it on `track`: an event-sourced adapter built like
- * Claude's, the provider switch, the workspace, the coordinator, Watcher with a full record and open on this computer
+ * Claude's, the provider switch, the workspace, usage on Owl, the coordinator, Watcher with a full record and open on this computer
  * (Owl), the local host service, the desktop router with this computer and one connected remote host, the window's state
  * publisher with the answer-recovery pass it asks for on every publish, the answer-draft store with its retirements, the
  * Watcher room, and the host-update pill's busy check with one saved host on an older Sotto. `scale` sets this computer's
@@ -144,7 +145,11 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
-  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl })
+  // Usage is an Owl feature: it reads every activity publication of the workspace, beside the coordinator (runtime.ts).
+  const usage = owl ? new UsageService({ directory: root, host: workspace, acceptedPromptIdentities: identities => workspace.recordedUserMessages(identities) }) : undefined
+  usage?.start()
+  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
+    ...(usage ? { usage } : {}) })
   await control.start()
   await control.command({ type: 'connect' })
   const localHostId = control.hostId()!
@@ -152,8 +157,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, limit: () => 4 }) : undefined
   const tools = watcher ? new WatcherToolServer(watcher) : undefined
   if (tools) workspace.useWatcherTools(tools)
+  // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
+  await watcher?.recover()
   const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true, setLimit: async () => undefined })
-  const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
+  const service = new LocalHostService({ control, events: workspace, ...(usage ? { usage } : {}), ...(watcher ? { watcher } : {}) })
   const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
   watcher?.useRemoteHosts(router.watcherHosts())
@@ -218,7 +225,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const offCount = control.subscribe(() => { broadcasts++ })
   const stop = async (): Promise<void> => {
     offCount(); updates.dispose(); room?.dispose(); offState(); offDetail(); statePublisher.dispose(); detailPublisher.dispose(); router.dispose(); watcher?.close(); await tools?.close()
-    control.dispose(); workspace.disconnect(); await workspace.privacyChanged(); await registry.flush(); workspace.dispose()
+    control.dispose(); usage?.close(); workspace.disconnect(); await workspace.privacyChanged(); await registry.flush(); workspace.dispose()
   }
 
   const streamIds = streamSessions.map(idOf)
