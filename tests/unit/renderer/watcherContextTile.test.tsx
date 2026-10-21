@@ -52,7 +52,7 @@ const emptyKept = { decisions: [], rules: [], issues: [], updatedAt: null }
 function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
   return {
     current: identity(), currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
-    requests: [], watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at,
+    requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at,
     context: context(), state: { watching: [], kept: emptyKept }, ...patch,
   }
 }
@@ -69,7 +69,7 @@ function renderRoom(room: WatcherRoomState, answer: AgentState | null = agentSta
   vi.mocked(useOptionalAgents).mockReturnValue(connection)
   const ok = (next: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state: next })
   const bridge = {
-    get: vi.fn(async () => ok(room)), open: vi.fn(async () => ok(room)), setLimit: vi.fn(async () => ok(room)),
+    get: vi.fn(async () => ok(room)), open: vi.fn(async () => ok(room)),
     prepareStopAll: vi.fn(), stopAll: vi.fn(), onChanged: vi.fn(() => () => {}),
   } as unknown as WatcherBridge
   render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)

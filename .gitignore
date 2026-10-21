@@ -714,6 +714,10 @@ artifacts/macos-traffic-light-room/*
 !artifacts/macos-traffic-light-room/mac-header-dark-559px-1600x1000.png
 !artifacts/macos-traffic-light-room/mac-header-light-718px-1600x1000.png
 !artifacts/macos-traffic-light-room/readings.json
+artifacts/working-threads-warning/*
+!artifacts/working-threads-warning/line-11-dark-1280x800.png
+!artifacts/working-threads-warning/line-11-light-820x560.png
+!artifacts/working-threads-warning/line-10-light-820x560.png
 # Main freeze notice (#1233); commit only the captures docs/verification/main-freeze-notice.md cites.
 artifacts/main-freeze-notice/*
 !artifacts/main-freeze-notice/pill-1280x800-dark.png

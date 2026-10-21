@@ -25,7 +25,7 @@ async function fixture(workerHost = false, open = true) {
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, historyEnabled: () => true } })
   let control: AgentControl = f.control
-  const makeService = () => new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost })
+  const makeService = () => new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, workerHost })
   let service = makeService()
   let toolServer = new WatcherToolServer(service)
   workspace.host.useWatcherTools(toolServer)
@@ -268,18 +268,19 @@ it('gives a message queued while Watcher reads news a request of its own, though
   expect(request).toMatchObject({ state: 'active', rootUserMessageId: sent.messageId })
 })
 
-it('has no watched-count cap, keeps starts capped, and lets standing sends bypass start capacity', async () => {
+it('has no watched-count cap and no starts cap, and standing sends go alongside starts (#1183)', async () => {
   const f = await fixture(), requestId = await f.request()
   for (let index = 0; index < 10; index++) expect(await f.service.watchThread({ target: await f.create() })).toMatchObject({ status: 'ok' })
   expect(f.service.state().standingWatches).toHaveLength(10)
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   const start = () => ({ requestId, retryKey: randomUUID(), project: { hostId: f.control.hostId()!, projectId: f.project.id },
     modelId: f.model.id, title: 'Synthetic started worker', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic work' })
   expect(await f.call('start_thread', start())).toMatchObject({ status: 'ok' })
-  expect(await f.call('start_thread', start())).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  expect(await f.call('start_thread', start())).toMatchObject({ status: 'ok' })
+  expect(f.service.startsInFlight()).toBe(2)
   const watch = f.service.state().standingWatches![0]!
   expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target: watch.target, text: 'Synthetic continuation', delivery: 'now' }))
-    .toMatchObject({ status: 'ok', limits: { inFlight: 1 } })
+    .toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
 })
 
 it('bounds standing prompts by Watcher turn, retains retries across turns, and never revives a stopped scope', async () => {

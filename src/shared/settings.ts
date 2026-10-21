@@ -133,8 +133,6 @@ export interface AppSettings {
    * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
    */
   resumeThreadsAfterRestart: boolean
-  /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
-  watcherInFlightLimit: number
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
@@ -306,7 +304,6 @@ const fieldSchemas = {
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
-  watcherInFlightLimit: z.number().int().min(1).max(8),
   workerRoles: workerRoleChoicesSchema,
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
@@ -390,7 +387,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visualsInThreads: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
-  watcherInFlightLimit: 4,
   workerRoles: {},
   reducedMotion: 'system',
   microphoneId: null,
@@ -516,6 +512,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 
+  // Only the keys named here are read. One a version of Sotto no longer has, such as `watcherInFlightLimit`, the Threads
+  // in flight limit removed in #1183, is left behind here and gone from the file at the next save.
   return {
     version: parseField(persisted, 'version', defaults),
     theme: parseField(persisted, 'theme', defaults),
@@ -532,7 +530,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
-    watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),

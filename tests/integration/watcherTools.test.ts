@@ -12,7 +12,8 @@ import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherToolSchemas } from '../../src/shared/watcher'
+import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
+import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
@@ -31,9 +32,8 @@ async function fixture(history = true) {
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
-  let limit = 4
   const service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control,
-    historyEnabled: () => history, limit: () => limit })
+    historyEnabled: () => history })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -61,7 +61,7 @@ async function fixture(history = true) {
     return workspace.adapters[binding.provider as keyof typeof workspace.adapters].state.threads.find(item => item.id === binding.sessionId)!
   }
   return { ...f, workspace, service, tools, id, requestId, model, project, start, call, native,
-    setLimit: (value: number) => { limit = value }, finish: async (threadId: string) => {
+    finish: async (threadId: string) => {
       const binding = workspace.registry.byThread(threadId)!
       const native = workspace.adapters[binding.provider as keyof typeof workspace.adapters]
       const thread = native.state.threads.find(item => item.id === binding.sessionId)!
@@ -80,8 +80,7 @@ it('projects the local room and complete get without copying a coordinator shell
     const room = f.service.state(), complete = f.service.get()
     expect(shell).not.toHaveBeenCalled()
     expect(room).toMatchObject({ current: before.current, currentOptions: before.currentOptions,
-      watchedThreads: before.watchedThreads, requests: before.requests, receipts: before.receipts,
-      inFlight: before.inFlight, inFlightLimit: before.inFlightLimit })
+      watchedThreads: before.watchedThreads, requests: before.requests, receipts: before.receipts })
     expect(complete).toMatchObject({ status: 'ok', state: { current: before.current,
       currentOptions: before.currentOptions, requests: before.requests, receipts: before.receipts } })
   } finally { shell.mockRestore() }
@@ -139,11 +138,12 @@ it('lists host-setup jobs as protected and readable while refusing their mutatio
   expect(f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread).toBe(unread)
 })
 
-it('enforces distinct target capacity from the current main setting and four prompts per target without replenishing retries', async () => {
-  const f = await fixture(); f.setLimit(1)
+it('starts past the old Threads in flight limit and keeps four prompts per target without replenishing retries (#1183)', async () => {
+  const f = await fixture()
   const first = await f.call('start_thread', f.start())
   expect(first.status).toBe('ok')
-  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  // The old limit was one to eight; nothing refuses a start now, whatever is working.
+  for (let more = 0; more < 8; more++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   await f.finish(first.target.threadId)
   for (let count = 2; count <= 4; count++) {
@@ -155,6 +155,68 @@ it('enforces distinct target capacity from the current main setting and four pro
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic exhausted' }))
     .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
 })
+
+it('says in a start’s result, and only there, once more than ten threads are working on this computer (#1183)', async () => {
+  const f = await fixture()
+  const working = () => countWorkingThreads(f.control.watcherSnapshot().threads)
+  // Watcher's own thread is working on the user's request, and is not counted.
+  expect(working()).toBe(0)
+  for (let started = 1; started <= 10; started++) {
+    const result = await f.call('start_thread', f.start())
+    expect(result).toMatchObject({ status: 'ok' })
+    expect(result).not.toHaveProperty('warning')
+    expect(working()).toBe(started)
+  }
+  const input = f.start(), eleventh = await f.call('start_thread', input)
+  expect(eleventh).toMatchObject({ status: 'ok', warning: '11 threads are working. This computer may slow down or use its battery faster.' })
+  if (eleventh.status !== 'ok' || !('target' in eleventh)) throw new Error('start refused')
+  expect((eleventh as unknown as { limits: object }).limits).toEqual({ promptCount: 1, promptLimit: 4 })
+  // A retry reads the receipt again and says nothing of the count, even with ten others still working: its own thread
+  // has finished, and counting it again would invent an eleventh.
+  await f.finish(eleventh.target.threadId)
+  expect(working()).toBe(10)
+  const retried = await f.call('start_thread', input)
+  expect(retried).toMatchObject({ status: 'ok', receipt: { operationId: (eleventh as unknown as { receipt: { operationId: string } }).receipt.operationId } })
+  expect(retried).not.toHaveProperty('warning')
+  // A send is not a start, and says nothing of it.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: eleventh.target, delivery: 'now', text: 'Synthetic follow-up' }))
+    .not.toHaveProperty('warning')
+})
+
+it('saves at most eight reservations, so a build from before #1183 still reads the file, and rebuilds the rest on load', async () => {
+  const f = await fixture()
+  for (let started = 1; started <= 11; started++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  expect(f.service.startsInFlight()).toBe(11)
+  expect(f.control.watcherRecordView().reservations).toHaveLength(11)
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  // The Watcher record schema before #1183 is this one with at most eight reservations. A record it could not read would
+  // cost that build all of agents.json.
+  const older = watcherRecordSchema.refine(record => record.reservations.length <= 8)
+  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: unknown }
+  expect(older.safeParse(saved.watcher).success).toBe(true)
+  // This build puts back what the file left off, for the threads still working.
+  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(service.startsInFlight()).toBe(11)
+}, 40_000)
+
+it('rebuilds the reservations the file left off even when a saved one is pruned before Watcher recovers (#1183)', async () => {
+  const f = await fixture()
+  for (let started = 1; started <= 11; started++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: { reservations: { target: { threadId: string } }[] } }
+  expect(saved.watcher.reservations).toHaveLength(8)
+  // While Sotto is closed, one thread the file kept finishes: the threads observed at start prune its reservation before
+  // Watcher recovers, leaving seven in the record.
+  const finished = f.workspace.registry.byThread(saved.watcher.reservations[0]!.target.threadId)!
+  const native = f.workspace.adapters.codex.state.threads.find(item => item.id === finished.sessionId)!
+  native.status = 'idle'; native.lastTurn = { id: native.lastTurn?.id ?? randomUUID(), status: 'completed' }
+  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(service.startsInFlight()).toBe(10)
+}, 40_000)
 
 it('opens an unchanged busy Watcher and keeps a queued user follow-up in its original request with a new turn budget', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
@@ -352,7 +414,7 @@ it('keeps an existing-thread acknowledgement uncertain without consuming start c
   const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'synthetic_lost_ack' }
   const result = await f.call('send_to_thread', input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' } })
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).watcher.operations.at(-1).deliveryState).toBe('uncertain')
   const count = spy.mock.calls.length
   expect(await f.call('send_to_thread', input)).toEqual(result)
@@ -382,7 +444,7 @@ it('refuses a request appearing during the read without consuming new-thread sta
     .toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
   spy.mockRestore()
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_request_race')).toBe(false)
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
 })
 
 it('fences an admitted send still waiting on a read before targeted Stop', async () => {
@@ -419,7 +481,7 @@ it('reports the original reserved creation receipt after process loss before the
   const before = f.workspace.adapters.codex.commands.length
   expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { operationId, target, deliveryState: 'queued' } })
   expect(f.workspace.adapters.codex.commands).toHaveLength(before)
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
 })
 
 it('serves structured MCP results through a thread-bound loopback token and revokes it', async () => {
@@ -579,7 +641,7 @@ it('keeps a continuation delivered while its request is active on that request',
 })
 
 it('retains an uncertain existing delivery through takeover while admitting an unrelated new start', async () => {
-  const f = await fixture(); f.setLimit(1)
+  const f = await fixture()
   const first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   await f.finish(first.target.threadId)
@@ -593,17 +655,17 @@ it('retains an uncertain existing delivery through takeover while admitting an u
     .toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' } })
   await f.control.commandShell({ type: 'queue-followup', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic takeover continuation' })
   expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, paused: true, participation: [{ state: 'participating' }] })
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
   await original(written!)
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
 })
 
 it('releases a definitively failed creation reservation and refunds its pre-writer prompt', async () => {
-  const f = await fixture(); f.setLimit(1)
+  const f = await fixture()
   expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' } })).toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(0)
   expect(f.service.state().receipts[0]!.deliveryState).toBe('failed')
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
@@ -623,7 +685,7 @@ it('detects a Sotto user instruction sent while the Watcher service was dormant'
   f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.control.watcherSnapshot().threads.find(item => item.id === first.target.threadId)!.lastUserMessageId).not.toBe(baseline)
-  const recovered = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true, limit: () => 4 })
+  const recovered = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true })
   cleanups.push(async () => { recovered.close() })
   await recovered.recover()
   expect(recovered.state().recoveryNotice).toBeNull()
@@ -758,11 +820,11 @@ it('waits for active worker slots before replacing the master provider', async (
   await f.finish(f.id)
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const model = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
   expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   expect(f.service.state().current!.target.threadId).toBe(f.id)
   await f.finish(first.target.threadId)
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
   expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'ok' })
 })
 
@@ -785,11 +847,11 @@ it('keeps an unacknowledged native Stop uncertain in its original receipt', asyn
   vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => command.type === 'interrupt' ? { accepted: false, uncertain: true } : native(command))
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target }))
     .toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' }, stopRequested: true })
-  expect(f.service.state().inFlight).toBe(1)
+  expect(f.service.startsInFlight()).toBe(1)
   await f.finish(first.target.threadId)
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.service.state().receipts.at(-1)!.deliveryState).toBe('accepted')
-  expect(f.service.state().inFlight).toBe(0)
+  expect(f.service.startsInFlight()).toBe(0)
 })
 
 /** Sotto's wake-ups for Watcher are shown nowhere, so these read the coordinator's own queue and the news its send carries. */
@@ -1196,7 +1258,7 @@ it('starts Watcher’s news afresh after a restart: wake-ups an earlier build sa
     { ...item, status: 'uncertain', commandId: randomUUID(), messageId: randomUUID(), text: watcherNewsText(saved.news![0] as Parameters<typeof watcherNewsText>[0]) },
     { ...item, id: randomUUID(), draftId: randomUUID(), news: [{ ...saved.news![0], events: [finish] }] }])
   await writeFile(path, JSON.stringify(file))
-  const restored = f.create(), service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true, limit: () => 4 })
+  const restored = f.create(), service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
   f.workspace.host.useWatcherTools(new WatcherToolServer(service))
   cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
   // They leave the queue only once their news is saved as untold, so a crash in between leaves them to be observed afresh.
@@ -1327,8 +1389,8 @@ it('keeps the roster readable after more than one hundred requests address a wor
 
 
 it.each([
-  { delivery: 'now', limit: 4 }, { delivery: 'queue', limit: 4 }, { delivery: 'steer', limit: 4 }, { delivery: 'now', limit: 1 },
-])('refuses $delivery to a settled participant before admission with capacity $limit', async ({ delivery, limit }) => {
+  { delivery: 'now' }, { delivery: 'queue' }, { delivery: 'steer' },
+])('refuses $delivery to a settled participant before admission', async ({ delivery }) => {
   const f = await fixture(), first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok') throw new Error('start refused')
   await f.finish(first.target.threadId)
@@ -1336,7 +1398,6 @@ it.each([
   expect(f.service.state().requests[0]).toMatchObject({ state: 'active', participants: [
     { target: first.target, state: 'relinquished', promptCount: 1 }, { state: 'participating', promptCount: 1 },
   ] })
-  f.setLimit(limit)
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target,
     delivery, text: 'Synthetic send after settle' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE',
@@ -1688,7 +1749,7 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   const ids = f.control.watcherRecord().wakeEventIds
   f.service.close()
   const restarted = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, control: f.control, host: f.workspace.host,
-    historyEnabled: () => true, limit: () => 4 })
+    historyEnabled: () => true })
   cleanups.push(async () => restarted.close())
   await restarted.recover(); await restarted.wakes.drained()
   expect(queued(f).find(item => item.id === waiting.id) && waitingNews(f)).toBe(news)

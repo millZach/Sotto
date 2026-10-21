@@ -12,7 +12,6 @@ export const WATCHER_OPEN = 'sotto:watcher:open'
 export const WATCHER_CHANGED = 'sotto:watcher:changed'
 export const WATCHER_PREPARE_STOP_ALL = 'sotto:watcher:prepare-stop-all'
 export const WATCHER_STOP_ALL = 'sotto:watcher:stop-all'
-export const WATCHER_SET_LIMIT = 'sotto:watcher:set-limit'
 export const WATCHER_SET_PERMISSION = 'sotto:watcher:set-permission'
 export const WATCHER_WATCH_THREAD = 'sotto:watcher:watch-thread'
 export const WATCHER_UNWATCH_THREAD = 'sotto:watcher:unwatch-thread'
@@ -42,7 +41,6 @@ export const watcherRoomStateSchema = z.object({
     waitsOn: z.array(pending), participation: z.array(watcherParticipantSchema),
     evidence: z.array(watcherEvidenceSchema).max(100).optional(),
     observation: z.object({ observedAt: timestamp, fresh: z.boolean(), connectedAt: timestamp.optional(), lastProgressAt: timestamp.optional() }).strict().optional() }).strict()),
-  inFlight: z.number().int().nonnegative(), inFlightLimit: z.number().int().min(1).max(8),
   receipts: z.array(watcherOperationSchema), news: z.array(watcherEventSchema).max(400).optional(),
   recoveryNotice: z.string().nullable(), observedAt: timestamp,
   /**
@@ -89,7 +87,6 @@ export const watcherStopAllResultSchema = z.union([
     results: z.array(z.object({ target: watcherThreadTargetSchema, status: z.enum(['stopped', 'requested', 'refused', 'uncertain']),
       message: z.string() }).strict()) }).strict(), watcherRefusalSchema,
 ])
-export const watcherSetLimitRequestSchema = z.object({ limit: z.number().int().min(1).max(8) }).strict()
 export const watcherSetPermissionRequestSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherWatchThreadRequestSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export type WatcherSetPermissionRequest = z.infer<typeof watcherSetPermissionRequestSchema>
@@ -178,7 +175,6 @@ export type WatcherRoomResult = z.infer<typeof watcherRoomResultSchema>
 export type WatcherPrepareStopAllResult = z.infer<typeof watcherPrepareStopAllResultSchema>
 export type WatcherStopAllRequest = z.infer<typeof watcherStopAllRequestSchema>
 export type WatcherStopAllResult = z.infer<typeof watcherStopAllResultSchema>
-export type WatcherSetLimitRequest = z.infer<typeof watcherSetLimitRequestSchema>
 
 /** Absent in stable builds. Opening/creating Watcher never selects a project or thread. */
 export interface WatcherBridge {
@@ -186,7 +182,6 @@ export interface WatcherBridge {
   open(request: WatcherOpenRequest): Promise<WatcherRoomResult>
   prepareStopAll(): Promise<WatcherPrepareStopAllResult>
   stopAll(request: WatcherStopAllRequest): Promise<WatcherStopAllResult>
-  setLimit(request: WatcherSetLimitRequest): Promise<WatcherRoomResult>
   /** Older room stand-ins omit management. The real Owl preload supplies all three methods. */
   setPermission?(request: WatcherSetPermissionRequest): Promise<WatcherRoomResult>
   watchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>

@@ -11,11 +11,11 @@ import { firstMessageTitleWriter } from '../../src/main/llm/threadTitle'
 import { workspaceFixture } from './workspaceFixture'
 import { agentControlFixture } from './agentControlFixture'
 
-export type DelegationResult = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; note: string; reply?: { from: string; text: string }; replyUnavailable?: string; refusal?: string; userSentSince?: boolean }; limits: { inFlight: number; prompts?: number } }
+export type DelegationResult = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; note: string; reply?: { from: string; text: string }; replyUnavailable?: string; refusal?: string; userSentSince?: boolean }; limits: { prompts?: number }; warning?: string }
 export type DelegationRefused = { status: 'refused'; code: string; message: string }
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { limit?: number; otherStarts?: number; history?: boolean; titles?: boolean } = {}) {
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
@@ -27,8 +27,7 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
       // Sotto's own naming, as the app runs it: the first message's opening words, then a generated name after the first reply.
       ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })).control
   let control = await controlFor()
-  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history,
-    limit: () => options.limit ?? 4, otherStartsInFlight: () => options.otherStarts ?? 0 })
+  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history })
   let service = make()
   let tools = new DelegationToolServer(service)
   workspace.host.useThreadTools([tools])
