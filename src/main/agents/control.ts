@@ -589,6 +589,8 @@ export class AgentControl {
   /** How many times the update line has changed each client's record, so a check that ran meanwhile knows its reading is older. */
   private readonly clientLineMoves = new Map<ProviderId, number>()
   /** The release each behind client was at when the user pressed Not now: only a newer one brings the card back. */
+  /** A check afresh asked for while the update line ran, which runs once the line is empty. */
+  private clientCheckOwed = false
   private dismissedReleases = new Map<ProviderId, string>()
   /** The check every machine runs every five minutes while Sotto is open (ADR-0042). */
   private clientCheckTimer: ReturnType<typeof setInterval> | null = null
@@ -1874,14 +1876,19 @@ export class AgentControl {
    */
   private async backgroundClientCheck(): Promise<void> {
     if (this.clientChecks > 0) return
-    await this.checkClientsAfresh()
+    await this.readClientsAfresh()
   }
   /**
    * Asks the registry afresh what every connected client publishes, keeping what an update already run said, and
    * publishes only when a reading moved. A newer release brings the card back by itself, as it always has. Main calls
-   * this when Sotto finds a new version of itself, so the clients' updates are listed beside it (ADR-0077).
+   * this when Sotto finds a new version of itself, so the clients' updates are listed beside it (ADR-0077). Asked while
+   * the update line runs, it is remembered and runs once, when the line is empty.
    */
   async checkClientsAfresh(): Promise<void> {
+    if (this.updatingClient || this.clientLineRunning) { if (!this.disposed) this.clientCheckOwed = true; return }
+    await this.readClientsAfresh()
+  }
+  private async readClientsAfresh(): Promise<void> {
     if (this.disposed || !this.state.configuration.checkClientUpdates || this.updatingClient || this.clientLineRunning) return
     const before = this.state.clientUpdates, dismissed = this.state.clientUpdatesDismissedAt
     try { await this.checkClientUpdates(false, true) } catch { return }
@@ -1988,6 +1995,8 @@ export class AgentControl {
     this.clientLineRunning = false
     delete this.state.clientUpdateRun
     if (!this.disposed) this.publish()
+    // A check afresh asked for while the line ran asks now, once.
+    if (this.clientCheckOwed && !this.disposed) { this.clientCheckOwed = false; void this.readClientsAfresh().catch(() => undefined) }
   }
   /** Update one client and wait for it, in the same line as every other update on this machine. */
   private async updateClient(provider: ProviderId): Promise<void> {

@@ -414,7 +414,8 @@ export class DesktopHostRouter {
       this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined)
       const next = signature(state)
       if (connection.kind === 'remote' && next !== last) { last = next; this.watcherChanged(connection.hostId) }
-      if (this.owedClientChecks.size && this.owedClientChecks.has(connection.hostId)) void this.checkHostClients(connection)
+      // Decided from the state the host just pushed, never a read of its own: this runs on every push while a check is owed.
+      if (this.owedClientChecks.size && this.owedClientChecks.has(connection.hostId)) void this.checkHostClients(connection, state)
     })]
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
@@ -533,7 +534,10 @@ export class DesktopHostRouter {
     await Promise.all([...this.hosts.values()].map(({ connection }) => {
       if (connection.kind !== 'remote') return undefined
       this.owedClientChecks.add(connection.hostId)
-      return this.checkHostClients(connection)
+      // A host that has yet to send a shell has nothing to read; it is not asked.
+      let view: AgentState | undefined
+      try { view = connection.available?.() === false ? undefined : readView(connection.service) } catch { view = undefined }
+      return this.checkHostClients(connection, view)
     }))
   }
   /**
@@ -543,11 +547,10 @@ export class DesktopHostRouter {
    * checks while it holds any. A host that is out of reach, cannot update its clients, would check a provider this build
    * holds, refuses, or does not answer is not asked again.
    */
-  private async checkHostClients(connection: DesktopHostConnection): Promise<void> {
+  private async checkHostClients(connection: DesktopHostConnection, view?: AgentState): Promise<void> {
     const command = { type: 'check-client-updates' } as const
     const hostId = connection.hostId
-    if (connection.available?.() === false || connection.offersClientUpdates?.() !== true || this.requiresManagementUpdate(hostId)) { this.owedClientChecks.delete(hostId); return }
-    const view = readView(connection.service)
+    if (!view || connection.available?.() === false || connection.offersClientUpdates?.() !== true || view.legacyManagement === true) { this.owedClientChecks.delete(hostId); return }
     if (view.clientUpdateRun !== undefined || view.clientUpdates?.some(update => update.state === 'queued' || update.state === 'updating')) return
     this.owedClientChecks.delete(hostId)
     if (connection.keepsClientOutcomes?.() !== true && view.clientUpdates?.some(update => update.state !== 'idle')) return

@@ -176,18 +176,22 @@ the outcome of any update already run, which a press may still be reading, and s
 connected host that offers client updates. Every host already takes the command, so host protocol version 1 is
 unchanged; what changed is what it does. `check-client-updates` used to set every outcome aside, and now keeps an
 outcome that still describes the client (the same version installed, the same release), so an Update all press reading
-a host's earlier "updated" or "failed" loses nothing to the check (ADR-0042). A host on this computer's Sotto or a later
-one keeps its outcomes, and is asked whatever its readings hold. A host on another version may still set them aside, so
-while it holds any it is left to its own checks, as before. A host whose update line is running is asked once the line
-is empty, when its shell says so. A host that would check a provider this build holds is not asked. A host is judged by
-the version it advertises, not by a new host feature: one on the same release number but built before this change
-counts as keeping its outcomes, and at worst a step it set aside reads as stopped, with Try again.
+a host's earlier "updated" or "failed" loses nothing to the check (ADR-0042). Such a host lists a new host feature,
+`client-update-outcomes`, offered with `client-updates`, and is asked whatever its readings hold. The feature is a new
+value in hello's existing `features` list, which every v1 client reads as a list of names, so an older host simply does
+not list it and an older desktop ignores it; no field or command is added. A host that does not list it may still set
+outcomes aside, so while it holds any it is left to its own checks, as before. The feature says what the host does, so
+the answer does not move as this computer moves on to later releases, as a comparison with this computer's own version
+would. A host whose update line is running is asked once the line is empty, decided from the shell the host pushes
+rather than a read of the host's state, since that runs on every push while the check is owed. A host that would check
+a provider this build holds is not asked. This computer remembers a check afresh asked for while its own update line
+runs, and asks once, when the line is empty.
 
 The press does not wait for the answers. A client found behind while a press of Update all is under way joins that
 press: the card puts it into its machine's update line, as the press did its own clients, and a host's update already
 waits for that line before it restarts (decision 2). The press is under way while a step it asked for is still going, a
-host waits for its clients or for the releases page, or the Sotto it downloaded waits for the restart. A step's own
-Try again does not make a press that others join. A client whose update the press ran and which a newer release then
+host waits for its clients or for the releases page, or the Sotto it downloaded waits for the restart. Once it is not,
+joining closes for good: a step's own Try again, after the press or during it, never opens it again. A client whose update the press ran and which a newer release then
 leaves behind is offered again in the same way, rather than reading as a step still starting. The order stays as above.
 Nothing reads the `update-all` switch for the checks: on stable the client update card and each host's tiles read the
 same readings, sooner, and nothing new is shown. Where Sotto does not update itself, no version is found and nothing

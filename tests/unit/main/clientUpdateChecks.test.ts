@@ -57,12 +57,18 @@ function registry() {
   return { published, state, fetchImpl }
 }
 
-async function coordinator(options: { run?: (executable: string, args: readonly string[]) => Promise<RunResult> } = {}) {
+/**
+ * A coordinator with three clients npm installed under one prefix. Each client's program sits inside its own package in
+ * `<prefix>/lib/node_modules`, which every platform's install rules read as npm's with that prefix, so the same fixture
+ * holds on Windows, Linux and macOS; `platform` picks whose rules the install is read by.
+ */
+async function coordinator(options: { run?: (executable: string, args: readonly string[]) => Promise<RunResult>; platform?: NodeJS.Platform } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-client-checks-')); roots.push(directory)
   const prefix = join(directory, 'npm')
+  const packageFolder = (id: ProviderId): string => join(prefix, 'lib', 'node_modules', ...CLIENT_PACKAGES[id]!.split('/'))
   for (const id of IDS) {
-    await mkdir(join(prefix, 'node_modules', ...CLIENT_PACKAGES[id]!.split('/')), { recursive: true })
-    await writeFile(join(prefix, 'node_modules', ...CLIENT_PACKAGES[id]!.split('/'), 'package.json'), '{}')
+    await mkdir(join(packageFolder(id), 'bin'), { recursive: true })
+    await writeFile(join(packageFolder(id), 'package.json'), '{}')
   }
   const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
   const host = new ThreeClients()
@@ -72,9 +78,9 @@ async function coordinator(options: { run?: (executable: string, args: readonly 
   const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
     clients: new ProviderClients({ fetchImpl: npm.fetchImpl, now: () => npm.state.now, npmPath: async () => join(prefix, 'npm-cli.js'),
-      ...(options.run ? { run: options.run } : {}) }),
+      platform: options.platform ?? process.platform, ...(options.run ? { run: options.run } : {}) }),
     // A check finds each client before it asks the registry, in the same turn as the tick that starts it.
-    locateClient: async provider => { npm.state.located += 1; return join(prefix, `${provider}.exe`) },
+    locateClient: async provider => { npm.state.located += 1; return join(packageFolder(provider), 'bin', provider) },
     reasoner: {},
   })
   await control.start()
@@ -227,7 +233,7 @@ describe('checking afresh', () => {
     } finally { control.dispose() }
   })
 
-  it('does nothing while the setting is off or a client updates', async () => {
+  it('remembers a check asked for while a client updates, and asks afresh once the line is empty (review)', async () => {
     const started = deferred(), release = deferred()
     const { control, npm } = await coordinator({ run: async () => { started.resolve(); await release.promise; return { ok: false, detail: 'stopped' } } })
     try {
@@ -236,11 +242,28 @@ describe('checking afresh', () => {
       await control.command({ type: 'queue-client-updates', providers: ['codex'] })
       await started.promise
       const before = npm.state.asked
+      // Sotto finds its new version while Codex installs: nothing is asked during the install, and nothing is lost.
+      await control.checkClientsAfresh()
       await control.checkClientsAfresh()
       expect(npm.state.asked).toBe(before)
+      // Claude Code is published meanwhile; the registry's earlier answer is still kept, so only a check afresh sees it.
+      npm.published.claude = '2.1.290'
       release.resolve()
-      await vi.waitFor(() => { expect(control.get().clientUpdateRun).toBeUndefined() })
+      await vi.waitFor(() => { expect(reading(control, 'claude')).toMatchObject({ published: '2.1.290', behind: true }) })
+      await settled(control)
+      // One check afresh, after the line's own: each client asked once more, not once per request.
+      const afterLine = npm.state.asked
+      await Promise.resolve()
+      expect(npm.state.asked).toBe(afterLine)
+      expect(reading(control, 'codex')).toMatchObject({ state: 'failed' })
+    } finally { control.dispose() }
+  })
+
+  it('asks nothing while the setting is off', async () => {
+    const { control, npm } = await coordinator()
+    try {
       await control.command({ type: 'configure', patch: { checkClientUpdates: false } })
+      const before = npm.state.asked
       await control.checkClientsAfresh()
       expect(npm.state.asked).toBe(before)
     } finally { control.dispose() }
@@ -319,6 +342,26 @@ describe('Not now and a registry that does not answer', () => {
       npm.published.claude = '2.1.290'
       await tick(npm, 3)
       await vi.waitFor(() => { expect(control.get().clientUpdatesDismissedAt).toBeUndefined() })
+    } finally { control.dispose() }
+  })
+})
+
+describe.each(['win32', 'linux', 'darwin'] as const)('the same checks read by %s’s install rules', platform => {
+  it('finds a release on a tick, updates it, and keeps the finding through a Check', async () => {
+    const fixture = await coordinator({ platform, run: async (_executable, args) => {
+      expect(args).toContain('--prefix')
+      fixture.host.onDisk.codex = '0.158.0'
+      return { ok: true }
+    } })
+    const { control, npm } = fixture
+    try {
+      npm.published.codex = '0.158.0'
+      await tick(npm, 3)
+      await vi.waitFor(() => { expect(reading(control, 'codex')).toMatchObject({ installed: '0.155.1', published: '0.158.0', behind: true, canInstall: true, channel: 'npm' }) })
+      await control.command({ type: 'queue-client-updates', providers: ['codex'] })
+      await vi.waitFor(() => { expect(reading(control, 'codex')).toMatchObject({ state: 'updated', installed: '0.158.0' }) })
+      await control.command({ type: 'check-client-updates' })
+      expect(reading(control, 'codex')).toMatchObject({ state: 'updated', installed: '0.158.0', behind: false })
     } finally { control.dispose() }
   })
 })

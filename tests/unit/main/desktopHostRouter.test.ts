@@ -1199,23 +1199,28 @@ describe('a new version of Sotto has each host check its clients afresh (ADR-007
     expect([...keeping, older, olderIdle].map(checks)).toEqual([1, 1, 0, 1])
   })
 
-  it('asks a host whose update line runs once the line is empty, and only once', async () => {
+  it('asks a host whose update line runs once the line is empty, and only once, deciding from what the host pushed', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), host = fixture(REMOTE, 'remote')
     let broadcast: (state: AgentState) => void = () => undefined
     host.state.clientUpdates = [reading('queued')]; host.state.clientUpdateRun = { total: 1, done: 0 }
+    // A read of the host's state copies its retained drafts, so the pushes below must not make one.
+    const shell = vi.fn(() => host.state), view = vi.fn(() => host.state)
     router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true,
-      service: { ...host.connection.service, subscribe: listener => { broadcast = listener; return () => undefined } } })
+      service: { ...host.connection.service, shell, view, subscribe: listener => { broadcast = listener; return () => undefined } } as DesktopHostConnection['service'] })
     await router.checkHostClientsAfresh()
     expect(checks(host)).toBe(0)
-    // Still running: still owed.
-    host.state.clientUpdates = [reading('updated')]
-    broadcast(host.state)
+    shell.mockClear(); view.mockClear()
+    // Still running in what it pushed: still owed.
+    broadcast({ ...host.state, clientUpdates: [reading('updated')] })
     expect(checks(host)).toBe(0)
-    delete host.state.clientUpdateRun
-    broadcast(host.state)
+    // The push says the line is empty, whatever a read of the host would say.
+    const empty = { ...host.state, clientUpdates: [reading('updated')] }
+    delete empty.clientUpdateRun
+    broadcast(empty)
     await vi.waitFor(() => { expect(checks(host)).toBe(1) })
-    broadcast(host.state)
+    broadcast(empty)
     expect(checks(host)).toBe(1)
+    expect([shell.mock.calls.length, view.mock.calls.length]).toEqual([0, 0])
   })
 
   it('does not ask a host that would enumerate a provider this build holds, and carries on past a host that refuses', async () => {

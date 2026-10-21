@@ -119,6 +119,33 @@ describe('the Update all card', () => {
     expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(1)
   })
 
+  it('lets no client join a step’s own Try again once the press it came from is over (review)', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    const codex = (patch: Partial<ProviderClientUpdate> = {}) => behind({ id: 'codex', installed: '0.155.1', published: '0.158.0', ...patch })
+    const current = behind({ installed: '2.1.42', published: '2.1.42', behind: false })
+    const first = provideAgents(agentState({ local: [codex(), current] }))
+    const hosts = hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: 1 client' }))
+    await waitFor(() => expect(first).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['codex'] }))
+    // Codex fails, and the press is over.
+    provideAgents(agentState({ local: [codex({ state: 'failed', ranAt: 'now', error: 'npm ERR! network' }), current] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
+    // Later Claude Code falls behind. It is offered, not put in the line.
+    const later = provideAgents(agentState({ local: [codex({ state: 'failed', ranAt: 'now', error: 'npm ERR! network' }), behind({ installed: '2.1.42', published: '2.1.45' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    const step = await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
+    fireEvent.click(within(step).getByRole('button', { name: /^Try again/u }))
+    await waitFor(() => expect(later).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['codex'] }))
+    // The retried step runs; Claude Code still waits for its own press.
+    provideAgents(agentState({ local: [codex({ state: 'updating' }), behind({ installed: '2.1.42', published: '2.1.45' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await screen.findByRole('listitem', { name: 'Update Codex, in progress' })
+    const calls = vi.mocked(useOptionalAgents).mock.results.flatMap(result => (result.value as { command: ReturnType<typeof vi.fn> }).command.mock.calls)
+    expect(calls).not.toContainEqual([expect.objectContaining({ type: 'queue-client-updates', providers: expect.arrayContaining(['claude']) })])
+  })
+
   // The incident of October 16, 2026: forge restarted with Codex in its line, and the step spun on Starting… for good.
   it('says a host client whose line was lost did not update, and Try again puts it back in the line', async () => {
     provideApp({ ...available, phase: { phase: 'unsupported' } })

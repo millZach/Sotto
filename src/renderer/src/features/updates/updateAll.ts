@@ -87,8 +87,8 @@ export interface UpdateAllPass {
    */
   readonly targets?: ReadonlyMap<string, string> | undefined
   /**
-   * Set by a press of Update all, not by a step's own Try again: while it is under way, a client found behind joins it
-   * (ADR-0077, October 21 amendment).
+   * Set by a press of Update all, not by a step's own Try again: while it is under way, a client found behind joins it.
+   * Cleared once the press is no longer under way, so a Try again after it opens nothing (ADR-0077, October 21 amendment).
    */
   readonly pressed?: true | undefined
   /**
@@ -350,10 +350,16 @@ export function newlyDropped(sources: UpdateAllSources, pass: UpdateAllPass | nu
  * still going, a host waits for its clients or its releases page, or the Sotto it downloaded waits for the restart.
  */
 export function clientsJoining(view: UpdateAllView, pass: UpdateAllPass | null): UpdateAllItem[] {
-  if (!pass?.pressed) return []
-  const underWay = view.items.some(item => pass.touched.has(item.key) && (item.state === 'running' || item.state === 'waiting' || item.state === 'checking'))
+  return pass?.pressed && pressUnderWay(view, pass) ? view.items.filter(item => item.kind === 'client' && item.state === 'offered') : []
+}
+/**
+ * Whether what a pass set going still goes: a step it asked for is running or waiting, a host waits for its clients or
+ * its releases page, or the Sotto it downloaded waits for the restart. Once a press is not, joining closes for good: a
+ * step's own Try again afterwards opens nothing (ADR-0077, October 21 amendment).
+ */
+export function pressUnderWay(view: UpdateAllView, pass: UpdateAllPass): boolean {
+  return view.items.some(item => pass.touched.has(item.key) && (item.state === 'running' || item.state === 'waiting' || item.state === 'checking'))
     || pass.after.size > 0 || (pass.joining?.size ?? 0) > 0 || pass.touched.has(APP_KEY) && view.ready !== undefined
-  return underWay ? view.items.filter(item => item.kind === 'client' && item.state === 'offered') : []
 }
 
 /** Whether the list ends with the restart: whenever Sotto has a download, offered, under way or ready. */

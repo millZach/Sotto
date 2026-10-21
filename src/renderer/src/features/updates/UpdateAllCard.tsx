@@ -11,7 +11,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
-import { APP_KEY, clientKey, clientsJoining, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
+import { APP_KEY, clientKey, clientsJoining, hostKey, newlyDropped, newlyInLine, pressUnderWay, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
 import './updateAll.css'
 
 const requests = new Set<() => void>()
@@ -221,6 +221,11 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     for (const item of offered) if (item.kind === 'host' && !after.has(hostOf(item)!)) void updateHost(hostOf(item)!)
   }, [clientUpdate, download, queueClients, updateHost])
 
+  // Joining closes once the press is over, and a step's own Try again after that does not open it again.
+  const pressOver = pass?.pressed === true && !pressUnderWay(view, pass)
+  useEffect(() => {
+    if (pressOver) setPass(current => current && { ...current, pressed: undefined })
+  }, [pressOver])
   // A client found behind while the press is under way joins it, in its machine's update line, as the press's own did.
   // The press never waits for the checks that find them; a host's update already waits for its line before it restarts.
   const joiningKeys = clientsJoining(view, pass).map(item => item.key).join('|')
