@@ -30,6 +30,20 @@ export async function extractLinuxAppAsar(tarball, into, { folder, tar = zipRead
   return join(into, ...asar.split('/'))
 }
 
+const PACKAGE_ASAR = 'opt/sotto/resources/app.asar'
+
+/**
+ * Extract only the installed app's app.asar from the pacman package, after listing it to find exactly one, so the
+ * package's app can be held to the verified tarball's rather than to its unsigned receipt.
+ */
+export async function extractPacmanAppAsar(packagePath, into, { tar = zipReadingTar() } = {}) {
+  const { stdout } = await execFileAsync(tar, ['-tf', basename(packagePath)], tarOptions(dirname(packagePath)))
+  const entries = stdout.split(/\r?\n/u).filter(Boolean).map(entry => entry.replace(/^\.\//u, ''))
+  if (entries.filter(entry => entry === PACKAGE_ASAR).length !== 1) throw new Error('The Linux Owl pacman package must carry exactly one /opt/sotto/resources/app.asar.')
+  await execFileAsync(tar, ['-xf', basename(packagePath), '-C', into, PACKAGE_ASAR], tarOptions(dirname(packagePath)))
+  return join(into, ...PACKAGE_ASAR.split('/'))
+}
+
 /** Read the .PKGINFO pacman records in a package. libarchive's tar reads zstd on Windows 11, macOS and Linux. */
 export async function readPacmanPkginfo(packagePath, { tar = zipReadingTar() } = {}) {
   const { stdout } = await execFileAsync(tar, ['-xOf', basename(packagePath), '.PKGINFO'], tarOptions(dirname(packagePath)))
@@ -52,13 +66,28 @@ function singleLine(text, pattern) {
   return matches.length === 1 ? matches[0] : undefined
 }
 
+/** Require an extracted app.asar to record this Owl's source, build inputs and version. */
+function checkPackagedApp(asar, label, { version, sourceCommit, buildInputsRevision }) {
+  let provenance, packagedVersion
+  try {
+    provenance = JSON.parse(readAsarText(asar, 'out/build-provenance.json'))
+    packagedVersion = JSON.parse(readAsarText(asar, 'package.json')).version
+  } catch { throw new Error(`The Linux Owl ${label}'s app carries no readable build provenance.`) }
+  if (provenance?.sourceCommit !== sourceCommit) throw new Error(`The Linux Owl ${label}'s app was built from a different source commit from the Windows Owl.`)
+  if (provenance.buildInputsRevision !== buildInputsRevision) throw new Error(`The Linux Owl ${label}'s app build inputs differ from its receipt.`)
+  if (packagedVersion !== version) throw new Error(`The Linux Owl ${label}'s app is version ${String(packagedVersion)}, not ${version}.`)
+}
+
 /**
  * Verify the folder downloaded from the "Sotto Owl for Linux" run against the Windows Owl it joins: both receipts name
  * the same version and source, the pacman package was built from that tarball, every file is there with its size and
- * SHA-256 and nothing else is, the tarball's packaged app records the same source and version, and the pacman package
- * records the Owl's pacman version. Returns the tarball and package, the two files the release attaches.
+ * SHA-256 and nothing else is, the tarball's packaged app records the same source and version, the pacman package
+ * installs that very app.asar, and it records the Owl's pacman version. The receipts are unsigned, so the package is
+ * held to the tarball by its contents: packages from two runs of the same version cannot be swapped. Returns the
+ * tarball and package, the two files the release attaches.
  */
-export async function verifyOwlLinuxArtifacts(directory, { version, sourceCommit } = {}, { extractAsar = extractLinuxAppAsar, readPkginfo = readPacmanPkginfo } = {}) {
+export async function verifyOwlLinuxArtifacts(directory, { version, sourceCommit } = {},
+  { extractAsar = extractLinuxAppAsar, extractPackageAsar = extractPacmanAppAsar, readPkginfo = readPacmanPkginfo } = {}) {
   checkedFullOwlVersion(version, {
     form: 'Supply the full Sotto Owl version the Linux files join, such as 0.1.38-owl.20261021.1',
     date: 'Supply a Sotto Owl version whose build date is a real UTC day',
@@ -90,17 +119,17 @@ export async function verifyOwlLinuxArtifacts(directory, { version, sourceCommit
       if (size !== file.size || hashed.size !== file.size || hashed.digest !== file.sha256) throw new Error(`${file.filename} does not match its Linux Owl receipt. Download the artifact again.`)
       files.push({ path, filename: file.filename, role: file.role, sha256: hashed.digest })
     }
-    const unpacked = join(temporary, 'unpacked')
-    await mkdir(unpacked)
+    const unpacked = join(temporary, 'unpacked'), installed = join(temporary, 'installed')
+    await mkdir(unpacked); await mkdir(installed)
+    const expected = { version, sourceCommit, buildInputsRevision: packageReceipt.buildInputsRevision }
     const asar = await extractAsar(copies.tarball, unpacked, { folder: names.tarballFolder })
-    let provenance, packagedVersion
-    try {
-      provenance = JSON.parse(readAsarText(asar, 'out/build-provenance.json'))
-      packagedVersion = JSON.parse(readAsarText(asar, 'package.json')).version
-    } catch { throw new Error('The Linux Owl tarball\'s app carries no readable build provenance.') }
-    if (provenance?.sourceCommit !== sourceCommit) throw new Error('The Linux Owl app was built from a different source commit from the Windows Owl.')
-    if (provenance.buildInputsRevision !== packageReceipt.buildInputsRevision) throw new Error('The Linux Owl app\'s build inputs differ from its receipt.')
-    if (packagedVersion !== version) throw new Error(`The Linux Owl app is version ${String(packagedVersion)}, not ${version}.`)
+    checkPackagedApp(asar, 'tarball', expected)
+    // What pacman would install must be the app just checked, byte for byte, whatever the pacman receipt says.
+    const packageAsar = await extractPackageAsar(copies.pacman, installed)
+    checkPackagedApp(packageAsar, 'pacman package', expected)
+    if ((await digestFile(packageAsar)).digest !== (await digestFile(asar)).digest) {
+      throw new Error('The Linux Owl pacman package carries a different app from the verified tarball. Download the artifact again from the workflow run for this Owl.')
+    }
     // pacman installs by what .PKGINFO says, not by the file name, so that is what must be the Owl's pacman version.
     const pkginfo = await readPkginfo(copies.pacman)
     if (singleLine(pkginfo, /^pkgname = /u) !== 'pkgname = sotto-bin' || pkginfoVersion(pkginfo) !== `${names.pkgver}-1`) {
