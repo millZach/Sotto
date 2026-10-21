@@ -75,6 +75,10 @@ function grokBin(environment: NodeJS.ProcessEnv): string {
 const within = (path: string, directory: string): boolean =>
   path.toLowerCase().startsWith(`${directory.toLowerCase()}${sep}`)
 
+/** The platform part of a client's platform package name: `darwin-arm64`, `linux-x64-musl`, `win32-x64`. */
+const PLATFORM_PACKAGE = /^(?:darwin|linux|win32)-(?:x64|arm64)(?:-[a-z0-9]+)?$/u
+/** The program Grok Build's install step links `~/.grok/bin/grok` to: `grok-1.0.5`. */
+const GROK_VERSIONED = /^grok-\d+(?:\.\d+)*(?:\.exe)?$/iu
 /** Where a global npm install keeps its packages, without running npm to ask. */
 function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
   const home = homedir()
@@ -90,22 +94,58 @@ function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
 /**
  * The folder npm installed a client's package in: the one the binary sits inside, else one in a global root. With no
  * environment only the binary's own prefix is looked in, so a package elsewhere on the machine cannot claim it.
+ * The binary's own prefix is asked before the global roots, so an old copy in `~/.npm-global` never claims one npm
+ * installed elsewhere. Outside Windows npm links a global binary to its package, so a package in the binary's own
+ * prefix claims only a binary that resolves into it, and a binary that links out of its folder (Claude Code's own
+ * installer in `~/.local/share/claude`) is claimed by no global root it does not resolve into: a script of the user's own in
+ * `~/.local/bin`, beside a package npm left in `~/.local/lib/node_modules`, is not that package's.
  */
-async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv | undefined): Promise<string | undefined> {
+async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv | undefined,
+  platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
   const parts = executable.split(sep), names = packageName.split('/')
+  // A platform package npm hoisted beside the client's own (`@openai/codex-darwin-arm64` beside `@openai/codex`) stands
+  // for that package, which is what npm updates. Only a platform package's name does: `@openai/codex-tools` is not one.
   const inside = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules'
-    && names.every((name, offset) => parts[index + 1 + offset]?.toLowerCase() === name.toLowerCase()))
+    && names.every((name, offset) => {
+      const found = parts[index + 1 + offset]?.toLowerCase(), wanted = name.toLowerCase()
+      return found === wanted || (offset === names.length - 1 && found !== undefined && found.startsWith(`${wanted}-`)
+        && PLATFORM_PACKAGE.test(found.slice(wanted.length + 1)))
+    }))
   const bin = dirname(executable)
-  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...environment ? npmGlobalRoots(environment) : [],
-    join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
+  const ownPrefix = [join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
+  const real = platform === 'win32' ? undefined : await realpath(executable).catch(() => executable)
+  // A link out of its own folder. Grok Build's `~/.grok/bin/grok` links to `grok-<version>` beside it and is still npm's,
+  // even when `~/.grok` is npm's prefix too, so a package there claims that link without resolving into it.
+  const linked = real !== undefined && dirname(real) !== await realpath(bin).catch(() => bin)
+  const grokVersionLink = packageName === CLIENT_PACKAGES.grok && real !== undefined && !linked
+    && bin.toLowerCase() === grokBin(environment ?? {}).toLowerCase() && GROK_VERSIONED.test(basename(real))
+  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...environment ? npmGlobalRoots(environment) : []]
   for (const root of roots) {
     const folder = join(root, ...names)
+    const mustResolve = real !== undefined && inside <= 0 && ((ownPrefix.includes(root) && !grokVersionLink) || linked)
+    if (mustResolve && !within(real, await realpath(folder).catch(() => folder))) continue
     try { await access(join(folder, 'package.json'), constants.F_OK); return folder } catch { /* Try the next global layout. */ }
   }
   return undefined
 }
-async function npmOwns(packageName: string, executable: string, environment: NodeJS.ProcessEnv): Promise<boolean> {
-  return await npmPackageFolder(packageName, executable, environment) !== undefined
+/**
+ * The prefix npm installed a global package under: `<prefix>/lib/node_modules/<package>`, or on Windows
+ * `<prefix>\node_modules\<package>` whatever the prefix is called. Anything else is not a global install Sotto can name a prefix for.
+ */
+export function npmPrefixOf(folder: string, packageName: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  let root = folder
+  for (let index = 0; index < packageName.split('/').length; index += 1) root = dirname(root)
+  if (basename(root).toLowerCase() !== 'node_modules') return undefined
+  if (platform === 'win32') return dirname(root)
+  return basename(dirname(root)).toLowerCase() === 'lib' ? dirname(dirname(root)) : undefined
+}
+/** npm's claim on a client, with the prefix to update it under when Sotto can name one. */
+async function npmInstall(packageName: string, executable: string, environment: NodeJS.ProcessEnv | undefined,
+  platform: NodeJS.Platform): Promise<ClientInstall | undefined> {
+  const folder = await npmPackageFolder(packageName, executable, environment, platform)
+  if (!folder) return undefined
+  const npmPrefix = npmPrefixOf(folder, packageName, platform)
+  return { channel: 'npm', ...(npmPrefix ? { npmPrefix } : {}) }
 }
 
 /** True when a program or library in this folder is running: Windows will not open a running image for writing. */
@@ -219,6 +259,12 @@ export interface ClientInstall {
   readonly channel: ClientChannel; readonly miseTool?: string; readonly muse?: MuseMakerInstall
   /** For a copy another package manager owns, the command that manager updates it with, which Sotto shows and never runs. */
   readonly byHand?: readonly string[]
+  /**
+   * For npm, the prefix the package is installed under. npm otherwise takes its global prefix from the Node running it,
+   * which for Sotto is the app itself: on macOS that put Claude Code 2.1.306 in `Sotto.app/Contents/lib` and left the
+   * copy in use where it was.
+   */
+  readonly npmPrefix?: string
 }
 
 const MANAGER_NAME = /^[A-Za-z0-9@][A-Za-z0-9@._+-]{0,63}$/u
@@ -280,7 +326,7 @@ function opencodePlatformPackage(path: string): string[] {
  * installer in `~/.local/bin`, updates itself.
  */
 export async function detectClientInstall(provider: ProviderId, executable: string | undefined,
-  environment: NodeJS.ProcessEnv = process.env): Promise<ClientInstall> {
+  environment: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): Promise<ClientInstall> {
   if (provider === 'devin') return { channel: 'devin-app' }
   if (!executable || !isAbsolute(executable)) return { channel: 'unknown' }
   const lower = executable.toLowerCase()
@@ -302,7 +348,8 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     // before Homebrew (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
     // machine never claims a copy Homebrew, the install script or a system package put there.
     for (const path of new Set([executable, real, ...[executable, real].flatMap(opencodePlatformPackage)])) {
-      if (await npmPackageFolder(CLIENT_PACKAGES.opencode!, path, undefined)) return { channel: 'npm' }
+      const npm = await npmInstall(CLIENT_PACKAGES.opencode!, path, undefined, platform)
+      if (npm) return npm
     }
     const byHand = await opencodeManager(executable)
     if (byHand) return { channel: 'unknown', byHand }
@@ -315,8 +362,9 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     const muse = await museInstallForExecutable(executable, process.platform, environment)
     return muse ? { channel: 'self-update', muse } : { channel: 'unknown' }
   }
+  const npm = packageName ? await npmInstall(packageName, executable, environment, platform) : undefined
+  if (npm) return npm
   if (lower.split(sep).includes('node_modules')) return { channel: 'npm' }
-  if (packageName && await npmOwns(packageName, executable, environment)) return { channel: 'npm' }
   if (inOwnHome) {
     const miseTool = await miseToolOf(provider, executable, environment)
     if (miseTool) return { channel: 'mise', miseTool }
@@ -325,8 +373,8 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
   return { channel: 'unknown' }
 }
 export async function detectClientChannel(provider: ProviderId, executable: string | undefined,
-  environment: NodeJS.ProcessEnv = process.env): Promise<ClientChannel> {
-  return (await detectClientInstall(provider, executable, environment)).channel
+  environment: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): Promise<ClientChannel> {
+  return (await detectClientInstall(provider, executable, environment, platform)).channel
 }
 
 /** Grok Build's own install step, which mise's npm backend skips: it puts the new program in `~/.grok/bin`. */
@@ -336,7 +384,13 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
   releaseAgeFlag = false): readonly string[] | undefined {
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
-    case 'npm': return packageName ? [`npm install -g --allow-scripts=${packageName} ${packageName}@latest`] : undefined
+    case 'npm': {
+      if (!packageName) return undefined
+      // A Windows prefix no shell there would keep literal gets no line at all: without it npm would update another folder.
+      const prefix = install.npmPrefix === undefined ? undefined : shellArgument(install.npmPrefix, platform)
+      if (install.npmPrefix !== undefined && prefix === undefined) return undefined
+      return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
+    }
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
       : provider === 'opencode' ? ['opencode upgrade'] : undefined
     case 'mise': {
@@ -351,6 +405,15 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
     }
     default: return install.byHand?.length ? [...install.byHand] : undefined
   }
+}
+/**
+ * A path as one argument to type into a shell, or undefined when it cannot be written so that it stays literal. POSIX
+ * shells take anything in single quotes literally but the quote itself. On Windows the line may be typed into PowerShell
+ * or cmd, so double quotes go only around a path neither would expand: no `$`, backtick, `%`, `!` or `"`.
+ */
+export function shellArgument(value: string, platform: NodeJS.Platform): string | undefined {
+  if (platform === 'win32') return /^[\w\\/.:+-]+$/u.test(value) ? value : /[$`%!"]/u.test(value) ? undefined : `"${value}"`
+  return /^[\w/.:+-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 const needsInstallStep = (provider: ProviderId, miseTool: string): boolean => provider === 'grok' && miseTool === `npm:${CLIENT_PACKAGES.grok}`
 
@@ -386,9 +449,13 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     // Build finishes its install in one, so this one package's scripts are allowed, the way T3 Code does
     // it. An older npm warns about a config it does not know and installs all the same.
     const allowScripts = `--allow-scripts=${packageName}`
+    // Run under this app's Node, npm would install into the app (`Sotto.app/Contents/lib` on macOS) and leave the copy
+    // in use as it was. Windows' npm names its own prefix in its builtin npmrc, so there an unnamed one stays npm's.
+    if (!found.npmPrefix && process.platform !== 'win32') return undefined
     const cli = await npmPath()
     if (!cli) return undefined
-    return { command: byHand[0]!, byHand, executable: process.execPath, args: [cli, 'install', '-g', allowScripts, `${packageName}@latest`], asNode: true }
+    return { command: byHand[0]!, byHand, executable: process.execPath, asNode: true,
+      args: [cli, 'install', '-g', ...found.npmPrefix ? ['--prefix', found.npmPrefix] : [], allowScripts, `${packageName}@latest`] }
   }
   if (found.channel === 'self-update' && provider !== 'muse' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: [provider === 'opencode' ? 'upgrade' : 'update'] }
   if (found.channel === 'mise' && found.miseTool && byHand) {
@@ -493,6 +560,8 @@ export interface ProviderClientsOptions {
   readonly nodePath?: string
   /** Sotto's own OpenCode folders: `opencode upgrade` runs with them, never with the user's own OpenCode folders (ADR-0087). */
   readonly opencodeFolders?: OpenCodeFolders
+  /** The platform whose install layouts are read: this one's, by default. */
+  readonly platform?: NodeJS.Platform
 }
 
 /**
@@ -510,6 +579,7 @@ export class ProviderClients {
   private readonly miseReleaseAgeFlag: (executable: string) => Promise<boolean>
   private readonly nodePath: string
   private readonly opencodeFolders: OpenCodeFolders | undefined
+  private readonly platform: NodeJS.Platform
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
     this.run = options.run ?? defaultRun
@@ -519,6 +589,7 @@ export class ProviderClients {
     this.miseReleaseAgeFlag = options.miseReleaseAgeFlag ?? defaultMiseReleaseAgeFlag
     this.nodePath = options.nodePath ?? process.execPath
     this.opencodeFolders = options.opencodeFolders
+    this.platform = options.platform ?? process.platform
   }
 
   /**
@@ -568,7 +639,7 @@ export class ProviderClients {
    */
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean } = {}): Promise<ProviderClientUpdate> {
-    const install = await detectClientInstall(provider, executable, environment)
+    const install = await detectClientInstall(provider, executable, environment, this.platform)
     const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
     const byHand = action?.byHand ?? byHandFor(provider, install)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
@@ -591,7 +662,7 @@ export class ProviderClients {
    */
   async install(provider: ProviderId, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void): Promise<InstallResult> {
-    const install = await detectClientInstall(provider, executable, environment)
+    const install = await detectClientInstall(provider, executable, environment, this.platform)
     if (provider === 'muse' && install.muse) {
       onStep?.(1)
       const updated = await installMuseClient(install.muse, environment, {
@@ -605,6 +676,7 @@ export class ProviderClients {
       return { ok: false, detail: install.channel === 'devin-app'
         ? `${PROVIDER_LABELS[provider]} updates with the Devin app.`
         : install.channel === 'mise' ? `Sotto could not find mise, so it did not update ${PROVIDER_LABELS[provider]}.`
+        : install.channel === 'npm' && !install.npmPrefix ? `Sotto cannot tell which npm folder ${PROVIDER_LABELS[provider]} is in, so it did not update it. Nothing changed.`
         : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it.` }
     }
     onStep?.(1)

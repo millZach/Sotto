@@ -138,6 +138,23 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
   })
 
+  it('lists follow-ups queued while Watcher works above its composer and not in its conversation', async () => {
+    const state = stateWithWatcher()
+    state.host.threads.find(thread => thread.id === 'watcher')!.status = 'running'
+    const texts = ['On PR #1216, fix the two bug bot findings.', 'Has PR #1251 merged to main?']
+    state.followups = texts.map((text, index) => ({ id: `6000000${index}-0000-4000-8000-000000000000`, threadId: 'watcher', draftId: crypto.randomUUID(), text, attachments: [], createdAt: at, updatedAt: at, status: 'queued' as const }))
+    renderRoom(state, roomState())
+    await paneReady()
+    const pane = screen.getByRole('region', { name: 'Watcher' })
+    expect(within(pane).getByRole('textbox', { name: 'Watcher message' })).toHaveAttribute('data-placeholder', 'Watcher is working. Write a follow-up to queue it.')
+    const queue = within(pane).getByRole('region', { name: 'Queued messages' })
+    for (const text of texts) {
+      expect(within(queue).getByText(text)).toBeInTheDocument()
+      expect(within(within(pane).getByRole('log', { name: 'Thread transcript' })).queryByText(text)).not.toBeInTheDocument()
+    }
+    expect(within(pane).queryByLabelText('Queued message')).not.toBeInTheDocument()
+  })
+
   it('says main’s refusal in its own words and keeps the message in the composer', async () => {
     const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null }))
     bridge.open.mockResolvedValueOnce({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Claude Code is not connected. Nothing was started.', retryable: true })

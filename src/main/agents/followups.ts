@@ -7,6 +7,7 @@ import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
+import { watcherPhoneOriginSchema } from '../../shared/watcher'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { hiddenEvents } from './hiddenWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -26,7 +27,12 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional() })
+/**
+ * `phoneOrigin`: the paired iPhone a follow-up for Watcher came from, when its steer went next instead (#1229). Text-free,
+ * as `watcherOperationId` is; the coordinator asks again at dispatch whether that phone is still paired and admitted.
+ */
+const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional(),
+  phoneOrigin: watcherPhoneOriginSchema.optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -135,7 +141,7 @@ export class FollowupStore {
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined }): Promise<void> {
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined; phoneOrigin?: QueuedFollowup['phoneOrigin'] }): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)

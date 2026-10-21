@@ -253,8 +253,8 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await pass()
     await changeState(state => { state.pulls[0]!.checks = [check('Owned build', 'COMPLETED', 'FAILURE')] })
     await pass()
-    // Wake-ups the provider has, as against the echo of one still waiting in the queue.
-    const sentWakeUps = pane(page).locator('.thread-message[data-from="sotto"]:not(.thread-message--pending)')
+    // Wake-ups the provider has; one still waiting is in the queue, not the transcript.
+    const sentWakeUps = pane(page).locator('.thread-message[data-from="sotto"]')
     const wakeUp = sentWakeUps.first()
     await expect(sentWakeUps).toHaveCount(1, { timeout: 30_000 })
     await expect(wakeUp.locator('header')).toContainText('SottoWake-up')
@@ -292,10 +292,10 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expectReadable({ 'queued label': waiting.locator('.thread-followup__sotto') })
     await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
     await expect(panel.getByRole('list', { name: 'Merge checklist' })).toContainText('CI / Owned build failed, and 1 more', { timeout: 30_000 })
-    // The transcript echoes it where it will go, as Sotto's and word for word.
-    const echo = pane(page).getByRole('article', { name: 'Queued wake-up from Sotto' })
-    await expect(echo).toContainText('- Check CI / Lint failed')
-    await expect(echo.locator('ul')).toHaveCount(0)
+    // The queue alone holds it until it is sent: the transcript draws neither it nor the user's queued message.
+    const transcript = pane(page).getByRole('log', { name: 'Thread transcript' })
+    await expect(transcript.locator('.thread-message--pending')).toHaveCount(0)
+    await expect(transcript).not.toContainText('Then add a changelog entry.')
     await capture(page, 'c-queued-wake-up-1280x800-dark')
     await waiting.getByRole('button', { name: 'Remove the wake-up from the queue' }).click()
     await expect(waiting).toHaveCount(0)

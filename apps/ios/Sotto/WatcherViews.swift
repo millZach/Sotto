@@ -329,6 +329,10 @@ private struct WatcherConversationPane: View {
                         }
                         .accessibilityElement(children: .combine)
                     }
+                    // What goes next, after Watcher's turn: a quiet line for each of the user's follow-ups (#1229, pick B).
+                    ForEach(page?.followups ?? []) { item in
+                        if let page { WatcherFollowupLine(hostID: hostID, item: item, page: page) }
+                    }
                     Color.clear.frame(height: 1).id(Self.end)
                         .background(reader { follow.end = $0.maxY })
                 }
@@ -509,6 +513,44 @@ private struct SendingBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 48)
+    }
+}
+
+/// One of the user's follow-ups waiting for Watcher, as a quiet line under the conversation (#1229, Zach's pick B): it goes
+/// next, after Watcher's turn, and Remove takes it out of the queue before it goes. Nothing is asked first.
+private struct WatcherFollowupLine: View {
+    @EnvironmentObject var model: AppModel
+    let hostID: String
+    let item: WatcherPage.Followup
+    let page: WatcherPage
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+            Image(systemName: "clock")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(WatcherWords.followup(item.status)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                Text(item.text).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                if let note = WatcherWords.followupNote(item.status, page: page, computer: model.name(hostID)) {
+                    Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            if ["queued", "paused", "failed"].contains(item.status) {
+                Button("Remove") { Task { await model.removeWatcherFollowup(item, on: hostID) } }
+                    .font(.sotto(.small, .semibold))
+                    .foregroundStyle(Palette.accentText)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .buttonStyle(PressStyle())
+                    .disabled(!model.canRemoveWatcherFollowup(item, on: hostID))
+                    .accessibilityLabel("Remove “\(item.text)” from the queue")
+                    .accessibilityIdentifier("watcher-followup-remove")
+            }
+        }
+        .accessibilityIdentifier("watcher-followup")
     }
 }
 
@@ -999,6 +1041,13 @@ private struct WatcherDock: View {
         let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
+        // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
+        // takes no steer (#1229, pick B); otherwise it sends as before.
+        let current = model.watcherPage(hostID)?.current
+        let steering = model.offersWatcherSteer(hostID) && current?.status == "running"
+        let queueing = steering && current?.steers == false
+        let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
+        let label = queueing ? "Queue for after this turn" : steering ? "Steer into Watcher’s turn" : "Send to Watcher"
         return HStack(alignment: .bottom, spacing: Space.s2) {
             TextField("Ask Watcher", text: draft, prompt: Text(working ? "Ask Watcher while it works" : "Ask Watcher").foregroundStyle(Palette.placeholder), axis: .vertical)
                 .font(.sotto(.body))
@@ -1011,7 +1060,7 @@ private struct WatcherDock: View {
                 .accessibilityIdentifier("watcher-reply")
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
             Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold))
+                Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
                     .frame(width: 44, height: 44)
                     .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
                     .background(canSend ? Palette.accent : Palette.fillSoft, in: Circle())
@@ -1019,7 +1068,7 @@ private struct WatcherDock: View {
             }
             .buttonStyle(PressStyle())
             .disabled(!canSend)
-            .accessibilityLabel("Send to Watcher")
+            .accessibilityLabel(label)
             .accessibilityIdentifier("watcher-send")
         }
         .padding(6)

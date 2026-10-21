@@ -13,7 +13,8 @@ import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '.
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
-  type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
+  type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
+  type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -23,7 +24,9 @@ import type { AgentHostCommand } from './host'
 import type { AgentControl, WatcherDraft } from './control'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
-import { watcherHostInput, watcherSlimRead } from './watcherSlimReads'
+import { watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead } from './watcherSlimReads'
+import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
+import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
 import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
@@ -197,6 +200,20 @@ function newestUserRequest(record: Readonly<WatcherRecord>, threadId: string): W
   }
   return newest
 }
+
+/** A thread's linked pull requests and its branch's, each once, as a thread's links list them first. */
+function threadPullRequests(thread: AgentThread): { number: number; url: string; state: 'open' | 'closed' | 'merged'; draft: boolean }[] {
+  const seen = new Set<string>()
+  return [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []].filter(pr => {
+    const prKey = pullRequestKey(pr.url) ?? pr.url
+    if (seen.has(prKey)) return false
+    seen.add(prKey)
+    return true
+  })
+}
+const withSince = (checksPassedAt: string | undefined) => checksPassedAt === undefined ? {} : { checksPassedAt }
+/** One row of read_state's pages: the watched thread, merge queue item and pending settle at the same place in each list. */
+interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined; readonly settle: WatcherPendingSettle | undefined }
 
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
@@ -526,23 +543,36 @@ export class WatcherService implements WatcherControlHooks {
    * Watcher has just stopped watching, whose news is no longer Watcher's.
    */
   private finishedWork(target: WatcherThreadTarget, look: FinishedLook, letGo = false): string | undefined {
+    const hold = this.settleHold(target, look, letGo)
+    return hold && !hold.pullRequests.length && (letGo || !hold.unheard) ? hold.turnId : undefined
+  }
+  /**
+   * A watched thread whose work is done but for its pull requests and Watcher hearing of it: the turn it finished with, the
+   * open pull requests of it and the threads it delegated to, and whether Watcher has yet to hear all its news. Undefined
+   * while anything else is unfinished. read_state says the same of each such thread, as a pending settle (#1274).
+   */
+  private settleHold(target: WatcherThreadTarget, look: FinishedLook, letGo = false): { turnId: string; pullRequests: string[]; unheard: boolean } | undefined {
     const watch = look.watches.get(key(target))
     if (!letGo && (!watch || watch.remoteOrigin || watch.pausedByUserMessageId)) return undefined
     const local = target.hostId === this.options.control.hostId()
     if (!local && !this.remote?.settle) return undefined
     const host = this.lookAtHost(look, target.hostId), snapshot = host.snapshot, thread = host.threads.get(target.threadId), turn = thread?.lastTurn
     if (!snapshot?.connected || !host.reportsWork || !thread || !turn || turn.status !== 'completed' || thread.status !== 'idle') return undefined
-    const done = (item: AgentThread) => !item.requests.length && !isWatcherWorkActive(item) && watcherBackgroundWorkCount(item) === 0
-      && !item.pullRequests?.some(pr => pr.state === 'open') && item.worktree?.git?.pullRequest?.state !== 'open'
-    if (!done(thread) || !this.connected(thread) || this.protectedThread(thread) || isThreadClosed(thread)
+    const quiet = (item: AgentThread) => !item.requests.length && !isWatcherWorkActive(item) && watcherBackgroundWorkCount(item) === 0
+    const open = (item: AgentThread) => [...(item.pullRequests ?? []).filter(pr => pr.state === 'open').map(pr => pr.url),
+      ...item.worktree?.git?.pullRequest?.state === 'open' ? [item.worktree.git.pullRequest.url] : []]
+    if (!quiet(thread) || !this.connected(thread) || this.protectedThread(thread) || isThreadClosed(thread)
       || isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return undefined
     // Nothing on its way to it: queued here, or a Watcher start or send, and the user has not taken it over.
     const clear = (id: string) => !(local && this.options.control.hasPendingThreadWork(id)) && !look.busy.has(key({ hostId: target.hostId, threadId: id }))
       && !look.takenOver.has(key({ hostId: target.hostId, threadId: id }))
     if (!clear(thread.id)) return undefined
     // Work it delegated (ADR-0081) is its work too, and settles with it.
-    if (host.delegators.has(thread.id) && delegatedThreadsBelow(snapshot.threads, thread.id).some(id => { const item = host.threads.get(id); return item !== undefined && (!done(item) || !clear(id)) })) return undefined
-    return letGo || this.wakes.heardAllOf(target, turn.id) ? turn.id : undefined
+    const delegated = host.delegators.has(thread.id) ? delegatedThreadsBelow(snapshot.threads, thread.id).flatMap(id => host.threads.get(id) ?? []) : []
+    if (delegated.some(item => !quiet(item) || !clear(item.id))) return undefined
+    const pullRequests = [...new Map([thread, ...delegated].flatMap(open).map(url => [pullRequestKey(url) ?? url, url])).values()]
+    // Asked only once nothing else holds it, as the settle itself asks.
+    return { turnId: turn.id, pullRequests, unheard: !letGo && !pullRequests.length && !this.wakes.heardAllOf(target, turn.id) }
   }
   /**
    * Settles a finished watched thread and stops watching it, quietly: no notice, no news, and not the user's own settle,
@@ -785,6 +815,8 @@ export class WatcherService implements WatcherControlHooks {
     const live = this.view(), { localTakeovers: _localTakeovers, ...view } = live; void _localTakeovers
     const record = { ...view, ...clonePlainData({ current: view.current, history: view.history, requests: view.requests,
       watches: view.watches, operations: view.operations }) }
+    // Which phone started a request is main's alone, for its own checks: no window or phone is sent a phone's client ID.
+    for (const request of record.requests) delete request.phoneOrigin
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     // Every target the record names, with its standing watch and every participation, gathered in one walk of the record by
     // keys built once per record. A walk of every request for each target, building both keys each time, was most of what
@@ -882,6 +914,66 @@ export class WatcherService implements WatcherControlHooks {
       const delegatedWaitsOn = owned ? local.threads.filter(child => child.delegatedBy === owned.id).flatMap(child => child.requests) : []
       return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn }) }
     })
+  }
+  /**
+   * read_state's watched threads (#1274), each with its open pull requests as Sotto last read them and what the merge queue
+   * reads of each: whether it is a draft and since when its checks have passed. A thread its host no longer lists gives
+   * what its evidence says.
+   */
+  private stateThreads() {
+    const hosts = new Map<string, Map<string, AgentThread>>()
+    const threadOf = (target: WatcherThreadTarget) => {
+      let threads = hosts.get(target.hostId)
+      if (!threads) hosts.set(target.hostId, threads = new Map((this.owningSnapshot(target.hostId)?.threads ?? []).map(thread => [thread.id, thread])))
+      return threads.get(target.threadId)
+    }
+    return this.watching(this.state().watchedThreads).map(row => {
+      const thread = threadOf(row.target), evidence = this.wakes.evidence.read(row.target, Boolean(thread && this.connected(thread)))
+      const since = (url: string | undefined) => url === undefined ? undefined : this.wakes.evidence.checksPassedSince(row.target, url)
+      const open: WatcherOpenPullRequest[] = thread
+        ? watcherOpenPullRequests(threadPullRequests(thread), evidence).filter(item => item.summary.state === 'open')
+          .map(({ pr, summary }) => ({ summary, draft: pr.draft, ...withSince(since(pr.url)) }))
+        // Evidence does not say whether a pull request is a draft, so one read only from it is never queued.
+        : watcherPullRequestSummaries(evidence).filter(summary => summary.state === 'open').map(summary => ({ summary, draft: undefined, ...withSince(since(summary.url)) }))
+      return { ...row, open }
+    })
+  }
+  /** Whether Settle finished threads settles anything here: its setting is on, on a computer that settles its watches. */
+  private settlesFinishedThreads(): boolean { return !this.options.workerHost && this.options.settleFinished?.() === true }
+  /** The watched threads Settle finished threads waits to settle and what holds each, while it is on (#1274). */
+  private pendingSettles(titles: ReadonlyMap<string, string>): WatcherPendingSettle[] {
+    if (!this.settlesFinishedThreads()) return []
+    const look = this.finishedLook()
+    // A thread already tried for its turn waits for another turn, so it is not pending.
+    return [...look.watches.values()].flatMap(watch => {
+      const hold = this.settleHold(watch.target, look)
+      return !hold || this.settleTried.get(key(watch.target)) === hold.turnId ? []
+        : [{ target: watch.target, title: titles.get(key(watch.target)) ?? 'Unavailable thread', settlesWhen: watcherSettlesWhen(hold) }]
+    })
+  }
+  /**
+   * The kept notes that name a thread that is settled or not watched, or a pull request that is merged or closed (#1274):
+   * every thread Sotto lists, and every pull request linked to one, with GitHub's own read of it first where Sotto has one.
+   */
+  private staleNotes(kept: WatcherKeptState, watching: readonly { readonly target: WatcherThreadTarget }[]): WatcherStaleNote[] {
+    const watched = new Set(watching.map(row => key(row.target))), watcher = this.view().current?.target
+    const projects = new Map<string, AgentHostSnapshot['projects']>()
+    const projectsOf = (hostId: string) => projects.get(hostId) ?? projects.set(hostId, this.owningSnapshot(hostId)?.projects ?? []).get(hostId)!
+    const all = this.snapshot().threads.map(thread => ({ thread, target: { hostId: thread.hostId ?? this.hostId(), threadId: thread.id } }))
+      .filter(({ target }) => !watcher || !sameTarget(target, watcher))
+    const threads = all.map(({ thread, target }) => ({ target, title: thread.title,
+      settled: isWorkspaceThreadSettled(thread, projectsOf(target.hostId).find(project => project.id === thread.projectId)), watched: watched.has(key(target)) }))
+    const pullRequests = new Map<string, WatcherKnownPullRequest>()
+    for (const { thread } of all) for (const pr of threadPullRequests(thread)) {
+      const prKey = pullRequestKey(pr.url) ?? pr.url
+      if (!pullRequests.has(prKey)) pullRequests.set(prKey, { url: pr.url, number: pr.number, state: pr.state })
+    }
+    for (const { target } of all) for (const summary of watcherPullRequestSummaries(this.wakes.evidence.read(target))) {
+      if (summary.url === undefined || summary.state === undefined) continue
+      const prKey = pullRequestKey(summary.url) ?? summary.url, number = pullRequests.get(prKey)?.number ?? summary.number
+      if (number !== undefined) pullRequests.set(prKey, { url: summary.url, number, state: summary.state })
+    }
+    return watcherStaleNotes(kept, threads, [...pullRequests.values()])
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
@@ -1499,7 +1591,7 @@ export class WatcherService implements WatcherControlHooks {
       && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
-    if (origin?.phoneOrigin && command.type === 'send') this.guardPhoneSend(command.threadId)
+    if (origin?.phoneOrigin && (command.type === 'send' || command.type === 'steer')) this.guardPhoneSend(command.threadId)
     if (!origin?.operationId && _draftId && (command.type === 'send' && !command.wakeUp || command.type === 'steer')) {
       const target = this.target(command.threadId), proof = this.record().localTakeovers?.find(item => key(item.target) === key(target))
         ?.userDrafts?.find(item => item.draftId === _draftId && item.digest === followupDigest(command))
@@ -2106,11 +2198,22 @@ export class WatcherService implements WatcherControlHooks {
         const kept = await this.kept.current()
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
-        const input = parsed.data as WatcherToolInput<'read_state'>, page = this.page('state', this.watching(this.state().watchedThreads), input.cursor, 100)
+        const input = parsed.data as WatcherToolInput<'read_state'>, first = !input.cursor || input.cursor === 'restart'
+        // Computed from live data at each read (#1274), never kept, so none of it can go stale. The watched threads, the
+        // merge queue and the pending settles are read once, at the first page, and paged together, a hundred of each to a
+        // page; a later page reads on from what the first one found.
+        const threads = first ? this.stateThreads() : [], settles = first ? this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))) : []
+        const watching = threads.map(({ open, ...row }) => ({ ...row, pullRequests: open.map(item => item.summary) })), queue = watcherMergeQueue(threads)
+        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, settles.length) },
+          (_, at) => ({ watching: watching[at], queue: queue[at], settle: settles[at] }))
+        const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
+        const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
         // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder. The look
         // comes first, so a reminder owed but not yet noticed is not raised again after this read.
         this.lookAtState(); this.stateOwed = false
-        return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept,
+        return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
+          mergeQueue: shown.flatMap(row => row.queue ?? []), settlesFinishedThreads: this.settlesFinishedThreads(),
+          pendingSettles: shown.flatMap(row => row.settle ?? []), kept, staleNotes,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
