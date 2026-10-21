@@ -92,17 +92,25 @@ function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
 async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv | undefined,
   platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
   const parts = executable.split(sep), names = packageName.split('/')
+  // A platform package npm hoisted beside the client's own (`@openai/codex-darwin-arm64` beside `@openai/codex`) stands
+  // for that package, which is what npm updates.
   const inside = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules'
-    && names.every((name, offset) => parts[index + 1 + offset]?.toLowerCase() === name.toLowerCase()))
+    && names.every((name, offset) => {
+      const found = parts[index + 1 + offset]?.toLowerCase(), wanted = name.toLowerCase()
+      return found === wanted || (offset === names.length - 1 && found?.startsWith(`${wanted}-`))
+    }))
   const bin = dirname(executable)
   const ownPrefix = [join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
   const real = platform === 'win32' ? undefined : await realpath(executable).catch(() => executable)
-  // A link out of its own folder: Grok Build's `~/.grok/bin/grok` links to `grok-<version>` beside it and is still npm's.
+  // A link out of its own folder. Grok Build's `~/.grok/bin/grok` links to `grok-<version>` beside it and is still npm's,
+  // even when `~/.grok` is npm's prefix too, so a package there claims that link without resolving into it.
   const linked = real !== undefined && dirname(real) !== await realpath(bin).catch(() => bin)
+  const grokVersionLink = packageName === CLIENT_PACKAGES.grok && real !== undefined && !linked
+    && basename(real).toLowerCase().startsWith(`${basename(executable).toLowerCase()}-`)
   const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...environment ? npmGlobalRoots(environment) : []]
   for (const root of roots) {
     const folder = join(root, ...names)
-    const mustResolve = real !== undefined && inside <= 0 && (ownPrefix.includes(root) || linked)
+    const mustResolve = real !== undefined && inside <= 0 && ((ownPrefix.includes(root) && !grokVersionLink) || linked)
     if (mustResolve && !within(real, await realpath(folder).catch(() => folder))) continue
     try { await access(join(folder, 'package.json'), constants.F_OK); return folder } catch { /* Try the next global layout. */ }
   }
@@ -364,7 +372,9 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
   releaseAgeFlag = false): readonly string[] | undefined {
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
-    case 'npm': return packageName ? [`npm install -g --allow-scripts=${packageName} ${packageName}@latest`] : undefined
+    case 'npm': return packageName
+      ? [`npm install -g${install.npmPrefix ? ` --prefix ${shellArgument(install.npmPrefix, platform)}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
+      : undefined
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
       : provider === 'opencode' ? ['opencode upgrade'] : undefined
     case 'mise': {
@@ -379,6 +389,11 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
     }
     default: return install.byHand?.length ? [...install.byHand] : undefined
   }
+}
+/** A path as one argument to type into a shell: bare when nothing in it needs quoting, else quoted for that platform's shell. */
+function shellArgument(value: string, platform: NodeJS.Platform): string {
+  if (/^[\w/\\.:~+-]+$/u.test(value)) return value
+  return platform === 'win32' ? `"${value}"` : `'${value.replaceAll("'", "'\\''")}'`
 }
 const needsInstallStep = (provider: ProviderId, miseTool: string): boolean => provider === 'grok' && miseTool === `npm:${CLIENT_PACKAGES.grok}`
 

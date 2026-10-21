@@ -49,7 +49,7 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     const reading = await clients.check('opencode', '2.0.31', executable, await noMise())
     expect(asked).toEqual(['https://registry.npmjs.org/%40opencode/cli/latest'])
     expect(reading).toMatchObject({ id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'npm', canInstall: true,
-      command: 'npm install -g --allow-scripts=@opencode/cli @opencode/cli@latest' })
+      command: `npm install -g --prefix ${prefix} --allow-scripts=@opencode/cli @opencode/cli@latest` })
   })
 
   it('lets the install script’s copy in ~/.opencode/bin update itself with opencode upgrade, on Sotto’s own OpenCode folders', async () => {

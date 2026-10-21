@@ -2,13 +2,13 @@
 
 import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises'
 
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 
 import { clientVersionOf, compareClientVersions } from '../../../src/main/agents/clientVersions'
 import { installerDetail } from '../../../src/main/agents/installerDetail'
-import { clearLeftoverPackage, detectClientChannel, detectClientInstall, npmPrefixOf, ProviderClients, updateActionFor, type RunLike } from '../../../src/main/agents/providerClients'
+import { byHandFor, clearLeftoverPackage, detectClientChannel, detectClientInstall, npmPrefixOf, ProviderClients, updateActionFor, type RunLike } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -138,13 +138,33 @@ describe('which channel owns an install', () => {
     expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), environment, 'win32')).toBe('npm')
     const clients = new ProviderClients({ fetchImpl: async () => answer('1.0.40'), npmPath: async () => join(prefix, 'npm.cmd'), platform: 'win32' })
     expect(await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), environment))
-      .toMatchObject({ behind: true, channel: 'npm', canInstall: true, command: 'npm install -g --allow-scripts=@xai-official/grok @xai-official/grok@latest' })
+      .toMatchObject({ behind: true, channel: 'npm', canInstall: true, command: `npm install -g --prefix ${prefix} --allow-scripts=@xai-official/grok @xai-official/grok@latest` })
   })
 
   it('lets npm run the install scripts of the one package it installs, which npm 12 skips while still exiting 0', async () => {
     const action = await updateActionFor('grok', { channel: 'npm', npmPrefix: join('prefix') }, undefined, async () => 'npm-cli.js')
-    expect(action).toMatchObject({ asNode: true, command: 'npm install -g --allow-scripts=@xai-official/grok @xai-official/grok@latest',
+    expect(action).toMatchObject({ asNode: true, command: `npm install -g --prefix ${join('prefix')} --allow-scripts=@xai-official/grok @xai-official/grok@latest`,
       args: ['npm-cli.js', 'install', '-g', '--prefix', join('prefix'), '--allow-scripts=@xai-official/grok', '@xai-official/grok@latest'] })
+  })
+
+  it('shows the same prefix in the command to run by hand, quoted for the shell it is typed into', () => {
+    expect(byHandFor('claude', { channel: 'npm', npmPrefix: "/Users/o'neil/node tools" }, 'darwin'))
+      .toEqual(["npm install -g --prefix '/Users/o'\\''neil/node tools' --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@latest"])
+    expect(byHandFor('codex', { channel: 'npm', npmPrefix: 'C:\\Program Files\\nodejs' }, 'win32'))
+      .toEqual(['npm install -g --prefix "C:\\Program Files\\nodejs" --allow-scripts=@openai/codex @openai/codex@latest'])
+    expect(byHandFor('codex', { channel: 'npm' }, 'win32')).toEqual(['npm install -g --allow-scripts=@openai/codex @openai/codex@latest'])
+  })
+
+  it('reads a platform package npm hoisted beside the client as that client, never an old copy in a global root', async () => {
+    const stale = await root('sotto-npm-stale-codex-')
+    const old = join(stale, 'lib', 'node_modules', '@openai', 'codex')
+    await mkdir(old, { recursive: true }); await writeFile(join(old, 'package.json'), '{}')
+    const prefix = await root('sotto-npm-hoisted-codex-')
+    const scope = join(prefix, 'lib', 'node_modules', '@openai')
+    await mkdir(join(scope, 'codex'), { recursive: true }); await writeFile(join(scope, 'codex', 'package.json'), '{}')
+    const program = join(scope, 'codex-darwin-arm64', 'vendor', 'aarch64-apple-darwin', 'bin', 'codex')
+    await mkdir(dirname(program), { recursive: true }); await writeFile(program, '')
+    expect(await detectClientInstall('codex', program, { npm_config_prefix: stale }, 'darwin')).toEqual({ channel: 'npm', npmPrefix: prefix })
   })
 
   it('names the prefix npm installed a package under, in each layout npm uses', () => {
@@ -201,6 +221,13 @@ describe('which channel owns an install', () => {
     await mkdir(grokBin, { recursive: true }); await writeFile(join(grokBin, 'grok-1.0.5'), ''); await symlink('grok-1.0.5', join(grokBin, 'grok'))
     expect(await detectClientInstall('grok', join(grokBin, 'grok'), { GROK_HOME: join(grokRoot, 'home'), npm_config_prefix: grokRoot }))
       .toEqual({ channel: 'npm', npmPrefix: grokRoot })
+    // The same link stays npm's when Grok's home is npm's prefix too.
+    const grokHome = await root('sotto-grok-home-prefix-')
+    const homePackage = join(grokHome, 'lib', 'node_modules', '@xai-official', 'grok')
+    await mkdir(homePackage, { recursive: true }); await writeFile(join(homePackage, 'package.json'), '{}')
+    await mkdir(join(grokHome, 'bin')); await writeFile(join(grokHome, 'bin', 'grok-1.0.5'), ''); await symlink('grok-1.0.5', join(grokHome, 'bin', 'grok'))
+    expect(await detectClientInstall('grok', join(grokHome, 'bin', 'grok'), { GROK_HOME: grokHome, npm_config_prefix: grokHome, MISE_DATA_DIR: join(grokHome, 'mise') }))
+      .toEqual({ channel: 'npm', npmPrefix: grokHome })
   })
 
   it.skipIf(process.platform === 'win32')('never lets a package npm left beside a script of the user’s own claim it', async () => {
