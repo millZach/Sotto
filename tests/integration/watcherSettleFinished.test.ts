@@ -82,9 +82,9 @@ it('waits while Watcher\'s own turn runs, and settles nothing while the setting 
   f.setting.on = true; f.service.settingsChanged()
   await new Promise(resolve => setTimeout(resolve, 100))
   expect(f.settled(target.threadId)).toBe(false)
-  await f.endTurn(f.watcherId)
-  // Off: Watcher has heard and rests, but nothing is settled.
-  f.setting.on = false; f.service.settingsChanged(); await f.emit()
+  // Off before Watcher rests: once it has heard and rests, nothing is settled.
+  f.setting.on = false; f.service.settingsChanged()
+  await f.endTurn(f.watcherId); await f.emit()
   await new Promise(resolve => setTimeout(resolve, 100))
   expect(f.settled(target.threadId)).toBe(false)
   expect(f.watching(target.threadId)).toBe(true)
@@ -190,7 +190,8 @@ it('leaves a finished thread alone while a thread it delegated to still works, a
   pending.mockRestore()
   await f.emit()
   await vi.waitFor(() => expect(f.settled(parent.threadId)).toBe(true), { timeout: 15_000 })
-  expect(f.watching(parent.threadId)).toBe(false)
+  // Watcher stops watching it just after the settle is written.
+  await vi.waitFor(() => expect(f.watching(parent.threadId)).toBe(false))
 })
 
 it('does not count news as heard while its wake-up is still being saved to Watcher\u2019s queue', async () => {

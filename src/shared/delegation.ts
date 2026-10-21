@@ -112,7 +112,9 @@ export interface DelegationRead {
 export const DELEGATION_NEWS_MAX = 50
 export const delegationNewsSchema = z.object({
   source: z.literal('delegation'),
-  items: z.array(z.object({ delegationId: z.uuid(), threadId: id, outcome: watcherOutcomeSchema, turnMessageId: id.optional() }).strict())
+  // heldMinutes: a background outcome released after its thread sat idle twenty minutes with its work never seen to end (#1263).
+  items: z.array(z.object({ delegationId: z.uuid(), threadId: id, outcome: watcherOutcomeSchema, turnMessageId: id.optional(),
+    heldMinutes: z.number().int().nonnegative().max(100_000_000).optional() }).strict())
     .min(1).max(DELEGATION_NEWS_MAX),
 }).strict()
 export type DelegationNews = z.infer<typeof delegationNewsSchema>
