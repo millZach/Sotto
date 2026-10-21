@@ -1,3 +1,4 @@
+import { publicProviderEntityId } from '../../../../shared/agents'
 import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
   USAGE_LIMIT_PROVIDERS, USAGE_TOKEN_FIELDS, usageProviderIdSchema, usageWindowLength,
@@ -216,6 +217,20 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
     sottoPrompts: add(sotto.map(row => row.prompts.total)),
     subAgentTokens: add(clients.filter(row => row.subAgent).map(row => fieldValue(row.tokens.total))),
   }
+}
+
+/**
+ * Every spelling a filtered read must name to reach one model's rows on every computer: the served ID, its public
+ * form, and the IDs older hosts stored it under.
+ */
+export function modelSpellings(summary: Pick<UsageSummary, 'modelIds'>, row: Pick<UsageModelAggregate, 'providerId' | 'modelId'>): string[] {
+  return [...new Set([row.modelId, publicProviderEntityId(row.providerId, 'model', row.modelId), ...(summary.modelIds.get(`${row.providerId}:${row.modelId}`) ?? [])])]
+}
+
+/** A filtered read's days, joined across computers. A host from before history import is scoped as the page scopes it. */
+export function joinedDays(read: UsageDashboardRead, sources: readonly UsageSource[] | undefined): UsageDailyAggregate[] {
+  const rows = read.hosts.flatMap(host => { const scoped = scopeHost(host, sources); return scoped.status === 'ready' ? scoped.activity?.daily ?? [] : [] })
+  return grouped(rows, row => row.day).map(items => ({ ...sumActivity(items), day: items[0]!.day })).sort((a, b) => a.day.localeCompare(b.day))
 }
 
 /** One bar on Where you work: Sotto threads, Sotto's subagents, then each app outside Sotto with its own subagents folded in. */
