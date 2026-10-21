@@ -135,6 +135,49 @@ describe('observational subagent roster metadata', () => {
     expect(statuses()).toEqual(['completed', 'completed'])
   })
 
+  describe('a Codex v2 message to a finished agent, across forks and runtimes (#1261 review)', () => {
+    const activity = (id: string, kind: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/spec_review' })
+    const conversation = (id: string) => ({ id, messages: [], activities: [] as AgentActivity[] })
+    type Conversation = ReturnType<typeof conversation>
+    const statuses = (thread: Conversation) => thread.activities.filter(record => record.kind === 'subagent').map(record => record.agents![0]!.status)
+    const read = (projection: CodexActivityProjection, thread: Conversation, phase: 'completed' | 'history', items: readonly (readonly [string, string])[]) => {
+      for (const [id, kind] of items) projection.item(thread, activity(id, kind), { turnId: 'turn', phase })
+    }
+
+    it('keeps a follow-up waiting on its source though a fork reads the same items before the agent starts', () => {
+      const projection = new CodexActivityProjection(() => 1_000)
+      const source = conversation('source'), fork = conversation('fork')
+      read(projection, source, 'completed', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']])
+      read(projection, fork, 'history', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted'], ['subagent-completed-2', 'completed']])
+      projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
+      expect(statuses(source)).toEqual(['completed', 'running'])
+      expect(statuses(fork)).toEqual(['completed', 'completed'])
+    })
+
+    it('does not reopen a fork\'s historical message because its source\'s agent works again', () => {
+      const projection = new CodexActivityProjection(() => 1_000)
+      const source = conversation('source'), fork = conversation('fork')
+      read(projection, source, 'completed', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-thanks', 'interacted'], ['call-followup', 'interacted']])
+      projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
+      expect(statuses(source)).toEqual(['completed', 'running'])
+      // The fork was made before the follow-up: its history ends with the message that started nothing.
+      read(projection, fork, 'history', [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-thanks', 'interacted']])
+      expect(statuses(fork)).toEqual(['completed'])
+    })
+
+    it('takes no agent as working once its conversation\'s runtime has ended', () => {
+      const projection = new CodexActivityProjection(() => 1_000)
+      const source = conversation('source')
+      read(projection, source, 'completed', [['call-spawn', 'started']])
+      projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-1', status: 'inProgress' } })
+      // The app-server stopped before the agent's own end was heard; its history then says the agent completed.
+      projection.runtimeEnded(source)
+      read(projection, source, 'history', [['call-spawn', 'started'], ['subagent-completed-1', 'completed']])
+      read(projection, source, 'completed', [['call-thanks', 'interacted']])
+      expect(statuses(source)).toEqual(['completed'])
+    })
+  })
+
   it('opens a Codex v2 follow-up a later completion shows ran, when no turn of the agent\'s own was seen', () => {
     const projection = new CodexActivityProjection(() => 1_000)
     const history = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
