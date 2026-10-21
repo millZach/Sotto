@@ -72,6 +72,8 @@ async function packageMac() {
   const plan = owlMacPackagePlan(root, version)
   // Every file the receipt names is made by this run, so a leftover from an earlier one is never vouched for.
   for (const path of [plan.receipt, plan.dmg, plan.dmgBlockmap, plan.zip, plan.zipBlockmap, plan.updateManifest]) await rm(path, { force: true })
+  // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
+  run(resolve(root, 'scripts/build-coreml-asr.mjs'))
   await build({ projectDir: root, targets: Platform.MAC.createTarget(['dmg', 'zip'], Arch.arm64), publish: 'never', config: plan.config })
   run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [plan.unpacked, '--installer', plan.dmg])
   const zipApp = await verifyOwlMacArchive(plan.zip, plan.unpacked)

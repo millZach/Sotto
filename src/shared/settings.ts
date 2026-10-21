@@ -196,6 +196,11 @@ export interface AppSettings {
    */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
+  /**
+   * The model that transcribes dictation, by its picker id, or null until the user chooses one.
+   * Nothing downloads before then. Main writes it when the user chooses on the picker or in setup.
+   */
+  speechModel: string | null
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -313,6 +318,7 @@ const fieldSchemas = {
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
+  speechModel: z.string().min(1).max(128).nullable(),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -396,6 +402,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
+  speechModel: null,
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -544,6 +551,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
+    speechModel: parseField(persisted, 'speechModel', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),

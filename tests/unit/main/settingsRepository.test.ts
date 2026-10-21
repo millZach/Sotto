@@ -249,6 +249,14 @@ describe('SettingsRepository', () => {
     expect(updated.maxRecordingSeconds).toBe(DEFAULT_SETTINGS.maxRecordingSeconds)
   })
 
+  it('keeps the chosen speech model through a reset, as Settings promises (ADR-0094)', async () => {
+    const { repository } = await createRepository()
+    await repository.update({ speechModel: 'fluidaudio:parakeet-ultra', soundCues: false })
+    const reset = await repository.reset()
+    expect(reset.speechModel).toBe('fluidaudio:parakeet-ultra')
+    expect(reset.soundCues).toBe(DEFAULT_SETTINGS.soundCues)
+  })
+
   it('resets persisted settings to a fresh default value', async () => {
     const { repository } = await createRepository()
     await repository.save({ theme: 'dark', soundCues: false, onboardingComplete: true })

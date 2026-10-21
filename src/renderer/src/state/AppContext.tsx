@@ -20,7 +20,7 @@ import type {
   TranscriptPolishAsrContext,
   UpdateStatus,
 } from '../../../shared/contracts'
-import type { SpeechModelStatus } from '../../../shared/speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from '../../../shared/speechModel'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
@@ -155,6 +155,13 @@ export interface AppActions {
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** Starts the speech model download, or retries one that failed. */
   downloadSpeechModel(): Promise<void>
+  /**
+   * Switches dictation to a model from `speechModels`; one of Sotto's downloads if it is not here
+   * yet. False when main refused it (the model is no longer here); the list is then read again.
+   */
+  chooseSpeechModel(id: string): Promise<boolean>
+  /** Reads again which speech models this computer has. */
+  refreshSpeechModels(): Promise<void>
   checkForUpdates(): Promise<UpdateStatus | null>
   downloadUpdate(): Promise<boolean>
   installUpdate(): Promise<boolean>
@@ -180,6 +187,10 @@ export interface AppContextValue {
   readonly recoveryNotices: readonly RecoveryNotice[]
   /** Where the speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
+  /** The speech models Sotto can run on this computer; null until main answers. */
+  readonly speechModels: readonly SpeechModelOption[] | null
+  /** The chosen speech model's id (`settings.speechModel`); null while none is chosen. */
+  readonly speechModelChoice: string | null
   /** Null until the main process answers, and on any build without a feed. */
   readonly update: UpdateStatus | null
   /** How many times the application menu asked for a check; each rise is one press. */
@@ -226,6 +237,8 @@ export function AppProvider({
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
   const speechModelRef = useRef<SpeechModelStatus | null>(null)
+  const [speechModels, setSpeechModels] = useState<readonly SpeechModelOption[] | null>(null)
+  const speechModelsVersionRef = useRef(0)
   const [updateCheckRequest, setUpdateCheckRequest] = useState(0)
 
   // The main process resolved the platform once and carried it across the
@@ -265,6 +278,20 @@ export function AppProvider({
     (generation: number): boolean => activeGenerationRef.current === generation,
     [],
   )
+
+  // The list is read again after every change of status that ends a load, so
+  // a model downloaded or gone shows on the picker; the latest read wins.
+  const refreshSpeechModels = useCallback(async (): Promise<void> => {
+    if (bridge === undefined) return
+    const generation = activeGenerationRef.current
+    const version = ++speechModelsVersionRef.current
+    try {
+      const models = await bridge.listSpeechModels()
+      if (isCurrentGeneration(generation) && speechModelsVersionRef.current === version) setSpeechModels(models)
+    } catch {
+      // The picker keeps the list it had.
+    }
+  }, [bridge, isCurrentGeneration])
 
   const commitSettings = useCallback((next: AppSettings): void => {
     settingsRef.current = next
@@ -369,6 +396,7 @@ export function AppProvider({
     setDictation(initialDictationState)
     setRecoveryNotices([])
     setUpdate(null)
+    setSpeechModels(null)
 
     if (bridge === undefined) {
       setStatus('unavailable')
@@ -410,11 +438,14 @@ export function AppProvider({
     }
     try {
       unsubscribeSpeechModel = bridge.onSpeechModelStatus((speechModelStatus) => {
-        if (isCurrentGeneration(generation)) commitSpeechModel(speechModelStatus)
+        if (!isCurrentGeneration(generation)) return
+        commitSpeechModel(speechModelStatus)
+        if (speechModelStatus.state === 'ready' || speechModelStatus.state === 'failed') void refreshSpeechModels()
       })
     } catch {
       // Without the subscription the status below is still read once.
     }
+    void refreshSpeechModels()
     void bridge.getSpeechModelStatus().then(
       (speechModelStatus) => { if (isCurrentGeneration(generation)) commitSpeechModel(speechModelStatus) },
       () => undefined,
@@ -578,7 +609,7 @@ export function AppProvider({
       try { localController?.dispose() } catch { /* resources are independently guarded */ }
       localController = null
     }
-  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, commitUpdate, createController, isCurrentGeneration])
+  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, commitUpdate, createController, isCurrentGeneration, refreshSpeechModels])
 
   const actions = useMemo<AppActions>(() => ({
     start: () => invokeController(controllerRef.current, (controller) => controller.start()),
@@ -678,6 +709,15 @@ export function AppProvider({
       if (bridge === undefined) return
       try { await bridge.downloadSpeechModel() } catch { /* the status it would have changed stays as it was */ }
     },
+    // Main saves the choice and publishes the setting and the status. A choice it
+    // refuses changes nothing, and the list is read again so the model that went is gone from it.
+    chooseSpeechModel: async (id) => {
+      if (bridge === undefined) return false
+      const chosen = await bridge.chooseSpeechModel(id).then(result => result.ok, () => false)
+      if (!chosen) void refreshSpeechModels()
+      return chosen
+    },
+    refreshSpeechModels,
     // Nothing about updating may raise a failure banner: an update that cannot
     // be reached is simply an update the user hears nothing about.
     checkForUpdates: async () => {
@@ -730,7 +770,7 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
       }
     },
-  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration])
+  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, refreshSpeechModels])
 
   const value = useMemo<AppContextValue>(() => ({
     windowMaximized,
@@ -746,10 +786,12 @@ export function AppProvider({
     navigation,
     recoveryNotices,
     speechModel,
+    speechModels,
+    speechModelChoice: settings?.speechModel ?? null,
     update,
     updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dictationRecovery, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, speechModel, status, update, updateCheckRequest])
+  }), [windowMaximized, actions, copy, dictation, dictationRecovery, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }

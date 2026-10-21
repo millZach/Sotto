@@ -20,6 +20,15 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('contentinfo')).toHaveTextContent(/parakeet v3 on this computer/i)
   })
 
+  it('names the chosen model at the foot once it is ready', async () => {
+    renderApp(createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: 'fluidaudio:parakeet-ultra' })),
+      listSpeechModels: vi.fn(async () => [{ id: 'fluidaudio:parakeet-ultra', name: 'Parakeet Ultra', maker: 'Moondream', languages: '25 European languages', source: 'fluidaudio' as const, installed: true, bytes: 632_314_500 }]),
+    }))
+    await openPage('home')
+    await waitFor(() => expect(screen.getByRole('contentinfo')).toHaveTextContent(/parakeet ultra on this computer/i))
+  })
+
   it('navigates the management shell and copies History through the trusted bridge without auto-paste', async () => {
     const user = userEvent.setup()
     const deliverOutput = vi.fn(async () => 'copied' as const)
@@ -204,7 +213,7 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
     stopped.resolve()
 
-    await screen.findByRole('heading', { name: /download the speech model/i })
+    await screen.findByRole('heading', { name: /choose a speech model/i })
     await act(async () => undefined)
     expect(createMicrophoneTest).toHaveBeenCalledOnce()
     expect(replacement.start).not.toHaveBeenCalled()
@@ -295,7 +304,7 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
     started.resolve('ready')
 
-    await screen.findByRole('heading', { name: /download the speech model/i })
+    await screen.findByRole('heading', { name: /choose a speech model/i })
     await act(async () => undefined)
     expect(microphone.stop).toHaveBeenCalledOnce()
   })

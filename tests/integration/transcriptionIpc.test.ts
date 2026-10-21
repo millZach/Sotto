@@ -7,8 +7,10 @@ import {
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
+  SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_LIST,
   TRANSCRIPTION_TRANSCRIBE
 } from '../../src/shared/channels'
 import { createIpcHarness } from '../fixtures/ipcHarness'
@@ -24,6 +26,8 @@ describe('IPC validation and lifecycle', () => {
       const speechModel = {
         status: vi.fn(() => ({ state: 'downloading' as const, receivedBytes: 1_000, totalBytes: 2_000 })),
         download: vi.fn(),
+        list: vi.fn(async () => [{ id: 'parakeet-tdt-0.6b-v3-int8', name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', source: 'sotto' as const, installed: false, bytes: 670_478_772 }]),
+        choose: vi.fn(async (id: string) => id === 'parakeet-tdt-0.6b-v3-int8'),
       }
       const openRouterKey = { check: vi.fn(async () => ({ ok: true as const })) }
       registerIpc(harness.ipc, {
@@ -54,6 +58,11 @@ describe('IPC validation and lifecycle', () => {
       })
       await expect(harness.ipc.invokeArgs(SPEECH_MODEL_DOWNLOAD, [])).resolves.toEqual({ ok: true })
       expect(speechModel.download).toHaveBeenCalledOnce()
+      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_LIST, [])).resolves.toMatchObject([{ id: 'parakeet-tdt-0.6b-v3-int8', installed: false }])
+      await expect(harness.ipc.invoke(SPEECH_MODEL_CHOOSE, 'parakeet-tdt-0.6b-v3-int8')).resolves.toEqual({ ok: true })
+      await expect(harness.ipc.invoke(SPEECH_MODEL_CHOOSE, 'fluidaudio:elsewhere')).resolves.toEqual({ ok: false, reason: 'unavailable' })
+      await expect(harness.ipc.invoke(SPEECH_MODEL_CHOOSE, '')).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+      expect(speechModel.choose).toHaveBeenCalledTimes(2)
       await expect(harness.ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(true)
 
       // A header-only buffer, an unbounded one, and a non-buffer payload are all
@@ -86,6 +95,8 @@ describe('IPC validation and lifecycle', () => {
         ok: false,
         reason: 'unavailable',
       })
+      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_LIST, [])).resolves.toEqual([])
+      await expect(harness.ipc.invoke(SPEECH_MODEL_CHOOSE, 'parakeet-tdt-0.6b-v3-int8')).resolves.toEqual({ ok: false, reason: 'unavailable' })
       await expect(harness.ipc.invokeArgs(OPENROUTER_CHECK_KEY, [])).resolves.toEqual({
         ok: false,
         reason: 'unconfigured',

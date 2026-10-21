@@ -7,14 +7,14 @@ import React, {
   type RefObject,
 } from 'react'
 
-import { SPEECH_MODEL, SPEECH_MODEL_SIZE, type SpeechModelStatus } from '../../../../shared/speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from '../../../../shared/speechModel'
 import type { HostsBridge } from '../../../../shared/hosts'
 import type { PhonesBridge } from '../../../../shared/phones'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useAudioInputDevices, type MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
-import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
+import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView, speechModelSummary } from '../../components/SpeechModelStatus'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -37,10 +37,18 @@ import './onboarding.css'
 export interface OnboardingProps {
   readonly settings: AppSettings
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
-  /** Where the speech model stands (ADR-0071); null until main answers. */
+  /** The speech models Sotto can run on this computer; null until main answers. */
+  readonly speechModels: readonly SpeechModelOption[] | null
+  /** The id of the model dictation uses; null until the user chooses one. */
+  readonly speechModelChoice: string | null
+  /** Where the chosen speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
-  /** Starts the speech model download, or retries one that failed. */
-  readonly onDownloadSpeechModel: () => void
+  /** Chooses a model for dictation; choosing one of Sotto's models not here yet downloads it. */
+  readonly onChooseSpeechModel: (id: string) => void
+  /** True when the last choice was refused because that model is no longer on this computer. */
+  readonly speechModelRefused?: boolean
+  /** Tries the chosen model again after it failed. */
+  readonly onRetrySpeechModel: () => void
   readonly microphoneState: MicrophoneTestState
   readonly microphoneLevel?: number
   readonly shortcut: string
@@ -113,8 +121,12 @@ function StepHeading({ title, lead, headingRef }: {
 export function Onboarding({
   settings,
   onUpdateSettings,
+  speechModels,
+  speechModelChoice,
   speechModel,
-  onDownloadSpeechModel,
+  onChooseSpeechModel,
+  speechModelRefused = false,
+  onRetrySpeechModel,
   microphoneState,
   microphoneLevel = 0,
   shortcut,
@@ -134,11 +146,10 @@ export function Onboarding({
   const omarchy = useOmarchySetup(platform === 'linux' && step.id === 'omarchy')
   const keysSet = omarchy.state && ['done', 'manual'].includes(omarchy.state.pieces.keys.status)
 
-  // Main starts the download when Sotto opens; this step starts it too if nothing has yet.
-  const speechModelMissing = speechModel?.state === 'missing'
-  useEffect(() => {
-    if (step.id === 'speech-model' && speechModelMissing) onDownloadSpeechModel()
-  }, [onDownloadSpeechModel, speechModelMissing, step.id])
+  // Nothing downloads until the user picks one of Sotto's models; models already on this computer come first.
+  const installedSpeechModels = speechModels?.filter(model => model.installed) ?? []
+  const downloadableSpeechModels = speechModels?.filter(model => !model.installed) ?? []
+  const chosenSpeechModel = speechModels?.find(model => model.id === speechModelChoice) ?? null
   const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
   const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
   if (settings.microphoneId !== savedMicrophoneId) {
@@ -243,7 +254,7 @@ export function Onboarding({
       case 'omarchy': return !!omarchy.state && Object.values(omarchy.state.pieces).some(piece => ['done', 'manual'].includes(piece.status))
       case 'microphone': return microphoneHeard
       // Once the download is under way setup can go on; dictation works as soon as it finishes.
-      case 'speech-model': return speechModel !== null && speechModel.state !== 'missing' && speechModel.state !== 'failed'
+      case 'speech-model': return speechModelChoice !== null && speechModel !== null && speechModel.state !== 'missing' && speechModel.state !== 'failed'
       case 'agents': return agentState !== null && localProviders(agentState).some(provider => provider.connection === 'connected')
       case 'project': return agentState !== null && localProjects(agentState).length > 0
       case 'computers': return hostCount > 0
@@ -331,7 +342,7 @@ export function Onboarding({
                 ? 'Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
                 : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
               <div className="onboarding-assurances">
-                <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by {SPEECH_MODEL.name}</p>
+                <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by the speech model you choose</p>
                 <p><Check aria-hidden="true" size={18} /> Your audio never leaves this computer</p>
                 <p><Check aria-hidden="true" size={18} /> Your threads go only to each agent's own provider</p>
                 <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
@@ -405,13 +416,47 @@ export function Onboarding({
 
           {step.id === 'speech-model' ? (
             <section aria-labelledby="onboarding-heading">
-              {heading('Download the speech model', 'Sotto turns your voice into text on this computer. Your audio never leaves it.')}
-              <div className="tt-field onboarding-speech-model">
-                <span className="tt-field__label">{SPEECH_MODEL.name}, by {SPEECH_MODEL.maker}</span>
-                <p className="tt-field__description">{SPEECH_MODEL_SIZE}, downloaded once from Sotto's releases on GitHub.</p>
-                <SpeechModelStatusView status={speechModel} onRetry={onDownloadSpeechModel} />
-              </div>
-              <p className="onboarding-aside">{speechModel?.state === 'ready' ? '' : 'You can continue while it downloads. Dictation works as soon as it finishes. '}AI cleanup is optional; turn it on in Settings → Cleanup.</p>
+              {heading('Choose a speech model', 'Sotto turns your voice into text on this computer. Your audio never leaves it.')}
+              {speechModels === null ? (
+                <p className="tt-field__description" role="status">Looking for speech models on this computer…</p>
+              ) : (
+                <>
+                  {installedSpeechModels.length > 0 ? <p className="onboarding-speech-models__intro">Already on this computer:</p> : null}
+                  <ul className="onboarding-speech-models">
+                    {[...installedSpeechModels, ...downloadableSpeechModels].map((model, position) => {
+                      const chosen = model.id === speechModelChoice
+                      return (
+                        <li key={model.id} className="onboarding-speech-model" data-chosen={chosen || undefined}>
+                          <div>
+                            <span className="tt-field__label">{model.name}, by {model.maker}</span>
+                            <p className="tt-field__description" {...(chosen ? { role: 'status' } : {})}>
+                              {chosen && speechModel !== null && speechModel.state !== 'failed' && speechModel.state !== 'missing'
+                                ? speechModel.state === 'ready' ? `${model.languages}. Ready.` : `${speechModelSummary(speechModel, model.name)}.`
+                                : `${model.languages}.${model.installed ? '' : ` ${formatModelSize(model.bytes)}, from GitHub.`}`}
+                            </p>
+                          </div>
+                          {/* The button stays once chosen (pressed) so keyboard focus is not lost. */}
+                          <Button
+                            variant={chosen || (position === 0 && speechModelChoice === null) ? 'primary' : 'secondary'}
+                            aria-pressed={chosen}
+                            onClick={() => { if (!chosen) onChooseSpeechModel(model.id) }}
+                          >
+                            {chosen ? <Check aria-hidden="true" size={16} /> : null}
+                            {model.installed ? `Use ${model.name}` : `Download ${model.name}`}
+                          </Button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {speechModelRefused ? <p className="onboarding-recovery" role="status">{SPEECH_MODEL_REFUSED}</p> : null}
+                  {/* Rows say how the chosen model stands in one line, so every row fits the smallest window;
+                      a failure needs its whole sentence and Try again, so it gets them below the list. */}
+                  {speechModelChoice !== null && (chosenSpeechModel === null || speechModel?.state === 'failed')
+                    ? <SpeechModelStatusView status={speechModel} model={chosenSpeechModel} onRetry={onRetrySpeechModel} />
+                    : null}
+                </>
+              )}
+              <p className="onboarding-aside onboarding-speech-model__aside">{chosenSpeechModel?.source === 'sotto' && speechModel?.state === 'downloading' ? 'You can continue while it downloads. Dictation works as soon as it finishes. ' : ''}AI cleanup is optional; turn it on in Settings → Cleanup.</p>
             </section>
           ) : null}
 

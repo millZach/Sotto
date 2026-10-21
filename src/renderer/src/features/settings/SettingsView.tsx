@@ -38,8 +38,8 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
-import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
-import { SPEECH_MODEL, type SpeechModelStatus } from '../../../../shared/speechModel'
+import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
+import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
@@ -89,6 +89,12 @@ export interface SettingsViewProps {
   readonly speechModel: SpeechModelStatus | null
   /** Starts the speech model download, or retries one that failed. */
   readonly onDownloadSpeechModel: () => void
+  /** The speech models Sotto can run on this computer; null until main answers. */
+  readonly speechModels?: readonly SpeechModelOption[] | null
+  /** Switches dictation to the model with this id. */
+  readonly onChooseSpeechModel?: (id: string) => void
+  /** True when the last choice was refused because that model is no longer on this computer. */
+  readonly speechModelRefused?: boolean
   readonly onCheckForUpdates: () => Promise<UpdateStatus | null>
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
@@ -171,6 +177,9 @@ export function SettingsView({
   onCheckOpenRouterKey,
   speechModel,
   onDownloadSpeechModel,
+  speechModels = null,
+  onChooseSpeechModel,
+  speechModelRefused = false,
   onCheckForUpdates,
   onDownloadUpdate,
   onInstallUpdate,
@@ -499,11 +508,15 @@ export function SettingsView({
               <Card className="settings-section" id="settings-transcription" {...panelProps('settings-transcription')}>
                 <div className="settings-section__heading"><h2>Transcription</h2><p>Speech to text, on this computer</p></div>
                 <div className="settings-rows">
-                  <div className="settings-model-statement">
-                    <h3>{SPEECH_MODEL.name}</h3>
-                    <p>Speech recognition by {SPEECH_MODEL.maker}, on this computer. Understands {SPEECH_MODEL.languages} European languages and works out which one you speak.</p>
-                    <SpeechModelStatusView status={speechModel} onRetry={onDownloadSpeechModel} />
-                  </div>
+                  <SpeechModelPicker
+                    models={speechModels}
+                    choice={settings.speechModel}
+                    status={speechModel}
+                    onChoose={onChooseSpeechModel}
+                    refused={speechModelRefused}
+                    onRetry={onDownloadSpeechModel}
+                    platform={platform}
+                  />
                   <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trims extra spaces without changing any words." />
                   <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
                 </div>
@@ -660,7 +673,123 @@ export function SettingsView({
       {statusText ? <p className="page-status">{statusText}</p> : null}
 
       {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
-      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key and history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
+      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
     </div>
   )
+}
+
+/**
+ * What the picker calls a model: its name, and for one not on this computer yet its size. The list's
+ * Download group says that choosing it downloads it, which keeps every name short enough to read in
+ * the closed list.
+ */
+function speechModelLabel(model: SpeechModelOption): string {
+  return model.installed ? model.name : `${model.name}, ${formatModelSize(model.bytes)}`
+}
+
+const PICKER_STEPS: Readonly<Record<string, (index: number, last: number) => number>> = Object.freeze({
+  ArrowDown: (index, last) => Math.min(last, index + 1),
+  ArrowRight: (index, last) => Math.min(last, index + 1),
+  ArrowUp: (index) => Math.max(0, index - 1),
+  ArrowLeft: (index) => Math.max(0, index - 1),
+  Home: () => 0,
+  PageUp: () => 0,
+  End: (_index, last) => last,
+  PageDown: (_index, last) => last,
+})
+
+/**
+ * Settings → Transcription's speech model: a list of the models already on
+ * this computer, then Sotto's models to download, then the chosen one's
+ * statement and where it stands.
+ *
+ * A closed list changes its value, and says so, at every typed letter, and on
+ * Windows and Linux at every arrow key too, and a choice can start a 650 MB
+ * download. So those keys only move to a model here, and Enter, or a click in
+ * the open list, chooses it; leaving the list goes back to the chosen one.
+ * macOS opens its own menu on the arrows, where only Enter or a click chooses,
+ * so the Mac keeps its arrows. Opening the list, by pointer or key, first goes
+ * back to the chosen model, so a click on the one moved to is a change.
+ */
+function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry, platform }: {
+  readonly models: readonly SpeechModelOption[] | null
+  readonly choice: string | null
+  readonly status: SpeechModelStatus | null
+  readonly onChoose: ((id: string) => void) | undefined
+  readonly refused: boolean
+  readonly onRetry: () => void
+  readonly platform: SottoPlatform
+}): ReactNode {
+  const chosen = models?.find(model => model.id === choice) ?? null
+  const [movedTo, setMovedTo] = useState<string | null>(null)
+  const here = models?.filter(model => model.installed) ?? []
+  const downloads = models?.filter(model => !model.installed) ?? []
+  // In the order the list shows them, which the arrow keys follow.
+  const options = [...here, ...downloads]
+  const moved = options.find(model => model.id === movedTo && model.id !== chosen?.id) ?? null
+  const choose = (id: string): void => {
+    setMovedTo(null)
+    if (id !== '' && id !== chosen?.id) onChoose?.(id)
+  }
+  const onKeyDown = (event: React.KeyboardEvent<HTMLSelectElement>): void => {
+    if (event.ctrlKey || event.metaKey) return
+    // These open the list; it opens on the chosen model, so choosing the one moved to is a change.
+    if (event.altKey || event.key === ' ' || event.key === 'F4' || (platform === 'darwin' && event.key.startsWith('Arrow'))) {
+      setMovedTo(null)
+      return
+    }
+    if (event.key === 'Enter') {
+      if (moved === null) return
+      event.preventDefault()
+      choose(moved.id)
+      return
+    }
+    if (event.key === 'Escape' && moved !== null) {
+      event.preventDefault()
+      event.stopPropagation()
+      setMovedTo(null)
+      return
+    }
+    const index = options.findIndex(model => model.id === (moved ?? chosen)?.id)
+    const last = options.length - 1
+    let next: number | undefined = platform === 'darwin' ? undefined : PICKER_STEPS[event.key]?.(index, last)
+    if (next === undefined && event.key.length === 1 && event.key !== ' ') {
+      // Typing a letter goes to the next model whose name starts with it, as the list itself would.
+      const letter = event.key.toLocaleLowerCase()
+      const after = [...options.slice(index + 1), ...options.slice(0, index + 1)]
+      const found = after.find(model => model.name.toLocaleLowerCase().startsWith(letter))
+      next = found === undefined ? index : options.indexOf(found)
+    }
+    if (next === undefined || last < 0) return
+    event.preventDefault()
+    setMovedTo(options[Math.max(0, next)]?.id ?? null)
+  }
+  const description = moved === null
+    ? 'The model that turns your speech into text. Choosing one switches dictation to it.'
+    : moved.installed
+      ? `Press Enter to switch dictation to ${moved.name}.`
+      : `Press Enter to download ${moved.name}, ${formatModelSize(moved.bytes)}, and switch dictation to it.`
+  return <>
+    <Field label="Speech model" description={description} {...(refused ? { error: SPEECH_MODEL_REFUSED } : {})}>
+      <Select
+        value={moved?.id ?? chosen?.id ?? ''}
+        disabled={models === null || onChoose === undefined}
+        onKeyDown={onKeyDown}
+        onBlur={() => setMovedTo(null)}
+        onMouseDown={() => setMovedTo(null)}
+        onChange={event => choose(event.currentTarget.value)}
+      >
+        {chosen === null ? <option value="" disabled>{models === null ? 'Looking for models…' : 'Choose a model'}</option> : null}
+        {here.length > 0 ? <optgroup label="Already on this computer">{here.map(model => <option key={model.id} value={model.id}>{speechModelLabel(model)}</option>)}</optgroup> : null}
+        {downloads.length > 0 ? <optgroup label="Download">{downloads.map(model => <option key={model.id} value={model.id}>{speechModelLabel(model)}</option>)}</optgroup> : null}
+      </Select>
+    </Field>
+    <div className="settings-model-statement">
+      {chosen === null ? null : <>
+        <h3>{chosen.name}</h3>
+        <p>Speech recognition by {chosen.maker}, on this computer. {chosen.languages}.</p>
+      </>}
+      <SpeechModelStatusView status={status} model={chosen} onRetry={onRetry} />
+    </div>
+  </>
 }

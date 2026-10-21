@@ -29,7 +29,7 @@ import { createCloudIphoneBridge } from './cloudIphone'
 import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
 import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
-import { speechModelStatusSchema } from '../shared/speechModel'
+import { speechModelListSchema, speechModelStatusSchema } from '../shared/speechModel'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
@@ -80,8 +80,10 @@ import {
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
+  SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_LIST,
   SPEECH_MODEL_STATUS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
@@ -519,6 +521,8 @@ export function createSottoBridge(
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
     getSpeechModelStatus: () => invokeParsed(renderer, SPEECH_MODEL_GET_STATUS, speechModelStatusSchema),
     downloadSpeechModel: () => invokeParsed(renderer, SPEECH_MODEL_DOWNLOAD, commandResultSchema),
+    listSpeechModels: () => invokeParsed(renderer, SPEECH_MODEL_LIST, speechModelListSchema),
+    chooseSpeechModel: (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
     onSpeechModelStatus,
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
     ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),

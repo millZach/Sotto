@@ -333,13 +333,14 @@ describe('DictateRoom', () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
-  it('names the missing speech model and sends people to Settings instead of a dead pill', async () => {
+  it('says no speech model is chosen and sends people to Settings → Transcription instead of a dead pill', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()
     render(<DictateRoom {...baseProps} speechModel={{ state: 'missing' }} onOpenSettings={onOpenSettings} />)
-    expect(screen.getByRole('heading', { level: 1, name: 'The speech model is not ready yet.' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: 'No speech model is chosen.' })).toBeVisible()
+    expect(screen.getByText('Choose one in Settings → Transcription.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Speech model needed' })).toBeDisabled()
-    expect(screen.getByText('Speech model not downloaded')).toBeVisible()
+    expect(screen.getByText('No speech model chosen')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
     expect(screen.queryByText(/press/i)).not.toBeInTheDocument()

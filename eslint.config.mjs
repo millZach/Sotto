@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'native/coreml-asr/.build/**',
       'artifacts/watcher-room-state/**',
       'artifacts/certified-detail/**',
       'artifacts/watcher-phone-wire/**',

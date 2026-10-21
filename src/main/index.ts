@@ -124,8 +124,11 @@ import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { loadParakeetEngine } from './asr/speechEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
+import { SpeechModelManager } from './asr/speechModelManager'
+import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
+import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
-import type { SpeechModelStatus } from '../shared/speechModel'
+import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
@@ -1238,25 +1241,52 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
-  // Dictation transcribes on this computer (ADR-0071). The speech model downloads once from Sotto's
-  // releases, starts loading when Sotto does and stays loaded. E2E runs never download it: they
-  // report it ready, and the renderer uses its fake transcriber. Each failed segment records why and
-  // how long it was in the transcription diagnostics, never what was said.
+  // Dictation transcribes on this computer (ADR-0071) with the model the user chose (ADR-0094). Nothing
+  // downloads until they choose Sotto's own; on an Apple silicon Mac the Core ML models FluidAudio keeps
+  // are on offer too, run through Sotto's helper. E2E runs never download or look: they report the model
+  // ready, and the renderer uses its fake transcriber. Each failed segment records why and how long it
+  // was in the transcription diagnostics, never what was said.
   const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
-  const speechModelStore = e2eConfiguration === null
-    ? new SpeechModelStore({
-      directory: join(userDataPath, 'speech-models'),
-      loadEngine: loadParakeetEngine,
+  const coreMlHelperPath = app.isPackaged
+    ? join(process.resourcesPath, 'coreml-asr', 'sotto-coreml-asr')
+    : join(__dirname, '../../native/coreml-asr/.build/sotto-coreml-asr')
+  // The settings coordinator is made further down; the choice is saved through it once it exists.
+  let saveSpeechModelChoice: (id: string | null) => Promise<void> = () => Promise.reject(new Error('Settings are not ready yet'))
+  const speechModelManager = e2eConfiguration === null
+    ? new SpeechModelManager({
+      // One folder per model under speech-models; Parakeet v3's is where ADR-0071 put it.
+      stores: SOTTO_SPEECH_MODELS.map((model) => new SpeechModelStore({
+        directory: join(userDataPath, 'speech-models'),
+        model,
+        loadEngine: loadParakeetEngine,
+        onStatus: () => undefined,
+      })),
+      findFluidAudio: () => coreMlHelperAvailable(coreMlHelperPath)
+        ? findFluidAudioModels(fluidAudioModelsRoot(app.getPath('appData')))
+        : Promise.resolve([]),
+      coreMlLoader: (version) => createCoreMlEngineLoader(coreMlHelperPath, version),
+      readChoice: () => workingCopySettings.speechModel,
+      saveChoice: (id) => saveSpeechModelChoice(id),
       onStatus: (status) => { windows.sendToMain(SPEECH_MODEL_STATUS, status) },
     })
     : null
   const speechModel = {
-    status: (): SpeechModelStatus => speechModelStore?.get() ?? { state: 'ready' },
-    download: (): void => { void speechModelStore?.ensure() },
+    status: (): SpeechModelStatus => speechModelManager?.status() ?? { state: 'ready' },
+    download: (): void => { speechModelManager?.download() },
+    // E2E runs offer Parakeet v3 as already here and Sotto's other models as downloads, so setup and
+    // Settings show real rows; choosing one only saves the choice, since an E2E model is always ready.
+    list: (): Promise<SpeechModelOption[]> => speechModelManager?.list() ?? Promise.resolve(
+      SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
+    ),
+    choose: async (id: string): Promise<boolean> => {
+      if (speechModelManager !== null) return speechModelManager.choose(id)
+      if (sottoSpeechModel(id) === undefined) return false
+      await saveSpeechModelChoice(id)
+      return true
+    },
   }
-  speechModel.download()
   const transcription = new LocalTranscriptionService({
-    engine: () => speechModelStore?.currentEngine() ?? null,
+    engine: () => speechModelManager?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
   })
 
@@ -1468,6 +1498,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, [cleanRetiredHistory])
     },
   })
+  // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
+  saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
+  void speechModelManager?.start()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
@@ -1839,7 +1872,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so drop what is still being transcribed.
         transcription.dispose()
-        speechModelStore?.dispose()
+        speechModelManager?.dispose()
         updates.dispose()
         desktopWatcher?.dispose()
         cleanup()
