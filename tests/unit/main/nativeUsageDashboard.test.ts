@@ -412,7 +412,7 @@ describe('Owl native numeric projection', () => {
 })
 
 describe('native subscription metadata seam', () => {
-  it.each(['codex', 'claude', 'grok'] as const)('refuses Muse quota reads in the %s adapter without starting native work', async provider => {
+  it.each(['codex', 'claude', 'grok'] as const)('answers other providers quota reads in the %s adapter without starting native work', async provider => {
     const { root } = await fixture(provider)
     const host = provider === 'codex' ? new CodexAppServerHost({ userDataPath: root, usageEnabled: true })
       : provider === 'claude' ? new ClaudeStreamJsonHost({ userDataPath: root, usageEnabled: true })
@@ -423,7 +423,9 @@ describe('native subscription metadata seam', () => {
       ? vi.spyOn((host as unknown as { client: { findExecutable(): Promise<string | null> } }).client, 'findExecutable')
       : vi.spyOn(host as unknown as { readQuota(): Promise<unknown> }, 'readQuota')
     for (const refresh of [false, true]) {
-      await expect(host.readProviderQuota!('muse', refresh)).rejects.toThrow('Usage is not available for this provider.')
+      // OpenCode reports no account limits, so nothing may build a quota result for it; Muse's are its own adapter's to read.
+      await expect(host.readProviderQuota!('opencode', refresh)).rejects.toThrow('Usage reads no limits for this provider.')
+      await expect(host.readProviderQuota!('muse', refresh)).resolves.toMatchObject({ providerId: 'muse', status: 'unavailable', reason: 'unsupported' })
     }
     expect(read).not.toHaveBeenCalled()
     expect(connect).not.toHaveBeenCalled()

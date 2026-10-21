@@ -365,8 +365,8 @@ export function About({ page }: { readonly page: UsagePage }): ReactNode {
   return <details className="usage-about" onKeyDown={dismissDisclosure}>
     <summary className="tt-focusable"><ChevronRight size={14} aria-hidden="true" />About these numbers</summary>
     <ul>
-      <li>Limits come from each provider and count all use of the account, in Sotto or anywhere else. Two computers' readings are shown side by side, never added.</li>
-      <li>Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build and Devin are counted in Sotto only.</li>
+      <li>Limits come from each provider and count all use of the account, in Sotto or anywhere else. Two computers' readings are shown side by side, never added. OpenCode doesn't report account limits, so it isn't on Subscriptions.</li>
+      <li>Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build, Devin, Muse and OpenCode are counted in Sotto only.</li>
       <li>Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it.</li>
       <li>Total tokens are input plus output. Cache reads and writes are part of input, not extra.</li>
       <li>A dash means the provider didn't report that number. It isn't zero. A ≥ means some records left a number out, so the figure is at least that.</li>

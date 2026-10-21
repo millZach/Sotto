@@ -12,7 +12,7 @@ A request Sotto already counted is the same request in the client's record, matc
 
 Codex work Sotto started that no thread owns any more, such as a deleted thread or a side call for a title or branch name, is Sotto's work too, counted in tokens and never as a prompt. Sotto's own prompts from before Usage began come from its thread store: each stored user message, with its instant and whether it was a wake-up. Prompts outside Sotto are the clients' own user turns: a Claude Code message typed into a session, and a Codex turn, which includes each `codex exec` run. An agent can start those runs; Usage counts them as prompts and names the app, because the record cannot tell who typed them. Subagent work counts in tokens and never as a prompt.
 
-Grok Build and Devin keep no token counts on the computer, so their work outside Sotto is not counted; their Sotto threads count as before. Work a client deleted from its own records, and Sotto threads deleted before Usage began, cannot be read back. A computer's history appears once its own Owl host carries this importer.
+Grok Build and Devin keep no token counts on the computer, so their work outside Sotto is not counted; their Sotto threads count as before. Muse and OpenCode are counted in Sotto's threads only (amended October 21, 2026, below). Work a client deleted from its own records, and Sotto threads deleted before Usage began, cannot be read back. A computer's history appears once its own Owl host carries this importer.
 
 ## Models
 
@@ -22,7 +22,7 @@ A prompt counts under the model that served it: the first token report after it 
 
 Claude Code's limits are read when Usage opens and when Read again is pressed, through Claude Code's own `get_usage` request on the stream-json connection Sotto already uses: a running thread's connection when there is one, otherwise a short metadata-only process like the one that reads its model list. It sends no prompt, Sotto reads no credentials, and Claude Code talks only to its own provider, as it does for every thread. The request is marked experimental by its maker; a client without it falls back to the limits Claude Code reports during work. Window names say their length ("5 hours", "Week"). An expired window is not shown as current, and extra usage is shown only when it is turned on.
 
-Limits are still per provider and per computer and never added together. A host from before this record does not advertise `usage-history`; the desktop then leaves out the place and window filters its stricter query would refuse, and shows that host's figures as Sotto's own work. When several computers read one provider, Subscriptions shows the freshest reading and the others as a line each.
+Muse's are read through its own `usage/read`, and OpenCode has none to read (amended October 21, 2026, below). Limits are still per provider and per computer and never added together. A host from before this record does not advertise `usage-history`; the desktop then leaves out the place and window filters its stricter query would refuse, and shows that host's figures as Sotto's own work. When several computers read one provider, Subscriptions shows the freshest reading and the others as a line each.
 
 ## What stays
 
@@ -31,3 +31,9 @@ ADR-0078's numeric-only store on the computer that owns the work, its independen
 ## The design
 
 The page follows the C · Focus design Zach chose for ADR-0078, rebuilt with his real numbers and checked by him on October 14, 2026. For telling Sotto's share apart he chose **3 · Where view** of three treatments: an Everywhere / In Sotto / Outside Sotto menu that every number follows, a "Where" headline, and a **Where you work** view with one bar per place, Sotto's subagents on their own bar. The prototype called the third choice Elsewhere; it reads Outside Sotto because first-run setup already uses Elsewhere for its group of other computers and the iPhone. The approved prototype embeds his real usage figures, so it is kept on his computer rather than published; the C · Focus prototype it extends stays under the `prototype/usage-dashboard` tag.
+
+## Amended October 21, 2026: Muse and OpenCode
+
+Zach decided on October 21, 2026 that Usage counts Muse and OpenCode work in Sotto's threads: their accepted prompts under the model that served them, and the tokens their clients report for each model call or step, so their models appear in Overview, Models, Where you work and the daily series. Neither has a history import of work outside Sotto: Muse's session log is undocumented, and ADR-0087 keeps Sotto out of the user's own OpenCode folders. Muse's subscription limits come from Muse's own `usage/read`, a 5-hour window and a week. OpenCode reports none, so it is left off Subscriptions entirely. ADR-0079 and ADR-0087 record how each adapter does it. Each provider's usage exists only where its own Owl gate and Usage's are both on.
+
+A desktop or host from before this amendment reads provider IDs against the four it knew and refuses a whole read or query naming another. The new host feature `usage-muse-opencode` says a peer knows Muse and OpenCode. A desktop names neither to a host that does not offer it. A host reads a desktop whose hello does not accept it for the four providers alone, so its totals hold only work that desktop can name, and leaves every Muse and OpenCode row out of what it sends, the way `usage-history` keeps place rows from a desktop from before history import.

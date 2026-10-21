@@ -285,7 +285,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## History and the host
 
-**Usage.** The Owl page for subscription limits and all the work each connected computer's Claude Code and Codex clients did, in Sotto and outside it, with Overview, Subscriptions and Models. Its headline index opens one focused measure at a time (ADR-0083).
+**Usage.** The Owl page for subscription limits and all the work each connected computer's Claude Code and Codex clients did, in Sotto and outside it, and the work Grok Build, Devin, Muse and OpenCode did in Sotto's threads, with Overview, Subscriptions and Models. Its headline index opens one focused measure at a time (ADR-0083). Muse and OpenCode are counted only where their own Owl gate is on too.
 
 **Usage history.** Counts, dates, model names and app names retained on the computer that ran the work, independently of transcript history: what Sotto observed, and what Usage read from the clients' own session records on that computer, keeping numbers only. Clear usage removes its figures separately; records from before a clear never return and new work counts afterward.
 
@@ -297,7 +297,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Served model.** The model that answered a prompt, under one spelling: the first token report after the prompt in its thread or session, else the model selected when it was sent. A prompt on `opus` and the tokens Claude reports for `claude-opus-5-5` are one model.
 
-**Subscription limits.** The current account allowance reported by a provider's native client, including work outside Sotto, read on demand as metadata (Claude Code through its own `get_usage`). Each computer has its own readings and ages; percentages are never added across computers, and Subscriptions shows the freshest one with the others beside it.
+**Subscription limits.** The current account allowance reported by a provider's native client, including work outside Sotto, read on demand as metadata (Claude Code through its own `get_usage`, Muse through its own `usage/read`, which a running Muse thread answers once it has made a model call). Each computer has its own readings and ages; percentages are never added across computers, and Subscriptions shows the freshest one with the others beside it. OpenCode reports none, so it has no place on Subscriptions.
 
 **Observed tokens.** Numeric native request usage, under the model the provider reported: what Sotto saw on its threads, and what the clients' own records hold for Sotto and outside it. Input contains cache read/write subsets; total is input plus output. A request Sotto already counted gains its date from the client's record rather than counting twice.
 

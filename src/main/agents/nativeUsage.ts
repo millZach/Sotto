@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageTokens } from '../../shared/threadUsage'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
-import type { UsageTokenObservation } from '../../shared/usageDashboard'
+import type { UsageProviderId, UsageTokenObservation } from '../../shared/usageDashboard'
 
 /** Facts supplied by the adapter, never inferred from a ledger's latest update. */
 export interface NativeUsageContext {
@@ -54,7 +54,7 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
  * The identity of one usage row as the store holds it. History read from a provider's own records reuses it, so a row
  * the ledger already counted learns its date instead of being counted again (ADR-0083).
  */
-export function nativeUsageKey(provider: 'codex' | 'claude' | 'grok', kind: 'row' | 'group', id: string, identity: string): string {
+export function nativeUsageKey(provider: UsageProviderId, kind: 'row' | 'group', id: string, identity: string): string {
   return createHash('sha256').update(JSON.stringify(['sotto-usage', provider, kind, id, identity])).digest('hex')
 }
 /** A Codex request's ledger entry key: its turn and the thread's running totals once it was counted. */

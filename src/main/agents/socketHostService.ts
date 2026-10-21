@@ -34,7 +34,7 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
-import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = 'This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.'
@@ -295,7 +295,7 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -1190,12 +1190,15 @@ export class SocketHostService implements HostService {
     this.offers('usage-dashboard')
     // A host from before history import refuses the place and window filters its strict query does not know (ADR-0083).
     const { sources, since, ...older } = usageLocalQuerySchema.parse(query)
+    // One from before Muse and OpenCode were counted refuses a query naming either, and has none of their work to read.
+    if (!this.features.includes('usage-muse-opencode') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeMuse(older.providerIds)
     const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
   async usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    const parsed = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    const parsed = named === undefined || this.features.includes('usage-muse-opencode') ? named : usageProvidersBeforeMuse(named)
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', ...(parsed ? { providerIds: parsed } : {}) }, undefined, undefined, 15000))
   }
   async usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
