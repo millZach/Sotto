@@ -59,6 +59,8 @@ function type(prompt: HTMLElement, value: string): void {
   fireEvent.select(prompt)
 }
 
+const transcript = (): HTMLElement => screen.getByRole('log', { name: 'Thread transcript' })
+
 function followup(patch: Partial<AgentFollowup> & Pick<AgentFollowup, 'id' | 'text'>): AgentFollowup {
   return { threadId: THREAD, draftId: crypto.randomUUID(), attachments: [], createdAt: new Date(NOW).toISOString(), updatedAt: new Date(NOW).toISOString(), status: 'queued', ...patch }
 }
@@ -151,19 +153,18 @@ describe('follow-up queue in the Threads composer', () => {
     expect(promptText(prompt())).toBe('Still writing')
   })
 
-  it('queues with Enter while a turn runs, empties the composer on the press and echoes the message in the transcript', async () => {
+  it('queues with Enter while a turn runs, empties the composer on the press and lists the message with the queue alone', async () => {
     const { live, prompt } = mount(manualState({ running: true }), { holdQueue: true })
     type(prompt(), 'Then run the visual gate')
     const started = performance.now()
     expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(false)
-    // The press is the feedback: an empty composer, the queue row, and the message where it will be read.
+    // The press is the feedback: an empty composer and the queue row. The conversation gets it once it is sent.
     expect(promptText(prompt())).toBe('')
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
     expect(within(queue).getByText('Queuing…')).toBeInTheDocument()
-    const echo = screen.getByLabelText('Queued message')
-    expect(echo).toHaveTextContent('Then run the visual gate')
-    expect(echo).toHaveTextContent('Queued')
+    expect(within(transcript()).queryByText('Then run the visual gate')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Queued message')).not.toBeInTheDocument()
     expectWithinBudget(performance.now() - started, 100, 'queueing a follow-up, emptying the composer and painting its row')
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
     expect(requests(live, 'queue-followup')).toEqual([{ type: 'queue-followup', threadId: THREAD, draftId: expect.any(String), text: 'Then run the visual gate' }])
@@ -173,8 +174,9 @@ describe('follow-up queue in the Threads composer', () => {
     act(() => live.heldQueue[0]!.finish())
     await waitFor(() => expect(within(queue).queryByText('Queuing…')).not.toBeInTheDocument())
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
-    // The queue owns it now, and its own echo replaces the one this window was showing: never two.
-    expect(screen.getAllByLabelText('Queued message')).toHaveLength(1)
+    // The queue owns it now, and it is still told there alone.
+    expect(within(transcript()).queryByText('Then run the visual gate')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Queued message')).not.toBeInTheDocument()
     expect(promptText(prompt())).toBe('A newer thought')
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
   })
@@ -289,6 +291,68 @@ describe('follow-up queue in the Threads composer', () => {
     state.followups = [followup({ id: '30000000-0000-4000-8000-000000000001', text: 'Already in history', status: 'dispatching', messageId: 'dispatched-message' })]
     mount(state)
     expect(screen.queryByRole('region', { name: 'Queued messages' })).not.toBeInTheDocument()
+  })
+
+  it('keeps queued messages out of the transcript and draws a steered one there once, as an ordinary message', async () => {
+    const state = manualState({ running: true, capabilities: { steer: true } })
+    const first = followup({ id: '40000000-0000-4000-8000-000000000001', text: 'Fix the two bug bot findings', messageId: 'steered-message', commandId: 'steer-command' })
+    const second = followup({ id: '40000000-0000-4000-8000-000000000002', text: 'Has the pull request merged?' })
+    // Queued before a reload: main hands back the queue, and nothing of it is in the conversation.
+    state.followups = [first, second]
+    const { live } = mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getAllByRole('listitem').map(item => item.querySelector('.thread-followup__text')?.textContent)).toEqual([first.text, second.text])
+    expect(within(transcript()).queryByText(first.text)).not.toBeInTheDocument()
+    expect(within(transcript()).queryByText(second.text)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Queued message')).not.toBeInTheDocument()
+
+    fireEvent.click(within(within(queue).getAllByRole('listitem')[0]!).getByRole('button', { name: 'Steer now' }))
+    await waitFor(() => expect(requests(live, 'steer-followup')).toEqual([{ type: 'steer-followup', threadId: THREAD, itemId: first.id }]))
+    // On its way to the provider it is still the queue's, as Sending.
+    act(() => { live.publish({ followups: [{ ...first, status: 'dispatching' }, second] }) })
+    expect(within(queue).getByText('Sending')).toBeInTheDocument()
+    expect(within(transcript()).queryByText(first.text)).not.toBeInTheDocument()
+    // The provider's history carries it: one ordinary message in the conversation, gone from the queue.
+    const threads = live.state.host.threads.map(thread => thread.id === THREAD
+      ? { ...thread, messages: [...thread.messages, { id: 'steered-message', role: 'user' as const, text: first.text, createdAt: new Date(NOW).toISOString() }] } : thread)
+    act(() => { live.publish({ host: { ...live.state.host, threads }, followups: [{ ...first, status: 'dispatching' }, second] }) })
+    expect(within(transcript()).getAllByText(first.text)).toHaveLength(1)
+    expect(within(queue).queryByText(first.text)).not.toBeInTheDocument()
+    act(() => { live.publish({ followups: [second] }) })
+    expect(within(transcript()).getAllByText(first.text)).toHaveLength(1)
+    expect(within(transcript()).queryByText(second.text)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Queued message')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Queued messages' })).getByText(second.text)).toBeInTheDocument()
+  })
+
+  it('leaves no copy in the transcript when a queued message is edited, reordered or removed', async () => {
+    const state = manualState({ running: true })
+    state.followups = [
+      followup({ id: '50000000-0000-4000-8000-000000000001', text: 'Original wording' }),
+      followup({ id: '50000000-0000-4000-8000-000000000002', text: 'Another follow-up' }),
+    ]
+    const { live } = mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    const absent = (...texts: string[]): void => { for (const text of texts) expect(within(transcript()).queryByText(text)).not.toBeInTheDocument() }
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Edit queued message 1' }))
+    const editor = within(queue).getByRole('textbox', { name: 'Edit queued message' })
+    setPromptText(editor, 'Edited wording')
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(within(queue).getByText('Edited wording')).toBeInTheDocument())
+    absent('Original wording', 'Edited wording', 'Another follow-up')
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Move queued message 1 down' }))
+    await waitFor(() => expect(live.state.followups!.map(item => item.text)).toEqual(['Another follow-up', 'Edited wording']))
+    absent('Edited wording', 'Another follow-up')
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Remove queued message 1' }))
+    await waitFor(() => expect(within(queue).queryByText('Another follow-up')).not.toBeInTheDocument())
+    absent('Edited wording', 'Another follow-up')
+    fireEvent.click(within(screen.getByRole('region', { name: 'Queued messages' })).getByRole('button', { name: 'Remove queued message 1' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Queued messages' })).not.toBeInTheDocument())
+    absent('Edited wording', 'Another follow-up')
+    expect(screen.queryByLabelText('Queued message')).not.toBeInTheDocument()
   })
 
   it('keeps a failed queue admission in the composer with Try again for the same revision', async () => {
