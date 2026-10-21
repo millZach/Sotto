@@ -345,6 +345,24 @@ export function frameDelay(stage: OwlStage, ripples: number, still: boolean): nu
   return still ? null : 100
 }
 
+/**
+ * How early a frame may come and still count as due: a little under one display frame, so a 60-hertz display draws
+ * every second frame for the 33 milliseconds a moving scene wants, rather than every third.
+ */
+export const FRAME_SLACK_MS = 4
+/** How long before a frame is due a waiting scene starts counting display frames for it, instead of sleeping on a timer. */
+export const FRAME_WAKE_MS = 20
+
+/** Whether a display frame starting at `now` is due, `delay` after the last drawn frame started at `last`. */
+export function frameDue(now: number, last: number, delay: number): boolean {
+  return now - last >= delay - FRAME_SLACK_MS
+}
+
+/** How long to sleep before counting display frames again, or 0 to count them from the next one. */
+export function frameSleep(now: number, last: number, delay: number): number {
+  return Math.max(0, last + delay - now - FRAME_WAKE_MS)
+}
+
 // ---------- Ink ----------
 
 /** Whether a surface is light: black text reads better on it than white. Every theme is judged by its colour, not its name. */

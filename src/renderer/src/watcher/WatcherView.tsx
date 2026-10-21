@@ -352,19 +352,19 @@ const FIRST_ENTRY = 'first'
 
 /**
  * Whether the night scene shows: while the room is empty, until its first message. `key` names the conversation, the
- * first entry's or a Watcher's; once something is sent there the scene ends for it, and a refusal or a reload of the
- * same conversation does not bring it back. The first entry's end carries to the Watcher its message created, which is
- * empty only until the message reaches it. A new Watcher after a provider change is a new conversation, and the scene
- * shows again. `hidden` puts it away without ending it, while the Watched view stands in the conversation's place.
+ * first entry's or a Watcher's. Only `started`, something sent or already there, ends the scene for it, and a refusal
+ * or a reload of the same conversation does not bring it back. The first entry's end carries to the Watcher its message
+ * created, which is empty only until the message reaches it. A new Watcher after a provider change is a new
+ * conversation, and the scene shows again. `hidden` puts it away without ending it: while the room or the conversation
+ * loads or cannot be read, and while the Watched view stands in the conversation's place.
  */
-function useSceneShown(key: string, empty: boolean, hidden: boolean): boolean {
-  const [memory, setMemory] = useState({ key, seen: false, ended: false })
+function useSceneShown(key: string, started: boolean, hidden: boolean): boolean {
+  const [memory, setMemory] = useState({ key, ended: started })
   let next = memory
-  if (next.key !== key) next = { key, seen: false, ended: next.key === FIRST_ENTRY && next.ended }
-  if (empty && !next.seen && !next.ended) next = { ...next, seen: true }
-  if (!empty && next.seen && !next.ended) next = { ...next, ended: true }
+  if (next.key !== key) next = { key, ended: next.key === FIRST_ENTRY && next.ended }
+  if (started && !next.ended) next = { ...next, ended: true }
   if (next !== memory) setMemory(next)
-  return empty && !hidden && !next.ended
+  return !hidden && !next.ended
 }
 
 /**
@@ -563,14 +563,16 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const first = useFirstMessage()
   const submissions = useSubmissions(agents.threadDrafts)
   const shownThread = watcherRow?.thread
-  // A thread whose messages are not read yet carries their count in its summary instead, so it is not taken for empty.
-  const conversationEmpty = shownThread !== undefined && shownThread.messages.length === 0 && (shownThread.summary?.messageCount ?? 0) === 0
-    && shownThread.status === 'idle' && shownThread.requests.length === 0 && shownThread.historyStatus !== 'loading' && shownThread.historyStatus !== 'error'
-    && !shownThread.earlierAvailable && !submissions.some(item => item.threadId === shownThread.id)
+  // What ends it: a message sent or on its way, or a conversation already there. A thread whose messages are not read
+  // yet carries their count in its summary instead.
+  const started = first.phase !== 'writing' || (shownThread !== undefined && (shownThread.messages.length > 0 || (shownThread.summary?.messageCount ?? 0) > 0
+    || shownThread.earlierAvailable === true || shownThread.status === 'running' || shownThread.requests.length > 0
+    || submissions.some(item => item.threadId === shownThread.id)))
+  // What only puts it away: the room or the conversation still loading or unreadable, or the Watched view in its place.
   const roomOpen = room !== null && room.status === 'ready' && state !== null && !(room.error !== null && room.state === null)
-  const roomEmpty = roomOpen && first.phase === 'writing' && (current === null || conversationEmpty)
+  const conversationReady = shownThread !== undefined && shownThread.status === 'idle' && shownThread.historyStatus !== 'loading' && shownThread.historyStatus !== 'error'
   const sceneKey = current === null ? FIRST_ENTRY : JSON.stringify([current.target.hostId, current.target.threadId])
-  const sceneShown = useSceneShown(sceneKey, roomEmpty, tab !== 'conversation')
+  const sceneShown = useSceneShown(sceneKey, started, !roomOpen || (current !== null && !conversationReady) || tab !== 'conversation')
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)

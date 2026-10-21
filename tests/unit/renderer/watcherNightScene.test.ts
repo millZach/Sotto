@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, buildRoute, FLIGHT, FLIGHT_ENDS, frameDelay, gridFor, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST, LIGHT_INK_BOOST,
+  addRipple, along, buildRoute, FLIGHT, FLIGHT_ENDS, frameDelay, frameDue, frameSleep, gridFor, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST, LIGHT_INK_BOOST,
   MAX_RIPPLES, owlAt, placeStars, quietAt, RIPPLE_LIFE, rippleAt, sceneInk, starStrength, STILL_RIPPLE_LIFE, type SceneMeasure,
 } from '../../../src/renderer/src/watcher/nightScene'
+import { watchResolution } from '../../../src/renderer/src/watcher/watchResolution'
 
 /** Watcher's room at 1280 by 800, its pane above the floating switch: the composer near the bottom, the intro above it. */
 function measure(patch: Partial<SceneMeasure> = {}): SceneMeasure {
@@ -115,6 +116,38 @@ describe('the night scene’s pace and ripples', () => {
     expect(liveRipples(ripples, STILL_RIPPLE_LIFE + 0.01, true)).toHaveLength(0)
   })
 
+  /**
+   * The scene's loop on a display that starts a frame every `period` milliseconds: after each drawn frame it sleeps for
+   * frameSleep, then checks each display frame with frameDue, as WatcherNightScene does. The gaps between drawn frames.
+   */
+  function drawnGaps(period: number, delay: number, frames = 60): number[] {
+    const drawn: number[] = []
+    let last = Number.NEGATIVE_INFINITY, awake = 0
+    for (let vsync = 0; drawn.length < frames; vsync += period) {
+      if (vsync < awake || !frameDue(vsync, last, delay)) continue
+      last = vsync
+      drawn.push(vsync)
+      // Drawing takes about a millisecond; the timer then sleeps until shortly before the next frame is due.
+      awake = vsync + 1 + frameSleep(vsync + 1, last, delay)
+    }
+    return drawn.slice(1).map((at, index) => at - drawn[index]!)
+  }
+  const mean = (gaps: readonly number[]): number => gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length
+
+  it('paces frames from when the last one started: about 30 a second moving and 10 sitting, on 60 and 144 hertz displays', () => {
+    for (const period of [1000 / 60, 1000 / 144]) {
+      const moving = mean(drawnGaps(period, 33)), sitting = mean(drawnGaps(period, 100))
+      expect(1000 / moving, `moving at ${Math.round(1000 / period)} Hz`).toBeGreaterThan(27)
+      expect(1000 / moving, `moving at ${Math.round(1000 / period)} Hz`).toBeLessThanOrEqual(31)
+      expect(1000 / sitting, `sitting at ${Math.round(1000 / period)} Hz`).toBeGreaterThan(9)
+      expect(1000 / sitting, `sitting at ${Math.round(1000 / period)} Hz`).toBeLessThanOrEqual(10.5)
+    }
+    // Waiting for the next frame and then the 33 ms on top of it, as the first version did, came to 20 a second.
+    expect(frameDue(33, 0, 33)).toBe(true)
+    expect(frameSleep(1, 0, 100)).toBe(79)
+    expect(frameSleep(1, 0, 33)).toBe(12)
+  })
+
   it('keeps no more than eight ripples, dropping the oldest', () => {
     let ripples = [{ x: 0, y: 0, t: 0 }]
     for (let k = 1; k <= 10; k++) ripples = addRipple(ripples, { x: k, y: k, t: k / 100 })
@@ -159,5 +192,30 @@ describe('the night scene’s ink', () => {
     expect(dark.ink[10]).toBe('rgba(240, 240, 248, 0.50)')
     expect(light.ink[20]).toBe('rgba(20, 22, 30, 1.00)')
     expect(light.ink[0]).toBe('rgba(20, 22, 30, 0.00)')
+  })
+})
+
+describe('the night scene and the display’s scaling', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('lays the scene out again whenever the pixel ratio changes, watching for the new ratio each time', () => {
+    const queries: Array<{ media: string; listeners: Set<() => void> }> = []
+    vi.stubGlobal('devicePixelRatio', 1)
+    vi.stubGlobal('matchMedia', (media: string) => {
+      const listeners = new Set<() => void>()
+      queries.push({ media, listeners })
+      return { media, addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) }
+    })
+    const changed = vi.fn()
+    const stop = watchResolution(changed)
+    expect(queries.map(query => query.media)).toEqual(['(resolution: 1dppx)'])
+    vi.stubGlobal('devicePixelRatio', 1.5)
+    for (const listener of [...queries[0]!.listeners]) listener()
+    expect(changed).toHaveBeenCalledTimes(1)
+    expect(queries.map(query => query.media)).toEqual(['(resolution: 1dppx)', '(resolution: 1.5dppx)'])
+    expect(queries[0]!.listeners.size).toBe(0)
+    expect(queries[1]!.listeners.size).toBe(1)
+    stop()
+    expect(queries[1]!.listeners.size).toBe(0)
   })
 })

@@ -80,6 +80,19 @@ async function capture(launched: LaunchedSotto, name: string): Promise<void> {
   await captureWindow(launched.app, resolve(evidence, name))
 }
 
+/**
+ * How many frames the scene draws over `ms`, and over how long, by the count an end-to-end run keeps on Watcher's pane.
+ * Pixels alone cannot tell a scene holding still from one repainting the same picture.
+ */
+async function framesOver(page: Page, ms: number): Promise<{ readonly frames: number; readonly elapsed: number }> {
+  return page.evaluate(async wait => {
+    const count = (): number => Number(document.getElementById('watcher-pane')?.dataset.nightSceneFrames ?? 0)
+    const before = count(), start = performance.now()
+    await new Promise(done => setTimeout(done, wait))
+    return { frames: count() - before, elapsed: performance.now() - start }
+  }, ms)
+}
+
 const land = (page: Page) => page.locator('#watcher-pane > canvas.watcher-scene--land')
 const owl = (page: Page) => page.locator('#watcher-pane > canvas.watcher-scene--owl')
 
@@ -183,19 +196,16 @@ test.describe("Watcher's night scene on the built app", () => {
       await expect(owl(page)).toHaveAttribute('data-owl', 'perched')
       await settle(page)
       await sceneHolds(page, 'reduced-dark-1280x800')
-      // Nothing moves, so nothing is drawn: two reads a few frames apart are the same picture.
-      const still = await page.evaluate(async () => {
-        const canvas = document.querySelector<HTMLCanvasElement>('#watcher-pane > canvas.watcher-scene--land')!
-        const before = canvas.toDataURL()
-        await new Promise(done => setTimeout(done, 400))
-        return before === canvas.toDataURL()
-      })
-      expect(still, 'the scene holds still').toBe(true)
+      // Nothing moves, so nothing is drawn.
+      expect((await framesOver(page, 600)).frames, 'frames drawn while still').toBe(0)
       await capture(launched, 'reduced-motion-dark-1280x800.png')
       // A press only brightens the spot, then it fades.
       await page.mouse.click(300, 260)
       await page.waitForTimeout(120)
       await captureWindow(launched.app, resolve(evidence, 'reduced-motion-press-dark-1280x800.png'))
+      // The spot fades within 0.7 s, and then drawing stops again.
+      await page.waitForTimeout(900)
+      expect((await framesOver(page, 600)).frames, 'frames drawn once the spot has faded').toBe(0)
     }))
   })
 
@@ -209,9 +219,26 @@ test.describe("Watcher's night scene on the built app", () => {
       await expect(owl(page)).toHaveAttribute('data-owl', 'watching')
       await captureWindow(launched.app, resolve(evidence, 'flight-1-watching-dark-1280x800.png'))
       await expect(owl(page)).toHaveAttribute('data-owl', 'flying', { timeout: 10_000 })
-      await page.waitForTimeout(1_400)
+      // In flight the scene draws about 30 frames a second, paced from each frame's start.
+      const flight = await framesOver(page, 1_500)
+      const flightRate = flight.frames / flight.elapsed * 1000
+      expect(flightRate, `frames a second in flight (${flight.frames} in ${Math.round(flight.elapsed)} ms)`).toBeGreaterThan(25)
+      expect(flightRate, `frames a second in flight (${flight.frames} in ${Math.round(flight.elapsed)} ms)`).toBeLessThan(33)
+      recorded['flight-frames-a-second'] = Number(flightRate.toFixed(1))
       await captureWindow(launched.app, resolve(evidence, 'flight-2-flying-dark-1280x800.png'))
       await expect(owl(page)).toHaveAttribute('data-owl', 'perched', { timeout: 15_000 })
+      // Perched, it draws about 10 a second for the blinks, the head's turns and the stars.
+      const idle = await framesOver(page, 2_000)
+      const idleRate = idle.frames / idle.elapsed * 1000
+      expect(idleRate, `frames a second perched (${idle.frames} in ${Math.round(idle.elapsed)} ms)`).toBeGreaterThan(8)
+      expect(idleRate, `frames a second perched (${idle.frames} in ${Math.round(idle.elapsed)} ms)`).toBeLessThan(11)
+      recorded['perched-frames-a-second'] = Number(idleRate.toFixed(1))
+      // With no composer to perch on, nothing is drawn, and no frame waits; the scene comes back with the composer.
+      await page.evaluate(() => { document.querySelector<HTMLElement>('#watcher-pane .thread-workspace__compose')!.style.display = 'none' })
+      await page.waitForTimeout(200)
+      expect((await framesOver(page, 800)).frames, 'frames drawn without a composer').toBe(0)
+      await page.evaluate(() => { document.querySelector<HTMLElement>('#watcher-pane .thread-workspace__compose')!.style.removeProperty('display') })
+      expect((await framesOver(page, 800)).frames, 'frames drawn once the composer is back').toBeGreaterThan(3)
       // A press in the open background, away from every control.
       await page.mouse.click(420, 300)
       await page.waitForTimeout(450)
@@ -223,6 +250,8 @@ test.describe("Watcher's night scene on the built app", () => {
       await expect(land(page)).toHaveAttribute('data-leaving', 'true')
       await expect(land(page)).toHaveCount(0, { timeout: 5_000 })
       await expect(owl(page)).toHaveCount(0)
+      // Gone, it draws nothing.
+      expect((await framesOver(page, 600)).frames, 'frames drawn after the fade').toBe(0)
       await capture(launched, 'after-send-dark-1280x800.png')
     }))
   })

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useReducedMotion } from '../state/reducedMotion'
-import { addRipple, frameDelay, liveRipples, sceneInk, type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneMeasure } from './nightScene'
+import { addRipple, frameDelay, frameDue, frameSleep, liveRipples, sceneInk, type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneMeasure } from './nightScene'
 import { NightScenePainter } from './nightScenePainter'
+import { watchResolution } from './watchResolution'
 import './nightScene.css'
 
 /** How long the scene takes to fade once the room has a conversation (nightScene.css). */
@@ -127,22 +128,46 @@ export function WatcherNightScene({ shown, held }: {
     let ripples: Ripple[] = []
     let look: Look | null = null
     let stage: OwlStage | null = null
+    /** When the last frame started, and how long after it the next is due; null while nothing moves. */
+    let last = Number.NEGATIVE_INFINITY
+    let delay: number | null = 0
+    // An end-to-end run counts the frames drawn on the pane, so a test can tell drawing from holding still.
+    let frames = 0
+    const counted = window.sottoE2E !== undefined
     const clock = (): number => origin.current === null ? 0 : (performance.now() - origin.current) / 1000
 
-    const frame = (): void => {
+    /** Stops every frame and layout already asked for. */
+    const halt = (): void => {
+      if (timer !== null) { window.clearTimeout(timer); timer = null }
+      if (request !== null) { cancelAnimationFrame(request); request = null }
+    }
+    /** The next frame, paced from when the last one started: about 30 a second while something moves, 10 while the owl sits. */
+    const schedule = (): void => {
+      if (delay === null || disposed) return
+      const sleep = frameSleep(performance.now(), last, delay)
+      if (sleep > 0) timer = window.setTimeout(() => { timer = null; request = requestAnimationFrame(frame) }, sleep)
+      else request = requestAnimationFrame(frame)
+    }
+    const frame = (now: number): void => {
       request = null
       if (disposed || document.visibilityState === 'hidden' || !painter.ready) return
+      // Display frames come at the display's own rate; the scene draws only on the ones that are due.
+      if (delay === null || !frameDue(now, last, delay)) { if (delay !== null) request = requestAnimationFrame(frame); return }
+      last = now
       const t = clock()
       ripples = liveRipples(ripples, t, stillRef.current)
       const drawn = painter.draw(t, ripples, look, stillRef.current)
+      if (counted) pane.dataset.nightSceneFrames = String(++frames)
       if (drawn.stage !== stage) { stage = drawn.stage; owl.dataset.owl = stage }
-      const delay = frameDelay(drawn.stage, ripples.length, stillRef.current)
-      if (delay !== null) timer = window.setTimeout(() => { timer = null; request = requestAnimationFrame(frame) }, delay)
+      delay = frameDelay(drawn.stage, ripples.length, stillRef.current)
+      schedule()
     }
     /** Draws the next frame now, rather than when the current pace would. */
     const wake = (): void => {
       if (disposed) return
       if (timer !== null) { window.clearTimeout(timer); timer = null }
+      delay = 0
+      last = Number.NEGATIVE_INFINITY
       if (request === null) request = requestAnimationFrame(frame)
     }
     wakeRef.current = wake
@@ -167,7 +192,12 @@ export function WatcherNightScene({ shown, held }: {
       measured = key
       observeParts()
       if (measure === null || !painter.resize(measure, dpr)) {
-        for (const canvas of [land, owl]) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+        // Nothing to fly to, such as a first entry whose composer went with the last model: nothing is drawn, and no
+        // frame is asked for, until the room can be measured again.
+        painter.invalidate()
+        halt()
+        delete owl.dataset.owl
+        stage = null
         return
       }
       // The clock starts when the scene first has a composer to fly to.
@@ -194,6 +224,8 @@ export function WatcherNightScene({ shown, held }: {
     const visibility = (): void => { if (document.visibilityState !== 'hidden') wake() }
     document.addEventListener('visibilitychange', visibility)
     window.addEventListener('resize', scheduleLayout)
+    // Moving to a display with other scaling changes the pixel ratio but not always the window's size.
+    const unwatchResolution = watchResolution(scheduleLayout)
 
     // A press in the open background sends out a ripple, and the owl looks toward it.
     const press = (event: PointerEvent): void => {
@@ -215,9 +247,9 @@ export function WatcherNightScene({ shown, held }: {
     return () => {
       disposed = true
       wakeRef.current = () => undefined
-      if (timer !== null) window.clearTimeout(timer)
-      if (request !== null) cancelAnimationFrame(request)
+      halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
+      unwatchResolution()
       sizes.disconnect(); parts.disconnect(); theme.disconnect()
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', scheduleLayout)

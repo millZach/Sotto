@@ -259,5 +259,7 @@
       "inkAlpha": 0,
       "ratio": 9.48
     }
-  ]
+  ],
+  "flight-frames-a-second": 30,
+  "perched-frames-a-second": 10
 }

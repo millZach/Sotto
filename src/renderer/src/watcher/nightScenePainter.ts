@@ -322,6 +322,14 @@ export class NightScenePainter {
 
   get ready(): boolean { return this.layout !== null && this.ink !== null }
 
+  /** Forgets the layout, so nothing is drawn until the room can be measured again, and clears both canvases. */
+  invalidate(): void {
+    this.layout = null
+    this.route = null
+    this.owlBox = null
+    for (const canvas of [this.back, this.front]) context(canvas)?.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
   /** The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet where words sit over it. */
   private paintGlyphs(): void {
     const ctx = context(this.glyphs)

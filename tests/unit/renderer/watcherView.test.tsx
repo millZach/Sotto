@@ -824,6 +824,27 @@ describe('Watcher’s night scene', () => {
     await waitFor(() => expect(scene(container)).toHaveLength(2))
   })
 
+  it('stays through a reload of an empty conversation: loading or failing to read it puts the scene away without ending it', async () => {
+    const withHistory = (historyStatus: AgentThread['historyStatus']): AgentState => {
+      const state = stateWithWatcher()
+      state.host.threads = state.host.threads.map(thread => thread.id === 'watcher' ? { ...thread, messages: [], historyStatus } : thread)
+      return state
+    }
+    mockApp('watcher')
+    mockAgents(withHistory('ready'))
+    const { bridge } = fakeBridge(roomState())
+    const room = () => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>
+    const { container, rerender } = render(room())
+    await paneReady()
+    expect(scene(container)).toHaveLength(2)
+    for (const status of ['loading', 'error', 'ready'] as const) {
+      mockAgents(withHistory(status))
+      rerender(room())
+      if (status === 'ready') await waitFor(() => expect(scene(container)).toHaveLength(2))
+      else await waitFor(() => expect(scene(container)).toHaveLength(0))
+    }
+  })
+
   it('is not drawn once Watcher has a conversation', async () => {
     const { container } = renderRoom(stateWithWatcher(), roomState())
     await paneReady()
