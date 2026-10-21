@@ -375,6 +375,9 @@ extension AppModel {
         #endif
         guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, on: hostID, unconfirmed: false); return }
         let steer = offersWatcherSteer(hostID)
+        // Whether Watcher's turn ran when these words left: an older computer's refusal of them says only that, even if a
+        // page saying Watcher finished arrives before it.
+        let workingAtSend = current.status == "running"
         let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer)
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
@@ -388,9 +391,15 @@ extension AppModel {
                 watcherDrafts[hostID]?.resolve(draftID)
                 applyWatcher(state, from: hostID)
             case .refused(let refusal):
+                // A page pushed while the words were on their way may already say Watcher took them or that they wait in
+                // its queue. Its word wins: put back in the box, they could be sent a second time.
+                if let page = watcherPage(hostID), page.delivery(of: draftID) == "accepted" || page.followup(of: draftID) != nil {
+                    watcherDrafts[hostID]?.resolve(draftID)
+                    return
+                }
                 restoreWatcherDraft(text, on: hostID, unconfirmed: false)
                 // An older computer refuses a message while Watcher works, in words that don't say why.
-                let busy = !steer && refusal.code == "PROVIDER_UNAVAILABLE" && watcherPage(hostID)?.current?.status == "running"
+                let busy = !steer && refusal.code == "PROVIDER_UNAVAILABLE" && workingAtSend
                 feedback = busy ? WatcherWords.updateToSteer(name(hostID)) : refusal.message
             }
         } catch let refusal as HostRefusal {

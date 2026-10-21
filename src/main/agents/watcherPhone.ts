@@ -8,6 +8,13 @@ import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
 import { isWatchedRow, takesPartInActiveRequest, watcherTakeovers, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 
+/**
+ * Whether a coordinator refusal is plain words a phone may show as they are: short, and with nothing technical in it, such
+ * as an error code, a system call or a path (#1229). Anything else is said in the phone's own fixed words.
+ */
+function plainWords(text: string): boolean {
+  return text.length <= 500 && !/\bE[A-Z]{3,}\b|\berrno\b|\bsyscall\b|^\w*Error\b|[A-Za-z]:[\\/]|(?:^|\s)\/[\w.-]+\/|\\[\w.-]+\\/u.test(text)
+}
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
   constructor(private readonly control: AgentControl, private readonly watcher: WatcherService) {}
@@ -15,7 +22,7 @@ export class WatcherPhoneService {
    * `standing`: whether this phone negotiated Watcher management, and with it knows standing watches. `steer`: whether it
    * negotiated steering, and with it is shown whether Watcher's provider steers and the follow-ups waiting for Watcher (#1229).
    */
-  state(mayAnswer: boolean, standing = true, steer = true): WatcherPhoneState {
+  state(mayAnswer: boolean, standing = true, steer = false): WatcherPhoneState {
     const room = this.watcher.state(), snapshot = this.watcher.phoneSnapshot(), starts = this.watcher.startsInFlight()
     const thread = (target: { hostId: string; threadId: string }): AgentThread | undefined => snapshot.threads.find(row =>
       (row.hostId ?? snapshot.hostId) === target.hostId && row.id === target.threadId)
@@ -100,7 +107,7 @@ export class WatcherPhoneService {
     const titles = new Map(snapshot.threads.map(row => [JSON.stringify([row.hostId ?? snapshot.hostId, row.id]), row.title] as const))
     return lines.map(line => ({ target: line.target, title: titles.get(JSON.stringify([line.target.hostId, line.target.threadId])) ?? 'Unavailable thread', at: line.at }))
   }
-  async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true, steer = true): Promise<WatcherPhoneSendResult> {
+  async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true, steer = false): Promise<WatcherPhoneSendResult> {
     if (request.origin.clientId !== client.clientId || request.origin.hostId !== this.control.hostId() || client.transport !== 'socket') {
       return watcherRefusal('INVALID_INPUT', 'This instruction does not belong to this phone and computer. Nothing was sent.')
     }
@@ -158,7 +165,7 @@ export class WatcherPhoneService {
     if (this.control.watcherPhoneTurn(threadId).running) {
       return watcherRefusal('THREAD_BUSY', 'Watcher is working, so your message wasn’t sent. Your words are kept on the phone. Send them again when it finishes.', true)
     }
-    return watcherRefusal('PROVIDER_UNAVAILABLE', error.length <= 2_000 ? error
+    return watcherRefusal('PROVIDER_UNAVAILABLE', plainWords(error) ? error
       : 'Watcher could not take this instruction. Your text is kept on the phone. Refresh Watcher and check its delivery before trying again.', true)
   }
   /**
@@ -179,14 +186,15 @@ export class WatcherPhoneService {
     try {
       check()
       const item = waiting()
-      if (!item) return this.get(mayAnswer(), standing)
+      if (!item) return this.get(mayAnswer(), standing, true)
       if (item.status === 'dispatching' || item.status === 'uncertain') {
         return watcherRefusal('THREAD_BUSY', 'This message is already on its way to Watcher. Nothing was removed.', false)
       }
       const result = await this.control.commandFromWatcherPhone({ type: 'remove-followup', threadId, itemId: request.itemId },
         { phoneOrigin: { kind: 'phone', hostId, clientId: client.clientId }, guard: check }, { ...client, selectedThreadId: threadId })
-      if (result.error && waiting()) return watcherRefusal('PROVIDER_UNAVAILABLE', result.error.length <= 2_000 ? result.error : 'This message could not be removed. Refresh Watcher and try again.', true)
-      return this.get(mayAnswer(), standing)
+      // The coordinator's words may be a file system's; the phone is told what became of its message instead.
+      if (result.error && waiting()) return watcherRefusal('PROVIDER_UNAVAILABLE', 'Your message wasn’t removed. It’s still waiting for Watcher. Try again.', true)
+      return this.get(mayAnswer(), standing, true)
     } catch { return watcherRefusal('TARGET_CHANGED', 'Watcher changed or is unavailable. Nothing was removed. Refresh Watcher.', true) }
   }
   answer(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity, decisionId: string, guard: () => void) {
@@ -200,14 +208,15 @@ export class WatcherPhoneService {
       title: state.watchedThreads.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)?.title ?? 'Unavailable thread',
       provider: state.watchedThreads.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)?.provider ?? null })) }
   }
-  async stop(confirmationId: string, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true, steer = true): Promise<WatcherPhoneStopResult> {
+  async stop(confirmationId: string, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true, steer = false): Promise<WatcherPhoneStopResult> {
     guard()
     const result = await this.watcher.stopAll(confirmationId, guard, client.clientId)
     return result.status === 'refused' ? result : { status: 'ok', state: this.state(mayAnswer(), standing, steer), results: result.results }
   }
   currentThreadId(): string | undefined { return this.watcher.state().current?.target.threadId }
+  /** `steer`: whether this phone negotiated steering, so its page carries what only such a phone reads (#1229). */
   async manage(action: 'permission' | 'watch' | 'unwatch', request: WatcherSetPermissionRequest | WatcherWatchThreadRequest,
-    client: ClientIdentity, guard: () => void, mayAnswer: () => boolean): Promise<WatcherPhoneResult> {
+    client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, steer = false): Promise<WatcherPhoneResult> {
     if (client.transport !== 'socket') return watcherRefusal('INVALID_INPUT', 'Watcher phone controls need a paired phone connection.')
     const permissionGrant = action === 'permission' && (request as WatcherSetPermissionRequest).runtimeMode !== 'approval-required'
     guard()
@@ -221,8 +230,10 @@ export class WatcherPhoneService {
       : action === 'watch' ? await this.watcher.watchThread(request as WatcherWatchThreadRequest, check)
         : await this.watcher.unwatchThread(request as WatcherWatchThreadRequest, check)
     check()
-    return result.status === 'refused' ? result : this.get(mayAnswer())
+    return result.status === 'refused' ? result : this.get(mayAnswer(), true, steer)
   }
   subscribe(listener: () => void): () => void { return this.watcher.subscribe(listener) }
-  get(mayAnswer: boolean, standing = true, steer = true): WatcherPhoneResult { return { status: 'ok', state: this.state(mayAnswer, standing, steer) } }
+  get(mayAnswer: boolean, standing = true, steer = false): WatcherPhoneResult { return { status: 'ok', state: this.state(mayAnswer, standing, steer) } }
+  /** The phone listener's answer to whether a paired phone is still paired and admitted, while it runs (#1229). Returns the release. */
+  useAdmission(admits: (clientId: string) => boolean): () => void { return this.control.useWatcherPhoneAdmission(admits) }
 }

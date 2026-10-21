@@ -931,6 +931,49 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testTheUpdateGuidanceHoldsWhenWatcherFinishesBeforeTheRefusalArrives() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        HostConnection.watcherHandler = { op, _, _ in
+            guard op == "watcher-phone-send" else { return try self.ok(self.page(Spec(workerCard: false))) }
+            // Watcher's turn ends while the words are on their way, and that page arrives before the older computer's refusal.
+            try self.push(Spec(working: false, status: "idle", workerCard: false, observedAt: "2026-10-11T09:06:00.000Z"))
+            await self.until { model.watcherPage(self.laptop)?.current?.status == "idle" }
+            return try self.json(#"{"status":"refused","code":"PROVIDER_UNAVAILABLE","message":"Watcher could not take this instruction. Your text is kept on the phone. Refresh Watcher and check its delivery before trying again.","retryable":true}"#)
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "And the webhook thread?"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.watcherPage(laptop)?.current?.status, "idle")
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?", "The words stay in the box")
+        XCTAssertEqual(model.feedback, "Update Sotto on Laptop to send to Watcher while it works. Your message is still here.",
+                       "Watcher was working when the words left, so the refusal is the older computer's")
+        model.phase(.background)
+    }
+
+    @MainActor func testWordsAPushedPageShowsWaitingStayOutOfTheBoxWhateverTheReplySays() async throws {
+        let model = try await fixture(features: Self.steerFeatures, spec: Spec(workerCard: false, steers: false))
+        var sends = 0
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send" else { return try self.ok(self.page(Spec(workerCard: false, steers: false))) }
+            sends += 1
+            let draft = operation["request"]?["draftId"].string ?? ""
+            // The page pushed with the queue's change comes first, and settles the draft as waiting to go next.
+            try self.push(Spec(workerCard: false, observedAt: "2026-10-11T09:07:00.000Z", steers: false,
+                               followups: [("cccccccc-0000-4000-8000-000000000003", draft, "Stop the webhook thread", "queued")]))
+            await self.until { model.watcherPage(self.laptop)?.followup(of: draft) != nil }
+            // An older desktop answered with its own banner's error.
+            return try self.json(#"{"status":"refused","code":"DELIVERY_UNCERTAIN","message":"Watcher didn’t confirm your message. Check the conversation before you send it again.","retryable":true}"#)
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "", "The page says the words wait in Watcher's queue, so they don't come back to be sent twice")
+        XCTAssertNil(model.watcherSetAside[laptop])
+        XCTAssertNil(model.feedback)
+        XCTAssertEqual(sends, 1)
+        model.phase(.background)
+    }
+
     @MainActor func testWordsWaitingInWatchersQueueLeaveTheBoxAfterALostAcknowledgement() async throws {
         let model = try await fixture(features: Self.steerFeatures, spec: Spec(workerCard: false, steers: false))
         var draft = ""

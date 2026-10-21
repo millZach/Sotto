@@ -738,6 +738,13 @@ it('queues a phone message to go next when Watcher’s provider takes no steer, 
   const remove = { op: 'watcher-phone-remove-followup', request: { target: f.target, itemId } }
   expect(await old.call('old-remove', remove)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   expect(await old.call('old-steer', f.send(old.paired.clientId, randomUUID(), text, 'steer'))).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // A queue the computer could not save is said in plain words, never the file system's.
+  const store = Reflect.get(f.control, 'followupStore') as { edit: (...args: unknown[]) => Promise<void> }
+  vi.spyOn(store, 'edit').mockRejectedValueOnce(Object.assign(new Error('EPERM: operation not permitted, rename \'C:\\synthetic\\followups.json.tmp\''), { code: 'EPERM', syscall: 'rename' }))
+  const failed = await peer.call('remove-fails', remove)
+  expect(failed).toMatchObject({ ok: true, result: { status: 'refused', message: 'Your message wasn’t removed. It’s still waiting for Watcher. Try again.' } })
+  expect(JSON.stringify(failed)).not.toContain('EPERM')
+  expect(f.control.shell().error).toBeNull()
   expect(await peer.call('remove', remove)).toMatchObject({ ok: true, result: { status: 'ok', state: { followups: [] } } })
   expect(f.control.shell().followups ?? []).toEqual([])
   expect(hostReceiptSchema.parse((await peer.call('remove-receipt', { op: 'receipt', commandId: 'remove' })).result)).toMatchObject({ status: 'completed', watcherManage: { status: 'ok' } })
@@ -753,10 +760,42 @@ it('queues a phone message to go next when Watcher’s provider takes no steer, 
   const delivered = f.workspace.adapters.codex.commands.find(command => command.type === 'send' && command.text === nextText)!
   if (delivered.type !== 'send') throw new Error('The message was not sent')
   const own = f.watcher.state().requests.find(request => request.rootUserMessageId === delivered.messageId)!
-  expect(own).toMatchObject({ state: 'active' })
+  // Its request is the phone's, as one its own send opened would be.
+  expect(own).toMatchObject({ state: 'active', phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
   expect(own.id).not.toBe(asked.id)
-  expect(f.phone.state(false).followups).toEqual([])
+  expect(f.phone.state(false, true, true).followups).toEqual([])
   expect(f.phone.state(false).draftDeliveries).toContainEqual({ draftId: nextDraft, status: 'accepted' })
+  // The desktop is never sent the phone's client ID with its queue.
+  expect(JSON.stringify(f.control.shell().followups ?? [])).not.toContain(clientId)
+})
+
+it('answers a phone that negotiated management but not steering with the page it knows (#1229)', async () => {
+  const f = await fixture(true, false, true), old = await f.pair(['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage'])
+  const managed = await old.call('old-permission', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'approval-required' } })
+  expect(managed).toMatchObject({ ok: true, result: { status: 'ok' } })
+  // Without what goes next or whether Watcher steers, which an older phone's strict page refuses.
+  const state = (managed.result as { state: { followups?: unknown; current: { steers?: unknown } } }).state
+  expect(state.followups).toBeUndefined()
+  expect(state.current.steers).toBeUndefined()
+})
+
+it('reports a phone’s queued message as queued whatever the desktop’s banner says, and sends nothing once that phone is unpaired (#1229)', async () => {
+  const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  await peer.call('ask', f.send(clientId))
+  // An older error on the desktop's banner is the desktop's: the phone hears what became of its own message.
+  ;(Reflect.get(f.control, 'state') as { error: string | null }).error = 'Synthetic older desktop error'
+  const draftId = randomUUID(), text = 'Synthetic phone message whose phone is unpaired before it goes'
+  expect(await peer.call('queue', f.send(clientId, draftId, text, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok', draftId,
+    state: { followups: [{ draftId, text, status: 'queued' }] } } })
+  expect(f.control.shell().error).toBe('Synthetic older desktop error')
+  // The same message again is that one, and still reported as queued.
+  expect(await peer.call('queue-again', f.send(clientId, draftId, text, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
+  expect(f.control.shell().followups?.filter(item => item.draftId === draftId)).toHaveLength(1)
+  // The phone is unpaired before Watcher's turn ends: its message is not sent.
+  await f.pairing.revoke(clientId)
+  await settle(f, f.target.threadId)
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.draftId === draftId)?.status).toBe('failed'), { timeout: 30_000 })
+  expect(f.workspace.adapters.codex.commands.some(command => 'text' in command && command.text.startsWith(text))).toBe(false)
 })
 
 it('sends a phone message next, once, when Watcher’s turn ends before its steer lands (#1229)', async () => {
@@ -769,7 +808,7 @@ it('sends a phone message next, once, when Watcher’s turn ends before its stee
   expect(result).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'steer' && command.text === text)).toHaveLength(1)
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === text)).toHaveLength(1), { timeout: 30_000 })
-  await vi.waitFor(() => expect(f.phone.state(false).followups).toEqual([]))
+  await vi.waitFor(() => expect(f.phone.state(false, true, true).followups).toEqual([]))
   expect(f.workspace.adapters.codex.commands.filter(command => 'text' in command && command.text === text)).toHaveLength(2)
 })
 

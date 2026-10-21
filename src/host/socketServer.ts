@@ -796,7 +796,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
           const action = request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch'
-          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer).then(result => {
+          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer, steer).then(result => {
             receipt.watcherManage = result.status === 'refused' ? result : { status: 'ok' }
             receipt.status = 'completed'
             return result
@@ -1309,13 +1309,17 @@ export async function startSocketServer(options: SocketServerOptions) {
   // The descriptor is also the body of /v1/health: a client reads the host's Sotto version and features
   // there before it opens a session, so it never has to find out what the host supports by trying it.
   const descriptor: HostDescriptor = { v: 1, hostId, pid: process.pid, port: address.port, sottoVersion, features: [...features] }
+  // While this listener serves Watcher's phone page, it says whether a phone that queued a follow-up for Watcher is still
+  // paired and admitted, so the follow-up goes under that phone's guard as its own send would (#1229).
+  const releasePhoneAdmission = features.includes('watcher-phone')
+    ? service.watcherPhone?.useAdmission(clientId => pairing.isPaired(clientId) && admits(clientId)) : undefined
   /** Closes every socket whose session ended, and every phone's while phones are not admitted. */
   const dropRefused = (): void => { for (const peer of peers) if (!authenticated(peer) || !admits(peer.client.clientId)) peer.frames.close() }
   const expiry = setInterval(dropRefused, 1000)
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeTerminals?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeTerminals?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     server.removeAllListeners('request')
     server.removeAllListeners('upgrade')
     server.removeAllListeners('connection')
