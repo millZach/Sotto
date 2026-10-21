@@ -131,7 +131,7 @@ import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioMode
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
-import { UpdateService, waitingVersion } from './updates/updateService'
+import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
 import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
@@ -1315,6 +1315,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const updatesSupported = app.isPackaged && e2eConfiguration === null && inAppUpdates
   // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
   const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
+  // A new version of Sotto has every machine check its clients afresh, so the card lists their updates beside it rather
+  // than after the restart (ADR-0077). Nothing waits for the answers, and on stable the client update card and each
+  // host's tiles read the same readings sooner.
+  const newSottoVersion = newVersionListener(() => {
+    void agentControl.checkClientsAfresh().catch(() => undefined)
+    void hostRouter.checkHostClientsAfresh()
+  })
   const updates = new UpdateService({
     currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
@@ -1332,6 +1339,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || releasesHeldProvider(heldProviders))
         hostUpdates.pending(waitingHostVersion)
       }
+      newSottoVersion(status.phase)
     },
   })
 

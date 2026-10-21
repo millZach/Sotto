@@ -36,7 +36,7 @@ describe('what a client publishes', () => {
     expect(clientVersionOf('fixture')).toBe('')
   })
 
-  it('asks the registry once an hour, as plain JSON, and keeps serving the answer in between', async () => {
+  it('asks the registry as plain JSON, and serves its answer for four minutes, less than the five between checks', async () => {
     const asked: string[] = []
     const accepted: unknown[] = []
     let now = 1_000
@@ -51,8 +51,23 @@ describe('what a client publishes', () => {
     expect(await clients.publishedVersion('grok')).toBe('1.0.40')
     expect(asked).toEqual(['https://registry.npmjs.org/%40xai-official/grok/latest'])
     expect(accepted).toEqual(['application/json'])
-    now += 60 * 60 * 1000 + 1
+    now += 4 * 60 * 1000 - 1
     expect(await clients.publishedVersion('grok')).toBe('1.0.40')
+    expect(asked).toHaveLength(1)
+    now += 2
+    expect(await clients.publishedVersion('grok')).toBe('1.0.40')
+    expect(asked).toHaveLength(2)
+  })
+
+  it('asks afresh for a check that must not read a kept answer, and keeps the new one (ADR-0042)', async () => {
+    let published = '1.0.40'
+    const asked: string[] = []
+    const clients = new ProviderClients({ now: () => 1_000, fetchImpl: async url => { asked.push(url); return answer(published) } })
+    expect(await clients.publishedVersion('grok')).toBe('1.0.40')
+    published = '1.0.41'
+    expect(await clients.publishedVersion('grok')).toBe('1.0.40')
+    expect(await clients.publishedVersion('grok', 'muse-stable', true)).toBe('1.0.41')
+    expect(await clients.publishedVersion('grok')).toBe('1.0.41')
     expect(asked).toHaveLength(2)
   })
 
