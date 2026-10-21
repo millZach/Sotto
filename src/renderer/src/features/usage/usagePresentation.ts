@@ -1,21 +1,22 @@
+import { publicProviderEntityId } from '../../../../shared/agents'
 import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
-  USAGE_TOKEN_FIELDS, usageProviderIdSchema, usageWindowLength,
+  USAGE_LIMIT_PROVIDERS, USAGE_TOKEN_FIELDS, usageProviderIdSchema, usageWindowLength,
   type UsageActivityAggregate, type UsageClient, type UsageClientAggregate, type UsageDashboardRead, type UsageDailyAggregate,
   type UsageFieldTotal, type UsageHostRead, type UsageHourlyAggregate, type UsageLocalRead, type UsageModelAggregate,
-  type UsageProviderAggregate, type UsageProviderId, type UsageQuotaRead, type UsageQuotaWindow, type UsageSource,
+  type UsageLimitProviderId, type UsageProviderAggregate, type UsageProviderId, type UsageQuotaRead, type UsageQuotaWindow, type UsageSource,
   type UsageTokenTotals,
 } from '../../../../shared/usageDashboard'
 
 /* ---------- Names ---------- */
 
 export const USAGE_PROVIDERS: readonly UsageProviderId[] = usageProviderIdSchema.options
-export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin' }
+export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode' }
 export const PROVIDER_ORDER = Object.keys(PROVIDER_NAMES) as UsageProviderId[]
-/** What a provider's limits belong to, when its client does not name the plan. */
-export const PROVIDER_ACCOUNTS: Record<UsageProviderId, string> = { codex: 'ChatGPT through Codex', claude: 'Claude Code subscription', grok: 'Grok subscription', devin: 'Devin account' }
+/** What a provider's limits belong to, when its client does not name the plan. OpenCode has none to show. */
+export const PROVIDER_ACCOUNTS: Record<UsageLimitProviderId, string> = { codex: 'ChatGPT through Codex', claude: 'Claude Code subscription', grok: 'Grok subscription', devin: 'Devin account', muse: 'Muse subscription' }
 /** The short name a sentence about the provider's own report uses. */
-const PROVIDER_SHORT: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin' }
+const PROVIDER_SHORT: Record<UsageLimitProviderId, string> = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin', muse: 'Muse' }
 /** Providers whose own records Usage reads outside Sotto (ADR-0083). The others are counted in Sotto only. */
 export const READ_OUTSIDE_SOTTO: ReadonlySet<UsageProviderId> = new Set(['codex', 'claude'])
 /** Devin reports no token counts at all; its prompts still count. */
@@ -218,6 +219,20 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
   }
 }
 
+/**
+ * Every spelling a filtered read must name to reach one model's rows on every computer: the served ID, its public
+ * form, and the IDs older hosts stored it under.
+ */
+export function modelSpellings(summary: Pick<UsageSummary, 'modelIds'>, row: Pick<UsageModelAggregate, 'providerId' | 'modelId'>): string[] {
+  return [...new Set([row.modelId, publicProviderEntityId(row.providerId, 'model', row.modelId), ...(summary.modelIds.get(`${row.providerId}:${row.modelId}`) ?? [])])]
+}
+
+/** A filtered read's days, joined across computers. A host from before history import is scoped as the page scopes it. */
+export function joinedDays(read: UsageDashboardRead, sources: readonly UsageSource[] | undefined): UsageDailyAggregate[] {
+  const rows = read.hosts.flatMap(host => { const scoped = scopeHost(host, sources); return scoped.status === 'ready' ? scoped.activity?.daily ?? [] : [] })
+  return grouped(rows, row => row.day).map(items => ({ ...sumActivity(items), day: items[0]!.day })).sort((a, b) => a.day.localeCompare(b.day))
+}
+
 /** One bar on Where you work: Sotto threads, Sotto's subagents, then each app outside Sotto with its own subagents folded in. */
 export interface UsagePlace {
   readonly key: string
@@ -405,7 +420,7 @@ export interface UsageReading {
   readonly stale: boolean
 }
 export interface UsageProviderLimits {
-  readonly providerId: UsageProviderId
+  readonly providerId: UsageLimitProviderId
   /** The freshest reading with a current window, else the most telling one. */
   readonly primary: UsageReading
   /** Other computers' readings with a known percentage, shown beside the primary and never added to it. */
@@ -429,7 +444,8 @@ function reading(hostId: string, quota: UsageQuotaRead, now: number): UsageReadi
 export function providerLimits(read: UsageDashboardRead, now: number): UsageProviderLimits[] {
   const readings = read.hosts.flatMap(host => host.quotas.map(quota => reading(host.hostId, quota, now)))
   const rank = (item: UsageReading): number => item.windows.length > 0 && item.quota.status === 'available' ? 0 : item.quota.status === 'available' ? 1 : item.quota.status === 'error' ? 2 : 3
-  return USAGE_PROVIDERS.flatMap(providerId => {
+  // OpenCode reports no account limits, so it has no place here at all (ADR-0087).
+  return USAGE_LIMIT_PROVIDERS.flatMap(providerId => {
     const own = readings.filter(item => item.quota.providerId === providerId)
       .sort((a, b) => rank(a) - rank(b) || (b.observedAt ?? 0) - (a.observedAt ?? 0))
     if (own.length === 0) return []
@@ -451,6 +467,8 @@ export function limitsMissing(limits: UsageProviderLimits, hostOf: (hostId: stri
     const when = calendarDay(new Date(last), timeZone) === calendarDay(new Date(now), timeZone) ? `at ${clockTime(last, timeZone)}` : `on ${shortDay(calendarDay(new Date(last), timeZone))}`
     return `The window ${hostName(primary.hostId)} last read ended ${when}. Read again for the new one.`
   }
+  // Muse keeps its window in each running Muse process and tells it after a model call, so before one there is nothing to read.
+  if (providerId === 'muse' && (quota.reason === 'not-reported' || quota.reason === 'not-read')) return `No reading yet. Muse reports its limits after a Muse turn runs on ${hostName(primary.hostId)}.`
   if (quota.status === 'error' || quota.reason === 'read-failed') return `${name}'s limits couldn't be read on ${hostName(primary.hostId)}. Nothing was changed. Read again to try once more.`
   switch (quota.reason) {
     case 'not-connected': return `${name} isn't connected on ${hostName(primary.hostId)}.`
@@ -459,4 +477,4 @@ export function limitsMissing(limits: UsageProviderLimits, hostOf: (hostId: stri
     default: return `${name} didn't report any limits.`
   }
 }
-export const unknownUseNote = (providerId: UsageProviderId): string => `${PROVIDER_SHORT[providerId]} reports when this resets, not how much is used.`
+export const unknownUseNote = (providerId: UsageLimitProviderId): string => `${PROVIDER_SHORT[providerId]} reports when this resets, not how much is used.`

@@ -26,7 +26,8 @@ export class MuseTooOld extends MuseUnsupported { constructor(message: string, r
  * user reads is always Sotto's, never the client's message.
  */
 export class MuseRejected extends Error {
-  constructor(message: string, readonly kind?: string, readonly reason?: string) { super(message) }
+  /** `code` is the wire error's JSON-RPC code: -32601 is a method this client does not have. */
+  constructor(message: string, readonly kind?: string, readonly reason?: string, readonly code?: number) { super(message) }
 }
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir', 'xdg_data_home', 'xdg_config_home', 'xdg_cache_home'])
 /**
@@ -95,7 +96,7 @@ export class MuseRpc {
               const key = JSON.stringify(frame.id)
               const waiter = this.pending.get(key); if (!waiter) return
               clearTimeout(waiter.timer); this.pending.delete(key)
-              if (frame.error !== undefined) waiter.reject(new MuseRejected('Muse rejected the operation. Review the thread before retrying.', frame.error.data?.kind, frame.error.data?.reason))
+              if (frame.error !== undefined) waiter.reject(new MuseRejected('Muse rejected the operation. Review the thread before retrying.', frame.error.data?.kind, frame.error.data?.reason, frame.error.code))
               else waiter.resolve(frame.result)
             } else await this.receive(frame)
           } finally { queued -= size }
