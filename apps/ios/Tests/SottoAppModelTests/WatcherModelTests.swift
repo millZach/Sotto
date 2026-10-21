@@ -22,6 +22,8 @@ final class WatcherModelTests: XCTestCase {
     private static let watcherFeatures = ["host-folders", "watcher-phone", "watcher-phone-stop-all"]
     /// An Owl desktop that also takes Watcher's permissions and watches from this iPhone.
     private static let manageFeatures = watcherFeatures + ["watcher-phone-manage"]
+    /// One that also takes a message while Watcher works (#1229).
+    private static let steerFeatures = manageFeatures + ["watcher-phone-steer"]
     private let receiptPause = ReceiptPause()
     private var suites: [String] = []
     override func tearDown() {
@@ -63,6 +65,10 @@ final class WatcherModelTests: XCTestCase {
         /// The files Watcher changed itself in its reply `started`, and the reason it gave, if any.
         var changed: [String] = []
         var reason: String?
+        /// Whether Watcher's provider takes a steer, as a computer that takes a message while Watcher works says it.
+        var steers: Bool?
+        /// The user's follow-ups waiting for Watcher, as (item, draft, words, status).
+        var followups: [(String, String, String, String)] = []
     }
     private static let workerRequest = #"{"id":"q1","kind":"question","text":"Which account?","options":[{"id":"a","label":"A fresh account"},{"id":"b","label":"The seeded user"}]}"#
     private static let ownRequest = #"{"id":"p1","kind":"permission","text":"Wants to run gh pr checks 845.","options":[]}"#
@@ -82,12 +88,16 @@ final class WatcherModelTests: XCTestCase {
         }
         let deliveries = spec.deliveries.map { draft, status in #"{"draftId":"\#(draft)","status":"\#(status)"}"# }.joined(separator: ",")
         let answer = spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? ""
-        let currentMode = spec.currentMode.map { #","runtimeMode":"\#($0)""# } ?? ""
+        let currentMode = (spec.currentMode.map { #","runtimeMode":"\#($0)""# } ?? "") + (spec.steers.map { #","steers":\#($0)"# } ?? "")
         let paused = spec.paused ? #","paused":true"# : ""
         var extra = spec.runtimeMode.map { #","runtimeMode":"\#($0)""# } ?? ""
         if spec.standing {
             let hold = spec.paused ? #","pausedByUserMessageId":"human""# : ""
             extra += #","standingWatches":[{"id":"eeeeeeee-0000-4000-8000-000000000001","target":{"hostId":"\#(laptop)","threadId":"t"},"createdAt":"2026-10-11T08:01:00.000Z","generation":1\#(hold)}]"#
+        }
+        if !spec.followups.isEmpty {
+            let rows = spec.followups.map { item, draft, text, status in #"{"itemId":"\#(item)","draftId":"\#(draft)","text":"\#(text)","status":"\#(status)"}"# }
+            extra += #","followups":[\#(rows.joined(separator: ","))]"#
         }
         if !spec.changed.isEmpty {
             let files = spec.changed.map { #""\#($0)""# }.joined(separator: ",")
@@ -854,6 +864,90 @@ final class WatcherModelTests: XCTestCase {
         await model.sendToWatcher(laptop)
         XCTAssertTrue(try connection.watcherCalls.isEmpty, "Nothing was sent")
         XCTAssertEqual(model.drafts[model.watcherDraftKey(laptop)], "And the webhook thread?")
+        model.phase(.background)
+    }
+
+    // MARK: Steering Watcher while it works (#1229, Zach's pick B)
+
+    @MainActor func testSendSteersWhileWatcherWorksAndWhatGoesNextShowsUntilRemoved() async throws {
+        let model = try await fixture(features: Self.steerFeatures, spec: Spec(workerCard: false, steers: false))
+        XCTAssertTrue(model.offersWatcherSteer(laptop))
+        let item = "cccccccc-0000-4000-8000-000000000001"
+        var sent: [JSONValue] = []
+        HostConnection.watcherHandler = { op, operation, _ in
+            switch op {
+            case "watcher-phone-send":
+                guard let request = operation["request"] else { throw ClientError.invalidRequest }
+                sent.append(request)
+                // Watcher's provider takes no steer: the words wait in its queue to go next.
+                let queued = self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:03:00.000Z", steers: false,
+                                            followups: [(item, request["draftId"].string ?? "", "And the webhook thread?", "queued")]))
+                return try self.json(#"{"status":"ok","draftId":"\#(request["draftId"].string ?? "")","state":\#(queued)}"#)
+            case "watcher-phone-remove-followup":
+                return try self.ok(self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:04:00.000Z", steers: false)))
+            default: return try self.ok(self.page(Spec(workerCard: false, steers: false)))
+            }
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "And the webhook thread?"
+        XCTAssertTrue(model.canSendToWatcher(laptop), "Watcher works, and Send still takes the words")
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(sent.first?["delivery"], .string("steer"), "A computer that takes it is asked to steer")
+        XCTAssertEqual(model.drafts[key], "", "Waiting to go next, the words leave the box")
+        XCTAssertNil(model.feedback, "Nothing announces itself; the line under the conversation says it")
+        let waiting = try XCTUnwrap(model.watcherPage(laptop)?.followups?.first)
+        XCTAssertEqual(WatcherWords.followup(waiting.status), "Goes next, after this turn")
+        XCTAssertEqual(WatcherWords.followupNote(waiting.status, page: try XCTUnwrap(model.watcherPage(laptop)), computer: "Laptop"), "Codex can’t take a steer.")
+        XCTAssertTrue(model.canRemoveWatcherFollowup(waiting, on: laptop))
+        await model.removeWatcherFollowup(waiting, on: laptop)
+        let removed = try XCTUnwrap(try calls("watcher-phone-remove-followup").first)
+        XCTAssertEqual(removed.operation["request"]["itemId"], .string(item))
+        XCTAssertEqual(removed.operation["request"]["target"]["threadId"], .string("w"))
+        XCTAssertNil(model.watcherPage(laptop)?.followups, "The page the computer sent back shows it gone")
+        XCTAssertTrue(model.watcherManaging.isEmpty)
+        model.phase(.background)
+    }
+
+    @MainActor func testAnOlderComputerSaysToUpdateSottoAndKeepsTheWords() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        XCTAssertFalse(model.offersWatcherSteer(laptop))
+        var sent: [JSONValue] = []
+        var reply = #"{"status":"refused","code":"PROVIDER_UNAVAILABLE","message":"Watcher could not take this instruction. Your text is kept on the phone. Refresh Watcher and check its delivery before trying again.","retryable":true}"#
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            sent.append(request)
+            return try self.json(reply)
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "And the webhook thread?"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(sent.first?["delivery"], .null, "An older computer is never asked to steer")
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?", "The words stay in the box")
+        XCTAssertEqual(model.feedback, "Update Sotto on Laptop to send to Watcher while it works. Your message is still here.")
+        // Any other refusal says what the computer said.
+        reply = #"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.feedback, "Watcher changed. Nothing new was sent.")
+        model.phase(.background)
+    }
+
+    @MainActor func testWordsWaitingInWatchersQueueLeaveTheBoxAfterALostAcknowledgement() async throws {
+        let model = try await fixture(features: Self.steerFeatures, spec: Spec(workerCard: false, steers: false))
+        var draft = ""
+        HostConnection.watcherHandler = { op, operation, _ in
+            if op == "watcher-phone-send" {
+                draft = operation["request"]?["draftId"].string ?? ""
+                throw ClientError.uncertain
+            }
+            // The computer queued the words before their acknowledgement was lost, and the page read after it says so.
+            return try self.ok(self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:05:00.000Z", steers: false,
+                                              followups: [("cccccccc-0000-4000-8000-000000000002", draft, "Stop the webhook thread", "queued")])))
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "", "Waiting in Watcher's queue, the words leave the box")
+        XCTAssertEqual(try calls("watcher-phone-send").count, 1, "Nothing was sent again")
         model.phase(.background)
     }
 

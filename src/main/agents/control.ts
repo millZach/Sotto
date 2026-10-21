@@ -427,12 +427,40 @@ export class AgentControl {
     if (this.delegationObservedIds === ids) return
     this.delegationObservedIds = ids; this.observe()
   }
-  /** Authenticated phone user input; its origin stays private to this command and the main-owned request. */
-  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
+  /**
+   * Authenticated phone user input; its origin stays private to this command and the main-owned request. A steer, a
+   * follow-up and its removal reach only Watcher's own thread, which a phone's ordinary commands never reach (#1229).
+   */
+  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' | 'steer' | 'queue-followup' | 'remove-followup' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
     if (!this.watcherHooks || !origin.phoneOrigin || client.transport !== 'socket'
       || client.clientId !== origin.phoneOrigin.clientId || this.hostId() !== origin.phoneOrigin.hostId) throw new Error('Watcher phone input is unavailable.')
+    if (command.type !== 'send' && this.state.host.threads.find(thread => thread.id === command.threadId)?.kind !== 'watcher') throw new Error('Watcher phone input is unavailable.')
+    if (command.type === 'remove-followup' && !this.watcherFollowups(command.threadId).some(item => item.id === command.itemId)) throw new Error('That message is no longer waiting for Watcher.')
     const parsed = agentCommandSchema.parse(command); origin.guard(); this.watcherOrigins.set(parsed, origin)
     return this.commandShell(parsed, client)
+  }
+  /** Watcher's thread as a phone's send reads it (#1229): whether a turn runs there, and whether its provider takes a steer. */
+  watcherPhoneTurn(threadId: string): { readonly running: boolean; readonly steers: boolean } {
+    const thread = this.state.host.threads.find(row => row.id === threadId)
+    if (thread?.kind !== 'watcher') return { running: false, steers: false }
+    return { running: thread.status === 'running', steers: capabilitiesForThread(this.state.host, thread).steer === true }
+  }
+  /**
+   * Whether a draft of Watcher's thread surely never went: nothing of it waits in the queue, is on its way or unconfirmed,
+   * or was delivered. Only such a draft may go again another way, so a phone's message is never sent twice (#1229).
+   */
+  watcherPhoneDraftUnsent(threadId: string, draftId: string): boolean {
+    const matches = (item: { readonly threadId?: string | undefined; readonly draftId?: string | undefined }): boolean => item.threadId === threadId && item.draftId === draftId
+    const queue = this.followupStore.peek()
+    return !this.outbox.some(matches) && !this.state.deliveredDrafts?.some(matches) && !queue.items.some(matches) && !queue.receipts.some(matches)
+      && !(this.state.deliveries ?? []).some(item => matches(item) && item.status !== 'failed')
+  }
+  /**
+   * The user's own follow-ups waiting in a thread's queue, first in line first, read without copying the queue: never a
+   * wake-up, Sotto's news, Watcher's own send or a delegated brief. The phone's page shows Watcher's (#1229).
+   */
+  watcherFollowups(threadId: string): readonly Readonly<QueuedFollowup>[] {
+    return this.followupStore.peek().items.filter(item => item.threadId === threadId && this.isUserFollowup(item))
   }
   /** A user's explicit phone card answer, with the same grant checks plus a private writer guard. */
   answerWatcherPhoneCard(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity, decisionId: string, connectionGuard: () => void): Promise<AgentState> {
@@ -2992,10 +3020,13 @@ export class AgentControl {
     return shown() !== before
   }
   private async followupCommand(command: Extract<AgentCommand, { type: 'queue-followup' | 'edit-followup' | 'remove-followup' | 'reorder-followups' | 'resume-followups' }>): Promise<AgentState> {
+    const origin = this.watcherOrigins.get(command)
+    // A phone's follow-up for Watcher hears why it failed in its own reply, never as the desktop's banner (#1229).
+    let phoneFailure: string | undefined
     try {
       const thread = this.thread(command.threadId)
-      const origin = this.watcherOrigins.get(command); origin?.guard()
-      this.state.error = null
+      origin?.guard()
+      if (!origin?.phoneOrigin) this.state.error = null
       if (command.type === 'queue-followup' || command.type === 'edit-followup') {
         const existing = command.type === 'edit-followup' ? this.followupStore.get().items.find(item => item.threadId === thread.id && item.id === command.itemId) : undefined
         if (!command.text.trim() && !(command.attachments ?? existing?.attachments)?.length) throw new Error('There is no prompt to queue.')
@@ -3028,10 +3059,14 @@ export class AgentControl {
       }
       this.syncFollowups(); this.observe(); await this.persist()
     } catch (error) {
-      this.setCommandError(error, error instanceof Error ? error.message : 'Could not save the follow-up queue.')
+      const message = error instanceof Error ? error.message : 'Could not save the follow-up queue.'
+      if (origin?.phoneOrigin) phoneFailure = message
+      else this.setCommandError(error, message)
       if (command.type === 'queue-followup' && !this.followupStore.get().receipts.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) this.setDelivery(command.threadId, command.draftId, 'failed')
     }
-    this.publish(); this.pumpFollowups(); return this.shell()
+    this.publish(); this.pumpFollowups()
+    const state = this.shell()
+    return phoneFailure === undefined ? state : { ...state, error: phoneFailure }
   }
   /**
    * Whether Watcher is answering one of Sotto's wake-ups, its news among them, or is about to: one is being sent to it, or

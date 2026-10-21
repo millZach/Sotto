@@ -66,6 +66,16 @@ October 13 Stop all client-isolation correction: the main-owned confirmation sto
 
 October 13 answer replay correction: an authenticated, opted-in phone can explicitly retry the same watcher-phone-answer request ID, owning target and exact command to read the recorded outcome with fresh state. Receipt lookup and digest comparison happen before checking the current card or Can answer; replay performs no second answer and needs no new answer grant. A changed target or command under the same ID refuses invalid_request. A new request still checks its owning target, current card and Can answer at admission and the writer. No refusal code, feature name or wire shape changes, and unconfirmed mutations are never retried automatically.
 
+October 21, 2026, steering Watcher from the phone (#1229, [ADR-0073](adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md)): optional `watcher-phone-steer` is offered with `watcher-phone` on the Owl desktop's phone listener; hello.accepts must contain both. A phone that negotiated it may add `delivery: "steer"` to `watcher-phone-send`. While Watcher's turn runs, the desktop then steers the words into that turn when Watcher's provider takes a steer, under the desktop's steer rules: they join the request the turn answers, or open one of their own with the phone origin. Otherwise, or when the steer surely did not go, it queues them as one of the user's follow-ups in Watcher's queue, under the same draft ID, to go next as their own turn; such a follow-up takes a request of its own when it is delivered. A steer that may have gone is never queued too: the send refuses `DELIVERY_UNCERTAIN`. With Watcher idle the field changes nothing. A send that carries the field from a phone that did not negotiate the feature refuses `invalid_request`. Success is `{status:"ok",draftId,state}` as before, whether the words steered or wait. A send without the field while Watcher works refuses `THREAD_BUSY` with words saying so; it was `PROVIDER_UNAVAILABLE` with generic words before.
+
+For such a phone the page adds optional `current.steers`, whether Watcher's provider takes a steer, and `followups`: the user's own follow-ups waiting in Watcher's queue, from the phone or the desktop, first in line first and at most fifty, each `{itemId, draftId, text, status}` with status `queued`, `dispatching`, `uncertain`, `failed` or `paused`. Wake-ups, Watcher's news, Watcher's own sends and delegated briefs are never listed. A phone that did not negotiate the feature gets neither field. A draft listed there is waiting, not lost: a phone reconciling a lost acknowledgement treats it as taken.
+
+| Operation | Payload | Result |
+| --- | --- | --- |
+| watcher-phone-remove-followup | request: {target:{hostId,threadId}, itemId} | WatcherPhoneResult |
+
+It removes one of those follow-ups through the coordinator's own Remove, with the phone's origin. The target must be the current Watcher. One already gone, delivered or removed elsewhere, returns the page; one on its way refuses `THREAD_BUSY` and removes nothing. Like management, it keeps `receipt.watcherManage` under the request ID, so a lost acknowledgement reads its outcome and a retry removes nothing more. A paired phone's generic thread commands still never reach Watcher's thread.
+
 
 
 ## Versions and features

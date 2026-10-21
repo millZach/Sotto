@@ -1497,7 +1497,7 @@ export class WatcherService implements WatcherControlHooks {
       && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
-    if (origin?.phoneOrigin && command.type === 'send') this.guardPhoneSend(command.threadId)
+    if (origin?.phoneOrigin && (command.type === 'send' || command.type === 'steer')) this.guardPhoneSend(command.threadId)
     if (!origin?.operationId && _draftId && (command.type === 'send' && !command.wakeUp || command.type === 'steer')) {
       const target = this.target(command.threadId), proof = this.record().localTakeovers?.find(item => key(item.target) === key(target))
         ?.userDrafts?.find(item => item.draftId === _draftId && item.digest === followupDigest(command))
