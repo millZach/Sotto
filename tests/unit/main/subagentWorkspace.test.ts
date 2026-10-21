@@ -241,16 +241,13 @@ it('answers a finished Codex turn whose sub-agents all completed, and the turn a
   const projection = new CodexActivityProjection()
   const v2 = (id: string, kind: string, name: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: `native-${name}`, agentPath: `/root/${name}` })
   const at = (seconds: number) => new Date(Date.UTC(2026, 9, 21, 7, 5, seconds)).toISOString()
-  const turn = (id: string, brief: string, reply: string, items: [string, string, string][], children: [string, string, unknown][] = []) => {
+  const turn = (id: string, brief: string, reply: string, items: [string, string, string][]) => {
     f.thread.messages.push({ id: brief, role: 'user', text: 'Synthetic brief', createdAt: at(f.thread.messages.length) })
     projection.anchor(f.thread, id, brief)
     projection.turn(f.thread, { id, status: 'inProgress' }, true)
     f.thread.status = 'running'; f.thread.lastTurn = { id, status: 'running' }
     f.native.emit()
-    for (const [itemId, kind, name] of items) {
-      projection.item(f.thread, v2(itemId, kind, name), { turnId: id, phase: 'completed' })
-      for (const [child, method, params] of children.filter(([, , ], index) => index === items.findIndex(item => item[0] === itemId))) projection.childNotification(child, method, params)
-    }
+    for (const [itemId, kind, name] of items) projection.item(f.thread, v2(itemId, kind, name), { turnId: id, phase: 'completed' })
     projection.turn(f.thread, { id, status: 'completed' }, true)
     f.thread.messages.push({ id: reply, role: 'assistant', text: 'Synthetic review', createdAt: at(f.thread.messages.length) })
     f.thread.status = 'idle'; f.thread.lastTurn = { id, status: 'completed' }

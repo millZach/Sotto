@@ -223,6 +223,27 @@ describe('observational subagent roster metadata', () => {
       expect(agents().at(-1)).toMatchObject({ status: 'failed', message: 'Synthetic failure' })
     })
 
+    it('remembers a follow-up whose own turn started after a reread, so a second reread keeps its end its own', () => {
+      let now = 1_000
+      const projection = new CodexActivityProjection(() => now)
+      const source = conversation('source')
+      const items = [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted']] as const
+      read(projection, source, 'completed', items)
+      // A reread lands between the follow-up and the agent's own start.
+      read(projection, source, 'history', items)
+      now = 2_000
+      projection.childNotification('native-child', 'turn/started', { turn: { id: 'child-turn-2', status: 'inProgress' } })
+      const agents = () => source.activities.filter(record => record.kind === 'subagent').map(record => record.agents![0]!)
+      expect(agents().map(agent => agent.status)).toEqual(['completed', 'running'])
+      expect(agents()[1]!.startedAt).toBe(new Date(1_000).toISOString())
+      const before = structuredClone(agents()[0]!)
+      read(projection, source, 'history', items)
+      now = 5_000
+      projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn-2', status: 'failed', durationMs: 3_000, error: { message: 'Synthetic failure' } } })
+      expect(agents()[0]).toEqual(before)
+      expect(agents()[1]).toMatchObject({ status: 'failed', message: 'Synthetic failure' })
+    })
+
     it('takes no agent as working once its conversation\'s runtime has ended', () => {
       const projection = new CodexActivityProjection(() => 1_000)
       const source = conversation('source')
