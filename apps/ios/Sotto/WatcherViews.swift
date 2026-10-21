@@ -20,6 +20,10 @@ struct WatcherView: View {
     @State private var section = Pane.conversation
     /// Counts presses on the bar's owl, each of which takes the open pane to its top, where Watcher's hero is.
     @State private var toTop = 0
+    /// The bar has slid away as the user reads down the page; it comes back as they go up (#1278).
+    @State private var barAway = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var stopPreview: WatcherStopPreview?
     @State private var reviewing: ReviewedCard?
     enum Pane: Hashable { case conversation, watched }
@@ -27,19 +31,36 @@ struct WatcherView: View {
     var body: some View {
         Group {
             switch section {
-            case .conversation: WatcherConversationPane(hostID: hostID, toTop: toTop) { reviewing = $0 }
-            case .watched: WatchedPane(hostID: hostID, toTop: toTop, stopAll: prepareStop)
+            case .conversation: WatcherConversationPane(hostID: hostID, toTop: toTop, slideBar: slideBar) { reviewing = $0 }
+            case .watched: WatchedPane(hostID: hostID, toTop: toTop, slideBar: slideBar, stopAll: prepareStop)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { WatcherBar(hostID: hostID, section: $section) { toTop += 1 } }
+        // The bar keeps its place in the layout while it is away, so the page never jumps as it goes and comes back: it
+        // only slides, up past the screen's top edge.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            let away = barAway
+            WatcherBar(hostID: hostID, section: $section) { slideBar(false); toTop += 1 }
+                .visualEffect { content, proxy in content.offset(y: away ? -proxy.frame(in: .global).maxY : 0) }
+                .accessibilityHidden(away)
+        }
+        // While the bar is away, glass under the status bar keeps the page's words from running into the clock.
+        .overlay(alignment: .top) {
+            Color.clear.frame(height: 0)
+                .background { Color.clear.glass(in: Rectangle()).ignoresSafeArea(edges: .top) }
+                .opacity(barAway ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .background(Palette.canvas)
         .background(TabItemAccessibility(title: "Watcher", value: model.watcherTab.spoken))
         .navigationTitle("Watcher")
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { model.watcherOnScreen = true }
+        .onAppear { model.watcherOnScreen = true; barAway = false }
         .onDisappear { model.watcherOnScreen = false }
         // Another computer's Watcher opens on its own Conversation, with nothing of this one's open over it.
-        .onChange(of: hostID) { _, _ in section = .conversation; stopPreview = nil; reviewing = nil }
+        .onChange(of: hostID) { _, _ in section = .conversation; stopPreview = nil; reviewing = nil; barAway = false }
+        .onChange(of: section) { _, _ in barAway = false }
+        .onChange(of: voiceOver) { _, on in if on { barAway = false } }
         .sheet(item: $reviewing) { card in
             RequestSheet(place: card.place, request: card.request)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
@@ -64,6 +85,13 @@ struct WatcherView: View {
             "\(target.title), \(AgentNames.name(target.provider)) on \(model.computerName(target.hostId) ?? "another computer")"
         }
         return (["Threads you started or took over keep going, and so does Watcher.", ""] + threads).joined(separator: "\n")
+    }
+
+    /// Slides the bar away, or back. Under Reduce Motion it goes and comes back without sliding, and with VoiceOver on it
+    /// stays, where VoiceOver can always reach the switch.
+    private func slideBar(_ away: Bool) {
+        guard away != barAway, !(away && voiceOver) else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { barAway = away }
     }
 
     /// Stop all asks first: the computer says which threads it would stop, and nothing stops until the user confirms.
@@ -312,6 +340,14 @@ private final class WatcherFollow {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
+    /// Which way the user moves the page, for the bar (#1278).
+    var slide = WatcherBarSlide()
+    /// Until when the page moves for the app rather than the user: following new words, keeping a card, going to the
+    /// top. iOS 17 can't say when the user moves the page, so there a move outside these times is theirs.
+    var quietUntil = Date.distantPast
+    func quiet() { quietUntil = Date().addingTimeInterval(0.6) }
+    /// Whether the move the page just made was the user's.
+    var userMoved: Bool { WatcherFollow.seesLetGo ? userScrolling : Date() >= quietUntil }
     func settle() {
         let place = WatcherReaderPlace(newest: newest, end: end, top: top, dockTop: dockTop, cards: cards)
         held = place.heldCard
@@ -350,6 +386,8 @@ private struct WatcherConversationPane: View {
     let hostID: String
     /// Presses on the bar's owl: each one scrolls the page to its top, to Watcher's hero.
     let toTop: Int
+    /// Slides the bar away, or back, as the user reads down or goes up.
+    let slideBar: (Bool) -> Void
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -423,6 +461,10 @@ private struct WatcherConversationPane: View {
                     let resized = abs(frame.height - follow.height) > 0.5
                     follow.height = frame.height
                     if resized { keepHeldCard(proxy, animated: false) } else if !WatcherFollow.seesLetGo { settle() }
+                    // How far the page has scrolled from its top, short of the bounce past its end, which would read as
+                    // going back up.
+                    let offset = min(follow.top - frame.minY, max(0, frame.height - (follow.dockTop - follow.top)))
+                    if let away = follow.slide.moved(to: offset, counts: !resized && follow.userMoved) { slideBar(away) }
                 })
             }
             .watcherScrollAnchor(holdingCard: holdingCard)
@@ -478,6 +520,7 @@ private struct WatcherConversationPane: View {
         box.following = false
         setHoldingCard(false)
         let still = reduceMotion
+        box.quiet()
         withAnimation(still ? nil : .easeOut(duration: 0.35)) { scroll.scrollTo(WatcherHero.id, anchor: .top) }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: still ? 120_000_000 : 450_000_000)
@@ -562,6 +605,7 @@ private struct WatcherConversationPane: View {
     private static func place(_ box: WatcherFollow, _ scroll: ScrollViewProxy, request: Int, still: Bool) {
         guard box.followRequests == request, !box.userScrolling, let key = box.held, let frame = box.cards[key],
               let y = WatcherReaderPlace.anchor(card: frame, offset: box.heldOffset, top: box.top, dockTop: box.dockTop) else { return }
+        box.quiet()
         withAnimation(still ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(cardID(key), anchor: UnitPoint(x: 0.5, y: y)) }
     }
     /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
@@ -577,9 +621,13 @@ private struct WatcherConversationPane: View {
             await Task.yield()
             guard box.followRequests == request else { return }
             guard !box.userScrolling else { box.missedFollow = true; return }
+            box.quiet()
             withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: .bottom) }
             try? await Task.sleep(nanoseconds: still ? 120_000_000 : 360_000_000)
-            if box.followRequests == request, box.following, !box.userScrolling { scroll.scrollTo(target, anchor: .bottom) }
+            if box.followRequests == request, box.following, !box.userScrolling {
+                box.quiet()
+                scroll.scrollTo(target, anchor: .bottom)
+            }
         }
     }
 
@@ -1402,6 +1450,26 @@ private struct WatcherPermissionSheet: View {
 
 // MARK: - Watched
 
+/// How Watched's page moves, kept outside SwiftUI's state so scrolling never redraws it: which way the user moves it, for
+/// the bar (#1278).
+private final class WatchedMotion {
+    /// The page's visible part: the bottom of the bar, and the height down to the tab bar.
+    struct Room: Equatable {
+        var top: CGFloat = 0
+        var height: CGFloat = 0
+    }
+    var room = Room()
+    var height: CGFloat = 0
+    var slide = WatcherBarSlide()
+    /// The user is dragging the page or letting a flick run out, on iOS 18 and later.
+    var userScrolling = false
+    /// Until when the page moves for the app, going to the top. iOS 17 can't say when the user moves the page, so there
+    /// a move outside this time is theirs.
+    var quietUntil = Date.distantPast
+    func quiet() { quietUntil = Date().addingTimeInterval(0.6) }
+    var userMoved: Bool { WatcherFollow.seesLetGo ? userScrolling : Date() >= quietUntil }
+}
+
 /// The threads Watcher works with: on a computer whose watches last until the user stops them, what watching means,
 /// Watch a thread and Stop all, then each thread as a card that opens it, with what Watcher last did and Stop watching;
 /// on an older one, how many of how many it may, Stop all and the cards. Then the ones it no longer watches.
@@ -1412,16 +1480,36 @@ private struct WatchedPane: View {
     let hostID: String
     /// Presses on the bar's owl: each one scrolls the page to its top, to Watcher's hero.
     let toTop: Int
+    /// Slides the bar away, or back, as the user reads down or goes up.
+    let slideBar: (Bool) -> Void
     let stopAll: () -> Void
     @State private var picking = false
+    @State private var motion = WatchedMotion()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ScrollViewReader { proxy in
             list
+                .onUserScrolling { motion.userScrolling = $0 }
+                .background(GeometryReader { page in
+                    let frame = page.frame(in: .global)
+                    let room = WatchedMotion.Room(top: frame.minY + page.safeAreaInsets.top,
+                                                  height: frame.height - page.safeAreaInsets.top - page.safeAreaInsets.bottom)
+                    Color.clear
+                        .onAppear { motion.room = room }
+                        .onChange(of: room) { _, value in motion.room = value }
+                })
                 .onChange(of: toTop) { _, _ in
+                    motion.quiet()
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.35)) { proxy.scrollTo(WatcherHero.id, anchor: .top) }
                 }
         }
+    }
+    /// Where Watched's page has scrolled, from its content's frame, for the bar.
+    private func moved(_ frame: CGRect) {
+        let resized = abs(frame.height - motion.height) > 0.5
+        motion.height = frame.height
+        let offset = min(motion.room.top - frame.minY, max(0, frame.height - motion.room.height))
+        if let away = motion.slide.moved(to: offset, counts: !resized && motion.userMoved) { slideBar(away) }
     }
     private var list: some View {
         let page = model.watcherPage(hostID)
@@ -1475,6 +1563,11 @@ private struct WatchedPane: View {
             .padding(.horizontal, Space.gutter)
             .padding(.bottom, Space.s8)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { content in
+                Color.clear
+                    .onAppear { moved(content.frame(in: .global)) }
+                    .onChange(of: content.frame(in: .global)) { _, frame in moved(frame) }
+            })
         }
         .refreshable { await model.readWatcher(hostID) }
         // What a Stop watching press did, with Undo, over the tab bar.

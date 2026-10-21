@@ -1469,6 +1469,28 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(hidden, 0, accuracy: 0.0001)
     }
 
+    // MARK: The bar that slides away (#1278)
+
+    /// Watcher's bar slides away once the user has read down the page a little way, comes back once they have gone up a
+    /// little way, and always shows near the page's top. A move the user didn't make counts for neither.
+    func testWatchersBarSlidesAwayOnTheWayDownAndBackOnTheWayUp() {
+        var slide = WatcherBarSlide()
+        XCTAssertNil(slide.moved(to: 400, counts: true), "The first look only says where the page is")
+        XCTAssertNil(slide.moved(to: 410, counts: true), "Ten points down isn't enough")
+        XCTAssertEqual(slide.moved(to: 420, counts: true), true, "Twenty points down slides it away")
+        XCTAssertEqual(slide.moved(to: 500, counts: true), true)
+        XCTAssertNil(slide.moved(to: 490, counts: true), "Turning back starts the count again")
+        XCTAssertEqual(slide.moved(to: 480, counts: true), false, "Twenty points up brings it back")
+
+        // The page following Watcher's words, or changing height, moves it without the user.
+        XCTAssertNil(slide.moved(to: 900, counts: false))
+        XCTAssertNil(slide.moved(to: 910, counts: true), "A move that didn't count starts the count again")
+        XCTAssertEqual(slide.moved(to: 920, counts: true), true)
+
+        XCTAssertEqual(slide.moved(to: 6, counts: false), false, "Near the top it always shows")
+        XCTAssertEqual(slide.moved(to: -40, counts: true), false, "And past it, pulling to read the page again")
+    }
+
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {
         XCTAssertEqual(WatcherPermissions.modes.map(WatcherPermissions.name), ["Ask before actions", "Allow edits", "Allow actions", "Full access"])
         XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", computer: "Laptop"), "Codex decides what to ask you about.")

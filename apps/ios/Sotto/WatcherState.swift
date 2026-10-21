@@ -315,6 +315,36 @@ struct WatcherReaderPlace: Equatable {
     }
 }
 
+/// Which way the user moves one of Watcher's pages, so its bar slides away as they read down and comes back as they go
+/// up, as Safari's does (#1278, pick A). Near the page's top the bar always shows. Moves the user didn't make (the page
+/// following Watcher's words, keeping a card, going to the top, or changing height) don't count, and start the count
+/// again.
+struct WatcherBarSlide: Equatable {
+    /// How near the page's top the bar always shows.
+    static let near: CGFloat = 12
+    /// How far the user must move the page one way before the bar follows.
+    static let travel: CGFloat = 14
+    private var last: CGFloat?
+    private var moved: CGFloat = 0
+
+    /// - Parameters:
+    ///   - offset: how far the page has scrolled from its top.
+    ///   - counts: whether this move was the user's.
+    /// - Returns: true to slide the bar away, false to bring it back, nil to leave it.
+    mutating func moved(to offset: CGFloat, counts: Bool) -> Bool? {
+        defer { last = offset }
+        guard let last else { return nil }
+        if offset < Self.near { moved = 0; return false }
+        guard counts else { moved = 0; return nil }
+        let step = offset - last
+        guard step != 0 else { return nil }
+        moved = (step > 0) == (moved > 0) ? moved + step : step
+        if moved > Self.travel { return true }
+        if moved < -Self.travel { return false }
+        return nil
+    }
+}
+
 // MARK: - Words
 
 enum WatcherWords {
