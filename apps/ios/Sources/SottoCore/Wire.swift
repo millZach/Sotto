@@ -214,6 +214,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public var delegatedBy: String? = nil
     /// How many sub-agents the thread's provider reports, and how many work (ADR-0101). Read tolerantly.
     public var subagentSummary: SubagentSummary? = nil
+    /// The computer's word that the thread's last turn failed and a client has shown it since, or Dismiss all named it
+    /// (ADR-0092). Only a computer that lists `failure-seen` sends it; the Agents view reads it (ADR-0101).
+    public var failureSeen: Bool? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.

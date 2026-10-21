@@ -35,15 +35,19 @@ public struct SubagentRow: Decodable, Identifiable, Equatable, Sendable {
     public let completedAt: String?
     public let lastObservedAt: String?
     public let durationMs: Double?
+    /// `workflow` for a workflow's run, which stands for its agents and is not one of them.
     public let kind: String?
+    /// Goes up each time the computer's record of the agent changes, its latest update or result among them.
+    public let revision: Int?
     public init(id: String, parentId: String? = nil, sequence: Int = 1, assignmentId: String? = nil, title: String, description: String = "",
                 model: String? = nil, status: String, startedAt: String? = nil, completedAt: String? = nil, lastObservedAt: String? = nil,
-                durationMs: Double? = nil, kind: String? = nil) {
+                durationMs: Double? = nil, kind: String? = nil, revision: Int? = nil) {
         self.id = id; self.parentId = parentId; self.sequence = sequence; self.assignmentId = assignmentId; self.title = title
         self.description = description; self.model = model; self.status = status; self.startedAt = startedAt
         self.completedAt = completedAt; self.lastObservedAt = lastObservedAt; self.durationMs = durationMs; self.kind = kind
+        self.revision = revision
     }
-    private enum Keys: String, CodingKey { case id, parentId, sequence, assignmentId, title, description, model, status, startedAt, completedAt, lastObservedAt, durationMs, kind }
+    private enum Keys: String, CodingKey { case id, parentId, sequence, assignmentId, title, description, model, status, startedAt, completedAt, lastObservedAt, durationMs, kind, revision }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -59,6 +63,7 @@ public struct SubagentRow: Decodable, Identifiable, Equatable, Sendable {
         lastObservedAt = c.readable(String.self, .lastObservedAt)
         durationMs = c.readable(Double.self, .durationMs)
         kind = c.readable(String.self, .kind)
+        revision = c.readable(Int.self, .revision)
     }
 }
 
@@ -176,7 +181,8 @@ public enum AgentsElapsed: Equatable, Sendable {
 /// One row of the sheet: a delegated thread, which opens, or a sub-agent, which opens in place to its task and result.
 public struct AgentsRow: Identifiable, Equatable, Sendable {
     public enum Kind: Equatable, Sendable { case thread, agent }
-    /// The row's light and its status word's colour. A settled thread's agents are quiet.
+    /// The row's light and its status word's colour. Settled is quiet: a settled thread's agents, and a settled delegated
+    /// thread, show their work without colour; only what needs the user keeps its light.
     public enum Tone: Equatable, Sendable { case needs, working, failed, done, quiet }
     public let id: String
     public let kind: Kind
@@ -201,6 +207,11 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     public let tone: Tone
     /// `approval` or `question` while a delegated thread waits on the user for one.
     public let waitingFor: String?
+    /// An agent row that is a workflow's run: it stands for the agents listed under it, and no count includes it.
+    public var workflow = false
+    /// What an opened agent's task and result were read for: its run, its revision and its status. When it changes, they
+    /// are read again.
+    public var detailsKey: String? = nil
 
     /// Provider · kind of work · model · start time, each only where it is known.
     public func meta(clock: (Date) -> String) -> String {
@@ -213,7 +224,7 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
             let provider = providerID.map { ", delegated thread on \(AgentNames.name($0))" } ?? ", delegated thread"
             return title + provider + (status.map { ", \($0)" } ?? "") + (waitingFor != nil ? ". Opens it to answer" : ". Opens it")
         case .agent:
-            return title + ", agent" + (status.map { ", \($0)" } ?? "")
+            return title + (workflow ? ", workflow" : ", agent") + (status.map { ", \($0)" } ?? "")
         }
     }
 }
@@ -249,11 +260,23 @@ public enum AgentsRoster {
         if let result = assignment.result, !result.isEmpty { return result }
         return assignment.status == "running" ? "No result reported yet." : "No result was reported."
     }
-    /// What a delegated thread waits on the user for: a permission ahead of a question. A settled thread waits on nothing.
+    /// What a delegated thread waits on the user for: a permission ahead of a question. A settled thread still waits, as it
+    /// stays in Needs you on the Threads tab: only the user can answer it (ADR-0081 decision 11, ADR-0004).
     public static func waitingFor(_ thread: ThreadSummary) -> String? {
-        guard !thread.requests.isEmpty, !ThreadGroups.isSettled(thread) else { return nil }
+        guard !thread.requests.isEmpty else { return nil }
         if thread.requests.contains(where: { $0.kind == "permission" }) { return "approval" }
         return thread.requests.contains(where: { $0.kind == "question" }) ? "question" : nil
+    }
+    /// A delegated thread whose last turn failed, that asks nothing and that no client has shown since: it says Needs
+    /// attention, as its desktop row does (`failureUnseen` in src/shared/threadFailures.ts, ADR-0092). Settled is quiet,
+    /// so a settled one never does. `failuresSeen` is whether its computer publishes `failureSeen` (`failure-seen`):
+    /// without that word no failure can be told unseen, so none is.
+    public static func failureUnseen(_ thread: ThreadSummary, failuresSeen: Bool = true) -> Bool {
+        failuresSeen && thread.status == "error" && thread.requests.isEmpty && thread.failureSeen != true && !ThreadGroups.isSettled(thread)
+    }
+    /// Whether a delegated thread needs the user: a permission or a question waiting, or a failure no client has shown.
+    public static func needsYou(_ thread: ThreadSummary, failuresSeen: Bool = true) -> Bool {
+        waitingFor(thread) != nil || failureUnseen(thread, failuresSeen: failuresSeen)
     }
 
     /// One delegated thread below a thread: 1 under it, 2 under one of its delegated threads, `by`.
@@ -281,18 +304,18 @@ public enum AgentsRoster {
 
     /// The top bar's count, from the thread list alone: delegated threads, both levels, and the provider's sub-agents.
     /// Nil when the thread has neither, so the control is not there.
-    public static func count(_ owner: ThreadSummary, in threads: [ThreadSummary]) -> AgentsCount? {
+    public static func count(_ owner: ThreadSummary, in threads: [ThreadSummary], failuresSeen: Bool = true) -> AgentsCount? {
         let below = delegated(below: owner.id, in: threads)
         let total = below.count + (owner.subagentSummary?.total ?? 0)
         guard total > 0 else { return nil }
-        return AgentsCount(total: total, needs: below.filter { waitingFor($0.thread) != nil }.count)
+        return AgentsCount(total: total, needs: below.filter { needsYou($0.thread, failuresSeen: failuresSeen) }.count)
     }
 
     /// The sheet's rows: the delegated threads and the sub-agents in one list, newest start first. Each delegated thread
     /// is followed by its own, newest first, and each sub-agent by the agents reported under it. `delegations` is the
     /// computer's answer, nil until it comes; a row it says nothing of shows what the thread list says.
     public static func rows(owner: ThreadSummary, threads: [ThreadSummary], delegations: [DelegatedThreadRecord]?, agents: [SubagentRow],
-                            models: [ThreadModel] = []) -> [AgentsRow] {
+                            models: [ThreadModel] = [], failuresSeen: Bool = true) -> [AgentsRow] {
         let quiet = ThreadGroups.isSettled(owner)
         let records = Dictionary((delegations ?? []).map { ($0.thread, $0) }, uniquingKeysWith: { first, _ in first })
         // Each block is a delegated thread with its own, or a sub-agent with the agents under it, and keeps its order.
@@ -306,7 +329,8 @@ public enum AgentsRoster {
         }
         for item in delegated(below: owner.id, in: threads) {
             if item.level == 1 { closeFamily() }
-            family.append(threadRow(item.thread, level: item.level, by: item.by, record: records[item.thread.id], read: delegations != nil, quiet: quiet, models: models))
+            family.append(threadRow(item.thread, level: item.level, by: item.by, record: records[item.thread.id], read: delegations != nil, quiet: quiet,
+                                    models: models, failuresSeen: failuresSeen))
         }
         closeFamily()
         var agentBlock: [AgentsRow] = []
@@ -330,9 +354,10 @@ public enum AgentsRoster {
     private struct Block { let start: Date?; let index: Int; let rows: [AgentsRow] }
 
     /// The line above the list: "2 delegated threads · 3 agents", and beside it what needs the user and what is working.
+    /// A workflow's run is not an agent, so no count includes it; the agents under it are counted (`subagentSummarySchema`).
     public static func countLine(_ rows: [AgentsRow], summary: SubagentSummary?) -> (title: String, detail: String) {
         let threads = rows.filter { $0.kind == .thread }
-        let agentRows = rows.filter { $0.kind == .agent }
+        let agentRows = rows.filter { $0.kind == .agent && !$0.workflow }
         let agents = max(summary?.total ?? 0, agentRows.count)
         let title = [threads.isEmpty ? nil : plural(threads.count, "delegated thread"), agents == 0 ? nil : plural(agents, "agent")]
             .compactMap { $0 }.joined(separator: " · ")
@@ -364,8 +389,12 @@ public enum AgentsRoster {
     }
 
     static func threadRow(_ thread: ThreadSummary, level: Int, by: ThreadSummary?, record: DelegatedThreadRecord?, read: Bool, quiet: Bool,
-                          models: [ThreadModel]) -> AgentsRow {
+                          models: [ThreadModel], failuresSeen: Bool = true) -> AgentsRow {
         let waiting = waitingFor(thread)
+        // An unseen failure needs the user too, but asks nothing: it says Needs attention and has no Open to answer.
+        let attention = waiting == nil && failureUnseen(thread, failuresSeen: failuresSeen)
+        // Settled is quiet, whether the sheet's own thread or this one was settled: only a request or a failure lights it.
+        let settled = quiet || ThreadGroups.isSettled(thread)
         let state = ThreadState(thread)
         // Without a record the list stands in: Working while its turn runs. Once the computer has answered without one,
         // its outcome is Unknown, never guessed; before then, nothing is said.
@@ -376,12 +405,13 @@ public enum AgentsRoster {
         let working = outcome == "working" || outcome == "background"
         let status: String?
         if let waiting { status = waiting == "question" ? "Needs your answer" : "Needs your approval" }
-        else if thread.finishedUnread == true && !working && !quiet { status = "Just finished" }
+        else if attention { status = "Needs attention" }
+        else if thread.finishedUnread == true && !working && !settled { status = "Just finished" }
         else if let outcome { status = outcomeWord(outcome) }
         else { status = nil }
         let tone: AgentsRow.Tone
-        if waiting != nil { tone = .needs }
-        else if quiet { tone = .quiet }
+        if waiting != nil || attention { tone = .needs }
+        else if settled { tone = .quiet }
         else if working { tone = .working }
         else if outcome == "failed" { tone = .failed }
         else { tone = .done }
@@ -415,9 +445,12 @@ public enum AgentsRoster {
         let title = row.title.isEmpty ? (row.kind == "workflow" ? "Workflow" : "Agent task") : row.title
         let preview: String? = row.description.isEmpty || row.description == row.title ? nil : row.description
         let model = row.model ?? ""
-        return AgentsRow(id: "agent:" + row.id, kind: .agent, level: depth + 1, title: title, threadID: nil, agentID: row.id, providerID: nil,
-                         delegatedBy: nil, preview: preview, facts: [model.isEmpty ? "Model not reported" : model],
-                         startedAt: start, elapsed: elapsed, status: agentWord(row.status), tone: tone, waitingFor: nil)
+        var result = AgentsRow(id: "agent:" + row.id, kind: .agent, level: depth + 1, title: title, threadID: nil, agentID: row.id, providerID: nil,
+                               delegatedBy: nil, preview: preview, facts: [model.isEmpty ? "Model not reported" : model],
+                               startedAt: start, elapsed: elapsed, status: agentWord(row.status), tone: tone, waitingFor: nil)
+        result.workflow = row.kind == "workflow"
+        result.detailsKey = [row.assignmentId ?? "", row.revision.map { String($0) } ?? "", row.status].joined(separator: "#")
+        return result
     }
 
     /// Newest start first; a row whose start isn't known goes last.

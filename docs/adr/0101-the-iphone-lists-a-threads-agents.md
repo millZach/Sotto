@@ -8,10 +8,11 @@ A thread on the desktop lists its delegated threads (ADR-0081) and its provider'
 
 Variant A of `docs/prototypes/iphone-agents-view-prototype.html`, Zach's pick on October 21, 2026. Variant B (a Threads | Agents switch at the top of the Threads tab) and variant C (a line on each delegating thread's card that opens in place) were rejected.
 
-- A thread's top bar has **Agents** with a count: its delegated threads, both levels, and its sub-agents. While a delegated thread waits on the user it carries the Needs you light. It is there only while the thread has either.
+- A thread's top bar has **Agents** with a count: its delegated threads, both levels, and its sub-agents. While a delegated thread needs the user it carries the Needs you light: it waits on a permission or a question, settled or not (ADR-0081 decision 11), or its last turn failed and no client has shown it (ADR-0092, read from the shell's `failureSeen` where the host lists `failure-seen`). It is there only while the thread has either.
 - Agents opens a sheet that lists them newest start first, each delegated thread followed by its own, as Tools › Agents does (`delegatedRoster.ts`). A row carries the title, Thread or Agent, the brief, provider · kind of work · model · start time, the outcome in the glossary's words and the time it has worked. Above the list a line counts them and says what needs the user and what is working.
 - A delegated thread's row opens that thread, and Back returns to the sheet. One that waits on the user says **Open to answer**, as the desktop does; it opens the thread, where its request is answered as any other. Nothing in the sheet answers anything (ADR-0004).
-- A sub-agent's row opens in place to its task and its latest update or result.
+- A failed delegated thread no client has shown says **Needs attention**, as its desktop row does, with nothing to answer. Settled is quiet: apart from a waiting request, a settled thread's rows carry no colour and never say Just finished or Needs attention.
+- A sub-agent's row opens in place to its task and its latest update or result, read again when the agent's run, revision or status changes and on a refresh. A workflow's run is one row with its agents under it, as Tools › Agents keeps it apart, and no count includes it.
 
 ## What the host sends
 

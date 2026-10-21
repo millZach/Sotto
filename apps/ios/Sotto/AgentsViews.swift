@@ -101,10 +101,13 @@ private struct AgentsSheet: View {
     @State private var problem = false
     /// Until the first read has answered, the list is loading rather than empty.
     @State private var loading = true
+    /// Counts the user's own refreshes, so an opened agent reads its task and result again with the list.
+    @State private var refreshes = 0
 
     var body: some View {
         let source = model.agentsSource(ref)
-        let rows = source.map { AgentsRoster.rows(owner: $0.owner, threads: $0.threads, delegations: delegations, agents: page?.rows ?? [], models: $0.models) } ?? []
+        let rows = source.map { AgentsRoster.rows(owner: $0.owner, threads: $0.threads, delegations: delegations, agents: page?.rows ?? [], models: $0.models,
+                                                  failuresSeen: $0.failuresSeen) } ?? []
         let counts = AgentsRoster.countLine(rows, summary: page?.summary ?? source?.owner.subagentSummary)
         let needs = rows.contains { $0.tone == .needs }
         ScrollView {
@@ -132,7 +135,7 @@ private struct AgentsSheet: View {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("Couldn’t read the agents on \(model.name(ref.hostID)). Nothing was changed. Try again.")
                             .font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
-                        Button("Try again") { Task { await load() } }
+                        Button("Try again") { Task { await refresh() } }
                             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                             .disabled(loading)
                     }
@@ -154,7 +157,7 @@ private struct AgentsSheet: View {
                                     if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
                                 }
                             case .agent:
-                                AgentsAgentRow(ref: ref, row: row)
+                                AgentsAgentRow(ref: ref, row: row, refreshes: refreshes)
                             }
                         }
                     }
@@ -168,20 +171,31 @@ private struct AgentsSheet: View {
             .padding(.bottom, Space.s6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .refreshable { await load() }
+        .refreshable { await refresh() }
         .task(id: signal(source)) { await load() }
         .presentationBackground { SheetBackdrop(wash: false) }
         .presentationCornerRadius(Radius.xl)
         .accessibilityAction(.escape) { dismiss() }
     }
 
-    /// What the thread list says of the thread's agents: a change here reads them again.
+    /// What the thread list says of the thread's agents: a change here reads them again. A delegated thread's background
+    /// work and its own agents are in it, so one that goes from Background work to Answered while idle and asking nothing
+    /// is read again too.
     private func signal(_ source: AgentsSource?) -> String {
         guard let source else { return "" }
-        let below = AgentsRoster.delegated(below: ref.threadID, in: source.threads)
-            .map { "\($0.thread.id):\($0.thread.status):\($0.thread.requests.count)" }
-        let summary = source.owner.subagentSummary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? ""
-        return (below + [summary]).joined(separator: "|")
+        func agents(_ summary: SubagentSummary?) -> String { summary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? "" }
+        let below = AgentsRoster.delegated(below: ref.threadID, in: source.threads).map { item in
+            let thread = item.thread
+            let background = (thread.backgroundWork ?? []).map(\.type).joined(separator: ",")
+            return "\(thread.id):\(thread.status):\(thread.requests.count):\(background):\(agents(thread.subagentSummary))"
+        }
+        return (below + [agents(source.owner.subagentSummary)]).joined(separator: "|")
+    }
+
+    /// The user's own refresh: the list, and every opened agent's task and result with it.
+    private func refresh() async {
+        refreshes += 1
+        await load()
     }
 
     private func load() async {
@@ -318,6 +332,8 @@ private struct AgentsAgentRow: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let row: AgentsRow
+    /// The sheet's count of the user's refreshes: each one reads an opened agent again.
+    let refreshes: Int
     @State private var open = false
     @State private var assignment: SubagentAssignment?
     @State private var failed = false
@@ -325,7 +341,8 @@ private struct AgentsAgentRow: View {
         VStack(alignment: .leading, spacing: 0) {
             Button { open.toggle() } label: {
                 HStack(alignment: .center, spacing: Space.s2) {
-                    RowBody(row: row, tag: "Agent", mark: AnyView(Image(systemName: "person.crop.square").font(.system(size: 13, weight: .semibold))))
+                    RowBody(row: row, tag: row.workflow ? "Workflow" : "Agent",
+                            mark: AnyView(Image(systemName: row.workflow ? "square.stack.3d.up" : "person.crop.square").font(.system(size: 13, weight: .semibold))))
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .accessibilityHidden(true)
@@ -342,7 +359,9 @@ private struct AgentsAgentRow: View {
             .accessibilityIdentifier("agents-row-\(row.id)")
             if open { details }
         }
-        .task(id: open) { if open { await load() } }
+        // Opened, it reads again when its run, its revision or its status changes, and on the user's refresh, so a running
+        // agent that finishes shows its result rather than its last update.
+        .task(id: [String(open), row.detailsKey ?? "", String(refreshes)].joined(separator: "|")) { if open { await load() } }
     }
 
     private var details: some View {

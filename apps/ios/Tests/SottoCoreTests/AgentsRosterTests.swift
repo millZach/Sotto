@@ -37,10 +37,10 @@ final class AgentsRosterTests: XCTestCase {
         let docs = try thread("docs", #", "delegatedBy":"owner""#)
         let nested = try thread("nested", #", "delegatedBy":"review""#, requests: question)
         let elsewhere = try thread("elsewhere", #", "delegatedBy":"other""#, requests: permission)
-        // A delegated thread whose own delegated thread is settled waits on nothing.
+        // A settled delegated thread that waits on the user still needs you: only the user can answer it (ADR-0081).
         let settled = try thread("settled", #", "delegatedBy":"docs", "settledAt":"2026-10-20""#, requests: permission)
         let threads = [owner, review, docs, nested, elsewhere, settled]
-        XCTAssertEqual(AgentsRoster.count(owner, in: threads), AgentsCount(total: 6, needs: 2))
+        XCTAssertEqual(AgentsRoster.count(owner, in: threads), AgentsCount(total: 6, needs: 3))
         XCTAssertNil(AgentsRoster.count(try thread("alone"), in: threads), "No control without delegated threads or agents")
         XCTAssertEqual(AgentsRoster.count(try thread("agents", #", "subagentSummary":{"total":1}"#), in: threads), AgentsCount(total: 1, needs: 0))
     }
@@ -107,6 +107,80 @@ final class AgentsRosterTests: XCTestCase {
         XCTAssertEqual(AgentsRoster.countLine(after, summary: nil).detail, "None working")
         XCTAssertEqual(AgentsRoster.countLine([], summary: SubagentSummary(total: 1, unknown: 1)).title, "1 agent")
         XCTAssertEqual(AgentsRoster.countLine([], summary: SubagentSummary(total: 1, unknown: 1)).detail, "Activity not confirmed")
+    }
+
+    func testASettledDelegatedThreadKeepsItsRequestButItsWorkIsQuiet() throws {
+        let owner = try thread("owner")
+        let asking = try thread("asking", #", "delegatedBy":"owner", "settledAt":"2026-10-21""#, status: "running", requests: question)
+        let busy = try thread("busy", #", "delegatedBy":"owner", "settledAt":"2026-10-21""#, status: "running")
+        let done = try thread("done", #", "delegatedBy":"owner", "settledAt":"2026-10-21", "finishedUnread":true"#)
+        let threads = [owner, asking, busy, done]
+        XCTAssertEqual(AgentsRoster.count(owner, in: threads), AgentsCount(total: 3, needs: 1))
+        let records = [DelegatedThreadRecord(thread: "asking", by: "owner", outcome: "working", startedAt: at(4)),
+                       DelegatedThreadRecord(thread: "busy", by: "owner", outcome: "working", startedAt: at(2)),
+                       DelegatedThreadRecord(thread: "done", by: "owner", outcome: "answered", startedAt: at(6), outcomeAt: at(5))]
+        let rows = Dictionary(uniqueKeysWithValues: AgentsRoster.rows(owner: owner, threads: threads, delegations: records, agents: []).map { ($0.id, $0) })
+        XCTAssertEqual(rows["thread:asking"]?.waitingFor, "question")
+        XCTAssertEqual(rows["thread:asking"]?.status, "Needs your answer")
+        XCTAssertEqual(rows["thread:asking"]?.tone, .needs)
+        XCTAssertEqual(rows["thread:busy"]?.status, "Working")
+        XCTAssertEqual(rows["thread:busy"]?.tone, .quiet)
+        XCTAssertEqual(rows["thread:done"]?.status, "Answered", "Settled is quiet: no Just finished")
+        XCTAssertEqual(rows["thread:done"]?.tone, .quiet)
+        XCTAssertEqual(AgentsRoster.countLine(Array(rows.values), summary: nil).detail, "1 needs you")
+    }
+
+    func testAnUnseenFailureNeedsAttentionWithoutAnythingToAnswer() throws {
+        let owner = try thread("owner")
+        let failed = try thread("failed", #", "delegatedBy":"owner", "failureId":"f1""#, status: "error")
+        let seen = try thread("seen", #", "delegatedBy":"owner", "failureSeen":true"#, status: "error")
+        let settled = try thread("settled", #", "delegatedBy":"owner", "settledAt":"2026-10-21""#, status: "error")
+        let asking = try thread("asking", #", "delegatedBy":"owner""#, status: "error", requests: permission)
+        let threads = [owner, failed, seen, settled, asking]
+        XCTAssertEqual(seen.failureSeen, true)
+        XCTAssertNil(failed.failureSeen)
+        XCTAssertEqual(AgentsRoster.count(owner, in: threads), AgentsCount(total: 4, needs: 2))
+        XCTAssertEqual(AgentsRoster.count(owner, in: threads, failuresSeen: false), AgentsCount(total: 4, needs: 1),
+                       "A computer that doesn't say which failures were shown can't have one unseen")
+        let records = threads.dropFirst().map { DelegatedThreadRecord(thread: $0.id, by: "owner", outcome: "failed", startedAt: at(5), outcomeAt: at(4)) }
+        let rows = Dictionary(uniqueKeysWithValues: AgentsRoster.rows(owner: owner, threads: threads, delegations: records, agents: []).map { ($0.id, $0) })
+        XCTAssertEqual(rows["thread:failed"]?.status, "Needs attention")
+        XCTAssertEqual(rows["thread:failed"]?.tone, .needs)
+        XCTAssertNil(rows["thread:failed"]?.waitingFor, "Nothing to answer, so no Open to answer")
+        XCTAssertEqual(rows["thread:failed"]?.spokenLabel, "failed title, delegated thread on Codex, Needs attention. Opens it")
+        XCTAssertEqual(rows["thread:seen"]?.status, "Failed")
+        XCTAssertEqual(rows["thread:seen"]?.tone, .failed)
+        XCTAssertEqual(rows["thread:settled"]?.tone, .quiet)
+        XCTAssertEqual(rows["thread:asking"]?.status, "Needs your approval")
+        XCTAssertEqual(AgentsRoster.countLine(Array(rows.values), summary: nil).detail, "2 needs you")
+        let unread = AgentsRoster.rows(owner: owner, threads: threads, delegations: records, agents: [], failuresSeen: false)
+        XCTAssertEqual(unread.first { $0.id == "thread:failed" }?.status, "Failed")
+    }
+
+    func testAWorkflowsRunListsItsAgentsAndIsNeverCountedAsOne() throws {
+        let page = try JSONDecoder().decode(SubagentPage.self, from: Data(#"{"threadId":"owner","rows":[{"id":"flow","sequence":1,"revision":3,"title":"Check the drawer","status":"running","kind":"workflow","startedAt":"2026-10-21T10:00:00.000Z"},{"id":"one","parentId":"flow","sequence":2,"revision":1,"assignmentId":"one-1","title":"Read the tests","status":"running","startedAt":"2026-10-21T10:00:01.000Z"},{"id":"two","parentId":"flow","sequence":3,"revision":2,"assignmentId":"two-1","title":"Read the docs","status":"running","startedAt":"2026-10-21T10:00:02.000Z"}],"summary":{"total":2,"working":2,"unknown":0}}"#.utf8))
+        XCTAssertEqual(page.rows.first?.kind, "workflow")
+        XCTAssertEqual(page.rows.first?.revision, 3)
+        let rows = AgentsRoster.rows(owner: try thread("owner"), threads: [], delegations: nil, agents: page.rows)
+        XCTAssertEqual(rows.map(\.id), ["agent:flow", "agent:one", "agent:two"])
+        XCTAssertEqual(rows.map(\.workflow), [true, false, false])
+        XCTAssertEqual(rows.map(\.level), [1, 2, 2])
+        XCTAssertEqual(rows[0].spokenLabel, "Check the drawer, workflow, Working")
+        // Two agents work under the workflow: two, as the toolbar and the desktop say, whether or not the summary is in.
+        XCTAssertEqual(AgentsRoster.countLine(rows, summary: page.summary).title, "2 agents")
+        XCTAssertEqual(AgentsRoster.countLine(rows, summary: page.summary).detail, "2 working")
+        XCTAssertEqual(AgentsRoster.countLine(rows, summary: nil).title, "2 agents")
+        XCTAssertEqual(AgentsRoster.countLine(rows, summary: nil).detail, "2 working")
+    }
+
+    func testAnOpenedAgentIsReadAgainWhenItsRunChanges() {
+        let running = AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a1", title: "A", status: "running", revision: 1), depth: 0, quiet: false)
+        let updated = AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a1", title: "A", status: "running", revision: 2), depth: 0, quiet: false)
+        let finished = AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a1", title: "A", status: "completed", revision: 2), depth: 0, quiet: false)
+        let next = AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a2", title: "A", status: "completed", revision: 2), depth: 0, quiet: false)
+        XCTAssertEqual(Set([running, updated, finished, next].compactMap(\.detailsKey)).count, 4)
+        XCTAssertEqual(AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a1", title: "A", status: "running", revision: 1), depth: 0, quiet: false).detailsKey,
+                       running.detailsKey)
     }
 
     func testNestedAgentsKeepEveryRowOnceWhateverTheirParents() {

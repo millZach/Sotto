@@ -1372,7 +1372,7 @@ struct HeldDetail {
             let shell = decode(Shell.self, shellObject)
             var features = arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"]
             if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature] }
-            if agents && host == laptop { features += [AgentsRoster.feature, "subagents"] }
+            if agents && host == laptop { features += [AgentsRoster.feature, "subagents", "failure-seen"] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         if watching {
@@ -3114,13 +3114,16 @@ extension AppModel {
     func agentsCount(_ ref: ThreadRef) -> AgentsCount? {
         guard offersAgentsView(ref.hostID), let threads = live[ref.hostID]?.shell?.host.threads,
               let owner = threads.first(where: { $0.id == ref.threadID }) else { return nil }
-        return AgentsRoster.count(owner, in: threads)
+        return AgentsRoster.count(owner, in: threads, failuresSeen: offersFailuresSeen(ref.hostID))
     }
+    /// Whether the thread's computer says which failures a client has shown (`failure-seen`), so an unseen one can say
+    /// Needs attention.
+    func offersFailuresSeen(_ hostID: String) -> Bool { live[hostID]?.features.contains("failure-seen") == true }
     /// The thread, its computer's threads and its model catalog as the computer last shared them, for the sheet's rows.
     func agentsSource(_ ref: ThreadRef) -> AgentsSource? {
         guard offersAgentsView(ref.hostID), let host = live[ref.hostID]?.shell?.host,
               let owner = host.threads.first(where: { $0.id == ref.threadID }) else { return nil }
-        return AgentsSource(owner: owner, threads: host.threads, models: host.models ?? [])
+        return AgentsSource(owner: owner, threads: host.threads, models: host.models ?? [], failuresSeen: offersFailuresSeen(ref.hostID))
     }
     /// What delegation's record on the thread's computer says of its delegated threads. A thread with none isn't asked.
     func readDelegations(_ ref: ThreadRef) async throws -> ThreadDelegations {
@@ -3221,4 +3224,6 @@ struct AgentsSource {
     let owner: ThreadSummary
     let threads: [ThreadSummary]
     let models: [ThreadModel]
+    /// Whether the computer says which failures a client has shown (`failure-seen`).
+    let failuresSeen: Bool
 }
