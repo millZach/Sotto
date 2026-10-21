@@ -1424,6 +1424,47 @@ it('returns a settle receipt on retry after its request closes without reviving 
   expect(f.control.watcherRecord()).toEqual(record)
 })
 
+it.each(['sequential', 'parallel'])('settles many user threads in one Watcher turn, %s, and closes the request when the turn ends (#1254)', async order => {
+  const f = await fixture(), targets: { hostId: string, threadId: string }[] = []
+  for (let index = 0; index < 4; index++) {
+    await f.control.commandShell({ type: 'create-thread', projectId: f.project.id, title: `Synthetic idle review ${index}`, modelId: f.model.id })
+    const threadId = f.control.shell().activeThreadId!
+    await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic review work' })
+    await f.finish(threadId)
+    targets.push({ hostId: f.control.hostId()!, threadId })
+  }
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!.status).toBe('running')
+  const settle = (target: (typeof targets)[number]) => f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target })
+  // The last settle always comes after the others have been accepted, while Watcher's turn still runs.
+  const first = targets.slice(0, -1)
+  const results = order === 'parallel' ? await Promise.all(first.map(settle)) : await first.reduce<Promise<unknown[]>>(
+    async (done, target) => [...await done, await settle(target)], Promise.resolve([]))
+  results.push(await settle(targets.at(-1)!))
+  for (const result of results) expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(f.service.state().requests[0]).toMatchObject({ state: 'active', participants: targets.map(target => ({ target, state: 'relinquished' })) })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.service.state().requests[0]!.state).toBe('closed'))
+})
+
+it('closes a settled request once Watcher\'s running turn answers another request (#1254)', async () => {
+  const f = await fixture()
+  await f.control.commandShell({ type: 'create-thread', projectId: f.project.id, title: 'Synthetic idle review', modelId: f.model.id })
+  const threadId = f.control.shell().activeThreadId!
+  await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic review work' })
+  await f.finish(threadId)
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.control.hostId()!, threadId } })).toMatchObject({ status: 'ok' })
+  expect(f.service.state().requests[0]).toMatchObject({ id: f.requestId, state: 'active' })
+  // Watcher's turn ends and the user's next message starts another request before any pass sees Watcher idle.
+  const observe = vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
+  await f.finish(f.id)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic next request' })).error).toBeNull()
+  observe.mockRestore()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!.status).toBe('running')
+  await vi.waitFor(() => expect(f.service.state().requests.find(item => item.id === f.requestId)!.state).toBe('closed'))
+  expect(f.service.state().requests.find(item => item.id !== f.requestId)).toMatchObject({ state: 'active' })
+})
+
 
 it('keeps working-copy choices and base refs in the same snapshot across pages', async () => {
   const f = await fixture()
