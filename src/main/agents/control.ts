@@ -3296,7 +3296,10 @@ export class AgentControl {
           if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
           // A delegation's hidden news goes past what waits ahead of it, so it claims itself rather than the head.
           await this.followupStore.claim(first.id, 'send', isDelegationOnlyWakeUp(first) ? candidate => candidate.id !== first.id : held); claimed = true
-          this.syncFollowups(); this.publish()
+          // A claimed item's thread is observed from here until the send settles, so its read and its echo carry its
+          // messages even when no window shows it. Otherwise a wake-up to a thread the user moved away from could not be
+          // confirmed, and held back what queued behind it until something else had the thread observed (#1263).
+          this.syncFollowups(); this.observe(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
           sentCommandId = item.commandId
           // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
@@ -3345,7 +3348,7 @@ export class AgentControl {
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
-          const news = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.()) : undefined
+          const news = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.(), this.watcherHooks?.newsHeld?.()) : undefined
           // After a compaction, Watcher is told to read its state back first (#1189).
           const stateNote = news ? this.watcherHooks?.stateNote?.() : undefined, watcherNews = news && stateNote ? `${news}\n\n${stateNote}` : news
           // The requests that news said wait on the user go with the wake-up as identities alone, for the workspace to

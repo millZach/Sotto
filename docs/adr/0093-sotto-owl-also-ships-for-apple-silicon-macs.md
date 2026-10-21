@@ -6,6 +6,8 @@ Accepted by Zach on October 19, 2026. **Number provisional until merge:** 0092 i
 
 Amended October 20, 2026: [ADR-0096](0096-stable-mac-builds-in-github-actions.md) builds stable Mac in GitHub Actions too. Below, "built by hand on a Mac" now describes only the fallback; stable Mac is otherwise unchanged.
 
+Amended October 21, 2026: [ADR-0099](0099-sotto-owl-also-ships-for-linux.md) adds a Linux half to each Owl, built in GitHub Actions the same way. "Linux on neither" below still holds: Linux has no in-app updater.
+
 The decision lands in two stages. Stage 1 needs no Apple credentials and is built. Stage 2 needs a Developer ID certificate and a notarization key in GitHub's secrets. Zach added them to the `owl-mac` environment on October 20, 2026, and Stage 2 is built; the first signed run shows its `codesign` and `spctl` results before a signed Owl ships.
 
 ## Context

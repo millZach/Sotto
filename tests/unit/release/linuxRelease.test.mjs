@@ -39,7 +39,9 @@ describe('Linux recipe and checksums', () => {
     expect(updated).toContain('pkgver=0.1.38\npkgrel=1\n')
     expect(updated.match(/'[a-f0-9]{64}'/gu)).toEqual(hashes.map(hash => `'${hash}'`))
     expect(updated.slice(updated.indexOf('package()'))).toBe(recipe.slice(recipe.indexOf('package()')))
-    expect(updated).toContain('https://github.com/millZach/Sotto-releases/releases/download/v${pkgver}/${_archive}')
+    // Stable's release version is pkgver; only a Sotto Owl build sets it apart (owlLinuxPackage.test.mjs).
+    expect(updated).toContain('_version="${pkgver}"\n_archive_name="Sotto-${_version}-linux-x64"\n_archive="${_archive_name}.tar.gz"\n')
+    expect(updated).toContain('https://github.com/millZach/Sotto-releases/releases/download/v${_version}/${_archive}')
   })
   it('refuses missing fields, unchecked hashes and source expressions it cannot hash', () => {
     expect(() => rewriteLinuxPkgbuild(recipe, '0.1.38', hashes.slice(1))).toThrow('Every Linux package source')
