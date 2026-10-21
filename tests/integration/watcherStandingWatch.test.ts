@@ -204,6 +204,8 @@ it('lets the user steer Watcher’s news turn, under a request of its own that W
   const earlier = await f.request(); await f.finish(f.watcherId())
   await startNews(f)
   expect(f.control.watcherWakeUpTurn(f.watcherId())).toBe(true)
+  // The user steers from Watcher's window, so Watcher's conversation is what the window shows.
+  await f.control.command({ type: 'observe-threads', threadIds: [f.watcherId()] })
   const draftId = randomUUID(), text = 'Synthetic: watch that thread again'
   const steer = await steerIn(f, draftId, text)
   // The steer opens a request of its own, rooted in its own message, and carries that request's line after the words.

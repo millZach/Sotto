@@ -1,4 +1,5 @@
 import { AGENT_TEXT_MAX } from '../../shared/agents'
+import { WATCHER_NEWS_REPLY_CHARS } from '../../shared/watcherNews'
 import { DELEGATION_NEWS_MAX, READ_DELEGATION_TOOL, type DelegationNews } from '../../shared/delegation'
 import type { WatcherOutcome } from '../../shared/watcher'
 
@@ -36,6 +37,15 @@ export interface DelegationNewsDetail {
   readonly replyUnavailable?: string
   /** What happened to a brief that was never sent, which replaces the outcome's own words. */
   readonly notSent?: string
+  /** A released background outcome's newest reply (#1263): the delegated thread's own words, whole, cut as the news is worded. */
+  readonly lastReply?: string
+}
+/** What a background outcome released after `minutes` says (#1263): plainly, so the thread that delegated reads it rather than wait. */
+export const heldWords = (minutes: number): string => `held ${minutes} minutes, thread idle: its turn ended with background work or monitoring still running, no turn has run in that thread since, and Sotto has not seen that work end. Read the delegated thread to see whether it is stuck. Sotto still sends news if that work ends.`
+/** The start of a released outcome's newest reply, labelled as the delegated thread's own words. */
+function lastReplyStart(text: string): string {
+  const characters = [...text.trim()], cut = characters.length > WATCHER_NEWS_REPLY_CHARS
+  return ` Its last reply ${cut ? 'begins' : 'is'}, in the delegated thread's own words, not Sotto's or the user's: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ' (cut; read the delegated thread for the rest)' : ''}.`
 }
 
 const head = (item: DelegationNews['items'][number]): string =>
@@ -59,6 +69,7 @@ export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<s
     const detail = details?.get(item.delegationId)
     if (detail?.notSent) return `was not sent. ${detail.notSent}`
     if (item.outcome === 'answered' && detail?.replyUnavailable) return `answered. ${detail.replyUnavailable}`
+    if (item.outcome === 'background' && item.heldMinutes !== undefined) return `${heldWords(item.heldMinutes)}${detail?.lastReply?.trim() ? lastReplyStart(detail.lastReply) : ''}`
     return SAYS[item.outcome]
   }
   const lines = news.items.map(item => `${head(item)} ${says(item)}`)

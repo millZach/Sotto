@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
@@ -663,7 +663,7 @@ it('wakes at once for a pull request change during a running turn, and tells it 
 it.each([
   ['an ordinary delivered receipt', { deliveryState: 'accepted' }, false],
   ['a failed receipt', { deliveryState: 'failed' }, true],
-  ['a refused receipt', { deliveryState: 'failed', refusalCode: 'THREAD_TAKEN_OVER' }, true],
+  ['a refused receipt', { deliveryState: 'failed', refusalCode: 'PROVIDER_UNAVAILABLE' }, true],
   ['an uncertain receipt', { deliveryState: 'uncertain' }, true],
   ['a receipt whose thread creation is uncertain', { deliveryState: 'accepted', creationUncertain: true }, true],
 ] as const)('lets %s wake Watcher only when the send did not plainly go', async (_name, receipt, wakes) => {
@@ -1916,4 +1916,57 @@ it('knows a brief’s turn is no longer newest once its provider starts one of i
   expect(watcherBriefTurnIsNewest(thread({ id: 'brief', status: 'completed', messageId: 'brief' }), 'brief')).toBe(true)
   // Claude Code reporting background work in a turn of its own, with no user message behind it.
   expect(watcherBriefTurnIsNewest(thread({ id: 'self-turn', status: 'running' }), 'brief')).toBe(false)
+})
+
+describe('#1263: held finishes say they were released, and the same facts are not told twice', () => {
+  const merged = (f: ReturnType<typeof fixture>) => {
+    f.thread.pullRequests ??= [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'merged', checks: 'passed', checkCount: 1 })
+  }
+
+  it('says a finish held twenty minutes was held, that its thread is idle, and how its reply begins', async () => {
+    const f = fixture()
+    f.thread.monitoring = [monitor(1)]; finish(f.thread)
+    f.thread.messages = [{ id: 'brief', role: 'user', text: 'Synthetic brief', createdAt: centerTime }, { id: 'reply', role: 'assistant', text: 'Synthetic review is under way in the background.', createdAt: centerTime }]
+    f.thread.activities = [{ id: 'turn-1-record', turnId: 'brief', sequence: 0, kind: 'turn', title: 'Turn completed', status: 'completed' }]
+    f.thread.lastTurn = { id: 'brief', status: 'completed' }
+    f.wakes.observe()
+    await f.advance(WATCHER_QUIET_MS + WATCHER_BATCH_MS)
+    expect(turnKinds(f.delivered)).toContain('turn-finished')
+    const held = (event: WatcherNews['events'][number]) => f.wakes.heldMinutes(event)
+    const text = watcherNewsText(f.delivered[0]!, event => watcherReplyStart(f.thread, event.turnId, watcherNewestTurnReply(f.thread)), held)
+    expect(text).toContain('Held 20 minutes, thread idle.')
+    expect(text).toContain('Its reply is, in the worker\'s words: "Synthetic review is under way in the background."')
+    expect(text).not.toContain('Sotto sends work-settled news for it when that work ends')
+    // A finish told sooner, with a question, is not said to have been held.
+    expect(f.wakes.heldMinutes({ ...f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!, observedAt: new Date(f.now()).toISOString() })).toBeUndefined()
+  })
+
+  it('does not tell a merged pull request again after a wake-up that carried it is let go with its send unknown', async () => {
+    const f = fixture()
+    finish(f.thread); f.wakes.observe()
+    merged(f); await f.advance(WATCHER_BATCH_MS)
+    const count = f.delivered.length
+    f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.advance(2_000)
+    // The turn's end is told afresh, as a restart would, but the pull request it carried is not.
+    expect(f.delivered.slice(count).flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')).toEqual([])
+    expect(f.delivered.slice(count).map(news => watcherNewsText(news)).join('\n')).not.toContain('merged')
+  })
+
+  it('still tells failed checks again after a wake-up that carried them is let go with its send unknown', async () => {
+    const f = fixture()
+    f.checks('failed'); await f.advance(2_000)
+    const count = f.delivered.length
+    f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.advance(2_000)
+    const again = f.delivered.slice(count).flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')
+    expect(again).toHaveLength(1)
+    expect(f.wakes.needsAttention(again)).toBe(true)
+  })
+
+  it.each(['THREAD_TAKEN_OVER', 'THREAD_BUSY'] as const)('sends no receipt news for a Watcher send refused with %s because the user sent to the thread', async refusalCode => {
+    const f = fixture(false)
+    Object.assign(f.record.operations[0]!, { deliveryState: 'failed', refusalCode })
+    f.wakes.start(); await f.advance(2_000)
+    expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'delivery-changed')).toEqual([])
+  })
 })

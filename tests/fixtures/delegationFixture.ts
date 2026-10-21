@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import type { AgentControl } from '../../src/main/agents/control'
-import { DelegationService } from '../../src/main/agents/delegation'
+import { DelegationService, type DelegationServiceOptions } from '../../src/main/agents/delegation'
 import { DelegationToolServer } from '../../src/main/agents/delegationTools'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
@@ -15,7 +15,7 @@ export type DelegationResult = { status: 'ok'; delegation: { id: string; thread:
 export type DelegationRefused = { status: 'refused'; code: string; message: string }
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean } = {}) {
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule'> } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
@@ -27,7 +27,7 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
       // Sotto's own naming, as the app runs it: the first message's opening words, then a generated name after the first reply.
       ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })).control
   let control = await controlFor()
-  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history })
+  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history, ...options.delegation })
   let service = make()
   let tools = new DelegationToolServer(service)
   workspace.host.useThreadTools([tools])

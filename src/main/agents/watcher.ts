@@ -615,6 +615,8 @@ export class WatcherService implements WatcherControlHooks {
       return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread))
     }
   }
+  /** How long each held finish in a wake-up's news was held, in minutes, when it went by itself with its thread idle (#1263). */
+  newsHeld(): (event: WatcherEvent) => number | undefined { return event => this.wakes.heldMinutes(event) }
   private transaction<T>(work: () => Promise<T>): Promise<T> {
     const task = this.tail.catch(() => undefined).then(work); this.tail = task; return task
   }

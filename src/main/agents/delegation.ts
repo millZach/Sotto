@@ -13,8 +13,9 @@ import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
   type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
-import { delegationNewsText, foldDelegationNews, type DelegationNewsDetail } from './delegationNews'
+import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
+import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
+import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
 import type { AgentState } from '../../shared/agents'
 
 /** The commands delegation sends on a thread's behalf: create the delegated thread, send it a brief, stop it. */
@@ -72,6 +73,9 @@ export interface DelegationServiceOptions {
    * permission come from its kind of work unless the call names them. Read once per `delegate` call, in admission.
    */
   readonly roles?: () => WorkerRoleChoices
+  /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
+  readonly now?: () => number
+  readonly schedule?: (callback: () => void, delay: number) => () => void
 }
 /** A start's worker role as the `delegate` result says it (#1041). Never saved: a retry's result has none. */
 interface RoleReceipt { readonly work: DelegationWork; readonly named: RoleField[]; readonly note: string }
@@ -144,6 +148,11 @@ const recordSchema = z.object({
   callerMessageId: id.optional(),
   /** Why the outcome became unknown, which the window's card says: a restart, a brief never confirmed, or a thread gone. */
   unknownBecause: z.enum(['restarted', 'unconfirmed', 'gone']).optional(),
+  /**
+   * When a background outcome was released: its thread sat idle, no turn running, for twenty minutes, and the work its turn
+   * left running was never seen to end (#1263). Whether the delegating thread has been told so, by a wake-up or a read.
+   */
+  releasedAt: z.iso.datetime().optional(), releaseTold: z.literal(true).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -245,6 +254,10 @@ export class DelegationService {
   private readonly untold = new Map<string, { readonly ids: Set<string>; attempts: number }>()
   private readonly telling = new Set<string>()
   private newsScheduled = false
+  /** The wait for the next held background outcome's release, while one waits (`releaseHeld`). */
+  private cancelRelease: (() => void) | undefined
+  private readonly clock: () => number
+  private readonly schedule: NonNullable<DelegationServiceOptions['schedule']>
   /** Delegating threads whose delegations changed since the window was last told, and who listens (#1029). */
   private readonly viewsChanged = new Set<string>()
   private readonly viewListeners = new Set<(threadIds: readonly string[]) => void>()
@@ -254,6 +267,8 @@ export class DelegationService {
   private unhook: (() => void) | undefined
 
   constructor(private readonly options: DelegationServiceOptions) {
+    this.clock = options.now ?? Date.now
+    this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, Math.max(0, delay)); timer.unref?.(); return () => clearTimeout(timer) })
     this.store = new AtomicJsonStore(join(options.directory, 'delegations.json'), input => fileSchema.parse(input),
       (): DelegationFile => ({ version: 1, delegations: [], links: [], roots: [] }))
   }
@@ -304,6 +319,7 @@ export class DelegationService {
   }
   close(): void {
     this.closed = true
+    this.cancelRelease?.(); this.cancelRelease = undefined
     this.viewListeners.clear()
     this.unhook?.(); this.unhook = undefined
     for (const waiting of this.waiters.values()) for (const wake of waiting) wake()
@@ -984,14 +1000,42 @@ export class DelegationService {
       const seen = watcherTurnOutcome({ messageId: record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId))
       if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) continue
       this.update(record.id, saved => {
-        saved.outcome = seen.outcome; saved.outcomeAt = now()
+        saved.outcome = seen.outcome; saved.outcomeAt = now(); delete saved.releasedAt; delete saved.releaseTold
         for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) { if (seen[field]) saved[field] = seen[field]; else delete saved[field] }
       })
       if (seen.outcome === 'answered') this.answeredThisRun.add(record.id)
       changed = true
       this.changed(record.id)
     }
+    if (this.releaseHeld(snapshot, threads)) changed = true
     if (changed) { void this.persist(); this.options.control.refreshDelegationObservation() }
+  }
+  /**
+   * Releases each background outcome whose delegated thread has sat idle, no turn running, for WATCHER_QUIET_MS since that
+   * outcome, the work its turn left running never seen to end (#1263). The delegating thread is told once, plainly, rather
+   * than wait for work-settled news that may never come. One wait runs, for the next such outcome due, only while one waits.
+   */
+  private releaseHeld(snapshot: AgentHostSnapshot, threads: ReadonlyMap<string, AgentThread>): boolean {
+    this.cancelRelease?.(); this.cancelRelease = undefined
+    let released = false, next = Infinity
+    const clock = this.clock()
+    for (const record of this.records) {
+      if (record.releasedAt || !record.outcomeAt || this.outcomeOf(record) !== 'background') continue
+      const thread = threads.get(record.delegatedThreadId)
+      if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false || isThreadTurnRunning(thread)) continue
+      const due = Date.parse(record.outcomeAt) + WATCHER_QUIET_MS
+      if (clock < due) { next = Math.min(next, due); continue }
+      this.update(record.id, saved => { saved.releasedAt = new Date(clock).toISOString() })
+      released = true
+      this.changed(record.id)
+    }
+    if (Number.isFinite(next) && !this.closed) this.cancelRelease = this.schedule(() => { this.cancelRelease = undefined; if (!this.closed) this.observe(this.snapshot()) }, next - clock)
+    return released
+  }
+  /** How long a released background outcome was held, in minutes; with `untold`, only while its delegating thread has not been told so. */
+  private heldMinutes(record: DelegationRecord, untold = true): number | undefined {
+    if (!record.releasedAt || !record.outcomeAt || untold && record.releaseTold || this.outcomeOf(record) !== 'background') return undefined
+    return Math.max(0, Math.floor((Date.parse(record.releasedAt) - Date.parse(record.outcomeAt)) / 60_000))
   }
   /**
    * An outcome moved: a call waiting on it hears it; otherwise, once it says something new, the delegating thread is sent
@@ -1002,7 +1046,7 @@ export class DelegationService {
     if (!record) return
     const outcome = this.outcomeOf(record)
     if (!this.open(record)) this.waiters.get(record.id)?.forEach(wake => wake())
-    if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told) return
+    if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told && this.heldMinutes(record) === undefined) return
     const pending = this.untold.get(record.delegatingThreadId) ?? { ids: new Set<string>(), attempts: 0 }
     pending.ids.add(record.id); this.untold.set(record.delegatingThreadId, pending)
     this.scheduleNews()
@@ -1022,15 +1066,15 @@ export class DelegationService {
     await Promise.allSettled([...this.untold].map(async ([threadId, pending]) => {
       if (this.telling.has(threadId)) return
       const records = [...pending.ids].flatMap(id => { const record = this.record(id); return record ? [record] : [] })
-        .filter(record => !this.calling.has(record.id) && this.outcomeOf(record) !== 'working' && this.outcomeOf(record) !== record.told)
+        .filter(record => !this.calling.has(record.id) && this.outcomeOf(record) !== 'working' && (this.outcomeOf(record) !== record.told || this.heldMinutes(record) !== undefined))
       if (!records.length || !threads.has(threadId) || pending.attempts >= NEWS_ATTEMPTS_MAX) { this.untold.delete(threadId); return }
-      const told = records.map(record => ({ record, outcome: this.outcomeOf(record) }))
-      const news: DelegationNews = { source: 'delegation', items: told.map(({ record, outcome }) => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome,
-        ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}) })) }
+      const told = records.map(record => ({ record, outcome: this.outcomeOf(record), held: this.heldMinutes(record) }))
+      const news: DelegationNews = { source: 'delegation', items: told.map(({ record, outcome, held }) => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome,
+        ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}), ...(held !== undefined ? { heldMinutes: held } : {}) })) }
       this.telling.add(threadId); pending.attempts++
       try {
         await this.options.control.deliverWakeUp(threadId, news, { tool: this.options.tool?.(threadId) ?? false })
-        for (const { record, outcome } of told) { record.told = outcome; pending.ids.delete(record.id) }
+        for (const { record, outcome, held } of told) { record.told = outcome; if (held !== undefined) record.releaseTold = true; pending.ids.delete(record.id) }
         // News that came while this was being told goes next, rather than wait for another snapshot.
         if (!pending.ids.size) this.untold.delete(threadId)
         else { pending.attempts = 0; this.scheduleNews() }
@@ -1060,7 +1104,9 @@ export class DelegationService {
     const thread = this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
     const latest = this.records.findLast(item => item.delegatedThreadId === record.delegatedThreadId && item.deliveryState === 'accepted')
     const head = thread ? userHead(thread) : null
-    const note = record.deliveryState === 'failed' ? FAILURE_NOTES[record.failure ?? 'provider'] : !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE : NOTES[outcome]
+    const held = this.heldMinutes(record, false)
+    const note = record.deliveryState === 'failed' ? FAILURE_NOTES[record.failure ?? 'provider'] : !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE
+      : held !== undefined ? heldWords(held).replace(/^h/u, 'H') : NOTES[outcome]
     const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
       outcome, note, createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
@@ -1071,6 +1117,7 @@ export class DelegationService {
       else if (reply.reply) read.reply = { from: 'delegated-thread', thread: record.delegatedThreadId, ...reply.reply }
     }
     record.told = outcome
+    if (held !== undefined) record.releaseTold = true
     if (reading && thread) { const link = this.links.get(record.delegatedThreadId); if (link) link.seenHead = head }
     await this.persist()
     return { status: 'ok' as const, delegation: read, limits: this.limits(record) }
@@ -1103,6 +1150,12 @@ export class DelegationService {
       if (!record || record.delegatingThreadId !== threadId) continue
       if (record.deliveryState === 'failed') details.set(record.id, { notSent: FAILURE_NOTES[record.failure ?? 'provider'] })
       else if (item.outcome === 'answered' && this.outcomeOf(record) === 'answered') details.set(record.id, this.replyOf(record, threads.get(record.delegatedThreadId)))
+      else if (item.heldMinutes !== undefined) {
+        // The brief's turn's own reply, while that turn is still the thread's newest: never a later turn's words.
+        const thread = threads.get(record.delegatedThreadId)
+        const reply = thread && record.turnMessageId && watcherBriefTurnIsNewest(thread, record.turnMessageId) ? watcherNewestTurnReply(thread) : undefined
+        if (reply) details.set(record.id, { lastReply: reply.text })
+      }
     }
     return delegationNewsText(folded, details)
   }
