@@ -1,0 +1,111 @@
+/* The main freeze notice and Settings > Performance (#1233, ADR-0098). The notice sits in the title row, just left of
+   the window controls, over the drag handle there, so it and its popover opt out of dragging. Colour comes from theme
+   roles only. */
+
+/* The room the notice takes from the pane (or tools panel) that meets the window's corner, and from the host update
+   pill beside it; threadsChrome.css and hostUpdates.css add it to their own. */
+.threads-view:has(.threads-view__winctl .main-freeze) { --main-freeze-room: 166px; }
+.threads-view--mac:has(.threads-view__winctl .main-freeze) { --threads-winctl-inset: var(--main-freeze-room); }
+.settings-view:has(.threads-view__winctl .main-freeze) .settings-feedback { padding-right: calc(116px + 166px); }
+
+.main-freeze { position: relative; display: flex; align-items: center; margin-right: 8px; -webkit-app-region: no-drag; }
+.threads-view__winctl > .main-freeze:last-child, .app-room__top > .main-freeze:last-child, .app-strip__end > .main-freeze:last-child { margin-right: 6px; }
+.app-strip__end { display: flex; align-self: stretch; align-items: center; justify-self: end; }
+.app-strip__end > .app-controls { align-self: stretch; }
+
+.main-freeze__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 1px solid color-mix(in oklab, var(--tt-warning) 45%, var(--tt-hairline));
+  border-radius: var(--tt-radius-pill);
+  background: var(--tt-warning-surface);
+  color: var(--tt-warning-on-tint);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.main-freeze__pill[data-tone='quiet'] { border-color: var(--tt-border); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-weight: 500; }
+.main-freeze__pill:hover, .main-freeze__pill[aria-expanded='true'] { border-color: var(--tt-text-faint); }
+.main-freeze__pill > svg { flex: none; color: var(--tt-text-muted); }
+.main-freeze__dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tt-warning); }
+.main-freeze__ring {
+  --main-activity-progress: 0;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--tt-accent) calc(var(--main-activity-progress) * 1turn), var(--tt-track) 0);
+  mask: radial-gradient(circle, transparent 3.5px, var(--tt-text) 4px);
+}
+
+.main-freeze__popover {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 30;
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 56px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-surface-overlay);
+  box-shadow: var(--tt-shadow-lg);
+  color: var(--tt-text);
+  font-size: 13px;
+  animation: main-freeze-arrive 140ms ease;
+  -webkit-app-region: no-drag;
+}
+@keyframes main-freeze-arrive { from { opacity: 0; transform: translateY(-4px); } }
+.main-freeze__popover h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.main-freeze__popover h2:focus { outline: none; }
+.main-freeze__popover h2:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
+.main-freeze__popover p { margin: 0 0 10px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.45; }
+
+/* Shared by the popover and Settings > Performance. */
+.main-activity__figures { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 10px; }
+.main-activity__figure b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.main-activity__figure span { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.main-activity__figure[data-warn] b { color: var(--tt-warning); }
+.main-activity__chart-figure { margin: 0; }
+.main-activity__chart { display: block; width: 100%; height: 44px; }
+.main-activity__chart rect { fill: var(--tt-text-faint); opacity: 0.55; }
+.main-activity__chart rect[data-warn] { fill: var(--tt-warning); opacity: 1; }
+.main-activity p.main-activity__caption, .main-activity__caption { margin: 4px 0 0; color: var(--tt-text-muted); font-size: 12px; }
+.main-activity p.main-activity__privacy { margin: 10px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.main-activity p.main-activity__muted, .main-activity__muted { margin: 2px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.main-activity__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.main-activity__actions .tt-button { min-height: 30px; padding: 0 13px; font-size: 13px; }
+/* The window controls' own rule sizes every button in their corner as a 34px key; the popover's buttons are not keys. */
+.threads-view__winctl .main-freeze__popover .tt-button { width: auto; height: auto; min-height: 30px; border-radius: var(--tt-radius-pill); }
+.main-activity__actions .tt-button > svg { flex: none; }
+.main-activity__count { font-size: 28px; font-weight: 600; letter-spacing: -0.8px; font-variant-numeric: tabular-nums; }
+.main-activity__progress { height: 6px; margin: 8px 0 6px; overflow: hidden; border-radius: var(--tt-radius-pill); background: var(--tt-track); }
+.main-activity__progress > i { display: block; width: calc(var(--main-activity-progress, 0) * 100%); height: 100%; border-radius: inherit; background: var(--tt-accent); transition: width 900ms linear; }
+.main-activity__file { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 6px 0 2px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); font-size: 13px; }
+.main-activity__file > svg { flex: none; color: var(--tt-text-muted); }
+.main-activity__file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.main-activity__file small { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.main-activity p.main-activity__done, .main-activity__done { margin: 8px 0 0; color: var(--tt-accent-text); font-size: 13px; }
+.main-activity__failure { margin: 10px 0 0; color: var(--tt-error-text); font-size: 13px; }
+
+/* Settings > Performance. */
+.main-activity__row { padding: 4px 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.main-activity__grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 22px; align-items: center; }
+.main-activity__label { margin: 0 0 2px; color: var(--tt-text); font-size: 15px; font-weight: 500; }
+.main-activity__status { max-width: 60ch; margin: 2px 0 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.main-activity__status[data-warn] { color: var(--tt-warning-text); }
+.main-activity .main-activity__grid .main-activity__muted { max-width: 52ch; }
+
+@media (prefers-reduced-motion: reduce) {
+  .main-freeze__popover { animation: none; }
+  .main-activity__progress > i { transition: none; }
+}
+:root[data-reduced-motion='on'] .main-freeze__popover { animation: none; }
+:root[data-reduced-motion='on'] .main-activity__progress > i { transition: none; }

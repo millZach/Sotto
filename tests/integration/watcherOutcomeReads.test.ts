@@ -21,7 +21,7 @@ async function fixture(history = true) {
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
-  let service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
+  let service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -66,7 +66,7 @@ async function fixture(history = true) {
   }
   const restart = async () => {
     service.close()
-    service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
+    service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history })
     await service.recover()
   }
   return { ...f, workspace, id, requestId, call, native, emit, endTurn, start, read, restart, get service() { return service } }

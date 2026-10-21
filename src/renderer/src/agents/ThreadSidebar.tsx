@@ -1,7 +1,8 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
+import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX, workingThreadsLead } from '../../../shared/workingThreads'
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
@@ -13,11 +14,23 @@ import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
+import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
 
 type Command = AgentConnection['command']
 type Section = 'open' | 'settled'
+
+/**
+ * The working threads line (#1183, Zach's pick A from the prototype): while more than ten threads are working on this
+ * computer, a quiet line under the search field says it may slow down or use its battery faster. Nothing is held back.
+ * It is never dismissed and never announced, and it goes at ten or fewer. The collapsed rail does not show it.
+ */
+export function WorkingThreadsLine({ threads }: { readonly threads: AgentState['host']['threads'] }): ReactNode {
+  const count = useMemo(() => countWorkingThreads(threads), [threads])
+  if (count <= WORKING_THREADS_QUIET_MAX) return null
+  return <p className="thread-nav__working"><Gauge size={15} aria-hidden="true" /><span><strong>{workingThreadsLead(count)}</strong> {WORKING_THREADS_CAUTION}</span></p>
+}
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 /** What follows a row's status while its provider is out of reach: Reconnecting while its host restarts for an update. */
@@ -328,7 +341,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const topShortcut = newThreadShortcut ? { title: `New thread ${newThreadShortcut.suffix}`, keys: currentThreadId === null ? newThreadShortcut.keys : undefined } : undefined
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
-    extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread}
+    extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
     afterSearch={<NeedsAttentionLine failures={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />

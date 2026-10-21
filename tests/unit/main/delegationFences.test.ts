@@ -52,7 +52,7 @@ async function service(delegations: Record<string, unknown>[], threads: AgentThr
     deliverWakeUp: async (_threadId, news) => (options.deliver ?? (async () => undefined))(news),
   }
   const delegation = new DelegationService({ directory: root, control,
-    host: { setDelegatedBy: options.setDelegatedBy ?? (async () => undefined), threadMessage: () => undefined }, historyEnabled: () => true, limit: () => 4 })
+    host: { setDelegatedBy: options.setDelegatedBy ?? (async () => undefined), threadMessage: () => undefined }, historyEnabled: () => true })
   await delegation.recover()
   ;(delegation as unknown as { records: unknown[] }).records = structuredClone(delegations)
   const internals = delegation as unknown as { queuedBriefs: Map<string, string>; fenced: Set<string> }

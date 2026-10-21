@@ -40,7 +40,7 @@ function agentState(watcherModel = OPUS): AgentState {
   return state
 }
 const room: WatcherRoomState = { current: identity, currentOptions: { modelId: OPUS, reasoningEffort: 'high', runtimeMode: 'approval-required', status: 'idle', connected: true },
-  history: [], runtimeMode: 'approval-required', requests: [], watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at }
+  history: [], runtimeMode: 'approval-required', requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at }
 
 function show(watcherModel = OPUS) {
   const state = agentState(watcherModel)
@@ -49,7 +49,7 @@ function show(watcherModel = OPUS) {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'settings', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { owlFeatures: { watcher: true, 'worker-roles': true } }, actions: { navigate: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
   const ok = (state: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state })
-  const bridge = { get: vi.fn(async () => ok(room)), open: vi.fn(async () => ok(room)), setLimit: vi.fn(), prepareStopAll: vi.fn(), stopAll: vi.fn(),
+  const bridge = { get: vi.fn(async () => ok(room)), open: vi.fn(async () => ok(room)), prepareStopAll: vi.fn(), stopAll: vi.fn(),
     setPermission: vi.fn(async () => ok(room)), onChanged: vi.fn(() => () => undefined) }
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   render(<WatcherRoomProvider bridge={bridge as unknown as WatcherBridge}>

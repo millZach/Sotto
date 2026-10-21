@@ -127,8 +127,13 @@ async function measure(threads: number, owl: boolean) {
  * workspace's. It also counts reading a provider out of a public ID, about 2,400 times per update with 200 threads on
  * Owl, where a held provider makes the workspace ask about every thread and model; it reads each ID once now.
  */
+/*
+ * October 20, 2026: Watcher's observe pass now changes the record only when something changed (#1231), so an update
+ * while a thread streams copies Watcher's record no times at all, and Owl makes 10.4 to 10.7 copies per update, from
+ * 12.4. The Owl budget is 11 copies and no copy of the record.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 12.5, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 1.5, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 11, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
   stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
 } as const
 
