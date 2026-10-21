@@ -229,11 +229,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
-      otherStartsInFlight: () => delegation?.startsInFlight() ?? 0, ...roles }) : undefined
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
+      ...roles }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.

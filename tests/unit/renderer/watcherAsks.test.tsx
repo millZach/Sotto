@@ -72,7 +72,7 @@ function agentState(requests: readonly AgentRequest[] = []): AgentState {
 function roomState(asks: WatcherAskPlacement[]): WatcherRoomState {
   return { current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [], requests: [],
     watchedThreads: [{ target: target('footer-links'), title: 'Footer links', watched: true, status: 'idle', connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [] }],
-    inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at, asks }
+    receipts: [], recoveryNotice: null, observedAt: at, asks }
 }
 const place = (requestCardId: string, messageId = 'watcher-2', patch: Partial<WatcherAskPlacement> = {}): WatcherAskPlacement =>
   ({ target: target('footer-links'), requestCardId, kind: 'question', messageId, wakeUpMessageId: `wake-${messageId}`, ...patch })
@@ -81,7 +81,7 @@ function fakeBridge(state: WatcherRoomState): { bridge: WatcherBridge; publish: 
   const ok = (next: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state: next })
   let current = state
   const listeners = new Set<(next: WatcherRoomState) => void>()
-  const bridge = { get: vi.fn(async () => ok(current)), open: vi.fn(async () => ok(current)), setLimit: vi.fn(async () => ok(current)),
+  const bridge = { get: vi.fn(async () => ok(current)), open: vi.fn(async () => ok(current)),
     prepareStopAll: vi.fn(), stopAll: vi.fn(), onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }) } as unknown as WatcherBridge
   return { bridge, publish: next => { current = next; for (const listener of listeners) listener(next) } }
 }

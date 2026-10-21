@@ -10,8 +10,8 @@ describe('Owl feature list', () => {
     for (const feature of OWL_FEATURES) expect(existsSync(feature.owner)).toBe(true)
     expect(OWL_FEATURES[1]).toMatchObject({ id: 'muse', name: 'Muse provider', owner: 'docs/adr/0079-muse-is-a-thread-provider.md', sentToStable: false })
     expect(OWL_FEATURES[2]).toMatchObject({ id: 'usage', name: 'Usage', owner: 'docs/adr/0078-usage-keeps-numeric-history-on-its-own-host.md', sentToStable: false })
-    expect(owlFeaturesForTrack('stable')).toEqual({ watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false, 'continue-on-provider': false, 'continue-agent-thread': false, opencode: false, 'dictation-hold-shortcuts': false })
-    expect(owlFeaturesForTrack('owl')).toEqual({ watcher: true, muse: true, usage: true, 'resume-after-restart': true, 'update-all': true, 'streaming-publish-cost': true, 'thread-delegation': true, 'worker-roles': true, 'continue-on-provider': true, 'continue-agent-thread': true, opencode: true, 'dictation-hold-shortcuts': true })
+    expect(owlFeaturesForTrack('stable')).toEqual({ watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false, 'continue-on-provider': false, 'continue-agent-thread': false, opencode: false, 'dictation-hold-shortcuts': false, 'main-freeze': false })
+    expect(owlFeaturesForTrack('owl')).toEqual({ watcher: true, muse: true, usage: true, 'resume-after-restart': true, 'update-all': true, 'streaming-publish-cost': true, 'thread-delegation': true, 'worker-roles': true, 'continue-on-provider': true, 'continue-agent-thread': true, opencode: true, 'dictation-hold-shortcuts': true, 'main-freeze': true })
   })
 
   it('keeps a second feature in Owl until its single stable flag changes', () => {

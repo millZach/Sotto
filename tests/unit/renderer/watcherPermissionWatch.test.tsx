@@ -62,7 +62,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
     current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true }, history: [],
     runtimeMode: 'approval-required', standingWatches: [{ id: WATCH, target: target('footer-links'), createdAt: at, generation: 0 }], ownChanges: [],
     requests: [], watchedThreads: [row('footer-links', 'Footer links')],
-    inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at, ...patch,
+    receipts: [], recoveryNotice: null, observedAt: at, ...patch,
   }
 }
 
@@ -77,7 +77,6 @@ function fakeBridge(initial: WatcherRoomState, legacy = false) {
   const bridge = {
     get: vi.fn(async () => ({ status: 'ok' as const, state })),
     open: vi.fn(async () => ok({ ...state, current: identity })),
-    setLimit: vi.fn(async ({ limit }: { limit: number }) => ok({ ...state, inFlightLimit: limit })),
     prepareStopAll: vi.fn(),
     stopAll: vi.fn(),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),

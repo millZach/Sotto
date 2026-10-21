@@ -4,11 +4,11 @@ import { HOST_OPENCODE_ANSWERS, HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, H
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
   WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomStateSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
-  watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
+  watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -22,6 +22,7 @@ import {
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -333,6 +334,8 @@ export function createSottoBridge(
   opencodeEnabled = false,
   /** A host's OpenCode signed in from Settings > Hosts (#1107): on whenever OpenCode is not held, local host or not. */
   opencodeHostsEnabled = false,
+  /** Main's watch on itself and Record a minute (ADR-0098): only while the `main-freeze` Owl feature is on. */
+  mainActivityEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -389,6 +392,11 @@ export function createSottoBridge(
       cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
+    ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
+      read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
+      command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+    }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
       read: request => invokeParsed(renderer, CONTINUE_READ, continueReadSchema, continueReadRequestSchema.parse(request)),
@@ -399,7 +407,6 @@ export function createSottoBridge(
       open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
       prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
       stopAll: request => invokeParsed(renderer, WATCHER_STOP_ALL, watcherStopAllResultSchema, watcherStopAllRequestSchema.parse(request)),
-      setLimit: request => invokeParsed(renderer, WATCHER_SET_LIMIT, watcherRoomResultSchema, watcherSetLimitRequestSchema.parse(request)),
       setPermission: request => invokeParsed(renderer, WATCHER_SET_PERMISSION, watcherRoomResultSchema, watcherSetPermissionRequestSchema.parse(request)),
       watchThread: request => invokeParsed(renderer, WATCHER_WATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
       unwatchThread: request => invokeParsed(renderer, WATCHER_UNWATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
@@ -621,7 +628,7 @@ export function exposeRendererBridge(
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
-      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT)))
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

@@ -202,6 +202,10 @@ import { migrateDesktopKey } from './settings/migrateDesktopKey'
 import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
+import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
+import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { mainProcessProfiler, windowProfiler } from './performance/profilers'
+import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -280,6 +284,7 @@ type NativeDiagnostic =
   | 'omarchy-theme-watch-failed'
   | 'omarchy-theme-refresh-failed'
   | 'shell-pill-refresh-failed'
+  | MainActivityLogEvent
   | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
@@ -577,6 +582,36 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 }
 
+/**
+ * Main's watch on itself (#1233). Development runs of the e2e suite may shorten the window and the recording; a packaged
+ * build reads neither override.
+ */
+function createMainActivity(userDataPath: string, version: string): MainActivityService {
+  const testing = e2eConfiguration !== null && !app.isPackaged
+  const override = (name: string, max: number): number | undefined => {
+    const value = testing ? Number(process.env[name]) : Number.NaN
+    return Number.isInteger(value) && value > 0 && value <= max ? value : undefined
+  }
+  const windowSeconds = override('SOTTO_E2E_MAIN_LOOP_WINDOW_SECONDS', 600)
+  const durationMs = override('SOTTO_E2E_ACTIVITY_RECORDING_MS', 600_000)
+  const devOrigin = app.isPackaged ? undefined : parseOrigin(process.env.ELECTRON_RENDERER_URL)
+  return new MainActivityService({
+    directory: join(userDataPath, 'performance-recordings'),
+    clock: { now: () => performance.now(), setInterval: (callback, ms) => setInterval(callback, ms), clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>) },
+    ...(windowSeconds ? { windowSeconds } : {}), ...(durationMs ? { durationMs } : {}),
+    mainProfiler: mainProcessProfiler,
+    appRoots: [app.getAppPath(), ...(app.isPackaged ? [] : [process.cwd()])],
+    ...(devOrigin ? { devOrigins: [devOrigin] } : {}),
+    sottoVersion: version, platform: process.platform,
+    revealFile: path => shell.showItemInFolder(path),
+    log: logOperational,
+  })
+}
+
+function parseOrigin(url: string | undefined): string | undefined {
+  try { return url ? new URL(url).origin : undefined } catch { return undefined }
+}
+
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -606,6 +641,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const workerRolesEnabled = owlFeatures['worker-roles']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   const continueEnabled = owlFeatures['continue-on-provider']
+  // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
+  // builds no service, starts no monitor and registers no bridge.
+  const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
+  mainActivity?.start()
+  app.on('will-quit', () => mainActivity?.dispose())
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
@@ -626,7 +666,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
-    watcherEnabled,
     { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
@@ -691,6 +730,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
+        ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
       const window = new BrowserWindow(featureArguments.length
@@ -1015,6 +1055,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }, () => requestDraftWatcherOwnerIds(agentControl, () => localRuntime?.agentHost.dormantThreadIds?.(), hostRouter))
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
+  mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })
   const cleanRetiredHistory = async (): Promise<void> => {
     const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
@@ -1565,6 +1606,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      // A recording profiles the main window that asked, through its own debugger (ADR-0098).
+      const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
+        event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
@@ -1661,8 +1705,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
-        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state),
-        setLimit: limit => settingsCoordinator.updateSettings({ watcherInFlightLimit: limit }) })
+        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
         settings: {
@@ -1780,6 +1823,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupUsage()
         cleanupDelegations()
         cleanupContinue()
+        cleanupMainActivity()
         cleanupOpenCodeSignIn()
         cleanupTerminals()
         worktreeCleanup?.dispose()

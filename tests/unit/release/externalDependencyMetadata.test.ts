@@ -21,6 +21,7 @@ const mainImports = [
   'node:fs/promises',
   'node:http',
   'node:https',
+  'node:inspector',
   'node:net',
   'node:os',
   'node:path',

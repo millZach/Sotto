@@ -52,6 +52,7 @@ export const readDelegationInputSchema = z.object({
 }).strict()
 export const cancelDelegationInputSchema = z.object({ delegation: z.uuid().describe('The delegation to cancel.') }).strict()
 
+// IN_FLIGHT_LIMIT is no longer refused (#1183, no limit on threads working). It stays so a refusal recorded before then still reads.
 export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST',
   'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING',

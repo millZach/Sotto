@@ -170,7 +170,7 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
           createdAt: at, updatedAt: at, receiptId: `generated-receipt-${index}`, cardId: `generated-card-${index}`, messageId: `generated-message-${index}` })))
       })
       const watcher = new WatcherService({ directory: local.root, control: f.control, host: local.host,
-        historyEnabled: () => false, limit: () => 8, ...{ streamingPublishCost: true } })
+        historyEnabled: () => false, ...{ streamingPublishCost: true } })
       cleanups.push(async () => { watcher.close() })
       const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, ...{ streamingPublishCost: true } })
       cleanups.push(async () => { router.dispose() })

@@ -7,6 +7,8 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
+import { rebuildReservations } from './watcherRecords'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
@@ -258,9 +260,7 @@ export class WatcherService implements WatcherControlHooks {
   private readonly roleStarts = new Map<string, RoleReceipt>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
-    limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
-    /** Delegation's starts in flight, which share Watcher's starts-only limit (ADR-0081 decision 5). */
-    otherStartsInFlight?: () => number
+    historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
     /**
      * The user's worker roles, present only while that Owl feature is on (#1041). Read once per start that names a role,
      * when it is asked, never on publish or observe.
@@ -546,13 +546,30 @@ export class WatcherService implements WatcherControlHooks {
     if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
     if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
   }
-  /** Watcher's own starts in flight, for delegation, whose starts share the limit (ADR-0081 decision 5). */
+  /**
+   * Watcher's starts still working, on every machine: what the phone's page counts as Watcher working, and sends where
+   * host protocol version 1 has a count. Nothing is held back at any number (#1183).
+   */
   startsInFlight(): number { return this.inFlight() }
-  /** Watcher's starts in flight, on every machine or on the one `hostId` names. */
-  private inFlight(record: Readonly<WatcherRecord> = this.view(), hostId?: string): number { return new Set(record.reservations.filter(item => (hostId === undefined || item.target.hostId === hostId) && record.operations.some(operation => operation.id === item.operationId && operation.action === 'start')).map(item => key(item.target))).size }
+  /** One pass over the operations whatever the number of reservations: the phone's page asks on every build. */
+  private inFlight(record: Readonly<WatcherRecord> = this.view()): number {
+    if (record.reservations.length === 0) return 0
+    const reserved = new Map(record.reservations.map(item => [item.operationId, key(item.target)]))
+    const targets = new Set<string>()
+    for (const operation of record.operations) {
+      const target = operation.action === 'start' ? reserved.get(operation.id) : undefined
+      if (target !== undefined) targets.add(target)
+    }
+    return targets.size
+  }
+  /** The working threads warning (#1183) after a start on this computer, counting the new thread as working: only above ten. */
+  private workingWarning(threadId: string): { warning: string } | Record<string, never> {
+    const warning = workingThreadsWarning(countWorkingThreads(this.options.control.watcherSnapshot().threads, threadId))
+    return warning ? { warning } : {}
+  }
   private limits(operation: WatcherOperation) {
     const record = this.record()
-    return { inFlight: this.inFlight(record), inFlightLimit: this.options.limit(), promptCount: Math.min(WATCHER_PROMPTS_PER_THREAD,
+    return { promptCount: Math.min(WATCHER_PROMPTS_PER_THREAD,
       this.promptCount(record, operation.target, operation.promptTurnId, operation.requestId)), promptLimit: WATCHER_PROMPTS_PER_THREAD }
   }
   private promptCount(record: WatcherRecord, target: WatcherThreadTarget, promptTurnId: string | undefined, requestId: string): number {
@@ -691,7 +708,7 @@ export class WatcherService implements WatcherControlHooks {
           ...(thread && observation ? { observation: this.roomObservation(observation) } : {}),
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
           participation }
-      }), inFlight: this.inFlight(record), inFlightLimit: this.options.limit(),
+      }),
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
@@ -1091,7 +1108,10 @@ export class WatcherService implements WatcherControlHooks {
       }
       await this.options.control.updateWatcher(next => {
         // Owl owns this upgrade. Stable retains dormant records unchanged.
-        next.reservations = next.reservations.filter(item => next.operations.some(operation => operation.id === item.operationId && operation.action === 'start'))
+        // The file holds at most eight reservations (#1183): those left off come back, and what no thread needs goes again.
+        if (rebuildReservations(next) && !this.options.workerHost) this.pruneReservations(next, this.options.control.watcherSnapshot())
+        const starts = new Set(next.operations.flatMap(operation => operation.action === 'start' ? [operation.id] : []))
+        next.reservations = next.reservations.filter(item => starts.has(item.operationId))
         if (!this.options.workerHost) for (const request of next.requests) if (request.state === 'active' && next.current && key(request.watcher) === key(next.current.target)) {
           for (const participant of request.participants) if (participant.state === 'participating' && !participant.automationStopped
             && (participant.target.hostId === this.hostId() || this.remote?.hosts().find(host => host.hostId === participant.target.hostId)?.standingWatch)
@@ -1269,7 +1289,7 @@ export class WatcherService implements WatcherControlHooks {
         for (const request of record.requests) if (stopped.has(request.id)) { request.state = 'stopped'; request.closedAt = now() }
         for (const operation of record.operations) if (operations.has(operation.id) && operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'REQUEST_NOT_ACTIVE' }
       })
-      void this.reconcileRemote().catch(() => { this.recoveryNotice = 'The host has not confirmed this stopped request. Its pending slots remain held.'; this.publish() })
+      void this.reconcileRemote().catch(() => { this.recoveryNotice = 'The host has not confirmed this stopped request. Its unconfirmed starts and sends are kept until it does.'; this.publish() })
       void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A stopped request has a queued message that could not be removed. It is fenced and will not be sent.'; this.publish() })
     }
   }
@@ -2120,8 +2140,6 @@ export class WatcherService implements WatcherControlHooks {
         if (!remote && this.options.control.hasPendingThreadWork(thread.id)) refuse('DELIVERY_UNCERTAIN', 'Reconcile this thread’s pending delivery before settling.')
       }
       if (start || send) {
-        const shared = start && !imported ? this.inFlight(record) + (this.options.otherStartsInFlight?.() ?? 0) : 0
-        if (start && !imported && (shared > this.options.limit() || !record.reservations.some(item => key(item.target) === key(target)) && shared >= this.options.limit())) refuse('IN_FLIGHT_LIMIT', 'Watcher’s threads in flight limit is reached. Wait for a thread to finish.', true)
         if (this.promptCount(record, target, turn?.id, request.id) >= WATCHER_PROMPTS_PER_THREAD) refuse('PROMPT_LIMIT', 'This thread has received four prompts in this Watcher turn. A retry or another request cannot renew the limit.')
       }
       const assignment = record.watches?.find(watch => key(watch.target) === key(target))
@@ -2166,7 +2184,12 @@ export class WatcherService implements WatcherControlHooks {
       return { operation, retry: false }
     })
     if (progress) progress.operationId = admitted.operation.id
-    if (admitted.retry) { const active = this.active.get(admitted.operation.id); if (active) return await active; return this.operationResult(name, admitted.operation, input) }
+    if (admitted.retry) {
+      // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
+      const active = this.active.get(admitted.operation.id)
+      if (active) { const answer = await active; if (typeof answer !== 'object' || answer === null || !('warning' in answer)) return answer; const { warning: _warning, ...rest } = answer; void _warning; return rest }
+      return this.operationResult(name, admitted.operation, input)
+    }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input)
     this.active.set(admitted.operation.id, running)
     try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); if (admitted.operation.target.hostId !== this.hostId() && this.record().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
@@ -2240,7 +2263,7 @@ export class WatcherService implements WatcherControlHooks {
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input)
+    return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input, true)
   }
   queueFailed(operationIds: ReadonlySet<string>): void {
     // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.
@@ -2342,7 +2365,8 @@ export class WatcherService implements WatcherControlHooks {
     const role = this.roleStarts.get(operationId)
     return role ? { role } : {}
   }
-  private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): unknown {
+  /** `firstRun`: the answer to the call that ran the operation, not to a retry reading its receipt again. */
+  private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, firstRun = false): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation) }
     // A refusal met at the writer keeps only its code. The writer's busy refusals are a turn that began meanwhile (#1203)
     // and the user's own turn, which Watcher may only steer.
@@ -2361,7 +2385,10 @@ export class WatcherService implements WatcherControlHooks {
       return { status: 'ok', ...base, target: operation.target, creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
         effectiveChoices: { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null,
           permission: thread.providerMode ? { kind: 'provider', choiceId: thread.providerMode } : { kind: 'runtime', mode: thread.runtimeMode ?? 'approval-required' },
-          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id) }
+          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id),
+        // Nothing is held back at any count; past ten working threads the start's own answer says so, for Watcher to tell
+        // the user. A retry's does not: its thread may have finished long since, and it would count it again.
+        ...firstRun && operation.target.hostId === this.hostId() ? this.workingWarning(operation.target.threadId) : {} }
     }
     if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery }
     return { status: 'ok', ...base, state: this.operationState(operation.target), ...(name === 'stop_thread' ? { stopRequested: true } : {}) }
@@ -2369,7 +2396,7 @@ export class WatcherService implements WatcherControlHooks {
 
   private requireRemote(hostId: string, mutation: boolean): void {
     const host = this.remote?.hosts().find(item => item.hostId === hostId)
-    if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its pending slots remain held. Reconnect it to continue.', true)
+    if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its unconfirmed starts and sends are kept. Reconnect it to continue.', true)
     if (!host.reads || mutation && !host.control) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher directs its threads. Nothing was sent.')
     if (!this.takesMaster(host)) refuse('HOST_FEATURE_UNAVAILABLE', 'Update Sotto on this host before Watcher on Muse reads or directs its threads. Nothing was sent.')
   }
@@ -2434,7 +2461,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!;
         if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') saved.deliveryState = 'uncertain' })
-      return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation. Its slot remains held. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
+      return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
     }
   }
   private recordRemoteRefusal(record: WatcherRecord, operationId: string, code: WatcherRefusal['code']): void {
@@ -2493,7 +2520,7 @@ export class WatcherService implements WatcherControlHooks {
           this.remotePending.delete(id)
           await this.reconcileRemote(id, force)
         }
-      })().catch(() => { this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held.' })
+      })().catch(() => { this.recoveryNotice = 'A paired host could not be reconciled. Its unconfirmed starts and sends are kept until it is.' })
         .finally(() => { this.remoteFlushing = false; this.armRemote() })
     }, Math.max(0, due - time))
     this.remoteTimer.unref?.()
@@ -2536,7 +2563,7 @@ export class WatcherService implements WatcherControlHooks {
             if (result.status === 'refused' && result.code === 'OPERATION_NOT_RECORDED') exact.set(operation.id, null)
             else if (result.status === 'ok' && result.receipt.operationId === operation.id && result.receipt.requestId === operation.requestId
               && key(result.receipt.target) === key(operation.target)) exact.set(operation.id, result.receipt)
-          } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. Its pending slot remains held.' }
+          } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. That start or send stays unconfirmed.' }
         }
         if (this.closed || JSON.stringify(this.record().current) !== JSON.stringify(master)) return
         const apply = (record: WatcherRecord) => {
@@ -2607,7 +2634,7 @@ export class WatcherService implements WatcherControlHooks {
         else this.remoteFailures.delete(host.hostId)
       } catch {
         this.retryRemote(host.hostId)
-        this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held. Other hosts continue to refresh.'
+        this.recoveryNotice = 'A paired host could not be reconciled. Its unconfirmed starts and sends are kept until it is. Other hosts continue to refresh.'
       }
     }
     const beforeObservation = digest(this.record())
@@ -2799,7 +2826,7 @@ export class WatcherService implements WatcherControlHooks {
           if (operation && !request) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
           if (operation) return operation
           if (!record.remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
-            if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot retain another absence fence. The pending slot remains held.')
+            if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot keep track of another missing thread. That start or send stays unconfirmed.')
             await this.options.control.updateWatcher(next => { (next.remoteAbsences ??= []).push({ operationId: call.input.operationId, master, clientId, observedAt: now() }) })
           }
           guard?.()
@@ -2911,10 +2938,8 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * This computer and every host the desktop holds a connection to, each with its host facts when it reports them (#1031).
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
-   * The in-flight limit is the one computer-wide limit, shown against each machine's own starts.
    */
   private async listMachines() {
-    const record = this.record(), inFlightLimit = this.options.limit()
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
       try {
@@ -2923,8 +2948,7 @@ export class WatcherService implements WatcherControlHooks {
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
-      ...(this.options.machineFacts ? await read(this.options.machineFacts, MACHINE_FACTS_UNREAD) : unknown(MACHINE_FACTS_UNREAD)),
-      inFlight: this.inFlight(record, this.hostId()), inFlightLimit }
+      ...(this.options.machineFacts ? await read(this.options.machineFacts, MACHINE_FACTS_UNREAD) : unknown(MACHINE_FACTS_UNREAD)) }
     const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null }
     const stillConnected = (hostId: string) => this.remote?.hosts().some(item => item.hostId === hostId && item.connected) === true
     const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => {
@@ -2933,7 +2957,7 @@ export class WatcherService implements WatcherControlHooks {
       // A connection that dropped while its facts were read is not connected, whatever the read came back with.
       const connected = host.connected && stillConnected(host.hostId)
       return { hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected,
-        ...connected ? facts : notConnected, inFlight: this.inFlight(record, host.hostId), inFlightLimit }
+        ...connected ? facts : notConnected }
     }))
     return { status: 'ok', machines: [local, ...remotes], observedAt: now() }
   }

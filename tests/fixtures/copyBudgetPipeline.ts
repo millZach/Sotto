@@ -71,11 +71,11 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   await control.start()
   await control.command({ type: 'connect' })
-  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, limit: () => 4 }) : undefined
+  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
   const tools = watcher ? new WatcherToolServer(watcher) : undefined
   if (tools) workspace.useWatcherTools(tools)
   // The window's Watcher room, as main wires it on Owl: it copies the room state for each Watcher publication.
-  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true, setLimit: async () => undefined })
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
   const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
   const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,

@@ -25,7 +25,7 @@ async function fixture(options: { readonly history?: boolean } = {}) {
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, historyEnabled: () => history } })
-  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, limit: () => 4, historyEnabled: () => history })
+  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history })
   const tools = new WatcherToolServer(service); workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); await f.dispose(); await workspace.stop() })
   await f.control.start()
