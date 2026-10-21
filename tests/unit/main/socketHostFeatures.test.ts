@@ -190,6 +190,14 @@ describe('the version sentence', () => {
     expect(client.hostIsNewer()).toBe(true)
     expect(internals.mismatch()).toContain('Update Sotto on this computer')
   })
+  it('counts a host on this Sotto or a later one as keeping what its client updates said through a check (ADR-0077)', () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: '', clientVersion: '0.1.38', owned: true })
+    expect(client.keepsClientOutcomes()).toBe(false)
+    for (const [hostVersion, keeps] of [['0.1.38', true], ['0.1.39', true], ['0.1.37', false]] as const) {
+      Object.assign(client, { hostVersion })
+      expect(client.keepsClientOutcomes(), hostVersion).toBe(keeps)
+    }
+  })
   it('says which side to bring up to date, and offers Stop host only for a host Sotto started', () => {
     expect(hostIsNewer('0.1.16', '0.1.15')).toBe(true)
     expect(hostIsNewer('0.2.0', '0.10.0')).toBe(false)

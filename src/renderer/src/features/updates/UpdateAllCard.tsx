@@ -11,7 +11,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
-import { APP_KEY, clientKey, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
+import { APP_KEY, clientKey, clientsJoining, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
 import './updateAll.css'
 
 const requests = new Set<() => void>()
@@ -106,9 +106,12 @@ const hostOf = (item: UpdateAllItem): string | undefined => item.machine.kind ==
 /** Whether a client the press asked for on this saved host is still going. */
 const clientsRunning = (pass: UpdateAllPass, items: readonly UpdateAllItem[], id: string): boolean =>
   items.some(item => item.kind === 'client' && hostOf(item) === id && pass.touched.has(item.key) && item.state === 'running')
-/** The versions a press asks hosts to update to, by item, added to those it asked for before. */
+/** The versions a press asks hosts and clients to update to, by item, added to those it asked for before. */
 const targetsWith = (before: ReadonlyMap<string, string> | undefined, items: readonly UpdateAllItem[]): Map<string, string> =>
-  new Map([...before ?? [], ...items.flatMap(item => item.target ? [[item.key, item.target] as const] : [])])
+  new Map([...before ?? [], ...items.flatMap(item => {
+    const target = item.target ?? (item.kind === 'client' ? item.versions.to : undefined)
+    return target ? [[item.key, target] as const] : []
+  })])
 
 /**
  * Update all (ADR-0077, variant C of `prototype/update-all`): one card in the window's bottom-right corner, on Owl,
@@ -206,7 +209,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     const after = new Set(offered.filter(item => item.kind === 'host' && clients.some(client => hostOf(client) === hostOf(item))).flatMap(item => hostOf(item) ?? []))
     setPass({ touched: new Set([...offered, ...checking].map(item => item.key)), after, refused: new Map(),
       ranBefore: new Map(clients.map(item => [item.key, clientUpdate(item)?.ranAt] as const)), targets: targetsWith(undefined, offered),
-      joining: new Set(checking.flatMap(item => hostOf(item) ?? [])) })
+      joining: new Set(checking.flatMap(item => hostOf(item) ?? [])), pressed: true })
     setFolded(false); setFailure(null); setDismissed(null)
     if (offered.some(item => item.kind === 'app')) download()
     const byMachine = new Map<string, ProviderId[]>()
@@ -218,6 +221,26 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     for (const item of offered) if (item.kind === 'host' && !after.has(hostOf(item)!)) void updateHost(hostOf(item)!)
   }, [clientUpdate, download, queueClients, updateHost])
 
+  // A client found behind while the press is under way joins it, in its machine's update line, as the press's own did.
+  // The press never waits for the checks that find them; a host's update already waits for its line before it restarts.
+  const joiningKeys = clientsJoining(view, pass).map(item => item.key).join('|')
+  useEffect(() => {
+    if (!joiningKeys) return
+    const keys = joiningKeys.split('|')
+    const found = latest.current.view.items.filter(item => keys.includes(item.key))
+    if (!found.length) return
+    setPass(current => {
+      if (!current) return current
+      // Each starts afresh, as after Try again: what it said before and where it was seen belong to the release before.
+      const refused = new Map(current.refused), seen = new Map(current.seen), dropped = new Set(current.dropped), kept = new Map(current.kept)
+      for (const key of keys) { refused.delete(key); seen.delete(key); dropped.delete(key); kept.delete(key) }
+      return { ...current, touched: new Set([...current.touched, ...keys]), refused, seen, dropped, kept,
+        ranBefore: new Map([...current.ranBefore, ...found.map(item => [item.key, clientUpdate(item)?.ranAt] as const)]), targets: targetsWith(current.targets, found) }
+    })
+    const byMachine = new Map<string, ProviderId[]>()
+    for (const item of found) byMachine.set(hostOf(item) ?? 'local', [...byMachine.get(hostOf(item) ?? 'local') ?? [], item.provider!])
+    for (const [machine, providers] of byMachine) queueClients(machine, providers)
+  }, [joiningKeys, clientUpdate, queueClients])
   // A client step seen in its host's update line is marked so, so that losing the line to the host's restart reads as lost.
   useEffect(() => {
     if (!lined) return

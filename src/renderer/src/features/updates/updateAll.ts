@@ -81,8 +81,16 @@ export interface UpdateAllPass {
   readonly dropped?: ReadonlySet<string> | undefined
   /** Client steps the press finished, by item, kept as they were if their machine forgets them, as a host's restart does. */
   readonly kept?: ReadonlyMap<string, UpdateAllItem> | undefined
-  /** The version each host the press asked for was to get, so a newer one offered later is not read as the press's. */
+  /**
+   * The version each host and client the press asked for was to get, so a newer one offered later is not read as the
+   * press's.
+   */
   readonly targets?: ReadonlyMap<string, string> | undefined
+  /**
+   * Set by a press of Update all, not by a step's own Try again: while it is under way, a client found behind joins it
+   * (ADR-0077, October 21 amendment).
+   */
+  readonly pressed?: true | undefined
   /**
    * Set by a press of Update all, not by a step's own Try again: the saved hosts it covers whose check of the releases
    * page had not ended. Each joins the press once its check does, aimed at what the check found, and the restart waits
@@ -149,7 +157,12 @@ function lostDetail(host: string, name: string, restarted: boolean): string {
 function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pass: UpdateAllPass | null): UpdateAllItem | undefined {
   const key = clientKey(machine.kind === 'host' ? machine.id : 'local', update.id)
   const name = PROVIDER_LABELS[update.id]
-  const touched = pass?.touched.has(key) === true
+  // A release newer than the one the press asked for, found once the client is out of its line, is a new offer: the
+  // finding about the release before it gave way to it (ADR-0042).
+  const target = pass?.targets?.get(key)
+  const renewed = target !== undefined && update.published !== undefined && update.published !== target && update.behind
+    && update.state !== 'queued' && update.state !== 'updating'
+  const touched = pass?.touched.has(key) === true && !renewed
   const behindVersions = { from: update.installed, ...update.published && update.published !== update.installed ? { to: update.published } : {} }
   const base = { key, machine, kind: 'client' as const, name, provider: update.id, versions: behindVersions }
   const refused = pass?.refused.get(key)
@@ -328,6 +341,19 @@ export function newlyDropped(sources: UpdateAllSources, pass: UpdateAllPass | nu
   if (!pass?.seen?.size) return []
   return sources.hosts.filter(host => !sources.clientHosts.some(item => item.hostId === host.hostId && item.connected))
     .flatMap(host => [...pass.seen?.keys() ?? []].filter(key => key.startsWith(clientPrefix(host.id)) && pass.dropped?.has(key) !== true))
+}
+
+/**
+ * Clients found behind while a press of Update all is under way, as when a new version of Sotto has every machine check
+ * its clients afresh: each joins the press in its machine's update line, the way the press's own clients did, and a host's
+ * update already waits for that line before it restarts (ADR-0077). The press is under way while a step it asked for is
+ * still going, a host waits for its clients or its releases page, or the Sotto it downloaded waits for the restart.
+ */
+export function clientsJoining(view: UpdateAllView, pass: UpdateAllPass | null): UpdateAllItem[] {
+  if (!pass?.pressed) return []
+  const underWay = view.items.some(item => pass.touched.has(item.key) && (item.state === 'running' || item.state === 'waiting' || item.state === 'checking'))
+    || pass.after.size > 0 || (pass.joining?.size ?? 0) > 0 || pass.touched.has(APP_KEY) && view.ready !== undefined
+  return underWay ? view.items.filter(item => item.kind === 'client' && item.state === 'offered') : []
 }
 
 /** Whether the list ends with the restart: whenever Sotto has a download, offered, under way or ready. */

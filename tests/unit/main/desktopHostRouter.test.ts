@@ -1182,19 +1182,40 @@ describe('a new version of Sotto has each host check its clients afresh (ADR-007
     expect([checks(local), checks(older), checks(away)]).toEqual([0, 0, 0])
   })
 
-  it('leaves a host whose readings hold an update’s outcome, or whose line runs, to its own check', async () => {
+  it('asks a host that keeps what its updates said whatever they said, and leaves an older one holding a finding to its own check', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
-    const hosts = (['updated', 'failed', 'queued'] as const).map((state, index) => {
+    const keeping = (['updated', 'failed'] as const).map((state, index) => {
       const host = fixture(`5555555${index}-5555-4555-8555-555555555555`, 'remote')
       host.state.clientUpdates = [reading(state)]
-      router.add({ ...host.connection, offersClientUpdates: () => true })
+      router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true })
       return host
     })
-    const running = fixture('66666666-6666-4666-8666-666666666666', 'remote')
-    running.state.clientUpdateRun = { total: 1, done: 1 }
-    router.add({ ...running.connection, offersClientUpdates: () => true })
+    // A host on another Sotto may set a finding aside when it checks, while a press may still be reading it.
+    const older = fixture('66666666-6666-4666-8666-666666666666', 'remote'), olderIdle = fixture('88888888-8888-4888-8888-888888888888', 'remote')
+    older.state.clientUpdates = [reading('updated')]; olderIdle.state.clientUpdates = [reading('idle')]
+    router.add({ ...older.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => false })
+    router.add({ ...olderIdle.connection, offersClientUpdates: () => true })
     await router.checkHostClientsAfresh()
-    expect([...hosts, running].map(checks)).toEqual([0, 0, 0, 0])
+    expect([...keeping, older, olderIdle].map(checks)).toEqual([1, 1, 0, 1])
+  })
+
+  it('asks a host whose update line runs once the line is empty, and only once', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), host = fixture(REMOTE, 'remote')
+    let broadcast: (state: AgentState) => void = () => undefined
+    host.state.clientUpdates = [reading('queued')]; host.state.clientUpdateRun = { total: 1, done: 0 }
+    router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true,
+      service: { ...host.connection.service, subscribe: listener => { broadcast = listener; return () => undefined } } })
+    await router.checkHostClientsAfresh()
+    expect(checks(host)).toBe(0)
+    // Still running: still owed.
+    host.state.clientUpdates = [reading('updated')]
+    broadcast(host.state)
+    expect(checks(host)).toBe(0)
+    delete host.state.clientUpdateRun
+    broadcast(host.state)
+    await vi.waitFor(() => { expect(checks(host)).toBe(1) })
+    broadcast(host.state)
+    expect(checks(host)).toBe(1)
   })
 
   it('does not ask a host that would enumerate a provider this build holds, and carries on past a host that refuses', async () => {

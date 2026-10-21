@@ -101,6 +101,24 @@ describe('the Update all card', () => {
     await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'update' }))
   })
 
+  it('puts a client found behind while the press runs into its machine’s line, without another press (ADR-0077, October 21 amendment)', async () => {
+    const actions = provideApp(available)
+    const command = provideAgents(agentState({ local: [behind()], forge: [] }))
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate()] })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: Sotto, 1 client and forge' }))
+    await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(1))
+    expect(command).toHaveBeenCalledTimes(1)
+    // The checks a new version of Sotto started answer after the press: Codex on this computer and Grok Build on forge.
+    provideAgents(agentState({ local: [behind({ state: 'updating' }), behind({ id: 'codex', installed: '0.155.1', published: '0.158.0' })],
+      forge: [behind({ id: 'grok', installed: '1.0.41', published: '1.0.43' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledWith({ id: FORGE, action: 'update', providers: ['grok'] }))
+    expect(vi.mocked(useOptionalAgents).mock.results.at(-1)?.value.command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['codex'] })
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
+    expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(1)
+  })
+
   // The incident of October 16, 2026: forge restarted with Codex in its line, and the step spun on Starting… for good.
   it('says a host client whose line was lost did not update, and Try again puts it back in the line', async () => {
     provideApp({ ...available, phase: { phase: 'unsupported' } })

@@ -173,11 +173,23 @@ clients already known to be behind, and the ones published since appeared on thi
 restart. Now, the first time the update service offers, downloads or has downloaded a version it has not found before
 in this run (never for a download's progress), main has this computer's coordinator ask the registry afresh, keeping
 the outcome of any update already run, which a press may still be reading, and sends `check-client-updates` to each
-connected host that offers client updates. That command sets a host's outcomes aside, so a host whose readings hold an
-update's outcome, or whose line runs, is left to its own five-minute check (ADR-0042), as is a host that would check a
-provider this build holds. Every host already takes the command, so host protocol version 1 is unchanged. The press
-does not wait for the answers: a client found behind joins the list as its reading arrives, and the order stays as
-above. Nothing reads the `update-all` switch for this: on stable the client update card and each host's tiles read the
+connected host that offers client updates. Every host already takes the command, so host protocol version 1 is
+unchanged; what changed is what it does. `check-client-updates` used to set every outcome aside, and now keeps an
+outcome that still describes the client (the same version installed, the same release), so an Update all press reading
+a host's earlier "updated" or "failed" loses nothing to the check (ADR-0042). A host on this computer's Sotto or a later
+one keeps its outcomes, and is asked whatever its readings hold. A host on another version may still set them aside, so
+while it holds any it is left to its own checks, as before. A host whose update line is running is asked once the line
+is empty, when its shell says so. A host that would check a provider this build holds is not asked. A host is judged by
+the version it advertises, not by a new host feature: one on the same release number but built before this change
+counts as keeping its outcomes, and at worst a step it set aside reads as stopped, with Try again.
+
+The press does not wait for the answers. A client found behind while a press of Update all is under way joins that
+press: the card puts it into its machine's update line, as the press did its own clients, and a host's update already
+waits for that line before it restarts (decision 2). The press is under way while a step it asked for is still going, a
+host waits for its clients or for the releases page, or the Sotto it downloaded waits for the restart. A step's own
+Try again does not make a press that others join. A client whose update the press ran and which a newer release then
+leaves behind is offered again in the same way, rather than reading as a step still starting. The order stays as above.
+Nothing reads the `update-all` switch for the checks: on stable the client update card and each host's tiles read the
 same readings, sooner, and nothing new is shown. Where Sotto does not update itself, no version is found and nothing
 changes.
 

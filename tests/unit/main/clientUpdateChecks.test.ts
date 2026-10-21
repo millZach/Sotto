@@ -37,14 +37,20 @@ class ThreeClients extends E2EAgentHost {
   async clientUpdated(provider: ProviderId): Promise<void> { this.installed[provider] = this.onDisk[provider]! }
 }
 
-/** The registry: what each package publishes now, how many times it was asked, and a gate a test may close. */
+/**
+ * The registry: what each package publishes now, how many times it was asked, a gate a test may close, one request a
+ * test may hold, and whether it answers at all.
+ */
 function registry() {
   const published: Record<string, string> = { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41' }
   // `now` is the clock each reading is stamped with, which a test moves on.
-  const state = { asked: 0, located: 0, now: 1_000_000, gate: undefined as Promise<void> | undefined }
+  const state = { asked: 0, located: 0, now: 1_000_000, gate: undefined as Promise<void> | undefined, holdNext: undefined as Promise<void> | undefined, down: false }
   const fetchImpl = async (url: string): Promise<Response> => {
     state.asked += 1
+    const hold = state.holdNext; state.holdNext = undefined
+    if (hold) await hold
     if (state.gate) await state.gate
+    if (state.down) throw new Error('getaddrinfo ENOTFOUND registry.npmjs.org')
     const id = IDS.find(item => url.includes(encodeURIComponent(CLIENT_PACKAGES[item]!.split('/')[0]!)))!
     return new Response(JSON.stringify({ version: published[id] }), { status: 200 })
   }
@@ -80,6 +86,8 @@ async function coordinator(options: { run?: (executable: string, args: readonly 
   control.subscribe(() => { publishes.count += 1 })
   return { control, host, npm, publishes }
 }
+/** Waits until no check of the clients is still reading. */
+const settled = (control: AgentControl): Promise<void> => vi.waitFor(() => { expect((control as unknown as { clientChecks: number }).clientChecks).toBe(0) })
 const reading = (control: AgentControl, id: ProviderId): ProviderClientUpdate | undefined => control.get().clientUpdates?.find(item => item.id === id)
 /** Runs the interval's next tick and waits until the registry has been asked `count` more times. */
 async function tick(npm: ReturnType<typeof registry>, count: number): Promise<void> {
@@ -235,6 +243,82 @@ describe('checking afresh', () => {
       await control.command({ type: 'configure', patch: { checkClientUpdates: false } })
       await control.checkClientsAfresh()
       expect(npm.state.asked).toBe(before)
+    } finally { control.dispose() }
+  })
+})
+
+describe('a check and the update line at once', () => {
+  it('takes a client the line installed while a check waited as the line left it, not the check’s older reading (review)', async () => {
+    const fixture = await coordinator({ run: async () => { fixture.host.onDisk.codex = '0.158.0'; return { ok: true } } })
+    const { control, npm } = fixture
+    try {
+      npm.published.codex = '0.158.0'
+      await control.command({ type: 'check-client-updates' })
+      expect(reading(control, 'codex')).toMatchObject({ installed: '0.155.1', behind: true })
+      // A five-minute check starts and waits on the registry before the install.
+      const hold = deferred(); npm.state.holdNext = hold.promise
+      await tick(npm, 1)
+      await control.command({ type: 'queue-client-updates', providers: ['codex'] })
+      await vi.waitFor(() => { expect(reading(control, 'codex')).toMatchObject({ state: 'updated', installed: '0.158.0' }) })
+      hold.resolve()
+      await settled(control)
+      expect(reading(control, 'codex')).toMatchObject({ state: 'updated', installed: '0.158.0', published: '0.158.0', behind: false, canInstall: false })
+    } finally { control.dispose() }
+  })
+
+  it('keeps a finding that still holds through a host’s or the user’s Check, and lets a newer release set it aside', async () => {
+    const { control, npm } = await coordinator({ run: async () => ({ ok: false, detail: 'npm ERR! network socket hang up' }) })
+    try {
+      npm.published.codex = '0.158.0'
+      await control.command({ type: 'check-client-updates' })
+      await control.command({ type: 'queue-client-updates', providers: ['codex'] })
+      await vi.waitFor(() => { expect(reading(control, 'codex')?.state).toBe('failed') })
+      const ranAt = reading(control, 'codex')!.ranAt
+      const before = npm.state.asked
+      await control.command({ type: 'check-client-updates' })
+      // Asked afresh, and the failure still describes Codex.
+      expect(npm.state.asked).toBe(before + 3)
+      expect(reading(control, 'codex')).toMatchObject({ state: 'failed', ranAt, error: 'npm ERR! network socket hang up', published: '0.158.0' })
+      npm.published.codex = '0.159.0'
+      await control.command({ type: 'check-client-updates' })
+      expect(reading(control, 'codex')).toMatchObject({ state: 'idle', published: '0.159.0', behind: true })
+      expect(reading(control, 'codex')).not.toHaveProperty('ranAt')
+    } finally { control.dispose() }
+  })
+})
+
+describe('Not now and a registry that does not answer', () => {
+  it('keeps the card put away through a failed check and the same release coming back, and brings it back for a newer one (review)', async () => {
+    const { control, npm } = await coordinator()
+    try {
+      npm.published.grok = '1.0.43'
+      await control.command({ type: 'check-client-updates' })
+      await control.command({ type: 'dismiss-client-updates' })
+      npm.state.down = true
+      await tick(npm, 3)
+      await settled(control)
+      // The release last read still stands while the registry is away.
+      expect(reading(control, 'grok')).toMatchObject({ published: '1.0.43', behind: true, canInstall: true })
+      expect(control.get().clientUpdatesDismissedAt).toBeDefined()
+      npm.state.down = false
+      await tick(npm, 3)
+      await settled(control)
+      expect(control.get().clientUpdatesDismissedAt).toBeDefined()
+      npm.published.grok = '1.0.44'
+      await tick(npm, 3)
+      await vi.waitFor(() => { expect(control.get().clientUpdatesDismissedAt).toBeUndefined() })
+    } finally { control.dispose() }
+  })
+
+  it('brings the card back for a client that was not behind when it was put away', async () => {
+    const { control, npm } = await coordinator()
+    try {
+      npm.published.grok = '1.0.43'
+      await control.command({ type: 'check-client-updates' })
+      await control.command({ type: 'dismiss-client-updates' })
+      npm.published.claude = '2.1.290'
+      await tick(npm, 3)
+      await vi.waitFor(() => { expect(control.get().clientUpdatesDismissedAt).toBeUndefined() })
     } finally { control.dispose() }
   })
 })
