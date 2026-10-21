@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage: bars or lines, and models on one chart (prototype)</title>
+<!--
+  Throwaway prototype. Two questions for Usage's per-day chart:
+    1. Switch the chart between bars and lines.
+    2. Compare models on the same chart, one line per model, choosing which are drawn.
+
+  Variants (?variant=A|B|C, the pill at the bottom, or Left/Right when focus is not in a field, a tab list or the chart):
+    A  Chart controls on the stage. Prompts and Tokens get Bars | Lines and a By model toggle. By model draws one
+       series per model and puts toggle chips under the chart (top 5 by prompts on); the chips are the legend.
+    B  Compare lives in Models. Overview only gains Bars | Lines. The Models tab gets a lines chart above the table,
+       a checkbox on each row (top 3 checked) and a Prompts | Tokens switch.
+    C  Split the chart. One Show control (Total / By provider / By model) plus Bars | Lines. By model is the top 5
+       and Other. Pointing at a day reads every series in the line above the chart.
+
+  Bars with several models are stacked, not grouped: 5 models x 30 days grouped is 150 bars of 2px each at the
+  820x560 minimum, which nobody can read; a stack keeps each day's height honest and still shows who filled it.
+  Lines are never stacked: a stacked line reads as a total, which hides the model you are trying to follow.
+
+  Series colours are an 8-slot categorical palette validated for both modes (lightness band, chroma, adjacent
+  colour-blind separation, 3:1 on the canvas). Sotto has no categorical role yet, so shipping this needs tokens.
+  A model keeps its colour while it is drawn; a filter never repaints the survivors.
+
+  Only Overview's Prompts and Tokens stages and the Models tab are built. Date range works (30 or 7 days) so the
+  "a model with no activity in the range is not offered" rule can be seen: gpt-6-astra stops 10 days ago and
+  gpt-6-mini has none in 30 days.
+-->
+<style>
+/* ---------- Theme roles, from src/shared/themes/palettes.ts (Sotto, Ink and paper) and tokens.css ---------- */
+.window[data-theme='dark'] {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-overlay: oklch(0.215 0.008 265);
+  --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-field: oklch(0.145 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: oklch(0.86 0.01 272);
+  --tt-text-muted: oklch(0.72 0.014 265);
+  --tt-text-faint: oklch(0.66 0.012 270);
+  --tt-border: oklch(0.305 0.02 265);
+  --tt-hairline: oklch(0.24 0.012 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-focus-ring: oklch(0.714403 0.104089 183.092);
+  --tt-warning: oklch(0.772406 0.172798 65.367);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-sidebar-border: oklch(0.355 0.012 265);
+  --tt-sidebar-row: oklch(0.355 0.035 188);
+  --tt-scrollbar: oklch(0.315 0.008 265);
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --tt-shadow-lg: 0 14px 36px rgb(0 0 0 / 60%);
+  --tt-provider-codex: #d7dbe1; --tt-provider-claude: #e3b58e; --tt-provider-grok: #c9baff; --tt-provider-opencode: #ece3d0; --tt-provider-muse: #f2b8cf; --tt-provider-ink: #080b0a;
+  /* Series: validated as a set on the dark canvas (see the note at the top). */
+  --usage-s1: #32a798; --usage-s2: #d95926; --usage-s3: #3987e5; --usage-s4: #c98500;
+  --usage-s5: #d55181; --usage-s6: #008300; --usage-s7: #9085e9; --usage-s8: #e66767;
+  --usage-other: color-mix(in oklab, var(--tt-text) 40%, var(--tt-canvas));
+}
+.window[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-overlay: oklch(0.945 0.007 85);
+  --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-field: oklch(0.99 0.003 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.35 0.014 75);
+  --tt-text-muted: oklch(0.5 0.014 75);
+  --tt-text-faint: oklch(0.525 0.015 78);
+  --tt-border: oklch(0.86 0.012 80);
+  --tt-hairline: oklch(0.9 0.01 82);
+  --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-accent-text: oklch(0.43 0.08 186);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-focus-ring: oklch(0.53 0.095 186);
+  --tt-warning: oklch(0.772406 0.172798 65.367);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-sidebar-border: oklch(0.87 0.012 82);
+  --tt-sidebar-row: oklch(0.895 0.028 188);
+  --tt-scrollbar: oklch(0.84 0.01 85);
+  --tt-shadow-sm: 0 1px 2px rgb(20 24 22 / 10%);
+  --tt-shadow-lg: 0 14px 36px rgb(20 24 22 / 18%);
+  --tt-provider-codex: #c9ced6; --tt-provider-claude: #e2ad80; --tt-provider-grok: #bfaefc; --tt-provider-opencode: #625843; --tt-provider-muse: #e79ab8; --tt-provider-ink: #0b0d0c;
+  --usage-s1: #008a7b; --usage-s2: #eb6834; --usage-s3: #2a78d6; --usage-s4: #b87800;
+  --usage-s5: #d55181; --usage-s6: #008300; --usage-s7: #6250d6; --usage-s8: #e34948;
+  --usage-other: color-mix(in oklab, var(--tt-text) 42%, var(--tt-canvas));
+}
+.window {
+  --tt-hover: color-mix(in srgb, var(--tt-accent-surface) 70%, transparent);
+  --tt-link: var(--tt-accent-text);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ---------- The window: a thin strip, a sidebar, one room ---------- */
+html, body { margin: 0; height: 100%; background: #1e1e1e; }
+.window { position: fixed; inset: 0; display: grid; grid-template-rows: 36px minmax(0, 1fr); overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+.window[data-size] { position: relative; inset: auto; margin: 24px auto 120px; outline: 1px solid #555; }
+.window *, .window *::before, .window *::after { box-sizing: border-box; }
+.strip { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--tt-canvas); border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; user-select: none; -webkit-app-region: drag; }
+.strip__mark { width: 14px; height: 14px; border-radius: 4px; background: var(--tt-accent); }
+.strip__controls { display: flex; gap: 18px; margin-left: auto; color: var(--tt-text-faint); }
+.body { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 0; }
+.sidebar { min-width: 0; padding: 14px 10px; border-right: 1px solid var(--tt-sidebar-border); background: var(--tt-sidebar); color: var(--tt-text-muted); font-size: 13px; overflow: hidden; }
+.sidebar p { margin: 0; padding: 7px 10px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar p[data-on] { background: var(--tt-sidebar-row); color: var(--tt-text); }
+.sidebar small { display: block; margin: 16px 10px 4px; color: var(--tt-text-muted); font-size: 12px; }
+.tt-focusable:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.tt-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.window button { font-family: inherit; }
+
+/* ---------- Copied from src/renderer/src/features/usage/usage.css (the parts this page shows) ---------- */
+.usage-view {
+  --usage-hover-soft: color-mix(in srgb, var(--tt-accent-surface) 38%, transparent);
+  --usage-seg: var(--tt-surface-sunken);
+  --usage-seg-on: light-dark(var(--tt-surface), var(--tt-surface-overlay));
+  --usage-pop: light-dark(var(--tt-surface), var(--tt-surface-overlay));
+  --usage-strong: var(--tt-accent);
+  --usage-mid: light-dark(color-mix(in oklab, var(--tt-accent) 62%, var(--tt-canvas)), color-mix(in oklab, var(--tt-accent) 56%, var(--tt-canvas)));
+  --usage-soft: light-dark(color-mix(in oklab, var(--tt-accent) 36%, var(--tt-canvas)), color-mix(in oklab, var(--tt-accent) 30%, var(--tt-canvas)));
+  --usage-ink: var(--tt-text-2);
+  --usage-track: color-mix(in oklab, var(--tt-text) 11%, var(--tt-canvas));
+  --usage-grid: color-mix(in oklab, var(--tt-text) 9%, var(--tt-canvas));
+}
+.usage-view { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }
+.usage-scroll { flex: 1; min-width: 0; overflow-y: auto; container: usage-room / inline-size; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.usage-page { container: usage / inline-size; max-width: 1180px; margin: 0 auto; padding: 4px clamp(20px, 5cqi, 64px) 96px; }
+.usage-title { display: flex; align-items: center; gap: 12px; min-height: 40px; padding-top: 4px; }
+.usage-title h1 { margin: 0; font-size: 28px; font-weight: 500; line-height: 1.2; letter-spacing: -1px; }
+.usage-more { display: grid; place-items: center; width: 34px; height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 9px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.usage-subtitle { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 13.5px; }
+.usage-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 18px; }
+.usage-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--usage-seg); }
+.usage-seg button { height: 30px; padding: 0 14px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font-size: 13.5px; white-space: nowrap; cursor: pointer; transition: background-color .15s, color .15s; }
+.usage-seg button:hover { color: var(--tt-text); }
+.usage-seg button:is([aria-selected='true'], [aria-checked='true']) { background: var(--usage-seg-on); color: var(--tt-text); box-shadow: var(--tt-shadow-sm); }
+.usage-seg--small { padding: 2px; border-radius: 8px; }
+.usage-seg--small button { height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12.5px; }
+.usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.usage-filter:hover, .usage-filter[aria-expanded='true'] { background: var(--usage-hover-soft); color: var(--tt-text); }
+.usage-filter svg { color: var(--tt-text-muted); }
+.usage-pop { position: fixed; z-index: 50; min-width: 190px; padding: 5px; border: 1px solid var(--tt-hairline); border-radius: 11px; background: var(--usage-pop); box-shadow: var(--tt-shadow-lg); }
+.usage-pop__item { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 12px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.usage-pop__item:is(:hover, :focus-visible) { background: var(--tt-hover); color: var(--tt-text); outline: none; }
+.usage-pop__check { visibility: hidden; color: var(--tt-accent-text); }
+.usage-pop__item[aria-checked='true'] .usage-pop__check { visibility: visible; }
+.usage-panel { padding-top: 40px; }
+.usage-note { margin: 16px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.usage-note b, .usage-when b, .usage-origin b, .usage-models-summary b { color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
+.usage-link { padding: 0; border: 0; background: none; color: var(--tt-link); font: inherit; font-size: 13px; cursor: pointer; }
+.usage-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.usage-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--tt-text-muted); font-size: 12.5px; }
+.usage-legend i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; }
+.usage-legend--below { display: flex; margin: 14px 0 0; }
+.usage-legend--table { display: flex; gap: 8px 22px; margin: 26px 0 0; }
+.usage-kind--read { background: var(--usage-strong); }
+.usage-kind--write { background: var(--usage-mid); }
+.usage-kind--new { background: var(--usage-soft); }
+.usage-kind--out { background: var(--usage-ink); }
+.usage-kind--input { background: var(--usage-mid); }
+.usage-spark { display: block; }
+.usage-focus { display: grid; grid-template-columns: 252px minmax(0, 1fr); align-items: start; gap: 52px; }
+.usage-index { display: flex; flex-direction: column; gap: 2px; margin-left: -16px; }
+.usage-index__item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 3px 14px; width: 100%; padding: 14px 16px; border: 0; border-radius: 12px; background: transparent; color: var(--tt-text); text-align: left; font: inherit; cursor: pointer; }
+.usage-index__item:hover { background: var(--usage-hover-soft); }
+.usage-index__item[aria-selected='true'] { background: var(--tt-hover); }
+.usage-index__item[aria-selected='true']::before { content: ''; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; border-radius: 3px; background: var(--tt-accent); }
+.usage-index__label { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: 12.5px; }
+.usage-index__value { min-width: 0; overflow: hidden; font-size: 27px; font-weight: 450; line-height: 1.15; letter-spacing: -.9px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.usage-index__value[data-words] { padding-top: 4px; font-size: 18px; font-weight: 500; letter-spacing: -.3px; }
+.usage-index__unit { margin-left: 7px; color: var(--tt-text-2); font-size: 15px; font-weight: 450; letter-spacing: -.2px; }
+.usage-index__viz { align-self: center; color: var(--tt-accent-text); }
+.usage-index__note { grid-column: 1 / -1; overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; text-overflow: ellipsis; }
+.usage-stage { min-width: 0; padding-top: 12px; }
+.usage-stage__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.usage-stage__head h2 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -.5px; }
+.usage-stage__head > span { color: var(--tt-text-muted); font-size: 13px; }
+.usage-when { min-height: 20px; margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13.5px; }
+.usage-stage__sub { margin-top: 44px; }
+.usage-stage__sub .usage-chart { --usage-chart-h: 160px; }
+.usage-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.usage-chart-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
+.usage-chart { --usage-chart-h: 230px; }
+.usage-chart__plot { position: relative; height: var(--usage-chart-h); margin-top: 22px; border-bottom: 1px solid var(--tt-border); border-radius: 2px; cursor: crosshair; outline-offset: 6px; }
+.usage-chart__grid { position: absolute; right: 0; left: 0; border-top: 1px dashed var(--usage-grid); pointer-events: none; }
+.usage-chart__grid span { position: absolute; right: 0; bottom: 3px; padding-left: 6px; background: var(--tt-canvas); color: var(--tt-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.usage-chart__none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: 13px; }
+.usage-chart__axis { position: relative; height: 20px; margin-top: 8px; color: var(--tt-text-faint); font-size: 12px; }
+.usage-chart__axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.usage-chart__axis .usage-chart__tick--start { transform: none; }
+.usage-chart__axis .usage-chart__tick--end { transform: translateX(-100%); }
+.usage-split-block { margin-top: 30px; }
+.usage-split-caption { margin: 0 0 10px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 550; }
+.usage-split { display: flex; flex-wrap: wrap; gap: 14px 36px; }
+.usage-split__item { display: grid; gap: 4px; }
+.usage-split__item span { display: flex; align-items: center; gap: 7px; color: var(--tt-text-muted); font-size: 12.5px; }
+.usage-split__item b { font-size: 22px; font-weight: 450; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.usage-origin { margin: 30px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.usage-tokens { container: usage-tokens / inline-size; margin-top: 22px; }
+.usage-tokens__brackets { display: flex; gap: 4px; height: 30px; }
+.usage-tokens__bracket { position: relative; flex-basis: 0; min-width: 8px; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.usage-tokens__bracket::after { content: ''; position: absolute; right: 0; bottom: 3px; left: 0; height: 6px; border: 1px solid var(--tt-text-faint); border-bottom: 0; border-radius: 3px 3px 0 0; opacity: .65; }
+.usage-tokens__bracket > span { position: absolute; top: 0; left: 0; }
+.usage-tokens__bracket--output > span { right: 0; left: auto; }
+.usage-tokens__bracket b { margin-right: 5px; color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
+.usage-tokens__bar { display: flex; gap: 4px; height: 22px; }
+.usage-tokens__group { display: flex; flex-basis: 0; gap: 2px; min-width: 8px; overflow: hidden; border-radius: 5px; }
+.usage-tokens__segment { flex-basis: 0; min-width: 2px; }
+.usage-tokens__legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 20px; margin: 22px 0 0; }
+.usage-tokens__legend dt { display: flex; align-items: center; gap: 7px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.usage-tokens__legend dt i { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.usage-tokens__legend dd { margin: 4px 0 0; font-size: 19px; font-weight: 450; letter-spacing: -.3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@container usage-tokens (max-width: 470px) { .usage-tokens__legend { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.usage-models-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.usage-models-summary { margin: 0; color: var(--tt-text-muted); font-size: 14px; }
+.usage-sort { display: flex; align-items: center; gap: 10px; color: var(--tt-text-muted); font-size: 13px; }
+.usage-table { margin: 26px -14px 0; }
+.usage-table__rows { margin: 0; padding: 0; list-style: none; }
+.usage-table__columns, .usage-row__main, .usage-table__total { display: grid; grid-template-columns: minmax(180px, 1.15fr) minmax(140px, 2fr) 78px 78px 70px; align-items: center; gap: 0 20px; }
+.usage-table__columns { padding: 0 14px 10px; color: var(--tt-text-faint); font-size: 12px; }
+.usage-table__columns span:nth-child(n+3), .usage-row__n { text-align: right; }
+.usage-row { border-radius: 12px; }
+.usage-row[data-open] { background: var(--usage-hover-soft); }
+.usage-row__main { width: 100%; min-height: 62px; padding: 10px 14px; border: 0; border-radius: 12px; background: transparent; color: var(--tt-text); text-align: left; font: inherit; cursor: pointer; }
+.usage-row__main:hover { background: var(--usage-hover-soft); }
+.usage-row__name { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.usage-row__name > span { min-width: 0; }
+.usage-row__model { display: block; overflow: hidden; font-size: 14px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.usage-row__provider { display: block; color: var(--tt-text-muted); font-size: 12.5px; }
+.usage-row__n { font-size: 14px; font-variant-numeric: tabular-nums; }
+.usage-composition { display: flex; gap: 2px; width: calc(var(--usage-w) * 100%); min-width: 6px; height: 10px; overflow: hidden; border-radius: 4px; }
+.usage-composition i { flex-basis: 0; min-width: 2px; }
+.usage-detail { padding: 0 14px 18px 51px; color: var(--tt-text-muted); font-size: 13px; }
+.usage-table__total { padding: 20px 14px 0; font-size: 14px; font-weight: 550; }
+.usage-enter > * { animation: usage-rise .34s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes usage-rise { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .usage-view *, .usage-pop { animation: none !important; transition: none !important; } }
+.window[data-reduced-motion] :is(.usage-view *, .usage-pop) { animation: none !important; transition: none !important; }
+@container usage (max-width: 780px) {
+  .usage-focus { grid-template-columns: minmax(0, 1fr); gap: 30px; }
+  .usage-index { flex-direction: row; gap: 6px; margin: 0 -4px; padding: 0 4px 6px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: thin; }
+  .usage-index__item { flex: 0 0 auto; width: auto; min-width: 172px; scroll-snap-align: start; }
+  .usage-index__item :is(.usage-index__value, .usage-index__note) { overflow: visible; text-overflow: clip; }
+  .usage-index__viz { display: none; }
+  .usage-index__item[aria-selected='true']::before { top: auto; right: 16px; bottom: 0; left: 16px; width: auto; height: 3px; }
+}
+@container usage (max-width: 640px) {
+  .usage-chart { --usage-chart-h: 180px; }
+  .usage-table__columns, .usage-row__main, .usage-table__total { grid-template-columns: minmax(0, 1fr) 64px 66px; gap: 8px 14px; }
+  .usage-table__columns span:nth-child(2), .usage-table__columns span:nth-child(5), .usage-row__cache { display: none; }
+  .usage-row__main .usage-row__bar { grid-row: 2; grid-column: 1 / -1; }
+  .usage-table__total .usage-row__bar { display: none; }
+  .usage-detail { padding-left: 14px; }
+}
+
+/* Provider marks: the real page draws each provider's logo; here a lettered tile in the provider's colour. */
+.pmark { display: inline-grid; flex: none; place-items: center; width: 15px; height: 15px; border-radius: 4px; background: var(--pc); color: var(--tt-provider-ink); font-size: 9.5px; font-weight: 700; line-height: 1; }
+.pmark--18 { width: 18px; height: 18px; border-radius: 5px; font-size: 11px; }
+.pmark[data-p='codex'] { --pc: var(--tt-provider-codex); }
+.pmark[data-p='claude'] { --pc: var(--tt-provider-claude); }
+.pmark[data-p='grok'] { --pc: var(--tt-provider-grok); }
+.pmark[data-p='opencode'] { --pc: var(--tt-provider-opencode); }
+.window[data-theme='light'] .pmark[data-p='opencode'] { color: var(--tt-canvas); }
+.pmark[data-p='muse'] { --pc: var(--tt-provider-muse); }
+
+/* ---------- New in this prototype ---------- */
+.usage-per { margin-top: 30px; }
+.usage-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.usage-tools__label { color: var(--tt-text-muted); font-size: 12.5px; }
+/* A: the By model toggle. */
+.usage-toggle { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.usage-toggle:hover { background: var(--usage-hover-soft); color: var(--tt-text); }
+.usage-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); background: var(--tt-hover); color: var(--tt-text); }
+.usage-toggle__box { display: grid; place-items: center; width: 13px; height: 13px; border: 1.5px solid var(--tt-text-faint); border-radius: 3px; }
+.usage-toggle[aria-pressed='true'] .usage-toggle__box { border-color: var(--tt-accent); background: var(--tt-accent); }
+.usage-toggle[aria-pressed='true'] .usage-toggle__box::after { content: ''; width: 6px; height: 3px; margin-top: -2px; border-left: 1.5px solid var(--tt-canvas); border-bottom: 1.5px solid var(--tt-canvas); transform: rotate(-45deg); }
+/* A: model chips under the chart. A grid, so values changing as you point never move a chip. */
+.usage-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 6px; margin: 16px 0 0; padding: 0; list-style: none; }
+.usage-chip { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 10px 0 9px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; text-align: left; cursor: pointer; }
+.usage-chip:hover { background: var(--usage-hover-soft); color: var(--tt-text); }
+.usage-chip > i { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--tt-text-faint); }
+.usage-chip > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.usage-chip > b { font-weight: 550; font-variant-numeric: tabular-nums; }
+.usage-chip[aria-pressed='true'] { border-color: var(--tt-border); background: var(--usage-seg); color: var(--tt-text); }
+.usage-chip[aria-pressed='true'] > i { background: var(--c); box-shadow: none; }
+.usage-chips-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-top: 10px; color: var(--tt-text-muted); font-size: 12.5px; }
+/* B and C: the read-out above the chart. A grid too, for the same reason. */
+.usage-readout { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 6px 18px; margin: 12px 0 0; padding: 0; list-style: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.usage-readout li { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.usage-readout i { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+.usage-readout[data-kind='lines'] i { width: 12px; height: 3px; border-radius: 2px; }
+.usage-readout span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.usage-readout b { color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
+.usage-readout + .usage-chart .usage-chart__plot { margin-top: 18px; }
+.usage-chart__fill { position: absolute; inset: 0; }
+.usage-chart__fill svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+/* B: the compare block on Models, and a checkbox before each row. */
+.usage-compare { margin-top: 30px; }
+.usage-table--check .usage-row, .usage-table--check .usage-table__head, .usage-table--check .usage-table__foot { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: start; }
+.usage-table__head > span:first-child { padding-left: 14px; color: var(--tt-text-faint); font-size: 12px; }
+.usage-table--check .usage-detail { grid-column: 2; }
+.usage-check { display: grid; place-items: center; height: 62px; padding-left: 14px; }
+.usage-check input { appearance: none; display: grid; place-items: center; width: 16px; height: 16px; margin: 0; border: 1.5px solid var(--tt-field-border); border-radius: 4px; background: transparent; cursor: pointer; }
+.usage-check input:checked { border-color: var(--c); background: var(--c); }
+.usage-check input:checked::after { content: ''; width: 8px; height: 4px; margin-top: -2px; border-left: 2px solid var(--tt-canvas); border-bottom: 2px solid var(--tt-canvas); transform: rotate(-45deg); }
+.usage-check input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+@container usage (max-width: 640px) { .usage-check { height: auto; padding-top: 14px; } }
+
+/* ---------- Prototype chrome: deliberately loud so nobody mistakes it for the design ---------- */
+.proto { font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; color: #111; }
+.proto-pill { position: fixed; z-index: 100; bottom: 16px; left: 50%; display: flex; align-items: center; gap: 4px; padding: 4px; border: 2px dashed #111; border-radius: 999px; background: #ffd84d; transform: translateX(-50%); box-shadow: 0 6px 18px rgb(0 0 0 / 35%); }
+.proto-pill button { width: 30px; height: 30px; border: 0; border-radius: 50%; background: #111; color: #ffd84d; font: 700 15px/1 ui-monospace, monospace; cursor: pointer; }
+.proto-pill span { min-width: 280px; padding: 0 10px; font-weight: 700; text-align: center; white-space: nowrap; }
+.proto-debug { position: fixed; z-index: 100; top: 44px; right: 12px; width: 280px; max-height: calc(100vh - 120px); overflow: auto; border: 2px dashed #111; border-radius: 10px; background: #ffd84d; box-shadow: 0 6px 18px rgb(0 0 0 / 35%); }
+.proto-debug summary { padding: 7px 10px; font-weight: 700; cursor: pointer; }
+.proto-debug > div { padding: 0 10px 10px; }
+.proto-debug dl { display: grid; grid-template-columns: 92px 1fr; gap: 3px 8px; margin: 0 0 8px; }
+.proto-debug dt { opacity: .7; }
+.proto-debug dd { margin: 0; overflow-wrap: anywhere; }
+.proto-debug .row { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
+.proto-debug .row button { padding: 3px 7px; border: 1.5px solid #111; border-radius: 6px; background: transparent; font: inherit; cursor: pointer; }
+.proto-debug .row button[aria-pressed='true'] { background: #111; color: #ffd84d; }
+.proto-debug label { display: flex; align-items: center; gap: 6px; }
+.proto :focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="window" id="win"></div>
+<p class="tt-visually-hidden" aria-live="polite" id="live"></p>
+<details class="proto proto-debug" id="debug"><summary>Prototype state</summary><div id="debug-body"></div></details>
+<div class="proto proto-pill" role="group" aria-label="Prototype variant">
+  <button type="button" id="prev" aria-label="Previous variant">&lsaquo;</button>
+  <span id="pill-name"></span>
+  <button type="button" id="next" aria-label="Next variant">&rsaquo;</button>
+</div>
+<script>
+'use strict'
+// ---------- Sample data: 30 days to Wednesday, October 21, 2026 ----------
+const VARIANTS = ['A', 'B', 'C']
+const VARIANT_NAMES = { A: 'Chart controls on the stage', B: 'Compare lives in Models', C: 'Split the chart' }
+const TODAY = '2026-10-21'
+const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10)
+const ALL_DAYS = Array.from({ length: 30 }, (_, i) => addDays(TODAY, i - 29))
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const weekday = iso => new Date(`${iso}T00:00:00Z`).getUTCDay()
+const shortDay = iso => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`
+const longDay = iso => iso === TODAY ? 'Today' : `${WEEKDAYS[weekday(iso)]}, ${shortDay(iso)}`
+const PROVIDERS = { claude: ['Claude Code', 'C'], codex: ['Codex', 'X'], opencode: ['OpenCode', 'O'], grok: ['Grok Build', 'G'], muse: ['Muse', 'M'] }
+// Provider series take colours near their own: Claude orange, Codex blue, OpenCode amber, Muse magenta, Grok violet.
+const PROVIDER_SLOT = { claude: 1, codex: 2, opencode: 3, muse: 4, grok: 6 }
+
+function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+const rand = mulberry(20261021)
+const ZERO_DAYS = new Set([5, 19]) // two Sundays with nothing at all
+// id, provider, prompts on a weekday, tokens per prompt, first day, day it stops, chance of a quiet day
+const SPEC = [
+  ['claude-opus-5-5', 'claude', 44, 210e3, 0, 30, 0],
+  ['gpt-6.1-sol', 'codex', 28, 150e3, 0, 30, 0.04],
+  ['claude-sonnet-5-5', 'claude', 19, 110e3, 0, 30, 0.06],
+  ['opencode/kimi-k3', 'opencode', 18, 70e3, 11, 30, 0.05],
+  ['gpt-6-astra', 'codex', 15, 120e3, 0, 20, 0.1],
+  ['grok-code-2', 'grok', 8, 90e3, 0, 30, 0.35],
+  ['muse-1', 'muse', 6, 60e3, 0, 30, 0.5],
+  ['anthropic/claude-sonnet-5-5', 'opencode', 5, 100e3, 15, 30, 0.3],
+  ['claude-haiku-5-5', 'claude', 3, 40e3, 0, 30, 0.45],
+  ['gpt-6-mini', 'codex', 0, 0, 0, 0, 1],
+]
+const MODELS = SPEC.map(([id, provider, base, perPrompt, start, end, quiet]) => {
+  const prompts = [], input = [], output = []
+  ALL_DAYS.forEach((day, i) => {
+    let p = 0
+    if (base > 0 && i >= start && i < end && !ZERO_DAYS.has(i)) {
+      const week = weekday(day) === 0 || weekday(day) === 6 ? 0.3 : 1
+      const ramp = start > 0 ? Math.min(1, (i - start + 1) / 6) : 1
+      p = Math.round(base * week * ramp * (i === 29 ? 0.45 : 1) * (0.55 + rand() * 0.9))
+      if (rand() < quiet) p = 0
+    }
+    const inp = p > 0 ? Math.round(p * perPrompt * (0.7 + rand() * 0.6)) : 0
+    prompts.push(p); input.push(inp); output.push(Math.round(inp * (0.025 + rand() * 0.02)))
+  })
+  return { id, provider, prompts, input, output }
+})
+const MODEL = Object.fromEntries(MODELS.map(m => [m.id, m]))
+const sum = list => list.reduce((a, b) => a + b, 0)
+// A model's preferred colour: its rank by prompts over the whole 30 days. The top 8 have one.
+const PREF = Object.fromEntries([...MODELS].sort((a, b) => sum(b.prompts) - sum(a.prompts)).slice(0, 8).map((m, i) => [m.id, i]))
+
+// ---------- Formatting ----------
+const fmtInt = n => Math.round(n).toLocaleString('en-US')
+const fmtTok = n => {
+  const one = (v, s) => `${(v >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toString()}${s}`
+  return n >= 1e9 ? one(n / 1e9, 'B') : n >= 1e6 ? one(n / 1e6, 'M') : n >= 1e3 ? one(n / 1e3, 'K') : fmtInt(n)
+}
+const fmt = (metric, n) => metric === 'prompts' ? fmtInt(n) : fmtTok(n)
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+function niceMax(value) { const power = 10 ** Math.floor(Math.log10(value)); for (const step of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (step * power >= value) return step * power; return 10 * power }
+
+// ---------- State ----------
+const params = new URLSearchParams(location.search)
+const S = {
+  variant: VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'A',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark', size: 'fit', reduced: false,
+  tab: 'overview', focus: 'prompts', range: 30, kind: 'bars',
+  aOn: false, a: null, b: null, bMetric: 'prompts', cShow: 'total', sort: 'prompts', opened: null,
+  hover: null, pin: null, menu: false, note: null,
+}
+const start = () => 30 - S.range
+const days = () => ALL_DAYS.slice(start())
+const vals = (m, metric) => (metric === 'prompts' ? m.prompts : m.input.map((v, i) => v + m.output[i])).slice(start())
+const offered = () => MODELS.filter(m => sum(vals(m, 'prompts')) + sum(vals(m, 'tokens')) > 0)
+const notOffered = () => MODELS.filter(m => sum(vals(m, 'prompts')) + sum(vals(m, 'tokens')) === 0)
+const ranked = metric => offered().sort((a, b) => sum(vals(b, metric)) - sum(vals(a, metric)) || a.id.localeCompare(b.id))
+const totalsBy = metric => days().map((_, i) => sum(MODELS.map(m => vals(m, metric)[i])))
+const rangeLabel = () => `Last ${S.range} days`
+const MAX_LINES = 8
+
+// A pool of drawn models. A model keeps its colour while it is drawn: it takes its preferred slot if free, else the lowest free one.
+function poolOn(pool, id) {
+  if (pool.sel.includes(id)) return true
+  if (pool.sel.length >= MAX_LINES) return false
+  const used = new Set(pool.sel.map(x => pool.col[x]))
+  let slot = PREF[id]
+  if (slot === undefined || used.has(slot)) slot = [0, 1, 2, 3, 4, 5, 6, 7].find(s => !used.has(s))
+  pool.sel.push(id); pool.col[id] = slot; return true
+}
+function poolOff(pool, id) { pool.sel = pool.sel.filter(x => x !== id); delete pool.col[id] }
+function makePool(n) { const pool = { sel: [], col: {} }; ranked('prompts').slice(0, n).forEach(m => poolOn(pool, m.id)); return pool }
+function prune(pool) { const ok = new Set(offered().map(m => m.id)); [...pool.sel].filter(id => !ok.has(id)).forEach(id => poolOff(pool, id)) }
+const isDefault = (pool, n) => { const top = ranked('prompts').slice(0, n).map(m => m.id); return pool.sel.length === top.length && top.every(id => pool.sel.includes(id)) }
+S.a = makePool(5); S.b = makePool(3)
+const slotVar = s => `var(--usage-s${s + 1})`
+
+// ---------- What a chart draws ----------
+function chartCfg(ctx) {
+  const metric = ctx === 'models' ? S.bMetric : ctx
+  const kind = ctx === 'models' ? 'lines' : S.kind
+  const byTotal = (a, b) => sum(b.values) - sum(a.values)
+  const fromPool = pool => pool.sel.map(id => ({ key: id, name: id, color: slotVar(pool.col[id]), values: vals(MODEL[id], metric) })).sort(byTotal)
+  let series, stacked = false, empty = null, split = 'total'
+  if (ctx === 'models') { series = fromPool(S.b); split = 'model'; if (series.length === 0) empty = 'Check a model in the table to draw it.' }
+  else if (S.variant === 'A' && S.aOn) { series = fromPool(S.a); split = 'model'; stacked = kind === 'bars'; if (series.length === 0) empty = 'Turn on a model below to draw it.' }
+  else if (S.variant === 'C' && S.cShow === 'model') {
+    const list = ranked(metric).filter(m => sum(vals(m, metric)) > 0)
+    const top = list.slice(0, 5), rest = list.slice(5), used = new Set()
+    series = top.map(m => {
+      let slot = PREF[m.id]; if (slot === undefined || used.has(slot)) slot = [0, 1, 2, 3, 4, 5, 6, 7].find(s => !used.has(s) && !top.some(t => PREF[t.id] === s))
+      used.add(slot); return { key: m.id, name: m.id, color: slotVar(slot), values: vals(m, metric) }
+    })
+    if (rest.length > 0) series.push({ key: 'other', name: `Other (${rest.length})`, title: rest.map(m => m.id).join(', '), color: 'var(--usage-other)', values: days().map((_, i) => sum(rest.map(m => vals(m, metric)[i]))) })
+    split = 'model'; stacked = kind === 'bars'
+  } else if (S.variant === 'C' && S.cShow === 'provider') {
+    series = Object.keys(PROVIDERS).map(p => ({ key: p, name: PROVIDERS[p][0], color: slotVar(PROVIDER_SLOT[p]),
+      values: days().map((_, i) => sum(MODELS.filter(m => m.provider === p).map(m => vals(m, metric)[i]))) })).filter(s => sum(s.values) > 0).sort(byTotal)
+    split = 'provider'; stacked = kind === 'bars'
+  } else if (metric === 'prompts') series = [{ key: 'total', name: 'Prompts', color: 'var(--usage-strong)', values: totalsBy('prompts') }]
+  else if (kind === 'bars') {
+    const sl = arr => arr.slice(start())
+    const input = ALL_DAYS.map((_, i) => sum(MODELS.map(m => m.input[i]))), output = ALL_DAYS.map((_, i) => sum(MODELS.map(m => m.output[i])))
+    series = [{ key: 'input', name: 'Input', color: 'var(--usage-mid)', values: sl(input) }, { key: 'output', name: 'Output', color: 'var(--usage-ink)', values: sl(output) }]
+    stacked = true
+  } else series = [{ key: 'total', name: 'Input and output', color: 'var(--usage-strong)', values: totalsBy('tokens') }]
+  return { ctx, metric, kind, series, stacked, empty, split, days: days() }
+}
+const selected = () => S.hover ?? S.pin
+
+// ---------- Region painters: re-run on every hover without rebuilding the page ----------
+const REGION = {
+  plot(el, ctx) {
+    const cfg = chartCfg(ctx)
+    const W = el.clientWidth, H = el.clientHeight
+    if (W === 0) return ''
+    if (cfg.empty) return `<div class="usage-chart__none">${cfg.empty}</div>`
+    const n = cfg.days.length, col = W / n
+    const perDay = cfg.days.map((_, i) => cfg.stacked ? sum(cfg.series.map(s => s.values[i])) : Math.max(0, ...cfg.series.map(s => s.values[i])))
+    const peak = Math.max(0, ...perDay)
+    if (peak === 0) return `<div class="usage-chart__none">No ${cfg.metric === 'prompts' ? 'prompts' : 'token counts'} in this range</div>`
+    const top = niceMax(Math.max(cfg.metric === 'prompts' ? 10 : 1e5, peak))
+    const y = v => H - v / top * H
+    const sel = selected()
+    let svg = ''
+    if (cfg.kind === 'bars') {
+      const gap = n <= 7 ? 18 : n <= 45 ? 4 : 2, bw = Math.min(52, col - gap), r = n > 20 ? 3 : 5
+      cfg.days.forEach((_, i) => {
+        const x = i * col + (col - bw) / 2
+        const parts = cfg.series.map(s => ({ s, v: s.values[i] })).filter(p => p.v > 0)
+        let base = H
+        const dim = sel !== null && sel !== i ? ' opacity=".28"' : ''
+        parts.forEach((p, j) => {
+          let h = Math.max(1, p.v / top * H)
+          const gapPx = j > 0 ? 1 : 0 // a 1px canvas gap between stacked pieces
+          const yTop = base - h, hh = h - gapPx
+          if (hh > 0) {
+            if (j === parts.length - 1) { const rr = Math.min(r, hh, bw / 2); svg += `<path d="M${x},${base - gapPx} V${yTop + rr} Q${x},${yTop} ${x + rr},${yTop} H${x + bw - rr} Q${x + bw},${yTop} ${x + bw},${yTop + rr} V${base - gapPx} Z" style="fill:${p.s.color}"${dim}/>` }
+            else svg += `<rect x="${x}" y="${yTop}" width="${bw}" height="${hh}" style="fill:${p.s.color}"${dim}/>`
+          }
+          base = yTop
+        })
+      })
+    } else {
+      const single = cfg.series.length === 1
+      // Smaller series last, so they sit on top of the big ones.
+      cfg.series.forEach(s => {
+        const pts = s.values.map((v, i) => [(i + 0.5) * col, Math.min(H - 1, y(v))])
+        const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+        if (single) svg += `<path d="${d} L${pts.at(-1)[0]},${H} L${pts[0][0]},${H} Z" style="fill:${s.color}" opacity=".12"/>`
+        svg += `<path d="${d}" fill="none" style="stroke:${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+        if (n <= 7 && sel === null) pts.forEach(p => { svg += `<circle cx="${p[0]}" cy="${p[1]}" r="3" style="fill:${s.color};stroke:var(--tt-canvas)" stroke-width="1.5"/>` })
+      })
+      if (sel !== null) {
+        const x = (sel + 0.5) * col
+        svg = `<line x1="${x}" x2="${x}" y1="0" y2="${H}" style="stroke:var(--tt-text-faint)" stroke-width="1" stroke-dasharray="2 3"/>` + svg
+        cfg.series.forEach(s => { svg += `<circle cx="${x}" cy="${Math.min(H - 1, y(s.values[sel]))}" r="4" style="fill:${s.color};stroke:var(--tt-canvas)" stroke-width="2"/>` })
+      }
+    }
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false">${svg}</svg>
+      <div class="usage-chart__grid" style="top:0"><span>${fmt(cfg.metric, top)}</span></div>
+      <div class="usage-chart__grid" style="top:50%"><span>${fmt(cfg.metric, top / 2)}</span></div>`
+  },
+  when(_, ctx) {
+    const cfg = chartCfg(ctx), sel = selected(), d = cfg.days
+    const prompts = totalsBy('prompts'), tokens = totalsBy('tokens')
+    if (ctx === 'models') {
+      const total = sel === null ? 0 : sum(cfg.series.map(s => s.values[sel]))
+      if (cfg.series.length === 0) return ''
+      return sel === null ? `${cfg.metric === 'prompts' ? 'Prompts' : 'Tokens'} per day for the checked models, ${rangeLabel().toLowerCase()}.`
+        : `<b>${longDay(d[sel])}</b> · ${fmt(cfg.metric, total)} ${cfg.metric === 'prompts' ? (total === 1 ? 'prompt' : 'prompts') : 'tokens'} across the checked models`
+    }
+    if (ctx === 'prompts') {
+      if (sel !== null) return `<b>${longDay(d[sel])}</b> · ${fmtInt(prompts[sel])} prompt${prompts[sel] === 1 ? '' : 's'}${cfg.split !== 'total' ? ' in all' : ''}`
+      const all = sum(prompts), peakAt = prompts.indexOf(Math.max(...prompts))
+      return `About <b>${fmtInt(all / d.length)}</b> a day · most on ${shortDay(d[peakAt])}, <b>${fmtInt(prompts[peakAt])}</b>`
+    }
+    if (sel !== null) {
+      if (tokens[sel] === 0) return `<b>${longDay(d[sel])}</b> · no tokens`
+      if (cfg.split !== 'total') return `<b>${longDay(d[sel])}</b> · ${fmtTok(tokens[sel])} tokens in all`
+      const inp = sum(MODELS.map(m => m.input[start() + sel])), out = sum(MODELS.map(m => m.output[start() + sel]))
+      return `<b>${longDay(d[sel])}</b> · ${fmtTok(inp)} input, ${fmtTok(out)} output`
+    }
+    return `About <b>${fmtTok(sum(tokens) / Math.max(1, sum(prompts)))}</b> tokens per prompt`
+  },
+  readout(_, ctx) {
+    const cfg = chartCfg(ctx), sel = selected()
+    return cfg.series.map(s => `<li${s.title ? ` title="${esc(s.title)}"` : ''} style="--c:${s.color}"><i></i><span>${esc(s.name)}</span><b>${fmt(cfg.metric, sel === null ? sum(s.values) : s.values[sel])}</b></li>`).join('')
+  },
+  chips(_, ctx) {
+    const metric = ctx, sel = selected()
+    return ranked(metric).map(m => {
+      const on = S.a.sel.includes(m.id), v = vals(m, metric)
+      return `<li><button type="button" class="usage-chip tt-focusable" data-act="chip" data-id="${esc(m.id)}" data-k="chip-${esc(m.id)}" aria-pressed="${on}"
+        aria-label="Draw ${esc(m.id)}, ${esc(PROVIDERS[m.provider][0])}: ${fmt(metric, sel === null ? sum(v) : v[sel])} ${metric}${sel === null ? '' : ` on ${longDay(days()[sel])}`}"
+        title="${esc(m.id)} · ${esc(PROVIDERS[m.provider][0])}" style="--c:${on ? slotVar(S.a.col[m.id]) : 'transparent'}"><i></i><span>${esc(m.id)}</span><b>${fmt(metric, sel === null ? sum(v) : v[sel])}</b></button></li>`
+    }).join('')
+  },
+}
+
+// ---------- Page pieces ----------
+const pmark = (p, big) => `<span class="pmark${big ? ' pmark--18' : ''}" data-p="${p}" role="img" aria-label="${PROVIDERS[p][0]}">${PROVIDERS[p][1]}</span>`
+const chevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'
+function seg(label, act, options, value) {
+  return `<div class="usage-seg usage-seg--small" role="radiogroup" aria-label="${label}">${options.map(([v, name]) =>
+    `<button type="button" role="radio" class="tt-focusable" data-act="${act}" data-v="${v}" data-k="${act}-${v}" aria-checked="${value === v}" tabindex="${value === v ? 0 : -1}">${name}</button>`).join('')}</div>`
+}
+const kindSeg = () => seg('Chart style', 'kind', [['bars', 'Bars'], ['lines', 'Lines']], S.kind)
+
+function axis(ctx) {
+  const d = days(), n = d.length
+  const marks = n <= 7 ? d.map((_, i) => i) : [0, Math.round((n - 1) / 2), n - 1]
+  return `<div class="usage-chart__axis" aria-hidden="true">${marks.map((index, place) => {
+    const day = d[index]
+    const text = day === TODAY ? 'Today' : n <= 7 ? `${WEEKDAYS[weekday(day)]} ${Number(day.slice(8, 10))}` : shortDay(day)
+    const edge = n > 7 && (place === 0 || place === marks.length - 1)
+    const left = edge ? (place === 0 ? 0 : 100) : (index + 0.5) / n * 100
+    const cls = n > 7 && place === 0 ? 'usage-chart__tick--start' : n > 7 && place === marks.length - 1 ? 'usage-chart__tick--end' : ''
+    return `<span class="${cls}" style="left:${left.toFixed(2)}%">${text}</span>`
+  }).join('')}</div>`
+}
+function chartBlock(ctx) {
+  const cfg = chartCfg(ctx)
+  const what = cfg.split === 'total' ? '' : ` ${cfg.kind === 'bars' ? 'Stacked' : 'One line'} per ${cfg.split}: ${cfg.series.map(s => s.name).join(', ')}.`
+  const label = `${cfg.metric === 'prompts' ? 'Prompts' : 'Tokens'} per day, ${rangeLabel().toLowerCase()}.${what} Use Left and Right to read one day; Escape goes back to the whole range.`
+  return `<div class="usage-chart">
+    <div class="usage-chart__plot tt-focusable" tabindex="0" role="group" aria-label="${esc(label)}" data-plot="${ctx}" data-k="plot-${ctx}"><div class="usage-chart__fill" data-region="plot:${ctx}"></div></div>
+    ${axis(ctx)}</div>`
+}
+function tools(ctx) {
+  if (S.variant === 'A') return `<button type="button" class="usage-toggle tt-focusable" data-act="aOn" data-k="aOn" aria-pressed="${S.aOn}"><span class="usage-toggle__box" aria-hidden="true"></span>By model</button>${kindSeg()}`
+  if (S.variant === 'B') return kindSeg()
+  return `<span class="usage-tools__label" aria-hidden="true">Show</span>${seg('Show on the chart', 'cShow', [['total', 'Total'], ['provider', 'By provider'], ['model', 'By model']], S.cShow)}${kindSeg()}`
+}
+function perDay(ctx) {
+  const cfg = chartCfg(ctx)
+  const head = `<div class="usage-chart-head"><h3>Per day</h3><div class="usage-tools">${tools(ctx)}</div></div>`
+  const when = ctx === 'tokens' ? `<p class="usage-when" data-region="when:tokens"></p>` : ''
+  const readout = S.variant === 'C' && S.cShow !== 'total' ? `<ul class="usage-readout" data-kind="${cfg.kind}" aria-hidden="true" data-region="readout:${ctx}"></ul>` : ''
+  const chips = S.variant === 'A' && S.aOn ? `<ul class="usage-chips" aria-label="Models to draw" data-region="chips:${ctx}"></ul>
+    <div class="usage-chips-foot"><span>${S.note ? esc(S.note) : `${S.a.sel.length} of ${offered().length} drawn. Colours stay with a model while it is drawn.`}</span>${isDefault(S.a, 5) ? '' : '<button type="button" class="usage-link tt-focusable" data-act="aReset" data-k="aReset">Back to the top 5</button>'}</div>` : ''
+  const legend = cfg.split !== 'total' ? '' : ctx === 'tokens'
+    ? (cfg.kind === 'bars' ? '<p class="usage-legend usage-legend--below"><span><i class="usage-kind--input"></i>Input</span><span><i class="usage-kind--out"></i>Output</span></p>' : '<p class="usage-legend usage-legend--below"><span><i style="background:var(--usage-strong)"></i>Input and output</span></p>')
+    : ''
+  return `<div class="usage-per${ctx === 'tokens' ? ' usage-stage__sub' : ''}">${head}${when}${readout}${chartBlock(ctx)}${chips}${legend}</div>`
+}
+const head = (title, right = rangeLabel()) => `<div class="usage-stage__head"><h2>${title}</h2><span>${right}</span></div>`
+
+function promptsStage() {
+  const byProvider = Object.keys(PROVIDERS).map(p => [p, sum(MODELS.filter(m => m.provider === p).flatMap(m => vals(m, 'prompts')))]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
+  const all = sum(totalsBy('prompts'))
+  return `${head('Prompts')}<p class="usage-when" data-region="when:prompts"></p>${perDay('prompts')}
+    <div class="usage-split-block"><p class="usage-split-caption">By provider</p><div class="usage-split">${byProvider.map(([p, n]) => `<div class="usage-split__item"><span>${pmark(p)}${PROVIDERS[p][0]}</span><b>${fmtInt(n)}</b></div>`).join('')}</div></div>
+    <p class="usage-origin">You sent <b>${fmtInt(all * 0.95)}</b>, Watcher <b>${fmtInt(all * 0.03)}</b> and wake-ups <b>${fmtInt(all * 0.02)}</b>.</p>`
+}
+function tokensStage() {
+  const input = sum(MODELS.flatMap(m => m.input.slice(start()))), output = sum(MODELS.flatMap(m => m.output.slice(start())))
+  const read = input * 0.82, write = input * 0.06, fresh = input - read - write
+  return `${head('Tokens')}
+    <div class="usage-tokens">
+      <div class="usage-tokens__brackets" aria-hidden="true"><span class="usage-tokens__bracket" style="flex-grow:${input}"><span><b>${fmtTok(input)}</b>input</span></span><span class="usage-tokens__bracket usage-tokens__bracket--output" style="flex-grow:${output}"><span><b>${fmtTok(output)}</b>output</span></span></div>
+      <div class="usage-tokens__bar" role="img" aria-label="${fmtTok(input)} input tokens, then ${fmtTok(output)} output tokens."><span class="usage-tokens__group" style="flex-grow:${input}"><i class="usage-tokens__segment usage-kind--read" style="flex-grow:${read}"></i><i class="usage-tokens__segment usage-kind--write" style="flex-grow:${write}"></i><i class="usage-tokens__segment usage-kind--new" style="flex-grow:${fresh}"></i></span><span class="usage-tokens__group" style="flex-grow:${output}"><i class="usage-tokens__segment usage-kind--out" style="flex-grow:1"></i></span></div>
+      <dl class="usage-tokens__legend"><div><dt><i class="usage-kind--read"></i>Cache read</dt><dd>${fmtTok(read)}</dd></div><div><dt><i class="usage-kind--write"></i>Cache write</dt><dd>${fmtTok(write)}</dd></div><div><dt><i class="usage-kind--new"></i>Uncached input</dt><dd>${fmtTok(fresh)}</dd></div><div><dt><i class="usage-kind--out"></i>Output</dt><dd>${fmtTok(output)}</dd></div></dl>
+    </div>${perDay('tokens')}`
+}
+const FOCUS = ['room', 'prompts', 'tokens', 'where', 'cache', 'models', 'rhythm']
+const FOCUS_NAMES = { room: 'Room left', prompts: 'Prompts', tokens: 'Tokens', where: 'Where', cache: 'From cache', models: 'Most used model', rhythm: 'Busiest hour' }
+function spark(values, w = 72, h = 24) {
+  const max = Math.max(1, ...values), step = w / Math.max(1, values.length - 1)
+  return `<svg class="usage-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${values.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - v / max * (h - 4)).toFixed(1)}`).join(' ')}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`
+}
+function overview() {
+  const prompts = totalsBy('prompts'), top = ranked('prompts')[0]
+  const items = {
+    room: ['41%', 'Lowest: Codex, weekly'], prompts: [fmtInt(sum(prompts)), rangeLabel(), spark(prompts)],
+    tokens: [fmtTok(sum(totalsBy('tokens'))), 'input + output'], where: ['62%<span class="usage-index__unit">in Sotto</span>', 'of tokens · 58% of prompts'],
+    cache: ['82%', 'of input tokens'], models: [top.id, `${Math.round(sum(vals(top, 'prompts')) / sum(prompts) * 100)}% of prompts`, '', true], rhythm: ['Tue 10 AM', 'when you send the most', '', true],
+  }
+  const stage = S.focus === 'prompts' ? promptsStage() : S.focus === 'tokens' ? tokensStage()
+    : `${head(FOCUS_NAMES[S.focus])}<p class="usage-when">Not part of this prototype. Prompts and Tokens are.</p>`
+  return `<div class="usage-focus">
+    <div class="usage-index" role="tablist" aria-label="Usage measures">${FOCUS.map(f => { const [v, note, viz = '', words] = items[f]; return `<button type="button" role="tab" class="usage-index__item tt-focusable" data-act="focus" data-v="${f}" data-k="focus-${f}" aria-selected="${S.focus === f}" tabindex="${S.focus === f ? 0 : -1}">
+      <span class="usage-index__label">${FOCUS_NAMES[f]}</span><span class="usage-index__value"${words ? ' data-words' : ''}>${v}</span><span class="usage-index__viz">${viz}</span><span class="usage-index__note">${note}</span></button>` }).join('')}</div>
+    <section class="usage-stage usage-enter" role="tabpanel" aria-label="${FOCUS_NAMES[S.focus]}">${stage}</section></div>`
+}
+function models() {
+  const list = offered().map(m => ({ m, p: sum(vals(m, 'prompts')), t: sum(vals(m, 'tokens')), c: 0.7 + (m.id.length % 7) / 40 }))
+  list.sort((a, b) => S.sort === 'prompts' ? b.p - a.p : S.sort === 'tokens' ? b.t - a.t : b.c - a.c)
+  const maxT = Math.max(...list.map(r => r.t)), check = S.variant === 'B'
+  const allP = sum(list.map(r => r.p)), allT = sum(list.map(r => r.t))
+  const compare = check ? `<section class="usage-compare" aria-label="Compare models">
+      <div class="usage-chart-head"><h3>Per day</h3><div class="usage-tools">${seg('Measure', 'bMetric', [['prompts', 'Prompts'], ['tokens', 'Tokens']], S.bMetric)}</div></div>
+      <p class="usage-when" data-region="when:models"></p>
+      <ul class="usage-readout" data-kind="lines" aria-hidden="true" data-region="readout:models"></ul>
+      ${chartBlock('models')}
+      ${S.note ? `<p class="usage-note" role="status">${esc(S.note)}</p>` : ''}
+    </section>` : ''
+  const rows = list.map(({ m, p, t, c }) => {
+    const open = S.opened === m.id, on = S.b.sel.includes(m.id), name = PROVIDERS[m.provider][0]
+    const main = `<button type="button" class="usage-row__main tt-focusable" data-act="row" data-id="${esc(m.id)}" data-k="row-${esc(m.id)}" aria-expanded="${open}" aria-label="${esc(m.id)}, ${name}: ${fmtInt(p)} prompts, ${fmtTok(t)} tokens, ${Math.round(c * 100)}% from cache">
+      <span class="usage-row__name">${pmark(m.provider, true)}<span><span class="usage-row__model" title="${esc(m.id)}">${esc(m.id)}</span><span class="usage-row__provider">${name}</span></span></span>
+      <span class="usage-row__bar"><span class="usage-composition" style="--usage-w:${(t / maxT).toFixed(3)}" aria-hidden="true"><i class="usage-kind--read" style="flex-grow:${c * 0.97}"></i><i class="usage-kind--write" style="flex-grow:.05"></i><i class="usage-kind--new" style="flex-grow:${(1 - c) * 0.97}"></i><i class="usage-kind--out" style="flex-grow:.03"></i></span></span>
+      <span class="usage-row__n">${fmtInt(p)}</span><span class="usage-row__n">${fmtTok(t)}</span><span class="usage-row__n usage-row__cache">${Math.round(c * 100)}%</span></button>`
+    const detail = open ? `<div class="usage-detail">The model's details open here, as they do today.</div>` : ''
+    const box = check ? `<span class="usage-check"><input type="checkbox" data-act="check" data-id="${esc(m.id)}" data-k="check-${esc(m.id)}" aria-label="Draw ${esc(m.id)} on the chart" ${on ? 'checked' : ''} style="--c:${on ? slotVar(S.b.col[m.id]) : 'transparent'}"></span>` : ''
+    return `<li class="usage-row"${open ? ' data-open' : ''}>${box}${main}${detail}</li>`
+  }).join('')
+  const columns = '<div class="usage-table__columns" aria-hidden="true"><span>Model</span><span>Tokens by kind</span><span>Prompts</span><span>Tokens</span><span>From cache</span></div>'
+  const total = `<div class="usage-table__total"><span>All models</span><span class="usage-row__bar"></span><span class="usage-row__n">${fmtInt(allP)}</span><span class="usage-row__n">${fmtTok(allT)}</span><span class="usage-row__n usage-row__cache">82%</span></div>`
+  return `<div class="usage-models-head"><p class="usage-models-summary"><b>${list.length}</b> models · <b>${fmtInt(allP)}</b> prompts · <b>${fmtTok(allT)}</b> tokens · ${rangeLabel()}</p>
+      <div class="usage-sort"><span>Sort by</span>${seg('Sort by', 'sort', [['prompts', 'Prompts'], ['tokens', 'Tokens'], ['cache', 'Cache']], S.sort)}</div></div>
+    ${compare}
+    <div class="usage-table${check ? ' usage-table--check' : ''}">
+      ${check ? `<div class="usage-table__head"><span aria-hidden="true">Chart</span>${columns}</div>` : columns}
+      <ul class="usage-table__rows">${rows}</ul>
+      ${check ? `<div class="usage-table__foot"><span></span>${total}</div>` : total}
+    </div>
+    <p class="usage-legend usage-legend--table"><span><i class="usage-kind--read"></i>Cache read</span><span><i class="usage-kind--write"></i>Cache write</span><span><i class="usage-kind--new"></i>Uncached input</span><span><i class="usage-kind--out"></i>Output</span></p>`
+}
+function windowHTML() {
+  const tab = t => `<button type="button" role="tab" class="tt-focusable" data-act="tab" data-v="${t}" data-k="tab-${t}" aria-selected="${S.tab === t}" tabindex="${S.tab === t ? 0 : -1}">${{ overview: 'Overview', subscriptions: 'Subscriptions', models: 'Models' }[t]}</button>`
+  const body = S.tab === 'overview' ? overview() : S.tab === 'models' ? models() : '<p class="usage-subtitle">Not part of this prototype.</p>'
+  const inert = (label, text) => `<button type="button" class="usage-filter tt-focusable" aria-label="${label}: ${text}. Not part of this prototype" title="Not part of this prototype">${text}${chevron}</button>`
+  return `<div class="strip"><span class="strip__mark" aria-hidden="true"></span>Sotto<span class="strip__controls" aria-hidden="true"><span>&#8212;</span><span>&#9744;</span><span>&#10005;</span></span></div>
+  <div class="body">
+    <nav class="sidebar" aria-label="Sidebar (mock)"><p>New thread</p><p>Threads</p><p data-on>Usage</p><p>Settings</p><small>Recent</small><p>Fix the widget focus ring</p><p>Usage charts</p><p>Release 1.42</p></nav>
+    <section class="usage-view" aria-label="Usage"><div class="usage-scroll"><div class="usage-page">
+      <header>
+        <div class="usage-title"><h1>Usage</h1><button type="button" class="usage-more tt-focusable" aria-label="More usage actions">&#8943;</button></div>
+        <p class="usage-subtitle">Your subscriptions, and the work on each computer, in Sotto and outside it.</p>
+        <div class="usage-bar">
+          <div class="usage-seg" role="tablist" aria-label="Usage views">${['overview', 'subscriptions', 'models'].map(tab).join('')}</div>
+          <div class="usage-filters">
+            ${S.tab === 'subscriptions' ? '' : `<button type="button" class="usage-filter tt-focusable" data-act="menu" data-k="menu" aria-haspopup="menu" aria-expanded="${S.menu}" aria-label="Date range: ${rangeLabel()}">${rangeLabel()}${chevron}</button>${inert('Provider', 'All providers')}`}
+            ${inert('Computer', 'This computer')}${S.tab === 'subscriptions' ? '' : inert('Where', 'Everywhere')}
+          </div>
+        </div>
+      </header>
+      <div class="usage-panel" role="tabpanel"><div class="usage-enter">${body}</div></div>
+    </div></div></section>
+  </div>
+  ${S.menu ? `<div class="usage-pop" role="menu" aria-label="Date range" id="pop">${[7, 30].map(n => `<button type="button" role="menuitemradio" class="usage-pop__item" data-act="range" data-v="${n}" aria-checked="${S.range === n}" tabindex="-1"><span class="usage-pop__check" aria-hidden="true">&#10003;</span>Last ${n} days</button>`).join('')}</div>` : ''}`
+}
+
+// ---------- Render ----------
+const win = document.getElementById('win')
+let focusNext = null
+function restoreFocus(key) {
+  if (!key) return
+  const el = win.querySelector(`[data-k="${CSS.escape(key)}"]`)
+  if (el && document.activeElement !== el) el.focus({ preventScroll: true })
+}
+function renderAll() {
+  const key = focusNext ?? document.activeElement?.dataset?.k
+  focusNext = null
+  const scroll = win.querySelector('.usage-scroll')?.scrollTop ?? 0
+  win.dataset.theme = S.theme
+  if (S.reduced) win.dataset.reducedMotion = ''; else delete win.dataset.reducedMotion
+  if (S.size === 'fit') { delete win.dataset.size; win.style.width = win.style.height = '' }
+  else { const [w, h] = S.size.split('x'); win.dataset.size = S.size; win.style.width = `${w}px`; win.style.height = `${h}px` }
+  win.innerHTML = windowHTML()
+  win.querySelector('.usage-scroll').scrollTop = scroll
+  if (S.menu) {
+    const button = win.querySelector('[data-act="menu"]'), pop = document.getElementById('pop'), r = button.getBoundingClientRect()
+    pop.style.top = `${r.bottom + 6}px`; pop.style.left = `${r.left}px`
+  }
+  paint(key)
+  renderChrome()
+}
+function paint(key = document.activeElement?.dataset?.k) {
+  win.querySelectorAll('[data-region]').forEach(el => { const [name, ctx] = el.dataset.region.split(':'); el.innerHTML = REGION[name](el, ctx) })
+  restoreFocus(key)
+  renderChrome()
+}
+function renderChrome() {
+  document.getElementById('pill-name').textContent = `${S.variant} — ${VARIANT_NAMES[S.variant]}`
+  const ctx = S.tab === 'models' ? (S.variant === 'B' ? 'models' : null) : (S.focus === 'prompts' || S.focus === 'tokens' ? S.focus : null)
+  const cfg = ctx ? chartCfg(ctx) : null
+  const sel = selected()
+  const drawn = !cfg ? '—' : cfg.split === 'total' ? cfg.series.map(s => s.name).join(', ') : cfg.series.map(s => `${s.name} (${s.color.replace('var(--usage-', '').replace(')', '')})`).join(', ')
+  const b = (group, v, label, on) => `<button type="button" data-${group}="${v}" aria-pressed="${on}">${label}</button>`
+  document.getElementById('debug-body').innerHTML = `<dl>
+      <dt>variant</dt><dd>${S.variant} — ${VARIANT_NAMES[S.variant]}</dd>
+      <dt>view</dt><dd>${S.tab}${S.tab === 'overview' ? ` / ${S.focus}` : ''}</dd>
+      <dt>metric</dt><dd>${cfg ? cfg.metric : '—'}</dd>
+      <dt>chart kind</dt><dd>${cfg ? `${cfg.kind}${cfg.stacked && cfg.split !== 'total' ? ' (stacked)' : ''}` : '—'}</dd>
+      <dt>split</dt><dd>${cfg ? cfg.split : '—'}${S.variant === 'A' ? ` · By model ${S.aOn ? 'on' : 'off'}` : ''}${S.variant === 'C' ? ` · Show ${S.cShow}` : ''}</dd>
+      <dt>drawn</dt><dd>${drawn}</dd>
+      <dt>day</dt><dd>${sel === null ? 'whole range' : `${days()[sel]} (${S.pin !== null && S.hover === null ? 'pinned' : 'pointing'})`}</dd>
+      <dt>range</dt><dd>${rangeLabel()}</dd>
+      <dt>not offered</dt><dd>${notOffered().map(m => m.id).join(', ') || 'none'} (no activity in range)</dd>
+    </dl>
+    <div>Theme</div><div class="row">${b('theme', 'dark', 'Dark', S.theme === 'dark')}${b('theme', 'light', 'Light', S.theme === 'light')}</div>
+    <div>Window</div><div class="row">${[['fit', 'Fit'], ['1600x1000', '1600×1000'], ['1280x800', '1280×800'], ['820x560', '820×560']].map(([v, l]) => b('size', v, l, S.size === v)).join('')}</div>
+    <label><input type="checkbox" id="reduced" ${S.reduced ? 'checked' : ''}> Reduced motion</label>`
+  const p = new URLSearchParams(location.search); p.set('variant', S.variant); history.replaceState(null, '', `?${p}`)
+}
+function announce(text) { const live = document.getElementById('live'); live.textContent = ''; requestAnimationFrame(() => { live.textContent = text }) }
+function resetDay() { S.hover = null; S.pin = null }
+
+// ---------- Actions ----------
+function act(name, el) {
+  const v = el.dataset.v, id = el.dataset.id
+  S.note = null
+  switch (name) {
+    case 'tab': S.tab = v; resetDay(); break
+    case 'focus': S.focus = v; resetDay(); break
+    case 'kind': S.kind = v; break
+    case 'cShow': S.cShow = v; break
+    case 'bMetric': S.bMetric = v; break
+    case 'sort': S.sort = v; break
+    case 'aOn': S.aOn = !S.aOn; break
+    case 'aReset': S.a = makePool(5); focusNext = 'aOn'; break
+    case 'chip': if (S.a.sel.includes(id)) poolOff(S.a, id); else if (!poolOn(S.a, id)) S.note = `Up to ${MAX_LINES} models at once. Turn one off first.`; break
+    case 'row': S.opened = S.opened === id ? null : id; break
+    case 'menu': S.menu = !S.menu; if (S.menu) { renderAll(); document.querySelector('#pop [aria-checked="true"]')?.focus(); return } break
+    case 'range': S.range = Number(v); S.menu = false; prune(S.a); prune(S.b); resetDay(); focusNext = 'menu'; break
+    default: return
+  }
+  renderAll()
+}
+win.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]')
+  if (el && el.dataset.act !== 'check') { act(el.dataset.act, el); return }
+  const plot = e.target.closest('[data-plot]')
+  if (plot) { S.pin = S.hover === null || S.pin === S.hover ? null : S.hover; S.hover = null; paint(); return }
+  if (S.menu && !e.target.closest('#pop')) { S.menu = false; renderAll() }
+})
+win.addEventListener('change', e => {
+  const el = e.target
+  if (el.dataset.act !== 'check') return
+  S.note = null
+  if (el.checked) { if (!poolOn(S.b, el.dataset.id)) S.note = `Up to ${MAX_LINES} models at once. Uncheck one first.` } else poolOff(S.b, el.dataset.id)
+  renderAll()
+})
+win.addEventListener('pointermove', e => {
+  const plot = e.target.closest?.('[data-plot]')
+  if (!plot) return
+  const r = plot.getBoundingClientRect(), n = days().length
+  const index = Math.max(0, Math.min(n - 1, Math.floor((e.clientX - r.left) / r.width * n)))
+  if (index !== S.hover) { S.hover = index; paint() }
+})
+win.addEventListener('pointerout', e => {
+  const plot = e.target.closest?.('[data-plot]')
+  if (plot && !plot.contains(e.relatedTarget) && S.hover !== null) { S.hover = null; paint() }
+})
+
+function chartKey(e, ctx) {
+  const n = days().length, last = n - 1
+  let current = S.pin ?? S.hover
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') current = current === null ? last : Math.max(0, Math.min(last, current + (e.key === 'ArrowRight' ? 1 : -1)))
+  else if (e.key === 'Home') current = 0
+  else if (e.key === 'End') current = last
+  else if (e.key === 'Escape' && S.pin !== null) current = null
+  else return false
+  e.preventDefault(); e.stopPropagation(); S.hover = null; S.pin = current; paint()
+  const cfg = chartCfg(ctx)
+  if (current === null) { announce('Whole range'); return true }
+  const unit = cfg.metric === 'prompts' ? 'prompts' : 'tokens'
+  const all = (cfg.metric === 'prompts' ? totalsBy('prompts') : totalsBy('tokens'))[current]
+  const parts = cfg.split === 'total' ? '' : `. ${cfg.series.map(s => `${s.name} ${fmt(cfg.metric, s.values[current])}`).join(', ')}`
+  announce(`${longDay(days()[current])}: ${fmt(cfg.metric, ctx === 'models' ? sum(cfg.series.map(s => s.values[current])) : all)} ${unit}${parts}`)
+  return true
+}
+function roving(e, list) {
+  const items = [...list.querySelectorAll('[role="tab"],[role="radio"]')], i = items.indexOf(e.target)
+  if (i < 0) return false
+  const t = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? Math.max(0, i - 1) : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : null
+  if (t === null) return false
+  e.preventDefault(); focusNext = items[t].dataset.k; act(items[t].dataset.act, items[t]); return true
+}
+document.addEventListener('keydown', e => {
+  const t = e.target
+  if (S.menu && t.closest?.('#pop, [data-act="menu"]')) {
+    const items = [...document.querySelectorAll('#pop [role="menuitemradio"]')], i = items.indexOf(t)
+    if (e.key === 'Escape' || e.key === 'Tab') { if (e.key === 'Escape') e.preventDefault(); S.menu = false; focusNext = 'menu'; renderAll(); return }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1) + (i < 0 ? 1 : 0)) % items.length]?.focus(); return }
+    if (i >= 0 && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); act('range', t); return }
+  }
+  const plot = t.closest?.('[data-plot]')
+  if (plot && chartKey(e, plot.dataset.plot)) return
+  const list = t.closest?.('[role="tablist"], [role="radiogroup"]')
+  if (list && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) && roving(e, list)) return
+  if (e.key === 'Escape' && t.closest?.('#debug')) { const d = document.getElementById('debug'); d.open = false; d.querySelector('summary').focus(); return }
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.defaultPrevented && !/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) && !t.isContentEditable && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault(); cycle(e.key === 'ArrowRight' ? 1 : -1)
+  }
+})
+function cycle(step) {
+  S.variant = VARIANTS[(VARIANTS.indexOf(S.variant) + step + VARIANTS.length) % VARIANTS.length]
+  S.note = null; resetDay(); renderAll()
+}
+document.getElementById('prev').addEventListener('click', () => cycle(-1))
+document.getElementById('next').addEventListener('click', () => cycle(1))
+document.getElementById('debug-body').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.theme) S.theme = b.dataset.theme
+  if (b.dataset.size) S.size = b.dataset.size
+  renderAll()
+})
+document.getElementById('debug-body').addEventListener('change', e => { if (e.target.id === 'reduced') { S.reduced = e.target.checked; renderAll() } })
+let frame = 0
+new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => paint()) }).observe(win)
+// Open where there is room beside the chart; collapsed on a narrow window, where it would cover the plot.
+document.getElementById('debug').open = false
+renderAll()
+</script>
+</body>
+</html>
