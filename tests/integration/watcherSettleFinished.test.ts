@@ -179,8 +179,15 @@ it('leaves a finished thread alone while a thread it delegated to still works, a
   await f.endTurn(child.threadId)
   await new Promise(resolve => setTimeout(resolve, 300))
   expect(f.settled(parent.threadId)).toBe(false)
-  // Once it merges, the parent, with nothing new for Watcher to hear, is settled.
+  // It merges, but work is still queued for the delegated thread, which would be settled with its parent: still not done.
+  const pending = vi.spyOn(f.control, 'hasPendingThreadWork')
+  pending.mockImplementation(threadId => threadId === child.threadId)
   links.linkPullRequestRecord(child.threadId, { ...pullRequest, state: 'merged' }, 'agent')
+  await f.emit()
+  await new Promise(resolve => setTimeout(resolve, 300))
+  expect(f.settled(parent.threadId)).toBe(false)
+  // Once that work has gone, the parent, with nothing new for Watcher to hear, is settled.
+  pending.mockRestore()
   await f.emit()
   await vi.waitFor(() => expect(f.settled(parent.threadId)).toBe(true), { timeout: 15_000 })
   expect(f.watching(parent.threadId)).toBe(false)

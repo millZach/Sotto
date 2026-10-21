@@ -536,10 +536,12 @@ export class WatcherService implements WatcherControlHooks {
       && !item.pullRequests?.some(pr => pr.state === 'open') && item.worktree?.git?.pullRequest?.state !== 'open'
     if (!done(thread) || !this.connected(thread) || this.protectedThread(thread) || isThreadClosed(thread)
       || isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return undefined
-    if (local && this.options.control.hasPendingThreadWork(thread.id)) return undefined
-    if (look.busy.has(key(target)) || look.takenOver.has(key(target))) return undefined
+    // Nothing on its way to it: queued here, or a Watcher start or send, and the user has not taken it over.
+    const clear = (id: string) => !(local && this.options.control.hasPendingThreadWork(id)) && !look.busy.has(key({ hostId: target.hostId, threadId: id }))
+      && !look.takenOver.has(key({ hostId: target.hostId, threadId: id }))
+    if (!clear(thread.id)) return undefined
     // Work it delegated (ADR-0081) is its work too, and settles with it.
-    if (host.delegators.has(thread.id) && delegatedThreadsBelow(snapshot.threads, thread.id).some(id => { const item = host.threads.get(id); return item !== undefined && !done(item) })) return undefined
+    if (host.delegators.has(thread.id) && delegatedThreadsBelow(snapshot.threads, thread.id).some(id => { const item = host.threads.get(id); return item !== undefined && (!done(item) || !clear(id)) })) return undefined
     return letGo || this.wakes.heardAllOf(target, turn.id) ? turn.id : undefined
   }
   /**
