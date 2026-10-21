@@ -510,6 +510,15 @@ Auto-settle merged threads, under Git, is unchanged and separate (Zach's pick: t
 
 The toggle sits first in Settings → Watcher, under a **Watched threads** heading, above **Worker roles** under a heading of its own; the section now shows whenever Watcher is on, with worker roles still behind their own Owl answer. Zach picked this, variant A of three, on October 20, 2026; the prototype is the tag `prototype/watcher-settle-toggle`.
 
+## October 20, 2026: a settled thread needs you only for a request
+
+A thread the user settled, or whose project they settled, sat under Needs you when its provider reported an error or its
+last turn failed, though the user had put that work aside and nothing there waited on them. A settled thread is now in
+Needs you only while a question or permission waits on its card. An error or a failed turn leaves it under Idle, folded
+with the other settled threads, and the line under Watcher's header (3A) does not name it. `list_threads` reads the same
+groups, so it lists such a thread under Idle and leaves it out of the Needs you count; its row still carries the
+thread's status. An unsettled thread's error or failed turn is in Needs you as before.
+
 ## October 21, 2026: held news goes, and says so once (#1263)
 
 On the night of October 20, Watcher heard nothing for 7.5 hours while a thread it watched waited on a delegation that never came back (#1261). Two things made that cost hours instead of minutes, and a third buried what did come.
