@@ -239,6 +239,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
+    // Offered with client updates: the coordinator's check keeps what an update already run said (ADR-0077).
+    && (feature !== 'client-update-outcomes' || options.clientUpdates === true)
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
     && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))

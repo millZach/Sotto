@@ -1225,6 +1225,11 @@ export class SocketHostService implements HostService {
   /** Whether the host shows its client updates to this client and runs them for it (#480). */
   offersClientUpdates(): boolean { return this.features.includes('client-updates') }
   /**
+   * Whether the host's `check-client-updates` keeps what an update already run said: it lists `client-update-outcomes`
+   * (ADR-0077, October 21 amendment). An older host does not, and may set it aside.
+   */
+  keepsClientOutcomes(): boolean { return this.features.includes('client-update-outcomes') }
+  /**
    * A provider's own sign-in on the host (ADR-0037). The answer carries the page's address and the code while it waits;
    * the caller hands the window neither the address nor anything to keep. A host that does not list `provider-sign-in`
    * is from before it; the version sentence says which side to bring up to date, and nothing is sent.
