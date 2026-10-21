@@ -10,6 +10,7 @@ import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '.
 import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
+import { delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
@@ -507,6 +508,11 @@ export class WatcherService implements WatcherControlHooks {
     if (local && this.options.control.hasPendingThreadWork(thread.id)) return undefined
     if (record.operations.some(operation => sameTarget(operation.target, target) && ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))) return undefined
     if (record.requests.some(request => request.state === 'active' && request.participants.some(item => sameTarget(item.target, target) && item.state === 'taken-over'))) return undefined
+    // Work it delegated (ADR-0081) is its work too: a thread it handed work to that still runs or asks keeps it open.
+    if (snapshot.threads.some(item => item.delegatedBy === thread.id)) {
+      const below = new Set(delegatedThreadsBelow(snapshot.threads, thread.id))
+      if (snapshot.threads.some(item => below.has(item.id) && (item.requests.length || isWatcherWorkActive(item)))) return undefined
+    }
     return this.wakes.heardAllOf(target, turn.id) ? turn.id : undefined
   }
   /**

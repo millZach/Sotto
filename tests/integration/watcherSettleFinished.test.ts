@@ -152,3 +152,22 @@ it('tries a refused settle once, and again only after the thread finishes anothe
   expect(settle).toHaveBeenCalledTimes(2)
   expect(f.watching(target.threadId)).toBe(false)
 })
+
+it('leaves a finished thread alone while a thread it delegated to still works, and settles it once that work ends', async () => {
+  const f = await fixture(), parent = await f.watched(), child = await f.watched()
+  // The workspace keeps which thread delegated to which (ADR-0081); here the second thread is marked as the first's.
+  const kept = f.workspace.host as unknown as { state: { snapshot: { threads: AgentThread[] } } }
+  kept.state.snapshot.threads.find(thread => thread.id === child.threadId)!.delegatedBy = parent.threadId
+  expect(await f.service.unwatchThread({ target: child }, undefined, 'watcher')).toMatchObject({ status: 'ok' })
+  await f.endTurn(parent.threadId)
+  await vi.waitFor(() => expect(f.thread(child.threadId).delegatedBy).toBe(parent.threadId))
+  await f.watcherHears()
+  await new Promise(resolve => setTimeout(resolve, 300))
+  expect(f.thread(child.threadId).status).toBe('running')
+  expect(f.settled(parent.threadId)).toBe(false)
+  expect(f.watching(parent.threadId)).toBe(true)
+  // The delegated thread finishes, and the parent, with nothing new for Watcher to hear, is settled.
+  await f.endTurn(child.threadId)
+  await vi.waitFor(() => expect(f.settled(parent.threadId)).toBe(true), { timeout: 15_000 })
+  expect(f.watching(parent.threadId)).toBe(false)
+})
