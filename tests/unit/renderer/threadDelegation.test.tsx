@@ -10,8 +10,9 @@ import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
 import { delegatedNote, delegationDuration, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
-import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
+import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
@@ -55,6 +56,7 @@ function bridge(views: Record<string, DelegationView[]>, received: Record<string
   const fake: DelegationsBridge & { readonly reads: string[] } = {
     reads: [],
     read: vi.fn(async ({ threadId }: { threadId: string }) => { fake.reads.push(threadId); return { threadId, delegations: views[threadId] ?? [], received: received[threadId] ?? [] } }),
+    brief: vi.fn(async () => null),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   return { fake, views, change: (threadIds: string[]) => { for (const listener of [...listeners]) listener({ threadIds }) }, listening: () => listeners.size }
@@ -63,7 +65,8 @@ function bridge(views: Record<string, DelegationView[]>, received: Record<string
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView now={NOW} />)
+  // A layout of its own, so a split one test opens is not the next test's.
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} />)
   return live
 }
 const openFolder = (name: RegExp): void => {
@@ -109,7 +112,8 @@ describe('delegation words', () => {
     expect(delegationRefusalLine({ action: 'start', refusal: 'PERMISSION_TOO_WIDE' })).toBe('It asked for more permission than this thread has, or than your new-thread default allows. '
       + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
     expect(delegationRefusalLine({ action: 'start', refusal: 'LEVEL_LIMIT' })).toBe('This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.')
-    expect(delegationRefusalLine({ action: 'start', refusal: 'IN_FLIGHT_LIMIT' })).toMatch(/Threads in flight allows, delegated and Watcher's together\. Nothing was started\. It can ask again once one finishes\.$/u)
+    // Only a refusal recorded before #1183 has it: Sotto no longer limits how many threads start.
+    expect(delegationRefusalLine({ action: 'start', refusal: 'IN_FLIGHT_LIMIT' })).toBe('This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. Nothing was started.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PAUSED' })).toBe('You were working in that thread, so it takes no brief until your turn there ends. Nothing was sent.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROMPT_LIMIT' })).toBe('That thread already had 4 briefs from this thread in this turn. Your next message to this thread renews the limit. Nothing was sent.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^That thread's provider or model was not available/u)
@@ -155,40 +159,148 @@ describe('delegation words', () => {
 })
 
 describe('delegated threads in the sidebar', () => {
-  it('lists each under the thread that delegated to it, two levels deep, only while delegation is on', () => {
+  const folderOf = (state: AgentState, query = '', delegation = true) => organizeWorkspace(state, describeThreads(state, NOW), query, null, delegation)
+  const ids = (state: AgentState, query = '', delegation = true): string[] => [...folderOf(state, query, delegation).open, ...folderOf(state, query, delegation).settled].flatMap(folder => folder.rows.map(row => row.thread.id))
+
+  it('lists no row for a delegated thread at either level while delegation is on, and each as any thread while it is off', () => {
     const state = delegatingState()
-    const nested = organizeWorkspace(state, describeThreads(state, NOW), '', null, true).open.find(folder => folder.id === 'workshop')!
-    const order = nested.rows.map(row => row.thread.id)
-    expect(order.slice(order.indexOf(PARENT), order.indexOf(PARENT) + 3)).toEqual([PARENT, CHILD, GRANDCHILD])
-    expect(nested.delegation?.get(CHILD)).toEqual({ level: 1, parent: 'Visual gate flake' })
-    expect(nested.delegation?.get(GRANDCHILD)).toEqual({ level: 2, parent: 'Review the gate fix' })
-    expect(nested.delegation?.has(PARENT)).toBe(false)
-    const flat = organizeWorkspace(state, describeThreads(state, NOW), '', null, false).open.find(folder => folder.id === 'workshop')!
-    expect(flat.delegation).toBeUndefined()
-    // A delegated thread whose delegating thread is not listed, as when a search leaves it out, stands on its own. (The
-    // search keeps Visual gate flake, which waits on the user, without the review it delegated.)
-    const searched = organizeWorkspace(state, describeThreads(state, NOW), 'Check the capture', null, true).open.find(folder => folder.id === 'workshop')!
-    expect(searched.rows.map(row => row.thread.id)).toEqual([PARENT, GRANDCHILD])
-    expect(searched.delegation).toBeUndefined()
+    expect(ids(state)).toContain(PARENT)
+    expect(ids(state)).not.toContain(CHILD)
+    expect(ids(state)).not.toContain(GRANDCHILD)
+    // Each is reached from the top of its delegation, the row the sidebar marks while it is in the pane.
+    expect(folderOf(state).listedAs).toEqual(new Map([[CHILD, PARENT], [GRANDCHILD, PARENT]]))
+    // With the Owl switch off nothing changes: they list as ordinary rows, in activity order, with no nesting.
+    expect(ids(state, '', false)).toEqual(expect.arrayContaining([PARENT, CHILD, GRANDCHILD]))
+    expect(folderOf(state, '', false).listedAs).toBeUndefined()
   })
 
-  it('indents them with their machine badge and says who delegated them; stable lists them as any other thread', () => {
+  it('keeps a delegated thread whose delegating thread is gone, and hides the one it delegated in turn', () => {
+    const state = delegatingState()
+    state.host.threads = state.host.threads.filter(thread => thread.id !== PARENT)
+    expect(ids(state)).toContain(CHILD)
+    expect(ids(state)).not.toContain(GRANDCHILD)
+    expect(folderOf(state).listedAs).toEqual(new Map([[GRANDCHILD, CHILD]]))
+    // A loop of links is no delegation: both threads stay reachable.
+    const looped = delegatingState()
+    looped.host.threads.find(thread => thread.id === PARENT)!.delegatedBy = GRANDCHILD
+    expect(ids(looped)).toEqual(expect.arrayContaining([PARENT, CHILD, GRANDCHILD]))
+  })
+
+  it('lists an open delegated thread on its own in Open when the thread above it is settled, at either level', () => {
+    const state = delegatingState()
+    const thread = (id: string): AgentThread => state.host.threads.find(item => item.id === id)!
+    const open = (given: AgentState): string[] => folderOf(given).open.flatMap(folder => folder.rows.map(row => row.thread.id))
+    // The top is settled while the review it delegated still works: the review stands in Open, the check it
+    // delegated in turn under it.
+    thread(PARENT).workspaceSettledAt = at(1)
+    thread(CHILD).requests = [{ id: 'review-permission', kind: 'permission', text: 'Run gh pr merge', options: [] }]
+    expect(open(state)).toContain(CHILD)
+    expect(open(state)).not.toContain(GRANDCHILD)
+    expect(folderOf(state).listedAs).toEqual(new Map([[GRANDCHILD, CHILD]]))
+    expect(folderOf(state).open.flatMap(folder => folder.rows).find(row => row.thread.id === CHILD)).toMatchObject({ waitingFor: 'approval', stateLabel: 'Needs your approval' })
+    // The first level is settled and the second is open: the second stands alone; the settled one stays with its top.
+    const second = delegatingState()
+    second.host.threads.find(item => item.id === CHILD)!.workspaceSettledAt = at(1)
+    expect(open(second)).toContain(GRANDCHILD)
+    expect(folderOf(second).listedAs).toEqual(new Map([[CHILD, PARENT]]))
+    // With the top open, nothing changes: both stay hidden under it.
+    expect(open(delegatingState())).not.toContain(CHILD)
+  })
+
+  it('keeps delegated threads settled with their thread out of Open, and says on its Settled row when one waits', () => {
+    const state = delegatingState()
+    // What main records when the user settles Visual gate flake: its delegated threads settle with it, under its timestamp.
+    for (const thread of state.host.threads) if ([PARENT, CHILD, GRANDCHILD].includes(thread.id)) thread.workspaceSettledAt = at(1)
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.requests = []; parent.status = 'idle'
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = [{ id: 'review-permission', kind: 'permission', text: 'Run gh pr merge', options: [] }]
+    const organized = folderOf(state)
+    const open = organized.open.flatMap(folder => folder.rows.map(row => row.thread.id))
+    for (const id of [PARENT, CHILD, GRANDCHILD]) expect(open).not.toContain(id)
+    expect(ids(state)).not.toContain(CHILD)
+    expect(ids(state)).not.toContain(GRANDCHILD)
+    expect(organized.listedAs).toEqual(new Map([[CHILD, PARENT], [GRANDCHILD, PARENT]]))
+    const shelf = organized.settled.find(folder => folder.id === 'workshop')!
+    expect(shelf.rows.find(row => row.thread.id === PARENT)).toMatchObject({ waitingFor: 'approval', stateLabel: 'Needs your approval', waitingIn: 'Review the gate fix' })
+    expect(shelf.needs).toBeGreaterThan(0)
+  })
+
+  it('rolls a delegated thread\'s error up onto the delegating row in its own words, below a waiting request', () => {
+    const state = delegatingState()
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.requests = []
+    parent.status = 'idle'
+    const row = (): ThreadRow => folderOf(state).open.flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!
+    state.host.threads.find(thread => thread.id === GRANDCHILD)!.status = 'error'
+    expect(row()).toMatchObject({ state: 'needs', waitingFor: null, stateLabel: 'Needs attention', attention: true, waitingIn: 'Check the capture' })
+    // A question below outranks an error below.
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = [{ id: 'review-question', kind: 'question', text: 'Which theme?', options: [] }]
+    expect(row()).toMatchObject({ waitingFor: 'question', stateLabel: 'Needs your answer', waitingIn: 'Review the gate fix' })
+    // The thread's own error outranks an error below.
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = []
+    parent.status = 'error'
+    expect(row()).toMatchObject({ stateLabel: 'Needs attention' })
+    expect(row().waitingIn).toBeUndefined()
+  })
+
+  it('finds no delegated thread by search', () => {
+    const state = delegatingState()
+    expect(folderOf(state, 'Check the capture').matching).toBe(0)
+    expect(ids(state, 'Check the capture')).not.toContain(GRANDCHILD)
+    expect(ids(state, 'Check the capture', false)).toContain(GRANDCHILD)
+  })
+
+  it('says Needs your approval or Needs your answer on the delegating row when a thread below it waits, its own waiting first', () => {
+    const state = delegatingState()
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.requests = []
+    parent.status = 'idle'
+    const thread = (id: string): AgentThread => state.host.threads.find(item => item.id === id)!
+    const row = (): ThreadRow => folderOf(state).open.flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!
+    expect(row()).toMatchObject({ state: 'done', waitingFor: null })
+    thread(GRANDCHILD).requests = [{ id: 'check-question', kind: 'question', text: 'Which theme?', options: [] }]
+    expect(row()).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer', attention: true, waitingIn: 'Check the capture' })
+    // A permission below outranks a question below.
+    thread(CHILD).requests = [{ id: 'review-permission', kind: 'permission', text: 'Run gh pr merge', options: [] }]
+    expect(row()).toMatchObject({ waitingFor: 'approval', stateLabel: 'Needs your approval', waitingIn: 'Review the gate fix' })
+    // The thread's own waiting wins.
+    parent.requests = [{ id: 'own-question', kind: 'question', text: 'Ship it?', options: [] }]
+    expect(row()).toMatchObject({ waitingFor: 'question', stateLabel: 'Needs your answer' })
+    expect(row().waitingIn).toBeUndefined()
+    // The panes keep the thread's own row: the roll-up is the sidebar's.
+    expect(describeThreads(state, NOW).find(item => item.thread.id === PARENT)!.waitingIn).toBeUndefined()
+  })
+
+  it('shows the delegating row only, marks it current while a delegated thread is in the pane, and says what waits below it', () => {
     owl(true)
     vi.stubGlobal('sotto', { delegations: bridge({}).fake })
-    mount(delegatingState())
+    const state = delegatingState()
+    state.activeThreadId = GRANDCHILD
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.requests = []
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = [{ id: 'review-permission', kind: 'permission', text: 'Run gh pr merge', options: [] }]
+    mount(state)
     openFolder(/^workshop \d+ threads?$/u)
-    const row = screen.getByRole('button', { name: 'Review the gate fix' }).closest('li')!
-    expect(row).toHaveAttribute('data-delegation-level', '1')
-    expect(row).toHaveAttribute('aria-level', '2')
-    expect(within(row).getByText('This computer')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Review the gate fix' })).toHaveAccessibleDescription(/Delegated by Visual gate flake, on This computer/u)
-    expect(screen.getByRole('button', { name: 'Check the capture' }).closest('li')).toHaveAttribute('data-delegation-level', '2')
+    const nav = screen.getByRole('complementary', { name: 'Thread sidebar' })
+    expect(within(nav).queryByRole('button', { name: 'Review the gate fix' })).toBeNull()
+    expect(within(nav).queryByRole('button', { name: 'Check the capture' })).toBeNull()
+    const row = within(nav).getByRole('button', { name: 'Visual gate flake' })
+    expect(row).toHaveAttribute('aria-current', 'page')
+    expect(row).toHaveAccessibleDescription(/Needs your approval.*Waiting in Review the gate fix/u)
+    expect(document.querySelector('[data-delegation-level]')).toBeNull()
+    // The mark is all that moves: the delegating row still opens beside the delegated thread in the pane, by its button,
+    // by Ctrl+Enter and by Ctrl+click, rather than replacing it.
+    expect(row).toHaveAttribute('aria-keyshortcuts', 'Control+Enter')
+    expect(within(nav).getByRole('button', { name: 'Open Visual gate flake beside' })).toBeInTheDocument()
+    fireEvent.click(row, { ctrlKey: true })
+    const panes = (): string[] => [...document.querySelectorAll('section.thread-pane[data-thread-id]')].map(pane => pane.getAttribute('data-thread-id')!)
+    expect(panes()).toEqual(expect.arrayContaining([GRANDCHILD, PARENT]))
     cleanup()
     owl(false)
     mount(delegatingState())
     openFolder(/^workshop \d+ threads?$/u)
-    expect(document.querySelector('[data-delegation-level]')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Review the gate fix' })).not.toHaveAccessibleDescription(/Delegated by/u)
+    expect(screen.getByRole('button', { name: 'Review the gate fix' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check the capture' })).toBeInTheDocument()
   })
 })
 
@@ -351,7 +463,7 @@ describe('the delegating and the delegated thread\'s panes', () => {
     vi.stubGlobal('sotto', { delegations: reads.fake })
     mount(stateWith(PARENT))
     expect(screen.getByRole('button', { name: 'Stop agent' })).toBeInTheDocument()
-    expect(document.querySelector('.delegation-card, .delegated-by, .delegation-note, [data-delegation-level]')).toBeNull()
+    expect(document.querySelector('.delegation-card, .delegated-by, .delegation-note')).toBeNull()
     expect(reads.fake.reads).toEqual([])
     expect(reads.listening()).toBe(0)
   })

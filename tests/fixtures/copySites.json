@@ -4,7 +4,8 @@
   },
   "src/main/agents/activitySnapshots.ts": {
     "cloneHostSnapshot(": 1,
-    "cloneActivitySnapshot(": 2
+    "cloneActivitySnapshot(": 2,
+    "copyUnshared(": 1
   },
   "src/main/agents/claude.ts": {
     "structuredClone(": 3,
@@ -21,7 +22,7 @@
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 21,
-    "shell()": 39,
+    "shell()": 38,
     "watcherRecord()": 2,
     "clonePlainData(": 3
   },
@@ -61,8 +62,9 @@
     "structuredClone(": 1
   },
   "src/main/agents/providerSwitch.ts": {
-    "structuredClone(": 3,
+    "structuredClone(": 2,
     "cloneHostSnapshot(": 5,
+    "clonePlainData(": 1,
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/questionPages.ts": {
@@ -100,7 +102,7 @@
     "clonePlainData(": 1
   },
   "src/main/agents/watcherRoomDesktop.ts": {
-    "structuredClone(": 1
+    "clonePlainData(": 1
   },
   "src/main/agents/workspace.ts": {
     "structuredClone(": 6,
@@ -111,7 +113,8 @@
     "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
-    "shell()": 35
+    "structuredClone(": 1,
+    "shell()": 29
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,

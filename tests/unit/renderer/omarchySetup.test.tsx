@@ -245,7 +245,7 @@ describe('Omarchy setup rows', () => {
   })
 })
 
-const props: OnboardingProps = { settings: DEFAULT_SETTINGS, speechModel: null, onDownloadSpeechModel: vi.fn(),
+const props: OnboardingProps = { settings: DEFAULT_SETTINGS, speechModels: [], speechModelChoice: null, speechModel: null, onChooseSpeechModel: vi.fn(), onRetrySpeechModel: vi.fn(),
   microphoneState: 'ready', shortcut: 'Ctrl+Shift+Space', platform: 'linux', onUpdateSettings: vi.fn(async () => true),
   onRequestMicrophone: vi.fn(), onComplete: vi.fn() }
 describe('Linux first-run step', () => {

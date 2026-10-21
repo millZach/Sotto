@@ -7,14 +7,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import { PARAKEET_ULTRA, PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModelOption, speechModelBytes, type SpeechModelOption } from '../../../src/shared/speechModel'
+
+const V3_BYTES = speechModelBytes(PARAKEET_V3)
+const DOWNLOADS = SOTTO_SPEECH_MODELS.map(model => sottoSpeechModelOption(model, false))
+
+const SOTTO_OPTION: SpeechModelOption = { id: PARAKEET_V3.id, name: 'Parakeet v3', maker: 'NVIDIA', languages: '25 European languages', source: 'sotto', installed: false, bytes: V3_BYTES }
+const ULTRA_OPTION: SpeechModelOption = { id: 'fluidaudio:parakeet-ultra', name: 'Parakeet Ultra', maker: 'Moondream', languages: '25 European languages', source: 'fluidaudio', installed: true, bytes: 1_000 }
+const V2_OPTION: SpeechModelOption = { id: 'fluidaudio:parakeet-tdt-0.6b-v2', name: 'Parakeet v2', maker: 'NVIDIA', languages: 'English only', source: 'fluidaudio', installed: true, bytes: 1_000 }
 
 afterEach(cleanup)
 
 const onboardingProps = {
   settings: DEFAULT_SETTINGS,
   onUpdateSettings: vi.fn(async () => true),
+  speechModels: [SOTTO_OPTION],
+  speechModelChoice: PARAKEET_V3.id as string | null,
   speechModel: { state: 'ready' as const },
-  onDownloadSpeechModel: vi.fn(),
+  onChooseSpeechModel: vi.fn(),
+  onRetrySpeechModel: vi.fn(),
 }
 
 /** Steps forward from wherever setup starts to the 1-indexed step named, clicking whichever forward
@@ -25,6 +36,15 @@ async function goToStep(user: ReturnType<typeof userEvent.setup>, step: number):
       ? screen.getByRole('button', { name: 'Get started' })
       : screen.getByRole('button', { name: /^(continue|skip for now)$/i })
     await user.click(button)
+  }
+}
+
+/** Steps forward until the step headed `name` is on screen, whatever steps this platform has before it. */
+async function goToHeading(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+  for (let step = 0; screen.queryByRole('heading', { name }) === null; step += 1) {
+    if (step > 12) throw new Error(`no step headed ${name}`)
+    const start = screen.queryByRole('button', { name: 'Get started' })
+    await user.click(start ?? screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
   }
 }
 
@@ -50,7 +70,7 @@ describe('first-run onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(screen.getByRole('heading', { name: 'Check your microphone' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
-    expect(screen.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
     await advanceToFinish(user)
     await user.click(screen.getByRole('button', { name: 'Finish setup' }))
     expect(complete).toHaveBeenCalledWith({ microphoneSkipped: true })
@@ -79,7 +99,7 @@ describe('first-run onboarding', () => {
       />,
     )
 
-    expect(screen.getByText(/Transcribed on this computer by Parakeet v3/i)).toBeVisible()
+    expect(screen.getByText(/Transcribed on this computer by the speech model you choose/i)).toBeVisible()
     expect(screen.getByText(/Your audio never leaves this computer/i)).toBeVisible()
     expect(screen.getByText(/no Sotto account/i)).toBeVisible()
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
@@ -433,16 +453,20 @@ describe('first-run onboarding', () => {
     )
   })
 
-  it('offers the speech-model step, starts its download when missing, and can finish without waiting', async () => {
+  it('offers the speech-model step without downloading anything, and can finish without choosing', async () => {
     const user = userEvent.setup()
     const complete = vi.fn()
-    const onDownloadSpeechModel = vi.fn()
-    render(<Onboarding {...onboardingProps} speechModel={{ state: 'missing' }} onDownloadSpeechModel={onDownloadSpeechModel}
+    const onChooseSpeechModel = vi.fn()
+    const onRetrySpeechModel = vi.fn()
+    render(<Onboarding {...onboardingProps} speechModelChoice={null} speechModel={{ state: 'missing' }}
+      onChooseSpeechModel={onChooseSpeechModel} onRetrySpeechModel={onRetrySpeechModel}
       microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={complete} />)
     await goToStep(user, 4)
-    expect(screen.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
-    expect(onDownloadSpeechModel).toHaveBeenCalled()
-    // Nothing has downloaded yet, so the step is not done: the forward button offers to skip, not continue.
+    expect(screen.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+    expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    expect(onRetrySpeechModel).not.toHaveBeenCalled()
+    expect(screen.getByText(/670 MB, from GitHub/)).toBeVisible()
+    // Nothing is chosen, so the step is not done: the forward button offers to skip, not continue.
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
@@ -451,13 +475,112 @@ describe('first-run onboarding', () => {
     expect(complete).toHaveBeenCalledOnce()
   })
 
+  it('lists models already on this computer first, each with a Use button, then the download', async () => {
+    const user = userEvent.setup()
+    const onChooseSpeechModel = vi.fn()
+    render(<Onboarding {...onboardingProps} speechModels={[SOTTO_OPTION, ULTRA_OPTION, V2_OPTION]} speechModelChoice={null}
+      speechModel={{ state: 'missing' }} onChooseSpeechModel={onChooseSpeechModel}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToStep(user, 4)
+    expect(screen.getByText('Already on this computer:')).toBeVisible()
+    const choices = screen.getAllByRole('button', { name: /^(use|download) /i }).map(button => button.textContent)
+    expect(choices).toEqual(['Use Parakeet Ultra', 'Use Parakeet v2', 'Download Parakeet v3'])
+    await user.click(screen.getByRole('button', { name: 'Use Parakeet Ultra' }))
+    expect(onChooseSpeechModel).toHaveBeenLastCalledWith('fluidaudio:parakeet-ultra')
+    await user.click(screen.getByRole('button', { name: 'Download Parakeet v3' }))
+    expect(onChooseSpeechModel).toHaveBeenLastCalledWith(PARAKEET_V3.id)
+  })
+
+  it.each(['win32', 'linux'] as const)('offers Sotto\'s three models as downloads, Parakeet Ultra first as the suggestion, on %s', async (platform) => {
+    const user = userEvent.setup()
+    const onChooseSpeechModel = vi.fn()
+    render(<Onboarding {...onboardingProps} speechModels={DOWNLOADS} speechModelChoice={null} speechModel={{ state: 'missing' }}
+      onChooseSpeechModel={onChooseSpeechModel}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform={platform} onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToHeading(user, 'Choose a speech model')
+    expect(screen.queryByText('Already on this computer:')).toBeNull()
+    const choices = screen.getAllByRole('button', { name: /^(use|download) /i }).map(button => button.textContent)
+    expect(choices).toEqual(['Download Parakeet Ultra', 'Download Parakeet v3', 'Download Parakeet v2'])
+    // The suggestion is the one primary button; nothing is chosen, so nothing downloads yet.
+    expect(screen.getByRole('button', { name: 'Download Parakeet Ultra' }).className).toContain('tt-button--primary')
+    expect(screen.getByRole('button', { name: 'Download Parakeet v3' }).className).toContain('tt-button--secondary')
+    expect(screen.getByRole('button', { name: 'Download Parakeet v2' }).className).toContain('tt-button--secondary')
+    expect(screen.getByText('25 European languages. 670 MB, from GitHub.')).toBeVisible()
+    expect(screen.getByText('25 European languages. 671 MB, from GitHub.')).toBeVisible()
+    expect(screen.getByText('English only. 661 MB, from GitHub.')).toBeVisible()
+    expect(onChooseSpeechModel).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Download Parakeet Ultra' }))
+    expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
+  })
+
+  it('offers a Mac what it already has first, then downloads of the models it does not have', async () => {
+    const user = userEvent.setup()
+    const coreMlUltra = { ...ULTRA_OPTION, name: 'Parakeet Ultra (Core ML)' }
+    render(<Onboarding {...onboardingProps} speechModels={[coreMlUltra, DOWNLOADS[1]!, DOWNLOADS[2]!]} speechModelChoice={null} speechModel={{ state: 'missing' }}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="darwin" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToHeading(user, 'Choose a speech model')
+    expect(screen.getByText('Already on this computer:')).toBeVisible()
+    const choices = screen.getAllByRole('button', { name: /^(use|download) /i }).map(button => button.textContent)
+    expect(choices).toEqual(['Use Parakeet Ultra (Core ML)', 'Download Parakeet v3', 'Download Parakeet v2'])
+  })
+
+  it('keeps keyboard focus on the Use button once its model is chosen', async () => {
+    const user = userEvent.setup()
+    const onChooseSpeechModel = vi.fn()
+    const props = { ...onboardingProps, speechModels: [SOTTO_OPTION, ULTRA_OPTION], onChooseSpeechModel,
+      microphoneState: 'ready' as const, shortcut: 'Ctrl+Shift+Space', platform: 'win32' as const, onRequestMicrophone: vi.fn(), onComplete: vi.fn() }
+    const { rerender } = render(<Onboarding {...props} speechModelChoice={null} speechModel={{ state: 'missing' }} />)
+    await goToStep(user, 4)
+    const use = screen.getByRole('button', { name: 'Use Parakeet Ultra' })
+    use.focus()
+    await user.keyboard('{Enter}')
+    expect(onChooseSpeechModel).toHaveBeenCalledWith(ULTRA_OPTION.id)
+    rerender(<Onboarding {...props} speechModelChoice={ULTRA_OPTION.id} speechModel={{ state: 'loading' }} />)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Use Parakeet Ultra' }))
+    expect(document.activeElement).toHaveAttribute('aria-pressed', 'true')
+    await user.keyboard('{Enter}')
+    expect(onChooseSpeechModel).toHaveBeenCalledOnce()
+  })
+
+  it('says it is looking while the list has not arrived', async () => {
+    const user = userEvent.setup()
+    render(<Onboarding {...onboardingProps} speechModels={null} speechModelChoice={null} speechModel={null}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToStep(user, 4)
+    expect(screen.getByText('Looking for speech models on this computer…')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
+  })
+
+  it('offers Continue once an installed model is chosen and ready', async () => {
+    const user = userEvent.setup()
+    render(<Onboarding {...onboardingProps} speechModels={[SOTTO_OPTION, ULTRA_OPTION]} speechModelChoice={ULTRA_OPTION.id}
+      speechModel={{ state: 'ready' }}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToStep(user, 4)
+    expect(screen.getByRole('button', { name: 'Use Parakeet Ultra' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Download Parakeet v3' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByText(/You can continue while it downloads/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+  })
+
+  it('keeps Skip for now while the chosen model failed', async () => {
+    const user = userEvent.setup()
+    render(<Onboarding {...onboardingProps} speechModels={[SOTTO_OPTION, ULTRA_OPTION]} speechModelChoice={ULTRA_OPTION.id}
+      speechModel={{ state: 'failed', reason: 'engine', receivedBytes: 0, totalBytes: 1 }}
+      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    await goToStep(user, 4)
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+  })
+
   it('offers Continue, not Skip, once the speech model is downloading', async () => {
     const user = userEvent.setup()
     render(<Onboarding {...onboardingProps} speechModel={{ state: 'downloading', receivedBytes: 1, totalBytes: 2 }}
       microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
     await goToStep(user, 4)
-    expect(screen.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
-    expect(screen.getByText(/Downloading/)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+    expect(screen.getAllByText(/Downloading/)[0]).toBeVisible()
+    expect(screen.getByText(/You can continue while it downloads/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Skip for now' })).toBeNull()
   })

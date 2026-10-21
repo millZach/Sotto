@@ -9,7 +9,7 @@ export interface NativeDictationLifecycleDependencies {
   }
   readonly getTrayState: () => TrayState
   readonly updateTray: (state: TrayState) => void
-  readonly syncEscape: (state: Pick<WidgetSnapshot, 'status' | 'cancellable'>) => void
+  readonly syncEscape: (state: NativeWidgetState) => void
   readonly showWidgetWhenIdle: () => boolean
   /**
    * The widget's presentation from main's current settings. When given it
@@ -20,6 +20,9 @@ export interface NativeDictationLifecycleDependencies {
   readonly publishShellState?: (state: WidgetSnapshot) => void
   readonly log: (code: NativeDictationLifecycleDiagnostic) => void
 }
+
+/** What main's native side reads from a snapshot; `kept` lets a hold shortcut leave a kept recording alone. */
+export type NativeWidgetState = Pick<WidgetSnapshot, 'status' | 'cancellable'> & { readonly kept?: boolean | undefined }
 
 export type WidgetPresentationFields = Pick<WidgetSnapshot, 'theme' | 'palette' | 'reducedMotion'>
 
@@ -88,7 +91,7 @@ export class NativeDictationLifecycle {
   }
 
   private updateNativeState(
-    state: Pick<WidgetSnapshot, 'status' | 'cancellable'>,
+    state: NativeWidgetState,
   ): void {
     const currentTrayState = this.dependencies.getTrayState()
     this.dependencies.updateTray({

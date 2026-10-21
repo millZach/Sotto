@@ -73,11 +73,13 @@ function headlessHostBuild(): Plugin {
       await buildVite({
         configFile: false,
         build: {
-          ssr: resolve(__dirname, 'src/host/index.ts'), target: 'node24',
+          // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`).
+          ssr: true, target: 'node24',
           outDir: resolve(__dirname, 'out/host'), emptyOutDir: true, minify: false,
           rollupOptions: {
+            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts') },
             external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
-            output: { format: 'cjs', entryFileNames: 'index.js' },
+            output: { format: 'cjs', entryFileNames: '[name].js' },
           },
         },
       })
@@ -93,6 +95,8 @@ export default defineConfig({
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
       terminalAgentHook: resolve(__dirname, 'src/main/terminals/helper.ts'),
+      // Git and gh launch on this worker thread, not on main's, which in Electron is the window's (`gitLauncher.ts`).
+      gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production

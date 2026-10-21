@@ -45,7 +45,7 @@ import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { requestDraftOwnerState } from './agents/requestDraftOwners'
+import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from './agents/requestDraftOwners'
 import { REQUEST_DRAFT_CHANGED } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
@@ -57,6 +57,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   powerMonitor,
   protocol,
   screen,
@@ -73,7 +74,7 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
@@ -92,6 +93,11 @@ import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
+import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
+import { holdCanStart } from './hotkeys/chordMatcher'
+import { createKeyListener } from './hotkeys/keyListener'
+import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
+import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
 import { parseDictationEdge } from './hotkeys/dictationCommand'
 import { LinuxDictationShell } from './hotkeys/linuxDictationShell'
 import { ShellWidgetMonitor } from './windows/shellWidgetMonitor'
@@ -118,12 +124,15 @@ import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { loadParakeetEngine } from './asr/speechEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
+import { SpeechModelManager } from './asr/speechModelManager'
+import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
+import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
-import type { SpeechModelStatus } from '../shared/speechModel'
+import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
-import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -156,6 +165,9 @@ import {
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
+  DICTATION_KEYS_HELD,
+  DICTATION_KEYS_TAKEN,
+  KEY_LISTENER_PERMISSION_CHANGED,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
   UPDATE_CHECK_REQUESTED,
@@ -171,6 +183,7 @@ import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
+import { dockPainter, readDockCoverage } from './dock/dockIcon'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
@@ -192,6 +205,10 @@ import { migrateDesktopKey } from './settings/migrateDesktopKey'
 import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
+import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
+import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { mainProcessProfiler, windowProfiler } from './performance/profilers'
+import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -231,6 +248,7 @@ import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
+import type { WatcherAutoSettleEvent } from './agents/watcher'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
@@ -262,7 +280,7 @@ if (e2eConfiguration === null) {
 // decision resolves through this profile.
 const platform = resolvePlatform(process.platform)
 const profile = platformProfile(platform)
-const platformDefaults = defaultSettings(profile.defaultHotkey)
+const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultHoldShortcuts)
 
 type NativeDiagnostic =
   | 'omarchy-theme-missing'
@@ -270,6 +288,7 @@ type NativeDiagnostic =
   | 'omarchy-theme-watch-failed'
   | 'omarchy-theme-refresh-failed'
   | 'shell-pill-refresh-failed'
+  | MainActivityLogEvent
   | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
@@ -289,6 +308,7 @@ type NativeDiagnostic =
   | 'worktree-cleanup-skipped'
   | 'thread-auto-settled'
   | 'thread-auto-settle-skipped'
+  | WatcherAutoSettleEvent
   | GitHubRateLimitEvent
   | BabysitEvent
   | ClaudeAdapterEvent
@@ -297,6 +317,9 @@ type NativeDiagnostic =
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
   | OsascriptPasteEvent
+  | DictationShortcutEvent
+  | 'dock-icon-unavailable'
+  | 'dock-icon-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -564,6 +587,36 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 }
 
+/**
+ * Main's watch on itself (#1233). Development runs of the e2e suite may shorten the window and the recording; a packaged
+ * build reads neither override.
+ */
+function createMainActivity(userDataPath: string, version: string): MainActivityService {
+  const testing = e2eConfiguration !== null && !app.isPackaged
+  const override = (name: string, max: number): number | undefined => {
+    const value = testing ? Number(process.env[name]) : Number.NaN
+    return Number.isInteger(value) && value > 0 && value <= max ? value : undefined
+  }
+  const windowSeconds = override('SOTTO_E2E_MAIN_LOOP_WINDOW_SECONDS', 600)
+  const durationMs = override('SOTTO_E2E_ACTIVITY_RECORDING_MS', 600_000)
+  const devOrigin = app.isPackaged ? undefined : parseOrigin(process.env.ELECTRON_RENDERER_URL)
+  return new MainActivityService({
+    directory: join(userDataPath, 'performance-recordings'),
+    clock: { now: () => performance.now(), setInterval: (callback, ms) => setInterval(callback, ms), clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>) },
+    ...(windowSeconds ? { windowSeconds } : {}), ...(durationMs ? { durationMs } : {}),
+    mainProfiler: mainProcessProfiler,
+    appRoots: [app.getAppPath(), ...(app.isPackaged ? [] : [process.cwd()])],
+    ...(devOrigin ? { devOrigins: [devOrigin] } : {}),
+    sottoVersion: version, platform: process.platform,
+    revealFile: path => shell.showItemInFolder(path),
+    log: logOperational,
+  })
+}
+
+function parseOrigin(url: string | undefined): string | undefined {
+  try { return url ? new URL(url).origin : undefined } catch { return undefined }
+}
+
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -593,6 +646,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const workerRolesEnabled = owlFeatures['worker-roles']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   const continueEnabled = owlFeatures['continue-on-provider']
+  // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
+  // builds no service, starts no monitor and registers no bridge.
+  const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
+  mainActivity?.start()
+  app.on('will-quit', () => mainActivity?.dispose())
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
@@ -613,8 +671,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
-    watcherEnabled,
-    { workerRolesEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -647,9 +704,33 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Main owns the widget's presentation: every snapshot is stamped with the
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
+  // The Dock icon wears the saved theme's mark, as the main window's mark does, repainted when the theme or the
+  // system's scheme changes. Without its coverage file the Dock keeps the bundle's icon, and a failed paint gives
+  // the bundle's icon back rather than leaving an earlier theme's.
+  const dockCoverage = platform === 'darwin' && app.dock !== undefined
+    ? await readFile(join(resourceRoot, 'dock', 'mark-coverage.bin')).then(readDockCoverage, () => null)
+    : null
+  if (platform === 'darwin' && dockCoverage === null) logOperational('dock-icon-unavailable')
+  let dockSettings = await settings.get()
+  const paintDockFor = dockCoverage === null ? undefined : dockPainter(dockCoverage, {
+    setIcon: png => {
+      const image = nativeImage.createFromBuffer(png)
+      if (image.isEmpty()) throw new Error('Unreadable Dock icon')
+      app.dock?.setIcon(image)
+    },
+    // Electron hands macOS an empty image for null, which restores the bundle's icon; its types leave null out.
+    restoreBundleIcon: () => app.dock?.setIcon(null as unknown as Electron.NativeImage),
+    log: logOperational,
+  })
+  const paintDock = (): void => paintDockFor?.(dockSettings, nativeTheme.shouldUseDarkColors)
+  paintDock()
+  if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  const releaseTrack = getReleaseTrack(appRunningVersion)
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
-  const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
+  const buildName = releaseTrackName(releaseTrack)
+  // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
+  const inAppUpdates = updatesInApp(profile, releaseTrack)
   const terminalFocus = new WeakSet<Electron.WebContents>()
   const windows = new WindowManager({
     title: buildName,
@@ -657,6 +738,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
+        ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
       const window = new BrowserWindow(featureArguments.length
@@ -778,20 +860,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
+    watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
   // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
   if (e2eConfiguration !== null && !app.isPackaged && localRuntime.babysitter) installBabysitPassE2E(localRuntime.babysitter)
-  // The window's panes show their threads only while it has the focus (ADR-0046).
-  const windowFocusChanged = (): void => {
-    const focused = BrowserWindow.getFocusedWindow()
-    hostService.setWindowFocused(focused !== null && focused.webContents === windows.getMainWebContents())
-  }
-  app.on('browser-window-focus', windowFocusChanged)
-  app.on('browser-window-blur', windowFocusChanged)
-  windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
   registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform, powerMonitor)
   let browserService: BrowserService | undefined
@@ -805,6 +880,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
+  // The window's panes show their threads only while it has the focus (ADR-0046), on this computer's host and on every
+  // remote host that keeps what is shown (ADR-0092).
+  const windowFocusChanged = (): void => {
+    const focused = BrowserWindow.getFocusedWindow()
+    const shown = focused !== null && focused.webContents === windows.getMainWebContents()
+    hostService.setWindowFocused(shown)
+    hostRouter.setWindowFocused(shown)
+  }
+  app.on('browser-window-focus', windowFocusChanged)
+  app.on('browser-window-blur', windowFocusChanged)
+  windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
@@ -870,7 +956,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
   // already ended what agents started, before its first pass.
   const pullRequestTools = new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
-    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined })
+    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined, watcherEnabled })
   quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
@@ -926,7 +1012,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
     finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
@@ -975,9 +1061,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     const key = parseHostEntityKey(owner.ownerId)
     if (key && key.hostId !== agentControl.hostId()) return hostRouter.preservesDormantThread(owner.ownerId)
     return localRuntime?.agentHost.dormantThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
-  })
+  }, () => requestDraftWatcherOwnerIds(agentControl, () => localRuntime?.agentHost.dormantThreadIds?.(), hostRouter))
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
+  mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })
   const cleanRetiredHistory = async (): Promise<void> => {
     const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
@@ -1037,8 +1124,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    // Updates install only on Windows today, so the macOS app menu leaves the command out.
-    ...(profile.inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
@@ -1160,33 +1247,62 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
-  // Dictation transcribes on this computer (ADR-0071). The speech model downloads once from Sotto's
-  // releases, starts loading when Sotto does and stays loaded. E2E runs never download it: they
-  // report it ready, and the renderer uses its fake transcriber. Each failed segment records why and
-  // how long it was in the transcription diagnostics, never what was said.
+  // Dictation transcribes on this computer (ADR-0071) with the model the user chose (ADR-0094). Nothing
+  // downloads until they choose Sotto's own; on an Apple silicon Mac the Core ML models FluidAudio keeps
+  // are on offer too, run through Sotto's helper. E2E runs never download or look: they report the model
+  // ready, and the renderer uses its fake transcriber. Each failed segment records why and how long it
+  // was in the transcription diagnostics, never what was said.
   const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
-  const speechModelStore = e2eConfiguration === null
-    ? new SpeechModelStore({
-      directory: join(userDataPath, 'speech-models'),
-      loadEngine: loadParakeetEngine,
+  const coreMlHelperPath = app.isPackaged
+    ? join(process.resourcesPath, 'coreml-asr', 'sotto-coreml-asr')
+    : join(__dirname, '../../native/coreml-asr/.build/sotto-coreml-asr')
+  // The settings coordinator is made further down; the choice is saved through it once it exists.
+  let saveSpeechModelChoice: (id: string | null) => Promise<void> = () => Promise.reject(new Error('Settings are not ready yet'))
+  const speechModelManager = e2eConfiguration === null
+    ? new SpeechModelManager({
+      // One folder per model under speech-models; Parakeet v3's is where ADR-0071 put it.
+      stores: SOTTO_SPEECH_MODELS.map((model) => new SpeechModelStore({
+        directory: join(userDataPath, 'speech-models'),
+        model,
+        loadEngine: loadParakeetEngine,
+        onStatus: () => undefined,
+      })),
+      findFluidAudio: () => coreMlHelperAvailable(coreMlHelperPath)
+        ? findFluidAudioModels(fluidAudioModelsRoot(app.getPath('appData')))
+        : Promise.resolve([]),
+      coreMlLoader: (version) => createCoreMlEngineLoader(coreMlHelperPath, version),
+      modelBeforeChoosing: PARAKEET_V3.id,
+      readChoice: () => workingCopySettings.speechModel,
+      saveChoice: (id) => saveSpeechModelChoice(id),
       onStatus: (status) => { windows.sendToMain(SPEECH_MODEL_STATUS, status) },
     })
     : null
   const speechModel = {
-    status: (): SpeechModelStatus => speechModelStore?.get() ?? { state: 'ready' },
-    download: (): void => { void speechModelStore?.ensure() },
+    status: (): SpeechModelStatus => speechModelManager?.status() ?? { state: 'ready' },
+    download: (): void => { speechModelManager?.download() },
+    // E2E runs offer Parakeet v3 as already here and Sotto's other models as downloads, so setup and
+    // Settings show real rows; choosing one only saves the choice, since an E2E model is always ready.
+    list: (): Promise<SpeechModelOption[]> => speechModelManager?.list() ?? Promise.resolve(
+      SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
+    ),
+    choose: async (id: string): Promise<boolean> => {
+      if (speechModelManager !== null) return speechModelManager.choose(id)
+      if (sottoSpeechModel(id) === undefined) return false
+      await saveSpeechModelChoice(id)
+      return true
+    },
   }
-  speechModel.download()
   const transcription = new LocalTranscriptionService({
-    engine: () => speechModelStore?.currentEngine() ?? null,
+    engine: () => speechModelManager?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
   })
 
-  // GitHub Releases is only a real feed for the packaged Windows build: the
-  // macOS disk image ships no update metadata, and a development or E2E run
-  // must never reach the network. Everywhere else the service resolves to the
-  // 'unsupported' phase without constructing electron-updater at all.
-  const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
+  // GitHub Releases is a real feed only for the packaged Windows app and the
+  // packaged Mac Owl: stable's macOS disk image ships no update metadata, and a
+  // development or E2E run must never reach the network. Everywhere else the
+  // service resolves to the 'unsupported' phase without constructing
+  // electron-updater at all.
+  const updatesSupported = app.isPackaged && e2eConfiguration === null && inAppUpdates
   // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
   const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
   const updates = new UpdateService({
@@ -1231,13 +1347,88 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : createE2EGlobalShortcuts(e2eConfiguration.scenario)
   const hotkeys = new HotkeyManager(
     e2eShortcuts ?? globalShortcut,
-    toggleDictation,
+    () => {
+      // A hold in progress no longer owns the session the primary shortcut toggled.
+      dictationShortcuts?.pressToggled()
+      toggleDictation()
+    },
     () => {
     hotkeys.cancelListening()
     dispatchDictation({ type: 'cancel' })
     },
     platform,
+    logOperational,
   )
+  // The widget's latest status: a hold shortcut starts dictation only when no session is under way.
+  let widgetState: { status: WidgetSnapshot['status']; kept: boolean } = { status: 'idle', kept: false }
+  // Sotto's own page must hold the keyboard: a site in the in-app browser or the cloud iPhone sits in the same
+  // window, and record mode must never hear what is typed there.
+  const mainWindowInFront = (): boolean => {
+    const focused = BrowserWindow.getFocusedWindow()
+    return focused !== null && focused.webContents === windows.getMainWebContents() && focused.isVisible()
+  }
+  const mainWindowFocused = (): boolean => mainWindowInFront() && BrowserWindow.getFocusedWindow()?.webContents.isFocused() === true
+  // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
+  const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
+    ? createDictationShortcutRouter({
+        shortcuts: e2eShortcuts ?? globalShortcut,
+        createListener: handlers => createKeyListener({
+          platform,
+          // The Windows helper can take long to start cold.
+          readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
+          // An E2E run never spawns the helper, so it never asks for Input Monitoring.
+          spawnHelper: e2eConfiguration === null
+            ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
+            : () => null,
+          log: event => logOperational(event as DictationShortcutEvent),
+          ...handlers,
+        }),
+        canStart: () => holdCanStart(widgetState),
+        isFocused: mainWindowFocused,
+        dispatch: dispatchDictation,
+        showWidget,
+        pushHeld: tokens => { windows.sendToMain(DICTATION_KEYS_HELD, tokens) },
+        pushPermission: permission => { windows.sendToMain(KEY_LISTENER_PERMISSION_CHANGED, permission) },
+        openInputMonitoring: () => e2eConfiguration === null
+          ? createSystemSettingsOpener(platform, url => shell.openExternal(url))?.('input-monitoring')
+          : undefined,
+        log: logOperational,
+        platform,
+      })
+    : null
+  if (dictationShortcuts !== null) interruptOnLockAndSleep(powerMonitor, () => dictationShortcuts.interrupt())
+  // Linux: while Settings records keys, Sotto's own Hyprland bindings start nothing. Hyprland keeps a bound key from the
+  // page, so the recording is told whose it was instead.
+  let compositorKeysSuspended = false
+  // The latest recording's span, in the epoch nanoseconds bindings stamp their key events with. A binding's command can
+  // arrive after the recording ends, since the launcher boots first, so a key pressed during it is still Sotto's.
+  let recordingSpan: { from: bigint; to: bigint | null } | null = null
+  const epochNanoseconds = (): bigint => BigInt(Date.now()) * 1_000_000n
+  // Settings recording stands every dictation shortcut down; stable has only the hotkey to suspend.
+  const shortcutLifecycle = createDictationShortcutLifecycle({
+    suspend: suspended => {
+      hotkeys.suspend(suspended)
+      dictationShortcuts?.suspend(suspended)
+      if (platform === 'linux' && suspended !== compositorKeysSuspended) {
+        recordingSpan = suspended ? { from: epochNanoseconds(), to: null } : recordingSpan && { ...recordingSpan, to: epochNanoseconds() }
+      }
+      compositorKeysSuspended = platform === 'linux' && suspended
+    },
+    router: dictationShortcuts,
+    isFocused: mainWindowFocused,
+    windowFocused: mainWindowInFront,
+  })
+  // A lock or a sleep also ends a page recording's stand-down, not only the router's own recording.
+  interruptOnLockAndSleep(powerMonitor, () => shortcutLifecycle.windowLostFocus())
+  // Record mode sees keys typed in other apps, so it ends the moment the main window loses the focus.
+  const watchMainWindowFocus = (window: BrowserWindow): void => {
+    const lost = (): void => { if (window.webContents === windows.getMainWebContents()) shortcutLifecycle.windowLostFocus() }
+    window.on('blur', lost)
+    window.on('hide', lost)
+    window.on('minimize', lost)
+  }
+  BrowserWindow.getAllWindows().forEach(watchMainWindowFocus)
+  app.on('browser-window-created', (_event, window) => watchMainWindowFocus(window))
 
   const nativeTray = e2eConfiguration === null
     ? await createTrayResource({
@@ -1267,9 +1458,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       nativeTray.destroy()
     },
   }
+  // Linux's keys are Hyprland bindings the Omarchy setup writes; it is built with the IPC, after this coordinator.
+  let omarchySetup: OmarchySetup | null = null
   const settingsCoordinator = new NativeSettingsCoordinator({
     repository: settings,
     hotkeys,
+    platform,
+    ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
+    ...(platform === 'linux' ? { compositorKeys: {
+      replace: async set => omarchySetup === null ? { ok: false as const, reason: 'unavailable' as const } : omarchySetup.replaceShortcuts(set),
+    } } : {}),
     startup,
     defaults: platformDefaults,
     onAutoPasteChanged(enabled): void {
@@ -1285,6 +1483,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       worktreeCleanup?.settingsChanged()
+      localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
@@ -1292,6 +1491,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings)
+        dockSettings = settings
+        paintDock()
         if (!dictationLifecycle.isIdle()) {
           await dictationLifecycle.repaint()
         } else if (settings.onboardingComplete) {
@@ -1306,6 +1507,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, [cleanRetiredHistory])
     },
   })
+  // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
+  saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
+  void speechModelManager?.start()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
@@ -1317,8 +1521,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     show(): void {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    // Only where a check can answer: the tray is the one menu Windows has.
-    ...(updatesSupported ? { checkForUpdates: requestUpdateCheck } : {}),
+    // Only where a check can answer, and only where the tray is the one menu: a Mac's app menu carries it instead.
+    ...(updatesSupported && profile.applicationMenu === 'none' ? { checkForUpdates: requestUpdateCheck } : {}),
     quit(): void {
       app.quit()
     },
@@ -1341,12 +1545,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       currentTrayState = state
       trayController.update(state)
     },
-    syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
+    syncEscape: (state) => {
+      widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
+      syncEscapeForWidgetSnapshot(hotkeys, state)
+    },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     presentation: () => widgetPresentation,
     log: logOperational,
   })
-  handleRendererProcessGone = (kind) => dictationLifecycle.rendererProcessGone(kind)
+  handleRendererProcessGone = (kind) => {
+    dictationLifecycle.rendererProcessGone(kind)
+    // A crashed Settings can no longer end its recording, so the shortcuts come back now.
+    if (kind === 'main') shortcutLifecycle.rendererGone()
+  }
   const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
     await dictationLifecycle.publish(state)
   }
@@ -1379,7 +1590,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           void settingsCoordinator.republish().catch(() => logOperational('shell-pill-refresh-failed'))
         },
       ),
-      async command => {
+      async (command, at) => {
         if (command.startsWith('place ')) {
           const edge = parseDictationEdge(command.slice(6))
           if (edge === null) return false
@@ -1387,6 +1598,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           await widgetPlacementStore.save({ edge })
           linuxDictationShell?.place(edge)
           await windows.setWidgetPlacement({ edge })
+          return true
+        }
+        const pressedWhileRecording = at !== undefined && recordingSpan !== null && at >= recordingSpan.from && (recordingSpan.to === null || at <= recordingSpan.to)
+        if ((compositorKeysSuspended || pressedWhileRecording) && (command === 'start' || command === 'toggle')) {
+          if (compositorKeysSuspended) windows.sendToMain(DICTATION_KEYS_TAKEN, command === 'toggle' ? 'press' : 'hold')
           return true
         }
         return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })
@@ -1399,6 +1615,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(linuxDictationShell === null ? {} : { dictationCommands: linuxDictationShell }),
     windows,
     hotkeys,
+    ...(dictationShortcuts === null ? {} : { dictationShortcuts }),
     tray,
     startup,
     settings,
@@ -1431,6 +1648,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      // A recording profiles the main window that asked, through its own debugger (ADR-0098).
+      const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
+        event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
@@ -1481,11 +1701,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, () => windows.getTrustedRenderers())
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
-      const omarchySetup = platform === 'linux' ? new OmarchySetup({
+      omarchySetup = platform === 'linux' ? new OmarchySetup({
         home: homedir(), data: userDataPath,
         resources: omarchyResources!,
         version: appRunningVersion,
         settings: { get: () => settingsCoordinator.getSettings(), update: patch => settingsCoordinator.updateSettings(patch) },
+        // Read from the store, not the coordinator's queue: a shortcut change holds that queue's turn only to save.
+        shortcuts: async () => {
+          const saved = await settings.get()
+          return { press: [saved.hotkey, ...saved.pressShortcuts], hold: saved.holdShortcuts }
+        },
+        commitShortcuts: set => settingsCoordinator.commitCompositorShortcuts(set),
+        holdShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'],
         onChanged: state => windows.sendToMain(OMARCHY_SETUP_CHANGED, state),
       }) : null
       const cleanupOmarchySetup = registerOmarchySetupIpc(ipcMain, platform, omarchySetup, () => windows.getTrustedRenderers(), { follow: listener => {
@@ -1520,8 +1747,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
-        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state),
-        setLimit: limit => settingsCoordinator.updateSettings({ watcherInFlightLimit: limit }) })
+        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
         settings: {
@@ -1538,6 +1764,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           current: () => settingsCoordinator.getHotkey(),
           replace: (accelerator) => settingsCoordinator.replaceHotkey(accelerator),
         },
+        dictationShortcuts: {
+          replace: change => settingsCoordinator.replaceDictationShortcuts(change),
+          suspend: shortcutLifecycle.suspend,
+          record: shortcutLifecycle.record,
+          cancelRecord: () => dictationShortcuts?.cancelRecord(),
+          permission: () => dictationShortcuts?.permission() ?? (platform === 'darwin' ? 'not-needed' : 'unsupported'),
+          requestPermission: async () => dictationShortcuts === null
+            ? (platform === 'darwin' ? 'not-needed' : 'unsupported')
+            : dictationShortcuts.requestPermission(),
+        },
         app: {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
@@ -1547,6 +1783,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           // kept recording, that no controller holds any more.
           reload: () => {
             dictationLifecycle.rendererProcessGone('main')
+            // A reloaded Settings can no longer end its recording, so the shortcuts come back now.
+            shortcutLifecycle.rendererGone()
             return windows.reloadMain()
           },
           toggleMaximize: () => windows.toggleMaximizeMain(),
@@ -1627,6 +1865,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupUsage()
         cleanupDelegations()
         cleanupContinue()
+        cleanupMainActivity()
         cleanupOpenCodeSignIn()
         cleanupTerminals()
         worktreeCleanup?.dispose()
@@ -1642,7 +1881,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so drop what is still being transcribed.
         transcription.dispose()
-        speechModelStore?.dispose()
+        speechModelManager?.dispose()
         updates.dispose()
         desktopWatcher?.dispose()
         cleanup()

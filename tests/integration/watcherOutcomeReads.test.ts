@@ -21,7 +21,7 @@ async function fixture(history = true) {
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
-  let service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
+  let service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -66,7 +66,7 @@ async function fixture(history = true) {
   }
   const restart = async () => {
     service.close()
-    service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
+    service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history })
     await service.recover()
   }
   return { ...f, workspace, id, requestId, call, native, emit, endTurn, start, read, restart, get service() { return service } }
@@ -107,6 +107,7 @@ it('names the operation a finished turn answers in its news', async () => {
     .map(item => watcherWakeUpNote(item.news ?? []) ?? '').find(text => text.includes('foreground turn finished'))
   await vi.waitFor(() => expect(note()).toBeDefined(), { timeout: 15_000 })
   expect(note()).toContain(`This turn answers operation ${started.receipt.operationId}`)
+  // The queued news holds identities only: Sotto adds the reply's start when the note is sent (#1190), never to the queue.
   expect(note()).not.toContain('Synthetic worker reply')
 })
 
@@ -191,4 +192,37 @@ it('keeps a stop and a settle without an outcome', async () => {
   const read = await f.read(stop.receipt.operationId)
   expect(read.outcome).toBeUndefined()
   expect(read.reference).toBeUndefined()
+})
+
+it('says no work-settled news will follow a background brief once its thread begins another turn', async () => {
+  const f = await fixture(), started = await f.start()
+  f.native(started.target.threadId).backgroundWork = [{ id: randomUUID(), label: 'Synthetic agent', type: 'subagent' }]
+  await f.endTurn(started.target.threadId, 'Synthetic reply, agent still running')
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background', outcomeNote: expect.stringContaining('Sotto sends work-settled news when that work ends') })
+  // The work is still running, and a second brief begins another turn in the thread.
+  const next = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target, text: 'Synthetic second brief', delivery: 'now' })
+  if (next.status !== 'ok') throw new Error('send refused')
+  await vi.waitFor(() => expect(f.native(started.target.threadId).messages.some(message => message.text === 'Synthetic second brief')).toBe(true))
+  // The provider reports the turn that brief began, as a real one does; a steer would keep the turn it was read into.
+  const native = f.native(started.target.threadId), second = native.messages.find(message => message.text === 'Synthetic second brief')!
+  const brief = native.messages.find(message => message.role === 'user')!
+  native.activities = [{ id: 'first-turn', turnId: brief.id, sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }]
+  native.status = 'running'; native.lastTurn = { id: second.id, status: 'running', messageId: second.id }
+  await f.emit(started.target.threadId)
+  await vi.waitFor(async () => expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background',
+    outcomeNote: expect.stringContaining('no work-settled news for that turn will follow') }))
+})
+
+it('says no work-settled news will follow a background brief once its provider starts a turn of its own', async () => {
+  const f = await fixture(), started = await f.start()
+  f.native(started.target.threadId).backgroundWork = [{ id: randomUUID(), label: 'Synthetic agent', type: 'subagent' }]
+  await f.endTurn(started.target.threadId, 'Synthetic reply, agent still running')
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'background', outcomeNote: expect.stringContaining('Sotto sends work-settled news when that work ends') })
+  // A background task reports, and the provider starts a turn of its own for it, with no user message behind it. The
+  // provider keeps a record of the brief's turn, as a real one does.
+  const native = f.native(started.target.threadId), brief = native.messages.find(message => message.role === 'user')!
+  native.activities = [{ id: 'first-turn', turnId: brief.id, sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }]
+  native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+  await f.emit(started.target.threadId)
+  await vi.waitFor(async () => expect(await f.read(started.receipt.operationId)).toMatchObject({ outcomeNote: expect.stringContaining('no work-settled news for that turn will follow') }))
 })

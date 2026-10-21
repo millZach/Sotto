@@ -11,7 +11,7 @@ it('keeps a complete Owl profile through stable real load/save and reopening Owl
   try {
     const result = await owlProfileRoundTrip(profile)
     expect(result.preserved).toEqual({ watcher: true, agents: true, threadKindsAndTitles: true, settings: true, messages: true, credential: true })
-    expect(result.stable.settings.watcherInFlightLimit).toBe(6)
+    expect(result.stable.settings).toMatchObject({ hotkey: 'Control+Alt+O', autoPaste: false })
     expect(result.stable.loaded.threads).not.toEqual(result.owl.loaded.threads)
     expect(result.reopenedOwl.loaded.threads).toEqual(result.owl.loaded.threads)
   } finally {

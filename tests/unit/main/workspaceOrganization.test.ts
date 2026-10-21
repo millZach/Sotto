@@ -148,6 +148,57 @@ describe("durable project/thread organization", () => {
     expect(saved).toMatchObject({ id: 'local', messages: [], requests: [], nativeSessionStarted: true, workspaceSettledAt: expect.any(String) })
   })
 
+  it('settles a thread\'s delegated threads with it, and restoring it brings back only those', async () => {
+    const f = await fixture(); f.host.enableDelegation(); await local(f, 'parent')
+    for (const id of ['child', 'grandchild', 'put-aside', 'unrelated']) await local(f, id)
+    await f.host.setDelegatedBy('child', 'parent')
+    await f.host.setDelegatedBy('grandchild', 'child')
+    await f.host.setDelegatedBy('put-aside', 'parent')
+    await f.host.setWorkspaceSettled('thread', 'put-aside', true)
+    const thread = (id: string) => f.host.workspaceSnapshot().threads.find(item => item.id === id)!
+    const putAside = thread('put-aside').workspaceSettledAt
+    // A later clock, so the thread put aside on its own keeps a settlement of its own.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse(putAside!) + 60_000 })
+    try { await f.host.setWorkspaceSettled('thread', 'parent', true) } finally { vi.useRealTimers() }
+    const settledAt = thread('parent').workspaceSettledAt
+    expect(settledAt).toEqual(expect.any(String))
+    expect(thread('child').workspaceSettledAt).toBe(settledAt)
+    expect(thread('grandchild').workspaceSettledAt).toBe(settledAt)
+    expect(thread('put-aside').workspaceSettledAt).toBe(putAside)
+    expect(thread('unrelated').workspaceSettledAt).toBeNull()
+
+    // Restore on a delegated thread's own row makes it an ordinary open thread; its parent stays settled, and settling
+    // the parent again, as a repeated command would, leaves it open.
+    await f.host.setWorkspaceSettled('thread', 'grandchild', false)
+    expect(thread('grandchild').workspaceSettledAt).toBeNull()
+    expect(thread('child').workspaceSettledAt).toBe(settledAt)
+    await f.host.setWorkspaceSettled('thread', 'parent', true)
+    expect(thread('parent').workspaceSettledAt).toBe(settledAt)
+    expect(thread('grandchild').workspaceSettledAt).toBeNull()
+
+    await f.host.setWorkspaceSettled('thread', 'parent', false)
+    expect(thread('parent').workspaceSettledAt).toBeNull()
+    expect(thread('child').workspaceSettledAt).toBeNull()
+    expect(thread('put-aside').workspaceSettledAt).toBe(putAside)
+  })
+
+  it('settles only the thread itself while delegation is off, as stable does', async () => {
+    const f = await fixture(); await local(f, 'parent'); await local(f, 'child')
+    await f.host.setDelegatedBy('child', 'parent')
+    await f.host.setWorkspaceSettled('thread', 'parent', true)
+    expect(f.host.workspaceSnapshot().threads.find(item => item.id === 'child')?.workspaceSettledAt).toBeNull()
+  })
+
+  it('leaves a thread and its delegated threads unsettled when saving the settlement fails', async () => {
+    const f = await fixture(); f.host.enableDelegation(); await local(f, 'parent'); await local(f, 'child')
+    await f.host.setDelegatedBy('child', 'parent')
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValue(new Error('Disk unavailable'))
+    await expect(f.host.setWorkspaceSettled('thread', 'parent', true)).rejects.toThrow('Disk unavailable')
+    const snapshot = f.host.workspaceSnapshot()
+    expect(snapshot.threads.find(item => item.id === 'parent')?.workspaceSettledAt).toBeNull()
+    expect(snapshot.threads.find(item => item.id === 'child')?.workspaceSettledAt).toBeNull()
+  })
+
   it('strictly validates settlement commands and rejects missing entities', async () => {
     const f = await fixture()
     for (const type of ['settle-thread', 'restore-thread', 'settle-project', 'restore-project']) {

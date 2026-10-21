@@ -27,7 +27,7 @@ import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
 import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
-import { takeNewThreadIntent } from './threadIntent'
+import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
@@ -124,9 +124,9 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
-  // Delegated threads sit under the thread that delegated to them (ADR-0081; Owl only).
-  const nestDelegated = useOwlFeature('thread-delegation')
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, nestDelegated), [state, rows, query, nestDelegated]))
+  // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
+  const delegation = useOwlFeature('thread-delegation')
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, delegation), [state, rows, query, delegation]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -139,6 +139,9 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const visible = state === null || rows.length === 0 ? stored : prune(stored, id => rowsById.has(id))
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
   const paneIds = useShared(isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : [])
+  // A delegated thread in a pane marks the row it is reached from, the top of its delegation, since it has none of its own.
+  // Only the mark: the sidebar's pane actions still go by the threads really in the panes.
+  const listedThreadId = focusedId === null ? null : organization.listedAs?.get(focusedId) ?? focusedId
 
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
   useEffect(() => {
@@ -226,8 +229,14 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     return Promise.resolve()
   }, [state, createThreadIn])
   const openNewThread = useCallback((projectId?: string): void => { void startNewThread(projectId) }, [startNewThread])
-  // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads.
-  useEffect(() => { const intent = takeNewThreadIntent(); if (intent !== null) openNewThread(intent.projectId) }, [openNewThread])
+  // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads; one asked
+  // for while this page is already open (an activity recording's Attach to a thread) lands at once. A carried draft opens
+  // in the new thread's composer, unsent.
+  useEffect(() => {
+    const take = (): void => { const intent = takeNewThreadIntent(); if (intent !== null) void startNewThread(intent.projectId, intent.carried) }
+    take()
+    return onNewThreadIntent(take)
+  }, [startNewThread])
   // Ctrl+Shift+N (Cmd+Shift+N on a Mac): a new thread in the focused thread's project, or the chooser when none
   // is focused. Checked against the dictation hotkey like every other chord; an open dialog or a terminal keeps
   // its keys.
@@ -309,7 +318,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
-      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
+      currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}

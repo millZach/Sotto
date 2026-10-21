@@ -5,9 +5,12 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import { releaseTrackName, type ReleaseTrack } from '../../../../shared/releaseTrack'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
+import { linuxKeyWords } from '../omarchy/linuxKeys'
 
 export interface HelpViewProps {
   readonly shortcut: string
+  /** Linux: the first hold shortcut, which Sotto binds in Hyprland beside the press shortcut. */
+  readonly holdShortcut?: string | undefined
   readonly platform: SottoPlatform
   /** The running version, when the main process has reported it. */
   readonly version?: string | undefined
@@ -32,7 +35,7 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable' }: HelpViewProps): ReactNode {
   const copy = platformCopy(platform)
   const name = releaseTrackName(releaseTrack)
   // An Owl version is one word on the line, never broken at its hyphen; a stable version has none to break at.
@@ -41,15 +44,17 @@ export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' 
   const mac = platform === 'darwin'
   const linux = platform === 'linux'
   const modifier = mac ? '⌘' : 'Ctrl'
+  const linuxKeys = linuxKeyWords({ hotkey: shortcut, holdShortcuts: holdShortcut === undefined ? [] : [holdShortcut] })
+  const linuxStart = linuxKeys.hold === undefined ? `Press ${linuxKeys.press} to start and stop` : `Hold ${linuxKeys.hold} to talk, or press ${linuxKeys.press} to start and stop`
 
   const gettingStarted: Topic[] = [
     { title: 'Start and stop', body: linux
-      ? <p>Hold F9 to talk, or press Super+Ctrl+X to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget.</p>
+      ? <p>{linuxStart}, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget.</p>
       : <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
-      : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
-    { title: 'Transcription', body: <p>Parakeet v3, by NVIDIA, transcribes your speech on this computer. It downloads once, 670 MB, and understands 25 European languages. Settings → Transcription shows whether it is ready.</p> },
+      : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go.</p> },
+    { title: 'Transcription', body: <p>A speech model transcribes your speech on this computer. Choose it in Settings → Transcription: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</p> },
   ]
   const privacy: Topic[] = [
     { title: 'Privacy', body: <p>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. History stays on this computer.</p> },

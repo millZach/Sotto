@@ -26,7 +26,7 @@ it('gives one send that ends several requests’ work on a thread one takeover t
     mutateWatcher: update, updateWatcher: async (change: (next: WatcherRecord) => void) => update(change), cancelWatcherQueue: async () => undefined,
     refreshWatcherObservation: () => undefined, watcherSendRecords: () => ({ deliveries: [], followups: [] }),
   } as unknown as AgentControl
-  const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
+  const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
   try {
     // The clock ticks between every read of it.
     let tick = 0

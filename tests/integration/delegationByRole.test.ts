@@ -25,7 +25,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: false } })
   let choices: WorkerRoleChoices = {}, reads = 0
-  const service = new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => true, limit: () => 4,
+  const service = new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => true,
     ...(options.roles === false ? {} : { roles: () => { reads++; return choices } }) })
   cleanups.push(async () => { service.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
   await f.control.start()

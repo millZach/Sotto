@@ -10,7 +10,7 @@ afterEach(cleanup)
 describe('HelpView', () => {
   it('names Linux and explains button dictation, manual paste and the Wayland shortcut limit', () => {
     const copy = platformCopy('linux')
-    render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="linux" version="3.4.0" />)
+    render(<HelpView shortcut="Super+CommandOrControl+X" holdShortcut="F9" platform="linux" version="3.4.0" />)
     expect(screen.getByText(/Sotto 3.4.0, Linux/)).toBeVisible()
     expect(screen.getByText(/Hold F9 to talk, or press Super\+Ctrl\+X to start and stop/)).toBeVisible()
     expect(screen.getByText(copy.settingsGlobalShortcutDescription)).toBeVisible()
@@ -18,6 +18,13 @@ describe('HelpView', () => {
     expect(screen.queryByLabelText('Ctrl+Shift+Space')).not.toBeInTheDocument()
     expect(screen.queryByText(/anywhere to begin/)).not.toBeInTheDocument()
     expect(screen.queryByText(/previous working shortcut active/)).not.toBeInTheDocument()
+  })
+
+  it('names the Linux keys Settings saved', () => {
+    render(<HelpView shortcut="Super+Alt+D" holdShortcut="F10" platform="linux" version="3.4.0" />)
+    expect(screen.getByText(/Hold F10 to talk, or press Super\+Alt\+D to start and stop/)).toBeVisible()
+    render(<HelpView shortcut="Super+Alt+D" platform="linux" version="3.4.0" />)
+    expect(screen.getByText(/^Press Super\+Alt\+D to start and stop, once/)).toBeVisible()
   })
 
   it('sends Linux to the widget to cancel, because Escape is a global shortcut Wayland never delivers', () => {

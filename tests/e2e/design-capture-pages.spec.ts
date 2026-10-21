@@ -32,7 +32,7 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-3-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
 
       await forward.click()
-      await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-4-speech-model.png', { category: 'onboarding', state: 'speech-model' })
 
       await forward.click()

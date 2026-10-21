@@ -12,6 +12,11 @@ const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-c
 // a settings save, Update all, and Settings > Providers' presses on this computer's own clients.
 const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
   connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'] }
+/**
+ * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
+ * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
+ */
+const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -80,10 +85,13 @@ describe('remote command allow-list', () => {
   it('decides every command type and every field the schema knows, so nothing new is remote by default', () => {
     for (const [type, fields] of schemaFields) {
       if (HOST_LOCAL.includes(type)) { expect(REMOTE_COMMANDS[type as AgentCommand['type']], type).toBeUndefined(); continue }
-      const own = WINDOW_ONLY[type as AgentCommand['type']] ?? []
+      const own = [...WINDOW_ONLY[type as AgentCommand['type']] ?? [], ...HOST_INTERNAL[type as AgentCommand['type']] ?? []]
       expect([...(REMOTE_COMMANDS[type as AgentCommand['type']] ?? ['(missing)'])].sort(), type).toEqual(fields.filter(field => !own.includes(field)))
     }
     expect([...schemaFields.keys()].sort()).toEqual([...new Set([...HOST_LOCAL, ...Object.keys(REMOTE_COMMANDS)])].sort())
+    // A paired client cannot say which threads count as shown for every client on the host.
+    expect(refuse({ type: 'observe-threads', threadIds: ['thread'], shownThreadIds: [] }, true)).toBe('forbidden')
+    expect(refuse({ type: 'observe-threads', threadIds: ['thread'] }, true)).toBeNull()
   })
   it('decides every host request: reads and the session, commands through their own list, sign-in and Usage requests', () => {
     expect([...REMOTE_SIGN_IN_OPERATIONS]).toEqual(['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'])
@@ -112,7 +120,9 @@ describe('remote command allow-list', () => {
       // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
       'start-handover',
       // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
-      'host-update']
+      'host-update',
+      // One activity record whole, a read for a desktop that accepted activity-bodies (ADR-0025, October 18 amendment).
+      'activity-body']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

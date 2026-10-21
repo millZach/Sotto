@@ -14,7 +14,8 @@ const current = '0.1.37-owl.20261011.2'
 const newer = '0.1.37-owl.20261011.10'
 
 /** Real AppUpdater, provider factory, GitHub Atom selection and semver gate; only HTTP is scripted. */
-async function fixture(version: string, tags: string[], manifests: Record<string, string | { version: string; tag: string }> = {}, missingOwl = false) {
+async function fixture(version: string, tags: string[], manifests: Record<string, string | { version: string; tag: string }> = {}, missingOwl = false,
+  platform: 'win32' | 'darwin' = 'win32') {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-owl-update-'))
   directories.push(directory)
   const requests: string[] = []
@@ -23,13 +24,14 @@ async function fixture(version: string, tags: string[], manifests: Record<string
     appUpdateConfigPath: join(directory, 'app-update.yml'), whenReady: async () => undefined,
     relaunch: () => undefined, quit: () => undefined, onQuit: () => undefined,
   })
-  // NSIS and these scripted manifests describe Windows, regardless of the test host.
-  Object.assign(updater, { _testOnlyOptions: { platform: 'win32' }, httpExecutor: { request: async (options: { path: string }) => {
+  // The provider names its channel file for this platform, regardless of the test host: owl.yml on Windows,
+  // owl-mac.yml on a Mac. Only the provider is exercised; the Mac's Squirrel install needs a real app.
+  Object.assign(updater, { _testOnlyOptions: { platform }, httpExecutor: { request: async (options: { path: string }) => {
     requests.push(options.path)
     if (options.path.endsWith('.atom')) return `<feed>${tags.map(tag => `<entry><title>Sotto ${tag}</title><link href="https://github.com/millZach/Sotto-releases/releases/tag/v${tag}"/><content>Release</content></entry>`).join('')}</feed>`
     if (options.path.endsWith('/latest')) return JSON.stringify({ tag_name: 'v0.1.37' })
-    const match = /\/download\/v([^/]+)\/(owl|latest)\.yml$/u.exec(options.path)
-    if (!match) throw new Error(`Unexpected request: ${options.path}`)
+    const match = /\/download\/v([^/]+)\/(owl|latest)(-mac)?\.yml$/u.exec(options.path)
+    if (!match || (match[3] !== undefined) !== (platform === 'darwin')) throw new Error(`Unexpected request: ${options.path}`)
     if (missingOwl && match[2] === 'owl') throw new Error('missing owl.yml')
     const manifest = manifests[match[1]!]
     return JSON.stringify({ ...(typeof manifest === 'string' ? { version: manifest } : manifest ?? { version: match[1] }), files: [{ url: 'Sotto-Owl-Setup.exe', sha512: 'test' }] })
@@ -94,6 +96,29 @@ describe('Owl GitHub updates', () => {
 
   it('rejects a manifest naming a different Owl tag', async () => {
     const f = await fixture(current, [newer], { [newer]: '0.1.38-owl.20261012.1' })
+    await expect(f.adapter.check()).rejects.toThrow('inconsistent update information')
+    expect(f.offers).toEqual([])
+  })
+
+  it('reads owl-mac.yml on a Mac and offers a newer Owl from it', async () => {
+    const f = await fixture(current, ['0.2.0', '0.1.37', newer, current], {}, false, 'darwin')
+    await f.adapter.check()
+    expect(f.offers).toEqual([newer])
+    expect(f.updater.autoDownload).toBe(false)
+    expect(f.updater.autoInstallOnAppQuit).toBe(false)
+    expect(f.requests).toEqual(['/millZach/Sotto-releases/releases.atom', `/millZach/Sotto-releases/releases/download/v${newer}/owl-mac.yml`])
+  })
+
+  it.each([false, true])('rejects a stable Mac manifest before an offer, including the latest-mac.yml fallback (fallback=%s)', async fallback => {
+    const f = await fixture(current, [newer], { [newer]: '0.1.37' }, fallback, 'darwin')
+    await expect(f.adapter.check()).rejects.toThrow('inconsistent update information')
+    expect(f.offers).toEqual([])
+    if (fallback) expect(f.requests).toContain(`/millZach/Sotto-releases/releases/download/v${newer}/latest-mac.yml`)
+    await expect(f.adapter.download()).rejects.toThrow('Please check update first')
+  })
+
+  it('rejects a Mac manifest naming a different Owl tag', async () => {
+    const f = await fixture(current, [newer], { [newer]: '0.1.38-owl.20261012.1' }, false, 'darwin')
     await expect(f.adapter.check()).rejects.toThrow('inconsistent update information')
     expect(f.offers).toEqual([])
   })

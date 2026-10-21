@@ -121,6 +121,14 @@ const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().o
 class SessionUnavailable extends Error {
   constructor(cause: unknown) { super('Codex could not start this thread’s session. Nothing was sent. Try again, or reconnect Codex.', { cause }) }
 }
+/**
+ * Whether the thread's unconfirmed settings change holds it back: only one that sets a permission mode other than the
+ * confirmed one does. One that set only a model or an effort holds nothing back (#1192): the turn starts with the
+ * settings Codex confirmed, which the chips show, and the thread's history stays readable.
+ */
+function settingsHold(alias: Alias): boolean {
+  return alias.pendingSettings !== undefined && alias.pendingSettings.runtimeMode !== (alias.runtimeMode ?? 'auto-accept-edits')
+}
 class SettingsUnconfirmed extends Error {
   constructor() { super('Codex did not confirm this thread’s settings. Choose the thread settings again before sending.') }
 }
@@ -191,6 +199,8 @@ export class CodexAppServerHost implements AgentHost {
   private quota: UsageQuotaRead | undefined
   private quotaReading: Promise<UsageQuotaRead> | undefined
   private readonly usageTurnStarts = new Map<string, string>()
+  /** When each thread's context was last reported as its compaction started, so the end can tell whether a reading came since. */
+  private readonly compactionReadings = new Map<string, string>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
@@ -433,6 +443,8 @@ export class CodexAppServerHost implements AgentHost {
     const runtime = this.runtimes.get(id)
     // An idle app-server is let go gently: its input closes and it has the request deadline to finish writing.
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
+    const thread = this.threads.get(id)
+    if (thread) this.activity.runtimeEnded(thread)
   }
   /**
    * Codex's own rollouts on this computer, for Usage (ADR-0083). A thread this adapter owns reports under its own ID,
@@ -636,6 +648,8 @@ export class CodexAppServerHost implements AgentHost {
   private runtimeLost(id: string, runtime: Runtime): void {
     if (this.runtimes.get(id) !== runtime) return
     this.runtimes.delete(id); this.live.delete(id); this.outdated.delete(id); this.reaper.forget(id); this.log.release(id)
+    const lost = this.threads.get(id)
+    if (lost) this.activity.runtimeEnded(lost)
     // What it asked can no longer be answered.
     for (const [key, pending] of [...this.requests]) if (pending.server === runtime.server) this.removeRequest(key)
     this.settingsConfirmations.get(id)?.settle(false)
@@ -1006,7 +1020,7 @@ export class CodexAppServerHost implements AgentHost {
     this.histories.add(id)
     this.flushLogMessages(id); this.reconcileMessages(id)
     const read = this.ensureThread(id)
-    if (!this.aliases[id]!.pendingSettings) { delete read.historyStatus; delete read.historyError }
+    if (!settingsHold(this.aliases[id]!)) { delete read.historyStatus; delete read.historyError }
   }
   /**
    * The newest-turn check (#324): the read before a send, without reading the whole transcript. It asks Codex for
@@ -1211,6 +1225,15 @@ export class CodexAppServerHost implements AgentHost {
     if (item.type === 'contextCompaction' && turnId && lifecycle.phase !== 'history' && thread.usage?.contextUsed !== undefined) {
       thread.activities = bracketCompaction(thread.activities, { before: thread.usage.contextUsed })
     }
+    // Nor does it report the size after one, so the figure from before it would outlive it: cleared at the end, with a new
+    // time, unless a reading came in while it ran. The next reading restores it, and the compaction recommendation does
+    // not ask again for a context just compacted, wherever the compaction started (ADR-0095).
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'started') this.compactionReadings.set(id, JSON.stringify([thread.usage?.contextUsed, thread.usage?.contextUpdatedAt]))
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'completed') {
+      const readSince = this.compactionReadings.has(id) && this.compactionReadings.get(id) !== JSON.stringify([thread.usage?.contextUsed, thread.usage?.contextUpdatedAt])
+      this.compactionReadings.delete(id)
+      if (thread.usage?.contextUsed !== undefined && !readSince) { this.usage.compacted(id, undefined); thread.usage = this.usage.get(id) }
+    }
     if (item.type === 'fileChange') {
       this.fileSummaries.set(turnKey(id, item.id), (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
       return
@@ -1348,7 +1371,9 @@ export class CodexAppServerHost implements AgentHost {
       if (response.thread) this.applyThread(id, response.thread)
       this.live.add(id); this.log.pin(id)
       const thread = this.ensureThread(id)
-      thread.historyStatus = 'error'; thread.historyError = error.message
+      // Only a permission change keeps the thread's history marked: a model or effort change holds nothing back, its
+      // queued follow-ups included.
+      if (settingsHold(alias)) { thread.historyStatus = 'error'; thread.historyError = error.message }
       await this.persist(); this.emit()
       return
     }
@@ -1581,7 +1606,8 @@ export class CodexAppServerHost implements AgentHost {
         // The coordinator's read before this send stands for the send's own (#765).
         const readForSend = this.readsBeforeSend.take(id, command)
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
-        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
+        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread'
+          && (settingsHold(alias) || (command.type !== 'send' && command.type !== 'steer'))) throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
         // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
         // resumes it here before the command proceeds.

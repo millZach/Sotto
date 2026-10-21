@@ -57,7 +57,7 @@ async function pairedWatcher(size: number) {
       action: 'start' as const, target: { hostId, threadId }, generation: 0, deliveryState: 'accepted' as const, createdAt: at, updatedAt: at,
       receiptId: `receipt-${index}`, cardId: `card-${index}`, messageId: `brief-${index}` })))
   })
-  const watcher = new WatcherService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => false, limit: () => 8, streamingPublishCost: true })
+  const watcher = new WatcherService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => false, streamingPublishCost: true })
   cleanups.push(async () => { watcher.close() })
   const remote = router.watcherHosts(), listHosts = remote.hosts.bind(remote)
   remote.hosts = () => { if (counted()) tally.hostLists++; return listHosts() }

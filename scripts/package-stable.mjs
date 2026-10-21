@@ -6,7 +6,7 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { checkRelease, stableReleaseArguments } from './check-release.mjs'
 import { Arch, build, Platform } from 'electron-builder'
-import { stablePackagePlan, checkedPromotion, withStableManifestGuard } from './stable-package.mjs'
+import { stableMacReceipt, stablePackagePlan, checkedPromotion, withStableManifestGuard } from './stable-package.mjs'
 import { releaseCheckout } from './stable-promotion.mjs'
 import { fileSha256 } from './release-provenance.mjs'
 import { linuxReleaseArguments, REHEARSAL_WARNING, requireCleanLinuxCheckout } from './linux-release.mjs'
@@ -20,6 +20,7 @@ export async function packageStable(platform, args = [], root = resolve(import.m
     await clearLinuxFinishOutputs(resolve(root, 'release'))
     await rm(resolve(root, 'release/linux-desktop-package.json'), { force: true })
   }
+  if (platform === 'mac' && (process.platform !== 'darwin' || process.arch !== 'arm64')) throw new Error('Build the Mac release on an Apple silicon Mac.')
   if (options.rehearsal) process.stderr.write(`${REHEARSAL_WARNING}\n`)
   else await checkRelease({ root, version: options.version })
   const checkout = releaseCheckout(root)
@@ -48,10 +49,17 @@ export async function packageStable(platform, args = [], root = resolve(import.m
       throw new Error('The source package manifests changed during packaging.')
     }
   }
+  if (platform === 'mac') {
+    // The receipt vouches only for files this run made, so leftovers of the same version go first.
+    for (const path of [plan.receipt, plan.installer, plan.blockmap]) await rm(resolve(root, path), { force: true })
+  }
   await withStableManifestGuard(async () => {
     run(npm, ['run', 'assets:verify'])
     run(npm, ['run', 'build'])
+    if (platform === 'mac') run(resolve(root, 'scripts/build-key-listener.mjs'))
     run(resolve(root, 'scripts/write-build-provenance.mjs'))
+    // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
+    if (platform === 'mac') run(resolve(root, 'scripts/build-coreml-asr.mjs'))
     recheck()
     const targets = { win: [Platform.WINDOWS, Arch.x64], mac: [Platform.MAC, Arch.arm64], linux: [Platform.LINUX, Arch.x64] }
     const [builderPlatform, arch] = targets[platform]
@@ -64,6 +72,13 @@ export async function packageStable(platform, args = [], root = resolve(import.m
   if (platform === 'linux') {
     const { sha256 } = await fileSha256(resolve(root, plan.installer))
     await writeFile(receiptPath, JSON.stringify({ version, sourceCommit: checkout.sourceCommit, rehearsal: options.rehearsal, tarball: plan.installer, sha256 }, null, 2) + '\n')
+  }
+  if (platform === 'mac') {
+    // Written last, so it exists only for a build that passed every check.
+    const provenance = JSON.parse(await readFile(resolve(root, 'out/build-provenance.json'), 'utf8'))
+    if (provenance.sourceCommit !== checkout.sourceCommit) throw new Error('The build provenance does not name the checked source commit.')
+    const receipt = await stableMacReceipt({ version, provenance, dmg: resolve(root, plan.installer), blockmap: resolve(root, plan.blockmap) })
+    await writeFile(resolve(root, plan.receipt), JSON.stringify(receipt, null, 2) + '\n')
   }
   process.stdout.write(options.rehearsal ? `${REHEARSAL_WARNING}\nPackaged rehearsal Sotto ${version} from ${checkout.sourceCommit}.\n` :
     `Packaged Sotto ${version} from ${promotion.sourceCommit}, checked on origin/main.\n`)

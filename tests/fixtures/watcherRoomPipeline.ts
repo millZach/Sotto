@@ -34,7 +34,7 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     finally { await seeding.stop() }
     const f = await stack(root, false, streamCount, true); stop = f.stop
     const { adapters, control, workspace, registry } = f
-    watcher = new WatcherService({ directory: root, control, host: workspace, limit: () => 8, historyEnabled: () => true, streamingPublishCost: true })
+    watcher = new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true })
     const service = new LocalHostService({ control, events: workspace })
     const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: true, streamingPublishCost: true })
     router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
@@ -97,7 +97,7 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     }
     // Earlier steps remain true in stack/router; only this desktop room seam varies off/on.
     const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: enabled, watcher,
-      send: state => { send(state); return true }, setLimit: async () => { throw new Error('Unexpected limit command in benchmark') } })!
+      send: state => { send(state); return true } })!
     unsubscribe = () => desktop.dispose()
     await control.command({ type: 'observe-threads', threadIds: ids })
     for (const id of ids) control.threadDetail(id)

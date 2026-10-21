@@ -60,7 +60,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
     current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
     requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
     watchedThreads: [{ target: target('footer-links'), title: 'Footer links', status: 'running', connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [participant] }],
-    inFlight: 2, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at, ...patch,
+    receipts: [], recoveryNotice: null, observedAt: at, ...patch,
   }
 }
 
@@ -70,7 +70,6 @@ function fakeBridge(state: WatcherRoomState) {
   const bridge = {
     get: vi.fn(async () => ok(state)),
     open: vi.fn(async () => ok({ ...state, current: identity })),
-    setLimit: vi.fn(async ({ limit }: { limit: number }) => ok({ ...state, inFlightLimit: limit })),
     setPermission: vi.fn(async ({ runtimeMode }: { runtimeMode: WatcherRoomState['runtimeMode'] }) => ok({ ...state, runtimeMode })),
     watchThread: vi.fn(async () => ok(state)),
     unwatchThread: vi.fn(async () => ok(state)),
@@ -116,7 +115,7 @@ afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe("Watcher's room", () => {
   it('starts on Watcher’s own composer the first time, and the first message starts Watcher and goes to it without selecting anything', async () => {
-    const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
     expect(screen.getByText(/only you answer a thread’s questions and permissions/)).toBeInTheDocument()
     // No tabs or actions before Watcher runs.
@@ -170,7 +169,7 @@ describe("Watcher's room", () => {
   it('keeps the first message when the room is left while Watcher starts, and sends it to Watcher once', async () => {
     mockApp('watcher')
     const command = mockAgents(stateWithWatcher())
-    const { bridge, publish } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    const { bridge, publish } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     let answer: (result: WatcherRoomResult) => void = () => undefined
     bridge.open.mockImplementationOnce(() => new Promise<WatcherRoomResult>(resolve => { answer = resolve }))
     const tree = (room: boolean) => <React.StrictMode><WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}>
@@ -201,7 +200,7 @@ describe("Watcher's room", () => {
   it('shows a refusal that came while the room was left, with the message still in the composer', async () => {
     mockApp('watcher')
     const command = mockAgents(stateWithWatcher())
-    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     let answer: (result: WatcherRoomResult) => void = () => undefined
     bridge.open.mockImplementationOnce(() => new Promise<WatcherRoomResult>(resolve => { answer = resolve }))
     const tree = (room: boolean) => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}>
@@ -225,7 +224,7 @@ describe("Watcher's room", () => {
     state.host.models = [{ id: 'muse:fixture', provider: 'Muse', providerId: 'muse', name: 'Fixture Muse', ready: true }]
     mockApp('watcher', true, true)
     mockAgents(state)
-    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
     expect(await screen.findByText(/your own Codex, Claude Code, Grok Build or Muse account/)).toBeInTheDocument()
     setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
@@ -245,7 +244,8 @@ describe("Watcher's room", () => {
     const { command } = renderRoom(stateWithWatcher(), roomState())
     const pane = await screen.findByRole('region', { name: 'Watcher' })
     expect(within(pane).getByRole('heading', { level: 1, name: 'Watcher' })).toBeInTheDocument()
-    expect(within(pane).getByRole('img', { name: 'Sotto Owl' })).toBeInTheDocument()
+    // Once Watcher runs, the tile is the button for its context and state (#1189).
+    expect(within(pane).getByRole('button', { name: 'Watcher’s context and state' })).toBeInTheDocument()
     // The tile is the owl in the corner; the small owl that sat before Watcher's name is gone, and so is the sidebar.
     expect(pane.querySelector('.watcher-head .watcher-owl')).toBeNull()
     expect(screen.queryByRole('complementary')).toBeNull()
@@ -291,6 +291,17 @@ describe("Watcher's room", () => {
       : { ...item, messages: [], historyStatus: 'loading' as const, summary: { messageCount: item.messages.length, activityCount: 0 } })
     return next
   }
+
+  it.each(['news', 'watcher-1'])('offers Steer now while Watcher works, on Sotto’s news as on the user’s message (#1188), head %s', async head => {
+    const state = stateWithWatcher()
+    state.host.capabilities = { ...state.host.capabilities, steer: true }
+    Object.assign(state.host.threads.find(thread => thread.id === 'watcher')!, { status: 'running', lastUserMessageId: head, wakeUpMessageIds: ['news'] })
+    state.followups = [{ id: 'queued', threadId: 'watcher', draftId: 'draft', text: 'Watch them again', attachments: [], status: 'queued', createdAt: at, updatedAt: at }]
+    renderRoom(state, roomState())
+    const pane = await screen.findByRole('region', { name: 'Watcher' })
+    expect(within(within(pane).getByRole('region', { name: 'Queued messages' })).getAllByText('Watch them again').length).toBeGreaterThan(0)
+    expect(within(pane).getAllByRole('button', { name: 'Steer now' }).length).toBeGreaterThan(0)
+  })
 
   it('keeps Watcher’s reading position, and a beside thread’s, for a trip to another room', async () => {
     layOutTranscripts()
@@ -501,7 +512,7 @@ describe("Watcher's room", () => {
   })
 
   it('stops reading a beside thread when its pane closes before Watcher exists, so main does not count it as seen', async () => {
-    const { command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    const { command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })
     fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Weekly note beside Watcher' }))
@@ -624,25 +635,11 @@ describe("Watcher's room", () => {
     toolsPanelStore.setOpen(false)
   })
 
-  it('keeps Threads in flight under More Watcher actions, saves it through main and returns focus on Escape', async () => {
-    const { bridge, publish } = renderRoom(stateWithWatcher(), roomState())
-    const more = await screen.findByRole('button', { name: 'More Watcher actions' })
-    fireEvent.click(more)
-    const panel = screen.getByRole('dialog', { name: 'Watcher settings' })
-    const limit = within(panel).getByRole('combobox', { name: 'Threads in flight' })
-    expect(limit).toHaveFocus()
-    expect(limit).toHaveValue('4')
-    // It limits new starts, not watching.
-    expect(limit).toHaveAccessibleDescription(/It watches any number, and lowering this stops nothing/)
-    fireEvent.change(limit, { target: { value: '3' } })
-    await waitFor(() => expect(bridge.setLimit).toHaveBeenCalledWith({ limit: 3 }))
-    await waitFor(() => expect(limit).toHaveValue('3'))
-    fireEvent.keyDown(limit, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Watcher settings' })).toBeNull()
-    expect(more).toHaveFocus()
-    // A lower limit than the threads in flight stops nothing, and the watched count is not the limit's.
-    act(() => publish(roomState({ inFlightLimit: 1, observedAt: new Date(NOW + 1_000).toISOString() })))
-    expect(screen.getByRole('tab', { name: 'Watched, 1 thread' })).toBeInTheDocument()
+  it('has no limit to set: once Watcher runs its header holds no More Watcher actions, and the watched count is not capped', async () => {
+    renderRoom(stateWithWatcher(), roomState())
+    expect(await screen.findByRole('tab', { name: 'Watched, 1 thread' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More Watcher actions' })).toBeNull()
+    expect(screen.queryByText('Threads in flight')).toBeNull()
   })
 
   /** A window whose Sotto browser opens `footer-links`' pages, and whose system browser opens anything. */
@@ -694,30 +691,6 @@ describe("Watcher's room", () => {
       expect(browser.bridge.openLink).not.toHaveBeenCalled()
       expect(navigate).not.toHaveBeenCalled()
     } finally { restore() }
-  })
-
-  it('closes More Watcher actions on Escape from its button too, after Shift+Tab back to it', async () => {
-    const user = userEvent.setup()
-    renderRoom(stateWithWatcher(), roomState())
-    const more = await screen.findByRole('button', { name: 'More Watcher actions' })
-    await user.click(more)
-    expect(screen.getByRole('combobox', { name: 'Threads in flight' })).toHaveFocus()
-    await user.tab({ shift: true })
-    expect(more).toHaveFocus()
-    expect(screen.getByRole('dialog', { name: 'Watcher settings' })).toBeInTheDocument()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: 'Watcher settings' })).toBeNull()
-    expect(more).toHaveAttribute('aria-expanded', 'false')
-    expect(more).toHaveFocus()
-  })
-
-  it('says a refused limit change and keeps the old limit', async () => {
-    const { bridge } = renderRoom(stateWithWatcher(), roomState())
-    bridge.setLimit.mockResolvedValueOnce({ status: 'refused', code: 'INVALID_INPUT', message: 'The limit was not saved. It is still 4.', retryable: true })
-    fireEvent.click(await screen.findByRole('button', { name: 'More Watcher actions' }))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Threads in flight' }), { target: { value: '7' } })
-    expect(await screen.findByRole('alert')).toHaveTextContent('The limit was not saved. It is still 4.')
-    expect(screen.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('4')
   })
 })
 

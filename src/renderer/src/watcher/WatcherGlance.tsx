@@ -5,17 +5,26 @@ import { openAtRequestLabel, threadPress, waitKind, type OpenThread, type Overvi
 const NAMES = 5
 const WHY: Record<WaitKind, string> = { question: 'question', permission: 'permission', failed: 'last turn failed' }
 
+/** What a press on a name does when the thread's request has its card in Watcher's conversation. */
+export const goToAskLabel = (title: string, kind: 'question' | 'permission'): string => `Go to the ${kind} from ${title} in this conversation`
+
 /**
  * One quiet line under Watcher's header naming each thread that needs the user and why: a question, a permission or a
  * failed turn (Zach's pick on October 11, 2026). Each name opens that thread beside Watcher at what it waits on, or with
- * Shift in the Threads room. Past five names the rest are counted, and the count opens All threads. Gone when nothing
- * waits. Narrow windows drop the reasons and keep the names.
+ * Shift in the Threads room. A name whose request has its card in Watcher's conversation goes to that card instead and
+ * focuses it (Zach's pick on October 19, 2026), and opens the thread as before when the card is no longer there. Past
+ * five names the rest are counted, and the count opens All threads. Gone when nothing waits. Narrow windows drop the
+ * reasons and keep the names.
  */
-export function WatcherGlance({ entries, onOpen, onShowAll }: {
+export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump }: {
   readonly entries: readonly OverviewEntry[]
   readonly onOpen: OpenThread
   /** Opens All threads; `from` is the count that was pressed, for focus to come back to. */
   readonly onShowAll: (from: HTMLElement) => void
+  /** The threads whose waiting request has its card in Watcher's conversation now. */
+  readonly inline?: ReadonlySet<string> | undefined
+  /** Brings a thread's card in the conversation into view and focuses it; false when it is not there. */
+  readonly onJump?: ((threadId: string, requestId: string | undefined) => boolean) | undefined
 }): ReactNode {
   const heading = useId()
   if (entries.length === 0) return null
@@ -27,10 +36,13 @@ export function WatcherGlance({ entries, onOpen, onShowAll }: {
       {named.map(entry => {
         const thread = entry.overview.thread
         const kind = waitKind(entry)
+        const press = threadPress(onOpen, thread.id, true)
+        const here = kind !== 'failed' && onJump !== undefined && inline?.has(thread.id) === true
+        const requestId = entry.facts.request?.requestId ?? thread.requests[0]?.id
         return <li key={thread.id}>
           <span className="watcher-row__ring" data-tone={kind === 'failed' ? 'failed' : 'needs'} aria-hidden="true" />
-          <button type="button" className="watcher-glance__name tt-focusable" aria-label={openAtRequestLabel(thread.title, kind)} title={thread.title}
-            {...threadPress(onOpen, thread.id, true)}><span>{thread.title}</span></button>
+          <button type="button" className="watcher-glance__name tt-focusable" aria-label={here ? goToAskLabel(thread.title, kind) : openAtRequestLabel(thread.title, kind)} title={thread.title}
+            onClick={event => { if (here && !event.shiftKey && onJump?.(thread.id, requestId) === true) return; press.onClick(event) }} onKeyDown={press.onKeyDown}><span>{thread.title}</span></button>
           <span className="watcher-glance__why" aria-hidden="true">{WHY[kind]}</span>
         </li>
       })}
