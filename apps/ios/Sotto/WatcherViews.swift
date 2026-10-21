@@ -236,17 +236,24 @@ private struct SectionSwitch: View {
 
 /// Where Watcher's conversation stands, kept outside SwiftUI's state so scrolling never redraws it. Frames are global.
 private final class WatcherFollow {
-    /// How near the box, or the header, the newest words must be to count as in view.
-    static let slack: CGFloat = 56
+    /// Whether this iOS says when the user lets go of the page, as iOS 18 and later do. iOS 17 can't, and keeps the page's
+    /// end where it was as the page grows, so there where the page stands is decided as its end moves, as a thread's is.
+    static let seesLetGo: Bool = { if #available(iOS 18.0, *) { return true } else { return false } }()
     /// The bottom of the newest words, and of the page.
     var newest: CGFloat = 0
     var end: CGFloat = 0
     /// The bottom of the header, and the top of the box.
     var top: CGFloat = 0
     var dockTop: CGFloat = .greatestFiniteMagnitude
-    /// The reader sees the newest words, or the page's end where it opens, so the page follows Watcher's new words.
-    /// Decided where the user lets go of the page, or the box moves, never as the content grows: new words judged by
-    /// where they pushed the page would stop it following them.
+    /// Where each card waiting on the user sits, by the card's key.
+    var cards: [String: CGRect] = [:]
+    /// The key of the card the reader is on. Nothing but the reader moves it away: Watcher's new words, the box changing
+    /// height and the keyboard all leave it whole above the box (#1277). Taken where the user lets go of the page with a
+    /// card in view, and let go of where they let go with none, when they send their own words, or when the card leaves.
+    var held: String?
+    /// The reader sees the newest words, or the page's end where it opens, and no card they are on, so the page follows
+    /// Watcher's new words. Decided where the user lets go of the page, or the box moves, never as the content grows: new
+    /// words judged by where they pushed the page would stop it following them.
     var following = true
     /// The user is dragging the page or letting a flick run out, so it never moves under them.
     var userScrolling = false
@@ -255,18 +262,22 @@ private final class WatcherFollow {
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
     func settle() {
-        let seesNewest = newest >= top - Self.slack && newest <= dockTop + Self.slack
-        following = seesNewest || end <= dockTop + Self.slack
+        let place = WatcherReaderPlace(newest: newest, end: end, top: top, dockTop: dockTop, cards: cards)
+        held = place.heldCard
+        following = place.following
     }
 }
 
 private extension View {
     /// Opens at the page's end, and sits a short conversation at the bottom, as a chat does. On iOS 18 and later that is
     /// all the anchor does, so a page that grows keeps a reader's place and follows new words only for a reader who sees
-    /// them (`WatcherFollow`). iOS 17 can't separate the anchor's roles, so there it does as it did before.
-    @ViewBuilder func watcherScrollAnchor() -> some View {
+    /// them (`WatcherFollow`), except while the reader is on a card: Watcher's words grow above the cards, so there the
+    /// page keeps its bottom where it was and the card stays put as they grow. iOS 17 can't separate the anchor's roles,
+    /// so there it always keeps its bottom, as it did before.
+    @ViewBuilder func watcherScrollAnchor(holdingCard: Bool) -> some View {
         if #available(iOS 18.0, *) {
             defaultScrollAnchor(.bottom, for: .initialOffset).defaultScrollAnchor(.bottom, for: .alignment)
+                .defaultScrollAnchor(holdingCard ? .bottom : nil, for: .sizeChanges)
         } else {
             defaultScrollAnchor(.bottom)
         }
@@ -288,8 +299,13 @@ private struct WatcherConversationPane: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var follow = WatcherFollow()
+    /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
+    /// never as the page scrolls, and read only on iOS 18 and later.
+    @State private var holdingCard = false
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
+    /// A waiting card's place on the page, to scroll it whole above the box.
+    private static func cardID(_ key: String) -> String { "watcher-needs-you-" + key }
 
     var body: some View {
         let page = model.watcherPage(hostID)
@@ -334,44 +350,73 @@ private struct WatcherConversationPane: View {
                         if let page { WatcherFollowupLine(hostID: hostID, item: item, page: page) }
                     }
                     Color.clear.frame(height: 1).id(Self.end)
-                        .background(reader { follow.end = $0.maxY })
+                        .background(reader { frame in
+                            follow.end = frame.maxY
+                            if !WatcherFollow.seesLetGo { follow.settle() }
+                        })
                 }
                 .padding(.horizontal, Space.s4)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .watcherScrollAnchor()
+            .watcherScrollAnchor(holdingCard: holdingCard)
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.readWatcher(hostID) }
             .onUserScrolling { scrolling in
                 let wasScrolling = follow.userScrolling
                 follow.userScrolling = scrolling
                 guard wasScrolling && !scrolling else { return }
-                // Where they let go decides whether the page follows. What arrived while they moved it is followed then,
-                // if they let go where it follows; a page moved to earlier messages is left where they put it.
-                follow.settle()
+                // Where they let go decides whether the page follows, or keeps the card they stopped on. What arrived
+                // while they moved it is followed then, if they let go where it follows; a page moved to earlier messages
+                // is left where they put it.
+                settle()
                 guard follow.missedFollow else { return }
                 follow.missedFollow = false
-                if follow.following { toNewest(proxy, to: newest) }
+                if follow.following { toNewest(proxy, to: newest) } else { keepHeldCard(proxy) }
             }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 WatcherDock(hostID: hostID, willSend: {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
-                    follow.following = true
+                    resumeFollowing()
                 }).background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
             // so scrolling to the end would leave the new words under the header on a small phone. A reader of earlier
-            // messages is left there, and the user's own words are always shown as they send them (ADR-0051).
+            // messages is left there, a reader on a card is left on it, whole above the box, and the user's own words are
+            // always shown as they send them (ADR-0051).
             .onChange(of: WatcherTail(revision: page?.conversation.revision ?? 0, sending: sending != nil)) { before, after in
-                if after.sending && !before.sending { follow.following = true }
-                if follow.following { toNewest(proxy, to: newest) }
+                if after.sending && !before.sending { resumeFollowing() }
+                // iOS 17 keeps the page's bottom where it was as it grows, which keeps the card too, and can't say when
+                // the user is dragging, so there nothing scrolls for it.
+                if follow.following { toNewest(proxy, to: newest) } else if WatcherFollow.seesLetGo { keepHeldCard(proxy) }
+            }
+            // The card the reader was on left the page, answered here or anywhere else: the page follows the newest words
+            // again.
+            .onChange(of: page?.needsYou.map(\.key) ?? []) { _, keys in
+                guard let held = follow.held, !keys.contains(held) else { return }
+                resumeFollowing()
+                toNewest(proxy, to: newest)
             }
         }
+    }
+
+    /// Decides where the page stands (`WatcherFollow.settle`), and tells the scroll anchor whether the reader is on a card.
+    private func settle() {
+        follow.settle()
+        setHoldingCard(follow.held != nil)
+    }
+    /// The page follows the newest words again, and no card is held.
+    private func resumeFollowing() {
+        follow.held = nil
+        follow.following = true
+        setHoldingCard(false)
+    }
+    private func setHoldingCard(_ holding: Bool) {
+        if WatcherFollow.seesLetGo, holdingCard != holding { holdingCard = holding }
     }
 
     /// Reads a frame, in global coordinates, as it moves. Nothing redraws for it, and nothing is decided by it.
@@ -382,17 +427,18 @@ private struct WatcherConversationPane: View {
                 .onChange(of: proxy.frame(in: .global)) { _, frame in moved(frame) }
         }
     }
-    /// The bottom of the header, which sits over the page's top.
+    /// The bottom of the header, which sits over the page's top. Where the page stands is decided where the user lets go
+    /// of it or the box moves; the header only says where the page's top is.
     private var barReader: some View {
         GeometryReader { proxy in
             let bottom = proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
             Color.clear
-                .onAppear { follow.top = bottom; follow.settle() }
-                .onChange(of: bottom) { _, value in follow.top = value; follow.settle() }
+                .onAppear { follow.top = bottom }
+                .onChange(of: bottom) { _, value in follow.top = value }
         }
     }
     /// The top of the box, which moves when it changes height or the keyboard opens or closes. A reader who saw the newest
-    /// words before it moved still sees them after.
+    /// words before it moved still sees them after, and a reader on a card still sees all of it.
     private func dockReader(_ scroll: ScrollViewProxy, newest: String) -> some View {
         GeometryReader { proxy in
             Color.clear
@@ -400,9 +446,35 @@ private struct WatcherConversationPane: View {
                 .onChange(of: proxy.frame(in: .global).minY) { _, value in
                     let wasFollowing = follow.following
                     follow.dockTop = value
-                    if wasFollowing { toNewest(scroll, to: newest) } else { follow.settle() }
+                    if wasFollowing { toNewest(scroll, to: newest) }
+                    else if follow.held != nil { keepHeldCard(scroll) }
+                    else { settle() }
                 }
         }
+    }
+    /// Keeps the card the reader is on whole above the box once the new layout is in, and looks once more after it has
+    /// settled: the box rose over it, or Watcher's words pushed it down. A card the box doesn't cover stays where it is.
+    /// Requests made in the same moment scroll once. None scrolls while the user moves the page; the page owes it to them
+    /// for when they let go.
+    private func keepHeldCard(_ scroll: ScrollViewProxy) {
+        let box = follow
+        guard box.held != nil else { return }
+        guard !box.userScrolling else { box.missedFollow = true; return }
+        box.followRequests += 1
+        let request = box.followRequests
+        let still = reduceMotion
+        Task { @MainActor in
+            await Task.yield()
+            Self.lift(box, scroll, request: request, still: still)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            Self.lift(box, scroll, request: request, still: still)
+        }
+    }
+    /// Scrolls the held card's bottom to just above the box, if the box covers any of it and nothing asked to scroll since.
+    private static func lift(_ box: WatcherFollow, _ scroll: ScrollViewProxy, request: Int, still: Bool) {
+        guard box.followRequests == request, !box.userScrolling, let key = box.held,
+              let frame = box.cards[key], frame.maxY > box.dockTop + 1 else { return }
+        withAnimation(still ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(cardID(key), anchor: .bottom) }
     }
     /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
     /// scroll has run, for words whose height settled after it. Requests made in the same moment scroll once, and only the
@@ -447,19 +519,28 @@ private struct WatcherConversationPane: View {
         let workers = page.needsYou.filter { !page.isOwn($0) }
         let own = page.needsYou.filter { page.isOwn($0) }
         ForEach(workers, id: \.key) { card in
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
-                    Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.")
-                        .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            waiting(card.key) {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.")
+                            .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    WatcherRequestCard(hostID: hostID, card: card, own: false, review: review)
                 }
-                .accessibilityElement(children: .combine)
-                WatcherRequestCard(hostID: hostID, card: card, own: false, review: review)
             }
         }
         ForEach(own, id: \.key) { card in
-            WatcherRequestCard(hostID: hostID, card: card, own: true, review: review)
+            waiting(card.key) { WatcherRequestCard(hostID: hostID, card: card, own: true, review: review) }
         }
+    }
+    /// A card waiting on the user, where the page can scroll to it and say where it sits, so a reader can be held on it.
+    private func waiting<Card: View>(_ key: String, @ViewBuilder _ card: () -> Card) -> some View {
+        card()
+            .id(Self.cardID(key))
+            .background(reader { follow.cards[key] = $0 })
+            .onDisappear { follow.cards[key] = nil }
     }
 }
 

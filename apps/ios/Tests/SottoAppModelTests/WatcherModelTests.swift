@@ -1,5 +1,6 @@
 import XCTest
 import Combine
+import CoreGraphics
 import SottoCore
 
 /// Holds the model between two receipt reads while a test says so. Otherwise it lets other work run, as the real wait
@@ -1383,6 +1384,38 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(WatcherConversation.items(orphan).contains { if case .ownChange = $0 { return true } else { return false } })
         XCTAssertTrue(WatcherConversation.items(try decoded()).allSatisfy { if case .ownChange = $0 { return false } else { return true } },
                       "A reply in which Watcher changed nothing has no line")
+    }
+
+    // MARK: Where the reader stands (#1277)
+
+    /// A reader who lets go with a waiting card in view is held on it, even with the page's end in view, so Watcher's new
+    /// words never push it under the box. A reader who sees no card follows the new words where they see the newest words
+    /// or the end, and a reader of earlier messages follows nothing.
+    func testAReaderOnAWaitingCardIsHeldThereRatherThanFollowingNewWords() {
+        // The header ends at 140 and the box starts at 600.
+        func place(newest: CGFloat, end: CGFloat, cards: [String: CGRect] = [:]) -> WatcherReaderPlace {
+            WatcherReaderPlace(newest: newest, end: end, top: 140, dockTop: 600, cards: cards)
+        }
+        let whole = CGRect(x: 16, y: 340, width: 340, height: 230)
+        let onCard = place(newest: 320, end: 590, cards: ["login": whole])
+        XCTAssertEqual(onCard.heldCard, "login", "The card is whole above the box")
+        XCTAssertFalse(onCard.following, "The end is in view, but the card holds the page")
+
+        let barelyShowing = place(newest: 560, end: 860, cards: ["login": CGRect(x: 16, y: 580, width: 340, height: 260)])
+        XCTAssertNil(barelyShowing.heldCard, "Less than a reading's worth of the card shows above the box")
+        XCTAssertTrue(barelyShowing.following, "The newest words are in view, so the page follows them")
+
+        let scrolledPast = place(newest: 100, end: 400, cards: ["login": CGRect(x: 16, y: -140, width: 340, height: 230)])
+        XCTAssertNil(scrolledPast.heldCard, "A card above the header isn't the one the reader is on")
+        XCTAssertTrue(scrolledPast.following, "The page's end is in view")
+
+        let two = place(newest: 160, end: 595, cards: ["login": CGRect(x: 16, y: 180, width: 340, height: 180),
+                                                       "notes": CGRect(x: 16, y: 380, width: 340, height: 200)])
+        XCTAssertEqual(two.heldCard, "notes", "With two in view, the lower one is kept whole above the box")
+
+        let reading = place(newest: 1600, end: 1900, cards: ["login": CGRect(x: 16, y: 1640, width: 340, height: 230)])
+        XCTAssertNil(reading.heldCard)
+        XCTAssertFalse(reading.following, "A reader of earlier messages is left where they are")
     }
 
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {

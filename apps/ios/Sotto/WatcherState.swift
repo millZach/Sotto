@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import SottoCore
 
@@ -256,6 +257,33 @@ enum WatcherConversation {
             items += (after[index] ?? []).map { .receipts($0, attached: false) }
         }
         return items + trailing.map { .receipts($0, attached: false) }
+    }
+}
+
+/// Where the reader of Watcher's conversation stands, worked out from frames in one coordinate space where they let go of
+/// the page or the box moves. Cards waiting on the user sit after the conversation, so following Watcher's new words
+/// would push a card under the box; a reader on a card is held on it instead, and nothing but the reader moves it away
+/// (#1277).
+struct WatcherReaderPlace: Equatable {
+    /// How near the box, or the header, the newest words or the page's end must be to count as in view, and how much of
+    /// a card must show above the box for the reader to be on it.
+    static let slack: CGFloat = 56
+    /// The key of the card the reader is on: the lowest one they can see with room to read it. Keeping the lowest whole
+    /// above the box keeps any above it where they are too.
+    let heldCard: String?
+    /// The reader sees the newest words, or the page's end, and is on no card, so the page follows Watcher's new words.
+    let following: Bool
+
+    /// - Parameters:
+    ///   - newest: the bottom of the newest words; `end`, the bottom of the page.
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    ///   - cards: each waiting card's frame, by its key.
+    init(newest: CGFloat, end: CGFloat, top: CGFloat, dockTop: CGFloat, cards: [String: CGRect]) {
+        let slack = Self.slack
+        heldCard = cards.filter { $0.value.minY < dockTop - slack && $0.value.maxY > top }
+            .max { $0.value.minY < $1.value.minY }?.key
+        let seesNewest = newest >= top - slack && newest <= dockTop + slack
+        following = heldCard == nil && (seesNewest || end <= dockTop + slack)
     }
 }
 

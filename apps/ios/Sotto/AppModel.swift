@@ -1416,11 +1416,17 @@ struct HeldDetail {
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         if watching {
-            let page = Self.fixtureWatcherPage(laptop: laptop, studio: studio, mayAnswer: watcherAnswers,
+            var page = Self.fixtureWatcherPage(laptop: laptop, studio: studio, mayAnswer: watcherAnswers,
                                                asks: arguments.contains("--ui-watcher-asks"),
                                                reasoned: !arguments.contains("--ui-watcher-no-reason"), at: at)
+            // With --ui-watcher-keeps-writing, Fix login test's question arrives while Watcher writes, and Watcher goes on
+            // writing above it (#1277).
+            let keepsWriting = arguments.contains("--ui-watcher-keeps-writing")
+            let waiting = page["needsYou"]
+            if keepsWriting { page["needsYou"] = [[String: Any]]() }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
+            if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }
         }
         storageReady = true
         if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
@@ -1708,6 +1714,29 @@ struct HeldDetail {
         appendFixtureWatcherMessage(["id": "refresh-" + UUID().uuidString, "role": "assistant",
                                      "createdAt": ISO8601DateFormatter().string(from: Date()),
                                      "text": "Nothing new needs you. Babysit #845 release notes is still waiting for its checks."], on: hostID)
+    }
+    /// Watcher writes one long reply a few words at a time, twice a second for two minutes, and `cards` arrive under it a
+    /// moment after it starts, as a worker's question reaches Watcher's page while Watcher writes.
+    private func keepFixtureWatcherWriting(on hostID: String, then cards: Any?) {
+        let id = "writing-" + UUID().uuidString
+        appendFixtureWatcherMessage(["id": id, "role": "assistant", "createdAt": ISO8601DateFormatter().string(from: Date()),
+                                     "text": "Checking the threads I watch."], on: hostID)
+        Task { [weak self] in
+            for tick in 1...240 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let self else { return }
+                changeFixtureWatcher(on: hostID) { page in
+                    if tick == 3, let cards { page["needsYou"] = cards }
+                    guard var conversation = page["conversation"] as? [String: Any],
+                          var messages = conversation["messages"] as? [[String: Any]],
+                          let index = messages.firstIndex(where: { $0["id"] as? String == id }) else { return }
+                    messages[index]["text"] = (messages[index]["text"] as? String ?? "") + " Still waiting on #845’s checks."
+                    conversation["messages"] = messages
+                    conversation["revision"] = (conversation["revision"] as? Int ?? 0) + 1
+                    page["conversation"] = conversation
+                }
+            }
+        }
     }
     private func appendFixtureWatcherMessage(_ message: [String: Any], on hostID: String, receipts: [String: Any]? = nil) {
         changeFixtureWatcher(on: hostID) { page in
