@@ -200,6 +200,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
       otherStartsInFlight: () => delegation?.startsInFlight() ?? 0 }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
+    agentHost.enableDelegation()
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId) })
