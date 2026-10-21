@@ -1,0 +1,579 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything. Nothing here starts, sends or reads a Watcher.
+
+  Question: what does the "New Watcher" button in Watcher's composer look like? A press starts a new Watcher on the
+  current model at once, with no confirm. The old conversation moves to Watcher history; workers and watches carry on.
+  The new Watcher then shows the existing handover offer over its composer (WatcherHandoverOffer, watcher.css
+  .watcher-handover*) and the send button reads Continue. While Watcher works or has deliveries pending, the button is
+  unavailable and says why, on hover and on focus.
+
+  It replaces the composer's "Runs on this computer" chip in Watcher's composer only (Watcher always runs on this
+  computer). Ordinary threads keep their chip.
+
+  Variants (?variant=A|B|C, the bar at the bottom, or the arrow keys):
+    A  Labelled chip.  A quiet pill, "New Watcher" with its icon, in the host chip's place: first in the footer row,
+                       the model and permission chips' height and style.
+    B  Icon only.      A 28px round button in the chip's place, the paperclip's and the send disc's footprint, named
+                       "Start a new Watcher with a handover of this one", which a tooltip shows on hover and focus.
+    C  In the header.  The alternative to Zach's placement: a labelled button in the room's top strip, right of the
+                       Conversation and Watched tabs. The composer footer then has no chip at all.
+
+  States (?state=idle|busy|after): Idle; Busy (Watcher working: the stop square, the button unavailable with its
+  reason); After press (the new Watcher, the handover offer over the composer and Continue on the send button).
+  Pressing New Watcher in Idle goes to After press. X on the strip, or Escape in the composer, puts the offer away.
+
+  URL: ?variant=A|B|C&state=idle|busy|after&theme=dark|light&motion=reduce&size=1600x1000|1280x800|820x560
+  Colour comes only from custom properties: the --theme-* roles are Sotto's default palette (src/shared/themes/
+  palettes.ts, SOTTO_*_THEME_COLORS) and --tt-* are derived as src/renderer/src/styles/tokens.css derives them.
+  The --proto-* properties paint the prototype's own controls, which are not part of the design.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto: New Watcher button, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+/* ---------- Theme roles: Sotto's default palette, dark (Ink) and light (paper) ---------- */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  --tt-owl-room-night: oklch(from var(--tt-canvas) calc(l + .04) .036 265);
+  --tt-owl-star: color-mix(in srgb, var(--theme-text) 55%, transparent);
+  --proto-page: oklch(0.27 0 0);
+  --proto-page-text: oklch(0.86 0 0);
+  --proto-bar: oklch(0.9 0.11 92);
+  --proto-bar-ink: oklch(0.2 0.02 90);
+  --proto-bar-line: oklch(0.55 0.08 90);
+  --proto-bar-on: oklch(0.2 0.02 90);
+  --proto-bar-on-ink: oklch(0.95 0.06 92);
+  --proto-frame: oklch(0 0 0);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
+  --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, var(--tt-accent));
+  --tt-owl-star: transparent;
+  --proto-page: oklch(0.8 0 0);
+  --proto-page-text: oklch(0.25 0 0);
+  --proto-frame: oklch(0.55 0 0);
+}
+/* The --tt-* tokens the room reads, derived as tokens.css derives them at the default (100%) contrast. */
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-field: var(--theme-surface);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-border-faint: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-error-text: var(--theme-error-foreground);
+  --tt-warning-text: var(--theme-warning-foreground);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-link: var(--tt-accent-text);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-pill: 999px;
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--proto-page); }
+body { font-family: var(--tt-font); }
+button { font: inherit; }
+svg { flex: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tt-focusable:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+
+/* ---------- The prototype's own page (not the design) ---------- */
+.proto-cap { max-width: 980px; margin: 0 auto; padding: 18px 24px 12px; color: var(--proto-page-text); font: 13px/1.5 ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.proto-cap b { font-weight: 700; }
+.stage { display: flex; justify-content: center; padding: 0 0 96px; }
+.window { zoom: var(--fit, 1); position: relative; flex: none; width: var(--w); height: var(--h); overflow: hidden; outline: 1px solid var(--proto-frame);
+  container: win / size; background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; }
+
+.proto-bar { position: fixed; bottom: 14px; left: 50%; z-index: 100; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; max-width: calc(100vw - 24px);
+  padding: 7px 10px; border: 2px dashed var(--proto-bar-line); border-radius: 10px; background: var(--proto-bar); color: var(--proto-bar-ink);
+  font: 12.5px/1.2 ui-monospace, 'Cascadia Code', Consolas, monospace; transform: translateX(-50%); box-shadow: 0 6px 24px rgb(0 0 0 / 35%); }
+.proto-bar button, .proto-bar select { height: 28px; padding: 0 9px; border: 1px solid var(--proto-bar-line); border-radius: 6px; background: transparent; color: var(--proto-bar-ink); font: inherit; cursor: pointer; }
+.proto-bar button[aria-pressed='true'] { background: var(--proto-bar-on); color: var(--proto-bar-on-ink); }
+.proto-bar :focus-visible { outline: 2px solid var(--proto-bar-ink); outline-offset: 2px; }
+.proto-bar .group { display: inline-flex; align-items: center; gap: 4px; }
+.proto-bar .vlabel { min-width: 196px; text-align: center; font-weight: 700; }
+.proto-bar label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.proto-bar .sep { width: 1px; height: 20px; background: var(--proto-bar-line); }
+
+/* ---------- Watcher's room ---------- */
+.room { position: relative; display: grid; grid-template-rows: 44px minmax(0, 1fr) auto 54px; height: 100%; }
+.sky { position: absolute; top: 0; left: 0; width: 520px; max-width: 100%; height: 104px; pointer-events: none;
+  background: radial-gradient(130px 70px at 26px 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-room-night);
+  -webkit-mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
+.stars { position: absolute; inset: 0 auto auto 0; width: 320px; height: 92px;
+  background: radial-gradient(1px 1px at 58px 61px, var(--tt-owl-star), transparent), radial-gradient(1px 1px at 141px 12px, var(--tt-owl-star), transparent),
+    radial-gradient(1.2px 1.2px at 214px 38px, var(--tt-owl-star), transparent), radial-gradient(1px 1px at 97px 80px, var(--tt-owl-star), transparent),
+    radial-gradient(1px 1px at 262px 70px, var(--tt-owl-star), transparent), radial-gradient(1px 1px at 182px 86px, var(--tt-owl-star), transparent); }
+
+/* The top strip: also the window's drag strip; every control in it opts out of dragging. */
+.head { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0; padding: 0 0 0 14px; -webkit-app-region: drag; }
+.head :is(button, a) { -webkit-app-region: no-drag; }
+.tile { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 6px; border-radius: 7px; background: var(--tt-accent); color: var(--tt-on-accent); }
+.head h1 { flex: 0 1 auto; min-width: 3em; margin: 0 6px 0 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-btn { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.list-btn:hover { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+.list-btn:hover .count { color: var(--tt-text-2); }
+.tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.tab:hover { color: var(--tt-text); }
+.tab[aria-selected='true'] { background: var(--tt-surface-elevated); box-shadow: 0 1px 2px var(--tt-shadow-color); color: var(--tt-text); }
+.tab .count { color: var(--tt-text-2); }
+.grow { flex: 1 1 auto; min-width: 8px; }
+.ib { display: grid; flex: none; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.ib:hover { background: var(--tt-hover); color: var(--tt-text); }
+.winctl { display: flex; flex: none; align-items: center; height: 44px; margin-left: 10px; color: var(--tt-text-2); }
+.winctl span { display: grid; place-items: center; width: 46px; height: 44px; }
+
+/* Transcript */
+.transcript { position: relative; min-height: 0; overflow-y: auto; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; }
+.msg { position: relative; margin: 0 0 28px; }
+.msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg .who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-weight: 500; }
+.msg time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.msg p { margin: 0 0 10px; color: var(--tt-text-2); font-size: 15px; line-height: 1.6; }
+.msg p:last-child { margin-bottom: 0; }
+.msg.user { margin-left: max(24px, 12%); padding: 14px 18px; border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); }
+.msg.user p { color: var(--tt-text); }
+.worked { display: flex; align-items: center; gap: 6px; margin: -10px 0 18px; color: var(--tt-text-2); font-size: 14px; }
+.worked svg { color: var(--tt-text-muted); }
+.working { display: flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-size: 14px; }
+.spin { width: 12px; height: 12px; border: 2px solid color-mix(in srgb, var(--tt-activity) 30%, transparent); border-top-color: var(--tt-activity); border-radius: 50%; }
+:root:not([data-reduced-motion='on']) .spin { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* The new Watcher's empty conversation. */
+.fresh { display: grid; place-items: center; height: 100%; text-align: center; }
+.fresh > div { max-width: 420px; }
+.fresh .owl-mark { color: var(--tt-text-muted); }
+.fresh h2 { margin: 10px 0 6px; color: var(--tt-text); font-size: 16px; font-weight: 600; }
+.fresh p { margin: 0; color: var(--tt-text-muted); font-size: 14px; line-height: 1.55; }
+
+/* Watched tab (a stand-in, so the tab is not a dead control) */
+.watched-list { display: grid; gap: 8px; }
+.watched-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; }
+.watched-row b { font-size: 15px; font-weight: 500; }
+.watched-row span { grid-column: 1; color: var(--tt-text-muted); font-size: 13px; }
+.watched-row .stop { grid-row: 1 / span 2; grid-column: 2; height: 28px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 13px; cursor: pointer; }
+
+/* Composer area */
+.compose { display: flex; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
+.prompt { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt > .editor { grid-column: 1 / -1; }
+.prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--tt-field-border)); }
+.prompt:focus-within { border-color: var(--tt-field-border-focus); }
+.editor { display: block; width: 100%; min-height: 74px; max-height: 220px; overflow-y: auto; padding: 0; border: 0; outline: 0; color: var(--tt-text); font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.editor[data-empty]::before { content: attr(data-placeholder); color: var(--tt-text-muted); float: left; height: 0; pointer-events: none; }
+.attach { grid-column: 1; align-self: center; display: grid; place-items: center; width: 28px; height: 28px; margin: 6px 4px 0 -6px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.attach:hover { background: var(--tt-hover); color: var(--tt-text); }
+.footer { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; min-width: 0; }
+.meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chip:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.chip .mark { width: 14px; height: 14px; }
+.send, .stop { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: var(--tt-activity); color: var(--tt-on-accent); cursor: pointer; }
+.send:hover, .stop:hover { filter: brightness(1.08); }
+.send[data-wide] { gap: 5px; width: auto; padding: 0 9px 0 12px; border-radius: var(--tt-radius-pill); font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+/* ---------- New Watcher, the three placements ---------- */
+.nw { position: relative; display: inline-flex; flex: none; }
+.nw > button { cursor: pointer; }
+/* Unavailable: dimmed by colour, not opacity, so the focus ring keeps its full strength. It stays in the Tab order so its reason can be reached. */
+.nw > button[aria-disabled='true'] { border-color: color-mix(in srgb, var(--tt-field-border) 55%, transparent); color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); cursor: not-allowed; }
+/* A: one of the composer's chips, first in the row where the host chip was. */
+.nw--chip > button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.nw--chip > button:not([aria-disabled='true']):hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+/* B: a ring the paperclip's and the send disc's size, so it reads as a control and not as a status. */
+.nw--icon > button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--tt-field-border); border-radius: 50%; background: transparent; color: var(--tt-text-muted); }
+.nw--icon > button:not([aria-disabled='true']):hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+/* C: in the top strip, the All threads button's height, outlined like the Watch pill on a thread's header. */
+.nw--head { margin-left: 8px; }
+.nw--head > button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.nw--head > button:not([aria-disabled='true']):hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+
+/* The tooltip: on focus at once, on hover after a beat, away on Escape. It holds the unavailable button's reason. */
+.tip { position: absolute; bottom: calc(100% + 8px); left: -4px; z-index: 30; width: max-content; max-width: 340px; padding: 7px 10px; border: 1px solid var(--tt-border-faint); border-radius: 8px;
+  background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text); font-size: 12.5px; font-weight: 400; line-height: 1.4; white-space: normal; text-align: left;
+  visibility: hidden; opacity: 0; pointer-events: none; transition: opacity 120ms ease, visibility 0s linear 120ms; }
+.tip .tip-why { display: block; color: var(--tt-text); }
+.tip .tip-name + .tip-why { margin-top: 3px; color: var(--tt-text-2); }
+.nw--head .tip { top: calc(100% + 8px); bottom: auto; left: auto; right: -4px; }
+.nw:hover:not([data-tip-off]) .tip { visibility: visible; opacity: 1; transition-delay: 350ms, 350ms; }
+.nw:focus-within:not([data-tip-off]) .tip, .nw[data-tip-on]:not([data-tip-off]) .tip { visibility: visible; opacity: 1; transition-delay: 0s, 0s; }
+:root[data-reduced-motion='on'] .tip { transition: none; }
+
+/* The handover offer: watcher.css .watcher-handover*, unchanged. */
+.watcher-handover { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+:root:not([data-reduced-motion='on']) .watcher-handover[data-arriving] { animation: rise 180ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+.watcher-handover__lead { display: flex; align-items: flex-start; gap: 8px; }
+.watcher-handover__lead > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
+.watcher-handover__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
+.watcher-handover__lead strong { font-weight: 600; }
+.watcher-handover__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.watcher-handover__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-handover__ledger { margin: 6px 0 0 23px; color: var(--tt-text-2); }
+.watcher-handover__read { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.watcher-handover__text { max-height: min(200px, 28vh); margin: 8px 0 0 23px; padding: 10px 12px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken);
+  color: var(--tt-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The floating switch */
+.dock { display: flex; justify-content: center; align-items: flex-start; min-width: 0; padding: 2px 8px 0; }
+.pill { display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); }
+.pill .ib { border-radius: 50%; }
+.seg { display: grid; grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr); width: 236px; padding: 2px; border-radius: 999px; background: var(--tt-surface-sunken); }
+.seg button { display: inline-flex; align-items: center; justify-content: center; height: 30px; min-width: 0; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; cursor: pointer; }
+.seg button:hover { color: var(--tt-text); }
+.seg button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-accent-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.pill .sep { flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
+
+/* Narrow and short windows, as threads.css has them. */
+@container win (max-width: 980px) {
+  .transcript { padding: 22px 18px; }
+  .compose { padding: 8px 16px 16px; }
+  .msg.user { margin-left: 24px; }
+}
+@container win (max-height: 760px) {
+  .transcript { padding-block: 18px; }
+  .compose { padding-block: 6px 12px; }
+  .prompt { padding: 10px 14px 8px; }
+  .editor { min-height: 50px; max-height: 150px; }
+}
+</style>
+</head>
+<body>
+<p class="proto-cap" id="cap"></p>
+<div class="stage"><div class="window" id="win"></div></div>
+
+<div class="proto-bar" role="toolbar" aria-label="Prototype controls">
+  <span class="group">
+    <button type="button" id="prev" aria-label="Previous variant">&larr;</button>
+    <span class="vlabel" id="vlabel" aria-live="polite"></span>
+    <button type="button" id="next" aria-label="Next variant">&rarr;</button>
+  </span>
+  <span class="sep"></span>
+  <span class="group" role="group" aria-label="State">
+    <button type="button" data-state="idle">Idle</button>
+    <button type="button" data-state="busy">Busy</button>
+    <button type="button" data-state="after">After press</button>
+  </span>
+  <span class="sep"></span>
+  <button type="button" id="theme"></button>
+  <label><input type="checkbox" id="motion"> Reduce motion</label>
+  <select id="size" aria-label="Window size">
+    <option>1600x1000</option><option>1280x800</option><option>820x560</option>
+  </select>
+</div>
+
+<script>
+const VARIANTS = {
+  A: { name: 'Labelled chip', note: 'A quiet "New Watcher" pill where the "Runs on this computer" chip was, first in the composer footer.' },
+  B: { name: 'Icon only', note: 'A round icon button in the chip\'s place; its name shows as a tooltip on hover and focus.' },
+  C: { name: 'In the header (alternative)', note: 'The alternative to Zach\'s placement: a labelled button in the top strip, right of the tabs. The composer footer has no chip.' },
+}
+const STATES = { idle: 'Idle', busy: 'Busy', after: 'After press' }
+const SIZES = ['1600x1000', '1280x800', '820x560']
+const NAME = 'Start a new Watcher with a handover of this one'
+const BUSY_WHY = 'Wait for Watcher to finish before starting a new one.'
+const FRESH_WHY = 'This Watcher is new, so there is nothing to hand over yet.'
+const PLACEHOLDER = 'Ask about your threads, or say what to start or send'
+const HANDOVER_TEXT = 'Handover from the last Watcher, on GPT-5.4. Context, not a new request.\n\nWhat Zach is doing: getting 1.9.0 out. The Mac package is building on Release (macOS). Weekly note waits on his answer about the changelog wording.\n\nThreads I started: Footer links (Codex, sotto-site), working. Watched: Visual gate flake, Footer links, Weekly note.\n\nOpen promises: tell Zach when the Mac build finishes.'
+
+const pick = (value, list, fallback) => list.includes(value) ? value : fallback
+const P = new URLSearchParams(location.search)
+const S = {
+  variant: pick(P.get('variant'), ['A', 'B', 'C'], 'A'),
+  state: pick(P.get('state'), ['idle', 'busy', 'after'], 'idle'),
+  theme: pick(P.get('theme'), ['dark', 'light'], 'dark'),
+  motion: P.get('motion') === 'reduce',
+  size: pick(P.get('size'), SIZES, '1280x800'),
+  tab: 'conversation', offer: true, reading: false, arriving: false,
+}
+
+const svg = (body, size = 16, extra = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"${extra}>${body}</svg>`
+const I = {
+  pen: s => svg('<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>', s),
+  clip: s => svg('<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>', s),
+  down: s => svg('<path d="m6 9 6 6 6-6"/>', s),
+  right: s => svg('<path d="m9 18 6-6-6-6"/>', s),
+  up: s => svg('<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>', s, ' stroke-width="2.25"'),
+  x: s => svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', s),
+  corner: s => svg('<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>', s),
+  list: s => svg('<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>', s),
+  more: s => svg('<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', s),
+  clock: s => svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', s),
+  chart: s => svg('<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', s),
+  gear: s => svg('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', s),
+  help: s => svg('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>', s),
+  refresh: s => svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>', s),
+  min: () => '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"/></svg>',
+  max: () => '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></svg>',
+  close: () => '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"/></svg>',
+  stop: () => '<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor"/></svg>',
+}
+const OWL = 'M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8Z'
+  + 'M1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95Z'
+  + 'M9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z'
+const owl = (s = 16, cls = '') => `<svg class="${cls}" width="${s}" height="${s}" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="${OWL}" fill-rule="evenodd"/><circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/></svg>`
+const CODEX = 'M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z'
+const codex = () => `<svg class="mark" viewBox="0 0 256 260" fill="currentColor" aria-hidden="true" focusable="false"><path d="${CODEX}"/></svg>`
+
+const why = () => S.state === 'busy' ? BUSY_WHY : S.state === 'after' ? FRESH_WHY : null
+
+/** The button in one of its three places, with the tooltip that names it and, when unavailable, says why. */
+function newWatcher(kind) {
+  const reason = why()
+  const off = reason !== null ? ' aria-disabled="true"' : ''
+  if (kind === 'icon') {
+    return `<span class="nw nw--icon"><button type="button" class="tt-focusable" data-key="nw" data-act="new" aria-label="${NAME}"${off}${reason ? ' aria-describedby="nw-why"' : ''}>${I.pen(15)}</button>
+      <span class="tip" role="tooltip" id="nw-tip"><span class="tip-name">${NAME}</span>${reason ? `<span class="tip-why" id="nw-why">${reason}</span>` : ''}</span></span>`
+  }
+  return `<span class="nw nw--${kind}"><button type="button" class="tt-focusable" data-key="nw" data-act="new" aria-describedby="nw-tip"${off}>${I.pen(14)}New Watcher</button>
+    <span class="tip" role="tooltip" id="nw-tip"><span class="tip-why">${reason ?? NAME}</span></span></span>`
+}
+
+function head() {
+  const tab = (id, label, extra = '') => `<button type="button" role="tab" class="tab tt-focusable" id="tab-${id}" data-key="tab-${id}" data-tab="${id}" aria-selected="${S.tab === id}" aria-controls="transcript" tabindex="${S.tab === id ? 0 : -1}">${label}${extra}</button>`
+  return `<header class="head">
+    <span class="tile" aria-hidden="true">${owl(16)}</span><h1>Watcher</h1>
+    <button type="button" class="list-btn tt-focusable" data-key="list" aria-haspopup="dialog">${I.list(15)}<span>All threads</span><span class="count">8</span>${I.down(14)}</button>
+    <div class="tabs" role="tablist" aria-label="Watcher's views">${tab('conversation', 'Conversation')}${tab('watched', 'Watched', ' <span class="count">3</span>')}</div>
+    ${S.variant === 'C' ? newWatcher('head') : ''}
+    <span class="grow"></span>
+    <button type="button" class="ib tt-focusable" data-key="more" aria-label="More for Watcher" title="More for Watcher">${I.more(16)}</button>
+    <span class="winctl" aria-hidden="true"><span>${I.min()}</span><span>${I.max()}</span><span>${I.close()}</span></span>
+  </header>`
+}
+
+const watcherWho = time => `<header><span class="who">${owl(14)}Watcher</span><time>${time}</time></header>`
+const userMsg = (time, text) => `<article class="msg user" aria-label="You at ${time}"><header><span class="who">You</span><time>${time}</time></header><p>${text}</p></article>`
+
+function conversation() {
+  if (S.tab === 'watched') {
+    const row = (t, s) => `<div class="watched-row"><b>${t}</b><span>${s}</span><button type="button" class="stop tt-focusable">Stop watching</button></div>`
+    return `<div class="watched-list">${row('Visual gate flake', 'Claude · workshop · Needs your approval')}${row('Footer links', 'Codex · sotto-site · Working')}${row('Weekly note', 'Grok · notes · Working')}</div>`
+  }
+  if (S.state === 'after') {
+    return `<div class="fresh"><div>${owl(28, 'owl-mark')}<h2>New Watcher on GPT-5.4.</h2>
+      <p>The last conversation is in Watcher history on the Threads page. Watcher still watches your 3 threads, and the threads it started keep working.</p></div></div>`
+  }
+  let html = userMsg('10:12 am', 'What is left before I can cut 1.9.0?')
+    + `<article class="msg">${watcherWho('10:12 am')}<p>Two things. The Mac package is still building on Release (macOS), and Weekly note is waiting on your answer about the changelog wording. I am watching both and will bring you the answer when it comes.</p></article>`
+    + userMsg('10:20 am', 'Start a thread to fix the footer links on sotto-site.')
+    + `<div class="worked">Worked for 3s ${I.right(14)}</div>`
+    + `<article class="msg">${watcherWho('10:20 am')}<p>Started Footer links on Codex in sotto-site, and I am watching it. It has not asked anything yet.</p></article>`
+  if (S.state === 'busy') {
+    html += userMsg('10:31 am', 'Has the Mac build finished?')
+      + `<article class="msg" aria-busy="true">${watcherWho('10:31 am')}<div class="working" role="status"><span class="spin" aria-hidden="true"></span>Working for 12s</div></article>`
+  }
+  return html
+}
+
+function strip() {
+  if (S.state !== 'after' || !S.offer) return ''
+  return `<section class="watcher-handover" aria-label="Handover of the last Watcher"${S.arriving ? ' data-arriving' : ''}>
+    <div class="watcher-handover__lead">${I.corner(15)}
+      <p role="status">Sending starts the new Watcher with a <strong>handover</strong> of the last one.</p>
+      <button type="button" class="watcher-handover__dismiss tt-focusable" data-key="dismiss" data-act="dismiss" aria-label="Don’t hand over: start the new Watcher without it" title="Don’t hand over: start the new Watcher without it">${I.x(15)}</button>
+    </div>
+    <p class="watcher-handover__ledger">It carries all 14 messages and leaves out 2 records of its work. <button type="button" class="watcher-handover__read tt-focusable" data-key="read" data-act="read" aria-expanded="${S.reading}"${S.reading ? ' aria-controls="handover-text"' : ''}>${S.reading ? 'Hide it' : 'Read it'}</button></p>
+    ${S.reading ? `<div id="handover-text" class="watcher-handover__text tt-focusable" tabindex="0" role="region" aria-label="The handover, word for word">${HANDOVER_TEXT}</div>` : ''}
+  </section>`
+}
+
+function composer() {
+  const busy = S.state === 'busy'
+  const offered = S.state === 'after' && S.offer
+  const slot = S.variant === 'A' ? newWatcher('chip') : S.variant === 'B' ? newWatcher('icon') : ''
+  const send = busy
+    ? `<button type="button" class="stop tt-focusable" data-key="stop" aria-label="Stop agent" title="Stop agent">${I.stop()}</button>`
+    : offered
+      ? `<button type="submit" class="send tt-focusable" data-key="send" data-wide aria-label="Continue with the handover" title="Continue with the handover">Continue${I.up(15)}</button>`
+      : `<button type="submit" class="send tt-focusable" data-key="send" aria-label="Send prompt" title="Send prompt">${I.up(15)}</button>`
+  return `<div class="compose">${strip()}
+    <form class="prompt"${busy ? ' data-running' : ''} id="prompt">
+      <div class="editor" id="composer" data-key="composer" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Watcher message" data-placeholder="${PLACEHOLDER}" data-empty></div>
+      <button type="button" class="attach tt-focusable" data-key="attach" aria-label="Attach images or files" title="Attach images or files">${I.clip(16)}</button>
+      <div class="footer">
+        <div class="meta">${slot}
+          <button type="button" class="chip tt-focusable" data-key="model" aria-haspopup="listbox" aria-label="Model: GPT-5.4">${codex()}<span>GPT-5.4</span>${I.down(14)}</button>
+          <button type="button" class="chip tt-focusable" data-key="perm" aria-haspopup="listbox" aria-label="Permissions: Ask for approval"><span>Ask for approval</span>${I.down(14)}</button>
+        </div>
+        <div class="actions">${send}</div>
+      </div>
+    </form>
+  </div>`
+}
+
+function dock() {
+  return `<nav class="dock" aria-label="Rooms"><div class="pill">
+    <button type="button" class="ib tt-focusable" aria-label="History" title="History">${I.clock(16)}</button>
+    <button type="button" class="ib tt-focusable" aria-label="Usage" title="Usage">${I.chart(16)}</button>
+    <button type="button" class="ib tt-focusable" aria-label="Settings" title="Settings">${I.gear(16)}</button>
+    <button type="button" class="ib tt-focusable" aria-label="Help" title="Help">${I.help(16)}</button>
+    <span class="sep"></span>
+    <div class="seg" role="tablist" aria-label="Room"><button type="button" role="tab" aria-selected="false" tabindex="-1">Dictate</button><button type="button" role="tab" class="tt-focusable" aria-selected="true" aria-label="Watcher">${owl(18)}</button><button type="button" role="tab" aria-selected="false" tabindex="-1">Threads</button></div>
+    <span class="sep"></span>
+    <button type="button" class="ib tt-focusable" aria-label="Check for updates" title="Check for updates">${I.refresh(16)}</button>
+  </div></nav>`
+}
+
+const win = document.getElementById('win')
+function render(focusKey) {
+  const root = document.documentElement
+  root.dataset.theme = S.theme
+  if (S.motion || matchMedia('(prefers-reduced-motion: reduce)').matches) root.dataset.reducedMotion = 'on'; else delete root.dataset.reducedMotion
+  const [w, h] = S.size.split('x').map(Number)
+  win.style.setProperty('--w', `${w}px`); win.style.setProperty('--h', `${h}px`)
+  const fit = Math.min(1, (innerWidth - 32) / w, (innerHeight - 150) / h)
+  win.style.setProperty('--fit', String(Math.max(.3, fit)))
+  const keep = focusKey ?? document.activeElement?.dataset?.key
+  const text = document.getElementById('composer')?.innerText ?? ''
+  win.innerHTML = `<div class="room"><div class="sky" aria-hidden="true"><div class="stars"></div></div>${head()}
+    <main class="transcript" id="transcript" role="tabpanel" aria-labelledby="tab-${S.tab}" tabindex="-1">${conversation()}</main>${composer()}${dock()}</div>`
+  const editor = document.getElementById('composer')
+  if (text.trim()) { editor.innerText = text; delete editor.dataset.empty }
+  S.arriving = false
+  // As in the room: the conversation opens at its latest message.
+  const transcript = document.getElementById('transcript'); transcript.scrollTop = transcript.scrollHeight
+  if (keep) win.querySelector(`[data-key="${keep}"]`)?.focus()
+  const v = VARIANTS[S.variant]
+  document.getElementById('vlabel').textContent = `${S.variant} · ${v.name}`
+  document.getElementById('cap').innerHTML = `<b>Prototype: New Watcher.</b> ${S.variant}, ${v.name}: ${v.note} State: <b>${STATES[S.state]}</b>. Arrow keys change the variant.`
+  document.querySelectorAll('.proto-bar [data-state]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === S.state)))
+  document.getElementById('theme').textContent = S.theme === 'dark' ? 'Dark' : 'Light'
+  document.getElementById('theme').setAttribute('aria-label', `Theme: ${S.theme}. Press for ${S.theme === 'dark' ? 'light' : 'dark'}`)
+  document.getElementById('motion').checked = S.motion
+  document.getElementById('size').value = S.size
+  const q = new URLSearchParams({ variant: S.variant, state: S.state, theme: S.theme, size: S.size })
+  if (S.motion) q.set('motion', 'reduce')
+  history.replaceState(null, '', `?${q}`)
+}
+
+function setState(state) { S.state = state; S.offer = true; S.reading = false; S.tab = 'conversation'; S.arriving = state === 'after'; render() }
+function cycle(step) { const keys = ['A', 'B', 'C']; S.variant = keys[(keys.indexOf(S.variant) + step + 3) % 3]; render() }
+function dismissOffer() { S.offer = false; S.reading = false; render('composer') }
+
+win.addEventListener('click', event => {
+  const target = event.target.closest('[data-act], [data-tab]')
+  if (!target) return
+  if (target.dataset.tab) { S.tab = target.dataset.tab; render(`tab-${S.tab}`); return }
+  const act = target.dataset.act
+  if (act === 'new') {
+    if (target.getAttribute('aria-disabled') === 'true') { const nw = target.closest('.nw'); delete nw.dataset.tipOff; nw.dataset.tipOn = ''; return }
+    // At once, no confirm: the new Watcher arrives with the offer, and focus goes to its composer.
+    S.state = 'after'; S.offer = true; S.reading = false; S.tab = 'conversation'; S.arriving = true; render('composer')
+  } else if (act === 'dismiss') dismissOffer()
+  else if (act === 'read') { S.reading = !S.reading; render('read') }
+})
+win.addEventListener('submit', event => event.preventDefault())
+win.addEventListener('input', event => {
+  const editor = event.target.closest('.editor')
+  if (editor) { if (editor.innerText.trim()) delete editor.dataset.empty; else editor.dataset.empty = '' }
+})
+win.addEventListener('focusout', event => {
+  const nw = event.target.closest?.('.nw')
+  if (nw && !nw.contains(event.relatedTarget)) { delete nw.dataset.tipOff; delete nw.dataset.tipOn }
+})
+win.addEventListener('mouseleave', event => { win.querySelectorAll('.nw[data-tip-off]').forEach(nw => { if (!nw.contains(document.activeElement)) delete nw.dataset.tipOff }) }, true)
+
+document.addEventListener('keydown', event => {
+  const t = event.target
+  if (event.key === 'Escape') {
+    const nw = t.closest?.('.nw')
+    const tipShown = nw && !nw.hasAttribute('data-tip-off')
+    if (tipShown) { event.preventDefault(); nw.dataset.tipOff = ''; delete nw.dataset.tipOn; return }
+    const offer = t.closest?.('.watcher-handover')
+    if (offer && S.reading) { event.preventDefault(); S.reading = false; render('read'); return }
+    if (S.state === 'after' && S.offer && t.closest?.('.compose')) { event.preventDefault(); dismissOffer(); return }
+    return
+  }
+  if (event.key === 'Enter' && !event.shiftKey && t.id === 'composer') { event.preventDefault(); return }
+  if (t.getAttribute?.('role') === 'tab' && t.closest('.tabs') && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault(); S.tab = S.tab === 'conversation' ? 'watched' : 'conversation'; render(`tab-${S.tab}`); return
+  }
+  const typing = t.isContentEditable || ['TEXTAREA', 'INPUT', 'SELECT'].includes(t.tagName) || t.getAttribute?.('role') === 'tab'
+  if (typing || event.altKey || event.ctrlKey || event.metaKey) return
+  if (event.key === 'ArrowLeft') { event.preventDefault(); cycle(-1) }
+  if (event.key === 'ArrowRight') { event.preventDefault(); cycle(1) }
+})
+
+document.getElementById('prev').addEventListener('click', () => cycle(-1))
+document.getElementById('next').addEventListener('click', () => cycle(1))
+document.querySelectorAll('.proto-bar [data-state]').forEach(b => b.addEventListener('click', () => setState(b.dataset.state)))
+document.getElementById('theme').addEventListener('click', () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render() })
+document.getElementById('motion').addEventListener('change', event => { S.motion = event.target.checked; render() })
+document.getElementById('size').addEventListener('change', event => { S.size = event.target.value; render() })
+addEventListener('resize', () => render())
+render()
+</script>
+</body>
+</html>
