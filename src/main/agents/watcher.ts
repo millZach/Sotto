@@ -2687,14 +2687,6 @@ export class WatcherService implements WatcherControlHooks {
         if (!retry) this.checkRemoteAuthority(operation, master, clientId, request.standingWatchId)
         if (!existing) await this.options.control.updateWatcher(record => { guard(); record.requests.push({ ...request, state: 'active', closedAt: null,
           participants: [], remoteOrigin: { clientId, master, creationOperationId: master.creationOperationId, ceiling: packet.ceiling } }) })
-        // This host closes its copy once the threads it holds have settled, but cannot see the master's turn going on to
-        // settle more (#1254). A new operation the master admitted under its active request opens it again; settled
-        // participants stay settled, and a stopped copy stays stopped.
-        else if (existing.state === 'closed' && !retry) await this.options.control.updateWatcher(record => {
-          guard()
-          const copy = record.requests.find(item => item.id === request.id)!
-          if (copy.state === 'closed') { copy.state = 'active'; copy.closedAt = null }
-        })
         if (!retry || this.remoteGuards.has(operation.id) && ['queued', 'dispatching', 'uncertain'].includes(retry.deliveryState)) this.remoteGuards.set(operation.id, guard)
       })
       return await this.mutate(master.target.threadId, call.name, call.input, operation, guard)
