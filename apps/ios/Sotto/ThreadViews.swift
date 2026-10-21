@@ -19,6 +19,9 @@ struct ThreadView: View {
     @State private var stuck = false
     /// The big title has scrolled off, so the bar shows it.
     @State private var titled = false
+    /// The Agents sheet is up, or a delegated thread it opened is on top (ADR-0101): no request sheet is offered then.
+    @State private var agentsOpen = false
+    @State private var agentsCovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var thread: ThreadSummary? { model.thread(ref) }
 
@@ -34,6 +37,7 @@ struct ThreadView: View {
             ToolbarItem(placement: .principal) { barTitle }
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: Space.s1) {
+                    if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
                     if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
                     if model.compactionOffered(ref) { ThreadMenu(ref: ref) }
@@ -52,6 +56,7 @@ struct ThreadView: View {
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
             RequestSheet(ref: ref, request: request).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
+        .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
     }
 
     private var barTitle: some View {
@@ -73,7 +78,7 @@ struct ThreadView: View {
 
     /// Opens the thread's waiting request once; after "Not now" it waits in the reply box.
     private func offer() {
-        guard open == nil, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
+        guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
     }

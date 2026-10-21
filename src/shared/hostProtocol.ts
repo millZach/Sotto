@@ -197,8 +197,12 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * (`failureReason`), one that some client has shown or Dismiss all named carries `failureSeen`, and the host takes
  * `dismiss-failures`, which names each thread with the failure its row showed (ADR-0092). A desktop sends Dismiss all
  * only to a host that lists it, and says to update any other whose threads it named.
+ * `agents-view`: the host offers the iPhone's Agents view (ADR-0101) and answers `thread-delegations` with what delegation's
+ * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
+ * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
+ * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'agents-view'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -405,6 +409,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('sign-in-cancel'), signInId: z.uuid() }).strict(),
   /** The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107). */
   z.object({ ...base, op: z.literal('opencode-sign-in'), call: opencodeHostCallSchema }).strict(),
+  /** A thread's delegated threads as delegation's record knows them, for the iPhone's Agents view (`agents-view`, ADR-0101). */
+  z.object({ ...base, op: z.literal('thread-delegations'), threadId: id }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never

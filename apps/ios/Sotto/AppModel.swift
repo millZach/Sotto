@@ -1314,6 +1314,9 @@ struct HeldDetail {
             fixtureDetails[laptop + "/notes845"] = decode(ThreadDetail.self, ["threadId": "notes845", "revision": 1, "messages": [
                 ["id": "brief", "role": "user", "text": "Write the release notes for #845 once its checks pass.", "createdAt": at(12 * 60)]]])
         }
+        // The Agents journey: the working thread's delegated threads and its provider's agents (ADR-0101).
+        let agents = arguments.contains("--ui-agents")
+        if agents { addFixtureAgents(to: &threads, laptop: laptop, at: at) }
         // The working thread's own conversation: a review reply in Markdown and a follow-up, with the agent's steps
         // between them by time, the last one still running.
         let conversation: [[String: Any]] = [
@@ -1369,6 +1372,7 @@ struct HeldDetail {
             let shell = decode(Shell.self, shellObject)
             var features = arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"]
             if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature] }
+            if agents && host == laptop { features += [AgentsRoster.feature, "subagents"] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         if watching {
@@ -3096,4 +3100,125 @@ struct HeldDetail {
             connections[hostID]?.disconnect(); feedback = words
         }
     }
+}
+
+// The Agents view (ADR-0101, an Owl feature): a thread's top bar counts its delegated threads and its provider's own
+// sub-agents, and opens a sheet that lists them. Only a computer that lists `agents-view` offers it; a stable one
+// doesn't, and nothing of it shows. Every read is the sheet opening or the user's own press; nothing here answers or
+// changes anything on the computer.
+extension AppModel {
+    /// Whether this thread's computer offers the Agents view to this iPhone.
+    func offersAgentsView(_ hostID: String) -> Bool { live[hostID]?.features.contains(AgentsRoster.feature) == true }
+    /// What the thread's top bar says of its delegated threads and agents, from the thread list alone; nil when there is
+    /// no Agents control.
+    func agentsCount(_ ref: ThreadRef) -> AgentsCount? {
+        guard offersAgentsView(ref.hostID), let threads = live[ref.hostID]?.shell?.host.threads,
+              let owner = threads.first(where: { $0.id == ref.threadID }) else { return nil }
+        return AgentsRoster.count(owner, in: threads)
+    }
+    /// The thread, its computer's threads and its model catalog as the computer last shared them, for the sheet's rows.
+    func agentsSource(_ ref: ThreadRef) -> AgentsSource? {
+        guard offersAgentsView(ref.hostID), let host = live[ref.hostID]?.shell?.host,
+              let owner = host.threads.first(where: { $0.id == ref.threadID }) else { return nil }
+        return AgentsSource(owner: owner, threads: host.threads, models: host.models ?? [])
+    }
+    /// What delegation's record on the thread's computer says of its delegated threads. A thread with none isn't asked.
+    func readDelegations(_ ref: ThreadRef) async throws -> ThreadDelegations {
+        guard let source = agentsSource(ref), !AgentsRoster.delegated(below: ref.threadID, in: source.threads).isEmpty else {
+            return ThreadDelegations(threadId: ref.threadID, threads: [])
+        }
+        #if DEBUG && os(iOS)
+        if isUIFixture { return try Self.fixtureAgentsRead(ThreadDelegations.self, Self.fixtureDelegations(ref.threadID)) }
+        #endif
+        return try await agentsRead(ref, ["op": .string("thread-delegations"), "threadId": .string(ref.threadID)], as: ThreadDelegations.self)
+    }
+    /// Whether the thread's computer answers the sub-agent reads (`subagents`).
+    func offersSubagents(_ hostID: String) -> Bool { live[hostID]?.features.contains("subagents") == true }
+    /// The newest page of the thread's sub-agents. A thread whose provider reports none, or whose computer doesn't read
+    /// them, isn't asked.
+    func readSubagents(_ ref: ThreadRef) async throws -> SubagentPage {
+        guard offersSubagents(ref.hostID), let source = agentsSource(ref), (source.owner.subagentSummary?.total ?? 0) > 0 else {
+            return SubagentPage(threadId: ref.threadID, rows: [], summary: SubagentSummary())
+        }
+        #if DEBUG && os(iOS)
+        if isUIFixture { return try Self.fixtureAgentsRead(SubagentPage.self, Self.fixtureSubagents(ref.threadID)) }
+        #endif
+        return try await agentsRead(ref, ["op": .string("subagent-page"), "request": .object(["threadId": .string(ref.threadID)])], as: SubagentPage.self)
+    }
+    /// One sub-agent's runs, newest first, for its row's task and result.
+    func readAssignments(_ ref: ThreadRef, agentID: String) async throws -> SubagentAssignmentsPage {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return try Self.fixtureAgentsRead(SubagentAssignmentsPage.self, Self.fixtureAssignments(ref.threadID, agentID: agentID)) }
+        #endif
+        guard offersSubagents(ref.hostID) else { throw ClientError.invalidRequest }
+        return try await agentsRead(ref, ["op": .string("subagent-assignments"),
+            "request": .object(["threadId": .string(ref.threadID), "agentId": .string(agentID)])], as: SubagentAssignmentsPage.self)
+    }
+    private func agentsRead<T: Decodable & Sendable>(_ ref: ThreadRef, _ operation: [String: JSONValue], as type: T.Type) async throws -> T {
+        guard offersAgentsView(ref.hostID), online(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
+            throw ClientError.rejected("Can\u{2019}t reach \(name(ref.hostID)) to read its agents. Nothing was changed. Reconnect, then try again.")
+        }
+        let result = try await connection.call(operation, as: type)
+        guard generations[ref.hostID] == epoch, online(ref.hostID) else { throw ClientError.disconnected }
+        return result
+    }
+
+    #if DEBUG && os(iOS)
+    /// The Agents journey (`--ui-agents`): the working thread delegated a review, which waits on the user's approval, and
+    /// a look at the drawer's docs, which has answered; its provider runs two agents of its own.
+    fileprivate func addFixtureAgents(to threads: inout [String: [[String: Any]]], laptop: String, at: (Double) -> String) {
+        guard var rows = threads[laptop], let index = rows.firstIndex(where: { $0["id"] as? String == "iphone" }) else { return }
+        rows[index]["subagentSummary"] = ["total": 2, "working": 1, "completed": 1, "failed": 0, "interrupted": 0, "unknown": 0]
+        rows.append(["id": "review-fix", "hostId": laptop, "projectId": "sotto", "title": "Review the drawer fix", "providerId": "claude",
+            "status": "running", "delegatedBy": "iphone", "summary": ["lastMessageAt": at(60), "runningTurnStartedAt": at(4 * 60)],
+            "requests": [["id": "review-permission", "kind": "permission", "text": "Run npm test -- terminalDrawer?", "options": []]]])
+        rows.append(["id": "drawer-docs", "hostId": laptop, "projectId": "sotto", "title": "Check the drawer docs", "providerId": "codex",
+            "status": "idle", "delegatedBy": "iphone", "requests": [], "summary": ["lastMessageAt": at(9 * 60)]])
+        threads[laptop] = rows
+        let replies = ["review-fix": "The wait on the chord is sound. I would like to run the drawer tests to be sure.",
+                       "drawer-docs": "The docs promise the drawer opens within 300 ms."]
+        for (id, brief) in [("review-fix", Self.fixtureReviewBrief), ("drawer-docs", Self.fixtureDocsBrief)] {
+            let detail: [String: Any] = ["threadId": id, "revision": 1, "messages": [["id": "brief", "role": "user", "text": brief, "createdAt": at(12 * 60)],
+                ["id": "reply", "role": "assistant", "text": replies[id] ?? "", "createdAt": at(9 * 60)]]]
+            fixtureDetails[laptop + "/" + id] = try! Self.fixtureAgentsRead(ThreadDetail.self, detail)
+        }
+    }
+    private static let fixtureReviewBrief = "Review the change to TerminalDrawer.tsx on feat/frosted-window. Say whether the chord can still fire twice, and run its tests."
+    private static let fixtureDocsBrief = "Read docs/terminal.md and say what it promises about how long the drawer may take to open."
+    private static func fixtureStamp(_ minutesAgo: Double) -> String { ISO8601DateFormatter().string(from: Date().addingTimeInterval(-minutesAgo * 60)) }
+    private static func fixtureDelegations(_ threadID: String) -> [String: Any] {
+        ["threadId": threadID, "threads": [
+            ["thread": "review-fix", "by": threadID, "work": "code-review", "outcome": "working", "startedAt": fixtureStamp(4), "waiting": false, "brief": fixtureReviewBrief],
+            ["thread": "drawer-docs", "by": threadID, "work": "research", "outcome": "answered", "startedAt": fixtureStamp(12), "outcomeAt": fixtureStamp(9),
+             "waiting": false, "brief": fixtureDocsBrief]]]
+    }
+    private static func fixtureSubagents(_ threadID: String) -> [String: Any] {
+        let summary: [String: Any] = ["total": 2, "working": 1, "completed": 1, "failed": 0, "interrupted": 0, "unknown": 0]
+        let suite: [String: Any] = ["id": "suite", "sequence": 2, "revision": 1, "assignmentId": "suite-1", "assignmentCount": 1,
+            "title": "Run the drawer tests twenty times", "description": "Run the drawer tests twenty times", "model": "gpt-6.1-sol",
+            "status": "running", "startedAt": fixtureStamp(1), "lastObservedAt": fixtureStamp(0)]
+        let waits: [String: Any] = ["id": "waits", "sequence": 1, "revision": 1, "assignmentId": "waits-1", "assignmentCount": 1,
+            "title": "Find fixed waits in the drawer tests", "description": "Find fixed waits in the drawer tests", "model": "gpt-6.1-sol",
+            "status": "completed", "startedAt": fixtureStamp(14), "completedAt": fixtureStamp(13), "lastObservedAt": fixtureStamp(13), "durationMs": 48_000]
+        return ["threadId": threadID, "revision": 2, "summary": summary, "rows": [suite, waits]]
+    }
+    private static func fixtureAssignments(_ threadID: String, agentID: String) -> [String: Any] {
+        let running = agentID == "suite"
+        let assignment: [String: Any] = ["id": agentID + "-1", "sequence": 1, "status": running ? "running" : "completed",
+            "title": running ? "Run the drawer tests twenty times" : "Find fixed waits in the drawer tests",
+            "prompt": running ? "Run the drawer tests twenty times and count the failures." : "Find every setTimeout and fixed wait under tests/unit/renderer.",
+            "result": running ? "Run 11 of 20. No failures so far." : "Three fixed waits. Only terminalDrawer.test.ts waits on the chord."]
+        return ["threadId": threadID, "agentId": agentID, "assignments": [assignment]]
+    }
+    private static func fixtureAgentsRead<T: Decodable>(_ type: T.Type, _ object: [String: Any]) throws -> T {
+        try JSONDecoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
+    }
+    #endif
+}
+
+/// A thread with its computer's threads and model catalog, as the Agents sheet reads them.
+struct AgentsSource {
+    let owner: ThreadSummary
+    let threads: [ThreadSummary]
+    let models: [ThreadModel]
 }
