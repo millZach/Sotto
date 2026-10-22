@@ -115,6 +115,7 @@ const settingKeys = [
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
+  'typingSpeedWpm',
   'formatWhitespace',
   'autoCopy',
   'autoPaste',

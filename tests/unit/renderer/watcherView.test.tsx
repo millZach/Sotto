@@ -709,7 +709,7 @@ describe('the room switch', () => {
     expect(tabs().map(tab => tab.tabIndex)).toEqual([0, -1, -1])
   })
 
-  for (const from of ['home', 'threads', 'settings', 'help', 'history', 'memory'] as const) it(`reaches all three rooms from the keyboard on ${from}`, () => {
+  for (const from of ['home', 'threads', 'settings', 'help', 'memory'] as const) it(`reaches all three rooms from the keyboard on ${from}`, () => {
     const { navigate, tabs } = foot(from)
     const start = tabs().find(tab => tab.tabIndex === 0)!
     start.focus()
@@ -740,7 +740,7 @@ describe('the room switch', () => {
     render(<WatcherDock updateControl={<button type="button" aria-label="Check for updates" />} />)
     const dock = document.querySelector('.watcher-dock__pill')!
     const stops = [...dock.querySelectorAll('a, [role="tab"][tabindex="0"], button[aria-label="Check for updates"]')].map(node => node.getAttribute('aria-label') ?? node.textContent)
-    expect(stops).toEqual(['History', 'Settings', 'Help', 'Watcher', 'Check for updates'])
+    expect(stops).toEqual(['Settings', 'Help', 'Watcher', 'Check for updates'])
     expect(screen.getByRole('tab', { name: 'Watcher' })).toHaveAttribute('aria-selected', 'true')
   })
 

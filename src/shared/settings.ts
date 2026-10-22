@@ -85,6 +85,10 @@ export function mergeMethodChosenPatch(settings: Pick<AppSettings, 'defaultMerge
   return settings.defaultMergeMethod === 'last' && settings.lastMergeMethod !== method ? { lastMergeMethod: method } : null
 }
 
+/** The bounds of Settings, Dictation, Typing speed, in words per minute. */
+export const TYPING_SPEED_MIN_WPM = 10
+export const TYPING_SPEED_MAX_WPM = 150
+
 export const SETTINGS_VERSION = 1 as const
 
 /**
@@ -201,6 +205,8 @@ export interface AppSettings {
    */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
+  /** How fast the user types, in words per minute: the Dictate room counts time saved against it. */
+  typingSpeedWpm: number
   /**
    * The model that transcribes dictation, by its picker id, or null until the user chooses one.
    * Nothing downloads before then. Main writes it when the user chooses on the picker or in setup.
@@ -324,6 +330,7 @@ const fieldSchemas = {
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
+  typingSpeedWpm: z.number().int().min(TYPING_SPEED_MIN_WPM).max(TYPING_SPEED_MAX_WPM),
   speechModel: z.string().min(1).max(128).nullable(),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
@@ -409,6 +416,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
+  typingSpeedWpm: 40,
   speechModel: null,
   formatWhitespace: true,
   autoCopy: true,
@@ -559,6 +567,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
+    typingSpeedWpm: parseField(persisted, 'typingSpeedWpm', defaults),
     speechModel: parseField(persisted, 'speechModel', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),

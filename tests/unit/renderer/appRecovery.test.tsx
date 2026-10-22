@@ -20,7 +20,7 @@ it.each(['unmount', 'blur'] as const)('shows dictionary save failures after Sett
   const dictionary = screen.getByRole('textbox', { name: 'Personal dictionary' })
   await userEvent.type(dictionary, 'Sotto')
   if (trigger === 'blur') await userEvent.tab()
-  act(() => shell.navigate('history'))
+  act(() => shell.navigate('help'))
   await act(async () => { pending.reject(new Error('Synthetic save failure')) })
   expect(await screen.findByText('Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again.')).toBeVisible()
   expect(screen.getByText('Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again.')).toHaveAttribute('role', 'alert')
@@ -62,7 +62,7 @@ it('retains failed dictation across navigation and later dictation, and copies w
   }
   await dictate()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue('Completed words 1'))
-  act(() => shell.navigate('history'))
+  act(() => shell.navigate('help'))
   act(() => shell.navigate('home'))
   expect(screen.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue('Completed words 1')
   await dictate()
