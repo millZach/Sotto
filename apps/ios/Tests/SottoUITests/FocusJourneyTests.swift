@@ -788,19 +788,9 @@ import XCTest
         XCTAssertEqual(light.value as? String, "Selected")
         openWatcher()
     }
-    /// The part of Watcher's conversation a press reaches: below its pinned glass bar and above its reply box, with
-    /// anything the box carries over it. XCTest calls a row under the bar hittable, but a press there lands on the bar
-    /// (on CI it opened Watched instead of a card's Review question).
-    private var watcherBand: (top: CGFloat, bottom: CGFloat) {
-        // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
-        // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
-        let snapshot: any XCUIElementSnapshot
-        do {
-            snapshot = try app.snapshot()
-        } catch {
-            XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
-            return (.infinity, -.infinity)
-        }
+    /// Every element in the app from one reading of its hierarchy, parents before their children. Frames read from it
+    /// all come from the same instant, and the reading is one query however many elements the caller looks at.
+    private func everyElement() throws -> [any XCUIElementSnapshot] {
         var elements: [any XCUIElementSnapshot] = []
         func collect(_ parent: any XCUIElementSnapshot) {
             for child in parent.children {
@@ -808,7 +798,22 @@ import XCTest
                 collect(child)
             }
         }
-        collect(snapshot)
+        collect(try app.snapshot())
+        return elements
+    }
+    /// The part of Watcher's conversation a press reaches: below its pinned glass bar and above its reply box, with
+    /// anything the box carries over it. XCTest calls a row under the bar hittable, but a press there lands on the bar
+    /// (on CI it opened Watched instead of a card's Review question).
+    private var watcherBand: (top: CGFloat, bottom: CGFloat) {
+        // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
+        // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
+        let elements: [any XCUIElementSnapshot]
+        do {
+            elements = try everyElement()
+        } catch {
+            XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
+            return (.infinity, -.infinity)
+        }
         func element(_ identifier: String, type: XCUIElement.ElementType = .any) -> (any XCUIElementSnapshot)? {
             // Like matching(identifier:), keep the first descendant of the requested type whose identifying
             // attributes match. All of these attributes belong to the captured snapshot, with no further UI query.
@@ -1021,25 +1026,32 @@ import XCTest
         capture("watcher-hero-watched-dark")
         conversation.tap()
         XCTAssertTrue(byID("watcher-reply").waitForExistence(timeout: 5), "Conversation opens from the bar")
-        // The owl goes to the top of the conversation, where the hero is.
-        let reply = byID("watcher-reply")
+        // The owl goes to the top of the conversation, where the hero is. Each look reads Watcher's state and the box from
+        // one snapshot. On CI's large iPhone, separate queries for them took up to eleven seconds a look, so twenty seconds
+        // held one whole look, and the deadline cut the second one's queries off, which read every frame as zero while the
+        // hero sat between the bar and the box.
         var seen = "no look found Watcher's state"
         var matches = 0
         let atTop = NSPredicate { _, _ in
-            guard state.exists else { seen = "Watcher's state is missing"; matches = 0; return false }
-            let frame = state.frame
-            seen = "state \(frame), bar at \(bar), the box at \(reply.frame.minY)"
-            matches = frame.minY >= bar && frame.maxY <= reply.frame.minY ? matches + 1 : 0
+            guard let elements = try? self.everyElement() else { seen = "no snapshot of the page"; matches = 0; return false }
+            guard let frame = elements.first(where: { $0.identifier == "watcher-state" })?.frame,
+                  let box = elements.first(where: { $0.identifier == "watcher-reply" })?.frame.minY else {
+                seen = "Watcher's state or the box is missing"; matches = 0; return false
+            }
+            seen = "state \(frame), bar at \(bar), the box at \(box)"
+            matches = frame.minY >= bar && frame.maxY <= box ? matches + 1 : 0
             return matches >= 2
         }
         owl.tap()
-        let shown = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 20)
+        let shown = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 30)
         if shown != .completed { explain("watcher-hero-not-shown", seen) }
         XCTAssertEqual(shown, .completed, "The owl brings Watcher's hero back into view (\(seen))")
         capture("watcher-hero-dark")
         watcherInLight()
+        // Counted again from here, so the hero must be seen in light on two looks of its own.
+        matches = 0
         owl.tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 20), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 30), .completed,
                        "The owl brings Watcher's hero back into view in light (\(seen))")
         capture("watcher-hero-light")
     }
