@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { memo, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
 
 import type { DictationRecord } from '../../../../shared/dictationRecord'
@@ -45,7 +45,7 @@ const ALL = 'All'
  * text, its facts, Copy and Delete, and Escape closes it again. The words come from saved transcripts; the stats
  * beside it come from dictation records, so with History off older transcripts stay listed and new ones are not.
  */
-export function Journal({
+export const Journal = memo(function Journal({
   entries,
   records,
   historyEnabled,
@@ -80,8 +80,11 @@ export function Journal({
   }
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const searching = normalizedQuery.length > 0
-  // A chip for an app that no longer has words in the window falls back to All rather than hiding everything.
-  const chosenApp = app !== ALL && chips.includes(app) ? app : ALL
+  // A chip for an app that no longer has words in the window falls back to All rather than hiding everything, and
+  // stays there: the choice is let go, so the app's next dictation does not quietly narrow the feed again.
+  const chipGone = app !== ALL && !chips.includes(app)
+  const chosenApp = chipGone ? ALL : app
+  useEffect(() => { if (chipGone) setApp(ALL) }, [chipGone])
 
   // A new search or another chip starts again from the first week.
   useEffect(() => { setDaysShown(JOURNAL_DAYS_STEP) }, [normalizedQuery, chosenApp])
@@ -260,9 +263,9 @@ export function Journal({
       )}
     </div>
   )
-}
+})
 
-function JournalEntry({ row, open, factsId, copyState, toggleRef, onToggle, onKeyDown, onCopy, onDelete }: {
+const JournalEntry = memo(function JournalEntry({ row, open, factsId, copyState, toggleRef, onToggle, onKeyDown, onCopy, onDelete }: {
   readonly row: JournalRow
   readonly open: boolean
   readonly factsId: string
@@ -312,4 +315,4 @@ function JournalEntry({ row, open, factsId, copyState, toggleRef, onToggle, onKe
       </article>
     </li>
   )
-}
+})

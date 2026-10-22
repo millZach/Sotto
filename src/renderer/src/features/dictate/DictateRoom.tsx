@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import {
   MICROPHONE_NOT_SET_UP_DETAIL,
@@ -60,6 +60,7 @@ export interface DictateRoomProps {
   readonly now?: number | undefined
 }
 
+const NO_RECORDS: readonly DictationRecord[] = []
 const TIMER_TICK_MS = 250
 /** How long after an error appears an Escape is still taken as meant for the work before it. */
 const ESCAPE_GRACE_MS = 500
@@ -143,7 +144,7 @@ export function DictateRoom({
   platform,
   dictation,
   entries,
-  records = [],
+  records = NO_RECORDS,
   recovery = [],
   onDismissRecovery,
   historyStatus,
@@ -153,8 +154,8 @@ export function DictateRoom({
   onDismiss,
   onOpenSettings,
   onCopy,
-  onDelete = async () => false,
-  onClear = async () => false,
+  onDelete,
+  onClear,
   query,
   onQueryChange,
   now: pinnedNow,
@@ -195,6 +196,18 @@ export function DictateRoom({
   const statsDay = startOfDay(journalNow)
   const typingWpm = settings.typingSpeedWpm
   const stats = useMemo(() => journalStats(records, statsDay, typingWpm), [records, statsDay, typingWpm])
+  // The microphone level arrives many times a second and the app hands down new handlers with it. The Journal and
+  // its stats are memoised, so they take handlers that never change and call whatever the room was last given:
+  // a level, a timer tick or a new sentence then redraws the bar alone, never a long feed.
+  const latest = useRef({ onCopy, onDelete, onClear, onQueryChange, onOpenSettings })
+  useLayoutEffect(() => { latest.current = { onCopy, onDelete, onClear, onQueryChange, onOpenSettings } })
+  const journalHandlers = useMemo(() => ({
+    onCopy: (text: string) => latest.current.onCopy(text),
+    onDelete: (id: string) => latest.current.onDelete?.(id) ?? Promise.resolve(false),
+    onClear: () => latest.current.onClear?.() ?? Promise.resolve(false),
+    onQueryChange: (value: string) => latest.current.onQueryChange?.(value),
+    onOpenSettings: () => latest.current.onOpenSettings(),
+  }), [])
 
   const invoke = async (operation: () => Promise<void>): Promise<void> => {
     if (submitting) return
@@ -337,11 +350,11 @@ export function DictateRoom({
             now={journalNow}
             chips={stats.chips}
             query={query}
-            onQueryChange={onQueryChange}
-            onCopy={onCopy}
-            onDelete={onDelete}
-            onClear={onClear}
-            onOpenSettings={onOpenSettings}
+            onQueryChange={journalHandlers.onQueryChange}
+            onCopy={journalHandlers.onCopy}
+            onDelete={journalHandlers.onDelete}
+            onClear={journalHandlers.onClear}
+            onOpenSettings={journalHandlers.onOpenSettings}
           />
         </div>
       </div>

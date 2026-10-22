@@ -79,6 +79,24 @@ describe('Journal', () => {
     expect(screen.getByText('An older thought')).toBeVisible()
   })
 
+  it('lets go of an app chip once it is gone, so that app’s next dictation does not narrow the feed again', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<Journal {...baseProps} />)
+    await user.click(screen.getByRole('button', { name: 'Windows Terminal' }))
+    expect(screen.queryByText('Alpha note for the team')).not.toBeInTheDocument()
+
+    // Its last transcript in the window was deleted: the chip goes and the feed shows everything.
+    rerender(<Journal {...baseProps} chips={['Microsoft Outlook']} />)
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Alpha note for the team')).toBeVisible()
+
+    // A new dictation into the same app brings the chip back, and the feed stays on All.
+    rerender(<Journal {...baseProps} />)
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Windows Terminal' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Alpha note for the team')).toBeVisible()
+  })
+
   it('searches with trimmed case-insensitive matching, filters by app chip, and copies through its safe action', async () => {
     const user = userEvent.setup()
     const copy = vi.fn(async () => true)

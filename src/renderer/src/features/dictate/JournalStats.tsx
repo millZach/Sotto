@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react'
+import React, { memo, type ReactNode } from 'react'
 
 import {
   hourLabel,
@@ -16,7 +16,7 @@ const count = (value: number): string => value.toLocaleString()
  * text alternative. Below 900 pixels of room the column becomes a row of the two figure sections and the charts
  * (the sections marked wide) step aside.
  */
-export function JournalStats({ stats, typingWpm }: { readonly stats: Stats; readonly typingWpm: number }): ReactNode {
+export const JournalStats = memo(function JournalStats({ stats, typingWpm }: { readonly stats: Stats; readonly typingWpm: number }): ReactNode {
   const { today, usual, month } = stats
   const todayPace = today.wpm === null
     ? usual === null ? { value: '0', label: 'wpm today' } : { value: String(usual), label: 'wpm, your usual' }
@@ -65,7 +65,7 @@ export function JournalStats({ stats, typingWpm }: { readonly stats: Stats; read
       </section>
     </aside>
   )
-}
+})
 
 /** One figure and what it counts, read in that order: "1,240 words in 7 dictations". */
 function Figure({ value, label }: { readonly value: string; readonly label: string }): ReactNode {
