@@ -4,6 +4,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { WATCHER_STOP_PAUSE } from '../../src/main/agents/followups'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import type { ProviderId } from '../../src/shared/agents'
@@ -518,6 +519,9 @@ it('fences remove-followup and branch controls as user reconfiguration', async (
   expect(f.service.state().watchedThreads.find(item => item.target.threadId === other.target.threadId)!.participation[0]!.state).toBe('taken-over')
 })
 
+// A machine Stop keeps the user's queue whole for their review, paused by Watcher so Resume queue is there to give it.
+const pausedByWatcher = <T extends object>(items: T[]): T[] => items.map(item => ({ ...item, status: 'paused', pausedBy: 'watcher', error: WATCHER_STOP_PAUSE }))
+
 it('keeps preexisting user queues intact when machine Stop interrupts their thread', async () => {
   const f = await fixture()
   await f.control.commandShell({ type: 'create-thread', projectId: f.project.id, title: 'Synthetic user worker', modelId: f.model.id })
@@ -527,7 +531,7 @@ it('keeps preexisting user queues intact when machine Stop interrupts their thre
   const queued = f.control.shell().followups!.filter(item => item.threadId === threadId)
   expect(queued).toHaveLength(1)
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.control.hostId()!, threadId } })).toMatchObject({ status: 'ok' })
-  expect(f.control.shell().followups!.filter(item => item.threadId === threadId)).toEqual(queued)
+  await vi.waitFor(() => expect(f.control.shell().followups!.filter(item => item.threadId === threadId)).toEqual(pausedByWatcher(queued)))
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'Synthetic preexisting user queue')).toBe(false)
 })
 
@@ -560,7 +564,7 @@ it.each(['persistence', 'queue cleanup'])('keeps saved user prompts waiting when
   const result = await stop
   saving.mockRestore(); cancelling.mockRestore()
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text === 'Synthetic saved user prompt')).toHaveLength(0)
-  expect(f.control.shell().followups!.filter(item => item.threadId === threadId)).toEqual(queued)
+  await vi.waitFor(() => expect(f.control.shell().followups!.filter(item => item.threadId === threadId)).toEqual(pausedByWatcher(queued)))
   expect(result).toMatchObject({ status: 'ok' })
   expect((await f.control.commandShell({ type: 'resume-followups', threadId })).error).toBeNull()
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text === 'Synthetic saved user prompt')).toHaveLength(1))

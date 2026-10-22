@@ -6,7 +6,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -2722,22 +2722,25 @@ export class AgentControl {
         ?? items.find(item => item.threadId === threadId && !held(item))
       if (!first) continue
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
+      // A machine Stop fences its own sends. A user's queue, and Sotto's wake-up in it, waits for the user's review
+      // (ADR-0073), so once the thread rests the queue is paused by Watcher and says so: Resume queue is that review.
+      const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
+      const stopHeld = first.status === 'queued' && !confirmed && !first.watcherOperationId && thread && !isThreadTurnRunning(thread)
+        && this.watcherHooks?.preserveUserQueue(threadId)
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
       const terminalBlocked = thread && !isThreadTurnRunning(thread)
         && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== UNKNOWN_TURN)
-      if (first.status === 'queued' && terminalBlocked) {
-        // A machine Stop fences its own sends. A user's queue remains intact and waits for explicit review.
-        if (!first.watcherOperationId && this.watcherHooks?.preserveUserQueue(threadId)) continue
+      if (first.status === 'queued' && (stopHeld || terminalBlocked)) {
         this.pumping.add(threadId)
         let paused = false
-        void this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.')
+        void (stopHeld ? this.followupStore.pause(threadId, WATCHER_STOP_PAUSE, 'watcher')
+          : this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.'))
           .then(() => { paused = true })
           .catch(() => { this.state.error = 'Could not pause the follow-up queue.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
         continue
       }
-      const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       if (!confirmed && (first.status !== 'queued' || !this.followupReady(threadId))) continue
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {
         // What babysitting ended since it was told is taken out before the wake-up goes, and the rest goes after.

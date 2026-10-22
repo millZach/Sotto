@@ -249,6 +249,8 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const paused = visible.filter(item => item.status === 'paused')
   const queuePaused = paused.length > 0 && !visible.some(item => item.status === 'queued')
   const pauseNote = queuePaused && paused.every(item => item.error === paused[0]!.error) ? paused[0]!.error : undefined
+  // A Watcher stop holds the queue for the user's review (ADR-0073); the pause names who made it.
+  const pausedBy = queuePaused && paused.every(item => item.pausedBy === 'watcher') ? 'Paused by Watcher' : 'Paused'
   const tool = (itemId: string, name: string): HTMLElement | null | undefined =>
     section.current?.querySelector<HTMLElement>(`[data-followup="${itemId}"] [data-tool="${name}"]`)
   const toggle = (): HTMLElement | null | undefined => section.current?.querySelector<HTMLElement>('.thread-followups__toggle')
@@ -305,7 +307,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
         {!expanded && added ? <span className="thread-followups__next" data-added><span className="thread-followups__next-label">Added</span>{added.text}</span>
           : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">Next</span>{next}</span> : null}
       </button>
-      {queuePaused ? <span className="thread-followup__state" data-status="paused"><i aria-hidden="true" />Paused</span>
+      {queuePaused ? <span className="thread-followup__state" data-status="paused"><i aria-hidden="true" />{pausedBy}</span>
         : !expanded && admissions.some(item => !item.resolved) ? <span className="thread-followup__state" role="status">Queuing…</span>
           : !expanded && visible.some(item => item.status === 'dispatching') ? <span className="thread-followup__state" data-status="dispatching"><i aria-hidden="true" />Sending</span> : null}
       {resumable ? <Button variant="secondary" disabled={!row.connected} onClick={() => {

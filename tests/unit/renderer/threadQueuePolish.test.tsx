@@ -148,6 +148,18 @@ describe('queue presentation', () => {
     expect(within(queue).getAllByRole('button', { name: 'Resume queue' })).toHaveLength(1)
   })
 
+  it('names Watcher on a pause its stop made, with the reason once and Resume queue', () => {
+    const state = manualState()
+    const reason = 'Watcher stopped this thread, so its queue waits for you. Review the thread and resume its queue when ready.'
+    state.followups = [followup({ id: ids(1), text: 'Run the audio suite', status: 'paused', error: reason, pausedBy: 'watcher' })]
+    mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getByText('Paused by Watcher')).toBeInTheDocument()
+    expect(within(queue).queryByText('Paused')).toBeNull()
+    expect(within(queue).getAllByText(reason)).toHaveLength(1)
+    expect(within(queue).getByRole('button', { name: 'Resume queue' })).toBeInTheDocument()
+  })
+
   it('collapses to a count and the next message in a short window, and the toggle shows the list', () => {
     shortWindow(true)
     const state = manualState({ running: true })

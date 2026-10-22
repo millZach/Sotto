@@ -12,6 +12,8 @@ import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, WAKE_UP
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
+/** Why a queue Watcher's stop holds for the user's review (ADR-0073) is paused. */
+export const WATCHER_STOP_PAUSE = 'Watcher stopped this thread, so its queue waits for you. Review the thread and resume its queue when ready.'
 /** Shared identity for prompt admission, the outbox and queue receipts. Images stay handles, never content reads. */
 export function followupDigest(input: Pick<AgentFollowup, 'text' | 'skills' | 'files'> & { readonly attachments?: readonly AgentAttachmentHandle[] | undefined }): string {
   const base = input.skills?.length ? [input.text.trim(), input.attachments ?? [], input.skills] : [input.text.trim(), input.attachments ?? []]
@@ -108,7 +110,7 @@ export class FollowupStore {
         const remaining = item.attachments.filter(kept)
         if (remaining.length === item.attachments.length && !lost.has(item.id)) continue
         item.attachments = remaining
-        if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES }
+        if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES; delete item.pausedBy }
       }
       for (const item of state.items) if (active(item.threadId) && item.status === 'dispatching') {
         item.status = 'uncertain'; item.error = 'Dispatch was interrupted. Refresh to reconcile; this message will not be replayed.'
@@ -237,7 +239,7 @@ export class FollowupStore {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined } : {}
+        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined, pausedBy: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
       } else {
@@ -319,15 +321,15 @@ export class FollowupStore {
       if (!changed) return false
     })
   }
-  pause(threadId: string, error: string): Promise<void> {
+  pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {
     return this.change(state => {
-      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued') Object.assign(item, { status: 'paused', error })
+      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued') Object.assign(item, { status: 'paused', error, ...by ? { pausedBy: by } : {} })
     })
   }
   resume(threadId: string, turnId?: string): Promise<void> {
     return this.change(state => {
       for (const item of state.items) if (item.threadId === threadId && ['paused', 'failed'].includes(item.status)) {
-        item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error
+        item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error; delete item.pausedBy
       }
     })
   }
