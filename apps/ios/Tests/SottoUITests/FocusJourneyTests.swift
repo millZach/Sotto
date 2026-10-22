@@ -788,19 +788,9 @@ import XCTest
         XCTAssertEqual(light.value as? String, "Selected")
         openWatcher()
     }
-    /// The part of Watcher's conversation a press reaches: below its pinned glass bar and above its reply box, with
-    /// anything the box carries over it. XCTest calls a row under the bar hittable, but a press there lands on the bar
-    /// (on CI it opened Watched instead of a card's Review question).
-    private var watcherBand: (top: CGFloat, bottom: CGFloat) {
-        // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
-        // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
-        let snapshot: any XCUIElementSnapshot
-        do {
-            snapshot = try app.snapshot()
-        } catch {
-            XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
-            return (.infinity, -.infinity)
-        }
+    /// Every element in the app from one reading of its hierarchy, parents before their children. Frames read from it
+    /// all come from the same instant, and the reading is one query however many elements the caller looks at.
+    private func everyElement() throws -> [any XCUIElementSnapshot] {
         var elements: [any XCUIElementSnapshot] = []
         func collect(_ parent: any XCUIElementSnapshot) {
             for child in parent.children {
@@ -808,7 +798,22 @@ import XCTest
                 collect(child)
             }
         }
-        collect(snapshot)
+        collect(try app.snapshot())
+        return elements
+    }
+    /// The part of Watcher's conversation a press reaches: below its pinned glass bar and above its reply box, with
+    /// anything the box carries over it. XCTest calls a row under the bar hittable, but a press there lands on the bar
+    /// (on CI it opened Watched instead of a card's Review question).
+    private var watcherBand: (top: CGFloat, bottom: CGFloat) {
+        // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
+        // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
+        let elements: [any XCUIElementSnapshot]
+        do {
+            elements = try everyElement()
+        } catch {
+            XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
+            return (.infinity, -.infinity)
+        }
         func element(_ identifier: String, type: XCUIElement.ElementType = .any) -> (any XCUIElementSnapshot)? {
             // Like matching(identifier:), keep the first descendant of the requested type whose identifying
             // attributes match. All of these attributes belong to the captured snapshot, with no further UI query.
@@ -1127,7 +1132,8 @@ import XCTest
         let writing = text("Checking the threads I watch.")
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
         // The card's top is the line over it that says where its answer goes; its foot is Send answer.
-        let lead = text("The thread’s own card. Your answer goes to Fix login test")
+        let leadWords = "The thread’s own card. Your answer goes to Fix login test"
+        let lead = text(leadWords)
         XCTAssertTrue(lead.waitForExistence(timeout: 15), "Fix login test's question arrives while Watcher writes")
         let card = byID("watcher-card-login")
         revealInWatcher(card)
@@ -1136,7 +1142,6 @@ import XCTest
         let owl = app.buttons["watcher-to-top"].frame
         let strip = (top: owl.minY - 4, bottom: owl.maxY + 8)
         let conversation = app.buttons["watcher-section-conversation"]
-        let reply = byID("watcher-reply")
         let window = app.windows.firstMatch
         let windowTop = window.frame.minY
         func barAway() -> Bool { !conversation.exists || conversation.frame.maxY <= windowTop + 1 }
@@ -1171,17 +1176,24 @@ import XCTest
         let to = origin.withOffset(CGVector(dx: watcherDragX, dy: (strip.top + strip.bottom) / 2 - windowTop))
         from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.15)
         waitForWatcherBar(away: false, "Stopping on the card brings the bar back")
-        // The card comes down below the bar, if the bar came back over it, and sits whole above the box.
+        // The card comes down below the bar, if the bar came back over it, and sits whole above the box. Each look reads
+        // the card's top, its foot and the box from one snapshot. On CI's SE, five separate queries took four and a half
+        // seconds a look, so ten seconds held only two looks, and the deadline cut the second one's queries off, which
+        // read every frame as zero while the card sat whole below the bar.
         var seen = "no look found the card"
         var matches = 0
         let placed = NSPredicate { _, _ in
-            guard lead.exists, card.exists else { seen = "the card is missing"; matches = 0; return false }
-            let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
+            guard let elements = try? self.everyElement() else { seen = "no snapshot of the page"; matches = 0; return false }
+            guard let top = elements.first(where: { $0.label.hasPrefix(leadWords) })?.frame.minY,
+                  let foot = elements.first(where: { $0.identifier == "watcher-card-login" })?.frame.maxY,
+                  let box = elements.first(where: { $0.identifier == "watcher-reply" })?.frame.minY else {
+                seen = "the card or the box is missing"; matches = 0; return false
+            }
             seen = "card \(top) to \(foot), the bar's bottom at \(strip.bottom), the box at \(box)"
             matches = top >= strip.bottom - 1 && foot <= box ? matches + 1 : 0
             return matches >= 2
         }
-        let whole = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 10)
+        let whole = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 30)
         if whole != .completed { explain("watcher-card-not-below-the-bar", seen) }
         XCTAssertEqual(whole, .completed, "The card sits whole between the bar and the box (\(seen))")
         let start = lead.frame.minY
@@ -1207,7 +1219,7 @@ import XCTest
                                              CFNotificationName("app.sotto.ui.watcher-notes-answered" as CFString), nil, nil, true)
         XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
         let back = NSPredicate { _, _ in lead.exists && abs(lead.frame.minY - start) <= 2 }
-        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: back, object: nil)], timeout: 5)
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: back, object: nil)], timeout: 15)
         let after = lead.frame.minY
         if abs(after - start) > 2 { explain("watcher-card-moved-after-removal", "card top \(after), was \(start), the bar's bottom at \(strip.bottom)") }
         XCTAssertEqual(after, start, accuracy: 2, "Once the permission under it has gone, the card is back where the reader has it")
