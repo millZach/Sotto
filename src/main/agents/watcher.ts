@@ -11,12 +11,13 @@ import { countWorkingThreads, workingThreadsWarning } from '../../shared/working
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { delegatedThreadsBelow } from '../../shared/delegation'
-import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
+import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
 import type { HostMachineReport } from '../../shared/hostFacts'
-import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+  type WatcherMergeTurn, type WatcherMergeTurnsRead,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import { clonePlainData } from './cloneHostSnapshot'
@@ -175,7 +176,11 @@ const STILL_ADMITTING = 'Sotto is still checking this call, so its result is not
 const STILL_WATCHING = 'Sotto is still carrying this out, so its result is not known yet. It may still finish, and calling it again is safe. Read list_threads to see where it stands.'
 const STILL_READING = 'This read took longer than your provider waits for a tool call. Nothing changed. Read again.'
 /** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
-interface CallProgress { operationId?: string }
+interface CallProgress {
+  operationId?: string
+  /** Called once the call's operation is admitted, before it runs: a send's merge turn is remembered here (#1339). */
+  admitted?: (operationId: string) => void
+}
 const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
 const LATE: unique symbol = Symbol('late')
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
@@ -223,6 +228,12 @@ export class WatcherService implements WatcherControlHooks {
   private openingKind: 'open' | 'new' | undefined
   private recoveryNotice: string | null = null
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
+  /**
+   * The sends Watcher marked as giving a thread its merge turn (#1339), oldest first, for Watcher's picture. In memory
+   * only: the saved record keeps no new key, since a build that cannot read it loses the whole file, and a restart
+   * forgets them until history is kept (#1340).
+   */
+  private readonly mergeTurns: { readonly operationId: string; readonly pullRequest: number; readonly at: string }[] = []
   private readonly active = new Map<string, Promise<unknown>>()
   private invocations = 0
   /** What Watcher keeps through compaction (#1189), and whether a compaction since it last read it owes it a note. */
@@ -1005,6 +1016,27 @@ export class WatcherService implements WatcherControlHooks {
   private currentOffer(): NonNullable<WatcherService['handoverOffer']> | null {
     const offer = this.handoverOffer, current = this.view().current
     return offer && current && key(offer.to) === key(current.target) ? offer : null
+  }
+  private noteMergeTurn(operationId: string, pullRequest: number): void {
+    if (this.mergeTurns.some(turn => turn.operationId === operationId)) return
+    this.mergeTurns.push({ operationId, pullRequest, at: now() })
+    if (this.mergeTurns.length > WATCHER_MERGE_TURNS_KEPT) this.mergeTurns.splice(0, this.mergeTurns.length - WATCHER_MERGE_TURNS_KEPT)
+  }
+  /**
+   * The merge turns for Watcher's picture (#1339): the merge queue read_state computes from live data (#1274), and the
+   * merge turns Watcher gave whose sends are still in its record. Read only while the picture shows, never published.
+   */
+  readMergeTurns(): WatcherMergeTurnsRead {
+    try {
+      if (!this.view().current) return { status: 'ok', queue: [], turns: [] }
+      const wanted = new Set(this.mergeTurns.map(turn => turn.operationId)), operations = new Map<string, WatcherOperation>()
+      if (wanted.size) for (const operation of this.view().operations) if (wanted.has(operation.id)) operations.set(operation.id, operation)
+      const turns: WatcherMergeTurn[] = this.mergeTurns.flatMap(turn => {
+        const operation = operations.get(turn.operationId)
+        return operation?.action === 'send' ? [{ operationId: turn.operationId, target: operation.target, pullRequest: turn.pullRequest, at: turn.at }] : []
+      })
+      return { status: 'ok', queue: watcherMergeQueue(this.stateThreads()).slice(0, WATCHER_STATE_COMPUTED_MAX), turns }
+    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the merge turns just now. Nothing was changed.', true) }
   }
   /** The offered handover's words, as the new Watcher would receive them. Read only when the user asks to read it. */
   readHandover(): WatcherHandoverRead {
@@ -2361,7 +2393,14 @@ export class WatcherService implements WatcherControlHooks {
         }
         return this.slim(name, parsed.data, await this.dispatchRead(call, operation))
       }
-      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
+      if (name === 'send_to_thread') {
+        // The merge turn marks the send for Watcher's picture alone (#1339): the send is admitted, digested, retried and
+        // forwarded without it, so it changes nothing about the send, and is remembered once the send is admitted.
+        const { mergeTurn, ...send } = parsed.data as WatcherToolInput<'send_to_thread'>
+        if (mergeTurn) progress.admitted = operationId => this.noteMergeTurn(operationId, mergeTurn.pullRequest)
+        return await this.mutate(threadId, name, send, undefined, undefined, progress)
+      }
+      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
   }
@@ -2550,7 +2589,7 @@ export class WatcherService implements WatcherControlHooks {
       if (roleResult) this.rememberRoleStart(operation.id, roleResult)
       return { operation, retry: false }
     })
-    if (progress) progress.operationId = admitted.operation.id
+    if (progress) { progress.operationId = admitted.operation.id; progress.admitted?.(admitted.operation.id) }
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
       const active = this.active.get(admitted.operation.id)
