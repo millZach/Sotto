@@ -17,8 +17,8 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-manifest-')); roots.push(root)
   const dependencies = { zod: '4.4.3' }
   const files: Record<string, string> = {
-    'package.json': JSON.stringify({ version: '1.0.0', type: 'commonjs', main: 'host/index.js', engines: { node: '>=24 <25' }, dependencies }),
-    'runtime-manifest.json': JSON.stringify({ version: 1, kind: 'sotto-host', sottoVersion: '1.0.0', node: '>=24 <25', dependencies }),
+    'package.json': JSON.stringify({ version: '1.0.0', type: 'commonjs', main: 'host/index.js', engines: { node: '>=24.22.1 <25' }, dependencies }),
+    'runtime-manifest.json': JSON.stringify({ version: 1, kind: 'sotto-host', sottoVersion: '1.0.0', node: '>=24.22.1 <25', dependencies }),
     'host/index.js': '/* test artifact */',
     'host/external-dependencies.json': JSON.stringify(external()),
     'host/bundled-dependencies.json': JSON.stringify({ version: 1, packages: [] }),

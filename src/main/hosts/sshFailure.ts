@@ -43,6 +43,9 @@ export type SshFailureCode =
 
 /** The Node major a host archive needs when the archive does not say. `scripts/package-host.mjs` writes the same range. */
 export const HOST_NODE_MAJOR = 24
+/** The oldest Node 24 the host runs on. 24.22.1 stops trusting the compromised eMudhra intermediate CAs (October 2026). */
+export const HOST_NODE_MINIMUM = '24.22.1'
+const HOST_NODE_INSTALL = `Node ${HOST_NODE_MINIMUM} or a later Node ${HOST_NODE_MAJOR}`
 
 const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'ssh-missing': 'SSH could not start. Install OpenSSH and check that its executable is available.',
@@ -55,9 +58,9 @@ const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'identity-file-unreadable': 'The SSH identity file could not be read. Choose its current path and reconnect.',
   'connect-timeout': 'SSH did not finish connecting in time. Check the host and your network, then reconnect.',
   'prompt-unanswered': 'SSH waited too long for your answer, so Sotto stopped connecting. Connect again when you are ready to answer.',
-  'node-missing': `Node was not found on the SSH host. Install Node ${HOST_NODE_MAJOR} for that SSH account, then reconnect.`,
-  'node-too-old': `The SSH host's Node is too old for the host. Install Node ${HOST_NODE_MAJOR} for that SSH account, then reconnect.`,
-  'node-too-new': `The SSH host's Node is newer than this host release supports. Install Node ${HOST_NODE_MAJOR} for that SSH account, then reconnect.`,
+  'node-missing': `Node was not found on the SSH host. Install ${HOST_NODE_INSTALL} for that SSH account, then reconnect.`,
+  'node-too-old': `The SSH host's Node is too old for the host. Install ${HOST_NODE_INSTALL} for that SSH account, then reconnect.`,
+  'node-too-new': `The SSH host's Node is newer than this host release supports. Install ${HOST_NODE_INSTALL} for that SSH account, then reconnect.`,
   'archive-missing': 'The host installation was not found. Check its folder on the SSH host and reconnect.',
   'descriptor-invalid': 'The host connection record could not be read. Check the host data folder before reconnecting.',
   'port-taken': 'Another program is using the port the host last listened on. Stop it on the SSH host, then reconnect.',
@@ -86,8 +89,8 @@ const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
 function nodeMessage(code: 'node-too-old' | 'node-too-new', version: string | undefined): string {
   if (!version || !/^\d{1,4}(?:\.\d{1,6}){0,3}$/u.test(version)) return MESSAGES[code]
   return code === 'node-too-old'
-    ? `The SSH host runs Node ${version}, which is too old for the host. Install Node ${HOST_NODE_MAJOR} for that SSH account, then reconnect.`
-    : `The SSH host runs Node ${version}, which is newer than this host release supports. Install Node ${HOST_NODE_MAJOR} for that SSH account, then reconnect.`
+    ? `The SSH host runs Node ${version}, which is too old for the host. Install ${HOST_NODE_INSTALL} for that SSH account, then reconnect.`
+    : `The SSH host runs Node ${version}, which is newer than this host release supports. Install ${HOST_NODE_INSTALL} for that SSH account, then reconnect.`
 }
 
 /** A command that fixes a failure, for the user to run, and the sentence that introduces it. Sotto never runs it. */

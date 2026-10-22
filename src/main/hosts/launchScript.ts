@@ -1,4 +1,4 @@
-import { HOST_NODE_MAJOR } from './sshFailure'
+import { HOST_NODE_MAJOR, HOST_NODE_MINIMUM } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
 import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
@@ -975,7 +975,7 @@ fi
 `
 
 /** The range a host archive declares in its manifest; the desktop sends it for an archive without one. */
-export const HOST_NODE_RANGE = `>=${HOST_NODE_MAJOR} <${HOST_NODE_MAJOR + 1}`
+export const HOST_NODE_RANGE = `>=${HOST_NODE_MINIMUM} <${HOST_NODE_MAJOR + 1}`
 export { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from '../../shared/hostLaunchTimings'
 /**
  * How long the desktop gives a stop once SSH is signed in: the drain, the kill and the reply's trip back

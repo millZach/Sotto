@@ -22,8 +22,8 @@ async function directory() { const root = await mkdtemp(join(tmpdir(), 'sotto-ow
 function contents({ source = sourceCommit, dirty = false, packagedVersion = version, platform = process.platform, arch = process.arch, runtimeVersion = packagedVersion } = {}) {
   const dependencies = { zod: '4.4.3' }
   const files = {
-    'package.json': JSON.stringify({ version: packagedVersion, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24 <25' }, dependencies }),
-    'runtime-manifest.json': JSON.stringify({ version: 1, kind: 'sotto-host', sottoVersion: runtimeVersion, node: '>=24 <25', dependencies, platform, arch }),
+    'package.json': JSON.stringify({ version: packagedVersion, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24.22.1 <25' }, dependencies }),
+    'runtime-manifest.json': JSON.stringify({ version: 1, kind: 'sotto-host', sottoVersion: runtimeVersion, node: '>=24.22.1 <25', dependencies, platform, arch }),
     'host/index.js': '/* deterministic fixture only */',
     'host/external-dependencies.json': JSON.stringify({ version: 1, scope: 'host', imports: HOST_EXTERNAL_IMPORTS, dynamicImports: [] }),
     'host/bundled-dependencies.json': JSON.stringify({ version: 1, packages: [] }),

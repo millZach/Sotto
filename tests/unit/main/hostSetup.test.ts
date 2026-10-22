@@ -67,7 +67,7 @@ describe('the host setup brief', () => {
     const brief = hostSetupBrief({ name: 'forge', target: 'zach@forge', sshPort: 2222, installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', version: '0.1.21',
       failure: { step: 'install', reason: 'node-too-new' } })
     for (const text of ['forge', 'zach@forge', 'port 2222', '`ssh -p 2222 zach@forge`', '~/.local/share/sotto-host', '~/.sotto', 'Sotto 0.1.21', 'Sotto-host-0.1.21-linux-x64.tar.gz',
-      'stopped at the host installation (reason code node-too-new)', 'Node 24', 'host_check', 'host_add', 'never touch this computer\'s credential store']) expect(brief).toContain(text)
+      'stopped at the host installation (reason code node-too-new)', 'Node 24.22.1 or a later Node 24', 'host_check', 'host_add', 'never touch this computer\'s credential store']) expect(brief).toContain(text)
     expect(brief).not.toMatch(/id_forge|identity file|BEGIN|password:/iu)
   })
 })

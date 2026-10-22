@@ -70,7 +70,7 @@ it.skipIf(!enabled)('proves a Windows native Watcher against isolated current an
     let currentProjectId = '', currentModelId = '', olderHostId = '', olderProjectId = '', olderModelId = ''
     for (const [index, variant] of ['current', 'older'].entries()) {
       evidence.phase = `start-${variant}`; await save()
-      const pid = Number((await ssh(`nohup mise exec node@24.21.0 -- node '${remoteRoot}/watcherPairedHostLauncher.mjs' '${remoteRoot}' '${variant}' > '${remoteRoot}/${variant}/host.log' 2>&1 < /dev/null & echo $!`)).trim())
+      const pid = Number((await ssh(`nohup mise exec node@24.22.1 -- node '${remoteRoot}/watcherPairedHostLauncher.mjs' '${remoteRoot}' '${variant}' > '${remoteRoot}/${variant}/host.log' 2>&1 < /dev/null & echo $!`)).trim())
       if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('live-pid-unavailable')
       evidence.remotePids.push(pid)
       const localConnection = join(output, `${variant}-connection.json`)

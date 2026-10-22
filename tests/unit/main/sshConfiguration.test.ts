@@ -22,7 +22,7 @@ it('sends the launch script on stdin only and names the Node range the host arch
   const command = launchScriptCommand(validateSshHost(config), { op: 'stop-host', hostId: '11111111-1111-4111-8111-111111111111' }, 30000)
   expect(command).not.toContain(LAUNCH_SCRIPT_SOURCE.slice(0, 40))
   expect(command).toContain('"nodeRange":"' + HOST_NODE_RANGE + '"')
-  expect(HOST_NODE_RANGE).toBe('>=24 <25')
+  expect(HOST_NODE_RANGE).toBe('>=24.22.1 <25')
 })
 it('waits for a stop longer than the launch script lets the host drain', () => {
   const command = launchScriptCommand(validateSshHost(config), { op: 'stop-host', hostId: '11111111-1111-4111-8111-111111111111' }, 30000)

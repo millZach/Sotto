@@ -533,7 +533,7 @@ Phone access is the host's own setting. The host serves phones on a loopback por
 
 *Development feature.*
 
-The host can run under Node 24 on Windows or Linux without Electron or a display. It owns its providers, worktrees and saved history. Build from a checkout with `npm ci` and `npm run build:host`, then run:
+The host can run under Node 24.22.1 or a later Node 24 on Windows or Linux without Electron or a display. It owns its providers, worktrees and saved history. Build from a checkout with `npm ci` and `npm run build:host`, then run:
 
 ```sh
 # From a checkout, after npm run build:host
@@ -821,10 +821,10 @@ The packaged `resources` directory contains the Claude SDK history helper, `READ
 On forge with Node 24 and a clean checkout:
 
 ```sh
-mise exec node@24.21.0 -- npm ci
-mise exec node@24.21.0 -- node node_modules/electron/install.js
-mise exec node@24.21.0 -- npm run assets:verify
-mise exec node@24.21.0 -- npm run package:linux
+mise exec node@24.22.1 -- npm ci
+mise exec node@24.22.1 -- node node_modules/electron/install.js
+mise exec node@24.22.1 -- npm run assets:verify
+mise exec node@24.22.1 -- npm run package:linux
 ```
 
 `package:linux` is an offline, unchecked source-version verification command. Stable release owners instead run `npm run package:linux:stable` and `node scripts/release-linux.mjs` on forge from a clean, CI-green main commit; the [release procedure](release/releasing.md#linux-desktop-package) also covers a rehearsal on any clean commit.
