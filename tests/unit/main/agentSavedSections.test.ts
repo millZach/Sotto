@@ -21,6 +21,7 @@ type Inside = {
   savedOverLiveState(): Record<string, unknown>
   store: { write(value: unknown, compact?: string): Promise<void> }
   persist(closing?: boolean): Promise<void>
+  savedWhole(saved: unknown): unknown
   mutateWatcher(update: (record: WatcherRecord) => void): void
 }
 
@@ -131,20 +132,31 @@ describe('agents.json sections', () => {
   it('serializes the state whole when a stand-in for a section turns up in what the user wrote', async () => {
     const { inside, file, stringified } = await fixture()
     await inside.persist()
+    const whole = vi.spyOn(inside, 'savedWhole')
     // A key named like a section, holding a stand-in's exact words, ahead of the section itself.
-    Object.assign(inside.state.configuration, { watcher: ' sotto-saved-section watcher' })
+    Object.assign(inside.state.configuration, { watcher: '\u0000sotto-saved-section\u0000watcher' })
     const write = vi.spyOn(inside.store, 'write')
     await inside.persist()
+    expect(whole).toHaveBeenCalled()
     expect(write).toHaveBeenCalledTimes(1)
     expect(await file()).toBe(stringified())
     // And with nothing new after it, nothing is written again.
     await inside.persist()
     expect(write).toHaveBeenCalledTimes(1)
-    // The same for the markers around a section not kept yet.
-    Object.assign(inside.state.configuration, { '\u0000sotto-saved-section-before\u0000deliveredDrafts': 0 })
-    inside.state.deliveredDrafts = [{ threadId: 'a', draftId: randomUUID() }]
+  })
+
+  it('serializes the state whole when the markers around a section not kept yet turn up in what the user wrote', async () => {
+    const { inside, file, stringified } = await fixture()
     await inside.persist()
-    expect(write).toHaveBeenCalledTimes(2)
+    const whole = vi.spyOn(inside, 'savedWhole')
+    // The opening marker of a section not kept yet, followed by that section's own name, exactly as the serialization
+    // writes it, ahead of the section itself: the marker is then found twice.
+    Object.assign(inside.state.configuration, { '\u0000sotto-saved-section-before\u0000deliveredDrafts': 0, deliveredDrafts: [] })
+    inside.state.deliveredDrafts = [{ threadId: 'a', draftId: randomUUID() }]
+    const write = vi.spyOn(inside.store, 'write')
+    await inside.persist()
+    expect(whole).toHaveBeenCalled()
+    expect(write).toHaveBeenCalledTimes(1)
     expect(await file()).toBe(stringified())
   })
 
