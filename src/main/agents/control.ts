@@ -3357,9 +3357,11 @@ export class AgentControl {
       // (ADR-0073), so once the thread rests the queue is paused by Watcher and says so: Resume queue is that review.
       // A hidden wake-up never pauses, as above.
       const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
-      const stopHeld = first.status === 'queued' && !confirmed && !first.watcherOperationId && !isHiddenWakeUp(first) && thread
-        && !isThreadTurnRunning(thread) && this.watcherHooks?.preserveUserQueue(threadId)
-      if (first.status === 'queued' && (stopHeld || terminalBlocked)) {
+      // Whatever joins the queue behind a pause, such as later news, is paused with it, so the queue says why it waits.
+      const stopHeld = !confirmed && thread && !isThreadTurnRunning(thread)
+        && items.some(item => item.threadId === threadId && item.status === 'queued' && !item.watcherOperationId && !isHiddenWakeUp(item))
+        && this.watcherHooks?.preserveUserQueue(threadId)
+      if (stopHeld || first.status === 'queued' && terminalBlocked) {
         this.pumping.add(threadId)
         let paused = false
         void (stopHeld ? this.followupStore.pause(threadId, WATCHER_STOP_PAUSE, 'watcher')

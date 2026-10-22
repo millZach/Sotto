@@ -396,7 +396,10 @@ export class FollowupStore {
   /** Pauses the thread's queued follow-ups. A hidden wake-up never pauses: no one could resume it. */
   pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {
     return this.change(state => {
-      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isHiddenWakeUp(item)) Object.assign(item, { status: 'paused', error, ...by ? { pausedBy: by } : {} })
+      // A Watcher stop's pause holds the user's queue and Sotto's news; Watcher's own sends are fenced by the stop itself.
+      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isHiddenWakeUp(item) && !(by && item.watcherOperationId)) {
+        Object.assign(item, { status: 'paused', error, ...by ? { pausedBy: by } : {} })
+      }
     })
   }
   /**

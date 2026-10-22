@@ -1693,7 +1693,8 @@ export class WatcherService implements WatcherControlHooks {
     void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A taken-over thread’s queued Watcher message could not be removed. It is fenced and will not be sent.'; this.publish() })
   }
   preserveUserQueue(threadId: string): boolean {
-    return this.record().requests.some(request => request.participants.some(participant => participant.target.hostId === this.hostId() && participant.target.threadId === threadId
+    // Read, not copied: the follow-up queue asks this on the update path.
+    return this.view().requests.some(request => request.participants.some(participant => participant.target.hostId === this.hostId() && participant.target.threadId === threadId
       && participant.state === 'participating' && stoppedParticipation(request, participant)))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
