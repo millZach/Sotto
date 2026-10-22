@@ -83,6 +83,12 @@ describe('the strip above the composer while a prototype waits for review', () =
     expect(strip()).toBeNull()
   })
 
+  it('stays beside a waiting question that offers no page, so the prototype can still be opened', () => {
+    mount(stateWith({ ...marked(), requests: [{ id: 'q-2', kind: 'question', text: 'Merge the branch?', options: [] }] }))
+    expect(strip()).not.toBeNull()
+    expect(within(strip()!).getByRole('link', { name: 'Open the prototype, settings-prototype.html' })).toBeVisible()
+  })
+
   it('shows nothing on a closed thread', () => {
     mount(stateWith({ ...marked(), archivedAt: new Date(E2E_THREADS_NOW).toISOString() }))
     expect(strip()).toBeNull()
