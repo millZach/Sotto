@@ -29,7 +29,10 @@ export class ModelCatalogRevisions {
   /** The revision `models` has under `key`: the one it last had when its content is unchanged, otherwise the next. */
   revisionFor(key: string, models: readonly AgentModel[]): number {
     const existing = this.catalogs.get(key)
-    const same = existing !== undefined && (existing.models === models ? existing.length === models.length : this.sameContent(existing.models, models))
+    // A shell from a peer that sent no catalog, such as an unreadable push from a host of another version, has none at
+    // all; that is one content like any other.
+    const length = models?.length ?? 0
+    const same = existing !== undefined && (existing.models === models ? existing.length === length : this.sameContent(existing.models, models))
     if (same) {
       // The array just compared stands for this content from now on. A shell that keeps handing over one array, as a
       // certified catalog does, then meets its own identity on the next publish instead of being compared again with
@@ -38,7 +41,7 @@ export class ModelCatalogRevisions {
       return existing.revision
     }
     const revision = (existing?.revision ?? 0) + 1
-    this.catalogs.set(key, { revision, models, length: models.length })
+    this.catalogs.set(key, { revision, models, length })
     return revision
   }
 
@@ -53,9 +56,9 @@ export class ModelCatalogRevisions {
   private sameContent(stored: readonly AgentModel[], incoming: readonly AgentModel[]): boolean {
     const last = this.lastComparison
     if (last !== null && last.stored === stored && last.incoming === incoming
-      && last.lengths[0] === stored.length && last.lengths[1] === incoming.length) return last.equal
+      && last.lengths[0] === (stored?.length ?? 0) && last.lengths[1] === (incoming?.length ?? 0)) return last.equal
     const equal = stored === incoming || isDeepStrictEqual(stored, incoming)
-    this.lastComparison = { stored, incoming, lengths: [stored.length, incoming.length], equal }
+    this.lastComparison = { stored, incoming, lengths: [stored?.length ?? 0, incoming?.length ?? 0], equal }
     return equal
   }
 }
