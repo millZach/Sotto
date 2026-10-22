@@ -20,7 +20,6 @@ import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcher
   type WatcherMergeTurn, type WatcherMergeTurnsRead,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
-import { clonePlainData } from './cloneHostSnapshot'
 import type { AgentHostCommand } from './host'
 import type { AgentControl, WatcherDraft } from './control'
 import type { WorkspaceHost } from './workspace'
@@ -135,6 +134,13 @@ function alignGeneration(record: WatcherRecord, watch: WatcherStandingWatch): nu
 function withoutOutcome(operation: WatcherOperation): WatcherOperation {
   const copy = { ...operation }
   for (const field of OUTCOME_FIELDS) delete copy[field]
+  return copy
+}
+/** A request as the room hands it out: itself, or, when it names the phone that started it, a new record without it. */
+function withoutPhoneOrigin(request: WatcherRequest): WatcherRequest {
+  if (!('phoneOrigin' in request)) return request
+  const copy = { ...request }
+  delete copy.phoneOrigin
   return copy
 }
 type OperationRead = Extract<WatcherToolOutput<'read_operation'>, { status: 'ok' }>
@@ -836,14 +842,14 @@ export class WatcherService implements WatcherControlHooks {
       freshness: thread && this.connected(thread) ? 'fresh' as const : 'stale' as const }
   }
   state(): WatcherRoomState {
-    // The room is public state its readers may change, so the records it hands out are detached. The rest is read in
-    // place: prompt turns, wake-up IDs, reads and the private takeover proofs are most of the record, which grows with
-    // every prompt and wake-up Watcher has had, and this runs on every publish.
+    // The room hands out the record's own records rather than copies (#1327). Every change replaces the record instead of
+    // editing it (AgentControl.watcherRecordView), and every reader of the room only reads it: the window and a phone are
+    // sent a serialized copy, and the desktop room copies what it keeps for its publish window. This runs on every
+    // publish and for every phone on every update, and the records it copied here grow with every request Watcher has had.
     const live = this.view(), { localTakeovers: _localTakeovers, ...view } = live; void _localTakeovers
-    const record = { ...view, ...clonePlainData({ current: view.current, history: view.history, requests: view.requests,
-      watches: view.watches, operations: view.operations }) }
     // Which phone started a request is main's alone, for its own checks: no window or phone is sent a phone's client ID.
-    for (const request of record.requests) delete request.phoneOrigin
+    // Only a request that names one is handed out as a new record without it; the record keeps it.
+    const record = { ...view, requests: view.requests.map(withoutPhoneOrigin) }
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     // Every target the record names, with its standing watch and every participation, gathered in one walk of the record by
     // keys built once per record. A walk of every request for each target, building both keys each time, was most of what

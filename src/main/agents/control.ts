@@ -695,11 +695,21 @@ export class AgentControl {
   private broadcastOpen = false
   private broadcastPending = false
   private readonly detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
-  /** Per thread: the signature of the messages last handed out, and the revision that stands for them. */
+  /**
+   * Per thread: the version of the messages last handed out (see `detailMessageKeys`), the signature of the activity beside
+   * them, and the revision that stands for both.
+   */
   private readonly activityDetailSignatures = new WeakMap<readonly AgentActivity[], string>()
-  private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
+  private readonly detailRevisions = new Map<string, { messages: number; activities: string; revision: number }>()
   private readonly certifiedDetailSignatures = new WeakMap<AgentActivity, string>()
-  private readonly certifiedDetailRevisions = new Map<string, { messages: string; activities: readonly AgentActivity[]; revision: number }>()
+  private readonly certifiedDetailRevisions = new Map<string, { messages: number; activities: readonly AgentActivity[]; revision: number }>()
+  /**
+   * Per thread: each message's ID and its text, shown and attachment lengths as the last revision read them, and a version
+   * that moves whenever one of them did. A publish hands every message over as a new copy, so they are compared by value,
+   * in place, rather than written into a history-sized signature on every broadcast. Kept and dropped with the revisions.
+   */
+  private readonly detailMessageKeys = new Map<string, { epoch: string; ids: string[]; lengths: number[]; version: number }>()
+  private detailMessageVersions = 0
   /** Clients may retain a closed pane's detail. Releasing its words never resets their revision. */
   private readonly certifiedDetailCounters = new Map<string, number>()
   /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
@@ -1181,21 +1191,21 @@ export class AgentControl {
   threadDetail(threadId: string): AgentThreadDetail | null {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) return null
-    const revision = this.detailRevision(thread)
+    const pane = this.paneActivities(thread)
+    const revision = this.detailRevision(thread, pane)
     if (this.detailListeners.size && this.detailSnapshots.has(threadId) && this.publishedDetail.get(threadId) !== revision) {
-      const update = this.detailUpdate(thread, revision)
+      const update = this.detailUpdate(thread, revision, pane)
       if (update) for (const listener of this.detailListeners) listener(update)
     }
-    return this.wholeDetail(thread, revision)
+    return this.wholeDetail(thread, revision, pane)
   }
   /** The whole of a thread's history at a revision, which becomes the base the next delta is measured from. */
-  private wholeDetail(thread: AgentThread, revision: number): AgentThreadDetail {
+  private wholeDetail(thread: AgentThread, revision: number, pane = this.paneActivities(thread)): AgentThreadDetail {
     const threadId = thread.id
     const presented = this.presentedMessages(thread)
     const messages = structuredClone([...presented])
     // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
     // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
-    const pane = this.paneActivities(thread)
     const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
@@ -1322,23 +1332,17 @@ export class AgentControl {
    * A revision that changes exactly when a thread's messages do. Built from identity and length rather
    * than the text itself: a streaming chunk must bump it without the cost of copying every message.
    */
-  private detailRevision(thread: AgentThread): number {
-    const activities = this.paneActivities(thread)
-    const presented = this.presentedMessages(thread)
-    // A shown message can be shorter than its provider message, or not shown at all (-1).
-    let shown = presented === thread.messages ? undefined : this.shownLengths.get(presented)
-    if (presented !== thread.messages && !shown) { shown = new Map(presented.map(message => [message.id, message.text.length])); this.shownLengths.set(presented, shown) }
-    const messages = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
-      .map(message => `${message.id}:${message.text.length}:${shown ? shown.get(message.id) ?? -1 : message.text.length}:${message.attachments?.length ?? 0}`).join(',')
+  private detailRevision(thread: AgentThread, activities = this.paneActivities(thread)): number {
+    const messages = this.detailMessagesVersion(thread)
     if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
       const held = this.certifiedDetailRevisions.get(thread.id)
       if (held && held.messages === messages && held.activities.length === activities!.length
         && held.activities.every((record, index) => record === activities![index]
           || (record.id === activities![index]!.id && this.certifiedActivitySignature(record) === this.certifiedActivitySignature(activities![index]!)))) return held.revision
       // Retain the legacy signature only across a certified/mutable transition. Ordinary certified
-      // publishes compare the owned record identities, without rebuilding a history-sized string.
+      // publishes compare the owned record identities, without building a signature at all.
       const legacy = this.detailRevisions.get(thread.id)
-      const unchanged = !held && legacy?.signature === messages + '|' + activities!.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',')
+      const unchanged = !held && legacy?.messages === messages && legacy.activities === this.certifiedActivitiesSignature(activities!)
       const revision = (held?.revision ?? legacy?.revision ?? this.certifiedDetailCounters.get(thread.id) ?? 0) + (unchanged ? 0 : 1)
       this.certifiedDetailRevisions.set(thread.id, { messages, activities: activities!, revision })
       this.certifiedDetailCounters.set(thread.id, revision)
@@ -1346,8 +1350,7 @@ export class AgentControl {
     }
     const certified = this.certifiedDetailRevisions.get(thread.id)
     if (certified) {
-      this.detailRevisions.set(thread.id, { revision: certified.revision,
-        signature: certified.messages + '|' + certified.activities.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',') })
+      this.detailRevisions.set(thread.id, { revision: certified.revision, messages: certified.messages, activities: this.certifiedActivitiesSignature(certified.activities) })
       this.certifiedDetailRevisions.delete(thread.id)
     }
     let activitySignature = activities && this.activityDetailSignatures.get(activities)
@@ -1355,13 +1358,56 @@ export class AgentControl {
       activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
       if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
     }
-    const signature = messages + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
-    if (held && held.signature === signature) return held.revision
+    if (held && held.messages === messages && held.activities === activitySignature) return held.revision
     const revision = (held?.revision ?? (this.dependencies.streamingPublishCost === true ? this.certifiedDetailCounters.get(thread.id) : undefined) ?? 0) + 1
-    this.detailRevisions.set(thread.id, { signature, revision })
+    this.detailRevisions.set(thread.id, { messages, activities: activitySignature, revision })
     if (this.dependencies.streamingPublishCost === true) this.certifiedDetailCounters.set(thread.id, revision)
     return revision
+  }
+  private certifiedActivitiesSignature(activities: readonly AgentActivity[]): string {
+    return activities.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',')
+  }
+  /**
+   * The version of a thread's messages as a detail shows them: it moves exactly when a message's ID, text length, shown
+   * length or attachment count moves, or the history epoch or message count does. The held key is brought up to date in
+   * place, so an unchanged history makes nothing and a streaming chunk rewrites one number.
+   */
+  private detailMessagesVersion(thread: AgentThread): number {
+    const shownLength = this.detailShownLength(thread)
+    const messages = thread.messages, epoch = thread.historyEpoch ?? ''
+    let key = this.detailMessageKeys.get(thread.id), changed = false
+    if (!key || key.epoch !== epoch) { key = { epoch, ids: [], lengths: [], version: 0 }; this.detailMessageKeys.set(thread.id, key); changed = true }
+    const { ids, lengths } = key
+    for (let index = 0; index < messages.length; index++) {
+      const message = messages[index]!, at = index * 3
+      const text = message.text.length, shown = shownLength ? shownLength(message) : text, attachments = message.attachments?.length ?? 0
+      if (index >= ids.length) { ids.push(message.id); lengths.push(text, shown, attachments); changed = true; continue }
+      if (ids[index] !== message.id) { ids[index] = message.id; changed = true }
+      if (lengths[at] !== text) { lengths[at] = text; changed = true }
+      if (lengths[at + 1] !== shown) { lengths[at + 1] = shown; changed = true }
+      if (lengths[at + 2] !== attachments) { lengths[at + 2] = attachments; changed = true }
+    }
+    if (ids.length !== messages.length) { ids.length = messages.length; lengths.length = messages.length * 3; changed = true }
+    if (changed) key.version = ++this.detailMessageVersions
+    return key.version
+  }
+  /**
+   * How long a message is as a detail shows it, when that can differ from its text: shorter, or -1 when it is not shown.
+   * A wake-up of delegation news alone is left out by its own mark, so that is read from the message rather than from a
+   * projection of the history, which would compare every message deeply on every broadcast. A Watcher history or a
+   * continued thread is shown through its display, which is asked for the projection.
+   */
+  private detailShownLength(thread: AgentThread): ((message: AgentMessage) => number) | undefined {
+    if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || (thread.continuedFrom?.handover !== undefined && this.continuationDisplay)) {
+      const presented = this.presentedMessages(thread)
+      if (presented === thread.messages) return undefined
+      const held = this.shownLengths.get(presented)
+      const shown = held ?? new Map(presented.map(message => [message.id, message.text.length]))
+      if (!held) this.shownLengths.set(presented, shown)
+      return message => shown.get(message.id) ?? -1
+    }
+    return thread.hiddenWakeUpMessageIds?.length ? hiddenWakeUpShownLength : undefined
   }
   private certifiedActivitySignature = (record: AgentActivity): string => {
     if (!isImmutableActivity(record)) return agentActivitySignature(record)
@@ -1693,7 +1739,7 @@ export class AgentControl {
     this.publishedDetail.clear()
     this.detailSnapshots.clear()
     this.hiddenShown.clear()
-    if (this.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear() }
+    if (this.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear(); this.detailMessageKeys.clear() }
     // A failed store must not prevent the remaining stores from honoring the
     // privacy change. Preserve the failure for the caller after every cleanup runs.
     const cleanup = [
@@ -1867,21 +1913,24 @@ export class AgentControl {
     if (this.dependencies.streamingPublishCost === true) {
       for (const threadId of this.certifiedDetailRevisions.keys()) if (!targets.includes(threadId)) this.certifiedDetailRevisions.delete(threadId)
       for (const threadId of this.detailRevisions.keys()) if (!targets.includes(threadId)) this.detailRevisions.delete(threadId)
+      for (const threadId of this.detailMessageKeys.keys()) if (!targets.includes(threadId)) this.detailMessageKeys.delete(threadId)
     }
     if (!this.detailListeners.size) return
     for (const threadId of targets) {
       const thread = this.state.host.threads.find(item => item.id === threadId)!
-      const revision = this.detailRevision(thread)
+      // The pane's activity is read once and handed on: the host decides it a turn at a time, against every thread.
+      const pane = this.paneActivities(thread)
+      const revision = this.detailRevision(thread, pane)
       if (this.publishedDetail.get(threadId) === revision) continue
-      const update = this.detailUpdate(thread, revision)
+      const update = this.detailUpdate(thread, revision, pane)
       if (update) for (const listener of this.detailListeners) listener(update)
     }
   }
   /** The delta from what this thread's window already holds, or the whole detail when no delta can say it. */
-  private detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate | null {
+  private detailUpdate(thread: AgentThread, revision: number, pane = this.paneActivities(thread)): AgentThreadDetailUpdate | null {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
-      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: this.paneActivities(thread) }, revision,
+      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: pane }, revision,
         this.dependencies.streamingPublishCost === true ? this.certifiedActivitySignature : undefined)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
@@ -1891,7 +1940,7 @@ export class AgentControl {
         return this.decorateDetailDelta(thread, delta)
       }
     }
-    return this.wholeDetail(thread, revision)
+    return this.wholeDetail(thread, revision, pane)
   }
   /** A delta's whole messages carry the same preview markers a full detail's would; its appends carry text alone. */
   private decorateDetailDelta(thread: AgentThread, delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
@@ -5059,6 +5108,9 @@ export class AgentControl {
  * far fewer full copies of every thread's history than a streaming provider would otherwise force.
  */
 export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
+
+/** A message's shown length in a history that leaves out wake-ups of delegation news alone, as `withoutHiddenWakeUps` does. */
+const hiddenWakeUpShownLength = (message: AgentMessage): number => message.hiddenWakeUp === true ? -1 : message.text.length
 
 /**
  * A provider frame publishes the whole agent state, and Claude emits dozens of frames a
