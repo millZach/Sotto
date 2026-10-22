@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // A minute of the window's profile spent 1.4 s building a date formatter per clock label (#1328). These pin that the
 // labels are the strings toLocale*String made, and that one formatter now serves every call until the locale or the
-// time zone moves.
+// language moves, whatever the time zone does.
 
-const ZONES = ['America/Chicago', 'Europe/London', 'Asia/Kolkata', 'Australia/Lord_Howe', 'UTC']
+const ZONES = ['America/Chicago', 'Europe/London', 'Asia/Kolkata', 'Australia/Lord_Howe', 'Africa/Casablanca', 'UTC']
 const START = Date.parse('2026-01-01T00:00:00.000Z')
 // Every 97 minutes for a year: every hour of the day, both halves of daylight saving, both sides of noon.
 const INSTANTS = Array.from({ length: 5_420 }, (_, index) => START + index * 97 * 60_000)
@@ -27,6 +27,8 @@ afterEach(() => {
   if (zoneBefore === undefined) delete process.env.TZ
   else process.env.TZ = zoneBefore
 })
+
+const native = (at: number): string => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLocaleLowerCase()
 
 async function freshModules() {
   vi.resetModules()
@@ -70,7 +72,7 @@ describe('clock labels made with one formatter', () => {
     for (const unreadable of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 9e15]) expect(clockLabel(unreadable)).toBe('')
   })
 
-  it('builds the formatter once for every label, and again only when the time zone or the language moves', async () => {
+  it('builds the formatter once for every label, and again only when the language moves', async () => {
     process.env.TZ = 'America/Chicago'
     countFormatters()
     const { clockLabel } = await freshModules()
@@ -79,13 +81,29 @@ describe('clock labels made with one formatter', () => {
     expect(built).toBe(1)
 
     process.env.TZ = 'Asia/Kolkata'
-    expect(clockLabel(INSTANTS[0]!)).toBe(new Date(INSTANTS[0]!).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLocaleLowerCase())
-    for (const at of INSTANTS) clockLabel(at)
-    expect(built).toBe(2)
+    for (const at of INSTANTS) expect(clockLabel(at)).toBe(native(at))
+    expect(built).toBe(1)
 
     vi.stubGlobal('navigator', { language: 'fr-FR' })
     for (const at of INSTANTS) clockLabel(at)
-    expect(built).toBe(3)
+    expect(built).toBe(2)
+  })
+
+  it('follows a live switch between zones with the same January and July offsets', async () => {
+    // Algiers and Casablanca are both an hour ahead of UTC on 1 January and 1 July, but Casablanca goes back to UTC
+    // for Ramadan, so in late February and March 2026 the same moment is an hour apart on their clocks.
+    process.env.TZ = 'Africa/Algiers'
+    const { clockLabel, babysitClock } = await freshModules()
+    const ramadan = Date.parse('2026-03-01T12:00:00.000Z')
+    expect(clockLabel(ramadan)).toBe(native(ramadan))
+    for (const at of INSTANTS) clockLabel(at)
+
+    process.env.TZ = 'Africa/Casablanca'
+    expect(native(ramadan)).not.toBe(new Date(ramadan).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Algiers' }).toLocaleLowerCase())
+    expect(clockLabel(ramadan)).toBe(native(ramadan))
+    for (const at of INSTANTS) expect(clockLabel(at)).toBe(native(at))
+    const now = new Date(ramadan)
+    expect(babysitClock(new Date(ramadan).toISOString(), now)).toBe(native(ramadan))
   })
 
   it('builds one formatter for each of the babysitting line’s time and day', async () => {
