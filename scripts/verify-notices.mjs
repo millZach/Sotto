@@ -25,8 +25,8 @@ export const COMPOSER_NOTICE_COMPONENTS = Object.freeze([
 ])
 
 export const NOTICE_COMPONENTS = Object.freeze([
-  packageComponent('Electron', '43.1.0', 'MIT', 'Electron contributors', 'node_modules/electron'),
-  Object.freeze({ name: 'Chromium and bundled third-party code', version: 'Electron 43.1.0 distribution', license: 'Multiple', attribution: 'Chromium authors and third-party contributors' }),
+  packageComponent('Electron', '43.8.3', 'MIT', 'Electron contributors', 'node_modules/electron'),
+  Object.freeze({ name: 'Chromium and bundled third-party code', version: 'Electron 43.8.3 distribution', license: 'Multiple', attribution: 'Chromium authors and third-party contributors' }),
   packageComponent('react', '19.2.7', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('react-dom', '19.2.7', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),

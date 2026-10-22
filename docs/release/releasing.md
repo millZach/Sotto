@@ -156,13 +156,13 @@ No speech model is in any installer (ADR-0071, ADR-0094). Each of Sotto's three 
 
 ## Linux desktop package
 
-Cut on forge (Omarchy, x64), using Node 24.21.0, a clean, CI-green main commit and a clean `npm ci`. Run the four normal gates in [CI](../ci.md) first. Never change shared electron-builder keys for Linux: the Linux packaging plan enables the native rebuild and x64 tar.gz target; Windows and macOS keep their targets.
+Cut on forge (Omarchy, x64), using Node 24.22.1, a clean, CI-green main commit and a clean `npm ci`. Run the four normal gates in [CI](../ci.md) first. Never change shared electron-builder keys for Linux: the Linux packaging plan enables the native rebuild and x64 tar.gz target; Windows and macOS keep their targets.
 
 ```sh
-mise exec node@24.21.0 -- npm ci
-mise exec node@24.21.0 -- node node_modules/electron/install.js
-mise exec node@24.21.0 -- npm run package:linux:stable
-mise exec node@24.21.0 -- node scripts/release-linux.mjs
+mise exec node@24.22.1 -- npm ci
+mise exec node@24.22.1 -- node node_modules/electron/install.js
+mise exec node@24.22.1 -- npm run package:linux:stable
+mise exec node@24.22.1 -- node scripts/release-linux.mjs
 ```
 
 The first release command runs `release:check`, requires a clean commit on main with successful required CI and a newer stable version, and sets only the packaged manifest to that version. It produces `release/linux-unpacked` and `release/Sotto-X.Y.Z-linux-x64.tar.gz` without changing either source package manifest. It verifies provenance, assets, notices, the external import allowlist, normal startup, SQLite, the native PTY and speech engine. The tarball is extracted and every file compared with the verified unpacked build. A second probe reads the packaged app’s real stable Owl feature answers with every development override set to 1. Both GUI checks use owned nested Hyprland sessions, isolated HOME/XDG profiles and `--password-store=basic`; the release machine’s keyring is untouched. Feature evidence is saved as `release/owl-features-stable-package-status.json` and `release/owl-features-stable-package.png`.
@@ -176,8 +176,8 @@ After all checks pass, `release/` holds the tarball, `sotto-bin-X.Y.Z-1-x86_64.p
 For a rehearsal on any clean commit, give the same version to both commands:
 
 ```sh
-mise exec node@24.21.0 -- npm run package:linux:rehearse -- 0.1.38
-mise exec node@24.21.0 -- node scripts/release-linux.mjs --rehearse 0.1.38
+mise exec node@24.22.1 -- npm run package:linux:rehearse -- 0.1.38
+mise exec node@24.22.1 -- node scripts/release-linux.mjs --rehearse 0.1.38
 ```
 
 This runs the same build and checks, skips `release:check`, and prints **REHEARSAL ONLY — NOT PUBLISHABLE** before and after. The packaging record marks the result as a rehearsal; the stable finishing command refuses it. Never install, upload or publish a rehearsal. `npm run package:linux` remains the offline, unchecked source-version verification command. It does not check main, CI, stable version or packaged Owl features and cannot produce a stable packaging record.
@@ -186,7 +186,7 @@ Installation and publication are manual owner actions, separate from these comma
 
 ## Linux host archive
 
-The host is a Node process, not a Linux desktop app. For a stable release, use the same clean, CI-green main commit as the desktop, Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host:release`. That command runs `release:check` and packages the checked stable version in the archive, runtime manifest and bundled host. The desktop can then find the matching versioned archive. The ordinary `package:host` and the CI job **Host archive and socket contract (Linux)** stay offline and use the checkout manifest version for verification. CI retains its archive for review and never publishes a release.
+The host is a Node process, not a Linux desktop app. For a stable release, use the same clean, CI-green main commit as the desktop, Node 24.22.1 or a later Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host:release`. That command runs `release:check` and packages the checked stable version in the archive, runtime manifest and bundled host. The desktop can then find the matching versioned archive. The ordinary `package:host` and the CI job **Host archive and socket contract (Linux)** stay offline and use the checkout manifest version for verification. CI retains its archive for review and never publishes a release.
 
 `package:host` builds only the headless entry. It produces `release/Sotto-host-X.Y.Z-linux-x64.tar.gz` and a matching `.tar.gz.sha256` sidecar on the x64 Linux runner. Local builds carry their actual platform and architecture in the filename; a Windows smoke build is not a Linux release. There is no cross-platform native-module copy or Electron packaging step.
 
@@ -206,7 +206,7 @@ LICENSE.md
 THIRD_PARTY_NOTICES.md
 ```
 
-The manifest requires Node `>=24 <25`; Node itself and provider CLIs are not included. Install Node 24 and the desired provider CLI on the host and sign in there. The reviewed runtime closure is Node built-ins and zod, with no bundled dependencies or native modules. Packaging refuses a new external, an unexpected transitive dependency, or a native binary. The existing notices check covers the host inventory. Provenance records the source commit, dirty-tree status, build-input digest, Node/build platform, and every packaged file's size and digest. Only a reviewed clean-commit build is eligible for publication.
+The manifest requires Node `>=24.22.1 <25`: Node 24.22.1 is the first Node 24 that stops trusting the compromised eMudhra intermediate CAs (October 2026). Node itself and provider CLIs are not included. Install Node 24.22.1 or a later Node 24 and the desired provider CLI on the host and sign in there. The reviewed runtime closure is Node built-ins and zod, with no bundled dependencies or native modules. Packaging refuses a new external, an unexpected transitive dependency, or a native binary. The existing notices check covers the host inventory. Provenance records the source commit, dirty-tree status, build-input digest, Node/build platform, and every packaged file's size and digest. Only a reviewed clean-commit build is eligible for publication.
 
 The packaging command verifies the staged directory, extracts the resulting archive into a fresh temporary directory, verifies all hashes again, starts its `host/index.js` outside the checkout with every provider turned off, so no client installed on the machine starts, checks the loopback listener's identity, and verifies that shutdown saved the workspace. Linux delivers a real SIGTERM. A Windows development smoke substitutes that signal through a test-only IPC handler; it is not evidence of Linux execution.
 

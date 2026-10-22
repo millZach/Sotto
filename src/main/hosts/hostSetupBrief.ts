@@ -1,5 +1,5 @@
 import type { HostSetupStep } from '../../shared/hosts'
-import { HOST_NODE_MAJOR } from './sshFailure'
+import { HOST_NODE_MAJOR, HOST_NODE_MINIMUM } from './sshFailure'
 import { getReleaseTrack, releaseTrackName } from '../../shared/releaseTrack'
 
 /** What the brief says about the device: everything Add host was given for it, and nothing else. */
@@ -46,7 +46,7 @@ The device
 - The host must be ${name} ${input.version}, the same version as this computer.
 ${failure}
 What the host needs on ${input.name} (from Sotto's guide)
-1. Node ${HOST_NODE_MAJOR} for the SSH account. Sotto looks for it on the account's path, then through its login shell, then where nvm, fnm, mise, asdf, Volta and Homebrew keep it. A newer or older major does not work.
+1. Node ${HOST_NODE_MINIMUM} or a later Node ${HOST_NODE_MAJOR} for the SSH account. Sotto looks for it on the account's path, then through its login shell, then where nvm, fnm, mise, asdf, Volta and Homebrew keep it. An older Node 24, or a newer or older major, does not work.
 2. The host archive ${archive} from https://github.com/millZach/Sotto-releases/releases, checked against its .sha256 file and unpacked into the installation folder, so that host/index.js is directly inside it: \`mkdir -p <installation folder> && tar -xzf ${archive} -C <installation folder>\`. No npm install is needed. If ${input.name} cannot download it, download it on this computer and copy it over with scp.
 3. A data folder the SSH account can create and write. Keep it outside the installation folder.
 

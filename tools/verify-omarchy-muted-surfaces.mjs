@@ -1,4 +1,4 @@
-// After build: mise exec node@24.21.0 -- node tools/verify-omarchy-muted-surfaces.mjs
+// After build: mise exec node@24.22.1 -- node tools/verify-omarchy-muted-surfaces.mjs
 import console from 'node:console'
 import process from 'node:process'
 import { spawn } from 'node:child_process'

@@ -1,4 +1,4 @@
-// Dry fixtures only: mise exec node@24.21.0 -- node scripts/verify-omarchy-shell-sandbox.mjs
+// Dry fixtures only: mise exec node@24.22.1 -- node scripts/verify-omarchy-shell-sandbox.mjs
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
