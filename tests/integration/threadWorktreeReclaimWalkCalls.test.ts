@@ -49,7 +49,7 @@ async function addPackages(dependencies: string, from: number, count: number): P
 }
 
 describe('reclaim facts walk calls', () => {
-  it('reads dependencies without an lstat for every file and directory, and finds the same facts', async () => {
+  it('reads dependencies without an lstat for every file, and finds the same facts', async () => {
     const f = await fixture()
     const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     await writeFile(join(a.path!, '.gitignore'), 'node_modules/\nout/\n')
@@ -85,25 +85,25 @@ describe('reclaim facts walk calls', () => {
       { path: 'out/', bytes: 'build output'.length, fileCount: 1 },
     ])
 
-    // The walk's lstat calls are the two links, each nested repository's folder read again after Git ran
-    // in it, and the files the rows count, and nothing else. The two after it are the worktree's own .git
-    // file and the submodule metadata folder it may keep.
-    expect(first.counts.lstat).toBe(2 + facts.repositories.length + facts.items.reduce((sum, item) => sum + item.fileCount, 0) + 2)
-
-    // More dependencies change no fact and add no lstat: only a file some row counts is stat'ed,
-    // and a directory's .git, HEAD and objects are read from its own listing.
+    // More dependencies change no fact. Each package adds an lstat for its folder and its lib, which are
+    // read before they are entered, and at most one for its package.json, which is read when it is listed
+    // after lib; lib's six files are taken from lib's listing. A directory's .git, HEAD and objects are read
+    // from its own listing too.
     await addPackages(dependencies, 20, 40)
     const second = await counting(() => f.service.reclaimFacts(a))
     expect(second.result).toEqual(facts)
-    expect(second.counts.lstat).toBe(first.counts.lstat)
+    const lstats = second.counts.lstat! - first.counts.lstat!
+    expect(lstats).toBeGreaterThanOrEqual(40 * 2)
+    expect(lstats).toBeLessThanOrEqual(40 * 3)
     // Each directory added (a package and its lib) is listed once, and once more when the walk waited on
-    // anything after listing it (a package, for its lib), and nothing else is read for them.
+    // anything after listing it (a package, for its lib).
     const listings = (counts: Record<string, number>) => (counts.readdir ?? 0) + (counts.opendir ?? 0)
     const added = listings(second.counts) - listings(first.counts)
     expect(added).toBeGreaterThanOrEqual(40 * 2)
     expect(added).toBeLessThanOrEqual(40 * 2 * 2)
+    // Nothing else is read for them.
     const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, count) => sum + count, 0)
-    expect(total(second.counts) - total(first.counts)).toBe(added)
+    expect(total(second.counts) - total(first.counts)).toBe(added + lstats)
   }, 120_000)
 
   it('still counts dependencies and a nested repository inside an ignored folder in that folder’s row', async () => {
