@@ -72,10 +72,11 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
  * Send, queue or steer one revision of a thread's manual prompt. The echo in the transcript (or the
  * queue row) renders before the command leaves the renderer, and the composer is already empty.
  * With `retryDraftId` the prompt is sent again from its own copy, under the revision it already has.
+ * Resolves true when main took it, false when it was refused, and null when main's answer never came.
  */
 export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string,
   /** A step before the prompt goes, given its draft: Watcher's handover is told which draft carries it. A refusal keeps the prompt back. */
-  beforeSend?: (draftId: string) => Promise<string | null>): Promise<boolean> {
+  beforeSend?: (draftId: string) => Promise<string | null>): Promise<boolean | null> {
   const threadId = row.thread.id
   const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return false
@@ -94,10 +95,10 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
     const error = result === null ? UNCONFIRMED_SUBMISSION[mode]
       : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error
     store.resolve(threadId, draft.draftId, error)
-    return error === null
+    return result === null ? null : error === null
   } catch {
     store.resolve(threadId, draft.draftId, UNCONFIRMED_SUBMISSION[mode])
-    return false
+    return null
   }
 }
 
@@ -300,7 +301,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     onSend()
     // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
     void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
-      .then(sent => watchAfterSend(threadId, sent, watchActions))
+      .then(sent => watchAfterSend(threadId, sent, mode, watchActions))
     if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */

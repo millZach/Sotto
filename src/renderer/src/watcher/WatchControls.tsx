@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { useStandingWatch, useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
@@ -59,6 +59,8 @@ export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): 
   const actions = useWatchActions()
   const watched = useWatchedThread(threadId)
   const wanted = useWatchOnSend(threadId)
+  // Watched from elsewhere first (the pane header), the request has nothing left to do, and must not watch it twice.
+  useEffect(() => { if (watched && wanted) watchOnSend.set(threadId, false) }, [threadId, watched, wanted])
   if (actions === null) return null
   const on = watched || wanted
   return <button type="button" className="thread-chip watch-on-send tt-focusable" aria-pressed={on}

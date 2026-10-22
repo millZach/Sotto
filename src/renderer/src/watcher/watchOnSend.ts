@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { WatchActions } from './watcherRoom'
+import type { SubmissionMode } from '../agents/threadDraftStore'
 
 /**
  * Watch on a new thread's composer: the threads, by this window's ID, whose first send the user asked to put under a
@@ -36,10 +37,12 @@ export function useWatchOnSend(threadId: string): boolean {
 }
 
 /**
- * After a send main accepted: the standing watch the user asked for on the composer, through the same Watch as the pane
- * header, whose toast says it happened. A refused send keeps the request for the next one.
+ * After a send: once main accepted it, the standing watch the user asked for on the composer, through the same Watch as
+ * the pane header, whose toast says it happened. A refused send keeps the request for the next one. An unconfirmed send
+ * (`null`) may have started the thread and taken the chip away, so the request is dropped rather than left to fire,
+ * unseen, on some later send; the pane header's Watch is still there. Only a send counts, never a queue or a steer.
  */
-export function watchAfterSend(threadId: string, sent: boolean, actions: WatchActions | null): void {
-  if (!sent || actions === null || !watchOnSend.take(threadId)) return
-  void actions.setThread(threadId, true)
+export function watchAfterSend(threadId: string, sent: boolean | null, mode: SubmissionMode, actions: WatchActions | null): void {
+  if (mode !== 'send' || sent === false || actions === null || !watchOnSend.take(threadId)) return
+  if (sent) void actions.setThread(threadId, true)
 }
