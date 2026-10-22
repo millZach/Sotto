@@ -3275,6 +3275,17 @@ export class AgentControl {
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (separated) this.pumpFollowups() })
         continue
       }
+      // A pause a Watcher stop made lasts as long as its hold: once the user's own command ended it, the queue goes on.
+      // Only Watcher can say the hold ended, so without it the pause stays for Resume queue.
+      if (items.some(item => item.threadId === threadId && item.status === 'paused' && item.pausedBy === 'watcher')
+        && this.watcherHooks && !this.watcherHooks.preserveUserQueue(threadId)) {
+        this.pumping.add(threadId)
+        let released = false
+        void this.followupStore.releaseWatcherPause(threadId).then(() => { released = true })
+          .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (released) this.pumpFollowups() })
+        continue
+      }
       // A steer may have selected any queue item. Reconcile its late echo before the queue head.
       const echoed = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
       const head = echoed ?? items.find(item => item.threadId === threadId && !held(item))
@@ -3322,7 +3333,7 @@ export class AgentControl {
         // Stop lifts. They are paused for the user's Resume first, as a turn that did not finish pauses them (ADR-0073).
         const stopHeld = (item: Readonly<QueuedFollowup>): boolean => this.isUserFollowup(item) && item.id !== first.id
         if (step === 'send' && this.watcherHooks?.preserveUserQueue(threadId)
-          && items.some(item => item.threadId === threadId && item.status === 'queued' && stopHeld(item))) {
+          && items.some(item => item.threadId === threadId && (item.status === 'queued' || item.pausedBy === 'watcher') && stopHeld(item))) {
           this.pumping.add(threadId)
           let paused = false
           void this.followupStore.pauseUserPrompts(threadId, WATCHER_STOP_PAUSE, stopHeld)

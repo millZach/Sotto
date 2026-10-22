@@ -406,9 +406,23 @@ export class FollowupStore {
    */
   pauseUserPrompts(threadId: string, error: string, held: (item: QueuedFollowup) => boolean): Promise<void> {
     return this.change(state => {
-      const items = state.items.filter(item => item.threadId === threadId && item.status === 'queued' && !item.wakeUp && !item.watcherOperationId && held(item))
+      // A prompt the stop already paused is paused again the same way: once the news turn runs, the hold ending is no
+      // longer the review, so only Resume queue sends it.
+      const items = state.items.filter(item => item.threadId === threadId && (item.status === 'queued' || item.status === 'paused' && item.pausedBy === 'watcher')
+        && !item.wakeUp && !item.watcherOperationId && held(item))
       if (!items.length) return false
-      for (const item of items) Object.assign(item, { status: 'paused', error, pausedBy: 'watcher', updatedAt: new Date().toISOString() })
+      for (const item of items) { Object.assign(item, { status: 'paused', error, updatedAt: new Date().toISOString() }); delete item.pausedBy }
+    })
+  }
+  /**
+   * Puts back what a Watcher stop paused once its hold has ended: the user's own command in the thread was the review
+   * (ADR-0073), so the queue goes on as it would have. Any other pause still waits for Resume queue.
+   */
+  releaseWatcherPause(threadId: string): Promise<void> {
+    return this.change(state => {
+      const items = state.items.filter(item => item.threadId === threadId && item.status === 'paused' && item.pausedBy === 'watcher')
+      if (!items.length) return false
+      for (const item of items) { item.status = 'queued'; delete item.error; delete item.pausedBy }
     })
   }
   resume(threadId: string, turnId?: string): Promise<void> {
