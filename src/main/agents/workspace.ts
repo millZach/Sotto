@@ -2037,7 +2037,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.storedActivity.delete(thread.id)
     this.storedInputs.delete(thread.id)
     try {
-      thread.activities = this.threadStore.readActivities(thread.id).map(savedRecord)
+      // The store's own frozen records, shared: this list is replaced, never edited, like every list the workspace holds.
+      thread.activities = this.threadStore.readActivities(thread.id, { shared: true }).map(savedRecord)
     } catch {
       this.activityStoreUnavailable = true
       this.saveError = ACTIVITY_READ_ERROR

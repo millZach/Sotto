@@ -28,6 +28,19 @@ export function isImmutableActivities(activities: readonly AgentActivity[] | und
 /** A record is trusted only when this owner recursively copied and froze it. */
 export function isImmutableActivity(activity: AgentActivity): boolean { return owned.has(activity) }
 
+/** Owns a record its caller has just built and nobody else holds, such as one the schema parsed off the disk: with no
+ * alias to keep apart from, it is frozen and owned where it is rather than copied first (#1333). */
+export function ownBuiltActivity(activity: AgentActivity): AgentActivity {
+  ownInPlace(activity)
+  return activity
+}
+
+function ownInPlace(value: unknown): void {
+  if (value === null || typeof value !== 'object' || owned.has(value)) return
+  for (const child of Object.values(value)) ownInPlace(child)
+  own(value)
+}
+
 /** A model catalog owned and frozen the same way. Every layer between an adapter and the window then shares one copy
  * until the catalog itself changes, where each used to copy all of it, 608 models on the owner's machine (#917). */
 export function immutableModels(models: readonly AgentModel[]): AgentModel[] {

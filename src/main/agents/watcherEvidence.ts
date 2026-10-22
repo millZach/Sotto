@@ -3,10 +3,44 @@ import type { AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherEvidenceSchema, type WatcherEvidence, type WatcherThreadTarget } from '../../shared/watcher'
 
-export const observationDigest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+/**
+ * Digests already made of short JSON, by that JSON. Every pass asks again for the same IDs and scopes of every watched
+ * thread (#1331); a digest is a function of the JSON alone, so a known one is the same digest. Long JSON is hashed each time.
+ */
+const digests = new Map<string, string>()
+const DIGESTS_MAX = 4_096
+const DIGEST_JSON_MAX = 1_024
+export function observationDigest(value: unknown): string {
+  const json = JSON.stringify(value)
+  if (typeof json !== 'string' || json.length > DIGEST_JSON_MAX) return createHash('sha256').update(json).digest('hex')
+  const known = digests.get(json)
+  if (known !== undefined) return known
+  const digest = createHash('sha256').update(json).digest('hex')
+  digests.set(json, digest)
+  if (digests.size > DIGESTS_MAX) digests.delete(digests.keys().next().value!)
+  return digest
+}
 const evidenceIdentity = (slot: string, input: Omit<WatcherEvidence, 'id'>): string =>
   observationDigest([slot, input.target, { ...input, url: input.source === 'github' && input.url ? pullRequestKey(input.url) : input.url, observedAt: undefined, fetchedAt: undefined }])
-export const targetKey = (target: WatcherThreadTarget): string => JSON.stringify([target.hostId, target.threadId])
+/**
+ * Target keys already built, by host and thread ID. Watcher asks for the same few keys thousands of times a second while
+ * threads stream (#1331), and each is JSON of two strings, so the key is the same string whenever it is asked.
+ */
+const targetKeys = new Map<string, Map<string, string>>()
+let targetKeyCount = 0
+const TARGET_KEYS_MAX = 10_000
+export function targetKey(target: WatcherThreadTarget): string {
+  const hostId: unknown = target.hostId, threadId: unknown = target.threadId
+  if (typeof hostId !== 'string' || typeof threadId !== 'string') return JSON.stringify([hostId, threadId])
+  let byThread = targetKeys.get(hostId)
+  const known = byThread?.get(threadId)
+  if (known !== undefined) return known
+  if (targetKeyCount >= TARGET_KEYS_MAX) { targetKeys.clear(); targetKeyCount = 0; byThread = undefined }
+  const key = JSON.stringify([hostId, threadId])
+  if (!byThread) targetKeys.set(hostId, byThread = new Map())
+  byThread.set(threadId, key); targetKeyCount++
+  return key
+}
 export interface PullRequestObservation {
   url: string; observedAt: string; head: string | null; state?: 'open' | 'closed' | 'merged'
   availability: 'available' | 'unavailable'; reason?: 'read-failed' | 'rate-limited'
