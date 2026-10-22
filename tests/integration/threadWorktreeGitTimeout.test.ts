@@ -25,9 +25,10 @@ describe('worktree Git process deadlines', () => {
     expect(timer.mock.calls.some(call => call[1] === 300_000)).toBe(true)
     await runWorktreeGitProcess('.', ['status'], { executable: process.execPath, prefix: ['-e', 'process.exit(0)', '--'] })
     expect(timer.mock.calls.some(call => call[1] === 30_000)).toBe(true)
-    // A removal killed partway leaves a checkout Git cannot use (#1297), so Git is not stopped in the middle of one.
+    // A removal stopped partway leaves a checkout Git cannot use (#1297), so Git is never stopped in the middle of one.
+    const before = timer.mock.calls.length
     await runWorktreeGitProcess('.', ['worktree', 'remove'], { executable: process.execPath, prefix: ['-e', 'process.exit(0)', '--'] })
-    expect(timer.mock.calls.some(call => call[1] === 600_000)).toBe(true)
+    expect(timer.mock.calls.slice(before).some(call => typeof call[1] === 'number' && call[1] >= 30_000)).toBe(false)
   })
   it('stops a fake Git launcher and its writing grandchild before returning a timeout', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-git-timeout-')); roots.push(root)

@@ -1,9 +1,10 @@
 // @vitest-environment node
 
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REMOVING_LOCK_REASON, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
+import { removeFolderContents } from '../../src/main/agents/folderRemoval'
 import { fixture } from '../fixtures/threadWorktreeFixture'
 
 const commit = (folder: string, message: string) => git(folder, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', message])
@@ -12,7 +13,7 @@ const commit = (folder: string, message: string) => git(folder, ['-c', 'user.nam
 async function installedWorktree() {
   const f = await fixture()
   const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
-  await writeFile(join(a.path!, '.gitignore'), 'node_modules/\n')
+  await writeFile(join(a.path!, '.gitignore'), 'node_modules/\n.worktrees/\n')
   for (const name of ['a.txt', 'b.txt', 'z.txt']) await writeFile(join(a.path!, name), `${name} committed`)
   await git(a.path!, ['add', '.']); await commit(a.path!, 'Work')
   for (const name of ['alpha', 'zod']) {
@@ -22,37 +23,34 @@ async function installedWorktree() {
   return { ...f, a: await f.service.inspect(a) }
 }
 const registrations = async (project: string) => (await git(project, ['worktree', 'list', '--porcelain'])).split(/\r?\n\r?\n/u).filter(Boolean)
+/** A removal that stops before deleting anything, as a crash or a quit right after the lock would stop it. */
+const stopped = async () => { throw new Error('Sotto quit.') }
 
 describe('a worktree removal cut off partway (#1297)', () => {
-  it('finishes what a Git removal cut off in node_modules left, which Git reports prunable', async () => {
+  it('repairs, without deleting anything more, what a Git removal cut off in node_modules left', async () => {
     const f = await installedWorktree()
     const branch = f.a.branch!
-    const tip = (await git(f.project, ['rev-parse', branch])).trim()
     // What `git worktree remove` killed at its deadline left: `.git` goes first, then files in folder order, and the
-    // registration Git deletes last is still there.
+    // registration Git deletes last is still there. Nothing records that the removal was decided.
     await rm(join(f.a.path!, '.git'))
     for (const name of ['.gitignore', 'a.txt', 'b.txt']) await rm(join(f.a.path!, name))
     await rm(join(f.a.path!, 'node_modules', 'alpha'), { recursive: true })
     expect((await registrations(f.project))[1]).toMatch(/prunable/u)
+    await expect(f.service.inspect(f.a)).rejects.toThrow('only partly removed, so Git cannot use it')
 
-    await expect(f.service.inspect(f.a)).rejects.toThrow('did not finish, so Git cannot use it')
-    const finished = await f.service.resumeRemoval(f.a)
-    expect(finished).toMatchObject({ status: 'ready', branch, path: f.a.path })
-    expect(finished.reclaimedAt).toBeTruthy()
-    await expect(lstat(f.a.path!)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect(await registrations(f.project)).toHaveLength(1)
-    expect((await git(f.project, ['rev-parse', branch])).trim()).toBe(tip)
-
-    // The next send puts it back whole on its branch.
-    const restored = await f.service.inspect(await f.service.restore(finished))
-    expect(restored).toMatchObject({ status: 'ready', branch, reclaimedAt: undefined })
+    expect(await f.service.resumeRemoval(f.a)).toBe(f.a)
     expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect(await readFile(join(f.a.path!, '.gitignore'), 'utf8')).toBe('node_modules/\n.worktrees/\n')
+    // What was still there stays, the half-deleted dependencies included.
+    expect(await readdir(join(f.a.path!, 'node_modules'))).toEqual(['zod'])
+    expect((await registrations(f.project))[1]).not.toMatch(/prunable|locked/u)
+    expect(await f.service.inspect(f.a)).toMatchObject({ status: 'ready', branch, dirty: false })
   })
 
-  it('keeps Git able to use a folder whose removal stopped partway, and the next start finishes it', async () => {
+  it('keeps Git able to use a folder whose removal stopped partway, and the next start finishes it on its branch', async () => {
     const f = await installedWorktree()
-    const branch = f.a.branch!
-    // The removal stops after one dependency, as a deadline, a crash or a quit would stop it.
+    // The folder moved to another branch after its record was made; that is the branch it comes back on.
+    await git(f.a.path!, ['switch', '-c', 'feat/moved'])
     const cutOff = new ThreadWorktrees(f.root, git, undefined, async root => {
       await rm(join(root, 'node_modules', 'alpha'), { recursive: true })
       throw new Error('The removal was cut off.')
@@ -62,7 +60,7 @@ describe('a worktree removal cut off partway (#1297)', () => {
     const entry = (await registrations(f.project))[1]!
     expect(entry).toContain(`locked ${REMOVING_LOCK_REASON}`)
     expect(entry).not.toMatch(/prunable/u)
-    expect((await git(f.a.path!, ['branch', '--show-current'])).trim()).toBe(branch)
+    expect((await git(f.a.path!, ['branch', '--show-current'])).trim()).toBe('feat/moved')
     // Nothing sends into it while it is half removed, and the words say what to do.
     await expect(f.service.inspect(f.a)).rejects.toThrow('Choose Refresh to finish removing it')
 
@@ -74,6 +72,7 @@ describe('a worktree removal cut off partway (#1297)', () => {
       return git(cwd, args, options)
     }
     const finished = await new ThreadWorktrees(f.root, watching).resumeRemoval(f.a)
+    expect(finished).toMatchObject({ status: 'ready', branch: 'feat/moved' })
     expect(finished.reclaimedAt).toBeTruthy()
     expect(seen).toEqual([['.git']])
     await expect(lstat(f.a.path!)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -82,14 +81,45 @@ describe('a worktree removal cut off partway (#1297)', () => {
 
   it('finishes a half removal before a send puts the folder back', async () => {
     const f = await installedWorktree()
-    const cutOff = new ThreadWorktrees(f.root, git, undefined, async () => { throw new Error('Sotto quit.') })
-    await expect(cutOff.reclaim(f.a, { automatic: true })).rejects.toThrow()
-    await writeFile(join(f.a.path!, 'a.txt'), 'changed after the removal began')
+    await expect(new ThreadWorktrees(f.root, git, undefined, stopped).reclaim(f.a, { automatic: true })).rejects.toThrow()
     const restored = await f.service.inspect(await f.service.restore(f.a))
     expect(restored).toMatchObject({ status: 'ready', branch: f.a.branch, reclaimedAt: undefined, dirty: false })
     expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
     await expect(lstat(join(f.a.path!, 'node_modules'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect((await registrations(f.project))[1]).not.toMatch(/locked/u)
+  })
+
+  it('lets one removal of a folder run at a time, so a send never puts it back for a second remover to take', async () => {
+    const f = await installedWorktree()
+    await expect(new ThreadWorktrees(f.root, git, undefined, stopped).reclaim(f.a, { automatic: true })).rejects.toThrow()
+    // A finisher held inside its deletion, as a large folder holds one, while a send restores the same folder.
+    let entered!: () => void, release!: () => void
+    const inside = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const slow = new ThreadWorktrees(f.root, git, undefined, async root => { entered(); await gate; await removeFolderContents(root, { keep: new Set(['.git']) }) })
+    const finishing = slow.resumeRemoval(f.a)
+    await inside
+    const restoring = f.service.restore(f.a)
+    // Without turns the send would finish the removal itself and put the folder back here, for the held finisher to
+    // delete; with them it waits, and this bound only gives a broken lane time to show itself.
+    await Promise.race([restoring, new Promise(resolve => setTimeout(resolve, 1_000))])
+    release()
+    expect((await finishing).reclaimedAt).toBeTruthy()
+    expect(await restoring).toMatchObject({ status: 'ready', reclaimedAt: undefined })
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
+  })
+
+  it('clears a nested worktree’s registration when it finishes a removal later', async () => {
+    const f = await installedWorktree()
+    const nested = join(f.a.path!, '.worktrees', 'n')
+    await git(f.project, ['worktree', 'add', '-b', 'nested', '--', nested, 'HEAD'])
+    const facts = await f.service.reclaimFacts(f.a)
+    const cutOff = new ThreadWorktrees(f.root, git, undefined, stopped)
+    await expect(cutOff.reclaim(f.a, { confirmedItems: facts.items, confirmedIgnored: facts.ignored, confirmedRepositories: facts.repositories })).rejects.toThrow()
+    expect(await registrations(f.project)).toHaveLength(3)
+    expect((await f.service.resumeRemoval(f.a)).reclaimedAt).toBeTruthy()
+    expect(await registrations(f.project)).toHaveLength(1)
+    expect((await git(f.project, ['branch', '--list', 'nested'])).trim()).toBe('nested')
   })
 
   it('removes a large folder whole when nothing stops it', async () => {
@@ -103,6 +133,19 @@ describe('a worktree removal cut off partway (#1297)', () => {
     expect(seen).toEqual([['.git']])
     await expect(lstat(f.a.path!)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await registrations(f.project)).toHaveLength(1)
+  })
+
+  it('deletes nothing through a reserved folder that now leads somewhere else', async () => {
+    const f = await installedWorktree()
+    await expect(new ThreadWorktrees(f.root, git, undefined, stopped).reclaim(f.a, { automatic: true })).rejects.toThrow()
+    // Sotto's worktree folder is replaced by a junction to another folder that holds the same files.
+    const elsewhere = join(f.root, 'elsewhere')
+    await rename(join(f.root, 'thread-worktrees'), elsewhere)
+    await symlink(elsewhere, join(f.root, 'thread-worktrees'), 'junction')
+    await expect(f.service.resumeRemoval(f.a)).rejects.toThrow('redirected to another folder')
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    await rm(join(f.root, 'thread-worktrees'))
+    await rename(elsewhere, join(f.root, 'thread-worktrees'))
   })
 
   it('leaves alone a worktree someone else locked, and an ordinary one', async () => {

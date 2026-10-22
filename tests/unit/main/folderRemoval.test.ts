@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -47,6 +47,15 @@ describe('removeFolderContents', () => {
     await chmod(join(folder, 'locked'), 0o500)
     await removeFolderContents(folder, { keep: new Set(['.git']) })
     expect(await readdir(folder)).toEqual(['.git'])
+  })
+
+  it.runIf(process.platform !== 'win32')('changes no mode through a link in a folder it cannot write into', async () => {
+    const { root, folder } = await tree()
+    const outside = join(root, 'outside.txt'); await writeFile(outside, 'real'); await chmod(outside, 0o444)
+    await mkdir(join(folder, 'locked')); await symlink(outside, join(folder, 'locked', 'link')); await chmod(join(folder, 'locked'), 0o500)
+    await removeFolderContents(folder, { keep: new Set(['.git']) })
+    expect(await readdir(folder)).toEqual(['.git'])
+    expect((await stat(outside)).mode & 0o777).toBe(0o444)
   })
 
   it('stops when something keeps an entry past the stall, leaving the kept names', async () => {

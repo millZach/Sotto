@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { lstat, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -54,7 +54,7 @@ describe("durable project/thread organization", () => {
     }
   })
 
-  it('finishes a half-removed thread folder on Refresh and puts it back on the next send (#1297)', async () => {
+  it('repairs on Refresh a thread folder a Git removal left half done (#1297)', async () => {
     const f = await fixture()
     const repository = f.adapters.codex.state.projects[0]!.path
     await writeFile(join(repository, 'tracked.txt'), 'baseline')
@@ -72,13 +72,9 @@ describe("durable project/thread organization", () => {
     expect(await git(repository, ['worktree', 'list', '--porcelain'])).toMatch(/prunable/u)
 
     const refreshed = (await f.host.updateThreadWorktree('local', false)).threads.find(thread => thread.id === 'local')!.worktree!
-    expect(refreshed).toMatchObject({ status: 'ready', branch: worktree.branch })
-    expect(refreshed.reclaimedAt).toBeDefined()
-    await expect(lstat(worktree.path!)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect(await git(repository, ['worktree', 'list', '--porcelain'])).not.toMatch(/prunable/u)
-
-    await f.host.execute(send())
-    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.worktree).toMatchObject({ status: 'ready', reclaimedAt: undefined })
+    expect(refreshed).toMatchObject({ status: 'ready', branch: worktree.branch, reclaimedAt: undefined, dirty: false })
     expect(await readFile(join(worktree.path!, 'tracked.txt'), 'utf8')).toBe('baseline')
+    expect(await git(repository, ['worktree', 'list', '--porcelain'])).not.toMatch(/prunable|locked/u)
+    expect(await f.host.execute(send())).toEqual({ accepted: true })
   })
 })

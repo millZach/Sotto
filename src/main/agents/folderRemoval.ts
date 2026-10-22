@@ -38,7 +38,7 @@ export async function removeFolderContents(root: string, options: FolderRemovalO
     progressAt = now()
     if (++visited % YIELD_EVERY === 0) await new Promise(resolve => setImmediate(resolve))
   }
-  const persist = async (path: string, remove: () => Promise<void>): Promise<void> => {
+  const persist = async (path: string, link: boolean, remove: () => Promise<void>): Promise<void> => {
     for (let attempt = 0; ; attempt++) {
       try { await remove(); await progressed(); return }
       catch (error) {
@@ -46,10 +46,11 @@ export async function removeFolderContents(root: string, options: FolderRemovalO
         if (code === 'ENOENT') { await progressed(); return }
         if (!BUSY.has(code)) throw error
         if (now() - progressAt > stallMs) throw new FolderRemovalStalled('A file in the folder stayed in use. Close any program using the folder.', { cause: error })
-        // A read-only file, or a file in a folder that is not writable, is made writable once; nothing is ever followed.
+        // A read-only file, or a file in a folder that is not writable, is made writable once. chmod follows a link, so
+        // a link's own mode is left as it is and only the folder holding it is changed.
         if (attempt === 0 && (code === 'EPERM' || code === 'EACCES')) {
           await chmod(dirname(path), 0o700).catch(() => undefined)
-          await chmod(path, 0o600).catch(() => undefined)
+          if (!link) await chmod(path, 0o600).catch(() => undefined)
         }
         await new Promise(resolve => setTimeout(resolve, Math.min(1_000, 10 * 2 ** Math.min(attempt, 7))))
       }
@@ -61,7 +62,7 @@ export async function removeFolderContents(root: string, options: FolderRemovalO
     // A junction reads as a link here, and unlinking it removes the junction, not the folder it leads to.
     if (info.isDirectory() && !info.isSymbolicLink()) {
       await removeChildren(path)
-      await persist(path, async () => {
+      await persist(path, false, async () => {
         try { await rmdir(path) }
         catch (error) {
           // Something wrote into the folder after its entries went; take those too before asking again.
@@ -69,14 +70,17 @@ export async function removeFolderContents(root: string, options: FolderRemovalO
           throw error
         }
       })
-    } else await persist(path, () => unlink(path))
+    } else await persist(path, info.isSymbolicLink(), () => unlink(path))
   }
   const removeChildren = async (directory: string, keep?: ReadonlySet<string>): Promise<void> => {
     const names: string[] = []
     const handle = await opendir(directory)
     for await (const entry of handle) if (!keep?.has(entry.name)) names.push(entry.name)
     for (let offset = 0; offset < names.length; offset += PARALLEL) {
-      await Promise.all(names.slice(offset, offset + PARALLEL).map(name => removeEntry(join(directory, name))))
+      // Every removal in a batch settles before a failure is reported, so nothing is still deleting once the caller hears.
+      const results = await Promise.allSettled(names.slice(offset, offset + PARALLEL).map(name => removeEntry(join(directory, name))))
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed) throw failed.reason
     }
   }
   await removeChildren(root, options.keep)

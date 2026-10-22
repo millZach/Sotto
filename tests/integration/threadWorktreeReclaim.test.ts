@@ -282,7 +282,7 @@ describe("independent working-copy allocation", () => {
     expect(await readFile(join(a.path!, 'notes.txt'), 'utf8')).toBe('not Sotto’s')
     await expect(f.service.inspect(recorded)).rejects.toThrow('no longer this thread’s Git worktree')
   })
-  it('finishes and fills an empty folder Git still registers, which a removal cut off at its end leaves', async () => {
+  it('repairs an empty folder Git still registers, which a removal cut off at its end leaves', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     const recorded = await f.service.inspect(a)
     // Emptied with its registration intact, `.git` included, so Git reports it prunable (#1297). It holds nothing to lose.

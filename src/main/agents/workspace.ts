@@ -3510,9 +3510,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (metadata.reclaimedAt) { try { metadata = await this.worktrees.inspect(metadata) } catch { /* Still reclaimed; the record already says so. */ } }
       else {
         try {
-          // A removal that stopped partway is finished rather than undone, and like any reclaimed folder only a send puts it back (#1297).
+          // A removal Sotto started and did not finish is finished, and like any reclaimed folder only a send puts it back;
+          // one Git left half done before #1297 is repaired (#1297).
           const resumed = await this.worktrees.resumeRemoval(metadata)
-          metadata = resumed.reclaimedAt ? resumed : await this.worktrees.inspect(await this.worktrees.restore(metadata))
+          metadata = resumed.reclaimedAt ? resumed : await this.worktrees.inspect(await this.worktrees.restore(resumed))
         }
         catch (error) { metadata = { ...metadata, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
       }
