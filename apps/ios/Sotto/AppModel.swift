@@ -1443,6 +1443,20 @@ struct HeldDetail {
                      "status": "queued"]
                 }
             }
+            // With --ui-watcher-many-watched, Watcher watches six more of the fixture's threads, so Watched is taller than
+            // the largest iPhone's screen and the bar has a page to slide away from there too (#1278).
+            if arguments.contains("--ui-watcher-many-watched") {
+                let more: [(String, String, String, String)] = [
+                    (laptop, "release", "Choose the release target", "claude"), (laptop, "iphone", "Refine the iPhone thread view", "codex"),
+                    (laptop, "wiring", "Clean up the wiring schedule", "claude"), (laptop, "drives", "Compare motor drive options", "codex"),
+                    (studio, "lighting", "Update the lighting plan", "codex"), (laptop, "settings", "Simplify the settings screen", "codex")
+                ]
+                let rows = more.map { host, id, title, provider -> [String: Any] in
+                    ["target": ["hostId": host, "threadId": id], "title": title, "provider": provider, "status": "running",
+                     "connected": true, "watched": true, "takenOver": false, "backgroundWorkCount": 0]
+                }
+                page["watchedThreads"] = (page["watchedThreads"] as? [[String: Any]] ?? []) + rows
+            }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
             if keepsWriting {

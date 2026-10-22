@@ -921,6 +921,53 @@ import XCTest
         if result != .completed { explain(away ? "watcher-bar-not-away" : "watcher-bar-not-back", seen) }
         XCTAssertEqual(result, .completed, message + " (" + seen + ")")
     }
+    /// Drags Watcher's page as `dragWatcher` does, which slides the bar `away` or brings it back, and checks the page under
+    /// the bar moves with the finger and by nothing else, during the slide or after it. `marker` picks an element on the
+    /// page. Its top is read before the drag and then, from one snapshot per look, until the bar is in its place and two
+    /// looks in a row agree. Every look after the drag must find it moved by the drag's distance, less no more than the
+    /// touch's slop before the page starts to follow, and none may differ from another: a page that jumped as the bar
+    /// went or came, by the bar's height or any part of it, fails either way, whether the jump is still running when the
+    /// drag ends or long over.
+    private func dragWatcherKeepingThePage(down: Bool, by distance: CGFloat, away: Bool, marker: String,
+                                           _ matches: @escaping (any XCUIElementSnapshot) -> Bool, _ message: String) {
+        // The touch moves this far before the page follows it.
+        let slop: CGFloat = 30
+        func look() -> (bar: CGRect?, top: CGFloat, marker: CGFloat?)? {
+            guard let elements = try? everyElement(),
+                  let window = elements.first(where: { $0.elementType == .window }) else { return nil }
+            let bar = elements.first { $0.elementType == .button && $0.identifier == "watcher-section-conversation" }
+            return (bar?.frame, window.frame.minY, elements.first(where: matches)?.frame.minY)
+        }
+        guard let start = look()?.marker else {
+            XCTFail("\(marker) must be on Watcher's page before the drag")
+            return
+        }
+        dragWatcher(down: down, by: distance)
+        var seen: [CGFloat] = []
+        var placedLooks = 0
+        var last = "no look after the drag"
+        let settled = NSPredicate { _, _ in
+            guard let now = look(), let top = now.marker else { last = "\(marker) is missing"; return false }
+            seen.append(top)
+            let placed = away ? (now.bar.map { $0.maxY <= now.top + 1 } ?? true) : (now.bar.map { $0.minY >= now.top + 20 } ?? false)
+            last = "bar \(now.bar.map { "\($0)" } ?? "missing"), \(marker) at \(top)"
+            placedLooks = placed ? placedLooks + 1 : 0
+            return placedLooks >= 2 && seen.count >= 2 && abs(seen[seen.count - 1] - seen[seen.count - 2]) <= 0.5
+        }
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 30)
+        let moved = seen.map { (down ? start - $0 : $0 - start) }
+        let frames = "\(marker) at \(start) before the drag of \(distance), then \(seen); \(last)"
+        if result != .completed || moved.contains(where: { $0 < distance - slop || $0 > distance + 2 })
+            || (seen.max() ?? 0) - (seen.min() ?? 0) > 1 {
+            explain(away ? "watcher-bar-away-page-moved" : "watcher-bar-back-page-moved", frames)
+        }
+        XCTAssertEqual(result, .completed, message + ": the bar must settle in its place (" + frames + ")")
+        XCTAssertFalse(moved.contains { $0 < distance - slop || $0 > distance + 2 },
+                       message + ": the page moves with the finger and no farther (" + frames + ")")
+        XCTAssertLessThanOrEqual((seen.max() ?? 0) - (seen.min() ?? 0), 1,
+                                 message + ": nothing moves the page once the finger lifts (" + frames + ")")
+        waitForWatcherBar(away: away, message)
+    }
     /// Brings Watcher's bar back if reading down the page slid it away: a short drag back up the page.
     private func showWatcherBar() {
         let conversation = app.buttons["watcher-section-conversation"]
@@ -1145,30 +1192,37 @@ import XCTest
     }
 
     /// Watcher's bar slides away as the user reads down the conversation, and comes back as they go up, as Safari's does
-    /// (#1278, pick A). The page under it doesn't move as it goes and comes back, and the box and the tab bar stay.
+    /// (#1278, pick A), and so it does on Watched, which measures its own page. The page under it moves with the finger
+    /// and by nothing else as the bar goes and comes back, and the box and the tab bar stay. Watcher watches six more
+    /// threads, so Watched has a page to read down on the largest iPhone too.
     func testWatchersBarSlidesAwayOnTheWayDownAndBackOnTheWayUp() {
-        launch(Self.watcher)
+        launch(Self.watcher + ["--ui-watcher-many-watched"])
         openWatcher()
         toWatcherHero()
         let reply = byID("watcher-reply")
-        let first = text("The login test fails about one run in five")
-        XCTAssertTrue(first.waitForExistence(timeout: 5))
-        // Reading down the page from its top slides the bar away.
-        dragWatcher(down: true)
-        waitForWatcherBar(away: true, "Reading down the conversation slides the bar away")
+        let firstWords = "The login test fails about one run in five"
+        XCTAssertTrue(text(firstWords).waitForExistence(timeout: 5))
+        let first: (any XCUIElementSnapshot) -> Bool = { $0.label.hasPrefix(firstWords) }
+        // Reading down the page from its top slides the bar away, and the page moves only with the finger.
+        dragWatcherKeepingThePage(down: true, by: 160, away: true, marker: "The first message", first,
+                                  "Reading down the conversation slides the bar away")
         XCTAssertTrue(reply.isHittable, "The box stays")
         XCTAssertTrue(app.tabBars.buttons["Watcher"].isHittable, "The tab bar stays")
-        // The bar going away doesn't move the page under it.
-        let before = first.frame
-        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The bar finishes sliding")], timeout: 1)
-        XCTAssertEqual(first.frame.minY, before.minY, accuracy: 1, "The page stays where the reader has it")
         capture("watcher-bar-away-dark")
         // Going back up a little brings it back, and it works.
-        dragWatcher(down: false, by: 80)
-        waitForWatcherBar(away: false, "Going back up the conversation brings the bar back")
+        dragWatcherKeepingThePage(down: false, by: 80, away: false, marker: "The first message", first,
+                                  "Going back up the conversation brings the bar back")
         capture("watcher-bar-back-dark")
         app.buttons["watcher-section-watched"].tap()
         XCTAssertTrue(byID("watcher-watched-lead").waitForExistence(timeout: 5), "Watched opens from the bar that came back")
+        // Watched slides the bar the same way, from its own page.
+        let lead: (any XCUIElementSnapshot) -> Bool = { $0.identifier == "watcher-watched-lead" }
+        dragWatcherKeepingThePage(down: true, by: 160, away: true, marker: "Watched's lead", lead,
+                                  "Reading down Watched slides the bar away")
+        XCTAssertTrue(app.tabBars.buttons["Watcher"].isHittable, "The tab bar stays on Watched")
+        capture("watcher-bar-away-watched-dark")
+        dragWatcherKeepingThePage(down: false, by: 80, away: false, marker: "Watched's lead", lead,
+                                  "Going back up Watched brings the bar back")
         app.buttons["watcher-section-conversation"].tap()
         XCTAssertTrue(reply.waitForExistence(timeout: 5), "Conversation opens from the bar")
     }
