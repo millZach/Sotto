@@ -961,19 +961,11 @@ export class ThreadWorktrees {
       /** What each entry walked was listed as, and what the walk took it to be. */
       const seen = new Map<string, { listed: ReturnType<typeof entryKind>; used: ReturnType<typeof entryKind> }>()
       const first = given?.at === waits ? given : await list(directory)
-      let current = first
-      let currentByName: Map<string, Dirent> | undefined
-      for (const listed of first.entries) {
-        if (await yieldPeriodically()) {
-          waits++
-          // When that turn of the event loop is all the walk has waited on since the listing, one more
-          // listing keeps the rest of the folder's plain files from an lstat each.
-          if (current.at === waits - 1) { current = await list(directory); currentByName = new Map(current.entries.map(entry => [entry.name, entry])) }
-        }
-        const entry = currentByName ? currentByName.get(listed.name) : listed
-        // Gone since the first listing: nothing of it is left to remove.
-        if (!entry) continue
-        seen.set(entry.name, { listed: entryKind(entry), used: await visitEntry(entry, current) })
+      // Once anything has been waited on, the rest of the folder is read an entry at a time. Listing it
+      // again after each turn of the event loop would read a large folder once per turn (#1329).
+      for (const entry of first.entries) {
+        if (await yieldPeriodically()) waits++
+        seen.set(entry.name, { listed: entryKind(entry), used: await visitEntry(entry, first) })
       }
       if (waits === first.at) return
       // The walk waited on something after the listing was read, so it is read again. An entry that has
