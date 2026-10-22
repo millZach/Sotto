@@ -442,6 +442,52 @@ describe('thread detail over the socket', () => {
     } finally { slow.frames.close(); steady.frames.close(); await client.close(); await server.close() }
   })
 
+  it('sends a client that read a thread whole while behind no held delta from before that read (#1089)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const slowSession = session()
+    const slow = await rawPeer(server.descriptor.port, slowSession), steady = await rawPeer(server.descriptor.port, session())
+    let round = 0
+    const grow = async (bytes: number): Promise<void> => {
+      round++
+      stream.current = { threadId: 'streaming', revision: round + 1, messages: [message(stream.current.messages[0]!.text + 'x'.repeat(bytes))] }
+      stream.emit(delta(round, round + 1, 'x'.repeat(bytes)))
+      await expect.poll(() => steady.messages.some(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === round + 1)).toBe(true)
+    }
+    try {
+      for (const peer of [slow, steady]) {
+        await peer.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+        await peer.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      }
+      // The slow client stops reading and falls behind, with a delta held for it.
+      slow.stream.pause()
+      for (let index = 0; index < 3; index++) await grow(4 * 1024 * 1024)
+      await grow(16)
+      // It reads the thread whole while behind; the answer goes behind what is already in its socket, not behind what is
+      // held. Then the thread changes again.
+      const reads = stream.reads
+      slow.frames.send({ v: 1, id: 'read', session: slowSession, op: 'detail', threadId: 'streaming' })
+      await expect.poll(() => stream.reads).toBeGreaterThan(reads)
+      await grow(16)
+      await new Promise(resolve => setTimeout(resolve, AGENT_STATE_PUBLISH_INTERVAL_MS * 4))
+      slow.stream.resume()
+      await expect.poll(() => slow.messages.some(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === round + 1)
+        || slow.messages.some(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === round + 1), { timeout: 30_000 }).toBe(true)
+      // Read in order as the client does, every delta starts from what it holds, so it never has to read the thread again.
+      let held: AgentThreadDetail | null = null
+      for (const item of slow.messages) {
+        if (item.event === 'detail') held = item.detail as AgentThreadDetail
+        else if (item.id === 'read') held = (item as { result: AgentThreadDetail }).result
+        else if (item.event === 'detail-delta') {
+          const next = item.delta as AgentThreadDetailDelta
+          if (next.revision <= held!.revision) continue
+          expect(next.baseRevision).toBe(held!.revision)
+          held = applyAgentThreadDetailDelta(held!, next)
+        }
+      }
+      expect(held).toEqual(stream.current)
+    } finally { slow.frames.close(); steady.frames.close(); await client.close(); await server.close() }
+  })
+
   it('reads the whole thread once when a delta does not follow the revision the client holds', async () => {
     const { stream, server, client, updates } = await streamingHost()
     try {

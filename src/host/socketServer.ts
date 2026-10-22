@@ -636,10 +636,14 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (peer.frames.backlogged) { void track(peer.frames.drained().then(() => release(peer))); return }
       threads.delete(threadId)
       if (!peer.observed.has(threadId)) continue
-      if (queued === CURRENT) { detail(peer, threadId); continue }
-      // A whole sent since, such as the one a new observe sends, already carries what this update would.
       const held = peer.held.get(threadId)
-      if (held === undefined || queued.revision > held) sendUpdate(peer, queued, updateFor(queued))
+      // A whole sent since, such as the one a new observe sends, already carries what this update would.
+      if (queued !== CURRENT && held !== undefined && queued.revision <= held) continue
+      // A whole read answered since, which no held push waits behind, can land partway through a held delta: the client
+      // then holds a revision the delta does not start from, so it is sent the thread as it is rather than a delta it
+      // would only answer by reading the thread again.
+      if (queued === CURRENT || isAgentThreadDetailDelta(queued) && held !== undefined && held !== queued.baseRevision) { detail(peer, threadId); continue }
+      sendUpdate(peer, queued, updateFor(queued))
     }
     backlogs.delete(peer)
   }
