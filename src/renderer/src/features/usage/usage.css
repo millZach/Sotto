@@ -115,11 +115,12 @@
 .usage-spark { display: block; }
 
 /* ---------- The index and its stage ---------- */
-/* The index, its figures and the chart grow and shrink with the room. */
-.usage-focus { display: grid; grid-template-columns: clamp(220px, 24cqi, 300px) minmax(0, 1fr); align-items: start; gap: clamp(28px, 4cqi, 52px); }
+/* The index, its figures and the chart grow and shrink with the room. The index never goes under 240 pixels, so the
+   widest figure, a share with its unit and its split bar, still fits inside the card at 1280. */
+.usage-focus { display: grid; grid-template-columns: clamp(240px, 24cqi, 300px) minmax(0, 1fr); align-items: start; gap: clamp(28px, 4cqi, 52px); }
 /* The index and its stage are two cards (ADR-0107). */
-.usage-index { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
-.usage-index__item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 3px 14px; width: 100%; padding: 14px 16px; border: 0; border-radius: 12px; background: transparent; color: var(--tt-text); text-align: left; font: inherit; cursor: pointer; }
+.usage-index { display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.usage-index__item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 3px 12px; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: transparent; color: var(--tt-text); text-align: left; font: inherit; cursor: pointer; }
 .usage-index__item:hover { background: var(--usage-hover-soft); }
 .usage-index__item[aria-selected='true'] { background: var(--tt-card-selected); }
 .usage-index__item[aria-selected='true']::before { content: ''; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; border-radius: 3px; background: var(--tt-accent); }
