@@ -38,14 +38,98 @@ const markOf = (marks: PrototypeReady, shown: AgentHostSnapshot, id = 'thread') 
 describe('PrototypeReady', () => {
   it('marks a thread whose ended turn’s newest reply names a working page, and only then', () => {
     const pages = [page('a')]
+    const fresh = () => new PrototypeReady(searches({ 'thread\nreply:reply': pages }))
+    expect(markOf(fresh(), snapshot(thread()))).toEqual({ source: 'reply:reply', pages })
+    expect(markOf(fresh(), snapshot(thread({ status: 'running' })))).toBeUndefined()
+    expect(markOf(fresh(), snapshot(thread({ requests: [{ id: 'p', kind: 'permission', text: 'Run it?', options: [] }] })))).toBeUndefined()
+    expect(markOf(fresh(), snapshot(thread({ kind: 'watcher' })))).toBeUndefined()
+    expect(markOf(fresh(), snapshot(thread({ workspaceSettledAt: '2026-10-22T11:00:00.000Z' })))).toBeUndefined()
+    expect(markOf(fresh(), snapshot(thread({ messages: [assistant('reply'), user('u'), assistant('later', 'Done.')] })))).toBeUndefined()
+  })
+
+  it('keeps the mark while the thread runs, through a newer reply that names no page, and while a question without one waits', () => {
+    const pages = [page('a')]
     const marks = new PrototypeReady(searches({ 'thread\nreply:reply': pages }))
     expect(markOf(marks, snapshot(thread()))).toEqual({ source: 'reply:reply', pages })
+    expect(markOf(marks, snapshot(thread({ status: 'running', messages: [assistant('reply'), user('wake', { wakeUp: true })] })))).toEqual({ source: 'reply:reply', pages })
+    const later = [assistant('reply'), user('wake', { wakeUp: true }), assistant('later', 'Done.')]
+    expect(markOf(marks, snapshot(thread({ messages: later })))).toEqual({ source: 'reply:reply', pages })
+    expect(markOf(marks, snapshot(thread({ messages: later, requests: [question('q')] })))).toEqual({ source: 'reply:reply', pages })
+  })
+
+  it('moves the mark to a newer reply that names a working page, and a waiting question with one still comes first', () => {
+    const found = searches({ 'thread\nreply:reply': [page('a')] })
+    const marks = new PrototypeReady(found)
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    found.results.set('thread\nreply:newer', [page('n')])
+    const newer = [assistant('reply'), user('wake', { wakeUp: true }), assistant('newer')]
+    expect(markOf(marks, snapshot(thread({ messages: newer })))?.source).toBe('reply:newer')
+    found.results.set('thread\nrequest:q', [page('q')])
+    expect(markOf(marks, snapshot(thread({ messages: newer, requests: [question('q')] })))?.source).toBe('request:q')
+  })
+
+  it('ends a kept mark when the user replies after it, and not for a wake-up Sotto sent', () => {
+    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    const woken = [assistant('reply'), user('wake'), assistant('later', 'Done.')]
+    expect(markOf(marks, snapshot(thread({ messages: woken, wakeUpMessageIds: ['wake'] })))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(thread({ messages: [...woken, user('u')], wakeUpMessageIds: ['wake'], status: 'running' })))).toBeUndefined()
+    expect(markOf(marks, snapshot(thread({ messages: [...woken, user('u'), assistant('after', 'Done again.')], wakeUpMessageIds: ['wake'] })))).toBeUndefined()
+  })
+
+  it('ends a kept mark by the summary’s last user message when the thread carries no messages', () => {
+    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    const lastAssistant = { id: 'later', text: 'Done.', createdAt: '2026-10-22T10:10:00.000Z' }
+    const summarized = (lastUser: { id: string; createdAt: string }, wakeUpMessageIds: string[] = []) => thread({ messages: [], wakeUpMessageIds,
+      summary: { messageCount: 4, activityCount: 0, lastAssistant, lastUser: { ...lastUser, text: 'Hi' } } })
+    expect(markOf(marks, snapshot(summarized({ id: 'wake', createdAt: '2026-10-22T10:05:00.000Z' }, ['wake'])))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(summarized({ id: 'u', createdAt: '2026-10-22T10:05:00.000Z' })))).toBeUndefined()
+  })
+
+  it('names a kept reply for its pages to be kept, beside the newest reply while that could earn the mark', () => {
+    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
+    markOf(marks, snapshot(thread()))
+    const ask = (item: AgentThread) => marks.replies(snapshot(item))(item)
+    expect(ask(thread())).toEqual({ id: 'reply', text: 'The prototype is at docs/greeting.html' })
+    const running = thread({ status: 'running', messages: [assistant('reply'), user('wake', { wakeUp: true })] })
+    markOf(marks, snapshot(running))
+    expect(ask(running)).toEqual({ id: 'reply', text: 'The prototype is at docs/greeting.html' })
+    const later = thread({ messages: [assistant('reply'), user('wake', { wakeUp: true }), assistant('later', 'Done.')] })
+    markOf(marks, snapshot(later))
+    expect(ask(later)).toEqual([{ id: 'later', text: 'Done.' }, { id: 'reply', text: 'The prototype is at docs/greeting.html' }])
+    // Known only by its ID, a kept reply is read whole from the thread's store.
+    const elsewhere = thread({ messages: [], summary: { messageCount: 4, activityCount: 0, lastAssistant: { id: 'later', text: 'Done.', createdAt: '2026-10-22T10:10:00.000Z' } } })
+    expect(ask(elsewhere)).toEqual([{ id: 'later', summary: 'Done.' }, { id: 'reply' }])
+  })
+
+  it('saves kept marks and takes them back, so a restart keeps a prototype the thread has run on from', () => {
+    const found = searches({ 'thread\nreply:reply': [page('a')] })
+    const marks = new PrototypeReady(found)
+    markOf(marks, snapshot(thread()))
+    const later = thread({ status: 'running', messages: [assistant('reply'), user('wake', { wakeUp: true }), assistant('later', 'Done.')] })
+    expect(markOf(marks, snapshot(later))?.source).toBe('reply:reply')
+    expect(marks.marked()).toEqual([{ threadId: 'thread', messageId: 'reply', createdAt: '2026-10-22T10:00:00.000Z' }])
+    const restarted = new PrototypeReady(found)
+    restarted.restore([], undefined, marks.marked())
+    // A thread that carries no history yet names nothing, so no search is made before there are words to read.
+    const loading = thread({ status: 'running', messages: [] })
+    expect(restarted.replies(snapshot(loading))(loading)).toBeUndefined()
+    // Before the restarted coordinator has read the thread, the kept reply goes by its ID: QuestionPages reads its words.
+    expect(restarted.replies(snapshot(later))(later)).toEqual({ id: 'reply' })
+    expect(markOf(restarted, snapshot(later))?.source).toBe('reply:reply')
+  })
+
+  it('forgets a kept mark when the user answers a question asked after it, or the thread settles', () => {
+    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(thread({ requests: [question('q')] })))?.source).toBe('reply:reply')
     expect(markOf(marks, snapshot(thread({ status: 'running' })))).toBeUndefined()
-    expect(markOf(marks, snapshot(thread({ requests: [{ id: 'p', kind: 'permission', text: 'Run it?', options: [] }] })))).toBeUndefined()
-    expect(markOf(marks, snapshot(thread({ kind: 'watcher' })))).toBeUndefined()
-    expect(markOf(marks, snapshot(thread({ workspaceSettledAt: '2026-10-22T11:00:00.000Z' })))).toBeUndefined()
-    // A newer reply that names nothing that works ends the mark: only the newest reply counts.
-    expect(markOf(marks, snapshot(thread({ messages: [assistant('reply'), user('u'), assistant('later', 'Done.')] })))).toBeUndefined()
+    expect(marks.marked()).toEqual([])
+    const settles = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
+    expect(markOf(settles, snapshot(thread()))?.source).toBe('reply:reply')
+    expect(markOf(settles, snapshot(thread({ workspaceSettledAt: '2026-10-22T11:00:00.000Z' })))).toBeUndefined()
+    expect(settles.marked()).toEqual([])
   })
 
   it('names the reply to look in only while it could earn the mark', () => {
@@ -59,7 +143,7 @@ describe('PrototypeReady', () => {
     expect(ask(thread({ messages: [assistant('reply'), user('u')] }))).toBeUndefined()
     expect(ask(thread({ kind: 'watcher-history' }))).toBeUndefined()
     // A visual is Sotto's, not the agent's words: the reply before it is the newest.
-    expect(ask(thread({ messages: [assistant('reply'), { ...assistant('visual:1', ''), visual: { kind: 'diagram' } } as unknown as AgentMessage] }))?.id).toBe('reply')
+    expect(ask(thread({ messages: [assistant('reply'), { ...assistant('visual:1', ''), visual: { kind: 'diagram' } } as unknown as AgentMessage] }))).toMatchObject({ id: 'reply' })
   })
 
   it('ends the mark when the user replies after it, but not for a wake-up Sotto sent', () => {

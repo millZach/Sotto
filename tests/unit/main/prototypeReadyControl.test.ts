@@ -79,6 +79,25 @@ describe('the coordinator’s prototype-ready mark', () => {
     expect(mark(again.control.shell())).toBeUndefined()
   })
 
+  it('keeps the mark while the thread runs on and after a newer reply that names no page, and a restart keeps it', async () => {
+    const { root, host, control } = await start()
+    finishWithPrototype(host)
+    await vi.waitFor(() => expect(mark(control.shell())).toBeDefined())
+    const source = mark(control.shell())!.source
+    host.event({ type: 'stream', threadId: 'workshop', messageId: 'working', text: 'Checking the footer', status: 'running' })
+    expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.status).toBe('running')
+    expect(mark(control.shell())?.source).toBe(source)
+    host.event({ type: 'ready', threadId: 'workshop', text: 'Done.' })
+    expect(mark(control.shell())?.source).toBe(source)
+    await vi.waitFor(async () => expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).prototypesMarked)
+      .toEqual([{ threadId: 'workshop', messageId: source.slice('reply:'.length), createdAt: expect.any(String) }]))
+    const messages = control.get().host.threads.find(thread => thread.id === 'workshop')!.messages
+    control.dispose(); controls.delete(control)
+    const again = await start(root)
+    again.host.event({ type: 'history', threadId: 'workshop', text: '', messages })
+    await vi.waitFor(() => expect(mark(again.control.shell())?.source).toBe(source))
+  })
+
   it('clears the mark when the user replies, and showing the thread does not', async () => {
     const { host, control } = await start()
     finishWithPrototype(host)

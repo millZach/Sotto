@@ -190,7 +190,8 @@ export async function pageAnswers(url: string, timeoutMs = PAGE_ANSWER_TIMEOUT_M
 
 /**
  * A reply whose pages are looked for (ADR-0108): its message ID and its words, or, when the snapshot carries only the
- * thread's summary, the summary's excerpt of them. An excerpt cut at its limit is read whole from the thread's store.
+ * thread's summary, the summary's excerpt of them. An excerpt cut at its limit is read whole from the thread's store, and
+ * so is a reply named by its ID alone that the thread's messages do not hold.
  */
 export interface ReplyToSearch { readonly id: string; readonly text?: string; readonly summary?: string }
 
@@ -284,18 +285,20 @@ export class QuestionPages {
 
   /**
    * The snapshot with each question's pages on it. Threads with nothing to change keep their own object. `replyOf` names
-   * the reply of a thread whose pages are wanted, which is looked for once and kept while it is named.
+   * the replies of a thread whose pages are wanted, each looked for once and kept while it is named.
    */
-  decorate(snapshot: AgentHostSnapshot, replyOf?: (thread: AgentThread) => ReplyToSearch | undefined): AgentHostSnapshot {
+  decorate(snapshot: AgentHostSnapshot, replyOf?: (thread: AgentThread) => ReplyToSearch | readonly ReplyToSearch[] | undefined): AgentHostSnapshot {
     const present = new Set<string>()
     let changed = false
+    const look = (thread: AgentThread, reply: ReplyToSearch): void => {
+      const key = keyOf(thread.id, `reply:${reply.id}`)
+      present.add(key)
+      if (!this.entries.has(key)) this.searchReply(key, thread, snapshot, reply)
+    }
     const threads = snapshot.threads.map(thread => {
-      const reply = replyOf?.(thread)
-      if (reply) {
-        const key = keyOf(thread.id, `reply:${reply.id}`)
-        present.add(key)
-        if (!this.entries.has(key)) this.searchReply(key, thread, snapshot, reply)
-      }
+      const named = replyOf?.(thread)
+      if (Array.isArray(named)) for (const reply of named as readonly ReplyToSearch[]) look(thread, reply)
+      else if (named) look(thread, named as ReplyToSearch)
       let threadChanged = false
       const requests = thread.requests.map(request => {
         const asked = request.kind === 'question' && !isSottoRequest(request.id)
@@ -356,8 +359,9 @@ export class QuestionPages {
       if (this.entries.get(key) !== entry) { resolve(); return }
       this.find(key, entry, thread, snapshot, async () => {
         if (known !== undefined) return [known]
-        const stored = thread.messages.length ? thread.messages : await this.options.messages?.(thread.id)
-        return [stored?.find(message => message.id === reply.id)?.text ?? reply.summary ?? '']
+        const carried = thread.messages.find(message => message.id === reply.id)?.text
+        const stored = carried ?? (await this.options.messages?.(thread.id))?.find(message => message.id === reply.id)?.text
+        return [stored ?? reply.summary ?? '']
       }, resolve)
     }))
   }

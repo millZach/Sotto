@@ -163,6 +163,8 @@ const savedSchema = z.object({
   prototypesCleared: z.array(z.object({ threadId: z.string(), source: z.string() })).default([]),
   /** When prototype-ready marks began on this computer, in milliseconds: older replies earn none (ADR-0108). */
   prototypesSince: z.number().optional(),
+  /** The reply that holds each thread's prototype-ready mark until the user opens its page or replies, oldest first (ADR-0108). */
+  prototypesMarked: z.array(z.object({ threadId: z.string(), messageId: z.string(), createdAt: z.string() })).default([]),
   /** The failed threads a client has shown since they failed, or Dismiss all named, oldest first (ADR-0092). */
   failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string(), turn: z.string().optional(), since: z.number().optional() })).default([]),
   composing: z.boolean(), outbox: z.array(z.object({
@@ -809,10 +811,10 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
     this.finishedUnread.restore(finishedUnread)
-    this.prototypeReady.restore(prototypesCleared, prototypesSince)
+    this.prototypeReady.restore(prototypesCleared, prototypesSince, prototypesMarked)
     this.failuresSeen.restore(failuresSeen)
     this.deliveredPromptDigests = deliveredPromptDigests
     this.answeredRequests = answeredRequests
@@ -1519,6 +1521,7 @@ export class AgentControl {
       finishedUnread: this.finishedUnread.saved(),
       prototypesCleared: this.prototypeReady.saved(),
       prototypesSince: this.prototypeReady.since(),
+      prototypesMarked: this.prototypeReady.marked(),
       failuresSeen: this.failuresSeen.saved(),
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,

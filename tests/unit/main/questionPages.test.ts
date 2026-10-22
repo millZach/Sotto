@@ -304,6 +304,21 @@ describe('QuestionPages working pages and reply pages (ADR-0108)', () => {
     expect(plain.searched('thread', 'request:q')).toMatchObject({ finished: true, aboutPrototype: false })
   })
 
+  it('keeps two replies of a thread named together, and reads one known only by its ID from the thread or its store', async () => {
+    const stored = vi.fn(() => [{ ...reply(words), id: 'stored' }])
+    const pages = new QuestionPages({ changed: vi.fn(), live: async () => true, messages: stored })
+    const carried = snapshot([], [{ ...reply(words), id: 'carried' }, { ...reply('Done.'), id: 'newest' }])
+    pages.decorate(carried, () => [{ id: 'newest', text: 'Done.' }, { id: 'carried' }])
+    await vi.waitFor(() => expect(pages.searched('thread', 'reply:carried')?.finished).toBe(true))
+    expect(pages.searched('thread', 'reply:carried')!.working).toHaveLength(2)
+    expect(pages.searched('thread', 'reply:newest')).toMatchObject({ finished: true, pages: [] })
+    expect(stored).not.toHaveBeenCalled()
+    pages.decorate(carried, () => [{ id: 'newest', text: 'Done.' }, { id: 'stored' }])
+    await vi.waitFor(() => expect(pages.searched('thread', 'reply:stored')?.finished).toBe(true))
+    expect(stored).toHaveBeenCalledWith('thread')
+    expect(pages.searched('thread', 'reply:stored')!.working).toHaveLength(2)
+  })
+
   it('keeps no search for a reply that named no page once it is no longer looked for, however many replies come', () => {
     const pages = new QuestionPages({ changed: vi.fn(), live: async () => true })
     for (let index = 0; index < 100; index++) pages.decorate(snapshot([]), () => ({ id: `ordinary-${index}`, text: `Done with step ${index}.` }))
