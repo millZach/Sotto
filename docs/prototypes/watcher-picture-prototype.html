@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en" data-theme="sotto-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: Watcher's picture (Visualize)</title>
+<!--
+  PROTOTYPE, throwaway. Question: what should "Visualize" in Watcher's room look like?
+  Three structurally different variants of the picture, switchable with ?variant=A|B|C and the bar at the bottom:
+    A  Constellation: Watcher in the middle, projects as clusters, threads as nodes, blobs travel along the lines.
+    B  Lanes: one lane per thread on a time axis, Watcher and You as lanes, messages drop between lanes.
+    C  Board: Watcher's desk with the merge turns on top, projects as columns of compact thread tiles.
+  Every variant runs on the same fake event log (four hours of history plus a live script), scrubs and replays it,
+  and sits in the real room: header, All threads, Conversation | Watched, the Visualize button, the composer, the dock.
+  Colours are theme roles through --tt-* tokens, mapped the way src/renderer/src/styles/tokens.css maps them.
+-->
+<style>
+@font-face { font-family: Figtree; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); font-weight: 300 900; font-display: swap; }
+
+/* ---------- Theme roles, from src/shared/themes/palettes.ts ---------- */
+:root[data-theme='sotto-dark'] { --r-canvas: oklch(0.115 0.008 265); --r-surface: oklch(0.145 0.008 265); --r-raised: oklch(0.185 0.008 265); --r-overlay: oklch(0.215 0.008 265);
+  --r-text: oklch(0.985 0.005 280); --r-muted-fg: oklch(0.72 0.014 265); --r-border: oklch(0.305 0.02 265); --r-input: oklch(0.375 0.024 265);
+  --r-accent: oklch(0.714403 0.104089 183.092); --r-accent-fg: oklch(0.16 0.012 190); --r-update-fg: oklch(0.83 0.08 183); --r-accent-surface: oklch(0.32 0.05 185);
+  --r-warning-fg: oklch(0.829017 0.171221 81.038); --r-error-fg: oklch(0.702184 0.189226 22.228); --r-message: oklch(0.205 0.014 265); --dark: 1; }
+:root[data-theme='sotto-light'] { --r-canvas: oklch(0.978 0.004 85); --r-surface: oklch(0.99 0.003 85); --r-raised: oklch(0.955 0.006 85); --r-overlay: oklch(0.945 0.007 85);
+  --r-text: oklch(0.235 0.014 75); --r-muted-fg: oklch(0.5 0.014 75); --r-border: oklch(0.86 0.012 80); --r-input: oklch(0.8 0.016 80);
+  --r-accent: oklch(0.53 0.095 186); --r-accent-fg: oklch(0.99 0.003 85); --r-update-fg: oklch(0.43 0.08 186); --r-accent-surface: oklch(0.92 0.03 186);
+  --r-warning-fg: oklch(0.530927 0.155556 45.359); --r-error-fg: oklch(0.509494 0.208583 28.513); --r-message: oklch(0.93 0.012 85); }
+:root[data-theme='tropic-dark'] { --r-canvas: oklch(0.194797 0.030909 156.372); --r-surface: oklch(0.209797 0.04 158); --r-raised: oklch(0.244797 0.04 158); --r-overlay: oklch(0.27 0.04 158);
+  --r-text: oklch(0.950595 0.02561 5.652); --r-muted-fg: oklch(0.675106 0.037601 3.718); --r-border: oklch(0.354797 0.04 158); --r-input: oklch(0.404797 0.04 158);
+  --r-accent: oklch(0.72778 0.176858 5.966); --r-accent-fg: oklch(0.222003 0.03479 328.979); --r-update-fg: oklch(0.95 0.025908 5.966); --r-accent-surface: oklch(0.324797 0.043772 160);
+  --r-warning-fg: oklch(0.829017 0.171221 81.038); --r-error-fg: oklch(0.709184 0.189226 22.228); --r-message: oklch(0.327797 0.047752 160); --dark: 1; }
+:root[data-theme='nocturne-dark'] { --r-canvas: oklch(0.199462 0.019758 262.023); --r-surface: oklch(0.214462 0.010547 253.974); --r-raised: oklch(0.249462 0.010547 253.974); --r-overlay: oklch(0.275 0.0105 254);
+  --r-text: oklch(0.950198 0.013719 258.345); --r-muted-fg: oklch(0.669809 0.01518 258.359); --r-border: oklch(0.359462 0.01678 253.974); --r-input: oklch(0.409462 0.019176 253.974);
+  --r-accent: oklch(0.720135 0.053267 253.974); --r-accent-fg: oklch(0.222003 0.03479 328.979); --r-update-fg: oklch(0.95 0.013317 253.974); --r-accent-surface: oklch(0.329462 0.023438 253.974);
+  --r-warning-fg: oklch(0.829017 0.171221 81.038); --r-error-fg: oklch(0.712184 0.189226 22.228); --r-message: oklch(0.341462 0.025568 253.974); --dark: 1; }
+:root[data-theme='linen-light'] { --r-canvas: oklch(0.956283 0.014327 84.583); --r-surface: oklch(0.941283 0.009703 71.67); --r-raised: oklch(0.906283 0.009703 71.67); --r-overlay: oklch(0.89 0.0097 71.67);
+  --r-text: oklch(0.199045 0.010119 67.19); --r-muted-fg: oklch(0.504262 0.011594 69.417); --r-border: oklch(0.836283 0.015437 71.67); --r-input: oklch(0.796283 0.017642 71.67);
+  --r-accent: oklch(0.509263 0.044106 71.67); --r-accent-fg: oklch(0.990339 0.008411 325.64); --r-update-fg: oklch(0.2 0.011026 71.67); --r-accent-surface: oklch(0.876283 0.021832 71.67);
+  --r-warning-fg: oklch(0.495178 0.152223 45.359); --r-error-fg: oklch(0.480494 0.208583 28.513); --r-message: oklch(0.856283 0.023817 71.67); }
+
+/* ---------- --tt-* tokens, as tokens.css derives them ---------- */
+:root {
+  --tt-canvas: var(--r-canvas); --tt-surface: var(--r-surface); --tt-surface-elevated: var(--r-raised); --tt-surface-overlay: var(--r-overlay);
+  --tt-text: var(--r-text);
+  --tt-text-2: color-mix(in oklab, var(--r-text) 55%, var(--r-muted-fg));
+  --tt-text-muted: color-mix(in oklab, var(--r-muted-fg) 85%, var(--r-text));
+  --tt-hairline: var(--r-border); --tt-border-faint: var(--r-border); --tt-field-border: var(--r-input);
+  --tt-hover: color-mix(in srgb, var(--r-accent-surface) 70%, transparent);
+  --tt-accent: var(--r-accent); --tt-accent-fg: var(--r-accent-fg); --tt-accent-text: var(--r-update-fg); --tt-activity: var(--tt-accent-text);
+  --tt-warning: var(--r-warning-fg); --tt-attention: var(--tt-warning); --tt-error: var(--r-error-fg);
+  --tt-message: var(--r-message);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-shadow-color: rgb(0 0 0 / 73%); --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 84%, oklch(0.42 0.07 265));
+  --watcher-needs-ink: color-mix(in oklab, var(--tt-warning) 80%, var(--tt-text));
+  --watcher-ready-ink: color-mix(in oklab, var(--tt-success) 80%, var(--tt-text));
+}
+:root:is([data-theme='sotto-light'], [data-theme='linen-light']) {
+  --tt-success: oklch(0.445 0.11 158); --tt-shadow-color: rgb(20 24 22 / 18%); --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
+  --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, var(--tt-accent));
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: #111; font-family: Figtree, ui-sans-serif, system-ui, sans-serif; color: var(--tt-text); overflow: hidden; }
+:root:is([data-theme='sotto-light'], [data-theme='linen-light']) body { background: #8a8a86; }
+button { font: inherit; color: inherit; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--tt-accent-text); outline-offset: 2px; }
+
+/* ---------- The window ---------- */
+#stage { position: fixed; inset: 0 0 64px 0; display: grid; place-items: center; }
+#win { position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr) auto 54px; overflow: hidden; border-radius: 8px;
+  background: var(--tt-canvas); box-shadow: 0 30px 80px rgb(0 0 0 / 55%); transform-origin: center; container-type: inline-size; container-name: pane; }
+.sky { position: absolute; top: 0; left: 0; width: 520px; max-width: 100%; height: 104px; pointer-events: none;
+  background: radial-gradient(130px 70px at 26px 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-room-night);
+  mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
+.stars { position: absolute; top: 0; left: 0; width: 320px; height: 92px; pointer-events: none; }
+.stars i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--tt-text); opacity: .3; }
+
+.head { position: relative; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 14px; -webkit-app-region: drag; }
+.head > * { -webkit-app-region: no-drag; }
+.tile { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 6px; border-radius: 6px; background: var(--tt-accent); color: var(--tt-accent-fg); flex: none; }
+.head h1 { margin: 0 4px 0 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; white-space: nowrap; }
+.hbtn { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.hbtn:hover { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+.tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.tab:hover { color: var(--tt-text); }
+.tab[aria-selected='true'] { background: var(--tt-surface-elevated); box-shadow: 0 1px 2px var(--tt-shadow-color); color: var(--tt-text); }
+.tab .count { color: var(--tt-text-2); }
+/* Visualize: a pressed toggle, lit the way Watch is lit on a thread's pane header. */
+.viz { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; margin-left: 6px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px;
+  background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.viz:hover { background: var(--tt-hover); color: var(--tt-text); }
+.viz[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
+.viz[aria-pressed='true'] svg { color: var(--tt-accent-text); }
+.viz.in-tabs { margin-left: 0; height: 26px; border: 0; border-radius: 7px; padding: 0 10px; }
+.viz.in-tabs[aria-pressed='true'] { background: var(--tt-surface-elevated); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.spacer { flex: 1; }
+.wc { display: inline-grid; place-items: center; width: 40px; height: 30px; color: var(--tt-text-2); }
+@container pane (width < 900px) { .viz-text { display: none; } .viz { padding: 0 8px; } }
+@container pane (width < 860px) { .hbtn .list-text { display: none; } }
+
+.glance { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 3px 0 9px;
+  box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.glance b { color: var(--watcher-needs-ink); font-weight: 500; }
+.glance a { color: var(--tt-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.glance .it { display: inline-flex; align-items: center; gap: 6px; }
+
+#body { position: relative; min-height: 0; overflow: hidden; }
+.transcript { height: 100%; overflow: auto; padding: 18px max(24px, calc((100% - 760px) / 2)); }
+.msg { margin: 0 0 20px; font-size: 14.5px; line-height: 1.55; }
+.msg .who { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--tt-text); font-weight: 500; }
+.msg .who time { color: var(--tt-text-muted); font-weight: 400; margin-left: 8px; }
+.msg.you { margin-left: auto; max-width: 78%; padding: 12px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-message); }
+.msg p { margin: 6px 0 0; }
+.watched-lead { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; color: var(--tt-text); font-size: 14px; line-height: 1.5; margin-bottom: 14px; }
+.wgroup h3 { margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: var(--tt-text-2); }
+.wgroup[data-tone='needs'] h3 { color: var(--watcher-needs-ink); }
+.wgroup h3 .count { margin-left: 6px; font-weight: 400; }
+.wcard { list-style: none; display: grid; grid-template-columns: 22px 1fr auto; gap: 2px 8px; padding: 12px 14px; margin-bottom: 8px; border: 1px solid var(--tt-hairline); border-radius: 12px; }
+.wcard[data-tone='needs'] { border-left: 2px solid var(--tt-attention); }
+.wcard .t { font-weight: 600; font-size: 14px; }
+.wcard .m, .wcard .d { grid-column: 2 / 4; color: var(--tt-text-2); font-size: 12.5px; }
+.pill-btn { height: 28px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.pill-btn:hover { background: var(--tt-hover); }
+.ul { margin: 0; padding: 0; }
+
+.composer-wrap { padding: 0 max(24px, calc((100% - 760px) / 2)) 4px; }
+.composer { border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-canvas); padding: 12px 14px 10px; }
+.composer .ph { color: var(--tt-text-muted); font-size: 14px; height: 44px; }
+.composer .row { display: flex; align-items: center; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; font-size: 12.5px; color: var(--tt-text-2); white-space: nowrap; }
+.send { margin-left: auto; width: 30px; height: 30px; border-radius: 50%; border: 0; background: color-mix(in srgb, var(--tt-accent) 70%, var(--tt-canvas)); color: var(--tt-accent-fg); display: grid; place-items: center; }
+/* In the picture the composer keeps one line until it is focused, so the picture keeps the room's height. */
+#win[data-viz] .composer { display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 14px; }
+#win[data-viz] .composer .ph { height: auto; flex: 1; }
+#win[data-viz] .composer .row .chip { display: none; }
+#win[data-viz] .composer .row .chip.keep { display: inline-flex; }
+
+.dock { display: grid; place-items: center; }
+.dock .pill { display: flex; align-items: center; gap: 4px; height: 40px; padding: 4px 8px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 13px; }
+.dock .seg { display: grid; grid-template-columns: 70px 40px 70px; align-items: center; text-align: center; }
+.dock .seg .on { display: inline-grid; place-items: center; height: 30px; border-radius: 999px; background: var(--tt-surface-overlay); color: var(--tt-accent-text); }
+.dock .ico { width: 26px; height: 26px; display: grid; place-items: center; }
+
+/* ---------- The picture: shared parts ---------- */
+.pic { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.pic-canvas { position: relative; min-height: 0; overflow: hidden; }
+.blobs { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 5; }
+.blob { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 4px; will-change: transform; }
+.blob .s, .mark .s, .key .s { display: block; flex: none; }
+.s[data-kind='start'] { width: 12px; height: 12px; border: 2px solid var(--tt-accent-text); border-radius: 50%; background: var(--tt-canvas); }
+.s[data-kind='steer'] { width: 9px; height: 9px; border-radius: 50%; background: var(--tt-accent-text); }
+.s[data-kind='go'] { width: 11px; height: 11px; background: var(--tt-success); transform: rotate(45deg); border-radius: 2px; }
+.s[data-kind='reply'] { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-text-2); }
+.s[data-kind='ready'] { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--tt-success); background: var(--tt-canvas); }
+.s[data-kind='merged'] { width: 11px; height: 11px; border-radius: 50%; background: var(--tt-success); }
+.s[data-kind='card'] { width: 12px; height: 12px; border-radius: 3px; background: var(--tt-attention); }
+.s[data-kind='news'] { width: 9px; height: 9px; border-radius: 50%; border: 1.5px dashed var(--tt-text-muted); }
+.btag { padding: 1px 6px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); font-size: 10.5px; font-weight: 600; letter-spacing: .2px; white-space: nowrap; color: var(--tt-text); }
+.btag[data-kind='go'], .btag[data-kind='ready'], .btag[data-kind='merged'] { color: var(--watcher-ready-ink); }
+.btag[data-kind='card'] { color: var(--watcher-needs-ink); }
+.mark { position: absolute; display: flex; align-items: center; gap: 4px; pointer-events: none; z-index: 4; }
+
+/* Thread state rings: the room's own vocabulary (watcher.css .watcher-row__ring). */
+.ring { display: inline-block; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; }
+.ring[data-tone='needs'] { border: 2px solid var(--tt-attention); }
+.ring[data-tone='failed'] { border: 2px solid var(--tt-error); }
+.ring:is([data-tone='ready'], [data-tone='landing']) { border: 0; background: var(--tt-success); }
+.ring[data-tone='working'], .ring[data-tone='ci'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
+.ring[data-tone='ci'] { background: conic-gradient(var(--tt-text-2) 0 18%, transparent 18% 25%, var(--tt-text-2) 25% 43%, transparent 43% 50%, var(--tt-text-2) 50% 68%, transparent 68% 75%, var(--tt-text-2) 75% 93%, transparent 93%); }
+.ring[data-tone='quiet'] { border: 1.5px dashed var(--tt-text-muted); }
+.ring[data-tone='settled'] { border-color: var(--tt-hairline); }
+@keyframes spin { to { transform: rotate(1turn); } }
+:root:not([data-rm]) .ring:is([data-tone='working'], [data-tone='ci']) { animation: spin 1.5s linear infinite; }
+:root:not([data-rm]) .ring[data-tone='ci'] { animation-duration: 6s; }
+.word[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.word[data-tone='working'] { color: var(--tt-activity); }
+.word:is([data-tone='ready'], [data-tone='landing']) { color: var(--watcher-ready-ink); }
+.word:is([data-tone='quiet'], [data-tone='idle'], [data-tone='settled'], [data-tone='ci']) { color: var(--tt-text-2); }
+
+.prc { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border: 1px solid var(--tt-hairline); border-radius: 999px; font-size: 11px; color: var(--tt-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prc i { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-text-muted); }
+.prc[data-checks='passed'] i { background: var(--tt-success); }
+.prc[data-checks='failed'] i { background: var(--tt-error); }
+.prc[data-checks='running'] i { background: transparent; border: 1.5px solid var(--tt-text-2); }
+.prc[data-step='go'] { border-color: color-mix(in srgb, var(--tt-success) 60%, transparent); color: var(--watcher-ready-ink); }
+.prc[data-state='merged'] { color: var(--tt-text-muted); }
+
+/* Timeline under every variant */
+.timebar { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px; border-top: 1px solid var(--tt-hairline); font-size: 12.5px; color: var(--tt-text-2); }
+.tb-btn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.tb-btn:hover { background: var(--tt-hover); }
+.tb-btn[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); }
+.track { position: relative; flex: 1; min-width: 120px; height: 26px; }
+.track svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.track input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.track:focus-within { outline: 2px solid var(--tt-accent-text); outline-offset: 1px; border-radius: 4px; }
+.when { min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; color: var(--tt-text); white-space: nowrap; }
+.when.past { color: var(--watcher-needs-ink); }
+.livedot { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); }
+.speed { height: 26px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); padding: 0 6px; font-size: 12px; }
+@container pane (width < 900px) { .speed { display: none; } .when { min-width: 92px; } }
+
+.keypop { position: absolute; right: 12px; bottom: 44px; z-index: 20; width: 250px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); font-size: 12.5px; }
+.keypop h4 { margin: 0 0 8px; font-size: 12.5px; color: var(--tt-text-2); font-weight: 600; }
+.key { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 6px; margin: 4px 0; color: var(--tt-text); }
+.key .s { justify-self: center; }
+
+/* Detail card */
+.card { position: absolute; z-index: 30; width: 320px; max-height: calc(100% - 16px); overflow: auto; padding: 14px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); font-size: 13px; }
+.card h3 { display: flex; align-items: center; gap: 8px; margin: 0 26px 2px 0; font-size: 14px; font-weight: 600; }
+.card .sub { color: var(--tt-text-2); font-size: 12.5px; margin-bottom: 8px; }
+.card .x { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.card .x:hover { background: var(--tt-hover); }
+.card .prs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.card ol { list-style: none; margin: 0 0 10px; padding: 0; border-top: 1px solid var(--tt-hairline); }
+.card li { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--tt-hairline); }
+.card li .s { position: relative; top: 1px; justify-self: center; }
+.card li time { color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.card li .dir { color: var(--tt-text-muted); font-size: 11.5px; }
+.card .acts { display: flex; gap: 8px; }
+.card .acts .pri { border-color: transparent; background: var(--tt-accent); color: var(--tt-accent-fg); }
+.toast { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 40; padding: 8px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); font-size: 13px; color: var(--tt-text-2); }
+
+/* ---------- A: Constellation ---------- */
+.A svg.net { position: absolute; inset: 0; width: 100%; height: 100%; }
+.A .edge { fill: none; stroke: var(--tt-hairline); stroke-width: 1.2; }
+.A .edge[data-lit] { stroke: var(--tt-accent-text); stroke-width: 1.6; }
+.A .edge[data-tone='needs'] { stroke: color-mix(in srgb, var(--tt-attention) 55%, transparent); stroke-dasharray: 3 4; }
+.A .hull { fill: color-mix(in srgb, var(--tt-surface-elevated) 55%, transparent); stroke: var(--tt-hairline); }
+.A .plabel { position: absolute; font-size: 12px; color: var(--tt-text-2); white-space: nowrap; }
+.A .plabel b { color: var(--tt-text); font-weight: 600; }
+.A .node { position: absolute; display: grid; grid-template-columns: 12px minmax(0, auto); column-gap: 7px; align-items: center; max-width: var(--cell); padding: 2px 6px 2px 4px; border: 1px solid transparent; border-radius: 7px;
+  background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-canvas)); color: var(--tt-text); font-size: 12.5px; text-align: left; cursor: pointer; transform: translate(-9px, -12px); }
+.A .node .n2 { grid-column: 2; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; white-space: nowrap; overflow: hidden; }
+.A .node[data-mirror] { grid-template-columns: minmax(0, auto) 12px; text-align: right; padding: 2px 4px 2px 6px; transform: translate(calc(-100% + 9px), -12px); }
+.A .node[data-mirror] > .ring { grid-column: 2; grid-row: 1; }
+.A .node[data-mirror] > .nt { grid-column: 1; grid-row: 1; }
+.A .node[data-mirror] > .n2 { grid-column: 1; justify-content: flex-end; }
+.A .node .n2 .word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.A .node .n2 .prc { flex: none; }
+.A .node:hover, .A .node[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-surface-elevated); }
+.A .node .nt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.A .node[data-settled] { opacity: .55; }
+.A .node .prc { flex: none; }
+.A .owl { position: absolute; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--tt-surface-elevated); border: 1px solid var(--tt-hairline); color: var(--tt-accent-text); transform: translate(-26px, -26px);
+  box-shadow: 0 0 0 8px var(--tt-owl-glow); }
+.A .owl-l { position: absolute; transform: translate(-50%, 30px); font-size: 12px; color: var(--tt-text-2); white-space: nowrap; text-align: center; }
+.A .you { position: absolute; display: flex; align-items: center; gap: 6px; transform: translate(-50%, -50%); height: 24px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); font-size: 12px; color: var(--tt-text-2); }
+.A .you b { color: var(--watcher-needs-ink); font-weight: 600; }
+.A .turns { position: absolute; left: 12px; right: 12px; top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden; font-size: 12px; color: var(--tt-text-2); z-index: 3; }
+.A .turns .lbl { color: var(--tt-text-2); margin-right: 2px; white-space: nowrap; }
+.A .turns .arrow { color: var(--tt-text-muted); }
+.settled-btn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.settled-btn:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* ---------- B: Lanes ---------- */
+.B .scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; }
+.B .lanes { position: relative; }
+.B svg.lsvg { position: absolute; left: 0; top: 0; }
+.B .lh { position: absolute; left: 0; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 12px; height: 28px; border: 0; background: transparent; color: var(--tt-text); font-size: 12.5px; text-align: left; cursor: pointer; }
+.B .lh:hover, .B .lh[aria-expanded='true'] { background: var(--tt-hover); }
+.B .lh .nt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.B .ph { position: absolute; left: 12px; font-size: 11.5px; font-weight: 600; color: var(--tt-text-2); letter-spacing: .2px; }
+.B .ph span { font-weight: 400; color: var(--tt-text-muted); }
+.B .fixed { position: absolute; left: 0; display: flex; align-items: center; gap: 7px; padding: 0 12px; height: 28px; font-size: 12.5px; color: var(--tt-text); font-weight: 500; }
+.B .axis text { fill: var(--tt-text-muted); font-size: 10.5px; font-family: inherit; }
+.B .zoom { position: absolute; right: 10px; top: 6px; z-index: 6; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-canvas); }
+.B .zoom button { height: 22px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 11.5px; cursor: pointer; }
+.B .zoom button[aria-pressed='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); }
+
+/* ---------- C: Board ---------- */
+.C .desk { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); }
+.C .deskowl { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 50%; border: 1px solid var(--tt-hairline); background: var(--tt-surface-elevated); color: var(--tt-accent-text); box-shadow: 0 0 0 5px var(--tt-owl-glow); }
+.C .doing { min-width: 0; flex: 1; font-size: 12.5px; color: var(--tt-text-2); line-height: 1.35; }
+.C .doing b { color: var(--tt-text); font-weight: 500; }
+.C .doing .l2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.C .queue { display: flex; align-items: center; gap: 4px; flex: none; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: 10px; }
+.C .queue .ql { padding: 0 6px; font-size: 11.5px; color: var(--tt-text-2); white-space: nowrap; }
+.C .qt { display: grid; gap: 0; min-width: 58px; padding: 3px 8px; border-radius: 7px; font-size: 11px; line-height: 1.25; color: var(--tt-text-2); text-align: left; }
+.C .qt b { font-size: 12px; color: var(--tt-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.C .qt[data-step='go'] { background: color-mix(in srgb, var(--tt-success) 16%, var(--tt-canvas)); color: var(--watcher-ready-ink); }
+.C .qt[data-step='merged'] b { color: var(--tt-text-2); font-weight: 500; }
+.C .youbox { display: flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; font-size: 12px; color: var(--tt-text-2); }
+.C .youbox b { color: var(--watcher-needs-ink); font-weight: 600; }
+.C .cols { position: absolute; left: 0; right: 0; top: 52px; bottom: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(184px, 1fr); gap: 10px; padding: 10px 12px; overflow: auto; }
+.C .col h3 { position: sticky; top: 0; margin: 0 0 6px; padding: 2px 2px 4px; font-size: 12px; font-weight: 600; color: var(--tt-text); background: var(--tt-canvas); z-index: 1; }
+.C .col h3 span { color: var(--tt-text-muted); font-weight: 400; }
+.C .tl { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 1px 7px; width: 100%; margin-bottom: 6px; padding: 7px 9px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; font-size: 12.5px; }
+.C .tl:hover, .C .tl[aria-expanded='true'] { background: var(--tt-surface-elevated); }
+.C .tl[data-tone='needs'] { border-left: 2px solid var(--tt-attention); padding-left: 8px; }
+.C .tl[data-lit] { border-color: var(--tt-accent-text); }
+.C .tl .ring { margin-top: 3px; }
+.C .tl .nt { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.C .tl .ln { grid-column: 2; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--tt-text-2); }
+.C .tl .ln > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.C .tl .last .s { flex: none; }
+.C .tl[data-settled] { opacity: .6; }
+.C .fold { margin: 2px 0 0; }
+
+/* ---------- Prototype bar (not part of the design) ---------- */
+#protobar { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px;
+  background: #fffbe6; color: #1a1a1a; font: 13px/1 ui-sans-serif, system-ui, sans-serif; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); white-space: nowrap; }
+#protobar button, #protobar select { height: 28px; border: 1px solid #c9c2a0; border-radius: 999px; background: #fff; color: #1a1a1a; padding: 0 10px; font: inherit; cursor: pointer; }
+#protobar .vl { min-width: 190px; text-align: center; font-weight: 600; }
+#protobar label { display: inline-flex; align-items: center; gap: 4px; }
+#protobar .sep { width: 1px; height: 20px; background: #d6cfac; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="win" role="application" aria-label="Sotto, Watcher's room (prototype)">
+  <div class="sky" aria-hidden="true"></div>
+  <div class="stars" aria-hidden="true" id="stars"></div>
+  <header class="head">
+    <span class="tile" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path id="owlpath" fill-rule="evenodd" d="M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8ZM1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z"/><circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/></svg></span>
+    <h1>Watcher</h1>
+    <button class="hbtn" type="button" aria-haspopup="dialog"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="list-text">All threads</span> <span class="count">31</span></button>
+    <div class="tabs" role="tablist" aria-label="Watcher's room" id="tabs">
+      <button class="tab" role="tab" data-tab="conversation" aria-selected="true">Conversation</button>
+      <button class="tab" role="tab" data-tab="watched" aria-selected="false">Watched <span class="count" id="wcount">12</span></button>
+    </div>
+    <button class="viz" type="button" id="viz" aria-label="Visualize" aria-pressed="false" title="Show what Watcher is doing as a picture (Ctrl+Shift+V)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="4.5" cy="5.5" r="2"/><circle cx="19.5" cy="5.5" r="2"/><circle cx="19.5" cy="18.5" r="2"/><circle cx="4.5" cy="18.5" r="2"/><path d="M6 7l3.6 3M18 7l-3.6 3M18 17l-3.6-3M6 17l3.6-3"/></svg>
+      <span class="viz-text">Visualize</span>
+    </button>
+    <span class="spacer"></span>
+    <button class="hbtn" type="button" aria-label="More Watcher actions">···</button>
+    <span class="wc" aria-hidden="true">—</span><span class="wc" aria-hidden="true">☐</span><span class="wc" aria-hidden="true">✕</span>
+  </header>
+  <section class="glance" id="glance" aria-label="Needs you"></section>
+  <main id="body"></main>
+  <div class="composer-wrap"><div class="composer">
+    <div class="ph">Ask about your threads, or say what to start or send</div>
+    <div class="row">
+      <span class="chip">📎</span><span class="chip">GPT-5.4 ⌄</span><span class="chip">Ask for approval ⌄</span>
+      <button class="send" type="button" aria-label="Send">↑</button>
+    </div>
+  </div></div>
+  <div class="dock"><div class="pill">
+    <span class="ico">◷</span><span class="ico">▥</span><span class="ico">⚙</span><span class="ico">?</span>
+    <span class="seg"><span>Dictate</span><span class="on"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><use href="#owlpath"/><circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/></svg></span><span>Threads</span></span>
+    <span class="ico">↻</span>
+  </div></div>
+</div></div>
+
+<div id="protobar" aria-label="Prototype controls (not part of the design)">
+  <button type="button" id="pv" aria-label="Previous variant">←</button>
+  <span class="vl" id="vlabel">A — Constellation</span>
+  <button type="button" id="nv" aria-label="Next variant">→</button>
+  <span class="sep"></span>
+  <select id="theme" aria-label="Theme">
+    <option value="sotto-dark">Sotto dark</option><option value="sotto-light">Sotto light</option>
+    <option value="nocturne-dark">Nocturne dark</option><option value="tropic-dark">Tropic dark</option><option value="linen-light">Linen light</option>
+  </select>
+  <select id="size" aria-label="Window size">
+    <option value="1600x1000">1600×1000</option><option value="1280x800" selected>1280×800</option><option value="820x560">820×560 (minimum)</option>
+  </select>
+  <label><input type="checkbox" id="rm"> Reduced motion</label>
+  <label title="Visualize as a third segment instead of its own button"><input type="checkbox" id="intabs"> Button in tabs</label>
+</div>
+
+<script>
+'use strict'
+/* ======================= Fake data that behaves like Watcher ======================= */
+const MIN = 60_000
+const NOW0 = Date.now()
+const SPAN = 240 * MIN                    // how far back the scrubber reaches
+const ago = m => NOW0 - m * MIN
+
+const PROJECTS = [
+  { id: 'sotto', name: 'Sotto', host: 'This PC' },
+  { id: 'ios', name: 'Sotto iPhone', host: 'studio-mac' },
+  { id: 'fleet', name: 'Fleet', host: 'forge' },
+  { id: 'plant', name: 'Plant controls', host: 'forge' },
+]
+const THREADS = [
+  { id: 't1', title: 'Room copies per update', project: 'sotto', provider: 'Claude Code' },
+  { id: 't2', title: 'Watched tab keyboard order', project: 'sotto', provider: 'Codex' },
+  { id: 't3', title: 'Linux tray on Omarchy', project: 'sotto', provider: 'Codex' },
+  { id: 't4', title: 'Visual gate flake', project: 'sotto', provider: 'Claude Code' },
+  { id: 't5', title: 'Remote thread backlog', project: 'sotto', provider: 'Grok Build' },
+  { id: 't6', title: 'Release notes 0.48', project: 'sotto', provider: 'Codex' },
+  { id: 't7', title: 'iPhone Watched tab', project: 'ios', provider: 'Claude Code' },
+  { id: 't8', title: 'TestFlight 0.48', project: 'ios', provider: 'Codex' },
+  { id: 't9', title: 'Sync skills to forge', project: 'fleet', provider: 'Claude Code' },
+  { id: 't10', title: 'Archive unused skills', project: 'fleet', provider: 'Grok Build' },
+  { id: 't11', title: 'Boiler 2 I/O list', project: 'plant', provider: 'Claude Code' },
+  { id: 't12', title: 'DeltaV loop sheets', project: 'plant', provider: 'Codex' },
+  // settled: folded away by default
+  { id: 's1', title: 'Thread title from first exchange', project: 'sotto', provider: 'Claude Code' },
+  { id: 's2', title: 'Host update waits for clients', project: 'sotto', provider: 'Codex' },
+  { id: 's3', title: 'Update all host journey', project: 'sotto', provider: 'Codex' },
+  { id: 's4', title: 'Missed delta re-read', project: 'sotto', provider: 'Claude Code' },
+  { id: 's5', title: 'Widget focus on Mac', project: 'ios', provider: 'Codex' },
+  { id: 's6', title: 'Skill index cleanup', project: 'fleet', provider: 'Claude Code' },
+  { id: 's7', title: 'Boiler 1 pull sheet', project: 'plant', provider: 'Codex' },
+  { id: 't13', title: 'Owl gate for the picture', project: 'sotto', provider: 'Claude Code' },  // started live
+]
+const byId = Object.fromEntries(THREADS.map(t => [t.id, t]))
+
+// [minutes ago, thread, type, fields]. Types: start steer go (Watcher -> thread), reply ready merged news (thread -> Watcher),
+// card (thread -> You), answer (You answered), pr (pull request fact), state (state change Sotto observed).
+const H = [
+  [300, 's1', 'start', { text: 'Let a thread name itself from its first exchange. Open a PR and say READY TO MERGE when green.' }],
+  [295, 's2', 'start', { text: 'Make the host update wait for connected clients (#1084).' }],
+  [290, 's3', 'start', { text: 'Keep Sotto\'s own update check out of the Update all host journeys.' }],
+  [288, 't1', 'start', { text: 'Perf batch #1326: stop copying the whole room on every update. Follow the copy budget.' }],
+  [286, 't2', 'start', { text: 'Fix the keyboard order on the Watched tab (#1281).' }],
+  [284, 's5', 'start', { text: 'The widget loses focus on macOS after dictation. Find why.' }],
+  [282, 't9', 'start', { text: 'Sync the canonical skills to forge.' }],
+  [280, 's7', 'start', { text: 'Draft the Boiler 1 pull sheet from the I/O list.' }],
+  [270, 's2', 'pr', { pr: 1084, checks: 'running' }],
+  [262, 't5', 'start', { text: 'Find why remote threads miss a backlog after reconnect.' }],
+  [250, 's2', 'pr', { pr: 1084, checks: 'passed' }],
+  [249, 's2', 'ready', { pr: 1084, text: 'READY TO MERGE #1084. Gates and Package are green.' }],
+  [248, 's2', 'go', { pr: 1084, text: 'GO MERGE #1084. It is your turn.' }],
+  [244, 's2', 'merged', { pr: 1084, text: 'MERGED #1084. Branch deleted.' }],
+  [243, 's2', 'state', { state: 'settled' }],
+  [240, 's7', 'reply', { text: 'Pull sheet drafted: 46 cables, 3 marked for your check.', state: 'settled' }],
+  [236, 's3', 'pr', { pr: 1096, checks: 'running' }],
+  [232, 't6', 'start', { text: 'Draft the 0.48 release notes from the merged PRs.' }],
+  [228, 's4', 'start', { text: 'Read a thread again after a command when a missed delta\'s read failed.' }],
+  [225, 't9', 'reply', { text: 'Skills synced. 41 skills, 3 archived.', state: 'idle' }],
+  [220, 's3', 'pr', { pr: 1096, checks: 'passed' }],
+  [219, 's3', 'ready', { pr: 1096, text: 'READY TO MERGE #1096.' }],
+  [218, 's3', 'go', { pr: 1096, text: 'GO MERGE #1096.' }],
+  [214, 's3', 'merged', { pr: 1096, text: 'MERGED #1096.' }],
+  [213, 's3', 'state', { state: 'settled' }],
+  [210, 't7', 'start', { text: 'Port the Watched tab to the iPhone client, same groups as desktop.' }],
+  [205, 's5', 'reply', { text: 'Found it: the panel takes key on hide. Fixed, PR is up.', }],
+  [204, 's5', 'state', { state: 'settled' }],
+  [200, 't4', 'start', { text: 'Find why the visual gate flakes at 820x560 and fix it.' }],
+  [196, 's4', 'pr', { pr: 1090, checks: 'running' }],
+  [190, 't11', 'start', { text: 'Build the Boiler 2 I/O list from the P&IDs in the shared folder.' }],
+  [186, 's4', 'pr', { pr: 1090, checks: 'passed' }],
+  [185, 's4', 'ready', { pr: 1090, text: 'READY TO MERGE #1090.' }],
+  [184, 's4', 'go', { pr: 1090, text: 'GO MERGE #1090.' }],
+  [180, 's4', 'merged', { pr: 1090, text: 'MERGED #1090.' }],
+  [179, 's4', 'state', { state: 'settled' }],
+  [176, 't6', 'reply', { text: 'Notes drafted in docs/release/0.48.md. Nothing sent.', state: 'idle' }],
+  [172, 't12', 'start', { text: 'Make the DeltaV loop sheets for units 4 to 6.' }],
+  [168, 's1', 'pr', { pr: 1284, checks: 'running' }],
+  [165, 't3', 'start', { text: 'The tray icon is blank on Omarchy. Fix it without changing Windows or macOS.' }],
+  [160, 's6', 'start', { text: 'Clean up the skill index.' }],
+  [156, 't10', 'start', { text: 'Archive skills nobody used in 60 days.' }],
+  [150, 's1', 'pr', { pr: 1284, checks: 'passed' }],
+  [149, 's1', 'ready', { pr: 1284, text: 'READY TO MERGE #1284.' }],
+  [146, 't8', 'start', { text: 'Build 0.48 for TestFlight from main.' }],
+  [140, 's6', 'reply', { text: 'Index cleaned, 7 stale entries removed.', state: 'settled' }],
+  [134, 't5', 'news', { text: 'Quiet for 20 minutes.', state: 'quiet' }],
+  [133, 't5', 'steer', { text: 'Check in: are you still on the backlog read? Say what you found so far.' }],
+  [131, 't5', 'reply', { text: 'Still reading. The delta goes missing when the read fails.', state: 'working' }],
+  [126, 't2', 'pr', { pr: 1288, checks: 'running' }],
+  [120, 't4', 'steer', { text: 'Check the 820x560 capture first; the flake only shows there.' }],
+  [118, 's1', 'go', { pr: 1284, text: 'GO MERGE #1284. It is your turn.' }],
+  [114, 's1', 'merged', { pr: 1284, text: 'MERGED #1284.' }],
+  [113, 's1', 'state', { state: 'settled' }],
+  [108, 't11', 'news', { text: 'Turn finished.' }],
+  [107, 't11', 'steer', { text: 'Carry on with the analog inputs; leave spares marked.' }],
+  [100, 't7', 'card', { kind: 'permission', text: 'Run xcodebuild test on studio-mac.' }],
+  [96, 't7', 'answer', { text: 'You allowed it.' }],
+  [92, 't2', 'pr', { pr: 1288, checks: 'failed' }],
+  [91, 't2', 'news', { text: 'Checks failed on #1288: Gates (Windows).' }],
+  [90, 't2', 'steer', { text: 'Gates (Windows) failed on lint. Fix it at its cause and push once.' }],
+  [80, 't10', 'news', { text: 'Turn ended with background work running.', state: 'ci', label: 'Background work' }],
+  [74, 't1', 'pr', { pr: 1291, checks: 'running' }],
+  [70, 't2', 'pr', { pr: 1288, checks: 'running' }],
+  [62, 't12', 'steer', { text: 'Use the loop sheet template from units 1 to 3.' }],
+  [58, 't2', 'pr', { pr: 1288, checks: 'passed' }],
+  [57, 't2', 'ready', { pr: 1288, text: 'READY TO MERGE #1288. Gates and Package are green.' }],
+  [44, 't1', 'pr', { pr: 1291, checks: 'passed' }],
+  [43, 't1', 'ready', { pr: 1291, text: 'READY TO MERGE #1291. Copy budget tightened by 3.' }],
+  [40, 't11', 'news', { text: 'Quiet for 20 minutes.', state: 'quiet' }],
+  [34, 't9', 'state', { state: 'idle' }],
+  [30, 't4', 'pr', { pr: 1295, checks: 'running' }],
+  [29, 't4', 'reply', { text: 'Fix is up as #1295. Waiting on Gates (Windows).', state: 'ci', label: 'Waiting on checks' }],
+  [22, 't7', 'steer', { text: 'Match the desktop group order: Needs you first.' }],
+  [12, 't3', 'card', { kind: 'permission', text: 'Run npm ci in the worktree.' }],
+  [8, 't10', 'reply', { text: 'Archived 9 skills. Background index rebuild finished.', state: 'idle' }],
+  [6, 't2', 'go', { pr: 1288, text: 'GO MERGE #1288. It is your turn; #1291 is next.' }],
+  [4, 't8', 'card', { kind: 'question', text: 'Build number 212 or 213?' }],
+]
+// What happens while you watch: seconds after the page opens, then a gentle loop.
+const LIVE = [
+  [3, 't2', 'merged', { pr: 1288, text: 'MERGED #1288. Branch deleted.' }],
+  [5, 't2', 'state', { state: 'settled' }],
+  [7, 't1', 'go', { pr: 1291, text: 'GO MERGE #1291. It is your turn.' }],
+  [11, 't5', 'steer', { text: 'Check in: is the re-read in? Push when the suite is green.' }],
+  [14, 't5', 'reply', { text: 'Re-read is in. Running the integration suite.', state: 'working' }],
+  [18, 't4', 'pr', { pr: 1295, checks: 'passed' }],
+  [19, 't4', 'ready', { pr: 1295, text: 'READY TO MERGE #1295.' }],
+  [23, 't13', 'start', { text: 'Gate the picture behind Watcher\'s Owl switch.' }],
+  [27, 't12', 'news', { text: 'Turn finished.' }],
+  [29, 't12', 'steer', { text: 'Units 4 and 5 look right. Do unit 6 the same way.' }],
+  [33, 't1', 'merged', { pr: 1291, text: 'MERGED #1291.' }],
+  [34, 't1', 'state', { state: 'settled' }],
+  [36, 't4', 'go', { pr: 1295, text: 'GO MERGE #1295. It is your turn.' }],
+  [41, 't7', 'reply', { text: 'Watched tab ported; groups match desktop.', state: 'idle' }],
+]
+const LOOP = [
+  ['t12', 'steer', { text: 'Check in: how far along is unit 6?' }], ['t12', 'reply', { text: 'Half done. 14 loops left.', state: 'working' }],
+  ['t13', 'news', { text: 'Turn finished.' }], ['t13', 'steer', { text: 'Add the gate test the way Watcher\'s other parts have one.' }],
+  ['t11', 'steer', { text: 'Check in: anything blocking the analog inputs?' }], ['t11', 'reply', { text: 'No, 12 left. Spares marked.', state: 'working' }],
+  ['t5', 'news', { text: 'Turn finished.' }], ['t5', 'reply', { text: 'Suite green. PR #1299 is up.', state: 'ci', label: 'Waiting on checks' }],
+]
+
+const EVENTS = H.map(([m, th, type, f]) => ({ t: ago(m), th, type, ...f })).sort((a, b) => a.t - b.t)
+const KIND = { start: 'start', steer: 'steer', go: 'go', reply: 'reply', ready: 'ready', merged: 'merged', news: 'news', card: 'card' }
+const DIR = { start: 'out', steer: 'out', go: 'out', reply: 'in', ready: 'in', merged: 'in', news: 'in', card: 'you' }
+const KIND_WORD = { start: 'Start', steer: 'Check-in or steer', go: 'GO MERGE', reply: 'Reply', ready: 'READY TO MERGE', merged: 'MERGED', news: 'News', card: 'Card for you' }
+const TAG = { go: 'GO MERGE', ready: 'READY', merged: 'MERGED' }
+
+/* ======================= Folding the log into "where things stood at T" ======================= */
+const TONE_WORD = { needs: 'Needs you', working: 'Working', ci: 'Waiting on checks', ready: 'Ready to merge', landing: 'Merging', quiet: 'Quiet', idle: 'Idle', settled: 'Settled' }
+function stateAt(T) {
+  const th = {}, queue = new Map()
+  for (const e of EVENTS) {
+    if (e.t > T) break
+    let s = th[e.th] ??= { id: e.th, tone: 'idle', label: 'Idle', prs: new Map(), msgs: [], card: null, startedAt: e.t, lastAt: e.t }
+    s.lastAt = e.t
+    if (KIND[e.type]) s.msgs.push(e)
+    const set = (tone, label) => { s.tone = tone; s.label = label ?? TONE_WORD[tone] }
+    switch (e.type) {
+      case 'start': set('working'); break
+      case 'steer': if (s.tone === 'quiet' || s.tone === 'idle') set('working'); break
+      case 'reply': case 'news': if (e.state) set(e.state, e.label); break
+      case 'card': s.card = e; set('needs', e.kind === 'permission' ? 'Permission' : 'Question'); break
+      case 'answer': s.card = null; set('working'); break
+      case 'pr': { const p = s.prs.get(e.pr) ?? { pr: e.pr, state: 'open' }; p.checks = e.checks; s.prs.set(e.pr, p)
+        if (e.checks === 'running' && s.tone !== 'needs') set('ci', 'Waiting on checks'); if (e.checks === 'failed') set('working', 'Checks failed, fixing'); break }
+      case 'ready': queue.set(e.pr, { pr: e.pr, th: e.th, step: 'ready', at: e.t }); set('ready', `PR #${e.pr} ready to merge`); break
+      case 'go': queue.set(e.pr, { pr: e.pr, th: e.th, step: 'go', at: e.t }); set('landing', `Merging #${e.pr}`); break
+      case 'merged': queue.set(e.pr, { pr: e.pr, th: e.th, step: 'merged', at: e.t }); { const p = s.prs.get(e.pr); if (p) p.state = 'merged' } set('landing', `Merged #${e.pr}`); break
+      case 'state': set(e.state, e.label); break
+    }
+  }
+  for (const s of Object.values(th)) for (const p of s.prs.values()) { const q = queue.get(p.pr); if (q) p.step = q.step }
+  return { th, queue: [...queue.values()].sort((a, b) => a.at - b.at) }
+}
+// Merge-turn order: merged (latest two), then GO, then READY in the order they said it.
+function turnOrder(queue) {
+  const merged = queue.filter(q => q.step === 'merged').slice(-2)
+  return [...merged, ...queue.filter(q => q.step === 'go'), ...queue.filter(q => q.step === 'ready')]
+}
+
+/* ======================= Clock, playhead, live script ======================= */
+const ui = { variant: 'A', tab: 'conversation', viz: false, rm: false, live: true, playing: false, speed: 60, P: NOW0, open: null, showSettled: false, keyOpen: false, zoom: 60, inTabs: false }
+let liveStart = performance.now(), liveIx = 0, loopIx = 0, nextLoopAt = 48
+const nowT = () => Date.now()
+const fmt = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+const fmtAgo = t => { const m = Math.round((nowT() - t) / MIN); return m <= 0 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago` }
+
+function pushLive(th, type, f) {
+  const e = { t: nowT(), th, type, ...f }
+  EVENTS.push(e)
+  return e
+}
+function runLiveScript() {
+  const s = (performance.now() - liveStart) / 1000
+  while (liveIx < LIVE.length && LIVE[liveIx][0] <= s) { const [, th, type, f] = LIVE[liveIx++]; pushLive(th, type, f) }
+  if (liveIx >= LIVE.length && s >= nextLoopAt) { const [th, type, f] = LOOP[loopIx++ % LOOP.length]; pushLive(th, type, f); nextLoopAt = s + 4 + Math.random() * 3 }
+}
+
+/* ======================= Shared DOM helpers ======================= */
+const $ = s => document.querySelector(s)
+const h = (tag, attrs = {}, ...kids) => { const el = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (v == null || v === false) continue; if (k === 'class') el.className = v; else if (k === 'style') el.style.cssText = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v === true ? '' : v) } for (const k of kids.flat()) if (k != null) el.append(k.nodeType ? k : document.createTextNode(k)); return el }
+const svgEl = (tag, attrs = {}) => { const el = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v); return el }
+const shape = kind => h('span', { class: 's', 'data-kind': kind, 'aria-hidden': 'true' })
+const ring = tone => h('span', { class: 'ring', 'data-tone': tone, 'aria-hidden': 'true' })
+const prChip = p => h('span', { class: 'prc', 'data-checks': p.checks, 'data-step': p.step, 'data-state': p.state }, h('i'), `#${p.pr}`, p.step === 'go' ? ' GO' : p.step === 'ready' ? ' READY' : p.state === 'merged' ? ' merged' : '')
+const owlSvg = size => { const s = svgEl('svg', { width: size, height: size, viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': 'true' }); s.append(svgEl('use', { href: '#owlpath' }), svgEl('circle', { cx: 5.29, cy: 8.22, r: 1.19 }), svgEl('circle', { cx: 10.79, cy: 8.87, r: 1.19 })); return s }
+const trunc = (s, n) => s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s
+const visibleThreads = (S, withSettled) => THREADS.filter(t => S.th[t.id] && (withSettled || S.th[t.id].tone !== 'settled'))
+const settledCount = S => THREADS.filter(t => S.th[t.id]?.tone === 'settled').length
+function describe(t, s) { const prs = [...s.prs.values()].filter(p => p.state !== 'merged').map(p => `PR #${p.pr}${p.step === 'ready' ? ' ready to merge' : p.step === 'go' ? ' on its merge turn' : ''}`); return [t.title, s.label, ...prs, 'Show details'].join(', ') }
+
+/* ======================= Detail card (every variant) ======================= */
+function openCard(id, anchor) { ui.open = { id, anchor }; render(); requestAnimationFrame(() => $('.card .x')?.focus()) }
+function closeCard() { const id = ui.open?.id; ui.open = null; render(); requestAnimationFrame(() => document.querySelector(`[data-th="${id}"]`)?.focus()) }
+function cardEl(S, canvasRect) {
+  const { id, anchor } = ui.open, t = byId[id], s = S.th[id]
+  if (!s) return null
+  const host = PROJECTS.find(p => p.id === t.project)
+  const msgs = s.msgs.slice(-6).reverse()
+  const el = h('div', { class: 'card', role: 'dialog', 'aria-label': `${t.title}, details` },
+    h('button', { class: 'x', type: 'button', 'aria-label': 'Close details', onclick: closeCard }, '✕'),
+    h('h3', {}, ring(s.tone), t.title),
+    h('div', { class: 'sub' }, `${t.provider} · ${host.name} · ${host.host} · `, h('span', { class: 'word', 'data-tone': s.tone }, s.label)),
+    s.prs.size ? h('div', { class: 'prs' }, [...s.prs.values()].map(prChip)) : null,
+    s.card ? h('div', { class: 'sub', style: 'color:var(--watcher-needs-ink)' }, `${s.card.kind === 'permission' ? 'Asks permission' : 'Asks'}: ${s.card.text}`) : null,
+    h('ol', { 'aria-label': 'Last messages between Watcher and this thread' }, msgs.map(m => h('li', {},
+      shape(KIND[m.type]),
+      h('span', {}, h('span', { class: 'dir' }, DIR[m.type] === 'out' ? 'Watcher → ' : DIR[m.type] === 'you' ? 'To you · ' : 'To Watcher · '), m.text ?? ''),
+      h('time', {}, fmt(m.t))))),
+    h('div', { class: 'acts' },
+      s.tone === 'needs' ? h('button', { class: 'pill-btn pri', type: 'button', onclick: () => toast(`Prototype: opens ${t.title} beside Watcher at its card.`) }, 'Open to answer') : null,
+      h('button', { class: 'pill-btn', type: 'button', onclick: () => toast(`Prototype: opens ${t.title} beside Watcher.`) }, 'Open beside Watcher')))
+  const W = canvasRect.width, Hh = canvasRect.height
+  let x = anchor.x + 16, y = anchor.y - 30
+  if (x + 330 > W) x = Math.max(8, anchor.x - 336)
+  y = Math.max(8, Math.min(y, Hh - 260))
+  el.style.left = x + 'px'; el.style.top = y + 'px'
+  el.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeCard() } })
+  return el
+}
+function toast(text) { const t = h('div', { class: 'toast', role: 'status' }, text); $('#win').append(t); setTimeout(() => t.remove(), 2600) }
+
+/* ======================= Blobs ======================= */
+// Each variant fills GEO: where Watcher, You and each thread sit in its canvas, and (for B) where on the time axis.
+let GEO = { watcher: null, you: null, th: {}, lane: null }
+const litUntil = {}
+function playBlob(e) {
+  const layer = $('.blobs'); if (!layer) return
+  const kind = KIND[e.type]; if (!kind) return
+  const tp = GEO.th[e.th]; if (!tp) return
+  let from, to
+  if (GEO.lane) { // B: drop vertically at the event's own time
+    const x = GEO.lane.x(e.t); if (x < 0) return
+    const wy = GEO.watcher.y, ty = tp.y, yy = GEO.you.y
+    from = DIR[e.type] === 'out' ? { x, y: wy } : { x, y: ty }
+    to = DIR[e.type] === 'out' ? { x, y: ty } : DIR[e.type] === 'you' ? { x, y: yy } : { x, y: wy }
+  } else {
+    from = DIR[e.type] === 'out' ? GEO.watcher : tp
+    to = DIR[e.type] === 'out' ? tp : DIR[e.type] === 'you' ? GEO.you : GEO.watcher
+  }
+  litUntil[e.th] = performance.now() + (ui.rm ? 2500 : 1800)
+  const kids = [shape(kind)]; if (TAG[kind]) kids.push(h('span', { class: 'btag', 'data-kind': kind }, `${TAG[kind]} #${e.pr}`)); if (kind === 'card') kids.push(h('span', { class: 'btag', 'data-kind': 'card' }, e.kind === 'permission' ? 'Permission' : 'Question'))
+  if (ui.rm) { // Reduced motion: nothing travels; a still mark appears at the far end and the line lights.
+    const m = h('div', { class: 'mark', style: `left:${to.x - 6}px;top:${to.y - 18}px` }, ...kids)
+    layer.append(m); setTimeout(() => m.remove(), 5000); return
+  }
+  const b = h('div', { class: 'blob' }, ...kids); layer.append(b)
+  const mid = { x: (from.x + to.x) / 2 + (GEO.lane ? 0 : (to.y - from.y) * .12), y: (from.y + to.y) / 2 - (GEO.lane ? 0 : Math.abs(to.x - from.x) * .08) }
+  const pts = []; for (let i = 0; i <= 14; i++) { const u = i / 14; pts.push({ x: (1 - u) ** 2 * from.x + 2 * (1 - u) * u * mid.x + u * u * to.x, y: (1 - u) ** 2 * from.y + 2 * (1 - u) * u * mid.y + u * u * to.y }) }
+  const a = b.animate(pts.map(p => ({ transform: `translate(${p.x - 6}px, ${p.y - 6}px)` })), { duration: 1100, easing: 'cubic-bezier(.45,.05,.4,1)' })
+  a.onfinish = () => b.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 500, delay: 300, fill: 'forwards' }).onfinish = () => b.remove()
+  b.style.transform = `translate(${to.x - 6}px, ${to.y - 6}px)`
+}
+
+/* ======================= A: Constellation ======================= */
+function renderA(root, S) {
+  const W = root.clientWidth, Hh = root.clientHeight
+  root.className = 'pic-canvas A'
+  const top = 36, cx = W / 2, cy = top + (Hh - top) / 2
+  const svg = svgEl('svg', { class: 'net', 'aria-hidden': 'true' }); root.append(svg)
+  // Merge turns along the top.
+  const order = turnOrder(S.queue)
+  const turns = h('div', { class: 'turns' }, h('span', { class: 'lbl' }, 'Merge turns'),
+    order.length ? order.flatMap((q, i) => [i ? h('span', { class: 'arrow', 'aria-hidden': 'true' }, '›') : null, h('span', { class: 'prc', 'data-checks': S.th[q.th]?.prs.get(q.pr)?.checks, 'data-step': q.step, 'data-state': q.step === 'merged' ? 'merged' : 'open', title: byId[q.th].title }, h('i'), `#${q.pr} ${q.step === 'merged' ? 'MERGED' : q.step === 'go' ? 'GO MERGE' : 'READY'}`)]) : h('span', {}, 'none waiting'),
+    h('span', { class: 'spacer' }),
+    settledButton(S))
+  root.append(turns)
+  // Projects in the four quarters around Watcher, biggest first.
+  const vis = visibleThreads(S, ui.showSettled)
+  const groups = PROJECTS.map(p => ({ p, ts: vis.filter(t => t.project === p.id) })).filter(g => g.ts.length).sort((a, b) => b.ts.length - a.ts.length)
+  const quads = [[0, 0], [1, 0], [0, 1], [1, 1]]
+  GEO = { watcher: { x: cx, y: cy }, you: { x: cx, y: Hh - 18 }, th: {}, lane: null }
+  const gap = Math.min(70, W * .07)
+  groups.forEach((g, i) => {
+    const [qx, qy] = quads[i % 4]
+    const x0 = qx ? cx + gap : 14, x1 = qx ? W - 14 : cx - gap
+    const y0 = qy ? cy + 22 : top + 6, y1 = qy ? Hh - 34 : cy - 22
+    let cols = Math.max(1, Math.min(3, Math.floor((x1 - x0) / 170)))
+    while (cols < 4 && 24 + Math.ceil(g.ts.length / cols) * 22 > y1 - y0) cols++
+    const rows = Math.ceil(g.ts.length / cols)
+    const cellW = (x1 - x0) / cols, cellH = Math.max(22, Math.min(46, (y1 - y0 - 24) / rows)), two = cellH >= 40, mirror = !qx
+    const used = 24 + rows * cellH
+    const yy0 = qy ? y0 : Math.max(y0, y1 - used)
+    svg.append(svgEl('rect', { class: 'hull', x: x0 - 6, y: yy0 - 4, width: x1 - x0 + 12, height: used + 4, rx: 12 }))
+    root.append(h('div', { class: 'plabel', style: mirror ? `right:${W - x1 - 4}px;top:${yy0}px` : `left:${x0 + 4}px;top:${yy0}px` }, h('b', {}, g.p.name), ` · ${g.p.host}`))
+    g.ts.forEach((t, j) => {
+      const s = S.th[t.id], col = j % cols, row = Math.floor(j / cols)
+      const x = mirror ? x1 - 12 - (cols - 1 - col) * cellW : x0 + 12 + col * cellW, y = yy0 + 24 + row * cellH + (two ? 12 : cellH / 2 - 2)
+      GEO.th[t.id] = { x, y }
+      const lit = litUntil[t.id] > performance.now()
+      const c1x = cx + (x - cx) * .45, c2x = x - (x - cx) * .25
+      svg.append(svgEl('path', { class: 'edge', d: `M${cx},${cy} C${c1x},${cy} ${c2x},${y} ${x},${y}`, 'data-lit': lit ? '' : null, 'data-tone': s.tone === 'needs' ? 'needs' : null }))
+      const open = [...s.prs.values()].filter(p => p.state !== 'merged').slice(-1)
+      const n = h('button', { type: 'button', class: 'node', 'data-th': t.id, style: `left:${x}px;top:${y}px;--cell:${cellW - 14}px`, 'data-settled': s.tone === 'settled' ? '' : null,
+        'aria-label': describe(t, s), 'aria-expanded': ui.open?.id === t.id ? 'true' : 'false', onclick: ev => openCard(t.id, { x, y }) },
+        ring(s.tone), h('span', { class: 'nt' }, t.title),
+        two ? h('span', { class: 'n2' }, h('span', { class: 'word', 'data-tone': s.tone }, s.label), ...open.map(prChip)) : null)
+      if (mirror) n.setAttribute('data-mirror', '')
+      n.title = `${t.title} — ${s.label}`
+      root.append(n)
+    })
+  })
+  root.append(h('div', { class: 'owl', style: `left:${cx}px;top:${cy}px` }, owlSvg(26)))
+  const inflight = vis.filter(t => ['working', 'ci', 'landing'].includes(S.th[t.id].tone)).length
+  root.append(h('div', { class: 'owl-l', style: `left:${cx}px;top:${cy}px` }, W < 900 ? `${inflight} in flight` : `Watcher · ${inflight} in flight`))
+  const needs = vis.filter(t => S.th[t.id].tone === 'needs').length
+  root.append(h('div', { class: 'you', style: `left:${cx}px;top:${Hh - 18}px` }, 'You', needs ? h('b', {}, ` ${needs} waiting`) : ' · nothing waiting'))
+}
+function settledButton(S) {
+  const n = settledCount(S); if (!n) return null
+  return h('button', { type: 'button', class: 'settled-btn', 'aria-expanded': ui.showSettled ? 'true' : 'false', onclick: () => { ui.showSettled = !ui.showSettled; render() } }, ui.showSettled ? `Fold ${n} settled` : `Settled ${n}`)
+}
+
+/* ======================= B: Lanes ======================= */
+function renderB(root, S) {
+  root.className = 'pic-canvas B'
+  const W = root.clientWidth, Hh = root.clientHeight
+  const left = W < 900 ? 170 : 236, right = 14, laneH = 28, top = 26
+  const span = ui.zoom * MIN, P = ui.P
+  const x = t => left + (t - (P - span)) / span * (W - left - right)
+  const vis = visibleThreads(S, ui.showSettled)
+  // rows: merge turns, You, Watcher, then each project with its threads
+  const rows = [{ k: 'turns', y: top }, { k: 'you', y: top + laneH }, { k: 'watcher', y: top + laneH * 2 }]
+  let y = top + laneH * 3 + 8
+  const projRows = []
+  for (const p of PROJECTS) {
+    const ts = vis.filter(t => t.project === p.id); if (!ts.length) continue
+    projRows.push({ p, y }); y += 20
+    for (const t of ts) { rows.push({ k: 'th', t, y }); y += laneH }
+    y += 6
+  }
+  const total = Math.max(y + 8, Hh)
+  const scroll = h('div', { class: 'scroll' }), lanes = h('div', { class: 'lanes', style: `height:${total}px` })
+  scroll.append(lanes); root.append(scroll)
+  const prevScroll = renderB.scrollTop ?? 0
+  const svg = svgEl('svg', { class: 'lsvg', width: W, height: total, 'aria-hidden': 'true' }); lanes.append(svg)
+  const mid = r => r.y + laneH / 2
+  GEO = { watcher: { y: mid(rows[2]) }, you: { y: mid(rows[1]) }, th: {}, lane: { x } }
+  // stripes and axis
+  rows.forEach((r, i) => { if (i % 2) svg.append(svgEl('rect', { x: 0, y: r.y, width: W, height: laneH, fill: 'var(--tt-surface)', opacity: .5 })) })
+  const ax = svgEl('g', { class: 'axis' }); svg.append(ax)
+  const step = ui.zoom <= 30 ? 5 : ui.zoom <= 60 ? 10 : 30
+  const first = Math.ceil((P - span) / (step * MIN)) * step * MIN
+  for (let t = first; t <= P; t += step * MIN) { const xx = x(t); ax.append(svgEl('line', { x1: xx, x2: xx, y1: top - 4, y2: total, stroke: 'var(--tt-hairline)', 'stroke-width': .6 })); const tx = svgEl('text', { x: xx + 3, y: 14 }); tx.textContent = fmt(t); ax.append(tx) }
+  svg.append(svgEl('line', { x1: left, x2: left, y1: 0, y2: total, stroke: 'var(--tt-hairline)' }))
+  // thread lanes: state bands from the log
+  for (const r of rows.filter(r => r.k === 'th')) {
+    GEO.th[r.t.id] = { y: mid(r) }
+    let tone = null, from = null
+    const band = (t0, t1, tn) => { if (!tn || tn === 'idle' || tn === 'settled') return; const a = Math.max(x(t0), left), b = Math.min(x(t1), W - right); if (b <= a) return
+      const fill = tn === 'needs' ? 'var(--tt-attention)' : tn === 'ready' || tn === 'landing' ? 'var(--tt-success)' : tn === 'quiet' ? 'var(--tt-text-muted)' : 'var(--tt-activity)'
+      svg.append(svgEl('rect', { x: a, y: r.y + 9, width: b - a, height: laneH - 18, rx: 4, fill, opacity: tn === 'ci' || tn === 'quiet' ? .14 : .34 }))
+      if (tn === 'ci') svg.append(svgEl('rect', { x: a, y: r.y + 9, width: b - a, height: laneH - 18, rx: 4, fill: 'none', stroke: 'var(--tt-text-2)', 'stroke-dasharray': '3 3', opacity: .6 })) }
+    const ss = { tone: 'idle' }
+    for (const e of EVENTS) { if (e.th !== r.t.id || e.t > P) continue
+      const before = ss.tone
+      const st = stateAt.__mini(ss, e)
+      if (st !== before) { band(from ?? e.t, e.t, before); from = e.t } else if (from === null) from = e.t }
+    band(from ?? P, P, ss.tone)
+    // PR bars under the lane
+    const prs = {}; for (const e of EVENTS) if (e.th === r.t.id && e.pr && e.t <= P) { prs[e.pr] ??= { from: e.t }; prs[e.pr].to = e.t; prs[e.pr].last = e }
+    for (const [n, p] of Object.entries(prs)) { const a = Math.max(x(p.from), left), merged = p.last.type === 'merged', b = merged ? x(p.to) : x(P); if (b < left) continue
+      svg.append(svgEl('line', { x1: a, x2: b, y1: r.y + laneH - 4, y2: r.y + laneH - 4, stroke: merged ? 'var(--tt-text-muted)' : 'var(--tt-success)', 'stroke-width': 2, 'stroke-linecap': 'round', opacity: .8 }))
+      const lbl = svgEl('text', { x: a + 2, y: r.y + laneH - 7, fill: 'var(--tt-text-2)', 'font-size': 9.5 }); lbl.textContent = `#${n}`; svg.append(lbl) }
+  }
+  // merge-turn markers on the top lane
+  for (const e of EVENTS) { if (!['ready', 'go', 'merged'].includes(e.type) || e.t > P || e.t < P - span) continue
+    const xx = x(e.t), g = svgEl('g'); svg.append(g)
+    g.append(svgEl('line', { x1: xx, x2: xx, y1: mid(rows[0]) + 5, y2: GEO.th[e.th]?.y ?? mid(rows[0]), stroke: 'var(--tt-success)', 'stroke-width': .8, 'stroke-dasharray': '2 3', opacity: .7 }))
+    const tx = svgEl('text', { x: xx + 7, y: mid(rows[0]) + 4, fill: 'var(--watcher-ready-ink)', 'font-size': 10.5, 'font-weight': 600 }); tx.textContent = `${e.type === 'go' ? 'GO' : e.type === 'ready' ? 'READY' : 'MERGED'} #${e.pr}`; g.append(tx)
+    g.append(e.type === 'go' ? svgEl('rect', { x: xx - 4, y: mid(rows[0]) - 4, width: 8, height: 8, transform: `rotate(45 ${xx} ${mid(rows[0])})`, fill: 'var(--tt-success)' }) : svgEl('circle', { cx: xx, cy: mid(rows[0]), r: 4, fill: e.type === 'merged' ? 'var(--tt-success)' : 'var(--tt-canvas)', stroke: 'var(--tt-success)', 'stroke-width': 2 })) }
+  // message stems: Watcher <-> thread, card thread -> You (fixed marks for what already happened)
+  for (const e of EVENTS) { const kind = KIND[e.type]; if (!kind || e.t > P || e.t < P - span || !GEO.th[e.th]) continue
+    const xx = x(e.t), ty = GEO.th[e.th].y, wy = GEO.watcher.y, yy = GEO.you.y
+    const [a, b] = DIR[e.type] === 'out' ? [wy, ty] : DIR[e.type] === 'you' ? [ty, yy] : [ty, wy]
+    svg.append(svgEl('line', { x1: xx, x2: xx, y1: a, y2: b, stroke: kind === 'card' ? 'var(--tt-attention)' : DIR[e.type] === 'out' ? 'var(--tt-accent-text)' : 'var(--tt-text-muted)', 'stroke-width': .9, opacity: .45 }))
+    const m = h('div', { class: 'mark', style: `left:${xx - 6}px;top:${b - 6}px` }, shape(kind)); m.title = `${KIND_WORD[e.type]} · ${byId[e.th].title} · ${fmt(e.t)}`; lanes.append(m) }
+  // now line
+  svg.append(svgEl('line', { x1: x(P), x2: x(P), y1: top - 6, y2: total, stroke: ui.live ? 'var(--tt-success)' : 'var(--watcher-needs-ink)', 'stroke-width': 1.4 }))
+  // headers
+  lanes.append(h('div', { class: 'fixed', style: `top:${rows[0].y}px;width:${left}px;color:var(--tt-text-2)` }, 'Merge turns'))
+  const needs = vis.filter(t => S.th[t.id].tone === 'needs').length
+  lanes.append(h('div', { class: 'fixed', style: `top:${rows[1].y}px;width:${left}px` }, 'You', needs ? h('span', { style: 'color:var(--watcher-needs-ink);font-weight:600' }, `${needs} waiting`) : null))
+  lanes.append(h('div', { class: 'fixed', style: `top:${rows[2].y}px;width:${left}px;color:var(--tt-accent-text)` }, owlSvg(14), h('span', { style: 'color:var(--tt-text)' }, 'Watcher')))
+  for (const pr of projRows) lanes.append(h('div', { class: 'ph', style: `top:${pr.y + 4}px` }, pr.p.name, h('span', {}, ` · ${pr.p.host}`)))
+  for (const r of rows.filter(r => r.k === 'th')) { const s = S.th[r.t.id]
+    const open = [...s.prs.values()].filter(p => p.state !== 'merged').slice(-1)
+    lanes.append(h('button', { type: 'button', class: 'lh', 'data-th': r.t.id, style: `top:${r.y}px;width:${left}px`, 'data-settled': s.tone === 'settled' ? '' : null, 'aria-label': describe(r.t, s), 'aria-expanded': ui.open?.id === r.t.id ? 'true' : 'false', onclick: () => openCard(r.t.id, { x: left, y: r.y - scroll.scrollTop + 14 }) },
+      ring(s.tone), h('span', { class: 'nt', title: r.t.title }, r.t.title), left > 200 ? open.map(prChip) : null)) }
+  const z = h('div', { class: 'zoom', role: 'group', 'aria-label': 'How much time to show' }, [30, 60, 240].map(m => h('button', { type: 'button', 'aria-pressed': ui.zoom === m ? 'true' : 'false', onclick: () => { ui.zoom = m; render() } }, m < 60 ? `${m} min` : `${m / 60} h`)))
+  root.append(z)
+  const sb = settledButton(S); if (sb) { sb.style.cssText = 'position:absolute;left:10px;top:2px;z-index:6;background:var(--tt-canvas)'; root.append(sb) }
+  lanes.append(h('div', { class: 'blobs' }))
+  scroll.scrollTop = prevScroll; scroll.addEventListener('scroll', () => { renderB.scrollTop = scroll.scrollTop })
+  GEO.scrollEl = scroll
+}
+// A tiny state step for lane bands (the same rules as stateAt, one event at a time).
+stateAt.__mini = (ss, e) => {
+  switch (e.type) {
+    case 'start': ss.tone = 'working'; break
+    case 'steer': if (ss.tone === 'quiet' || ss.tone === 'idle') ss.tone = 'working'; break
+    case 'reply': case 'news': if (e.state) ss.tone = e.state; break
+    case 'card': ss.tone = 'needs'; break
+    case 'answer': ss.tone = 'working'; break
+    case 'pr': if (e.checks === 'running' && ss.tone !== 'needs') ss.tone = 'ci'; if (e.checks === 'failed') ss.tone = 'working'; break
+    case 'ready': ss.tone = 'ready'; break
+    case 'go': case 'merged': ss.tone = 'landing'; break
+    case 'state': ss.tone = e.state; break
+  }
+  return ss.tone
+}
+
+/* ======================= C: Board ======================= */
+function renderC(root, S) {
+  root.className = 'pic-canvas C'
+  const vis = visibleThreads(S, false)
+  const needs = vis.filter(t => S.th[t.id].tone === 'needs')
+  // What Watcher did last, in its own words of record.
+  const last = EVENTS.filter(e => e.t <= ui.P && DIR[e.type] === 'out').at(-1)
+  const lastIn = EVENTS.filter(e => e.t <= ui.P && (DIR[e.type] === 'in' || DIR[e.type] === 'you')).at(-1)
+  const order = turnOrder(S.queue)
+  const desk = h('div', { class: 'desk' },
+    h('span', { class: 'deskowl', 'data-watcher': '' }, owlSvg(20)),
+    h('div', { class: 'doing' },
+      last ? h('div', { class: 'l2' }, h('b', {}, `${KIND_WORD[last.type]}`), ` to ${byId[last.th].title} · ${fmt(last.t)}`) : null,
+      lastIn ? h('div', { class: 'l2' }, `Last heard: ${byId[lastIn.th].title}, ${KIND_WORD[lastIn.type].toLowerCase()} · ${fmt(lastIn.t)}`) : null),
+    h('div', { class: 'queue', role: 'list', 'aria-label': 'Merge turns, in order' }, h('span', { class: 'ql' }, 'Merge turns'),
+      order.length ? order.map(q => h('div', { class: 'qt', role: 'listitem', 'data-step': q.step, title: byId[q.th].title }, h('b', {}, `#${q.pr}`), q.step === 'merged' ? 'MERGED' : q.step === 'go' ? 'GO MERGE' : 'READY')) : h('span', { class: 'ql' }, 'none')),
+    h('span', { class: 'youbox', 'data-you': '' }, 'You', needs.length ? h('b', {}, `${needs.length} waiting`) : ' · nothing waiting'))
+  root.append(desk)
+  const cols = h('div', { class: 'cols' }); root.append(cols)
+  for (const p of PROJECTS) {
+    const all = THREADS.filter(t => t.project === p.id && S.th[t.id])
+    const live = all.filter(t => S.th[t.id].tone !== 'settled'), settled = all.filter(t => S.th[t.id].tone === 'settled')
+    if (!all.length) continue
+    const col = h('section', { class: 'col', 'aria-label': `${p.name} on ${p.host}` }, h('h3', {}, p.name, h('span', {}, ` · ${p.host}`)))
+    const order = { needs: 0, landing: 1, ready: 2, ci: 3, working: 4, quiet: 5, idle: 6, settled: 7 }
+    const list = [...live].sort((a, b) => order[S.th[a.id].tone] - order[S.th[b.id].tone])
+    if (ui.showSettled === p.id) list.push(...settled)
+    for (const t of list) {
+      const s = S.th[t.id], m = s.msgs.at(-1)
+      const prs = [...s.prs.values()].filter(x => x.state !== 'merged' || s.tone === 'settled').slice(-2)
+      col.append(h('button', { type: 'button', class: 'tl', 'data-th': t.id, 'data-tone': s.tone, 'data-settled': s.tone === 'settled' ? '' : null, 'data-lit': litUntil[t.id] > performance.now() ? '' : null,
+        'aria-label': describe(t, s), 'aria-expanded': ui.open?.id === t.id ? 'true' : 'false',
+        onclick: ev => { const r = ev.currentTarget.getBoundingClientRect(), c = root.getBoundingClientRect(), k = scaleOf(); openCard(t.id, { x: (r.right - c.left) / k - 4, y: (r.top - c.top) / k + 30 }) } },
+        ring(s.tone), h('span', { class: 'nt' }, t.title),
+        h('span', { class: 'ln' }, h('span', { class: 'word', 'data-tone': s.tone }, s.label), ...prs.map(prChip)),
+        m ? h('span', { class: 'ln last' }, shape(KIND[m.type]), h('span', {}, `${DIR[m.type] === 'out' ? 'Watcher: ' : ''}${m.text}`), h('span', { style: 'flex:none;color:var(--tt-text-muted)' }, fmt(m.t))) : null))
+    }
+    if (settled.length) col.append(h('button', { type: 'button', class: 'settled-btn fold', 'aria-expanded': ui.showSettled === p.id ? 'true' : 'false', onclick: () => { ui.showSettled = ui.showSettled === p.id ? false : p.id; render() } }, ui.showSettled === p.id ? 'Fold settled' : `Settled ${settled.length}`))
+    cols.append(col)
+  }
+  cols.addEventListener('scroll', () => placeC(root))
+  placeC(root)
+}
+function scaleOf() { const r = $('#win').getBoundingClientRect(); return r.width / $('#win').offsetWidth }
+function placeC(root) {
+  const c = root.getBoundingClientRect(), k = scaleOf()
+  const rel = el => { const r = el.getBoundingClientRect(); return { x: (r.left + r.width / 2 - c.left) / k, y: (r.top + r.height / 2 - c.top) / k } }
+  GEO = { watcher: rel(root.querySelector('[data-watcher]')), you: rel(root.querySelector('[data-you]')), th: {}, lane: null }
+  root.querySelectorAll('.tl').forEach(el => { const r = el.getBoundingClientRect(); GEO.th[el.dataset.th] = { x: (r.left - c.left) / k + 14, y: (r.top - c.top) / k + 15 } })
+}
+
+/* ======================= Timeline (every variant) ======================= */
+function timebar() {
+  const start = NOW0 - SPAN, end = nowT()
+  const bar = h('div', { class: 'timebar' })
+  const playing = ui.playing
+  bar.append(h('button', { type: 'button', class: 'tb-btn', 'aria-pressed': playing ? 'true' : 'false', onclick: () => {
+    if (ui.live) { ui.live = false; ui.P = Math.max(start, nowT() - 60 * MIN) }
+    ui.playing = !ui.playing; render() } }, playing ? '❚❚ Pause' : '▶ Replay'))
+  const sp = h('select', { class: 'speed', 'aria-label': 'Replay speed', onchange: e => { ui.speed = +e.target.value } }, [[30, '30× '], [60, '60×'], [180, '180×'], [600, '600×']].map(([v, l]) => h('option', { value: v, selected: ui.speed === v ? true : null }, l)))
+  bar.append(sp)
+  const track = h('div', { class: 'track' })
+  const svg = svgEl('svg', { viewBox: '0 0 1000 26', preserveAspectRatio: 'none', 'aria-hidden': 'true' })
+  svg.append(svgEl('rect', { x: 0, y: 12, width: 1000, height: 2, fill: 'var(--tt-hairline)' }))
+  const X = t => (t - start) / (end - start) * 1000
+  for (const e of EVENTS) { const k = KIND[e.type]; if (!k) continue
+    const col = k === 'card' ? 'var(--tt-attention)' : ['go', 'ready', 'merged'].includes(k) ? 'var(--tt-success)' : DIR[e.type] === 'out' ? 'var(--tt-accent-text)' : 'var(--tt-text-muted)'
+    svg.append(svgEl('rect', { x: X(e.t) - 1, y: k === 'go' || k === 'card' ? 4 : 8, width: 2, height: k === 'go' || k === 'card' ? 18 : 10, fill: col })) }
+  const px = X(ui.P)
+  svg.append(svgEl('rect', { x: 0, y: 12, width: px, height: 2, fill: 'var(--tt-text-2)' }))
+  svg.append(svgEl('rect', { x: px - 2, y: 2, width: 4, height: 22, rx: 2, fill: ui.live ? 'var(--tt-success)' : 'var(--watcher-needs-ink)' }))
+  const input = h('input', { type: 'range', min: start, max: end, step: 1000, value: ui.P, 'aria-label': 'When to show', 'aria-valuetext': ui.live ? 'Now, live' : `${fmt(ui.P)}, ${fmtAgo(ui.P)}` })
+  input.addEventListener('input', e => { ui.live = false; ui.playing = false; ui.P = +e.target.value; renderPicture(false); updateTimebar() })
+  input.addEventListener('keydown', e => { // Left and Right step from one event to the next
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault(); ui.live = false; ui.playing = false
+    const ts = EVENTS.filter(x => KIND[x.type]).map(x => x.t)
+    ui.P = e.key === 'ArrowLeft' ? (ts.filter(t => t < ui.P - 500).at(-1) ?? start) : (ts.find(t => t > ui.P + 500) ?? end)
+    if (ui.P >= nowT()) { ui.live = true; ui.P = nowT() }
+    render(); $('.track input')?.focus() })
+  track.append(svg, input)
+  bar.append(track)
+  bar.append(h('span', { class: ui.live ? 'when' : 'when past' }, ui.live ? h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, h('span', { class: 'livedot' }), 'Now') : `${fmt(ui.P)} · ${fmtAgo(ui.P)}`))
+  bar.append(h('button', { type: 'button', class: 'tb-btn', 'aria-pressed': ui.live ? 'true' : 'false', onclick: () => { ui.live = true; ui.playing = false; ui.P = nowT(); render() } }, 'Live'))
+  bar.append(h('button', { type: 'button', class: 'tb-btn', 'aria-expanded': ui.keyOpen ? 'true' : 'false', onclick: () => { ui.keyOpen = !ui.keyOpen; render() } }, 'Key'))
+  return bar
+}
+function updateTimebar() { const old = $('.timebar'); if (!old) return; const focused = document.activeElement?.closest('.track'); const nb = timebar(); old.replaceWith(nb); if (focused) nb.querySelector('.track input').focus() }
+function keyPop() {
+  return h('div', { class: 'keypop', role: 'dialog', 'aria-label': 'Key' }, h('h4', {}, 'Messages'),
+    ...['start', 'steer', 'go', 'reply', 'ready', 'merged', 'news', 'card'].map(k => h('div', { class: 'key' }, shape(k), h('span', {}, `${KIND_WORD[k]}${DIR[k] === 'out' ? ', Watcher to thread' : DIR[k] === 'you' ? ', thread to you' : ', thread to Watcher'}`))),
+    h('h4', { style: 'margin-top:10px' }, 'Threads'),
+    ...['needs', 'working', 'ci', 'ready', 'landing', 'quiet', 'idle'].map(t => h('div', { class: 'key' }, ring(t), h('span', {}, TONE_WORD[t]))))
+}
+
+/* ======================= Room views ======================= */
+function renderConversation(body) {
+  const tr = h('div', { class: 'transcript', role: 'tabpanel', tabindex: 0 })
+  const M = (who, t, text) => h('div', { class: `msg ${who === 'You' ? 'you' : ''}` }, h('div', { class: 'who' }, who === 'Watcher' ? owlSvg(14) : null, who, h('time', {}, fmt(t))), h('p', {}, text))
+  tr.append(
+    M('You', ago(292), 'Keep the perf batch moving and merge in turn. Tell me when a thread needs me.'),
+    M('Watcher', ago(287), 'Started Room copies per update on Claude Code and Watched tab keyboard order on Codex. I am watching 12 threads across Sotto, the iPhone client, Fleet and Plant controls.'),
+    M('Watcher', ago(57), 'Watched tab keyboard order says READY TO MERGE #1288. Room copies per update is behind it with #1291.'),
+    M('Watcher', ago(12), 'Linux tray on Omarchy asks to run npm ci in its worktree. Only you can allow that, in its own pane.'),
+    M('Watcher', ago(6), 'Sent GO MERGE to Watched tab keyboard order for #1288. #1291 is next.'),
+    M('Watcher', ago(4), 'TestFlight 0.48 asks a question: build number 212 or 213.'))
+  body.append(tr); requestAnimationFrame(() => { tr.scrollTop = tr.scrollHeight })
+}
+function renderWatched(body, S) {
+  const tr = h('div', { class: 'transcript', role: 'tabpanel', tabindex: 0 })
+  const vis = visibleThreads(S, false)
+  tr.append(h('div', { class: 'watched-lead' }, h('p', { style: 'margin:0' }, `Watcher keeps these ${vis.length} threads going on its own and brings you their questions and permissions. Each stays watched until you stop it.`), h('button', { class: 'pill-btn', type: 'button' }, 'Watch a thread')))
+  const G = [['Needs you', ['needs']], ['Ready for review', ['ready']], ['Working', ['working', 'ci']], ['Landing', ['landing']], ['Quiet', ['quiet']], ['Idle', ['idle']]]
+  for (const [g, tones] of G) { const ts = vis.filter(t => tones.includes(S.th[t.id].tone)); if (!ts.length) continue
+    tr.append(h('section', { class: 'wgroup', 'data-tone': tones[0] }, h('h3', {}, g, h('span', { class: 'count' }, ts.length)),
+      h('ul', { class: 'ul' }, ts.map(t => { const s = S.th[t.id], p = PROJECTS.find(x => x.id === t.project), last = s.msgs.filter(m => DIR[m.type] === 'out').at(-1)
+        return h('li', { class: 'wcard', 'data-tone': tones[0] }, ring(s.tone), h('span', { class: 't' }, t.title), h('button', { class: 'pill-btn', type: 'button' }, s.tone === 'needs' ? 'Open to answer' : 'Stop watching'),
+          h('span', { class: 'm' }, `${t.provider} · ${p.name} · ${p.host} · `, h('span', { class: 'word', 'data-tone': s.tone }, s.label)),
+          last ? h('span', { class: 'd' }, `Watcher ${last.type === 'start' ? 'started it' : 'last sent to it'} at ${fmt(last.t)}.`) : null) })))) }
+  body.append(tr)
+}
+
+// Rebuilding the picture must not take the keyboard's place away: remember what had focus and find it again.
+function focusKey() { const a = document.activeElement; if (!a || !a.closest?.('.pic-canvas')) return null
+  return { th: a.dataset?.th, inCard: !!a.closest('.card'), cls: a.className, text: a.textContent } }
+function restoreFocus(k, canvas) { if (!k) return
+  const pool = [...canvas.querySelectorAll(k.inCard ? '.card button' : 'button')]
+  const el = k.th && !k.inCard ? canvas.querySelector(`[data-th="${k.th}"]`) : pool.find(b => b.className === k.cls && b.textContent === k.text)
+  el?.focus({ preventScroll: true }) }
+function renderPicture(withCard = true) {
+  const fk = focusKey()
+  const body = $('#body')
+  let pic = body.querySelector('.pic')
+  const S = stateAt(ui.P)
+  if (!pic) { body.replaceChildren(); pic = h('div', { class: 'pic', role: 'tabpanel', 'aria-label': 'What Watcher is doing, as a picture' }, h('div', { class: 'pic-canvas' }), timebar()); body.append(pic) }
+  const canvas = h('div', { class: 'pic-canvas', role: 'group', 'aria-label': ui.live ? 'Now' : `As it stood at ${fmt(ui.P)}` })
+  const old = pic.querySelector('.pic-canvas'); const oldBlobs = old?.querySelector('.blobs')
+  if (old) old.replaceWith(canvas); else pic.append(canvas)
+  if (ui.variant === 'A') renderA(canvas, S); else if (ui.variant === 'B') renderB(canvas, S); else renderC(canvas, S)
+  // keep blobs that are mid-flight across re-renders
+  let layer = canvas.querySelector('.blobs')
+  if (!layer) { layer = h('div', { class: 'blobs' }); canvas.append(layer) }
+  if (oldBlobs) layer.append(...oldBlobs.children)
+  if (ui.open && withCard) { const c = cardEl(S, { width: canvas.clientWidth, height: canvas.clientHeight }); if (c) canvas.append(c) }
+  if (ui.keyOpen) canvas.append(keyPop())
+  restoreFocus(fk, canvas)
+}
+
+function renderGlance(S) {
+  const g = $('#glance'); g.replaceChildren()
+  const ts = THREADS.filter(t => S.th[t.id]?.tone === 'needs')
+  if (!ts.length) { g.style.display = 'none'; return }
+  g.style.display = ''
+  g.append(h('b', {}, `${ts.length} need${ts.length === 1 ? 's' : ''} you`))
+  for (const t of ts) g.append(h('span', { class: 'it' }, ring('needs'), h('a', { tabindex: 0 }, t.title), h('span', {}, S.th[t.id].card?.kind ?? '')))
+}
+
+function render() {
+  const live = stateAt(nowT())
+  renderGlance(live)
+  $('#wcount').textContent = visibleThreads(live, false).length
+  const win = $('#win')
+  win.toggleAttribute('data-viz', ui.viz)
+  $('#viz').setAttribute('aria-pressed', ui.viz ? 'true' : 'false')
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab && !(ui.inTabs && ui.viz))))
+  if (ui.inTabs) $('#viz').setAttribute('aria-selected', String(ui.viz))
+  const body = $('#body')
+  if (ui.viz) { renderPicture(); updateTimebar() }
+  else { body.replaceChildren(); ui.tab === 'watched' ? renderWatched(body, live) : renderConversation(body) }
+  $('#vlabel').textContent = { A: 'A — Constellation', B: 'B — Lanes over time', C: 'C — Board' }[ui.variant]
+}
+
+/* ======================= Loop ======================= */
+let lastFrame = performance.now(), lastP = ui.P, lastPaint = 0, held = false
+addEventListener('pointerdown', () => { held = true }, true)
+addEventListener('pointerup', () => setTimeout(() => { held = false }, 0), true)
+function frame(now) {
+  if (held) { lastFrame = now; requestAnimationFrame(frame); return }   // never rebuild under a press
+  const dt = now - lastFrame; lastFrame = now
+  runLiveScript()
+  const before = ui.P
+  if (ui.live) ui.P = nowT()
+  else if (ui.playing) { ui.P = Math.min(nowT(), ui.P + dt * ui.speed); if (ui.P >= nowT() - 1000) { ui.live = true; ui.playing = false } }
+  // Fire blobs for what the playhead just passed (live or replay), not while scrubbing.
+  const passed = (ui.live || ui.playing) && ui.viz ? EVENTS.filter(e => e.t > lastP && e.t <= ui.P) : []
+  const changed = EVENTS.some(e => e.t > lastP && e.t <= ui.P) || ui.P < lastP
+  lastP = ui.P
+  if (changed || now - lastPaint > (ui.variant === 'B' ? 1000 : 4000) || (ui.rm === false && Object.values(litUntil).some(u => u > now - 50 && u < now + 50))) {
+    lastPaint = now
+    if (ui.viz) { renderPicture(); updateTimebar() } else if (changed) render()
+    renderGlance(stateAt(nowT()))
+  }
+  for (const e of passed.slice(-8)) playBlob(e)
+  if (passed.length) lastPaint = now - 3900 * (ui.variant === 'B' ? 0 : 1) - 1000 * (ui.variant === 'B' ? 1 : 0) + 120
+  requestAnimationFrame(frame)
+}
+
+/* ======================= Wiring ======================= */
+function fit() {
+  const [w, hh] = $('#size').value.split('x').map(Number)
+  const win = $('#win'); win.style.width = w + 'px'; win.style.height = hh + 'px'
+  const k = Math.min(1, (innerWidth - 24) / w, (innerHeight - 88) / hh)
+  win.style.transform = `scale(${k})`
+  render()
+}
+function setVariant(v) { ui.variant = v; ui.open = null; const u = new URL(location); u.searchParams.set('variant', v); history.replaceState(null, '', u); render() }
+const VARS = ['A', 'B', 'C']
+$('#pv').onclick = () => setVariant(VARS[(VARS.indexOf(ui.variant) + 2) % 3])
+$('#nv').onclick = () => setVariant(VARS[(VARS.indexOf(ui.variant) + 1) % 3])
+$('#theme').onchange = e => { document.documentElement.dataset.theme = e.target.value; const u = new URL(location); u.searchParams.set('theme', e.target.value); history.replaceState(null, '', u) }
+$('#size').onchange = () => { const u = new URL(location); u.searchParams.set('size', $('#size').value); history.replaceState(null, '', u); fit() }
+$('#rm').onchange = e => { ui.rm = e.target.checked; document.documentElement.toggleAttribute('data-rm', ui.rm); render() }
+$('#intabs').onchange = e => { ui.inTabs = e.target.checked; const v = $('#viz'); if (ui.inTabs) { v.classList.add('in-tabs'); v.setAttribute('role', 'tab'); $('#tabs').append(v) } else { v.classList.remove('in-tabs'); v.removeAttribute('role'); $('#tabs').after(v) } render() }
+$('#viz').onclick = () => { ui.viz = !ui.viz; ui.open = null; render() }
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => { ui.tab = b.dataset.tab; if (ui.inTabs) ui.viz = false; render() })
+addEventListener('keydown', e => {
+  const typing = e.target.closest?.('input:not([type=range]):not([type=checkbox]), textarea, [contenteditable]')
+  if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) { e.preventDefault(); ui.viz = !ui.viz; render(); return }
+  if (e.key === 'Escape' && ui.keyOpen) { ui.keyOpen = false; render(); return }
+  if (e.key === 'Escape' && ui.open) { closeCard(); return }
+  if (typing || e.target.closest?.('.track, select')) return
+  if (e.key === 'ArrowLeft' && e.altKey) $('#pv').click()
+  if (e.key === 'ArrowRight' && e.altKey) $('#nv').click()
+})
+addEventListener('resize', fit)
+// a few stars in the room's corner
+{ const st = $('#stars'); for (let i = 0; i < 26; i++) { const s = document.createElement('i'); s.style.left = (Math.random() * 300) + 'px'; s.style.top = (Math.random() * 80) + 'px'; s.style.opacity = (.08 + Math.random() * .4).toFixed(2); st.append(s) } }
+
+const q = new URLSearchParams(location.search)
+if (VARS.includes(q.get('variant'))) ui.variant = q.get('variant')
+if (q.get('theme')) { $('#theme').value = q.get('theme'); document.documentElement.dataset.theme = q.get('theme') }
+if (q.get('size')) $('#size').value = q.get('size')
+if (q.get('viz') !== '0') ui.viz = true
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) { $('#rm').checked = true; ui.rm = true; document.documentElement.setAttribute('data-rm', '') }
+fit()
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>
