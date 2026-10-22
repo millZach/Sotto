@@ -118,7 +118,15 @@ it('gives the coordinator the shared records, and the shell it publishes says th
   await expect.poll(() => control.shell().host.threads.find(item => item.id === 'session-workshop')?.title).toBe('Workshop renamed')
   const shell = control.shell()
   const fresh = host.workspaceSnapshot()
-  for (const item of fresh.threads) expect(shell.host.threads.find(shown => shown.id === item.id)?.title).toBe(item.title)
+  // Every field the shell carries from the workspace says what a fresh copy of the workspace says. The coordinator
+  // empties the messages and adds its own fields, which a fresh copy does not have.
+  expect(shell.host.threads.map(shown => shown.id).sort()).toEqual(fresh.threads.map(item => item.id).sort())
+  for (const item of fresh.threads) {
+    const shown = shell.host.threads.find(candidate => candidate.id === item.id)! as unknown as Record<string, unknown>
+    const shared = Object.keys(item).filter(key => key !== 'messages' && key in shown)
+    expect(shared.length).toBeGreaterThan(5)
+    for (const key of shared) expect(shown[key], `${item.id}.${key}`).toEqual((item as unknown as Record<string, unknown>)[key])
+  }
   // `shell()` stays its caller's to change.
   shell.host.threads[0]!.title = 'Changed by the caller'
   expect(control.shell().host.threads[0]!.title).not.toBe('Changed by the caller')
