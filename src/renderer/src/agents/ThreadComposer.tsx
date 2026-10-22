@@ -24,6 +24,7 @@ import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useThreadStarts } from './ThreadStart'
 import { useWatcherSendGate } from '../watcher/WatcherHandover'
+import { WatcherNewButton } from '../watcher/WatcherNew'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -350,8 +351,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
-          {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen. */}
-          {threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
+          {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
+              Watcher always runs on this computer, so its composer has New Watcher in that place instead. */}
+          {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
+            : threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined

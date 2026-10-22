@@ -82,6 +82,9 @@
 }
 .watcher-room > .thread-workspace { grid-row: 1; }
 .watcher-room__status { margin: auto; padding: 30px; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+/* A creation that stopped part-way: what happened and Try again, centred where the conversation would be. */
+.watcher-room__stopped { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 460px; margin: auto; padding: 30px; text-align: center; }
+.watcher-room__stopped > p:not(.agent-error) { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 /* Watcher's replies are signed with the owl, in the name's own colour. */
 .thread-message__who:has(> .watcher-owl) { display: inline-flex; align-items: center; gap: 6px; }
 
@@ -375,7 +378,17 @@
 .watcher-own__files code { min-width: 0; overflow: hidden; padding: 1px 6px; border: 1px solid var(--tt-code-border); border-radius: 5px; background: var(--tt-code-bg); color: var(--tt-code-text);
   font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- The handover after a provider change (ADR-0073) ---------- */
+/* ---------- New Watcher ---------- */
+/* Zach's pick A of the New Watcher prototype: one of the composer's own chips, first in its footer where an ordinary
+   thread says where it runs. Unavailable, its words keep the muted text colour, which holds 4.5:1 on the composer, and
+   it says so by its edge instead: a dashed hairline, its icon dimmed, no hover fill and the not-allowed cursor. Its focus
+   ring keeps full strength, and it stays in the Tab order so its reason can be heard. */
+.thread-chip.watcher-new { flex: none; padding: 0 10px 0 9px; }
+.thread-chip.watcher-new[aria-disabled='true'], .thread-chip.watcher-new[aria-disabled='true']:hover {
+  border-style: dashed; border-color: var(--tt-field-border); background: transparent; color: var(--tt-text-muted); cursor: not-allowed; }
+.thread-chip.watcher-new[aria-disabled='true'] > svg { color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+
+/* ---------- The handover after a provider change or New Watcher (ADR-0073) ---------- */
 /* Zach's pick B of the continue prototype, in place: a strip over the new Watcher's composer, edged in the accent, says
    that sending starts it with a handover of the last one, what that carries and leaves out, and offers it to read. The
    send button says Continue while it stands. The first message then shows the handover as Sotto's, beside the user's. */
