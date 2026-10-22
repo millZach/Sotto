@@ -902,6 +902,7 @@ export class WatcherService implements WatcherControlHooks {
     room.context = current ? { tokens: this.contextTokens(current), compactAt: WATCHER_COMPACT_AT_TOKENS, canCompact: this.canCompact(snapshot, current),
       compacting: compactionPending(current.compaction) } : null
     room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read(), ...this.kept.readable() ? {} : { unread: true as const } }
+    if (current && !live.creation) room.newWatcher = this.newWatcherAnswer(live, current)
     return room
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
@@ -1492,6 +1493,16 @@ export class WatcherService implements WatcherControlHooks {
     return thread.status === 'running' || thread.requests.length > 0 || this.invocations > 0 || this.active.size > 0 || replacing && this.inFlight(record) > 0
       || this.options.control.hasPendingThreadWork(thread.id, { setAsideIgnored: true })
       || record.operations.some(operation => ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))
+  }
+  /**
+   * What New Watcher would answer now, for the room's chip: main's own busy conditions, and whether the conversation has
+   * said anything by the thread's own record of it. Cheap enough for every publish, so it builds no handover; a press
+   * still asks the handover itself (`hasHistory`).
+   */
+  private newWatcherAnswer(record: Readonly<WatcherRecord>, thread: AgentThread): NonNullable<WatcherRoomState['newWatcher']> {
+    if (this.opening !== undefined || this.replacementBusy(record, thread, true)) return { available: false, reason: 'busy' }
+    const said = thread.messages.length > 0 || thread.lastUserMessageId !== undefined || (thread.summary?.messageCount ?? 0) > 0 || thread.earlierAvailable === true
+    return said ? { available: true } : { available: false, reason: 'empty' }
   }
   /** Whether a Watcher conversation has said anything: what its handover would carry. One that cannot be read counts as having history. */
   private hasHistory(source: WatcherIdentity): boolean {
@@ -2252,7 +2263,8 @@ export class WatcherService implements WatcherControlHooks {
       : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
   }
   private async invokeNow(threadId: string, name: WatcherToolName, args: unknown, progress: CallProgress): Promise<unknown> {
-    this.invocations++
+    // The room's New Watcher waits while a call runs, so it hears when the first starts and the last ends.
+    if (this.invocations++ === 0) this.publish()
     try {
       this.checkCaller(threadId)
       if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before using its tools.', true)
@@ -2340,7 +2352,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
-    finally { this.invocations-- }
+    finally { if (--this.invocations === 0) this.publish() }
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress): Promise<unknown> {
     const admitted = await this.transaction(async () => {

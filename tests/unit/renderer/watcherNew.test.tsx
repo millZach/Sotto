@@ -130,6 +130,17 @@ describe('New Watcher in Watcher’s composer', () => {
     expect(bridge.startNew).not.toHaveBeenCalled()
   })
 
+  it('is unavailable while main says Watcher is busy, though its thread is at rest', async () => {
+    const user = userEvent.setup()
+    const { bridge } = renderRoom(roomState('watcher-a', { newWatcher: { available: false, reason: 'busy' } }),
+      stateWith(watcherThread('watcher-a', { messages: said })), vi.fn())
+    const button = await newButton()
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(button).toHaveAccessibleDescription(NEW_WATCHER_BUSY)
+    await user.click(button)
+    expect(bridge.startNew).not.toHaveBeenCalled()
+  })
+
   it('is unavailable for a Watcher that has said nothing yet', async () => {
     renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a')), vi.fn())
     const button = await newButton()

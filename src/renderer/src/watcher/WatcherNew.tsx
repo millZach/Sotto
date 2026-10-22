@@ -24,14 +24,15 @@ const STARTING = 'Starting a new Watcher…'
 const UNREACHABLE = 'Sotto could not reach Watcher, so no new Watcher was started. Try again.'
 
 /**
- * Why New Watcher cannot start one now, from what the window sees: Watcher working, waiting on a card, or with a prompt
- * on its way; or nothing said yet, so nothing to hand over. Main refuses the rest (deliveries, starts and tool calls in
- * flight) in its own words. Null when a press may go.
+ * Why New Watcher cannot start one now: Watcher working, waiting on a card or with a prompt on its way, as the window
+ * sees it, or busy by main's own answer (`newWatcher`), which also counts starts still working and deliveries and tool
+ * calls in flight; or nothing said yet, so nothing to hand over. A press still asks main. Null when a press may go.
  */
-export function newWatcherUnavailable(state: AgentState, thread: AgentThread): string | null {
-  if (thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)) return NEW_WATCHER_BUSY
+export function newWatcherUnavailable(state: AgentState, thread: AgentThread, main?: WatcherRoomState['newWatcher']): string | null {
+  // Main's own answer covers what the window cannot see: starts still working, deliveries and tool calls in flight.
+  if (thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || main?.available === false && main.reason === 'busy') return NEW_WATCHER_BUSY
   const said = thread.messages.length > 0 || (thread.summary?.messageCount ?? 0) > 0 || thread.earlierAvailable === true || thread.lastUserMessageId !== undefined
-  return said ? null : NEW_WATCHER_EMPTY
+  return said && main?.available !== false ? null : NEW_WATCHER_EMPTY
 }
 
 /** The chip in Watcher's composer; nothing where the room's bridge cannot start a new Watcher. */
@@ -47,7 +48,7 @@ export function WatcherNewButton({ state, thread, noticeSlot }: {
   const [refusal, setRefusal] = useState<string | null>(null)
   const startNew = room?.startNew ?? null
   if (room === null || startNew === null) return null
-  const why = starting ? STARTING : newWatcherUnavailable(state, thread)
+  const why = starting ? STARTING : newWatcherUnavailable(state, thread, room.state?.newWatcher)
   const press = async (): Promise<void> => {
     if (why !== null) return
     setStarting(true); setRefusal(null)

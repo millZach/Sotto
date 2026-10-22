@@ -197,6 +197,23 @@ describe('New Watcher', () => {
     expect(f.service.state().handover).toMatchObject({ source: f.first, provider: 'codex', counts: { carried: 2 } })
   })
 
+  it('tells the room what New Watcher would answer, a worker start still working after Watcher’s turn included', async () => {
+    const f = await fixture()
+    // Nothing said yet: nothing to hand over.
+    expect(f.service.state().newWatcher).toEqual({ available: false, reason: 'empty' })
+    await f.send('Check the release.')
+    expect(f.service.state().newWatcher).toEqual({ available: false, reason: 'busy' })
+    const worker = await f.startWorker('Release check')
+    await f.reply('Started Release check.')
+    // Watcher's own turn is over and its thread is idle, but the start it made is still working.
+    expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.first.threadId)?.status).toBe('idle')
+    expect(f.service.startsInFlight()).toBe(1)
+    expect(f.service.state().newWatcher).toEqual({ available: false, reason: 'busy' })
+    expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+    await f.finish(worker.threadId)
+    expect(f.service.state().newWatcher).toEqual({ available: true })
+  })
+
   it('tells the room a creation stopped part-way only once nothing is finishing it', async () => {
     const f = await fixture()
     await f.exchange('Watch the footer links thread.', 'Watching Footer links.')
