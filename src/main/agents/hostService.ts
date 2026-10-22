@@ -15,6 +15,7 @@ import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFol
 import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
@@ -166,6 +167,10 @@ export interface HostService {
   subagentPage?(request: SubagentPageRequest): Promise<SubagentPage>
   /** One agent's assignments, for Agents. */
   subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
+  /** The host offers the iPhone's Agents view (ADR-0103): its Owl answer turns it on. */
+  readonly supportsAgentsView?: boolean
+  /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
+  threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
 
 export interface RequestAnswerRecovery {
@@ -267,7 +272,12 @@ export class LocalHostService implements HostService {
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
-    pullRequestView?: boolean }) {
+    pullRequestView?: boolean
+    /**
+     * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
+     * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
+     */
+    agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations } }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -280,6 +290,12 @@ export class LocalHostService implements HostService {
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
+  get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
+  /** Reads the threads as the host last published them, without copying them. */
+  async threadDelegations(threadId: string): Promise<HostThreadDelegations> {
+    if (!this.options.agentsView) throw new Error('The Agents view is unavailable on this host.')
+    return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
+  }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
