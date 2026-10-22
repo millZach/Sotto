@@ -1556,6 +1556,40 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(123 + carried * (700 - 123), 123, accuracy: 0.0001, "The question's top lands where it was")
     }
 
+    /// `scrollTo` can leave a card short of the point it aimed it at. On CI's SE the card the bar came back over came to
+    /// rest at 79, 5 points above the bar's bottom at 84, under its glass, and lining it up at the bar's bottom again left
+    /// it there (#1288). The next look aims past the bar's bottom by as far as the scroll missed, and a look that finds the
+    /// scroll went where it aimed aims at the bar's bottom again, so a scroll cut off on its way lands too.
+    func testAHeldCardAScrollLeavesShortIsAimedAgainByWhatItMissed() throws {
+        // The status bar ends at 20, the bar's bottom at 84, and the box starts at 519.2: 435.2 points of visible page.
+        let page: CGFloat = 519.2 - 84
+        let question = CGRect(x: 16, y: 70, width: 343, height: 347)
+        let first = try XCTUnwrap(WatcherReaderPlace.anchor(card: question, offset: 0, top: 84, dockTop: 519.2, viewTop: 84))
+        XCTAssertEqual(first, 0, accuracy: 0.0001, "Its top lines up with the bar's bottom")
+        let aimed = WatcherReaderPlace.aimed(first, viewTop: 84, dockTop: 519.2)
+        XCTAssertEqual(aimed, 84, accuracy: 0.0001)
+
+        // It came to rest at 79. Aimed at the same point again, it would stay there; the next look aims 5 points lower.
+        let short = question.offsetBy(dx: 0, dy: 79 - 70)
+        let again = try XCTUnwrap(WatcherReaderPlace.anchor(card: short, offset: 0, top: 84, dockTop: 519.2, viewTop: 84,
+                                                            missed: short.minY - aimed))
+        XCTAssertEqual(WatcherReaderPlace.aimed(again, viewTop: 84, dockTop: 519.2), 89, accuracy: 0.0001)
+        XCTAssertEqual(again, 5 / page, accuracy: 0.0001, "The point is a fraction of the visible page")
+
+        // A scroll that always lands 5 points short puts it at the bar's bottom, and the look after finds it in place.
+        let landed = question.offsetBy(dx: 0, dy: 84 - 70)
+        XCTAssertNil(WatcherReaderPlace.anchor(card: landed, offset: 0, top: 84, dockTop: 519.2, viewTop: 84, missed: -5))
+
+        // A scroll cut off on its way went where the second aimed, 5 points under the bar: the third aims at the bar again.
+        let under = question.offsetBy(dx: 0, dy: 89 - 70)
+        let back = try XCTUnwrap(WatcherReaderPlace.anchor(card: under, offset: 0, top: 84, dockTop: 519.2, viewTop: 84,
+                                                           missed: under.minY - 89))
+        XCTAssertEqual(back, 0, accuracy: 0.0001)
+
+        // A card already where it goes moves nothing, whatever the last scroll missed by.
+        XCTAssertNil(WatcherReaderPlace.anchor(card: landed, offset: 0, top: 84, dockTop: 519.2, viewTop: 84, missed: 12))
+    }
+
     /// A card exactly as tall as the room between the bar and the box, held in the strip the bar uncovered, comes down to
     /// fill that room exactly when the bar comes back over it, and goes back there once the page carries it off: the page
     /// scrolls to the mark at its top, whose point doesn't depend on the card's height.

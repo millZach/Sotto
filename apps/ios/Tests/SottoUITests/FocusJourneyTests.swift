@@ -1246,13 +1246,14 @@ import XCTest
         XCTAssertTrue(lead.waitForExistence(timeout: 15), "Fix login test's question arrives while Watcher writes")
         let card = byID("watcher-card-login")
         revealInWatcher(card)
-        // The strip the bar uncovers runs from the status bar to the bar's bottom. The owl sits in the middle of the bar's
-        // row, as tall as Conversation | Watched less the switch's own 4 points of padding above and below; the bar's
-        // padding is 4 points over the row and 8 under it. So the strip starts 8 points above the owl and ends 12 below it.
+        // The strip the bar uncovers runs from the status bar to the bar's bottom, where its glass ends over the page: the
+        // bar's own frame, read from the bar.
         showWatcherBar()
-        let owl = app.buttons["watcher-to-top"].frame
-        let strip = (top: owl.minY - 8, bottom: owl.maxY + 12)
+        let bar = byID("watcher-bar")
+        XCTAssertTrue(bar.exists, "The bar says where it is")
+        let strip = (top: bar.frame.minY, bottom: bar.frame.maxY)
         let conversation = app.buttons["watcher-section-conversation"]
+        XCTAssertGreaterThan(strip.bottom, conversation.frame.maxY, "The bar's glass ends below Conversation | Watched (\(strip))")
         let window = app.windows.firstMatch
         let windowTop = window.frame.minY
         func barAway() -> Bool { !conversation.exists || conversation.frame.maxY <= windowTop + 1 }

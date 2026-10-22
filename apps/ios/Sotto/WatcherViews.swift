@@ -142,6 +142,10 @@ private struct WatcherBar: View {
                 .glass(in: UnevenRoundedRectangle(bottomLeadingRadius: Radius.xl, bottomTrailingRadius: Radius.xl, style: .continuous))
                 .ignoresSafeArea(edges: .top)
         }
+        // The bar as a whole, from the status bar to where its glass ends over the page, which is also the bottom of its
+        // place, so a journey reads where the bar ends from the bar itself. VoiceOver still reads the owl and the switch.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("watcher-bar")
     }
     /// Once the hero has scrolled off, Watcher's state is the light on the owl, and VoiceOver reads it as the owl's value.
     private var owl: some View {
@@ -635,10 +639,11 @@ private struct WatcherConversationPane: View {
     /// looks again after it has settled: the box rose over it, or the page changed around it and its bottom carried the
     /// card off. The box moving slides it, as the box does; a change in the page puts it back at once, so it never
     /// drifts. Each look waits for the scroll before it to have run its course, so it sees where that scroll stopped, and
-    /// a look that finds the card in place ends them. A scroll can stop short: on CI's large iPhone, the card the bar came
-    /// back over stopped a third of the way down, 8 points under the bar, while the second look came 120 ms after the
-    /// first, before that scroll had run out (#1288). Requests made in the same moment scroll once. None scrolls while the
-    /// user moves the page; the page owes it to them for when they let go.
+    /// a look that finds the card in place ends them. A scroll can leave the card short of where it aimed it: on CI's SE,
+    /// the card the bar came back over came to rest 5 points above the bar's bottom, under its glass, and 8 points above
+    /// it on the large iPhone (#1288). Lining it up again at the same point moved nothing, so each look aims again by as
+    /// far as the scroll before it missed (`WatcherReaderPlace.anchor`'s `missed`). Requests made in the same moment
+    /// scroll once. None scrolls while the user moves the page; the page owes it to them for when they let go.
     private func keepHeldCard(_ scroll: ScrollViewProxy, animated: Bool) {
         let box = follow
         guard box.held != nil else { return }
@@ -648,25 +653,36 @@ private struct WatcherConversationPane: View {
         let still = reduceMotion || !animated
         Task { @MainActor in
             await Task.yield()
-            Self.place(box, scroll, request: request, still: still)
+            var aim = Self.place(box, scroll, request: request, still: still, after: nil)
             // The second look is owed even when the first found the card in place, as the layout may settle after it.
-            // A third follows only a second that had to scroll.
-            for _ in 0..<2 {
+            // Each look after it follows only one that had to scroll. Three are enough for a scroll cut off on its way:
+            // the look after it aims past the card's place by as far as it fell short, and the next, finding that scroll
+            // went where it aimed, aims back at the place.
+            for _ in 0..<3 {
                 try? await Task.sleep(nanoseconds: still ? 120_000_000 : 350_000_000)
-                guard Self.place(box, scroll, request: request, still: still) else { return }
+                guard let next = Self.place(box, scroll, request: request, still: still, after: aim) else { return }
+                aim = next
             }
         }
     }
-    /// Scrolls the held card back where the reader left it, if it moved and nothing asked to scroll since. Returns
-    /// whether it scrolled.
+    /// Where a scroll aimed the held card's top, in the frames' space, so the next look can tell how far it missed.
+    private struct HeldAim {
+        let key: String
+        let at: CGFloat
+    }
+    /// Scrolls the held card back where the reader left it, if it moved and nothing asked to scroll since, aiming past
+    /// its place by as far as the scroll `after` missed. Returns where it aimed, or nil when it didn't scroll.
     @discardableResult
-    private static func place(_ box: WatcherFollow, _ scroll: ScrollViewProxy, request: Int, still: Bool) -> Bool {
-        guard box.followRequests == request, !box.userScrolling, let key = box.held, let frame = box.cards[key],
-              let y = WatcherReaderPlace.anchor(card: frame, offset: box.heldOffset, top: box.visibleTop, dockTop: box.dockTop,
-                                                viewTop: box.top) else { return false }
+    private static func place(_ box: WatcherFollow, _ scroll: ScrollViewProxy, request: Int, still: Bool,
+                              after: HeldAim?) -> HeldAim? {
+        guard box.followRequests == request, !box.userScrolling, let key = box.held,
+              let frame = box.cards[key] else { return nil }
+        let missed = after.map { $0.key == key ? frame.minY - $0.at : 0 } ?? 0
+        guard let y = WatcherReaderPlace.anchor(card: frame, offset: box.heldOffset, top: box.visibleTop, dockTop: box.dockTop,
+                                                viewTop: box.top, missed: missed) else { return nil }
         box.quiet()
         withAnimation(still ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(cardID(key), anchor: UnitPoint(x: 0.5, y: y)) }
-        return true
+        return HeldAim(key: key, at: WatcherReaderPlace.aimed(y, viewTop: box.top, dockTop: box.dockTop))
     }
     /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
     /// scroll has run, for words whose height settled after it. Requests made in the same moment scroll once, and only the

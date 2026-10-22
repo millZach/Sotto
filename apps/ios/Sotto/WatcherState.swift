@@ -312,13 +312,24 @@ struct WatcherReaderPlace: Equatable {
     ///   - top: the top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away;
     ///     `dockTop`, the top of the box.
     ///   - viewTop: the top of the scroll view's visible page, which `scrollTo` lines up within; `top` when nil.
-    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat, viewTop: CGFloat? = nil) -> CGFloat? {
+    ///   - missed: how far below the point it was aimed at (`aimed`) the last scroll left the card's top, above when
+    ///     negative. The point is moved the other way by as much. `scrollTo` doesn't always line the mark up where its
+    ///     point says: on CI's SE it left a card the bar came back over 5 points above the bar's bottom, under the glass,
+    ///     and lining it up again at the same point never moved it (#1288).
+    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat, viewTop: CGFloat? = nil,
+                       missed: CGFloat = 0) -> CGFloat? {
         let wanted = top + kept(offset, height: card.height, top: top, dockTop: dockTop)
         guard abs(card.minY - wanted) > 1 else { return nil }
         let viewTop = viewTop ?? top
         let page = dockTop - viewTop
         guard page > 1 else { return nil }
-        return (wanted - viewTop) / page
+        return (wanted - missed - viewTop) / page
+    }
+
+    /// The point a scroll that lines the card's top mark up at `y`, a fraction of the visible page from `viewTop` down to
+    /// `dockTop`, aims it at, in the frames' space: where its top should come to rest.
+    static func aimed(_ y: CGFloat, viewTop: CGFloat, dockTop: CGFloat) -> CGFloat {
+        viewTop + y * (dockTop - viewTop)
     }
 
     /// The held card's offset once the top of what the reader sees moves from `before` to `top`, as it does when the bar
