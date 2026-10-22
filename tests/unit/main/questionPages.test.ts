@@ -286,6 +286,14 @@ describe('QuestionPages working pages and reply pages (ADR-0108)', () => {
     expect(pages.searched('thread', 'reply:long')!.working).toHaveLength(2)
   })
 
+  it('keeps no search for a reply that named no page once it is no longer looked for, however many replies come', () => {
+    const pages = new QuestionPages({ changed: vi.fn(), live: async () => true })
+    for (let index = 0; index < 100; index++) pages.decorate(snapshot([]), () => ({ id: `ordinary-${index}`, text: `Done with step ${index}.` }))
+    expect(pages.searchCount).toBeLessThanOrEqual(1)
+    expect(pages.searched('thread', 'reply:ordinary-99')).toMatchObject({ finished: true, pages: [] })
+    expect(pages.searched('thread', 'reply:ordinary-98')).toBeUndefined()
+  })
+
   it('lets a reply’s pages linger an hour once it is no longer looked for', async () => {
     let now = 0
     const pages = new QuestionPages({ changed: vi.fn(), now: () => now, live: async () => true })

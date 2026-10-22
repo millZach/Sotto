@@ -249,6 +249,9 @@ export class QuestionPages {
     this.live = options.live ?? (url => pageAnswers(url))
   }
 
+  /** How many searches are kept, for tests that hold the count to the replies and questions still looked for. */
+  get searchCount(): number { return this.entries.size }
+
   /** What a token opens, while its question waits or lingers. */
   target(token: string): QuestionPageTarget | undefined {
     this.prune()
@@ -311,6 +314,9 @@ export class QuestionPages {
     const now = this.now()
     for (const [key, entry] of this.entries) {
       if (present.has(key)) delete entry.goneAt
+      // A reply no longer looked for that gave no page a token has nothing to serve: it goes at once, so the replies that
+      // named nothing, most of them, leave nothing behind. One with pages lingers like a question's (ADR-0085).
+      else if (entry.tries === 1 && !entry.pages?.length) this.entries.delete(key)
       else entry.goneAt ??= now
     }
     this.prune()
