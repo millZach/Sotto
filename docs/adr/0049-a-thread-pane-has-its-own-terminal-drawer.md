@@ -32,4 +32,4 @@ Because the shell is no longer in the thread's worktree, the drawer's bar names 
 
 ## October 22 amendment: Terminal mode is gone
 
-[ADR-0106](0106-terminal-mode-is-removed.md) removed Terminal mode. The drawer and the Tools panel's terminal are Sotto's two terminals now, and what this record says about Terminal mode's terminals, keeping Ctrl+J and sharing search and text size, no longer applies to anything.
+[ADR-0107](0107-terminal-mode-is-removed.md) removed Terminal mode. The drawer and the Tools panel's terminal are Sotto's two terminals now, and what this record says about Terminal mode's terminals, keeping Ctrl+J and sharing search and text size, no longer applies to anything.

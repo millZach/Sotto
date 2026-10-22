@@ -417,7 +417,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
     const shell = peer.clientUpdates || !state.clientUpdates ? projected : { ...projected, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
-    // An iPhone from before ADR-0106 settles a terminal answer it was waiting on only once a complete list leaves its
+    // An iPhone from before ADR-0107 settles a terminal answer it was waiting on only once a complete list leaves its
     // terminal out, so a client that still accepts `terminals` reads an empty one. Nothing offers the feature.
     return peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
   }

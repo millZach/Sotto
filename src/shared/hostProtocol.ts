@@ -106,7 +106,7 @@ export function shellForProtocolV1<T extends AgentState>(state: T) {
  * A shell as a client reads it. `host.modelsRevision` is sent only to a client that accepts
  * `model-catalog-revision`. The desktop's own client accepts it, and puts a catalog the host left out back
  * before it reads the shell, so it reads `modelsRevision` as optional and `host.models` stays required, as v1 has it.
- * `terminals` is always empty: the retired feature's list, sent only to a client whose hello still accepts it (ADR-0106).
+ * `terminals` is always empty: the retired feature's list, sent only to a client whose hello still accepts it (ADR-0107).
  */
 const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional(),
   terminals: z.tuple([]).optional(),
