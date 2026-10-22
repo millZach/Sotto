@@ -4,7 +4,7 @@ import { clonePlainData } from './cloneHostSnapshot'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
-  | 'readHandover' | 'continueWithHandover' | 'dismissHandover'>
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew'>
 type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */
@@ -30,6 +30,7 @@ export function createWatcherRoomDesktop(options: {
     readHandover: async () => watcher?.readHandover() ?? unavailable(),
     continueWithHandover: async request => watcher?.continueWithHandover(request) ?? unavailable(),
     dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
+    startNew: () => watcher?.startNew() ?? Promise.resolve(unavailable()),
   }
   // Keep the legacy callback/replies, without captures or a publisher, when either owner is absent.
   if (!options.streamingPublishCost || !watcher) {
@@ -55,6 +56,7 @@ export function createWatcherRoomDesktop(options: {
       readHandover: () => bridge.readHandover(),
       continueWithHandover: request => reply(() => bridge.continueWithHandover(request)),
       dismissHandover: () => reply(() => bridge.dismissHandover()),
+      startNew: () => reply(() => bridge.startNew()),
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

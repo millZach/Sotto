@@ -65,7 +65,11 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       const area = strip.current?.closest('.thread-workspace__compose')
-      if (event.key !== 'Escape' || event.defaultPrevented || !(event.target instanceof Node) || !area?.contains(event.target) || strip.current?.contains(event.target)) return
+      if (event.key !== 'Escape' || !(event.target instanceof Element) || !area?.contains(event.target) || strip.current?.contains(event.target)) return
+      // The prompt editor's own keymap takes every Escape to select around the caret, which leaves nothing open; there,
+      // only a composer menu that is open keeps the key.
+      const editor = event.target.closest('.prompt-editor')
+      if (event.defaultPrevented && (editor === null || editor.getAttribute('aria-expanded') === 'true')) return
       event.preventDefault()
       putAway.current()
     }
@@ -100,7 +104,8 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
     }}>
     <div className="watcher-handover__lead">
       <CornerDownRight size={15} aria-hidden="true" />
-      <p role="status">Sending starts the new Watcher with a <strong>handover</strong> of the last one, from {PROVIDER_LABELS[offer.provider]}.</p>
+      {/* After New Watcher, the last one was on the same provider, so the strip names none. */}
+      <p role="status">Sending starts the new Watcher with a <strong>handover</strong> of the last one{offer.provider === room.state?.current?.provider ? '' : `, from ${PROVIDER_LABELS[offer.provider]}`}.</p>
       <button type="button" className="watcher-handover__dismiss tt-focusable" aria-label="Don’t hand over: start the new Watcher without it"
         title="Don’t hand over: start the new Watcher without it" onClick={() => void dismiss()}><X size={15} aria-hidden="true" /></button>
     </div>

@@ -149,13 +149,15 @@ export interface ThreadPaneProps {
   readonly watcherHeader?: ReactNode
   /** In Watcher's own pane, what stands in its conversation's place (the Watched view); its own requests stay under it. */
   readonly watcherBody?: ReactNode
+  /** In Watcher's own pane, what its conversation says while empty, in place of the plain empty line (a new Watcher's note). */
+  readonly watcherEmpty?: ReactNode
 }
 
 /**
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherBody }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherBody, watcherEmpty }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const renameReturn = useRef<HTMLElement | null>(null)
@@ -304,7 +306,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot}>
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
