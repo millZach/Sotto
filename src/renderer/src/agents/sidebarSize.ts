@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 
-/** The Threads sidebar's key; Terminal mode and the pages beside it share it. */
+/** The Threads sidebar's key; the pages beside it share it. */
 export const THREADS_SIDEBAR_KEY = 'sotto.threadWorkspace.sidebar'
 const CHANGED = 'sotto-sidebar-size'
 const DEFAULT = '{"width":320,"collapsed":false}'

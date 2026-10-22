@@ -60,7 +60,6 @@ describe('the Sotto Owl night sky', () => {
     expect(stars.every(star => star.textContent === '' && star.childElementCount === 0)).toBe(true)
     // The row keeps every control it has on stable.
     const row = sidebar.querySelector<HTMLElement>('.thread-nav__top')!
-    expect(within(row).getByRole('radiogroup', { name: 'Sidebar mode' })).toBeVisible()
     for (const name of ['Add project', 'Collapse sidebar']) expect(within(row).getByRole('button', { name })).toBeVisible()
 
     await user.click(within(row).getByRole('button', { name: 'Collapse sidebar' }))

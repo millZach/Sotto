@@ -242,10 +242,6 @@ import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
 import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
-import { TERMINALS_EVENT } from '../shared/terminalWorkspace'
-import { TerminalWorkspaceService } from './terminals/service'
-import { registerTerminalWorkspaceIpc } from './terminals/ipc'
-import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
 import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
@@ -1032,23 +1028,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const terminalWorkspace = new TerminalWorkspaceService({
-    projects: () => agentControl.projects(), git: runWorktreeGit,
-    worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
-    acquireReclaim: async directory => {
-      const release = await agentHost.acquireWorktreeReclaim(directory)
-      try {
-        if (await terminalService.hasRunningTerminalInCheckout(directory)) throw new Error('A terminal is open in this folder, so it stays.')
-        return release
-      } catch (error) { release(); throw error }
-    },
-    emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
-  })
   const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,
-    terminals: terminalWorkspace,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,
   })
@@ -1678,7 +1661,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: copyOutput, reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
-      const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, terminalWorkspace, () => windows.getTrustedRenderers(), sender => BrowserWindow.getAllWindows().find(window => window.webContents === sender))
       browserService = new BrowserService({ files,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
@@ -1886,7 +1868,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupContinue()
         cleanupMainActivity()
         cleanupOpenCodeSignIn()
-        cleanupTerminals()
         worktreeCleanup?.dispose()
         cleanupTools()
         browserService = undefined

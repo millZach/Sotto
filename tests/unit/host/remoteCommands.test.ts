@@ -104,9 +104,6 @@ describe('remote command allow-list', () => {
       ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
       'check-answer',
-      // Only an advertised and accepted desktop terminal feature admits these operations (ADR-0066).
-      // Reading a preview and observing a detail grant nothing; hook dispatch rechecks current Can answer.
-      'terminal-approval', 'observe-terminals', 'answer-terminal',
       // Optional Watcher paths require an SSH-recorded desktop and use their own owning-host guards.
       // Neither becomes an ordinary remote command or grants answer authority.
       'watcher-control', 'watcher-read',

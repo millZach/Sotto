@@ -7,7 +7,7 @@ import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import type { AgentConnection } from './AgentContext'
-import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
+import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
 import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
@@ -290,7 +290,7 @@ function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnTy
 }
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
-export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread,
+export function ThreadSidebar({ state, command, organization, query, liveClock = true, onQuery, onOpen, onNewThread,
   currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
@@ -299,8 +299,6 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   /** The hidden page heading the frame carries; `null` beside a page that has its own. */
   readonly title?: string | null
   /** Which mode the sidebar's switch shows as current, and where the other one leads. */
-  readonly mode?: SidebarMode
-  readonly onMode?: (mode: SidebarMode) => void
   /** False where the page holds its clock still (a capture run); working rows then keep the time they were given. */
   readonly liveClock?: boolean | undefined
   readonly onQuery: (query: string) => void
@@ -339,7 +337,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   // The chord opens the chooser (what the top button does) only while no thread is focused; a focused thread
   // answers it from its own project's pen instead, so the top button's aria-keyshortcuts stands down then.
   const topShortcut = newThreadShortcut ? { title: `New thread ${newThreadShortcut.suffix}`, keys: currentThreadId === null ? newThreadShortcut.keys : undefined } : undefined
-  return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
+  return <SidebarFrame state={state} command={command} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
     afterSearch={<NeedsAttentionLine failures={failures} command={command} />}

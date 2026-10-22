@@ -25,10 +25,9 @@ import { ThreadPane } from './ThreadPane'
 import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
-import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
+import { SidebarChromeProvider } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
-import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
@@ -80,20 +79,17 @@ export interface ThreadsViewProps {
    */
   readonly onPaneThreadsChange?: ((threadIds: readonly string[]) => void) | undefined
   readonly layoutStore?: SplitLayoutStore | undefined
-  /** What Terminal mode is given beyond the state: its bridge, view and stores; tests pass stand-ins. */
-  readonly terminals?: Pick<TerminalWorkspaceProps, 'store' | 'bridge' | 'viewFactory' | 'layoutStore' | 'platform'> | undefined
   /** Test-only: the pane area's size where layout measurement is unavailable. */
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
   // On Owl the Update all card speaks for older hosts (ADR-0077).
   const updateAll = useOwlFeature('update-all')
   const now = useClock(fixedNow)
-  const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
   // The chooser for the top New thread button and the sidebar's own top button; the pen and the empty page's
   // button already know their project and skip it, opening the thread at once (issue #347). Opened by New thread
@@ -278,14 +274,6 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings')}>Open Settings</Button> : null}
     <PageWindowControls />
   </div>
-  // Terminal mode keeps the same frame; the threads and their panes wait, unchanged, for the switch back.
-  if (mode === 'terminals') {
-    return <SidebarChromeProvider updateControl={updateControl}><div className={page} data-mode="terminals">
-      <TerminalWorkspace state={state} command={command} mode={mode} onMode={setMode} now={fixedNow} {...terminals} paneAreaWidth={paneAreaWidth} paneAreaHeight={paneAreaHeight} />
-      <PageWindowControls />
-    </div></SidebarChromeProvider>
-  }
-
   const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
   gridRef.current = grid
 
@@ -317,7 +305,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label="Thread workspace">

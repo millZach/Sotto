@@ -7,7 +7,7 @@ import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents } from './AgentContext'
 import { overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
-import { SidebarFoot, SidebarTop, useSidebarMode, type SidebarMode } from './SidebarFrame'
+import { SidebarFoot, SidebarTop } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { describeThreads, organizeWorkspace } from './threadFacts'
 import { useContinueEnabled } from './continuations'
@@ -20,7 +20,7 @@ const noop = (): void => {}
 /**
  * The Threads sidebar beside a page that is not Threads (Dictate, History, Help): the same list, the same
  * frame, with no thread current and no pane to open beside. Opening a thread or asking for a new one leads to
- * the Threads page, and the Terminal side of the mode switch leads there too, since terminals open in panes.
+ * the Threads page.
  * Until main has agent controls the frame stands with the sentence the Threads page would show. The foot's
  * update control comes from the `SidebarChromeProvider` around the shell.
  */
@@ -32,7 +32,6 @@ export function PageSidebar({ now: fixedNow }: {
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
   const now = useClock(fixedNow)
-  const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
   const drafts = useDraftThreads()
   const published = agents.state
@@ -51,16 +50,10 @@ export function PageSidebar({ now: fixedNow }: {
     void command({ type: 'select-thread', threadId })
     navigate?.('threads')
   }, [command, navigate])
-  // The new thread opens in Threads mode, even when the page was last left in Terminal mode, so it is not made unseen.
   const startNewThread = useCallback((projectId?: string): void => {
     setNewThreadIntent({ projectId })
-    setMode('threads')
     navigate?.('threads')
-  }, [navigate, setMode])
-  const onMode = useCallback((next: SidebarMode): void => {
-    setMode(next)
-    if (next === 'terminals') navigate?.('threads')
-  }, [setMode, navigate])
+  }, [navigate])
 
   if (state === null) {
     return <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label="Thread sidebar">
@@ -69,6 +62,6 @@ export function PageSidebar({ now: fixedNow }: {
       <SidebarFoot />
     </aside>
   }
-  return <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={onMode} onQuery={setQuery}
+  return <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery}
     onOpen={openThread} onNewThread={startNewThread} currentThreadId={null} openThreadIds={NO_PANES} onOpenBeside={noop} onDragThread={noop} title={null} />
 }

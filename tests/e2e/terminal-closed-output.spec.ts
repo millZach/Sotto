@@ -1,7 +1,6 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { execFileSync } from 'node:child_process'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
@@ -70,73 +69,6 @@ for (const place of ['tools', 'drawer'] as const) {
     } finally { await closeSotto(launched) }
   })
 }
-
-test('each provider exits to an interactive shell and Close reclaims a native worktree', async () => {
-  test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')
-  test.setTimeout(180_000)
-  const launched = await launchSotto()
-  const { page } = launched
-  try {
-    const project = await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
-      const state = await window.sotto!.agents!.command({ type: 'connect' })
-      return state.host.projects[0]!
-    })
-    expect(project.path.startsWith(launched.userData)).toBe(true)
-    // The ordinary fixture folder has no Git repository; give this owned test folder a committed baseline.
-    await writeFile(join(project.path, 'terminal-baseline.txt'), 'Terminal worktree fixture\n')
-    for (const args of [['init'], ['add', '.'], ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'Baseline']]) execFileSync('git', args, { cwd: project.path, stdio: 'pipe' })
-    const commands = join(launched.userData, 'terminal-fixture-bin')
-    await mkdir(commands)
-    for (const provider of ['claude', 'codex', 'grok']) await writeFile(join(commands, `${provider}.cmd`), '@echo off\r\necho SOTTO_FIXTURE_PROVIDER\r\nexit /b 7\r\n')
-    await launched.app.evaluate((_, commands) => { process.env.PATH = `${commands};${process.env.PATH ?? ''}` }, commands)
-    await page.reload(); await openThreads(page)
-    await page.getByRole('radio', { name: 'Terminal', exact: true }).click()
-    // Drive the normal opening path before later launches vary the provider and folder through the bridge.
-    await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-    const dialog = page.getByRole('dialog', { name: 'New terminal', exact: true })
-    await dialog.getByRole('searchbox', { name: 'Search projects' }).press('ArrowDown')
-    await page.keyboard.press('Enter')
-    await dialog.getByRole('textbox', { name: 'Terminal name' }).fill('Shell entry check')
-    await dialog.getByRole('combobox', { name: 'Terminal provider' }).selectOption('')
-    await dialog.getByRole('button', { name: 'Open terminal', exact: true }).click()
-    await expect(page.locator('.terminal-view .xterm-helper-textarea')).toBeVisible()
-    await page.getByRole('button', { name: 'Close Shell entry check', exact: true }).click()
-    for (const provider of ['claude', 'codex', 'grok'] as const) {
-      const terminal = await page.evaluate(async ({ projectId, provider }) => {
-        const result = await window.sotto!.terminals!.open({ projectId, title: `${provider} exit check`, workingCopy: 'independent', launch: { provider, modelId: null, reasoning: null, permission: 'ask' } })
-        if (!result.ok) throw new Error(result.error.message)
-        return result.value.terminal
-      }, { projectId: project.id, provider })
-      const read = () => page.evaluate(async id => {
-        const result = await window.sotto!.terminals!.read({ id })
-        if (!result.ok) throw new Error(result.error.message)
-        return result.value
-      }, terminal.id)
-      await expect.poll(async () => (await read()).output).toContain(`${provider} exited with code 7.`)
-      expect((await read()).terminal.status).toBe('running')
-      await page.getByRole('button', { name: `${provider} exit check`, exact: true }).click()
-      const input = page.locator('.terminal-view .xterm-helper-textarea')
-      // The provider's exit leaves the same PowerShell running; its prompt comes after the exit line.
-      await waitForShellPrompt(async () => { const value = await read(); return { output: value.output, status: value.terminal.status } }, { after: `${provider} exited with code 7.` })
-      await input.pressSequentially("Write-Output ('SOTTO_' + 'SHELL_READY'); (Get-Location).Path")
-      await input.press('Enter')
-      await expect.poll(async () => (await read()).output).toContain('SOTTO_SHELL_READY')
-      const ready = await read()
-      expect(ready.terminal.workingDirectory.startsWith(launched.userData)).toBe(true)
-      expect(ready.output).toContain(ready.terminal.workingDirectory)
-      await mkdir(terminalTruthsEvidence, { recursive: true })
-      if (provider === 'codex') {
-        await resizeWindow(launched, 820, 560)
-        await page.screenshot({ path: join(terminalTruthsEvidence, 'provider-exit-820-dark.png'), animations: 'disabled' })
-      }
-      await page.getByRole('button', { name: `Close ${provider} exit check`, exact: true }).click()
-      await expect.poll(async () => (await read()).terminal.worktree?.reclaimedAt).toBeTruthy()
-      await expect(stat(ready.terminal.workingDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
-    }
-  } finally { await closeSotto(launched) }
-})
 
 test('a running Tools shell restores truthfully and the global ended-shell limit can be recovered', async () => {
   test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')
@@ -220,80 +152,5 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     await panel.getByRole('button', { name: 'End terminal', exact: true }).press('Enter')
     await expect(panel.getByRole('button', { name: 'Start terminal', exact: true })).toBeEnabled()
     await expect(panel.getByText(TERMINAL_LIMIT_MESSAGE)).toHaveCount(0)
-  } finally { await closeSotto(launched) }
-})
-
-const evidence = evidenceDirectory('artifacts/review-384')
-
-test('Closed keeps a native terminal row and reopens it with fresh output', async () => {
-  test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')
-  test.setTimeout(120_000)
-  const launched = await launchSotto()
-  const { page } = launched
-  try {
-    await mkdir(evidence, { recursive: true })
-    await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
-      await window.sotto!.agents!.command({ type: 'connect' })
-    })
-    await page.reload(); await openThreads(page)
-    await page.getByRole('radio', { name: 'Terminal', exact: true }).click()
-    const id = await page.evaluate(async () => {
-      const state = await window.sotto!.agents!.get()
-      const opened = await window.sotto!.terminals!.open({ projectId: state.host.projects[0]!.id, title: 'Closed shelf check', workingCopy: 'shared',
-        launch: { provider: null, modelId: null, reasoning: null, permission: null } })
-      if (!opened.ok) throw new Error(opened.error.message)
-      return opened.value.terminal.id
-    })
-    const read = () => page.evaluate(async id => {
-      const result = await window.sotto!.terminals!.read({ id })
-      if (!result.ok) throw new Error(result.error.message)
-      return result.value
-    }, id)
-    await expect.poll(async () => (await read()).terminal.status).toBe('running')
-    await page.getByRole('button', { name: 'Closed shelf check', exact: true }).click()
-    const before = await read()
-    expect(before.output).toContain('Opened by Sotto')
-    await page.getByRole('button', { name: 'Close Closed shelf check', exact: true }).click()
-    await expect.poll(async () => (await read()).output).toBe('')
-    await page.getByRole('button', { name: 'Closed 1 terminal', exact: true }).click()
-    const shelf = page.getByRole('region', { name: 'Closed', exact: true })
-    await expect(shelf.getByRole('button', { name: 'Closed shelf check', exact: true })).toBeDisabled()
-    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
-      await resizeWindow(launched, width, height)
-      for (const appearance of ['dark', 'light'] as const) {
-        await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), appearance)
-        await expect(shelf.getByRole('button', { name: 'Reopen Closed shelf check', exact: true })).toBeInViewport()
-        await page.screenshot({ path: join(evidence, `closed-${width}-${appearance}.png`), animations: 'disabled' })
-      }
-    }
-    const reopen = shelf.getByRole('button', { name: 'Reopen Closed shelf check', exact: true })
-    await shelf.locator('.thread-nav__row').hover()
-    await expect(reopen).toBeVisible()
-    const hit = await reopen.evaluate(element => {
-      const bounds = element.getBoundingClientRect()
-      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
-        receivesPointer: element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)),
-        opacity: getComputedStyle(element.parentElement!).opacity }
-    })
-    await writeFile(join(evidence, 'reopen-hit.json'), JSON.stringify(hit, null, 2) + '\n')
-    expect(hit.receivesPointer).toBe(true)
-    expect(hit.opacity).toBe('1')
-    await reopen.focus()
-    await expect(reopen).toBeFocused()
-    await reopen.click()
-    await expect.poll(async () => (await read()).terminal.status).toBe('running')
-    const reopened = await read()
-    expect(reopened.terminal).toMatchObject({ id, title: before.terminal.title, workingDirectory: before.terminal.workingDirectory, command: before.terminal.command, closedAt: null })
-    expect(reopened.output).toContain('Opened by Sotto')
-    await expect(shelf.getByRole('button', { name: 'Closed shelf check', exact: true })).toHaveCount(0)
-    const input = page.locator('.terminal-view .xterm-helper-textarea')
-    await waitForShellPrompt(async () => { const value = await read(); return { output: value.output, status: value.terminal.status } })
-    await input.pressSequentially("Write-Output ('SOTTO_' + 'REOPEN_READY')")
-    await input.press('Enter')
-    await expect.poll(async () => (await read()).output).toContain('SOTTO_REOPEN_READY')
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    await page.screenshot({ path: join(evidence, 'reopened.png'), animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

@@ -435,7 +435,7 @@ describe('Add project', () => {
   })
 })
 
-describe('a folder chosen in New thread or New terminal', () => {
+describe('a folder chosen in New thread', () => {
   function Chooser({ onChoose }: { readonly onChoose: (choice: ProjectChoice) => void }) {
     const chooser = useProjectChooser(twoHosts(), onChoose, { hostId: FORGE })
     return <>{chooser.choices}</>

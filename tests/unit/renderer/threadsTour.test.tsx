@@ -137,10 +137,4 @@ describe('ThreadsTour', () => {
     expect(screen.getByText(/Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings\./)).toBeVisible()
     expect(screen.queryByText(/Shift\+Space/)).toBeNull()
   })
-
-  it('shows the Threads sidebar rather than Terminal mode for the tour', () => {
-    localStorage.setItem('sotto.threadWorkspace.mode', 'terminals')
-    renderTour()
-    expect(localStorage.getItem('sotto.threadWorkspace.mode')).toBe('threads')
-  })
 })

@@ -144,8 +144,6 @@ describe('main-window theme tokens', () => {
     const onHeader = [
       ['text-faint', 'sidebar', 'owl-night', 'Add project and New thread'],
       ['text-muted', 'sidebar', 'owl-night', 'Collapse sidebar'],
-      ['text-muted', 'surface-sunken', 'owl-night-control', 'the Threads | Terminal switch'],
-      ['text', 'surface-elevated', 'owl-night-control-on', 'the switch\'s lit side'],
       ['text-faint', 'field', 'owl-night-field', 'the search placeholder'],
       ['text-muted', 'field', 'owl-night-field', 'the search icon'],
     ] as const

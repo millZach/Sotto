@@ -275,8 +275,7 @@
      four low strengths, three of them in the accent, and the accent glows faintly behind the tile. The night is the
      sidebar a hair darker with its chroma lifted, on the sidebar's own hue; a sidebar with no hue (Citrine) borrows
      Sotto's night blue, 265. The search field is a deeper pool of that night, so its placeholder reads within a
-     twentieth of how it reads on the theme's own field, and the Threads | Terminal switch takes the night at its
-     own lightness.
+     twentieth of how it reads on the theme's own field.
      --owl-night-hue is a channel expression, so it is only valid inside a relative oklch(). */
   --owl-night-hue: calc(h * clamp(0, (c - .001) * 100000, 1) + 265 * (1 - clamp(0, (c - .001) * 100000, 1)));
   --tt-owl-star: var(--tt-sidebar-text);
@@ -290,8 +289,6 @@
   --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
   --tt-owl-night: oklch(from var(--tt-sidebar) calc(l - .011) min(calc(c + .025), .05) var(--owl-night-hue));
   --tt-owl-night-field: oklch(from var(--tt-sidebar) calc(l - .05) min(calc(c + .023), .045) var(--owl-night-hue));
-  --tt-owl-night-control: oklch(from var(--tt-surface-sunken) l min(calc(c + .02), .045) var(--owl-night-hue));
-  --tt-owl-night-control-on: oklch(from var(--tt-surface-elevated) l min(calc(c + .02), .045) var(--owl-night-hue));
   /* Watcher's room has no sidebar, so its night sits in the room's top-left corner (watcher/watcher.css), derived
      from the canvas as the sidebar's is from the sidebar: the canvas is the darkest surface, so a little lighter
      than it, chroma lifted, on the same hue. */
@@ -400,8 +397,6 @@
   --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-night-field: var(--tt-field);
-  --tt-owl-night-control: var(--tt-surface-sunken);
-  --tt-owl-night-control-on: var(--tt-surface-elevated);
 }
 
 /* The effort colourways (ADR-0019). Ember and Theme accent come from theme roles; Cyberpunk, Rainbow, Aurora

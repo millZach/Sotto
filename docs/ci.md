@@ -4,9 +4,9 @@
 
 ## Terminal interaction verification
 
-After a build, run `npx playwright test tests/e2e/terminal-search-links-zoom.spec.ts tests/e2e/terminal-display.spec.ts tests/e2e/pane-terminal.spec.ts tests/e2e/terminal-loading.spec.ts tests/e2e/terminal-closed-output.spec.ts`. The interaction spec drives real Windows ConPTYs in Terminal mode, the pane drawer and Tools. It checks output search, safe modifier-click links through a stubbed external opener, font size and PTY resize, size persistence through a full app restart, and native clipboard image paste. Terminal mode first searches on WebGL, then falls back to DOM after a simulated context loss; drawers and Tools use DOM. The display spec separately checks WebGL colours and contiguous glyphs.
+After a build, run `npx playwright test tests/e2e/terminal-search-links-zoom.spec.ts tests/e2e/terminal-display.spec.ts tests/e2e/pane-terminal.spec.ts tests/e2e/terminal-loading.spec.ts tests/e2e/terminal-closed-output.spec.ts`. The interaction spec drives real Windows ConPTYs in the pane drawer and Tools. It checks output search, safe modifier-click links through a stubbed external opener, font size and PTY resize, and native clipboard image paste, on the DOM renderer. The display spec separately checks WebGL colours and contiguous glyphs.
 
-The interaction spec writes light and dark search and link-choice captures at 1600x1000, 1280x800 and 820x560 with reduced motion on through the shared evidence helper. Ordinary runs use ignored `artifacts/e2e-runs/terminal-search-links-zoom/`; set `SOTTO_E2E_EVIDENCE=publish` to refresh the cited images under `artifacts/terminal-search-links-zoom/` on purpose. Selected captures cited in the verification note are committed explicitly. It needs no provider account or network page and runs serially under the existing one-worker Playwright configuration. The Windows desktop trial also runs this interaction spec, including shifted Equals and native Plus input in all three terminal surfaces; the other terminal specs remain local desktop verification.
+The interaction spec writes light and dark search and link-choice captures at 1600x1000, 1280x800 and 820x560 with reduced motion on through the shared evidence helper. Ordinary runs use ignored `artifacts/e2e-runs/terminal-search-links-zoom/`; set `SOTTO_E2E_EVIDENCE=publish` to refresh the cited images under `artifacts/terminal-search-links-zoom/` on purpose. Selected captures cited in the verification note are committed explicitly. It needs no provider account or network page and runs serially under the existing one-worker Playwright configuration. The Windows desktop trial also runs this interaction spec, including shifted Equals and native Plus input in both terminals; the other terminal specs remain local desktop verification.
 
 ## When each job runs
 
@@ -189,14 +189,6 @@ inspect their images before claiming visual verification. These commands write
 disposable evidence by default. Publication needs the separate setting above;
 keep only intended captures when publishing. They do not regenerate the design
 comparison baselines.
-
-## Terminal agent states
-
-On forge, `scripts/verify-codex-terminal-state.mjs` checks the installed Codex CLI with one synthetic GPT-6-Luna turn, under `scripts/with-nested-hyprland.mjs` and a disposable profile. It also accepts a packaged Linux executable. This account-dependent proof is not a CI test; see [the Codex completion note](verification/2026-10-12-codex-terminal-state.md).
-
-`tests/integration/terminalAgentHooks.test.ts` runs `tests/fixtures/fakeTerminalAgent.mjs` through the private run-only hook configuration and built Node-capable helper. It checks authenticated bounded frames, exact one-time answers, acknowledgement, expiry, uncertain delivery, cancellation and privacy without installed provider accounts. Windows cases cross PowerShell's native argument handling for Codex notify. State and visibility unit tests also cover stale runs, silent work, changed versions, active screen matching and hidden panes.
-
-Build and run `npx playwright test tests/e2e/terminal-agent-states.spec.ts` on an interactive Windows desktop. The real Electron window and ConPTY drive fake Claude, Codex and Grok CLIs through work, native approvals/questions, unseen completion, viewing and provider exit to a retained shell. The spec also checks search during Needs you, visible unfocused split panes, minimising/restoring the window, keyboard selection, reduced motion, text contrast and bounds. It writes light/dark captures at 1600x1000, 1280x800 and 820x560, plus a geometry report, through the shared evidence helper to ignored `artifacts/e2e-runs/terminal-agent-states/` by default. The evidence environment variables above control explicit publication and alternate run roots. Inspect them and retain only the evidence cited in `docs/verification/`. This proves the scripted native boundary; it sends no paid model turn and does not establish compatibility with another CLI version or platform.
 
 ## Devin native verification
 

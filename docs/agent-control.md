@@ -2,14 +2,6 @@
 
 Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build and Devin clients, and, in Sotto Owl, Muse (ADR-0079) and OpenCode 2 (ADR-0087). Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Explicit pull request babysitting can send wake-ups but answers no request.
 
-## Terminal mode
-
-Terminal mode starts an installed provider CLI in its own terminal, apart from the thread adapters described below. Main owns each agent's run-scoped Starting, Working, Idle, Needs you, Just finished and Exited state, using private hooks and bundled live-screen rules. Approvals and questions stay in the native CLI; the sidebar and pane-header attention edge lead the user there. Needs you groups agents across projects first, Working next, other terminals by project, then Closed.
-
-[ADR-0066](adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md) governs those states. Just finished means a successful turn completed while no client showed it. Viewing clears the thread-style dot and bold title for every client; any on-screen pane earns nothing, focused or not. The mark is ephemeral and belongs to that run. Plain shells keep output-based Running and Idle. The ADR's iPhone terminal Host feature and approval preview remain proposed work.
-
-Claude Code uses private hooks for each run; Codex notify supplies completion and a consistent provider session ID. Grok uses bundled screen rules. Hooks carry normalised state and IDs, never prompt or tool content. The tested Claude permission channel can deliver an exact one-time Yes or No, but no desktop Sotto answer controls are added. A future phone answer would require its current Can answer policy and a request-bound preview; no phone terminal input or persistent approval choice is proposed. The prototype records the chosen look, not working approval controls. Thread permission handling below is unchanged.
-
 ## Set up
 
 1. Install and sign in to your chosen native coding client. Codex uses App Server, Claude Code uses stream-json and Grok Build uses ACP. Grok connection requires CLI 1.0.5 or newer and ACP 1; an older client produces an error before creating a session. Devin requires 3000.11.92 or newer. Sotto reports each connected client's version in Settings → Providers, with what its channel publishes (ADR-0042). Sotto finds a client on PATH, on your login shell's PATH, in `~/.local/bin`, where a version manager (mise, asdf, nvm, fnm, Volta, Homebrew) installed it, or in npm's global folder; the [guide](guide.md#providers-and-models) has the order (ADR-0036).

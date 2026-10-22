@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
+import React, { createContext, useContext, useMemo, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -18,14 +18,6 @@ import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
 import { useSidebarSize } from './sidebarSize'
 
-/** What the sidebar lists: threads, or the terminals of Terminal mode. */
-export type SidebarMode = 'threads' | 'terminals'
-export const SIDEBAR_MODE_KEY = 'sotto.threadWorkspace.mode'
-const MODES: ReadonlyArray<{ readonly id: SidebarMode; readonly label: string; readonly Icon: LucideIcon }> = [
-  { id: 'threads', label: 'Threads', Icon: MessagesSquare },
-  { id: 'terminals', label: 'Terminal', Icon: SquareTerminal },
-]
-
 /**
  * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own
  * tabs, and transcripts live in the Dictate room's Journal; Memory joins only while memory is switched on.
@@ -38,24 +30,9 @@ const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: string; read
   { id: 'help', label: 'Help', Icon: CircleHelp },
 ]
 
-const modeListeners = new Set<() => void>()
-function readMode(): SidebarMode {
-  try { return localStorage.getItem(SIDEBAR_MODE_KEY) === 'terminals' ? 'terminals' : 'threads' } catch { return 'threads' }
-}
-/** The mode this window was last in; it is remembered per window like the pane arrangement. */
-export function useSidebarMode(): readonly [SidebarMode, (mode: SidebarMode) => void] {
-  const subscribe = useCallback((listener: () => void) => { modeListeners.add(listener); return () => { modeListeners.delete(listener) } }, [])
-  const mode = useSyncExternalStore(subscribe, readMode, () => 'threads' as const)
-  const set = useCallback((next: SidebarMode): void => {
-    try { localStorage.setItem(SIDEBAR_MODE_KEY, next) } catch { /* Private mode: the switch still works for this render tree. */ }
-    for (const listener of [...modeListeners]) listener()
-  }, [])
-  return [mode, set]
-}
-
 /**
  * What the page hands the sidebar's foot. The update control is built by App from the flow it already owns, and
- * Terminal mode renders its own sidebar two components deeper, so it travels by context rather than by prop.
+ * every page's sidebar draws the foot, so it travels by context rather than by prop.
  */
 interface SidebarChrome { readonly updateControl: ReactNode }
 const SidebarChromeContext = createContext<SidebarChrome>({ updateControl: null })
@@ -160,8 +137,6 @@ export function SidebarResize({ size, onResizing }: { readonly size: SidebarSize
 export interface SidebarFrameProps {
   readonly state: AgentState
   readonly command: AgentConnection['command']
-  readonly mode: SidebarMode
-  readonly onMode: (mode: SidebarMode) => void
   readonly label: string
   readonly query: string
   readonly searchPlaceholder: string
@@ -189,19 +164,18 @@ export interface SidebarFrameProps {
   readonly onDismissExtraError?: (() => void) | undefined
   /** A quiet line under search and any refusal, in the open sidebar only: the Threads sidebar's working threads line. */
   readonly notice?: ReactNode
-  /** What a project chosen with Add project opens in: the mode's own New action, there. */
+  /** What a project chosen with Add project opens in: the sidebar's own New action, there. */
   readonly onProjectAdded?: ((projectId: string) => void) | undefined
   /** A line directly under the search, above the list: the Threads sidebar's Needs attention count. */
   readonly afterSearch?: ReactNode
 }
 
 /**
- * The sidebar both modes share: one top row carrying the mark, the Threads | Terminal switch and the two new
- * actions, then search, the scrolling list, and the foot. Only what the body lists changes with the mode. The
- * top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
+ * The Threads sidebar's frame: one top row carrying the mark and the two new actions, then search, the scrolling
+ * list, and the foot. The top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
-export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
   const addProject = useAddProject(state, command, { onAdded: onProjectAdded })
   const mac = (platform ?? app?.platform) === 'darwin'
@@ -209,24 +183,12 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
   const sky = useReleaseTrack() === 'owl' && !size.collapsed
-  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
     {sky ? <OwlSky /> : null}
     <SidebarTop>
       {title === null ? null : <h1 className="tt-visually-hidden">{title}</h1>}
-      <div className="thread-nav__seg thread-nav__seg--icons" role="radiogroup" aria-label="Sidebar mode">
-        {MODES.map(({ id, label: modeLabel, Icon }) => <button key={id} type="button" role="radio" className="tt-focusable" title={modeLabel}
-          aria-checked={id === mode} tabIndex={id === mode ? 0 : -1}
-          onClick={() => onMode(id)}
-          onKeyDown={event => {
-            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-            event.preventDefault()
-            const next = MODES[(MODES.findIndex(candidate => candidate.id === mode) + (event.key === 'ArrowRight' ? 1 : MODES.length - 1)) % MODES.length]!.id
-            onMode(next)
-            window.setTimeout(() => document.querySelector<HTMLElement>('.thread-nav__seg[role="radiogroup"] [role="radio"][aria-checked="true"]')?.focus(), 0)
-          }}><Icon size={15} aria-hidden="true" /><span className="tt-visually-hidden">{modeLabel}</span></button>)}
-      </div>
       <Button variant="ghost" iconOnly aria-label="Add project" title="Add project" disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
       <Button variant="ghost" iconOnly aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} /></Button>
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label="Collapse sidebar" title="Collapse sidebar" onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
@@ -253,7 +215,7 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
   </aside>
 }
 
-/** Settle project, or Restore project once settled: the same action on a folder head in either sidebar mode. */
+/** Settle project, or Restore project once settled, on a folder head in the sidebar. */
 export function ProjectSettleAction({ projectId, title, settled, disabled, command }: {
   readonly projectId: string; readonly title: string; readonly settled: boolean; readonly disabled: boolean
   readonly command: AgentConnection['command']

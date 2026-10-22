@@ -50,16 +50,16 @@ export function isDrawerShortcut(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 
 
 /**
  * The thread whose drawer a keydown toggles, or null when it is not the drawer's to take: already handled or
- * repeating, a dialog is open, it landed in a terminal that is not a drawer (Tools and Terminal mode keep the
- * key for their shells), or no pane with a drawer is on screen (Terminal mode, another page, a pane hidden by
- * narrow focus, a thread on a paired host). The pane holding focus wins; otherwise the selected thread's pane, when it is showing.
+ * repeating, a dialog is open, it landed in a terminal that is not a drawer (Tools keeps the key for its
+ * shells), or no pane with a drawer is on screen (another page, a pane hidden by narrow focus, a thread on a
+ * paired host). The pane holding focus wins; otherwise the selected thread's pane, when it is showing.
  */
 export function paneTerminalTarget(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey' | 'defaultPrevented' | 'repeat' | 'target'>, shortcut: PaneTerminalShortcut, selectedThreadId: string | null | undefined): string | null {
   if (event.defaultPrevented || event.repeat || !isPaneTerminalChord(event, shortcut)) return null
   if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]') !== null) return null
   const target = event.target instanceof Element ? event.target : null
   if (target?.closest('.xterm') && !target.closest('.pane-terminal')) return null
-  // A pane with no drawer button is not the drawer's: Terminal mode's panes, and a thread on a paired host.
+  // A pane with no drawer button is not the drawer's: a thread on a paired host.
   const shown = (pane: Element | null | undefined): string | null => pane instanceof HTMLElement && !pane.hasAttribute('data-hidden') && pane.querySelector('[data-pane-terminal-toggle]') !== null ? pane.dataset.threadId ?? null : null
   const focused = shown(target?.closest('.thread-pane'))
   if (focused !== null) return focused

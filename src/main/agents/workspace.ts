@@ -1448,17 +1448,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } finally { releaseStatus?.(); release() }
     })
   }
-  /** Terminal-owned folders obey the same checkout reservation and thread-use checks as thread-owned folders. */
-  async acquireWorktreeReclaim(folder: string): Promise<() => void> {
-    await this.initialize()
-    const release = await this.checkoutMutations.acquire(folder, 'mutation', { kind: 'remove-folder' })
-    const releaseStatus = this.gitStatus?.hold?.(folder)
-    try {
-      await this.gitStatus?.idle?.(folder)
-      if (!await this.checkoutIsUnreferenced(folder)) throw new Error('A thread works in this folder too, so it stays.')
-      return () => { releaseStatus?.(); release() }
-    } catch (error) { releaseStatus?.(); release(); throw error }
-  }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
     await this.initialize()
     const project = this.state.snapshot.projects.find(item => item.id === projectId)

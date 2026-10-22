@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded October 22, 2026, by [ADR-0106](0106-terminal-mode-is-removed.md), which removed Terminal mode, its agent states and the iPhone's terminal rows. What follows is the record of what was decided.
+
 Decided October 9, 2026, for [#882](https://github.com/millZach/Sotto/issues/882). The desktop states are implemented by [#883](https://github.com/millZach/Sotto/issues/883); the iPhone extension is implemented by #884, with native compilation and simulator verification remaining macOS checks. ADR-0066 was free on `origin/main` and in open pull request diffs on October 9; #880 already uses ADR-0065. Check the number again before merge, as [domain.md](../agents/domain.md) requires.
 
 ## Context
