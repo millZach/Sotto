@@ -6,8 +6,10 @@ from the October 21 owl scene (glyphs, Watcher's owl in the left tree, the fligh
 mode, no cabins) and the four he made on October 22:
 
 - Owls cross the room's column **behind** it: a flight leaves one margin and comes out of the other.
-- On the composer, Watcher's owl stands **beside it in the margin**, on a short ledge that carries the composer's top
-  edge out. It never stands on the edge over the transcript.
+- On the composer, Watcher's owl perches on **a branch growing out of the composer's side** into the margin, one on
+  each side, so it never covers text (Zach, after trying the prototype).
+- The moon **sends out a ripple** each time its whirlpool opens, for a newcomer or for an owl going home, so the moment
+  is easy to notice (Zach, after trying the prototype).
 - A margin too narrow for trees (under 160 px) shows a **rail of owl eyes**, one pair per watched thread.
 - The **moon** sits in the right margin, above the limb new owls fill first.
 
@@ -30,12 +32,14 @@ check that once it merges, and fold its layout into the plan if it doesn't.
   opens the thread at its question or permission, the same as `watcher-answer`. These buttons stay out of the tab
   order: the Watched tab is the keyboard path to the same threads, and twenty-five owls would swamp it.
 - The layout comes from a `ResizeObserver` on the room and the composer's rectangle; the ground line sits at the
-  composer's middle, as in the prototype. The ripple on a click in the open margin stays, limited to the margins.
+  composer's middle, as in the prototype. The composer's two branches are part of the static layer, rooted at the
+  column's edge just under the composer's top. Ripples (from a click in the open margin, and from the moon each time its
+  whirlpool opens) are drawn only in the margins.
 - Colours come from theme roles: ink from `--tt-text`, eyes, glow and whirlpool from `--tt-accent`, and the halo fill
   from `--tt-canvas`, read once per theme change. The stylesheet goes on `themeTokens.test.ts`'s `owned` list.
 - Spots fill in a fixed order: the right tree's limb (from the column side), then Watcher's tree, then the ground (the
   right margin, then the left). When the threads outnumber the spots, the last spot shows "+N", and a press switches to
-  Watched. From the prototype: 29 spots at 1600×1000, 12 at 1280×800 and 6 at 1100×720. The rail holds about 19 a
+  Watched. From the prototype: 27 spots at 1600×1000, 10 at 1280×800 and 4 at 1100×720. The rail holds about 19 a
   margin at 820×560.
 
 ## What the room already gives each owl
