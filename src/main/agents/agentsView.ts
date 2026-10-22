@@ -2,7 +2,7 @@ import type { AgentThread } from '../../shared/agents'
 import { HOST_DELEGATED_THREADS_MAX, HOST_DELEGATION_BRIEF_EXCERPT, hostThreadDelegationsSchema, type HostDelegatedThread, type HostThreadDelegations } from '../../shared/agentsView'
 import type { DelegatedView, DelegationView } from '../../shared/delegation'
 
-/** Delegation's own record as the iPhone's read asks it: every row's views and briefs, each read in one pass over the record. */
+/** Delegation's own record as the iPhone's read asks it: every row's views and briefs, each read once, from those threads' part of the record only. */
 export interface DelegationReads {
   viewsOf(threadIds: readonly string[]): ReadonlyMap<string, { readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[] }>
   briefsOf(threadIds: readonly string[]): ReadonlyMap<string, string>
