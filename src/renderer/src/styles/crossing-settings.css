@@ -155,14 +155,25 @@
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }
 /* Nested production account and provider controls share the focused form. */
 .settings-view .providers-workspace { grid-template-columns: minmax(0, 1fr); min-height: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
-.settings-view .providers-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 6px 0 24px; border: 0; border-bottom: 1px solid var(--tt-hairline); }
-.settings-view .providers-list__row { flex-direction: column; align-items: stretch; gap: 0; padding: 6px 12px 12px; }
-.settings-view .providers-list__select { padding: 10px 0; gap: 8px; }
-.settings-view .providers-list__select strong { font-size: 14px; }
-.settings-view .providers-list__row .tt-toggle { align-self: end; padding: 0; }
-.settings-view .provider-detail__header { padding: 22px 0 16px; }
+.settings-view .providers-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 6px 0 0; border: 0; }
+/* Each provider is its own card, with its toggle at the end of its name's line and its status under both (ADR-0107,
+   Zach's pick P1). The select button fills the card, so a press anywhere on it selects; the toggle sits over the
+   button's top right corner and follows it in the Tab order. The selected card wears the accent edge and wash. */
+.settings-view .providers-list__row { display: grid; grid-template: 'card' auto / minmax(0, 1fr); align-items: start; gap: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
+.settings-view .providers-list__row:hover:not([data-selected='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
+.settings-view .providers-list__row[data-selected='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
+.settings-view .providers-list__select { grid-area: card; display: grid; grid-template-columns: auto minmax(0, 1fr) 38px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 10px; width: 100%; padding: 13px 15px; border-radius: 11px; }
+.settings-view .providers-list__select > span { display: contents; }
+.settings-view .providers-list__select > .provider-mark { display: block; grid-area: mark; margin: 0; }
+.settings-view .providers-list__select strong { grid-area: name; min-width: 0; overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
+.settings-view .providers-list__select small { grid-area: status; min-width: 0; }
+.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; margin: 13px 15px 0 0; padding: 0; }
+/* The selected provider's detail is a card of its own under them. */
+.settings-view .provider-detail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.settings-view .provider-detail__header { padding: 18px 0 14px; }
 .settings-view .provider-tabs { padding: 0; }
-.settings-view .provider-detail__body { padding: 24px 0; }
+.settings-view .provider-detail__body { padding: 22px 0 16px; }
+.settings-view .provider-models li + li { border-top: 2px solid var(--tt-card-inset); }
 .settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); align-items: center; gap: 22px; padding: 20px 0; border-top: 1px solid var(--tt-hairline); }
 .settings-view .account-rows > label, .settings-view .account-rows > .account-row { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); gap: 12px 22px; padding: 18px 0; font-size: 15px; }
 .settings-view .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
@@ -200,9 +211,7 @@
   .settings-view .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
   .settings-view .settings-rows .tt-field:has(.segmented-control) { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field:has(.segmented-control) .segmented-control { justify-self: start; }
-  .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
-  .settings-view .providers-list__row { padding-inline: 8px; }
-  .settings-view .providers-list__select > .provider-mark { display: none; }
+  .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 }
 @media (max-height: 650px) {
   .settings-sidebar { padding-top: 22px; }
@@ -239,12 +248,10 @@
 .settings-view .agent-wake-advanced > summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
 .settings-view #settings-agents > .account-settings > .account-settings .account-rows > label:first-child { border-top: 0; }
 @media (max-height: 650px) {
-  .settings-view .providers-list { padding-top: 4px; padding-bottom: 14px; }
-  .settings-view .providers-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 8px; }
-  .settings-view .providers-list__select { padding: 4px 0; }
-  .settings-view .providers-list__select > .provider-mark { display: none; }
-  .settings-view .providers-list__select > span { gap: 5px; }
-  .settings-view .providers-list__row .tt-toggle { align-self: center; }
+  .settings-view .providers-list { padding-top: 4px; gap: 8px; }
+  .settings-view .providers-list__select { row-gap: 4px; padding: 9px 12px; }
+  .settings-view .providers-list__row .tt-toggle { margin: 9px 12px 0 0; }
+  .settings-view .provider-detail { margin-top: 12px; }
   .settings-view .provider-detail__header { min-height: 50px; padding: 12px 0 10px; }
   .settings-view .provider-detail__body { padding-top: 16px; }
   .settings-view .provider-tabs button { min-height: 38px; padding-bottom: 10px; }
