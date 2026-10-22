@@ -21,6 +21,8 @@ Counted, not timed, so they run in the default suite. Stable has no Watcher and 
 
 `streamingCopyBudget` counted 10.4 to 10.7 copies per Owl update before and 9.4 to 9.8 after, and its Owl budget is now 10. A Watcher publish copies the record no times (`watcherPassCost`, from one). The owner-scale budgets drop by the same amounts. The objects Owl copies still grow with the history, through the desktop room's capture and a command's copy of the whole record, by less than they did: 1.40 times from a quarter of the owner's history to all of it while one thread streams, from 1.58.
 
+These counts are #1327 alone. With #1326, which stops the workspace copying every thread for each publication, the combined counts are in `2026-10-15-copy-budget.md` under "with Watcher's room copied once".
+
 ## Time
 
 Timed once on the shared development PC with other test runs going, so read it as a direction, not a budget. At the owner's scale (250 threads, 160 requests, 144 operations, 5 standing watches), the median of five rounds of 200 calls: `state()` took 3.07 ms before and 1.81 ms after, and a whole publish with the desktop room listening (the observe pass, the room state and the capture) 5.33 ms before and 4.03 ms after.
