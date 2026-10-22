@@ -1066,25 +1066,32 @@ import XCTest
         capture("watcher-hero-watched-dark")
         conversation.tap()
         XCTAssertTrue(byID("watcher-reply").waitForExistence(timeout: 5), "Conversation opens from the bar")
-        // The owl goes to the top of the conversation, where the hero is.
-        let reply = byID("watcher-reply")
+        // The owl goes to the top of the conversation, where the hero is. Each look reads Watcher's state and the box from
+        // one snapshot. On CI's large iPhone, separate queries for them took up to eleven seconds a look, so twenty seconds
+        // held one whole look, and the deadline cut the second one's queries off, which read every frame as zero while the
+        // hero sat between the bar and the box.
         var seen = "no look found Watcher's state"
         var matches = 0
         let atTop = NSPredicate { _, _ in
-            guard state.exists else { seen = "Watcher's state is missing"; matches = 0; return false }
-            let frame = state.frame
-            seen = "state \(frame), bar at \(bar), the box at \(reply.frame.minY)"
-            matches = frame.minY >= bar && frame.maxY <= reply.frame.minY ? matches + 1 : 0
+            guard let elements = try? self.everyElement() else { seen = "no snapshot of the page"; matches = 0; return false }
+            guard let frame = elements.first(where: { $0.identifier == "watcher-state" })?.frame,
+                  let box = elements.first(where: { $0.identifier == "watcher-reply" })?.frame.minY else {
+                seen = "Watcher's state or the box is missing"; matches = 0; return false
+            }
+            seen = "state \(frame), bar at \(bar), the box at \(box)"
+            matches = frame.minY >= bar && frame.maxY <= box ? matches + 1 : 0
             return matches >= 2
         }
         owl.tap()
-        let shown = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 20)
+        let shown = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 30)
         if shown != .completed { explain("watcher-hero-not-shown", seen) }
         XCTAssertEqual(shown, .completed, "The owl brings Watcher's hero back into view (\(seen))")
         capture("watcher-hero-dark")
         watcherInLight()
+        // Counted again from here, so the hero must be seen in light on two looks of its own.
+        matches = 0
         owl.tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 20), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 30), .completed,
                        "The owl brings Watcher's hero back into view in light (\(seen))")
         capture("watcher-hero-light")
     }
