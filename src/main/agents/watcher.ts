@@ -1511,9 +1511,9 @@ export class WatcherService implements WatcherControlHooks {
    * still asks the handover itself (`hasHistory`).
    */
   private newWatcherAnswer(record: Readonly<WatcherRecord>, thread: AgentThread): NonNullable<WatcherRoomState['newWatcher']> {
-    if (this.opening !== undefined || this.replacementBusy(record, thread, true)) return { available: false, reason: 'busy' }
+    if (this.opening !== undefined || this.replacementBusy(record, thread, true)) return 'busy'
     const said = thread.messages.length > 0 || thread.lastUserMessageId !== undefined || (thread.summary?.messageCount ?? 0) > 0 || thread.earlierAvailable === true
-    return said ? { available: true } : { available: false, reason: 'empty' }
+    return said ? 'available' : 'empty'
   }
   /** Whether a Watcher conversation has said anything: what its handover would carry. One that cannot be read counts as having history. */
   private hasHistory(source: WatcherIdentity): boolean {

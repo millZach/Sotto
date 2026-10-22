@@ -132,7 +132,7 @@ describe('New Watcher in Watcher’s composer', () => {
 
   it('is unavailable while main says Watcher is busy, though its thread is at rest', async () => {
     const user = userEvent.setup()
-    const { bridge } = renderRoom(roomState('watcher-a', { newWatcher: { available: false, reason: 'busy' } }),
+    const { bridge } = renderRoom(roomState('watcher-a', { newWatcher: 'busy' }),
       stateWith(watcherThread('watcher-a', { messages: said })), vi.fn())
     const button = await newButton()
     expect(button).toHaveAttribute('aria-disabled', 'true')

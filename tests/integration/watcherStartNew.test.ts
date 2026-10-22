@@ -200,18 +200,18 @@ describe('New Watcher', () => {
   it('tells the room what New Watcher would answer, a worker start still working after Watcher’s turn included', async () => {
     const f = await fixture()
     // Nothing said yet: nothing to hand over.
-    expect(f.service.state().newWatcher).toEqual({ available: false, reason: 'empty' })
+    expect(f.service.state().newWatcher).toBe('empty')
     await f.send('Check the release.')
-    expect(f.service.state().newWatcher).toEqual({ available: false, reason: 'busy' })
+    expect(f.service.state().newWatcher).toBe('busy')
     const worker = await f.startWorker('Release check')
     await f.reply('Started Release check.')
     // Watcher's own turn is over and its thread is idle, but the start it made is still working.
     expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.first.threadId)?.status).toBe('idle')
     expect(f.service.startsInFlight()).toBe(1)
-    expect(f.service.state().newWatcher).toEqual({ available: false, reason: 'busy' })
+    expect(f.service.state().newWatcher).toBe('busy')
     expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
     await f.finish(worker.threadId)
-    expect(f.service.state().newWatcher).toEqual({ available: true })
+    expect(f.service.state().newWatcher).toBe('available')
   })
 
   it('refuses New Watcher while a change of Watcher’s model is under way, creating nothing', async () => {

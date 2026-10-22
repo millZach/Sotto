@@ -58,10 +58,10 @@ export const watcherRoomStateSchema = z.object({
   /**
    * What New Watcher would answer now, by main's own conditions: unavailable while Watcher or any of its work is busy,
    * including starts still working and deliveries the window cannot see, or while its conversation has said nothing.
-   * Absent with no Watcher thread, and from older hosts; a press still asks main.
+   * Absent with no Watcher thread, and from older hosts; a press still asks main. A word rather than an object, so a
+   * publish makes nothing new for it (ownerScaleWorkBudget).
    */
-  newWatcher: z.union([z.object({ available: z.literal(true) }).strict(),
-    z.object({ available: z.literal(false), reason: z.enum(['busy', 'empty']) }).strict()]).optional(),
+  newWatcher: z.enum(['available', 'busy', 'empty']).optional(),
   /**
    * Where each of the current Watcher's receipts goes in its conversation (ADR-0073, receipt cards): the message it is
    * shown under, the last reply of the Watcher turn that took the action, or that turn's own message while no reply has

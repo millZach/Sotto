@@ -30,9 +30,9 @@ const UNREACHABLE = 'Sotto could not reach Watcher, so no new Watcher was starte
  */
 export function newWatcherUnavailable(state: AgentState, thread: AgentThread, main?: WatcherRoomState['newWatcher']): string | null {
   // Main's own answer covers what the window cannot see: starts still working, deliveries and tool calls in flight.
-  if (thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || main?.available === false && main.reason === 'busy') return NEW_WATCHER_BUSY
+  if (thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || main === 'busy') return NEW_WATCHER_BUSY
   const said = thread.messages.length > 0 || (thread.summary?.messageCount ?? 0) > 0 || thread.earlierAvailable === true || thread.lastUserMessageId !== undefined
-  return said && main?.available !== false ? null : NEW_WATCHER_EMPTY
+  return said && main !== 'empty' ? null : NEW_WATCHER_EMPTY
 }
 
 /** The chip in Watcher's composer; nothing where the room's bridge cannot start a new Watcher. */
