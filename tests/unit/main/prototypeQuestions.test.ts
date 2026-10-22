@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { AGENT_THREAD_EXCERPT_MAX } from '../../../src/shared/agents'
 import { aboutPrototype, PROTOTYPE_HOLD_MAX_MS, PROTOTYPE_SEND_BACK_CONFIRM_MS, PROTOTYPE_SEND_BACK_NOTE, PROTOTYPE_SEND_BACK_WINDOW_MS, PrototypeQuestions, sendBackAnswer, type PrototypeSendBack } from '../../../src/main/agents/prototypeQuestions'
 import type { PageSearch } from '../../../src/main/agents/questionPages'
 import type { AgentHostSnapshot, AgentMessage, AgentRequest, AgentThread, QuestionPage } from '../../../src/shared/agents'
@@ -41,8 +42,8 @@ function setup(options: { taken?: boolean | 'throw' | 'later' } = {}) {
     get changes() { return changes },
     advance: (ms: number) => { now += ms },
     confirm: (taken: boolean) => confirm(taken),
-    found: (requestId: string, working: QuestionPage[], pages: QuestionPage[] = working) => searches.set(`thread\nrequest:${requestId}`, { finished: true, pages, working }),
-    searching: (requestId: string) => searches.set(`thread\nrequest:${requestId}`, { finished: false, pages: [], working: [] }),
+    found: (requestId: string, working: QuestionPage[], pages: QuestionPage[] = working, aboutPrototype = false) => searches.set(`thread\nrequest:${requestId}`, { finished: true, pages, working, aboutPrototype }),
+    searching: (requestId: string) => searches.set(`thread\nrequest:${requestId}`, { finished: false, pages: [], working: [], aboutPrototype: false }),
     shown: (shownThread: AgentThread) => held.decorate(snapshot(shownThread)).threads[0]!,
     fire: (ms: number) => { for (const timer of timers.filter(item => item.ms === ms && !item.cancelled)) { timer.cancelled = true; timer.run() } },
   }
@@ -244,6 +245,56 @@ describe('PrototypeQuestions', () => {
     expect(test.timers.some(timer => timer.ms === PROTOTYPE_HOLD_MAX_MS)).toBe(true)
     test.advance(PROTOTYPE_HOLD_MAX_MS)
     expect(test.shown(thread([question('q')])).requests).toEqual([question('q')])
+  })
+
+  describe('a question after a reply the thread carries only a cut summary of', () => {
+    const summarized = (text: string, requests: AgentRequest[]) => thread(requests, { messages: [],
+      summary: { messageCount: 1, activityCount: 0, lastAssistant: { id: 'reply', text, createdAt: '2026-10-22T10:00:00.000Z' } } })
+    const cut = 'Here is what I built. '.padEnd(AGENT_THREAD_EXCERPT_MAX, 'x')
+    const plain = question('q', 'Which variant do you like?')
+
+    it('holds it until its search has read the whole reply, then sends it back when that reply says prototype', async () => {
+      const test = setup()
+      test.searching('q')
+      expect(test.shown(summarized(cut, [plain])).requests).toEqual([])
+      expect(test.held.holds('thread')).toBe(true)
+      expect(test.timers.some(timer => timer.ms === PROTOTYPE_HOLD_MAX_MS)).toBe(true)
+      test.found('q', [], [], true)
+      expect(test.shown(summarized(cut, [plain])).requests).toEqual([])
+      await vi.waitFor(() => expect(test.sent).toHaveLength(1))
+    })
+
+    it('shows it once its search finds the whole reply says nothing of a prototype', () => {
+      const test = setup()
+      test.searching('q')
+      expect(test.shown(summarized(cut, [plain])).requests).toEqual([])
+      test.found('q', [], [], false)
+      const shown = summarized(cut, [plain])
+      expect(test.shown(shown)).toBe(shown)
+      expect(test.sent).toEqual([])
+    })
+
+    it('shows it once it has been held long enough, whatever the search', () => {
+      const test = setup()
+      test.searching('q')
+      expect(test.shown(summarized(cut, [plain])).requests).toEqual([])
+      test.advance(PROTOTYPE_HOLD_MAX_MS)
+      expect(test.shown(summarized(cut, [plain])).requests).toEqual([plain])
+    })
+
+    it('holds nothing when the summary is whole or already says prototype, or the thread carries the reply itself', async () => {
+      const test = setup()
+      test.searching('q')
+      const whole = summarized('Here is what I built.', [plain])
+      expect(test.shown(whole)).toBe(whole)
+      const carried = thread([plain], { messages: [reply(cut)] })
+      expect(test.shown(carried)).toBe(carried)
+      // A cut summary that says prototype decides it already: held as any prototype question is, and sent back without a page
+      // even when its search read no such word.
+      test.found('other', [], [], false)
+      expect(test.shown(summarized(`The prototype. ${cut}`.slice(0, AGENT_THREAD_EXCERPT_MAX), [question('other', 'Which variant?')])).requests).toEqual([])
+      await vi.waitFor(() => expect(test.sent.map(item => item.request.id)).toEqual(['other']))
+    })
   })
 
   it('never holds a question in Watcher’s own threads or a settled thread', () => {

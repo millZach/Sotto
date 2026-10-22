@@ -1,7 +1,7 @@
-import type { AgentHostSnapshot, AgentQuestionAnswers, AgentRequest, AgentThread } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, type AgentHostSnapshot, type AgentQuestionAnswers, type AgentRequest, type AgentThread } from '../../shared/agents'
 import { settledIn } from './finishedUnread'
 import { questionValues } from './nativeRequests'
-import { newestReply, requestWords, type PageSearch } from './questionPages'
+import { newestReply, requestWords, saysPrototype, type PageSearch } from './questionPages'
 import { isSottoRequest, SOTTO_REQUEST_PREFIX } from './sottoRequests'
 
 /** What Sotto answers a prototype question with when it found no page that opens (ADR-0108), word for word. */
@@ -21,11 +21,9 @@ export const PROTOTYPE_SEND_BACK_CONFIRM_MS = 10_000
 /** Sotto's own copy of a question it sent back: a Sotto request (ADR-0035) named after the original. */
 export const PROTOTYPE_QUESTION_COPY_PREFIX = `${SOTTO_REQUEST_PREFIX}prototype-question:`
 
-const PROTOTYPE_WORDS = /\b(?:prototypes?|mock[-‐‑ ]?ups?)\b/iu
-
 /** Whether a question is about a prototype (ADR-0108): its words, or the reply before it, say prototype or mock-up. */
 export function aboutPrototype(request: AgentRequest, reply?: string): boolean {
-  return requestWords(request).some(words => PROTOTYPE_WORDS.test(words)) || (reply !== undefined && PROTOTYPE_WORDS.test(reply))
+  return requestWords(request).some(saysPrototype) || (reply !== undefined && saysPrototype(reply))
 }
 
 /** The answer that sends a question back, or undefined when it cannot carry the note: a question that only takes listed choices. */
@@ -47,12 +45,19 @@ function copyOf(original: AgentRequest): AgentRequest {
 }
 
 /**
- * Where one provider question stands. `held` while its pages are looked for; `next` is the thread's first question after
+ * Where one provider question stands. `undecided` while the reply before it is known only by a summary that may be cut,
+ * until the search has read it whole; `held` while its pages are looked for; `next` is the thread's first question after
  * a send-back, held the same way; `sending` while the note goes; `sent-back` once the provider took it, hidden until the
  * provider puts the question away. `shown` and `link-missing` are what every client sees.
  */
-type QuestionState = 'held' | 'next' | 'sending' | 'sent-back' | 'shown' | 'link-missing'
-const HIDDEN: ReadonlySet<QuestionState> = new Set(['held', 'next', 'sending', 'sent-back'])
+type QuestionState = 'undecided' | 'held' | 'next' | 'sending' | 'sent-back' | 'shown' | 'link-missing'
+const HIDDEN: ReadonlySet<QuestionState> = new Set(['undecided', 'held', 'next', 'sending', 'sent-back'])
+
+/**
+ * The reply before a thread's questions as the snapshot carries it: its words, and whether they may be cut. A thread
+ * that carries no messages has only its summary's excerpt, cut at its limit, and one at the limit may say more.
+ */
+interface ReplyBefore { readonly text: string | undefined; readonly cut: boolean }
 
 /** The minute after a send-back. Until the provider takes the note it has no end. */
 interface Minute { readonly original: AgentRequest; cancel?: () => void }
@@ -202,9 +207,11 @@ export class PrototypeQuestions {
     }
     // An archived or settled thread is quiet: it holds nothing new, and Sotto's copy goes.
     if (closed) { this.endMinute(record); delete record.copy }
-    let reply: string | undefined | null = null
-    const replyBefore = (): string | undefined => {
-      if (reply === null) reply = thread.messages.length ? newestReply(thread.messages) : thread.summary?.lastAssistant?.text
+    let reply: ReplyBefore | undefined
+    const replyBefore = (): ReplyBefore => {
+      if (reply) return reply
+      const summary = thread.messages.length ? undefined : thread.summary?.lastAssistant?.text
+      reply = summary === undefined ? { text: newestReply(thread.messages), cut: false } : { text: summary, cut: summary.length >= AGENT_THREAD_EXCERPT_MAX }
       return reply
     }
     let changed = false
@@ -226,7 +233,7 @@ export class PrototypeQuestions {
     return changed ? { ...thread, requests } : thread
   }
 
-  private stateOf(threadId: string, record: ThreadRecord, request: AgentRequest, closed: boolean, replyBefore: () => string | undefined): QuestionState {
+  private stateOf(threadId: string, record: ThreadRecord, request: AgentRequest, closed: boolean, replyBefore: () => ReplyBefore): QuestionState {
     let entry = record.questions.get(request.id)
     if (!entry) {
       const sent = record.sentBack.get(request.id)
@@ -236,15 +243,22 @@ export class PrototypeQuestions {
         const answersNote = record.minute !== undefined
         this.endMinute(record)
         delete record.copy
-        const state: QuestionState = closed ? 'shown' : answersNote ? 'next' : aboutPrototype(request, replyBefore()) ? 'held' : 'shown'
+        // When the words the snapshot carries say nothing of a prototype but the reply's are cut, its search reads the
+        // whole reply from the thread's store, and the question waits for that to decide.
+        const state: QuestionState = closed ? 'shown' : answersNote ? 'next' : aboutPrototype(request, replyBefore().text) ? 'held' : replyBefore().cut ? 'undecided' : 'shown'
         entry = { state, since: this.now() }
-        if (state === 'held' || state === 'next') this.timer(() => this.options.changed(), PROTOTYPE_HOLD_MAX_MS)
+        if (HIDDEN.has(state)) this.timer(() => this.options.changed(), PROTOTYPE_HOLD_MAX_MS)
       }
       record.questions.set(request.id, entry)
     }
     if (entry.state === 'sending' && (closed || this.now() - entry.since >= PROTOTYPE_HOLD_MAX_MS)) this.unconfirmed(record, request.id)
-    if (entry.state !== 'held' && entry.state !== 'next') return entry.state
+    if (entry.state !== 'held' && entry.state !== 'next' && entry.state !== 'undecided') return entry.state
     const search = this.options.searched(threadId, `request:${request.id}`)
+    if (entry.state === 'undecided') {
+      if (search?.finished) entry.state = search.aboutPrototype ? 'held' : 'shown'
+      else if (closed || this.now() - entry.since >= PROTOTYPE_HOLD_MAX_MS) entry.state = 'shown'
+      if (entry.state !== 'held') return entry.state
+    }
     if (search?.finished) {
       if (search.working.length) entry.state = 'shown'
       else if (entry.state === 'next' || closed) entry.state = 'link-missing'

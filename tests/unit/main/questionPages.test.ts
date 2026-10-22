@@ -231,7 +231,7 @@ describe('QuestionPages working pages and reply pages (ADR-0108)', () => {
     const pages = new QuestionPages({ changed, token: tokens(), live })
     const first = snapshot([question('q', 'Which greeting?')], [reply(words)])
     pages.decorate(first)
-    expect(pages.searched('thread', 'request:q')).toEqual({ finished: false, pages: [], working: [] })
+    expect(pages.searched('thread', 'request:q')).toEqual({ finished: false, pages: [], working: [], aboutPrototype: false })
     await vi.waitFor(() => expect(changed).toHaveBeenCalled())
     expect(pages.decorate(first).threads[0]!.requests[0]!.pages?.map(page => page.kind)).toEqual(['file', 'server'])
     const search = pages.searched('thread', 'request:q')!
@@ -284,6 +284,24 @@ describe('QuestionPages working pages and reply pages (ADR-0108)', () => {
     await vi.waitFor(() => expect(pages.searched('thread', 'reply:long')?.finished).toBe(true))
     expect(stored).toHaveBeenCalledWith('thread')
     expect(pages.searched('thread', 'reply:long')!.working).toHaveLength(2)
+  })
+
+  it('says whether the words a question’s search read say prototype, the whole stored reply included', async () => {
+    const cut = 'Here is what I built. '.padEnd(2_000, 'x')
+    const changed = vi.fn()
+    const pages = new QuestionPages({ changed, live: async () => true, messages: () => [{ ...reply(`${cut} The prototype is at http://localhost:8075/.`), id: 'whole' }] })
+    const summarized = (requests: AgentRequest[]): AgentHostSnapshot => {
+      const shown = snapshot(requests)
+      return { ...shown, threads: [{ ...shown.threads[0]!, summary: { messageCount: 1, activityCount: 0, lastAssistant: { id: 'whole', text: cut, createdAt: '2026-10-14T00:00:00.000Z' } } }] }
+    }
+    pages.decorate(summarized([question('q', 'Which variant?')]))
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled())
+    expect(pages.searched('thread', 'request:q')).toMatchObject({ finished: true, aboutPrototype: true })
+    const plainChanged = vi.fn()
+    const plain = new QuestionPages({ changed: plainChanged, live: async () => true, messages: () => [{ ...reply(`${cut} It is at http://localhost:8075/.`), id: 'whole' }] })
+    plain.decorate(summarized([question('q', 'Which variant?')]))
+    await vi.waitFor(() => expect(plainChanged).toHaveBeenCalled())
+    expect(plain.searched('thread', 'request:q')).toMatchObject({ finished: true, aboutPrototype: false })
   })
 
   it('keeps no search for a reply that named no page once it is no longer looked for, however many replies come', () => {

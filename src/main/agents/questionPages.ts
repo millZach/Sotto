@@ -161,6 +161,11 @@ export function requestWords(request: AgentRequest): string[] {
     ...(request.questions ?? []).flatMap(question => [question.question, question.header ?? '', ...question.options.flatMap(option => [option.label, option.description ?? ''])])]
 }
 
+const PROTOTYPE_WORDS = /\b(?:prototypes?|mock[-‐‑ ]?ups?)\b/iu
+
+/** Whether words say prototype or mock-up (ADR-0108): what makes a question about a prototype. */
+export const saysPrototype = (words: string): boolean => PROTOTYPE_WORDS.test(words)
+
 /** The agent's newest words a thread holds: its last reply that is not a visual. */
 export function newestReply(messages: readonly AgentMessage[] | undefined): string | undefined {
   return messages?.findLast(message => message.role === 'assistant' && !isVisualMessage(message))?.text
@@ -192,8 +197,10 @@ export interface ReplyToSearch { readonly id: string; readonly text?: string; re
 /**
  * Where a search stands (ADR-0108). `finished` once it has found pages or will not look again; `pages` are every page it
  * found, as a question carries them; `working` are the ones that opened when Sotto looked, with the same tokens.
+ * `aboutPrototype` once any of the words it read say prototype or mock-up: a question's own, and the whole reply before it
+ * from the thread's store when the snapshot carries only its cut summary.
  */
-export interface PageSearch { readonly finished: boolean; readonly pages: readonly QuestionPage[]; readonly working: readonly QuestionPage[] }
+export interface PageSearch { readonly finished: boolean; readonly pages: readonly QuestionPage[]; readonly working: readonly QuestionPage[]; readonly aboutPrototype: boolean }
 
 /** A search is kept by its thread and its source: `request:<request ID>` for a question, `reply:<message ID>` for a reply. */
 const keyOf = (threadId: string, source: string): string => `${threadId}\n${source}`
@@ -207,6 +214,8 @@ interface Entry {
   pages: QuestionPage[] | undefined
   /** The pages among them that work, with the same tokens: what a published mark shares, never changed once settled. */
   working: readonly QuestionPage[]
+  /** Whether the words any of its searches read say prototype or mock-up. */
+  aboutPrototype: boolean
   searches: number
   searchedAt: number
   /** When the question left its thread, or the reply stopped being looked for; its pages close a while after. */
@@ -270,7 +279,7 @@ export class QuestionPages {
   searched(threadId: string, source: string): PageSearch | undefined {
     const entry = this.entries.get(keyOf(threadId, source))
     if (!entry) return undefined
-    return { finished: entry.pages !== undefined && (entry.pages.length > 0 || entry.searches >= entry.tries), pages: entry.pages ?? NO_PAGES, working: entry.working }
+    return { finished: entry.pages !== undefined && (entry.pages.length > 0 || entry.searches >= entry.tries), pages: entry.pages ?? NO_PAGES, working: entry.working, aboutPrototype: entry.aboutPrototype }
   }
 
   /**
@@ -354,7 +363,7 @@ export class QuestionPages {
   }
 
   private begin(key: string, threadId: string, source: string, tries: number, previous?: Entry): Entry {
-    const entry: Entry = previous ?? { threadId, source, tries, pages: undefined, working: NO_PAGES, searches: 0, searchedAt: 0 }
+    const entry: Entry = previous ?? { threadId, source, tries, pages: undefined, working: NO_PAGES, aboutPrototype: false, searches: 0, searchedAt: 0 }
     entry.pages = undefined
     entry.searches++
     entry.searchedAt = this.now()
@@ -367,7 +376,10 @@ export class QuestionPages {
     let folder: string | undefined
     try { folder = resolveThreadWorkingDirectory(thread, snapshot.projects.find(project => project.id === thread.projectId)) } catch { folder = undefined }
     void (async () => {
-      const found = await foundPages(pageMentions(await words()), folder)
+      const read = await words()
+      if (this.entries.get(key) !== entry) return
+      if (read.some(saysPrototype)) entry.aboutPrototype = true
+      const found = await foundPages(pageMentions(read), folder)
       if (this.entries.get(key) !== entry) return
       const answers = await Promise.all(found.map(({ page, target }) => target.kind === 'file' ? true : this.live(`${target.origin}/${page.start}`).catch(() => false)))
       if (this.entries.get(key) !== entry) return

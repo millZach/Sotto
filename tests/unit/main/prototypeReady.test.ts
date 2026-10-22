@@ -25,7 +25,7 @@ function searches(found: Record<string, readonly QuestionPage[]> = {}) {
     results,
     searched: (threadId: string, source: string): PageSearch | undefined => {
       const working = results.get(`${threadId}\n${source}`)
-      return working && { finished: true, pages: working, working }
+      return working && { finished: true, pages: working, working, aboutPrototype: false }
     },
     source: (token: string) => {
       for (const [key, pages] of results) if (pages.some(item => item.token === token)) { const [threadId, source] = key.split('\n'); return { threadId: threadId!, source: source! } }
