@@ -3325,7 +3325,7 @@ export class AgentControl {
           && items.some(item => item.threadId === threadId && item.status === 'queued' && stopHeld(item))) {
           this.pumping.add(threadId)
           let paused = false
-          void this.followupStore.pauseUserPrompts(threadId, 'Watcher stopped this thread. Review the queue and resume it when ready.', stopHeld)
+          void this.followupStore.pauseUserPrompts(threadId, WATCHER_STOP_PAUSE, stopHeld)
             .then(() => { paused = true })
             .catch(() => { this.state.error = 'Could not pause the follow-up queue. The news was not sent.' })
             .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
