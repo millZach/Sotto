@@ -41,19 +41,19 @@ function palette(mode: Mode, themeId: string, options: PaintOptions = {}): (name
 describe('main-window theme tokens', () => {
   it.each(combinations)('%s mode of %s keeps text readable on the surfaces it sits on', (mode, id) => {
     const color = palette(mode, id)
-    for (const surface of ['canvas', 'surface', 'surface-elevated', 'hover-strong', 'selected', 'field'] as const) {
+    for (const surface of ['canvas', 'surface', 'surface-elevated', 'hover-strong', 'selected', 'field', 'card', 'card-selected'] as const) {
       for (const ink of ['text', 'text-2'] as const) {
         expect(contrast(color(ink), color(surface)), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
     // Muted text lifts T3's muted foreground slightly toward the text colour so
     // metadata on raised panels and the sidebar still reads at 4.5:1.
-    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'sidebar'] as const) {
+    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'sidebar', 'card', 'card-selected'] as const) {
       expect(contrast(color('text-muted'), color(surface)), `muted text on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     // Faint text is still text: placeholders, ghost buttons and instrument labels read at 4.5:1 on the surfaces
     // they sit on. (The sidebar sets its own text roles.)
-    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated'] as const) {
+    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'card'] as const) {
       expect(contrast(color('text-faint'), color(surface)), `faint text on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(color('sidebar-text'), color('sidebar'))).toBeGreaterThanOrEqual(4.5)
@@ -83,7 +83,7 @@ describe('main-window theme tokens', () => {
 
   it.each(combinations)('%s mode of %s keeps accent text, actions, focus, boundaries and status readable', (mode, id) => {
     const color = palette(mode, id)
-    for (const surface of ['canvas', 'surface'] as const) {
+    for (const surface of ['canvas', 'surface', 'card'] as const) {
       expect(contrast(color('accent-text'), color(surface)), `accent text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('link'), color(surface)), `link on ${surface}`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('focus-ring'), color(surface)), `focus ring on ${surface}`).toBeGreaterThanOrEqual(3)
@@ -102,6 +102,10 @@ describe('main-window theme tokens', () => {
     for (const surface of ['field', 'selected'] as const) {
       expect(contrast(color('accent-text'), color(surface)), `question recommendation on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
+    // A provider's Connected line on its card, the selected card included.
+    expect(contrast(color('accent-text'), color('card-selected')), 'Connected on the selected card').toBeGreaterThanOrEqual(4.5)
+    // A card is a step off the room: a fill the eye finds, never one that reads as a different room.
+    expect(contrast(color('card'), color('canvas')), 'card against the room').toBeGreaterThan(1.05)
     expect(contrast(color('on-accent'), color('accent')), 'on-accent on accent').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('primary-contrast'), color('primary')), 'primary action').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('error-text'), color('error-surface'))).toBeGreaterThanOrEqual(4.5)
@@ -115,9 +119,9 @@ describe('main-window theme tokens', () => {
 
   it.each(combinations)('%s mode of %s draws every chart series and Other at 3:1 on the room and the surface', (mode, id) => {
     const color = palette(mode, id)
-    // Usage draws its charts on the room; the surface is checked too, for a chart that moves onto a card.
+    // Usage draws its charts on a card; the room and the surface are checked too, for a chart drawn on either.
     for (const series of [...CHART_SERIES, 'chart-other'] as const) {
-      for (const surface of ['canvas', 'surface'] as const) {
+      for (const surface of ['canvas', 'surface', 'card'] as const) {
         expect(contrast(color(series), color(surface)), `${series} on ${surface}`).toBeGreaterThanOrEqual(3)
       }
     }

@@ -18,7 +18,8 @@
 .worker-roles__empty > p { margin: 0; }
 .worker-roles__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
 
-.worker-role { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); }
+/* Each role is a card (ADR-0107); the one the user chose keeps its accent edge. */
+.worker-role { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
 .worker-role[data-chosen='true'] { border-color: var(--tt-accent-border); }
 .worker-role--wide { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); column-gap: 22px; }
 .worker-role__main { display: grid; align-content: start; gap: 10px; min-width: 0; }
@@ -35,7 +36,7 @@
 .worker-role__field--full { grid-column: 1 / -1; }
 .worker-role__field > span:first-child { color: var(--tt-text-muted); font-size: 11.5px; }
 .worker-role__field > :is(.model-picker, .thread-chip-menu) { display: flex; min-width: 0; }
-.worker-role__field .thread-chip { justify-content: space-between; width: 100%; max-width: none; height: 34px; min-height: 34px; padding: 0 11px; border-radius: 8px; background: var(--tt-field); color: var(--tt-text); }
+.worker-role__field .thread-chip { justify-content: space-between; width: 100%; max-width: none; height: 34px; min-height: 34px; padding: 0 11px; border-radius: 8px; background: var(--tt-card-inset); color: var(--tt-text); }
 .worker-role__field .thread-chip > span:not(.provider-mark):not(.thread-chip__pending) { flex: 1; text-align: left; }
 .worker-role__field[data-away='true'] .thread-chip { border-style: dashed; }
 .worker-role__field .thread-chip-menu__list:not(.thread-chip-menu__list--foot) { min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 24px)); }

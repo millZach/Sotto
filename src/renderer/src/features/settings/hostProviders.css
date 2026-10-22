@@ -9,11 +9,11 @@
 .hosts-settings .host-providers__foot { margin: 0 0 4px; color: var(--tt-text-muted); font-size: 12px; }
 
 /* One provider: its mark and name, a state line with a dot, a detail line and one action. */
-.host-provider { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); padding: 12px; }
-.host-provider[data-kind='not-installed'] { border-style: dashed; background: transparent; }
+.host-provider { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid transparent; border-radius: var(--tt-radius-md); background: var(--tt-card); padding: 12px; }
+.host-provider[data-kind='not-installed'] { border: 1px dashed var(--tt-hairline); background: transparent; }
 .host-provider__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: 14px; font-weight: 600; }
-.host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-text-2); }
+.host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-card-inset); color: var(--tt-text-2); }
 .host-provider__mark .provider-mark { fill: currentColor; }
 .host-provider__mark .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
 .host-provider__mark .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }

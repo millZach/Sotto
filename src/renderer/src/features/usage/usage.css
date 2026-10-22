@@ -14,6 +14,8 @@
   --usage-low: var(--tt-warning);
   --usage-sotto: var(--usage-strong);
   --usage-outside: var(--usage-mid);
+  /* What a chart cuts its gaps and labels out of: the room, or the card it is drawn on. */
+  --usage-ground: var(--tt-canvas);
 }
 .usage-view { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }
 .usage-scroll { flex: 1; min-width: 0; overflow-y: auto; container: usage-room / inline-size; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
@@ -52,8 +54,8 @@
 .usage-seg--small { padding: 2px; border-radius: 8px; }
 .usage-seg--small button { height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12.5px; }
 .usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
-.usage-filter:hover, .usage-filter[aria-expanded='true'] { background: var(--usage-hover-soft); color: var(--tt-text); }
+.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 0; border-radius: 9px; background: var(--tt-card); color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.usage-filter:hover, .usage-filter[aria-expanded='true'] { background: color-mix(in srgb, var(--tt-accent-surface) 38%, var(--tt-card)); color: var(--tt-text); }
 .usage-filter svg { color: var(--tt-text-muted); }
 .usage-dates { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; margin-top: 12px; }
 .usage-dates label { display: flex; align-items: center; gap: 9px; color: var(--tt-text-muted); font-size: 13px; }
@@ -114,10 +116,11 @@
 
 /* ---------- The index and its stage ---------- */
 .usage-focus { display: grid; grid-template-columns: 252px minmax(0, 1fr); align-items: start; gap: 52px; }
-.usage-index { display: flex; flex-direction: column; gap: 2px; margin-left: -16px; }
+/* The index and its stage are two cards (ADR-0107). */
+.usage-index { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .usage-index__item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 3px 14px; width: 100%; padding: 14px 16px; border: 0; border-radius: 12px; background: transparent; color: var(--tt-text); text-align: left; font: inherit; cursor: pointer; }
 .usage-index__item:hover { background: var(--usage-hover-soft); }
-.usage-index__item[aria-selected='true'] { background: var(--tt-hover); }
+.usage-index__item[aria-selected='true'] { background: var(--tt-card-selected); }
 .usage-index__item[aria-selected='true']::before { content: ''; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; border-radius: 3px; background: var(--tt-accent); }
 .usage-index__label { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: 12.5px; }
 .usage-index__value { min-width: 0; overflow: hidden; font-size: 27px; font-weight: 450; line-height: 1.15; letter-spacing: -.9px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
@@ -129,7 +132,9 @@
 .usage-mini-rings { display: flex; gap: 4px; }
 .usage-mini-split { display: flex; gap: 2px; width: 56px; height: 8px; }
 .usage-mini-split i { min-width: 2px; border-radius: 2px; }
-.usage-stage { min-width: 0; padding-top: 12px; }
+/* On a card, tracks and gridlines mix into the card rather than the room, and segmented controls sink to the inset. */
+.usage-index, .usage-stage { --usage-ground: var(--tt-card); --usage-seg: var(--tt-card-inset); --usage-track: color-mix(in oklab, var(--tt-text) 11%, var(--usage-ground)); --usage-grid: color-mix(in oklab, var(--tt-text) 12%, var(--usage-ground)); }
+.usage-stage { min-width: 0; padding: 20px 24px 22px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .usage-stage__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
 .usage-stage__head h2 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -.5px; }
 .usage-stage__head > span { color: var(--tt-text-muted); font-size: 13px; }
@@ -162,19 +167,19 @@
 .usage-chart__column { display: flex; flex: 1 1 0; flex-direction: column-reverse; min-width: 0; max-width: 52px; height: 100%; transform-origin: bottom; }
 .usage-chart__bar { display: block; flex: none; height: calc(var(--usage-h) * 100%); min-height: 1px; border-radius: 0; background: var(--usage-series); transition: opacity .15s; }
 .usage-chart__bar[data-top] { border-radius: var(--usage-radius) var(--usage-radius) 0 0; }
-/* Stacked series part with a hairline of the room between them; it is drawn inside each piece, so heights stay true. */
-.usage-chart__columns[data-split] .usage-chart__bar + .usage-chart__bar { box-shadow: inset 0 -1px 0 var(--tt-canvas); }
+/* Stacked series part with a hairline of the ground between them; it is drawn inside each piece, so heights stay true. */
+.usage-chart__columns[data-split] .usage-chart__bar + .usage-chart__bar { box-shadow: inset 0 -1px 0 var(--usage-ground); }
 /* Lines: a path per series, scaled to the plot, with a dot for each series on the day being read. */
 .usage-chart__fill { position: absolute; inset: 0; pointer-events: none; }
 .usage-chart__lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .usage-chart__line { fill: none; stroke: var(--usage-series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .usage-chart__area { fill: var(--usage-series); stroke: none; opacity: .12; }
 .usage-chart__cross { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--tt-text-faint); }
-.usage-chart__dot { position: absolute; width: 8px; height: 8px; margin: 0 0 -4px -4px; border-radius: 50%; background: var(--usage-series); box-shadow: 0 0 0 2px var(--tt-canvas); }
+.usage-chart__dot { position: absolute; width: 8px; height: 8px; margin: 0 0 -4px -4px; border-radius: 50%; background: var(--usage-series); box-shadow: 0 0 0 2px var(--usage-ground); }
 .usage-chart__dot[data-on] { width: 10px; height: 10px; margin: 0 0 -5px -5px; }
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__bar { opacity: .28; }
 .usage-chart__grid { position: absolute; right: 0; left: 0; border-top: 1px dashed var(--usage-grid); pointer-events: none; }
-.usage-chart__grid span { position: absolute; right: 0; bottom: 3px; padding-left: 6px; background: var(--tt-canvas); color: var(--tt-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.usage-chart__grid span { position: absolute; right: 0; bottom: 3px; padding-left: 6px; background: var(--usage-ground); color: var(--tt-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 .usage-chart__none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: 13px; }
 .usage-chart__axis { position: relative; height: 20px; margin-top: 8px; color: var(--tt-text-faint); font-size: 12px; }
 .usage-chart__axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }

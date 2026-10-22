@@ -29,8 +29,8 @@
 .phones-how { display: grid; gap: 6px; margin: 10px 0 0; padding: 0 0 0 20px; color: var(--tt-text-muted); font-size: 14px; }
 .phones-how b { color: var(--tt-text); font-weight: 600; }
 .hosts-settings .phones-note { margin-top: 10px; font-size: 13px; }
-.phones-code { display: grid; align-content: center; justify-items: start; gap: 12px; min-width: 0; min-height: 150px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); padding: 18px 20px; }
-.phones-code[data-off] { border-style: dashed; background: transparent; }
+.phones-code { display: grid; align-content: center; justify-items: start; gap: 12px; min-width: 0; min-height: 150px; border: 1px solid transparent; border-radius: var(--tt-radius-lg); background: var(--tt-card); padding: 18px 20px; }
+.phones-code[data-off] { border: 1px dashed var(--tt-hairline); background: transparent; }
 .hosts-settings .phones-code > p { margin: 0; font-size: 13px; }
 .phones-code__value { color: var(--tt-text); font: 600 36px/1 var(--tt-font-mono); letter-spacing: 0.08em; white-space: nowrap; }
 .phones-code__value > i { display: inline-block; width: 0.45em; }

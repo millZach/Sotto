@@ -111,7 +111,7 @@
 .thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
 .thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
 .thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: 15px; }
-.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: 14px 14px 4px 14px; }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
 /* A wake-up babysitting sent (ADR-0061): on the user's side, labelled Sotto and Wake-up, edged in the accent. */
 .thread-message[data-from='sotto'] { border-color: var(--tt-accent-border); }
@@ -153,7 +153,9 @@
 .thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
-.thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
+/* The composer is a card (ADR-0107): filled, with no outline at rest. Its edge comes back to say it is focused, running
+   or at a model's highest effort. */
+.thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
 .thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
 .thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; }

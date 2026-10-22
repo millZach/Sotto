@@ -116,12 +116,16 @@
 .settings-view .settings-section__heading { margin: 0 0 10px; padding: 0 0 20px; border-bottom: 1px solid var(--tt-hairline); }
 .settings-view .settings-section__heading h2 { margin: 0 0 10px; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
 .settings-view .settings-section__heading p { color: var(--tt-text-muted); font-size: 16px; line-height: 1.5; }
-.settings-view .settings-rows > *, .settings-view .settings-rows > * + * { min-height: 66px; padding: 17px 0; border: 0; border-bottom: 1px solid var(--tt-hairline); }
+/* Rows sit on a card (ADR-0107): no outline, each row divided from the next by a line of the inset, and the fields
+   and samples on it filled with the inset. */
+.settings-view .settings-rows { padding: 4px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.settings-view .settings-rows > *, .settings-view .settings-rows > * + * { min-height: 66px; padding: 17px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
 .settings-view .settings-rows > :last-child { border-bottom: 0; }
 .settings-view .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label control' 'description control' 'error error'; gap: 5px 22px; }
 .settings-view .settings-rows .tt-field__label, .settings-view .tt-toggle__copy > strong { font-size: 15px; font-weight: 500; line-height: 1.35; }
 .settings-view .settings-rows .tt-field__description { margin: 0; max-width: 330px; font-size: 13px; line-height: 1.45; }
-.settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font-size: 14px; }
+.settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid transparent; border-radius: 8px; background: var(--tt-card-inset); color: var(--tt-text); font-size: 14px; }
+.settings-view .settings-rows .tt-field > :is(.tt-input, .tt-select):hover:not(:disabled) { border-color: var(--tt-border); }
 .settings-view .settings-rows .tt-field > .tt-input[inputmode='numeric'] { width: 120px; justify-self: end; font-family: var(--tt-font-mono); }
 .settings-view .settings-rows textarea.tt-input { resize: vertical; min-height: 132px; line-height: 1.6; }
 .settings-view .settings-rows .tt-toggle { padding: 17px 0; gap: 22px; }
@@ -143,10 +147,9 @@
 /* A group of rows under a small heading with its icon (SettingsGroup), as Git and Cloud iPhone group theirs. */
 .settings-view .settings-group { margin-top: 26px; }
 .settings-view .settings-group:first-child { margin-top: 22px; }
-.settings-view .settings-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.settings-view .settings-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 2px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
 .settings-view .settings-group > h3 > svg { flex: none; color: var(--tt-text-muted); }
-.settings-view .settings-group > .settings-rows { border-top: 1px solid var(--tt-hairline); }
-.settings-view .settings-group__note { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.settings-view .settings-group__note { margin: 0 0 10px; padding: 0 2px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .settings-view .settings-danger-row { gap: 24px; }
 .settings-view .settings-danger-row h3 { font-size: 15px; }
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }
