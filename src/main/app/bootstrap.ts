@@ -278,7 +278,8 @@ export interface RuntimeController {
 }
 
 export interface NativeRuntimeWindowService {
-  createWindows(): Promise<void>
+  /** `widget` false leaves the floating widget's window unmade until something shows it (dictation off, ADR-0107). */
+  createWindows(widget?: boolean): Promise<void>
   showMain(): Promise<void>
   showMainFromActivation?(): Promise<void>
   showWidget(): Promise<void>
@@ -316,6 +317,8 @@ export interface NativeRuntimeDependencies {
     apply(set: { press: readonly string[]; hold: readonly string[] }, mode: 'lenient'): unknown
     dispose(): void
   }
+  /** False while dictation is turned off (ADR-0107): the resting widget is not shown. Defaults to on. */
+  readonly dictationOn?: () => boolean
   readonly log: (code: NativeRuntimeDiagnostic) => void
 }
 
@@ -471,7 +474,7 @@ export class NativeRuntimeController implements RuntimeController {
       'native-ipc-cleanup-failed',
     )
     this.assertRunning()
-    await this.dependencies.windows.createWindows()
+    await this.dependencies.windows.createWindows(this.dependencies.dictationOn?.() !== false)
     this.assertRunning()
     if (this.dependencies.dictationCommands !== undefined) {
       try { await this.dependencies.dictationCommands.start() } catch {
@@ -483,7 +486,7 @@ export class NativeRuntimeController implements RuntimeController {
       await this.dependencies.windows.showMain()
       this.assertRunning()
     }
-    if (settings.onboardingComplete && settings.showWidgetWhenIdle) {
+    if (settings.onboardingComplete && settings.showWidgetWhenIdle && this.dependencies.dictationOn?.() !== false) {
       // The dictation widget rests as a persistent sliver once setup is done,
       // unless the user turned the idle sliver off in Settings.
       await this.dependencies.windows.showWidget()

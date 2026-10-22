@@ -123,6 +123,7 @@ const settingKeys = [
   'successDisplayMs',
   'startMinimized',
   'showWidgetWhenIdle',
+  'dictationEnabled',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',

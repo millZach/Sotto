@@ -140,6 +140,16 @@ export class SpeechModelManager {
     void this.enqueue(async () => { this.retry() })
   }
 
+  /**
+   * Dictation was turned off (ADR-0107): lets go of the engine, or stops a load or download under way. The choice
+   * and the files stay, so start() loads the model again.
+   */
+  unload(): Promise<void> {
+    return this.enqueue(async () => {
+      if (!this.disposed) this.release(this.choice)
+    })
+  }
+
   dispose(): void {
     this.disposed = true
     this.load += 1
