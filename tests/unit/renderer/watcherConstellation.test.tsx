@@ -91,7 +91,7 @@ describe("Watcher's picture", () => {
     }
     const model = picture(state, roomState, merge)
     expect(model.turns.map(turn => [turn.number, turn.step])).toEqual([[1288, 'merged'], [1291, 'go'], [1295, 'ready']])
-    expect(model.nodes.get(targetKey(target('d')))!.pullRequest).toEqual({ number: 1299, state: 'open', checks: 'pending', step: null })
+    expect(model.nodes.get(targetKey(target('d')))!.pullRequest).toEqual({ id: 'millzach/sotto#1299', number: 1299, state: 'open', checks: 'pending', step: null })
     // A merge turn whose send never reached the thread was never given.
     const failed = picture(state, { ...roomState, receipts: [{ ...go, deliveryState: 'failed' }] }, merge)
     expect(failed.turns.map(turn => [turn.number, turn.step])).toEqual([[1288, 'merged'], [1291, 'ready'], [1295, 'ready']])
@@ -102,22 +102,22 @@ describe("Watcher's picture", () => {
     const sent = receipt('a', { deliveryState: 'dispatching' })
     const first = room([row('a'), row('b')], { receipts: [sent] })
     const model = picture(state, first, { queue: [], turns: [] })
-    const look = pictureMessages(null, first, model, new Set())
+    const look = pictureMessages(null, first, model, new Map())
     expect(look.messages).toEqual([])
     // The send is delivered and answered, b asks the user, and a's pull request joins the merge queue.
     const next = room([row('a'), row('b')], { receipts: [{ ...sent, deliveryState: 'accepted', outcome: 'answered' }],
       news: [{ id: 'n1', kind: 'needs-user', requestId: REQUEST, target: target('b'), generation: 0, observedAt: at() },
         { id: 'n2', kind: 'turn-finished', requestId: REQUEST, target: target('a'), generation: 0, observedAt: at() }] })
     const merge: PictureMergeTurns = { queue: [{ target: target('a'), title: 'a', pullRequest: { number: 7, state: 'open', checks: 'passed' }, checksPassedAt: at() }], turns: [] }
-    const after = pictureMessages(look.seen, next, picture(state, next, merge), new Set([sent.id]))
+    const after = pictureMessages(look.seen, next, picture(state, next, merge), new Map([[sent.id, 7]]))
     expect(after.messages.map(message => [message.kind, message.direction, message.key === targetKey(target('a')) ? 'a' : 'b', message.pullRequest])).toEqual([
       ['go', 'out', 'a', 7], ['reply', 'in', 'a', undefined], ['ready', 'in', 'a', 7], ['card', 'you', 'b', undefined],
     ])
     // Nothing moves twice.
-    expect(pictureMessages(after.seen, next, picture(state, next, merge), new Set([sent.id])).messages).toEqual([])
+    expect(pictureMessages(after.seen, next, picture(state, next, merge), new Map([[sent.id, 7]])).messages).toEqual([])
     // Main's first merge read only says where each stood: a pull request already queued does not move.
-    const before = pictureMessages(null, first, picture(state, first), new Set(), false)
-    expect(pictureMessages(before.seen, first, picture(state, first, merge), new Set()).messages).toEqual([])
+    const before = pictureMessages(null, first, picture(state, first), new Map(), false)
+    expect(pictureMessages(before.seen, first, picture(state, first, merge), new Map()).messages).toEqual([])
     expect(blobTag({ kind: 'go', pullRequest: 7 })).toBe('GO MERGE #7')
     expect(blobTag({ kind: 'card' }, 'permission')).toBe('Permission')
     expect(blobTag({ kind: 'steer' })).toBeNull()
@@ -139,12 +139,29 @@ describe("Watcher's picture", () => {
     const state = stateWith([thread('a', { pullRequests: [pr(7)] }), thread('b', { pullRequests: [pr(9)] })])
     const empty: PictureMergeTurns = { queue: [], turns: [] }
     const first = room([row('a'), row('b')])
-    const look = pictureMessages(null, first, picture(state, first, empty), new Set())
+    const look = pictureMessages(null, first, picture(state, first, empty), new Map())
     const news = (id: string, threadId: string) => ({ id, kind: 'evidence-changed' as const, requestId: REQUEST, target: target(threadId), generation: 0, observedAt: at() })
     const next = room([row('a'), row('b')], { news: [news('n1', 'a'), news('n2', 'b')] })
     const queued: PictureMergeTurns = { turns: [], queue: [{ target: target('a'), title: 'a', pullRequest: { number: 7, state: 'open', checks: 'passed' }, checksPassedAt: at() }] }
-    const after = pictureMessages(look.seen, next, picture(state, next, queued), new Set())
+    const after = pictureMessages(look.seen, next, picture(state, next, queued), new Map())
     expect(after.messages.map(message => [message.kind, message.key === targetKey(target('a')) ? 'a' : 'b'])).toEqual([['ready', 'a'], ['news', 'b']])
+  })
+
+  it('names the pull request a merge turn was given to, keeps two repositories’ #7 apart, and moves a newly seen ready one', () => {
+    const other = { ...pr(7), url: 'https://github.com/millZach/Sotto-releases/pull/7' }
+    const state = stateWith([thread('a', { pullRequests: [pr(7), pr(8)] }), thread('b', { pullRequests: [pr(7, 'merged'), other] })])
+    const first = room([row('a'), row('b')])
+    const look = pictureMessages(null, first, picture(state, first, { queue: [], turns: [] }), new Map())
+    // Watcher gives #8 its turn while #7 is open on the same thread; b's open Sotto-releases#7 is queued, its merged Sotto#7 is not.
+    const go = receipt('a', { deliveryState: 'accepted' })
+    const next = room([row('a'), row('b')], { receipts: [go] })
+    const merge: PictureMergeTurns = { turns: [{ operationId: go.id, target: target('a'), pullRequest: 8, at: at() }],
+      queue: [{ target: target('b'), title: 'b', pullRequest: { number: 7, url: other.url, state: 'open', checks: 'passed' }, checksPassedAt: at() }] }
+    const model = picture(state, next, merge)
+    expect(model.nodes.get(targetKey(target('b')))!.pullRequests.map(item => [item.id, item.state, item.step])).toEqual([
+      ['millzach/sotto-releases#7', 'open', 'ready'], ['millzach/sotto#7', 'merged', 'merged']])
+    const after = pictureMessages(look.seen, next, model, new Map([[go.id, 8]]))
+    expect(after.messages.map(message => [message.kind, message.pullRequest])).toEqual([['go', 8], ['ready', 7]])
   })
 
   it('says what Watcher last did with a thread from its receipts, newest first', () => {
@@ -154,8 +171,8 @@ describe("Watcher's picture", () => {
       receipt('a', { delivery: 'steer', deliveryState: 'uncertain', updatedAt: at(10) }),
       receipt('b'), go,
     ] })
-    expect(nodeActivity(roomState, targetKey(target('a')), new Set([go.id])).map(item => `${item.did}: ${item.went}`)).toEqual([
-      'Gave it its merge turn: Delivered', 'Steered its turn: Not confirmed', 'Started it: Answered',
+    expect(nodeActivity(roomState, targetKey(target('a')), new Map([[go.id, 1291]])).map(item => `${item.did}: ${item.went}`)).toEqual([
+      'Gave #1291 its merge turn: Delivered', 'Steered its turn: Not confirmed', 'Started it: Answered',
     ])
   })
 })

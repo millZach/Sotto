@@ -34,7 +34,8 @@
 .watcher-picture__edge[data-tone='needs'] { stroke: color-mix(in srgb, var(--threads-attention) 60%, transparent); stroke-dasharray: 3 4; }
 .watcher-picture__edge[data-lit] { stroke: var(--tt-accent-text); stroke-width: 1.6; stroke-dasharray: none; }
 
-.watcher-picture__cluster-name { position: absolute; z-index: 1; margin: 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+/* A cluster's name stays inside its cluster, cut short where it is too long; the cluster's own name says it whole. */
+.watcher-picture__cluster-name { position: absolute; z-index: 1; margin: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .watcher-picture__cluster-name b { color: var(--tt-text); font-weight: 600; }
 
 /* A thread: one line, its dot facing Watcher. On the left the line is drawn mirrored, the dot at its right end. The

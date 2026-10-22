@@ -1,4 +1,5 @@
 import type { AgentState, AgentThread } from '../../../shared/agents'
+import { pullRequestKey } from '../../../shared/gitPullRequests'
 import type { WatcherMergeQueueItem, WatcherThreadTarget } from '../../../shared/watcher'
 import type { WatcherMergeTurn, WatcherRoomState } from '../../../shared/watcherRoom'
 import { statusWord, TONES, waitKind, type OverviewEntry } from './WatcherOverview'
@@ -19,6 +20,8 @@ export type MergeStep = 'ready' | 'go' | 'merged'
 export type PictureChecks = 'passed' | 'failed' | 'pending' | 'unknown'
 
 export interface PicturePullRequest {
+  /** Which pull request this is: its repository and number, so two repositories' #7 stay apart; its number alone without an address. */
+  readonly id: string
   readonly number: number
   readonly state: 'open' | 'closed' | 'merged'
   readonly checks: PictureChecks | undefined
@@ -87,12 +90,19 @@ const TONE_ORDER: Readonly<Record<PictureTone, number>> = { needs: 0, landing: 1
 const OTHER_PROJECT = 'Other threads'
 const UNLISTED = 'Not in this window'
 
-/** A thread's linked pull requests and its branch's, each once by number. */
-function pullRequestsOf(thread: AgentThread | undefined): readonly { readonly number: number; readonly url: string; readonly state: 'open' | 'closed' | 'merged' }[] {
+/** A pull request's identity: its repository and number from its address, or its number alone without one. */
+function pullRequestId(url: string | undefined, number: number | undefined): string | undefined {
+  const keyed = url === undefined ? null : pullRequestKey(url)
+  return keyed ?? (number === undefined ? undefined : `#${number}`)
+}
+
+/** A thread's linked pull requests and its branch's, each once. */
+function pullRequestsOf(thread: AgentThread | undefined): readonly { readonly id: string; readonly number: number; readonly state: 'open' | 'closed' | 'merged' }[] {
   if (thread === undefined) return []
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   return [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
-    .filter(pr => !seen.has(pr.number) && Boolean(seen.add(pr.number)))
+    .map(pr => ({ id: pullRequestId(pr.url, pr.number)!, number: pr.number, state: pr.state }))
+    .filter(pr => !seen.has(pr.id) && Boolean(seen.add(pr.id)))
 }
 
 /**
@@ -127,11 +137,16 @@ export function buildPicture(input: {
 }): PictureModel {
   const { room, state, entries, idOf, merge } = input
   const threads = new Map(state.host.threads.map(thread => [thread.id, thread] as const))
-  const queued = new Set((merge?.queue ?? []).map(item => `${targetKey(item.target)}#${item.pullRequest.number ?? pullNumber(item.pullRequest.url) ?? 0}`))
+  // The queue and the turns given, by thread: a queued pull request by its address when it has one, else by number, and a
+  // turn by the number Watcher gave it.
+  const queued = new Map<string, WatcherMergeQueueItem[]>()
+  for (const item of merge?.queue ?? []) queued.set(targetKey(item.target), [...queued.get(targetKey(item.target)) ?? [], item])
   const given = merge?.turns ?? []
   const went = sendsThatWent(room.receipts, new Set(given.map(turn => turn.operationId)))
   const goes = new Map<string, WatcherMergeTurn>()
   for (const turn of given) if (went.has(turn.operationId)) goes.set(`${targetKey(turn.target)}#${turn.pullRequest}`, turn)
+  const inQueue = (key: string, pr: { readonly id: string; readonly number: number }) => (queued.get(key) ?? []).some(item => item.pullRequest.url !== undefined
+    ? pullRequestId(item.pullRequest.url, item.pullRequest.number) === pr.id : (item.pullRequest.number ?? pullNumber(item.pullRequest.url)) === pr.number)
   const nodes: PictureNode[] = []
   const mergedAt = new Map<string, number>()
   for (const row of watchedRows(room)) {
@@ -142,35 +157,35 @@ export function buildPicture(input: {
     const group = entry?.overview.group ?? 'Idle'
     const tone = TONES[group] as PictureTone
     const failed = thread !== undefined && (thread.status === 'error' || thread.lastTurn?.status === 'failed')
-    // What GitHub last reported of each of its pull requests: its checks, its state, and when Sotto first saw one merged.
-    const checks = new Map<number, PictureChecks>(), said = new Map<number, { state: 'open' | 'closed' | 'merged'; at: number }>()
+    // What GitHub last reported of each of its pull requests, by identity: its checks, its state, and when Sotto first saw
+    // it merged.
+    const checks = new Map<string, PictureChecks>(), said = new Map<string, { number: number; state: 'open' | 'closed' | 'merged'; at: number }>()
     for (const fact of row.evidence ?? []) {
       const number = fact.source === 'github' ? pullNumber(fact.url) : undefined
-      if (number === undefined) continue
+      const id = number === undefined ? undefined : pullRequestId(fact.url, number)
+      if (number === undefined || id === undefined) continue
       const at = Date.parse(fact.observedAt)
-      if (fact.checksState !== undefined) checks.set(number, fact.checksState)
+      if (fact.checksState !== undefined) checks.set(id, fact.checksState)
       const stateSaid = fact.fact === 'merge-observed' ? 'merged' : fact.pullRequestState
-      if (stateSaid !== undefined && at >= (said.get(number)?.at ?? -Infinity)) said.set(number, { state: stateSaid, at })
-      if (stateSaid === 'merged' && at < (mergedAt.get(`${key}#${number}`) ?? Infinity)) mergedAt.set(`${key}#${number}`, at)
+      if (stateSaid !== undefined && at >= (said.get(id)?.at ?? -Infinity)) said.set(id, { number, state: stateSaid, at })
+      if (stateSaid === 'merged' && at < (mergedAt.get(`${key}#${id}`) ?? Infinity)) mergedAt.set(`${key}#${id}`, at)
     }
-    // Its own links and what GitHub said, by number: GitHub's merged or closed wins over a link that has not caught up,
-    // and a merged link stays merged. A pull request only GitHub has spoken of is kept too.
-    const states = new Map<number, 'open' | 'closed' | 'merged'>()
-    for (const pr of pullRequestsOf(thread)) states.set(pr.number, pr.state)
-    for (const [number, fact] of said) {
-      const linked = states.get(number)
-      states.set(number, linked === 'merged' || fact.state === 'merged' ? 'merged' : linked === 'closed' || fact.state === 'closed' ? 'closed' : 'open')
+    // Its own links and what GitHub said: GitHub's merged or closed wins over a link that has not caught up, and a merged
+    // link stays merged. A pull request only GitHub has spoken of is kept too.
+    const states = new Map<string, { number: number; state: 'open' | 'closed' | 'merged' }>()
+    for (const pr of pullRequestsOf(thread)) states.set(pr.id, { number: pr.number, state: pr.state })
+    for (const [id, fact] of said) {
+      const linked = states.get(id)?.state
+      states.set(id, { number: fact.number, state: linked === 'merged' || fact.state === 'merged' ? 'merged' : linked === 'closed' || fact.state === 'closed' ? 'closed' : 'open' })
     }
-    const stepOf = (number: number, prState: 'open' | 'closed' | 'merged'): MergeStep | null => {
-      const turnKey = `${key}#${number}`
-      return prState === 'merged' ? 'merged' : prState === 'closed' ? null : goes.has(turnKey) ? 'go' : queued.has(turnKey) ? 'ready' : null
-    }
-    const pullRequests: PicturePullRequest[] = [...states].map(([number, prState]) => ({ number, state: prState, checks: checks.get(number), step: stepOf(number, prState) }))
+    const stepOf = (pr: { readonly id: string; readonly number: number; readonly state: 'open' | 'closed' | 'merged' }): MergeStep | null =>
+      pr.state === 'merged' ? 'merged' : pr.state === 'closed' ? null : goes.has(`${key}#${pr.number}`) ? 'go' : inQueue(key, pr) ? 'ready' : null
+    const pullRequests: PicturePullRequest[] = [...states].map(([id, pr]) => ({ id, number: pr.number, state: pr.state, checks: checks.get(id), step: stepOf({ id, ...pr }) }))
       .sort((a, b) => Number(a.state !== 'open') - Number(b.state !== 'open') || (a.state === 'open' ? a.number - b.number : b.number - a.number))
     // A merge Sotto has no GitHub time for counts from the merge turn Watcher gave it.
     for (const pr of pullRequests) {
       const turn = goes.get(`${key}#${pr.number}`)
-      if (pr.state === 'merged' && turn !== undefined && !mergedAt.has(`${key}#${pr.number}`)) mergedAt.set(`${key}#${pr.number}`, Date.parse(turn.at))
+      if (pr.state === 'merged' && turn !== undefined && !mergedAt.has(`${key}#${pr.id}`)) mergedAt.set(`${key}#${pr.id}`, Date.parse(turn.at))
     }
     const shown = pullRequests.find(pr => pr.state === 'open') ?? pullRequests.find(pr => pr.state === 'merged')
     const remote = thread?.remoteHost === true
@@ -199,16 +214,17 @@ export function buildPicture(input: {
     .sort((a, b) => b.nodes.length - a.nodes.length || a.project.localeCompare(b.project) || a.computer.localeCompare(b.computer))
   // The merge turns, from every pull request of every thread: the two merged last, then the turns given, then the queue,
   // oldest pass first.
-  const all = nodes.flatMap(node => node.pullRequests.map(pr => ({ node, pr, at: `${node.key}#${pr.number}` })))
+  const all = nodes.flatMap(node => node.pullRequests.map(pr => ({ node, pr, at: `${node.key}#${pr.id}`, given: `${node.key}#${pr.number}` })))
   const turnOf = ({ node, pr }: { readonly node: PictureNode; readonly pr: PicturePullRequest }, step: MergeStep): PictureTurn => ({ key: node.key, number: pr.number, step, title: node.title })
   const mergedTurns = all.filter(item => item.pr.step === 'merged' && mergedAt.has(item.at))
     .sort((a, b) => mergedAt.get(a.at)! - mergedAt.get(b.at)!).slice(-2).map(item => turnOf(item, 'merged'))
   const goTurns = all.filter(item => item.pr.step === 'go')
-    .sort((a, b) => Date.parse(goes.get(a.at)!.at) - Date.parse(goes.get(b.at)!.at)).map(item => turnOf(item, 'go'))
+    .sort((a, b) => Date.parse(goes.get(a.given)!.at) - Date.parse(goes.get(b.given)!.at)).map(item => turnOf(item, 'go'))
   const readyTurns = (merge?.queue ?? []).flatMap(queuedItem => {
-    const at = `${targetKey(queuedItem.target)}#${queuedItem.pullRequest.number ?? pullNumber(queuedItem.pullRequest.url) ?? 0}`
-    const item = all.find(candidate => candidate.at === at)
-    return item !== undefined && item.pr.step === 'ready' ? [turnOf(item, 'ready')] : []
+    const key = targetKey(queuedItem.target)
+    const item = all.find(candidate => candidate.node.key === key && candidate.pr.step === 'ready' && (queuedItem.pullRequest.url !== undefined
+      ? pullRequestId(queuedItem.pullRequest.url, queuedItem.pullRequest.number) === candidate.pr.id : (queuedItem.pullRequest.number ?? pullNumber(queuedItem.pullRequest.url)) === candidate.pr.number))
+    return item === undefined ? [] : [turnOf(item, 'ready')]
   })
   const live = nodes.filter(node => !node.settled)
   return {
@@ -379,7 +395,7 @@ const NEWS_KINDS: ReadonlySet<string> = new Set(['turn-finished', 'needs-user', 
  * neither does the first look with main's merge turns in hand (`stepsKnown`), which only says where each stood. `goes`
  * are the sends Watcher marked as merge turns.
  */
-export function pictureMessages(seen: PictureSeen | null, room: WatcherRoomState, model: PictureModel, goes: ReadonlySet<string>, stepsKnown = true): { readonly messages: PictureMessage[]; readonly seen: PictureSeen } {
+export function pictureMessages(seen: PictureSeen | null, room: WatcherRoomState, model: PictureModel, goes: ReadonlyMap<string, number>, stepsKnown = true): { readonly messages: PictureMessage[]; readonly seen: PictureSeen } {
   const messages: PictureMessage[] = []
   const receipts = new Map<string, { delivery: string; outcome: string | undefined }>()
   const replied = new Set<string>()
@@ -391,7 +407,7 @@ export function pictureMessages(seen: PictureSeen | null, room: WatcherRoomState
     if ((receipt.action === 'start' || receipt.action === 'send') && receipt.deliveryState === 'accepted' && before?.delivery !== 'accepted') {
       const go = receipt.action === 'send' && goes.has(receipt.id)
       messages.push({ id: `${receipt.id}:sent`, key, direction: 'out', kind: receipt.action === 'start' ? 'start' : go ? 'go' : 'steer', operationId: receipt.id,
-        ...(go ? { pullRequest: model.nodes.get(key)?.pullRequest?.number } : {}) })
+        ...(go ? { pullRequest: goes.get(receipt.id) } : {}) })
     }
     if (receipt.outcome === 'answered' && before?.outcome !== 'answered') {
       replied.add(key)
@@ -402,10 +418,10 @@ export function pictureMessages(seen: PictureSeen | null, room: WatcherRoomState
   const steps = new Map<string, MergeStep | null>()
   const stepped = new Set<string>()
   for (const node of model.nodes.values()) for (const pr of node.pullRequests) {
-    const at = `${node.key}#${pr.number}`
+    const at = `${node.key}#${pr.id}`
     steps.set(at, pr.step)
-    const before = seen?.steps.get(at)
-    if (seen === null || !seen.stepsKnown || !stepsKnown || before === undefined || before === pr.step) continue
+    // Once the picture has read the merge turns, a pull request it had not seen moves too, if it comes ready or merged.
+    if (seen === null || !seen.stepsKnown || !stepsKnown || seen.steps.get(at) === pr.step) continue
     if (pr.step === 'ready' || pr.step === 'merged') {
       stepped.add(node.key)
       messages.push({ id: `${at}:${pr.step}`, key: node.key, direction: 'in', kind: pr.step, pullRequest: pr.number })
@@ -452,12 +468,12 @@ export interface PictureActivity {
   readonly replyMessageId: string | undefined
 }
 type Receipt = WatcherRoomState['receipts'][number]
-function didWords(receipt: Receipt, goes: ReadonlySet<string>): string {
+function didWords(receipt: Receipt, goes: ReadonlyMap<string, number>): string {
   switch (receipt.action) {
     case 'start': return 'Started it'
     case 'stop': return 'Stopped it'
     case 'settle': return 'Settled it'
-    default: return goes.has(receipt.id) ? 'Gave it its merge turn' : receipt.delivery === 'steer' ? 'Steered its turn' : 'Sent to it'
+    default: return goes.has(receipt.id) ? `Gave #${goes.get(receipt.id)} its merge turn` : receipt.delivery === 'steer' ? 'Steered its turn' : 'Sent to it'
   }
 }
 function wentWords(receipt: Receipt): string {
@@ -476,7 +492,7 @@ function wentWords(receipt: Receipt): string {
   }
 }
 /** What Watcher last did with one thread, newest first, from Sotto's receipts alone. */
-export function nodeActivity(room: WatcherRoomState, key: string, goes: ReadonlySet<string>, limit = 5): PictureActivity[] {
+export function nodeActivity(room: WatcherRoomState, key: string, goes: ReadonlyMap<string, number>, limit = 5): PictureActivity[] {
   const found: PictureActivity[] = []
   for (let at = room.receipts.length - 1; at >= 0 && found.length < limit; at--) {
     const receipt = room.receipts[at]!

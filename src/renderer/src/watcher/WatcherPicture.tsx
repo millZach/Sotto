@@ -143,7 +143,7 @@ function Node({ node, x, y, width, mirror, open, onPress }: { readonly node: Pic
  * beside Watcher shows the thread itself; Open to answer goes to its waiting card.
  */
 function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: { readonly node: PictureNode; readonly room: WatcherRoomState; readonly state: AgentState
-  readonly goes: ReadonlySet<string>; readonly layout: PictureLayout; readonly onClose: (refocus: boolean) => void; readonly onOpen: OpenThread; readonly from: HTMLElement | null }): ReactNode {
+  readonly goes: ReadonlyMap<string, number>; readonly layout: PictureLayout; readonly onClose: (refocus: boolean) => void; readonly onOpen: OpenThread; readonly from: HTMLElement | null }): ReactNode {
   const card = useRef<HTMLDivElement>(null)
   useEffect(() => { card.current?.querySelector<HTMLElement>('button')?.focus() }, [node.key])
   const at = layout.at.get(node.key)
@@ -169,7 +169,7 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
     <p className="watcher-picture__card-where">{[node.provider, node.project, node.computer].filter(Boolean).join(' · ')}
       {' · '}<span className="watcher-row__status" data-tone={node.tone}>{node.word}</span></p>
     {node.pullRequests.length ? <ul className="watcher-picture__card-prs" aria-label="Its pull requests">
-      {node.pullRequests.map(pr => <li key={pr.number}><PullRequestChip pr={pr} /><span>{pullRequestWords(pr)}</span></li>)}
+      {node.pullRequests.map(pr => <li key={pr.id}><PullRequestChip pr={pr} /><span>{pullRequestWords(pr)}</span></li>)}
     </ul> : null}
     {asks ? <p className="watcher-picture__card-asks">{node.waits === 'permission' ? 'Asks permission: ' : 'Asks: '}{asks}</p> : null}
     {activity.length ? <ol className="watcher-picture__card-did" aria-label="What Watcher last did with it">
@@ -216,7 +216,8 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   const idOf = useMemo(() => threadAddressIndex(agents), [agents])
   const model = useMemo<PictureModel>(() => buildPicture({ room: roomState, state: agents, entries: known, idOf, merge: merge?.turns ?? null, showSettled }),
     [roomState, agents, known, idOf, merge, showSettled])
-  const goes = useMemo<ReadonlySet<string>>(() => new Set(merge?.turns.turns.map(turn => turn.operationId) ?? []), [merge])
+  // Each send Watcher marked as a merge turn, with the pull request it gave its turn to.
+  const goes = useMemo<ReadonlyMap<string, number>>(() => new Map(merge?.turns.turns.map(turn => [turn.operationId, turn.pullRequest] as const) ?? []), [merge])
   const scroller = useRef<HTMLDivElement>(null)
   const size = useSize(scroller)
   const layout = useMemo(() => size.width === 0 ? null : layoutPicture(model.clusters, size.width, size.height), [model, size.width, size.height])
@@ -228,7 +229,7 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   // turn, since its receipt can reach the window before main's read of the merge turns does.
   const blobs = useRef<HTMLDivElement>(null)
   const edges = useRef(new Map<string, SVGPathElement>())
-  const placed = useRef<{ layout: PictureLayout | null; model: PictureModel; goes: ReadonlySet<string>; askedAt: number }>({ layout, model, goes, askedAt: merge?.askedAt ?? -Infinity })
+  const placed = useRef<{ layout: PictureLayout | null; model: PictureModel; goes: ReadonlyMap<string, number>; askedAt: number }>({ layout, model, goes, askedAt: merge?.askedAt ?? -Infinity })
   placed.current = { layout, model, goes, askedAt: merge?.askedAt ?? -Infinity }
   const seen = useRef<PictureSeen | null>(null)
   const held = useRef<HeldSend[]>([])
@@ -280,11 +281,11 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   // Lets go every held send that was a merge turn, that a read asked after it was seen has answered for, or whose hold has
   // run out, then waits for the next hold to run out, if any is left.
   const release = useCallback(() => {
-    const { goes: goesNow, askedAt, model: picture } = placed.current, now = Date.now(), ready: PictureMessage[] = []
+    const { goes: goesNow, askedAt } = placed.current, now = Date.now(), ready: PictureMessage[] = []
     held.current = held.current.filter(item => {
       const go = item.message.operationId !== undefined && goesNow.has(item.message.operationId)
       if (!go && askedAt < item.seenAt && now < item.until) return true
-      ready.push(go ? { ...item.message, kind: 'go', pullRequest: picture.nodes.get(item.message.key)?.pullRequest?.number } : item.message)
+      ready.push(go ? { ...item.message, kind: 'go', pullRequest: goesNow.get(item.message.operationId!) } : item.message)
       return false
     })
     for (const message of ready) play(message)
@@ -352,7 +353,8 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
           const found = model.clusters.find(item => item.key === cluster.key)!
           return <section key={cluster.key} className="watcher-picture__cluster" aria-label={`${found.project}${found.computer ? ` on ${found.computer}` : ''}, ${found.nodes.length} ${found.nodes.length === 1 ? 'thread' : 'threads'}`}>
             <h3 className="watcher-picture__cluster-name" data-mirror={cluster.mirror || undefined} aria-hidden="true"
-              style={cluster.mirror ? { right: layout.width - cluster.x - cluster.width, top: cluster.y + 6 } : { left: cluster.x + 4, top: cluster.y + 6 }}>
+              title={`${found.project}${found.computer ? ` · ${found.computer}` : ''}`}
+              style={{ ...cluster.mirror ? { right: layout.width - cluster.x - cluster.width } : { left: cluster.x + 4 }, top: cluster.y + 6, maxWidth: Math.max(40, cluster.width - 8) }}>
               <b>{found.project}</b>{found.computer ? ` · ${found.computer}` : ''}
             </h3>
             {cluster.nodes.map(placedNode => {

@@ -127,6 +127,15 @@ describe("Watcher's picture in its room", () => {
     expect(node).toHaveFocus()
   })
 
+  it('keeps a cluster’s name inside its cluster, cut short when too long', async () => {
+    roomView.set({ tab: 'visualize' })
+    renderRoom()
+    await screen.findByRole('button', { name: /^Footer links: / })
+    const heading = document.querySelector<HTMLElement>('.watcher-picture__cluster-name')!
+    expect(Number.parseFloat(heading.style.maxWidth)).toBeGreaterThan(0)
+    expect(heading.title).toContain('This computer')
+  })
+
   it('lists the merge turns along the top, each opening its thread’s card', async () => {
     roomView.set({ tab: 'visualize' })
     const { bridge } = renderRoom()
