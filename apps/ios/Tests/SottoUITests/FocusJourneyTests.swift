@@ -643,7 +643,7 @@ import XCTest
         capture("thread-glow-top")
     }
 
-    /// A thread's pull request on an Owl computer (ADR-0100): the chip opens a sheet that reads it from GitHub, shows where
+    /// A thread's pull request on an Owl computer (ADR-0102): the chip opens a sheet that reads it from GitHub, shows where
     /// it stands, its failing check first with how long it took, and starts and stops babysitting. Once read, the chip
     /// carries the checks.
     func testThePullRequestChipOpensItsSheetAndBabysitsIt() {

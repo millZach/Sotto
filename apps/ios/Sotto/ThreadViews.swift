@@ -339,7 +339,7 @@ private struct Conversation: View {
         } message: { Text("It may already have reached \(model.name(ref.hostID)). Nothing is sent again.") }
     }
 
-    /// The pull request chip's sheet and dot, where the thread's computer offers the sheet (ADR-0100); nil keeps the chip
+    /// The pull request chip's sheet and dot, where the thread's computer offers the sheet (ADR-0102); nil keeps the chip
     /// as it was.
     private func pullRequestChip(_ thread: ThreadSummary?) -> PullRequestChip? {
         guard model.offersPullRequestSheet(ref.hostID), let url = GitChips(thread?.worktree).pullRequestURL else { return nil }
@@ -601,7 +601,7 @@ private struct ThreadHero: View, Equatable {
     }
 }
 
-/// The pull request chip where the computer offers the pull request sheet (ADR-0100): the pull request it opens, and the
+/// The pull request chip where the computer offers the pull request sheet (ADR-0102): the pull request it opens, and the
 /// checks' dot and roll-up from this iPhone's last read of it, nil before its sheet has opened.
 struct PullRequestChip: Equatable {
     let url: String

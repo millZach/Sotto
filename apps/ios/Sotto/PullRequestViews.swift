@@ -1,7 +1,7 @@
 import SwiftUI
 import SottoCore
 
-/// A thread's pull request in a full-height sheet, from the chip under the thread's title (ADR-0100, variant A): its
+/// A thread's pull request in a full-height sheet, from the chip under the thread's title (ADR-0102, variant A): its
 /// state, title and branches, three lines that say where it stands, then its summary, checks, reviews and files, with
 /// chips that jump to each part and follow the scroll, and babysitting docked at the bottom. GitHub is read through the
 /// thread's computer when the sheet opens and when it is pulled to refresh. Read only, but for babysitting.

@@ -229,7 +229,7 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
     /// The pull requests the thread babysits, and why babysitting each last ended on its own (ADR-0061), for the pull
-    /// request sheet (ADR-0100). Read item by item, so a later host's record never fails the thread. Older hosts send none.
+    /// request sheet (ADR-0102). Read item by item, so a later host's record never fails the thread. Older hosts send none.
     public var babysitting: ThreadList<ThreadBabysitting>? = nil
     public var babysitEnded: ThreadList<ThreadBabysitEnded>? = nil
 }

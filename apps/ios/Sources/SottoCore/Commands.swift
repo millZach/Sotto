@@ -20,7 +20,7 @@ public enum RemoteCommands {
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
         "create-project": ["provider", "title", "path", "useExisting"],
         "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "managed"],
-        // The user's own Babysit pull request and Stop babysitting (ADR-0061, ADR-0100). Neither grants anything.
+        // The user's own Babysit pull request and Stop babysitting (ADR-0061, ADR-0102). Neither grants anything.
         "babysit-pull-request": ["threadId", "url"],
         "stop-babysitting": ["threadId", "url"],
     ]

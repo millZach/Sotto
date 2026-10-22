@@ -2,7 +2,7 @@ import Foundation
 
 /// The chips under a thread's title: its branch, the folder's changed lines and its pull request, from the Git status
 /// the host keeps on the thread's worktree record. A chip with nothing to say is left out. The pull request chip opens
-/// the pull request sheet where the computer offers it (ADR-0100), and says its checks once the sheet has read them.
+/// the pull request sheet where the computer offers it (ADR-0102), and says its checks once the sheet has read them.
 public struct GitChips: Equatable, Sendable {
     public struct Changes: Equatable, Sendable {
         public let files: Int

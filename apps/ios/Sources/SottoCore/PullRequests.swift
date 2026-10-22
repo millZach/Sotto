@@ -1,7 +1,7 @@
 import Foundation
 
 /// A thread's pull request as the host's `git-pull-request` read answers it (`gitPullRequestDetailSchema` in
-/// src/shared/gitPullRequests.ts), for the pull request sheet (ADR-0100). Read tolerantly: a field this build can't read
+/// src/shared/gitPullRequests.ts), for the pull request sheet (ADR-0102). Read tolerantly: a field this build can't read
 /// is absent, a check, review or file it can't read is left out, and states stay strings so a later one still shows.
 public struct PullRequestDetail: Decodable, Equatable, Sendable {
     /// One check on the head. `status` is `success`, `failure`, `cancelled`, `pending`, `action-required`, `skipped` or
@@ -166,7 +166,7 @@ private extension KeyedDecodingContainer {
     }
 }
 
-/// How a pull request's parts read on the sheet (ADR-0100): the checks rolled up, the three lines that say where it
+/// How a pull request's parts read on the sheet (ADR-0102): the checks rolled up, the three lines that say where it
 /// stands, the order of its checks and files, and how long a check took, in the words of the desktop's Pull request
 /// surface where it says the same thing.
 public enum PullRequests {

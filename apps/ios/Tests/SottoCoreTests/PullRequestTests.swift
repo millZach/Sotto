@@ -1,7 +1,7 @@
 import XCTest
 @testable import SottoCore
 
-/// The pull request sheet's reading of a host's `git-pull-request` answer (ADR-0100): decoding, the roll-up and the
+/// The pull request sheet's reading of a host's `git-pull-request` answer (ADR-0102): decoding, the roll-up and the
 /// three lines in the desktop's words, the order of checks and files, durations, and the babysitting line.
 final class PullRequestTests: XCTestCase {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {

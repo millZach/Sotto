@@ -143,4 +143,4 @@ Babysitting PR #964 said "The required checks passed" five times before they had
 
 ## Amendment: the iPhone's control (October 21, 2026, #1281)
 
-Decision 11 gave phones no control. [ADR-0100](0100-the-iphone-reads-a-threads-pull-request-in-a-sheet.md) gives the iPhone's pull request sheet **Babysit pull request** and **Stop babysitting**, an Owl feature. The phone sends the same two commands to a host that lists `pull-request-babysit`, reads `babysitting` and `babysitEnded` for its line, and grants nothing. Everything else here stands.
+Decision 11 gave phones no control. [ADR-0102](0102-the-iphone-reads-a-threads-pull-request-in-a-sheet.md) gives the iPhone's pull request sheet **Babysit pull request** and **Stop babysitting**, an Owl feature. The phone sends the same two commands to a host that lists `pull-request-babysit`, reads `babysitting` and `babysitEnded` for its line, and grants nothing. Everything else here stands.

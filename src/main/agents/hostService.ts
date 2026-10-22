@@ -104,7 +104,7 @@ export interface HostService {
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
    * threads say Needs attention until their next turn. */
   readonly supportsFailureSeen?: boolean
-  /** The host offers phones the pull request sheet (#1281, ADR-0100), present only when its Owl answer turns it on. */
+  /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>

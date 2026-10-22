@@ -1226,7 +1226,7 @@ struct HeldDetail {
     /// What the last Watch or Stop watching press did, said with Undo for a few seconds.
     @Published private(set) var watchNotice: WatchNotice?
     /// Each pull request as this iPhone last read it while running, by computer and pull request, for the chip's dot
-    /// (ADR-0100). Kept in memory only, and read again whenever its sheet opens.
+    /// (ADR-0102). Kept in memory only, and read again whenever its sheet opens.
     @Published private(set) var pullRequestReads: [String: PullRequestDetail] = [:]
     private var watchNoticeDismissal: Task<Void, Never>?
     /// This iPhone's own preferences: alert switches and new-thread defaults.
@@ -3147,7 +3147,7 @@ struct HeldDetail {
     }
 }
 
-// MARK: - A thread's pull request (ADR-0100)
+// MARK: - A thread's pull request (ADR-0102)
 
 extension AppModel {
     static let pullRequestViewFeature = "pull-request-view"
