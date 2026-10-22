@@ -1118,9 +1118,12 @@ import XCTest
     /// it is answered on the laptop and leaves: the page's end carries the card down, and the page puts it back in the
     /// strip by lining its top up with a point above the scroll view's own top. Ten of the user's follow-ups wait under the
     /// cards, so the page has enough under the card, once the permission has gone, to scroll it back there on any phone.
+    /// Watcher writes its next words when the journey says so, once the card is in the strip: on CI's SE, placing it took
+    /// longer than the fixture's two minutes of timed writing, and words arriving while the page is read put the card back
+    /// above the box after each move.
     func testACardInTheStripTheBarUncoversStaysPutWhileWatcherWrites() {
-        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards",
-                               "--ui-watcher-queued-below"])
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-writes-when-asked",
+                               "--ui-watcher-two-cards", "--ui-watcher-queued-below"])
         openWatcher()
         let writing = text("Checking the threads I watch.")
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
@@ -1140,20 +1143,20 @@ import XCTest
         var steps: [String] = []
         func barAway() -> Bool { !conversation.exists || conversation.frame.maxY <= windowTop + 1 }
         // Reads the page down, with the bar going away, until the card's top sits in the strip and its foot above the box.
-        func inStrip() -> Bool {
-            let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
-            let away = barAway()
-            steps.append("card \(top) to \(foot), strip \(strip.top) to \(strip.bottom), box at \(box), bar away \(away)")
-            return away && top >= strip.top + 4 && top <= strip.bottom - 8 && foot <= box
-        }
         // The card comes up to the strip from below, with the finger moving up the page only: going back up the page
         // brings the bar back, by design, so a last move that way would leave the bar over the strip. The first move up
         // slides the bar away, so it starts with the card well below the strip; the rest come nearer in smaller steps.
         // A card that went past the strip, or is too near it with the bar still there, goes back down well below it and
-        // comes up again.
-        for _ in 0..<14 where !inStrip() {
-            let off = lead.frame.minY - target
+        // comes up again. Each look reads the frames once, and there are at most eight moves: on CI's SE every query takes
+        // a second or two, and fourteen moves with two looks each ran for minutes.
+        var placed = false
+        for attempt in 0...8 {
+            let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
             let away = barAway()
+            steps.append("card \(top) to \(foot), strip \(strip.top) to \(strip.bottom), box at \(box), bar away \(away)")
+            placed = away && top >= strip.top + 4 && top <= strip.bottom - 8 && foot <= box
+            if placed || attempt == 8 { break }
+            let off = top - target
             let move: String
             if off < 0 || (!away && off < 240) {
                 move = "back down below the strip"
@@ -1168,13 +1171,14 @@ import XCTest
             steps.append(move)
             _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
         }
-        let placed = inStrip()
         if !placed { explain("watcher-card-not-in-strip", steps.joined(separator: "\n")) }
         XCTAssertTrue(placed, "The card's top sits in the strip the bar uncovered (\(steps.last ?? ""))")
         let start = lead.frame.minY
         // Watcher's words grow above the card, twice, and the card stays where the reader has it, with the bar still away.
         for _ in 0..<2 {
             let before = writing.label
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                 CFNotificationName("app.sotto.ui.watcher-writes" as CFString), nil, nil, true)
             let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher keeps writing")
             _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
