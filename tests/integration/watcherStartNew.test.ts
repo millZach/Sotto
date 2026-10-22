@@ -214,6 +214,57 @@ describe('New Watcher', () => {
     expect(f.service.state().newWatcher).toEqual({ available: true })
   })
 
+  it('refuses New Watcher while a change of Watcher’s model is under way, creating nothing', async () => {
+    const f = await fixture()
+    f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
+    await f.refresh()
+    await f.exchange('Watch the release.', 'Watching it.')
+    const other = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.id !== f.model.id)!
+    const original = f.control.commandForWatcherRoom.bind(f.control)
+    const entered = deferred(), released = deferred()
+    const spy = vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async (command, guard) => {
+      if (command.type === 'configure-thread') { entered.resolve(); await released.promise }
+      return original(command, guard)
+    })
+    try {
+      const changing = f.service.open({ provider: 'codex', modelId: other.id })
+      await entered.promise
+      const creates = f.creates()
+      expect(await f.service.startNew()).toEqual({ status: 'refused', code: 'THREAD_BUSY', message: 'Wait for Watcher to finish changing before starting a new one.', retryable: true })
+      released.resolve()
+      // The open settles with its own answer, which New Watcher's press never took.
+      expect(await changing).not.toEqual(expect.objectContaining({ message: 'Wait for Watcher to finish changing before starting a new one.' }))
+      expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null })
+      expect(f.creates()).toBe(creates)
+    } finally { released.resolve(); spy.mockRestore() }
+  })
+
+  it('refuses an open during New Watcher, and a second press joins the first', async () => {
+    const f = await fixture()
+    f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
+    await f.refresh()
+    await f.exchange('Watch the release.', 'Watching it.')
+    const other = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.id !== f.model.id)!
+    const original = f.control.commandForWatcherRoom.bind(f.control)
+    const entered = deferred(), released = deferred()
+    let created = 0
+    const spy = vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async (command, guard) => {
+      if (command.type === 'create-thread') { created++; entered.resolve(); await released.promise }
+      return original(command, guard)
+    })
+    try {
+      const first = f.service.startNew()
+      await entered.promise
+      expect(await f.service.open({ provider: 'codex', modelId: other.id })).toEqual({ status: 'refused', code: 'THREAD_BUSY',
+        message: 'Wait for the new Watcher to start before changing its model.', retryable: true })
+      const second = f.service.startNew()
+      expect(second).toBe(first)
+      released.resolve()
+      expect(await first).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }], currentOptions: { modelId: f.model.id } } })
+      expect(created).toBe(1)
+    } finally { released.resolve(); spy.mockRestore() }
+  })
+
   it('tells the room a creation stopped part-way only once nothing is finishing it', async () => {
     const f = await fixture()
     await f.exchange('Watch the footer links thread.', 'Watching Footer links.')

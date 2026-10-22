@@ -219,6 +219,8 @@ export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
   private opening: Promise<WatcherRoomResult> | undefined
+  /** What `opening` is doing: an open (a first Watcher or a change of its choices) or New Watcher. */
+  private openingKind: 'open' | 'new' | undefined
   private recoveryNotice: string | null = null
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
   private readonly active = new Map<string, Promise<unknown>>()
@@ -1397,9 +1399,18 @@ export class WatcherService implements WatcherControlHooks {
     this.publish()
   }
   open(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
+    // An open joins an open under way. One during New Watcher would answer with New Watcher's result and drop its choice.
+    if (this.opening && this.openingKind === 'new') return Promise.resolve(watcherRefusal('THREAD_BUSY', 'Wait for the new Watcher to start before changing its model.', true))
+    return this.begin('open', () => this.openOne(input))
+  }
+  /**
+   * The one open or New Watcher under way, which a second of the same kind joins. Published once it settles, so the room
+   * learns whether a creation stopped part-way (`creationStopped`) and what New Watcher would answer.
+   */
+  private begin(kind: 'open' | 'new', run: () => Promise<WatcherRoomResult>): Promise<WatcherRoomResult> {
     if (this.opening) return this.opening
-    // Published once it settles, so the room learns whether a creation stopped part-way (`creationStopped`).
-    this.opening = this.openOne(input).finally(() => { this.opening = undefined; this.publish() })
+    this.openingKind = kind
+    this.opening = run().finally(() => { this.opening = undefined; this.openingKind = undefined; this.publish() })
     return this.opening
   }
   private async openOne(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
@@ -1447,9 +1458,9 @@ export class WatcherService implements WatcherControlHooks {
    * offered. Refused, nothing is sent and nothing changes. A creation left pending is finished, as open finishes it.
    */
   startNew(): Promise<WatcherRoomResult> {
-    if (this.opening) return this.opening
-    this.opening = this.startNewOne().finally(() => { this.opening = undefined; this.publish() })
-    return this.opening
+    // A second press joins the first. During an open it would answer with that open's result and start nothing.
+    if (this.opening && this.openingKind === 'open') return Promise.resolve(watcherRefusal('THREAD_BUSY', 'Wait for Watcher to finish changing before starting a new one.', true))
+    return this.begin('new', () => this.startNewOne())
   }
   private async startNewOne(): Promise<WatcherRoomResult> {
     try {
