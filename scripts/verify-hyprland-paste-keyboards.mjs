@@ -1,4 +1,4 @@
-// Live desktop proof (sends keys): npm run build && mise exec node@24.21.0 -- node scripts/verify-hyprland-paste-keyboards.mjs
+// Live desktop proof (sends keys): npm run build && mise exec node@24.22.1 -- node scripts/verify-hyprland-paste-keyboards.mjs
 // Run only while the owner has made the unlocked forge desktop available for testing.
 import assert from 'node:assert/strict'
 import console from 'node:console'

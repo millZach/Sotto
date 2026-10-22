@@ -24,10 +24,10 @@ The `sotto` launcher uses Sotto's bundled Electron in Node mode for the tiny cli
 From a development checkout, prepare and build with Node 24, then use the launcher's absolute path:
 
 ```sh
-mise exec node@24.21.0 -- npm ci
-mise exec node@24.21.0 -- node node_modules/electron/install.js
-mise exec node@24.21.0 -- npm run assets:verify
-mise exec node@24.21.0 -- npm run build
+mise exec node@24.22.1 -- npm ci
+mise exec node@24.22.1 -- node node_modules/electron/install.js
+mise exec node@24.22.1 -- npm run assets:verify
+mise exec node@24.22.1 -- npm run build
 /absolute/path/to/Sotto/apps/omarchy/sotto
 /absolute/path/to/Sotto/apps/omarchy/sotto dictation start
 /absolute/path/to/Sotto/apps/omarchy/sotto dictation stop
@@ -123,7 +123,7 @@ sudo pacman -U "$(makepkg --packagelist)"
 Until a release tarball exists, build one from this checkout with Node 24, then point the recipe at it. Replace the archive checksum in `sha256sums` with `sha256sum ../../release/Sotto-<version>-linux-x64.tar.gz`; local builds still require a checksum, never `SKIP`.
 
 ```sh
-mise exec node@24.21.0 -- npm run package:linux
+mise exec node@24.22.1 -- npm run package:linux
 cd apps/omarchy
 SOTTO_TARBALL="$PWD/../../release/Sotto-<version>-linux-x64.tar.gz" makepkg --cleanbuild --force
 pacman -Qlp "$(makepkg --packagelist)"
@@ -132,7 +132,7 @@ bsdtar -tvf "$(makepkg --packagelist)"
 
 Builds need no root. Installation does. `install.sh path/to/package.pkg.tar.zst` installs the local package with pacman and tells you to open Sotto for setup; it does not change your desktop configuration. Without a path it uses `omarchy-pkg-add sotto-bin` when a package repository carries it, or `yay -S --needed sotto-bin` for the AUR. Do not use that form before publication. The app bundles the keys, the shell plugin and the theme; press Set up all three after opening it.
 
-Regenerate the hicolor icons from `build/icon.svg` with `mise exec node@24.21.0 -- node scripts/generate-brand-assets.mjs --linux` at the repository root. This leaves Windows, macOS and phone outputs alone. Refresh the three icon checksums and run `makepkg --printsrcinfo > .SRCINFO` afterward.
+Regenerate the hicolor icons from `build/icon.svg` with `mise exec node@24.22.1 -- node scripts/generate-brand-assets.mjs --linux` at the repository root. This leaves Windows, macOS and phone outputs alone. Refresh the three icon checksums and run `makepkg --printsrcinfo > .SRCINFO` afterward.
 
 The package installs the app into `/opt/sotto`, links `/usr/bin/sotto` to `/opt/sotto/bin/sotto`, adds `sotto.desktop` and hicolor icons, and sets `chrome-sandbox` to root:root 4755. Arch's user namespaces normally supply the sandbox. The helper supports desktops with user namespaces turned off. The dependency list follows forge's `t3code-bin`, with wl-clipboard for copying, wtype for automatic paste and libsecret for credentials added. Omarchy supplies gnome-keyring; an unlocked Secret Service is needed to save keys.
 

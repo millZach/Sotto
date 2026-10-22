@@ -68,7 +68,7 @@ check_dest() {
 check_dest || exit 2
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-node=$(mise exec node@24.21.0 -- node -p 'process.execPath')
+node=$(mise exec node@24.22.1 -- node -p 'process.execPath')
 sandbox() { "$node" "$here/omarchy-shell-sandbox.mjs" "$@"; }
 omarchy_dir=$(cd -- "$here/../apps/omarchy" && pwd -P)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}

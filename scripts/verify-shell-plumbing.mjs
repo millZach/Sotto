@@ -1,4 +1,4 @@
-// Usage after build: mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs [Playwright spec ...]
+// Usage after build: mise exec node@24.22.1 -- node scripts/verify-shell-plumbing.mjs [Playwright spec ...]
 // Private HOME, TMPDIR and D-Bus, plus owned nested Hyprland scopes, isolate the locked live session.
 import assert from 'node:assert/strict'
 import console from 'node:console'
