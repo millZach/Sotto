@@ -1,4 +1,4 @@
-import { chmod, lstat, opendir, rmdir, unlink } from 'node:fs/promises'
+import { chmod, lstat, readdir, rmdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 /**
@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
  * going however long the folder takes, so a checkout with its own 1.4 GB `node_modules` on a slow Windows disk finishes.
  */
 export const REMOVAL_STALL_MS = 120_000
-/** Entries removed side by side within one folder. More would only queue behind Node's file system threads. */
+/** File system calls running at once across the whole removal. More would only queue behind Node's file system threads. */
 const PARALLEL = 16
 /** Every this many entries, the event loop gets a turn, as `periodicYield` gives the reclaim walk (`threadWorktrees.ts`). */
 const YIELD_EVERY = 256
@@ -38,46 +38,52 @@ export async function removeFolderContents(root: string, options: FolderRemovalO
     progressAt = now()
     if (++visited % YIELD_EVERY === 0) await new Promise(resolve => setImmediate(resolve))
   }
-  const persist = async (path: string, link: boolean, remove: () => Promise<void>): Promise<void> => {
-    for (let attempt = 0; ; attempt++) {
-      try { await remove(); await progressed(); return }
+  // One limit for the whole removal, not one per folder: a deep dependency tree would otherwise open thousands of
+  // folders at once and run out of file handles. Only single file system calls take a place, never a whole subtree.
+  let active = 0
+  const waiting: Array<() => void> = []
+  const slot = async <T>(work: () => Promise<T>): Promise<T> => {
+    while (active >= PARALLEL) await new Promise<void>(resolve => waiting.push(resolve))
+    active++
+    try { return await work() }
+    finally { active--; waiting.shift()?.() }
+  }
+  /**
+   * One file system call, retried while the entry is busy. `gone` is the answer when the entry is already not there.
+   * `mode` is what a read-only entry is made, once; none for a link, because chmod follows a link and its target is not
+   * the removal's to change. `beforeRetry` runs outside the limit, so it may itself remove entries.
+   */
+  const attempt = async <T>(path: string, mode: number | undefined, work: () => Promise<T>, gone: T, beforeRetry?: (code: string) => Promise<void>): Promise<T> => {
+    for (let tries = 0; ; tries++) {
+      try { const result = await slot(work); await progressed(); return result }
       catch (error) {
         const code = (error as NodeJS.ErrnoException).code ?? ''
-        if (code === 'ENOENT') { await progressed(); return }
+        if (code === 'ENOENT') { await progressed(); return gone }
         if (!BUSY.has(code)) throw error
         if (now() - progressAt > stallMs) throw new FolderRemovalStalled('A file in the folder stayed in use. Close any program using the folder.', { cause: error })
-        // A read-only file, or a file in a folder that is not writable, is made writable once. chmod follows a link, so
-        // a link's own mode is left as it is and only the folder holding it is changed.
-        if (attempt === 0 && (code === 'EPERM' || code === 'EACCES')) {
-          await chmod(dirname(path), 0o700).catch(() => undefined)
-          if (!link) await chmod(path, 0o600).catch(() => undefined)
+        // A read-only entry, or one in a folder that is not writable, is made writable once.
+        if (tries === 0 && (code === 'EPERM' || code === 'EACCES')) {
+          await slot(() => chmod(dirname(path), 0o700)).catch(() => undefined)
+          if (mode !== undefined) await slot(() => chmod(path, mode)).catch(() => undefined)
         }
-        await new Promise(resolve => setTimeout(resolve, Math.min(1_000, 10 * 2 ** Math.min(attempt, 7))))
+        await beforeRetry?.(code)
+        await new Promise(resolve => setTimeout(resolve, Math.min(1_000, 10 * 2 ** Math.min(tries, 7))))
       }
     }
   }
   const removeEntry = async (path: string): Promise<void> => {
-    const info = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+    const info = await slot(() => lstat(path)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
     if (!info) return
     // A junction reads as a link here, and unlinking it removes the junction, not the folder it leads to.
     if (info.isDirectory() && !info.isSymbolicLink()) {
       await removeChildren(path)
-      await persist(path, false, async () => {
-        try { await rmdir(path) }
-        catch (error) {
-          // Something wrote into the folder after its entries went; take those too before asking again.
-          if ((error as NodeJS.ErrnoException).code === 'ENOTEMPTY') await removeChildren(path)
-          throw error
-        }
-      })
-    } else await persist(path, info.isSymbolicLink(), () => unlink(path))
+      // Something that wrote into the folder after its entries went is taken too before asking again.
+      await attempt(path, 0o700, () => rmdir(path), undefined, async code => { if (code === 'ENOTEMPTY') await removeChildren(path) })
+    } else await attempt(path, info.isSymbolicLink() ? undefined : 0o600, () => unlink(path), undefined)
   }
   const removeChildren = async (directory: string, keep?: ReadonlySet<string>): Promise<void> => {
-    const names: string[] = []
     // A folder something else removed between its lstat and here is already what this removal wanted.
-    const handle = await opendir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
-    if (!handle) return
-    for await (const entry of handle) if (!keep?.has(entry.name)) names.push(entry.name)
+    const names = (await attempt(directory, 0o700, () => readdir(directory), [] as string[])).filter(name => !keep?.has(name))
     for (let offset = 0; offset < names.length; offset += PARALLEL) {
       // Every removal in a batch settles before a failure is reported, so nothing is still deleting once the caller hears.
       const results = await Promise.allSettled(names.slice(offset, offset + PARALLEL).map(name => removeEntry(join(directory, name))))

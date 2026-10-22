@@ -91,6 +91,8 @@ describe('a worktree removal cut off partway (#1297)', () => {
 
   it('lets one removal of a folder run at a time, so a send never puts it back for a second remover to take', async () => {
     const f = await installedWorktree()
+    // The folder moved branch after the record the send holds was made; it comes back on the branch the removal found.
+    await git(f.a.path!, ['switch', '-c', 'feat/moved'])
     await expect(new ThreadWorktrees(f.root, git, undefined, stopped).reclaim(f.a, { automatic: true })).rejects.toThrow()
     // A finisher held inside its deletion, as a large folder holds one, while a send restores the same folder.
     let entered!: () => void, release!: () => void
@@ -107,7 +109,8 @@ describe('a worktree removal cut off partway (#1297)', () => {
     order.push('finisher let go')
     release()
     expect((await finishing).reclaimedAt).toBeTruthy()
-    expect(await restoring).toMatchObject({ status: 'ready', reclaimedAt: undefined })
+    expect(await restoring).toMatchObject({ status: 'ready', branch: 'feat/moved', reclaimedAt: undefined })
+    expect((await git(f.a.path!, ['branch', '--show-current'])).trim()).toBe('feat/moved')
     expect(order[0]).toBe('finisher let go')
     expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
     expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)

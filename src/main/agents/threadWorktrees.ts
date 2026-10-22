@@ -203,6 +203,16 @@ const removalOperations = new Map<string, Promise<void>>()
 interface RegistryIdentity { readonly common: string; readonly key: string }
 interface InspectionReads { readonly root: string; readonly common?: string; readonly listing?: string }
 const removalsQueued = new Map<string, number>()
+/**
+ * The branch and time of the last removal of each folder in this process, until the folder is put back. A caller that
+ * waited its turn behind that removal may hold a record made before the folder moved branch; this is the newer word.
+ */
+const finishedRemovals = new Map<string, { readonly branch: string | undefined; readonly at: string }>()
+function reclaimedRecord(metadata: AgentWorktree, path: string, branch: string | undefined): AgentWorktree {
+  const at = new Date().toISOString()
+  finishedRemovals.set(pathKey(path), { branch, at })
+  return { ...withCheckedOutBranch(metadata, branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: at }
+}
 /** How many removals of this folder are running or waiting their turn; a test reads it to see one wait. */
 export function queuedRemovals(path: string): number { return removalsQueued.get(pathKey(path)) ?? 0 }
 async function removalTurn<T>(path: string, run: () => Promise<T>): Promise<T> {
@@ -754,6 +764,7 @@ export class ThreadWorktrees {
     // No -b and no -B: the recorded branch is checked out as it stands, with its commits.
     try { await this.addWorktree(repositoryRoot, path, branch, ['worktree', 'add', '--', path, branch], identity) }
     catch (error) { throw new Error(`This thread’s working folder was missing and Sotto could not put it back on ${branch}. Nothing was lost; the branch still has its commits. ${error instanceof Error ? error.message : ''}`.trim(), { cause: error }) }
+    finishedRemovals.delete(pathKey(path))
     return { ...metadata, status: 'ready', error: undefined, reclaimedAt: undefined }
   }
 
@@ -971,7 +982,7 @@ export class ThreadWorktrees {
       // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
       try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!, nestedWorktrees) }
       catch (error) { throw unfinishedRemoval(error) }
-      return { ...metadata, branch: facts.branch, status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
+      return reclaimedRecord(metadata, facts.path, facts.branch)
     })
   }
 
@@ -1005,6 +1016,13 @@ export class ThreadWorktrees {
     const allocationRoot = join(await realpath(this.directory).catch(() => resolve(this.directory)), this.home.folder)
     if (pathKey(dirname(path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(path))) return metadata
     return removalTurn(path, async () => {
+      // A folder this process removed, and that is still gone or emptied, is reclaimed on the branch that removal found:
+      // the caller may have waited its turn behind it holding a record made before the folder moved branch.
+      const afterRemoval = async (): Promise<AgentWorktree> => {
+        const finished = finishedRemovals.get(pathKey(path))
+        if (!finished || metadata.reclaimedAt || await reservedFolder(path).catch(() => 'occupied' as const) === 'occupied') return metadata
+        return { ...withCheckedOutBranch(metadata, finished.branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: finished.at }
+      }
       // Read from disk first, so an ordinary folder starts no Git process here.
       const folder = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error })
       if (folder && (!folder.isDirectory() || folder.isSymbolicLink())) return metadata
@@ -1022,7 +1040,7 @@ export class ThreadWorktrees {
           registration = there ? target : await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
         } catch { return metadata }
         const reason = (registration && await readFile(join(registration, 'locked'), 'utf8').catch(() => undefined))?.trim()
-        if (reason !== REMOVING_LOCK_REASON && reason !== REPAIRING_LOCK_REASON) return metadata
+        if (reason !== REMOVING_LOCK_REASON && reason !== REPAIRING_LOCK_REASON) return !folder && !registration ? afterRemoval() : metadata
       }
       let identity: RegistryIdentity
       try { identity = await this.registryIdentity(repositoryRoot) } catch { return metadata }
@@ -1075,7 +1093,7 @@ export class ThreadWorktrees {
         const nested = listed.filter((item): item is NestedWorktree => Boolean(item) && typeof (item as NestedWorktree).path === 'string' && typeof (item as NestedWorktree).commonDirectory === 'string')
         return { kind: 'finish', branch: entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : undefined, nested }
       })
-      if (!settle) return metadata
+      if (!settle) return afterRemoval()
       if (settle.kind === 'repair') {
         try {
           await this.putBackMissingFiles(path)
@@ -1085,7 +1103,7 @@ export class ThreadWorktrees {
       }
       try { await this.removeLocked(repositoryRoot, path, identity, settle.nested) }
       catch (error) { throw unfinishedRemoval(error) }
-      return { ...withCheckedOutBranch(metadata, settle.branch ?? metadata.branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
+      return reclaimedRecord(metadata, path, settle.branch ?? metadata.branch)
     })
   }
 
