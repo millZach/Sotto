@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, providerIdSchema, type AgentThread } from './agents'
+import { agentRuntimeModeSchema, providerIdSchema, type AgentState, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
 import { workerKindSchema } from './workerRoles'
 
@@ -221,6 +221,25 @@ export interface DelegationsBridge {
 
 /** The thread that delegated to this one, by Sotto thread ID, when the snapshot records one. */
 export const delegatingThreadOf = (thread: Pick<AgentThread, 'delegatedBy'> | undefined): string | undefined => thread?.delegatedBy
+
+/**
+ * A shell without its threads' delegation links, as a host sends it while the Owl feature `thread-delegation` is off
+ * (ADR-0072). A thread delegated while the feature was on keeps `delegatedBy` in its record, so turning the feature on
+ * again restores every link; until then no client hides it under the thread that delegated to it. The same state when no
+ * thread names one, so a host that never delegated sends what it always did. A shell of a shape this build cannot read
+ * passes through untouched, so the peer still learns why it cannot read it.
+ */
+export function stateWithoutDelegation<T extends AgentState>(state: T): T {
+  const listed: unknown = (state.host as Partial<AgentState['host']> | undefined)?.threads
+  if (!Array.isArray(listed) || !state.host.threads.some(thread => thread.delegatedBy !== undefined)) return state
+  const threads = state.host.threads.map(thread => {
+    if (thread.delegatedBy === undefined) return thread
+    const { delegatedBy, ...rest } = thread
+    void delegatedBy
+    return rest
+  })
+  return { ...state, host: { ...state.host, threads } }
+}
 
 /**
  * Every thread below `threadId` that it delegated to, at both levels, from the snapshot's own links: what Stop on it
