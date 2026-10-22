@@ -11,7 +11,7 @@ import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../shared/agents'
-import { isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates } from '../shared/agentThreadDetail'
+import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
@@ -33,6 +33,7 @@ import { visibleWatcherState } from '../shared/watcherVisibility'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
 import { stateWithoutDelegation } from '../shared/delegation'
+import { MAX_AGENT_ACTIVITIES } from '../shared/agentActivity'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 
@@ -601,23 +602,30 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.unknownProviders.size ? deltaWithoutProviders(delta, peer.unknownProviders) : delta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
     else peer.held.delete(threadId)
   }
-  // A thread's pushes wait for a client whose socket is still backed up, as its shell does (#1089). Each thread's waiting
-  // updates fold into one where they can, the way the 50 ms window folds them, so a client that reads slowly is sent one
-  // delta for what changed while it was behind rather than every delta in turn, and never more than about one push
-  // waits in the host's buffer. Once the socket drains they go in the order they were published, a thread at a time,
-  // waiting again whenever the socket backs up. A delta still follows the revision it applies to; answers never wait.
-  const backlogs = new WeakMap<Peer, Map<string, AgentThreadDetailUpdate[]>>()
+  // A thread's pushes wait for a client whose socket is still backed up, as its shell does (#1089). Each thread holds one
+  // update for it, every later one folded in, removals too, so a client that reads slowly is sent one delta for what
+  // changed while it was behind rather than every delta in turn. Updates that do not follow each other, or a fold that has
+  // grown to name more entries than a thread holds records, give way to the thread as it is when it goes (`CURRENT`), so
+  // what is held never outgrows one thread. Once the socket drains each goes, a thread at a time, waiting again whenever
+  // the socket backs up. A delta still follows the revision it applies to; answers never wait.
+  const CURRENT = null
+  const backlogs = new WeakMap<Peer, Map<string, AgentThreadDetailUpdate | typeof CURRENT>>()
   const holdFor = (peer: Peer, update: AgentThreadDetailUpdate): boolean => {
     let threads = backlogs.get(peer)
-    const queued = threads?.get(update.threadId)
-    if (!queued && !peer.frames.backlogged) return false
-    // An update this client would not be sent now is not held for later either.
-    if (!isAgentThreadDetailDelta(update) ? peer.sentAhead.has(update) : peer.opening.has(update.threadId)) return true
-    if (!threads) { backlogs.set(peer, threads = new Map()); void track(peer.frames.drained().then(() => release(peer))) }
-    if (!queued) { threads.set(update.threadId, [update]); return true }
-    const merged = mergeAgentThreadDetailUpdates(queued.at(-1)!, update)
-    if (merged === null) queued.push(update)
-    else queued[queued.length - 1] = merged
+    const threadId = update.threadId
+    if (!threads?.has(threadId)) {
+      if (!peer.frames.backlogged) return false
+      // An update this client would not be sent now is not held for later either. A thread still owed its first whole
+      // copy is sent it as it is then, so its deltas are dropped; once something is held for it, they fold into that.
+      if (!isAgentThreadDetailDelta(update) ? peer.sentAhead.has(update) : peer.opening.has(threadId)) return true
+      if (!threads) { backlogs.set(peer, threads = new Map()); void track(peer.frames.drained().then(() => release(peer))) }
+      threads.set(threadId, update)
+      return true
+    }
+    const queued = threads.get(threadId)!
+    if (queued === CURRENT) return true
+    const folded = foldAgentThreadDetailUpdates(queued, update)
+    threads.set(threadId, folded === null || isAgentThreadDetailDelta(folded) && folded.activityDeltas.length + folded.messageDeltas.length > MAX_AGENT_ACTIVITIES ? CURRENT : folded)
     return true
   }
   const release = (peer: Peer): void => {
@@ -625,14 +633,13 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!threads) return
     if (closing || peer.frames.isClosed) { backlogs.delete(peer); return }
     for (const [threadId, queued] of threads) {
-      while (queued.length > 0) {
-        if (peer.frames.backlogged) { void track(peer.frames.drained().then(() => release(peer))); return }
-        const update = queued.shift()!
-        const held = peer.held.get(threadId)
-        // A whole sent since, such as the one a new observe sends, already carries what this update would.
-        if (peer.observed.has(threadId) && (held === undefined || update.revision > held)) sendUpdate(peer, update, updateFor(update))
-      }
+      if (peer.frames.backlogged) { void track(peer.frames.drained().then(() => release(peer))); return }
       threads.delete(threadId)
+      if (!peer.observed.has(threadId)) continue
+      if (queued === CURRENT) { detail(peer, threadId); continue }
+      // A whole sent since, such as the one a new observe sends, already carries what this update would.
+      const held = peer.held.get(threadId)
+      if (held === undefined || queued.revision > held) sendUpdate(peer, queued, updateFor(queued))
     }
     backlogs.delete(peer)
   }
