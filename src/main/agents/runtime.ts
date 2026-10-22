@@ -45,6 +45,7 @@ import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport } from './hostFacts'
+import { threadDelegations } from './agentsView'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = AgentHost & { closed?: () => Promise<void> }
@@ -73,6 +74,8 @@ export interface AgentRuntimeOptions {
   threadStartsEnabled?: boolean
   /** The Owl list's answer for the iPhone's pull request sheet (#1281), read once. Absent fails closed. */
   pullRequestViewEnabled?: boolean
+  /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
+  agentsViewEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -372,9 +375,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
+  const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
+    // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.
+    ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })

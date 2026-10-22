@@ -221,6 +221,13 @@ function cutUtf8(text: string, bytes: number): string {
   return new TextDecoder().decode(encoded.subarray(0, end))
 }
 
+/** The list `index` holds for `key`, made empty the first time it is asked for. */
+function listed<T>(index: Map<string, T[]>, key: string): T[] {
+  let list = index.get(key)
+  if (!list) { list = []; index.set(key, list) }
+  return list
+}
+
 /**
  * Delegation between threads (ADR-0081): an ordinary thread starts threads and sends them briefs, under rules main
  * enforces, and reads each brief's outcome. Every call is the calling thread's, known from its tool token, rooted in the
@@ -230,8 +237,29 @@ function cutUtf8(text: string, bytes: number): string {
  */
 export class DelegationService {
   private readonly store: AtomicJsonStore<DelegationFile>
-  private records: DelegationRecord[] = []
-  private refusals: RefusedDelegation[] = []
+  /** The record, oldest first. Change it only through `records =` and `add`, which keep the index by thread with it. */
+  private entries: DelegationRecord[] = []
+  /**
+   * Each thread's part of the record, oldest first as in `entries`: by the thread that delegated, and by the thread
+   * delegated to (#1291). A read of a few threads' delegations walks only theirs, however long the user's history.
+   */
+  private readonly byDelegating = new Map<string, DelegationRecord[]>()
+  private readonly byDelegated = new Map<string, DelegationRecord[]>()
+  private refusalEntries: RefusedDelegation[] = []
+  /** Each delegating thread's refusals, oldest first as in `refusalEntries`. */
+  private readonly refusedBy = new Map<string, RefusedDelegation[]>()
+  private get records(): readonly DelegationRecord[] { return this.entries }
+  private set records(records: DelegationRecord[]) {
+    this.entries = records
+    this.byDelegating.clear(); this.byDelegated.clear()
+    for (const record of records) this.indexed(record)
+  }
+  private get refusals(): readonly RefusedDelegation[] { return this.refusalEntries }
+  private set refusals(refusals: RefusedDelegation[]) {
+    this.refusalEntries = refusals
+    this.refusedBy.clear()
+    for (const refusal of refusals) listed(this.refusedBy, refusal.delegatingThreadId).push(refusal)
+  }
   private readonly links = new Map<string, DelegationLink>()
   private readonly roots = new Map<string, string>()
   /** Briefs waiting for a busy delegated thread, held in memory only. */
@@ -379,8 +407,23 @@ export class DelegationService {
    * or main names the thread.
    */
   views(threadId: string): { readonly made: DelegationView[]; readonly received: DelegatedView[] } {
-    const made: DelegationView[] = [], received: DelegationRecord[] = []
-    const refused = this.refusals.filter(item => item.delegatingThreadId === threadId)
+    return this.viewsOf([threadId]).get(threadId)!
+  }
+  /**
+   * `views` for several threads, each read from its own part of the record (#1291), so a read that needs many threads'
+   * views, as the iPhone's Agents view does (ADR-0103), touches only their delegations, however long the history.
+   */
+  viewsOf(threadIds: readonly string[]): ReadonlyMap<string, { readonly made: DelegationView[]; readonly received: DelegatedView[] }> {
+    const views = new Map<string, { readonly made: DelegationView[]; readonly received: DelegatedView[] }>()
+    for (const threadId of threadIds) if (!views.has(threadId)) {
+      views.set(threadId, { made: this.made(threadId), received: (this.byDelegated.get(threadId) ?? []).slice(-DELEGATION_VIEWS_MAX).map(record => this.view(record)) })
+    }
+    return views
+  }
+  /** What `threadId` delegated, oldest first: every open one and the newest finished or refused ones. */
+  private made(threadId: string): DelegationView[] {
+    const records = this.byDelegating.get(threadId) ?? [], refused = this.refusedBy.get(threadId) ?? []
+    const made: DelegationView[] = []
     let finished = 0, next = refused.length - 1
     // Newest first through both lists at once: a refusal is a finished delegation that never started.
     const refusedAfter = (createdAt: string): void => {
@@ -388,19 +431,16 @@ export class DelegationService {
         if (finished < DELEGATION_VIEWS_MAX && made.length < DELEGATION_VIEWS_MAX * 2) { made.push(this.refusedView(refused[next]!)); finished++ }
       }
     }
-    for (let index = this.records.length - 1; index >= 0; index--) {
-      const record = this.records[index]!
-      if (record.delegatingThreadId === threadId) {
-        refusedAfter(record.createdAt)
-        if ((finished < DELEGATION_VIEWS_MAX || this.open(record)) && made.length < DELEGATION_VIEWS_MAX * 2) {
-          made.push(this.view(record))
-          if (!this.open(record)) finished++
-        }
+    for (let index = records.length - 1; index >= 0 && made.length < DELEGATION_VIEWS_MAX * 2; index--) {
+      const record = records[index]!
+      refusedAfter(record.createdAt)
+      if ((finished < DELEGATION_VIEWS_MAX || this.open(record)) && made.length < DELEGATION_VIEWS_MAX * 2) {
+        made.push(this.view(record))
+        if (!this.open(record)) finished++
       }
-      if (record.delegatedThreadId === threadId && received.length < DELEGATION_VIEWS_MAX) received.push(record)
     }
     refusedAfter('')
-    return { made: made.reverse(), received: received.reverse().map(record => this.view(record)) }
+    return made.reverse()
   }
   /**
    * The newest brief `threadId` was sent that Sotto still holds, for Tools › Agents when a row is opened: the user
@@ -408,13 +448,24 @@ export class DelegationService {
    * snapshot, and never a reply. Undefined when none is held, as with Keep local history off after a restart.
    */
   brief(threadId: string): string | undefined {
-    for (let index = this.records.length - 1; index >= 0; index--) {
-      const record = this.records[index]!
-      if (record.delegatedThreadId !== threadId || record.deliveryState === 'queued') continue
-      const message = this.options.host.threadMessage(threadId, record.messageId)
-      if (message?.role === 'user') return message.text.slice(0, DELEGATION_BRIEF_MAX)
+    return this.briefsOf([threadId]).get(threadId)
+  }
+  /**
+   * `brief` for several threads, in the order asked, each read newest first from the briefs that thread was sent
+   * (#1291) and stopping at the first one held.
+   */
+  briefsOf(threadIds: readonly string[]): ReadonlyMap<string, string> {
+    const briefs = new Map<string, string>()
+    for (const threadId of new Set(threadIds)) {
+      const sent = this.byDelegated.get(threadId) ?? []
+      for (let index = sent.length - 1; index >= 0; index--) {
+        const record = sent[index]!
+        if (record.deliveryState === 'queued') continue
+        const message = this.options.host.threadMessage(threadId, record.messageId)
+        if (message?.role === 'user') { briefs.set(threadId, message.text.slice(0, DELEGATION_BRIEF_MAX)); break }
+      }
     }
-    return undefined
+    return briefs
   }
   /**
    * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,
@@ -523,8 +574,14 @@ export class DelegationService {
       ...(target === undefined && input.provider ? { provider: input.provider } : {}),
       code: refusal.code, message: refusal.message.slice(0, REFUSAL_MESSAGE_MAX), ...(root ? { rootUserMessageId: root } : {}), ...(head ? { callerMessageId: head } : {}),
       createdAt: now() })
-    this.refusals.push(record)
-    if (this.refusals.length > REFUSALS_MAX) this.refusals.splice(0, this.refusals.length - REFUSALS_MAX)
+    this.refusalEntries.push(record)
+    listed(this.refusedBy, record.delegatingThreadId).push(record)
+    // The oldest go first, and each was the oldest of its own thread's too.
+    if (this.refusalEntries.length > REFUSALS_MAX) for (const dropped of this.refusalEntries.splice(0, this.refusalEntries.length - REFUSALS_MAX)) {
+      const own = this.refusedBy.get(dropped.delegatingThreadId)!
+      own.shift()
+      if (!own.length) this.refusedBy.delete(dropped.delegatingThreadId)
+    }
     await this.persist()
     // The window draws its card. A thread a refused send named was sent nothing, so it has nothing new to show.
     this.touched({ delegatingThreadId: record.delegatingThreadId })
@@ -541,6 +598,16 @@ export class DelegationService {
     return { status: 'ok' as const, delegation: read, limits: this.limits() }
   }
   private record(delegationId: string): DelegationRecord | undefined { return this.records.find(record => record.id === delegationId) }
+  /** Adds a newly admitted delegation to the record and to its threads' parts of it. */
+  private add(record: DelegationRecord): void {
+    this.entries.push(record)
+    this.indexed(record)
+  }
+  /** A record's threads never change once it is admitted, so it is indexed once, under both. */
+  private indexed(record: DelegationRecord): void {
+    listed(this.byDelegating, record.delegatingThreadId).push(record)
+    listed(this.byDelegated, record.delegatedThreadId).push(record)
+  }
   private owned(callerId: string, delegationId: string): DelegationRecord {
     const record = this.record(delegationId)
     if (!record || record.delegatingThreadId !== callerId) refuse('UNKNOWN_DELEGATION', 'This thread has no delegation with that ID. Call read_delegation with no delegation to list them.')
@@ -712,7 +779,7 @@ export class DelegationService {
       if (thread.providerMode && current.providerMode !== thread.providerMode) refuse('PERMISSION_NOT_COMPARABLE', 'That delegated thread\'s permission cannot be compared safely. Nothing was sent.')
       if (this.prompts(caller.id, root, thread.id) >= DELEGATION_PROMPTS_PER_THREAD) refuse('PROMPT_LIMIT', `That thread has had ${DELEGATION_PROMPTS_PER_THREAD} briefs in this turn of this thread. Retries, reads and wake-ups do not renew the limit; the user's next message does. Nothing was sent.`)
       const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId: thread.id, action: 'send', expectedLastUserMessageId: link.seenHead })
-      this.records.push(record)
+      this.add(record)
       await this.saveAdmission(record)
       this.touched(record)
       return { record, retry: false }
@@ -739,7 +806,7 @@ export class DelegationService {
     const permission = this.permission(model, caller, snapshot.models, input.permission ?? fromRole?.mode)
     const delegatedThreadId = randomUUID()
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
-    this.records.push(record)
+    this.add(record)
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)

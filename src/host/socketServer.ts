@@ -269,7 +269,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
-    && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
+    // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
+    && (feature !== 'agents-view' || service.supportsAgentsView === true))
   /**
    * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose
    * `remote-answer` policy lets it answer (ADR-0088). Read afresh each time, so `--deny-answers` takes it away at once.
@@ -1141,6 +1143,13 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'thread-starts') || !service.startHandover) throw new Refusal('invalid_request')
         if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
         return toolRead(async () => ({ handover: await service.startHandover!(request.threadId) }))
+      case 'thread-delegations': {
+        if (!offers(peer, 'agents-view') || !service.threadDelegations) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        // A delegated thread this peer is not sent is not named to it either.
+        const read = await toolRead(() => service.threadDelegations!(request.threadId))
+        return { ...read, threads: read.threads.filter(row => !hiddenThread(peer, row.thread) && !hiddenThread(peer, row.by)) }
+      }
       case 'host-facts':
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
         try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
