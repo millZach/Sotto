@@ -14,7 +14,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
-import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, immutableModels, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
@@ -148,6 +148,10 @@ function liveTurn(activities: readonly AgentActivity[], status: AgentThread['sta
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
 /** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
 const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
+/** The thread list of the part of an activity publication that is shared from one to the next. */
+const NO_THREADS: AgentThread[] = []
+/** Said on a thread part of whose own history could not be written; the rest of it was kept. */
+const HISTORY_SAVE_NOTICE = 'Part of this thread’s history could not be saved. Other messages were kept. Copy any missing text before closing Sotto.'
 /** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
 const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity remains available. Restore local storage and restart Sotto.'
@@ -730,6 +734,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly settledThreadListeners = new Set<(ids: readonly string[]) => void>()
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  /** The thread records the last activity publication carried, frozen and owned, by thread ID (#1326). */
+  private publishedThreads = new Map<string, AgentThread>()
+  /** Everything else that publication carried, frozen and owned the same way, with no threads. */
+  private publishedRest: AgentHostSnapshot | undefined
   /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   /** The catalog a snapshot last brought and the one accepting it made. */
@@ -2665,7 +2673,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
-    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
+    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear(); this.publishedThreads.clear(); this.publishedRest = undefined
     this.subagentInputs.clear()
     this.ready = false
   }
@@ -2788,7 +2796,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private historyNotices(snapshot: AgentHostSnapshot): void {
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
-      if (this.invalidEventThreads.has(thread.id)) thread.historySaveNotice = 'Part of this thread’s history could not be saved. Other messages were kept. Copy any missing text before closing Sotto.'
+      if (this.invalidEventThreads.has(thread.id)) thread.historySaveNotice = HISTORY_SAVE_NOTICE
     }
   }
   private publish(): void {
@@ -2799,15 +2807,31 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     for (const listener of this.listeners) listener(this.workspaceSnapshot())
     if (this.activityListeners.size) {
-      this.applyEvents()
-      // One copy for every activity subscriber: the coordinator takes it as its own and changes only what it builds over it,
-      // and usage reads it as it arrives and keeps none of it. It was a copy each, and each copied every thread.
-      const snapshot = cloneActivitySnapshot(this.visibleSnapshot(this.state.snapshot))
-      this.historyNotices(snapshot)
-      if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
-      else if (this.saveError) snapshot.error = this.saveError
+      const snapshot = this.activityPublication()
       for (const listener of this.activityListeners) listener(snapshot)
     }
+  }
+  /**
+   * One publication for every activity subscriber: the coordinator takes it as its own and changes only what it builds
+   * over it, and usage reads it as it arrives and keeps none of it. It was a copy each, and each copied every thread.
+   * Its thread records are frozen and owned, and a thread that has not changed since the last publication is the very
+   * record that one carried, so a publish copies only the threads that changed (#1326). The rest of the snapshot is a
+   * copy of its own, as before.
+   */
+  private activityPublication(): AgentHostSnapshot {
+    this.applyEvents()
+    const visible = this.visibleSnapshot(this.state.snapshot)
+    // The notice is the publication's, never the workspace's record: a thread that carries one is a new record over it.
+    const sources = visible.threads.map(thread => this.invalidEventThreads.has(thread.id) ? { ...thread, historySaveNotice: HISTORY_SAVE_NOTICE } : thread)
+    const threads = immutableUpdates(sources, sources.map(thread => this.publishedThreads.get(thread.id)))
+    this.publishedThreads = new Map(threads.map(thread => [thread.id, thread]))
+    // The catalog, the projects and the providers are shared the same way; the snapshot around them is this publication's.
+    const [rest] = immutableUpdates([{ ...visible, threads: NO_THREADS }], [this.publishedRest])
+    this.publishedRest = rest
+    const snapshot: AgentHostSnapshot = { ...rest!, threads }
+    if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
+    else if (this.saveError) snapshot.error = this.saveError
+    return snapshot
   }
 
   /** Native snapshots upsert records. Reused input records have already been merged, so only changed

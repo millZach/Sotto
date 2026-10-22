@@ -263,11 +263,13 @@ describe('multi-provider workspace update replay', () => {
     const before = published.at(-1)!
     const firstBefore = firstInternal.at(-1)!
     const secondBefore = secondInternal.at(-1)!
-    expect(isImmutableActivities(f.thread(firstBefore, codex).activities)).toBe(false)
-    // The activity subscribers share one copy of each publication (ADR-0016, October 19); the workspace's own state is
-    // not part of it, so a write into the publication never reaches what the workspace holds.
+    // The publication holds a frozen copy of the provider's mutable records, never the provider's own (#1326).
+    expect(isImmutableActivities(f.thread(firstBefore, codex).activities)).toBe(true)
+    expect(isImmutableActivities(native.activities)).toBe(false)
+    // The activity subscribers share one copy of each publication (ADR-0016, October 19), and its thread records are
+    // frozen (October 22), so a write into the publication is refused and never reaches what the workspace holds.
     expect(secondBefore).toBe(firstBefore)
-    f.thread(firstBefore, codex).activities![0]!.changes![0]!.diff = 'Local change'
+    expect(() => { f.thread(firstBefore, codex).activities![0]!.changes![0]!.diff = 'Local change' }).toThrow(TypeError)
     expect(f.thread(f.workspace.workspaceSnapshot(), codex).activities![0]!.changes![0]!.diff).toBe('Before')
     native.activities[0]!.output = 'After'
     native.activities[0]!.changes![0]!.diff = 'After'
@@ -276,7 +278,7 @@ describe('multi-provider workspace update replay', () => {
     const after = published.at(-1)!
     expect(f.thread(after, codex).activities?.[0]).toMatchObject({ output: 'After', changes: [{ diff: 'After' }] })
     expect(f.thread(before, codex).activities?.[0]).toMatchObject({ output: 'Before', changes: [{ diff: 'Before' }] })
-    expect(f.thread(firstBefore, codex).activities![0]!.changes![0]!.diff).toBe('Local change')
+    expect(f.thread(firstBefore, codex).activities![0]!.changes![0]!.diff).toBe('Before')
     expect(secondInternal.at(-1)).toBe(firstInternal.at(-1))
     expect(f.thread(firstInternal.at(-1)!, codex).activities![0]!.changes![0]!.diff).toBe('After')
     expect(f.thread(secondInternal.at(-1)!, codex).activities![0]!.changes![0]!.diff).toBe('After')

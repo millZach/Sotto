@@ -103,8 +103,9 @@ describe('Watcher pass cost at the owner\'s scale', () => {
       expect(owner[work].threadVisits / (OWNER.threads + 1), `${work} read each thread more often with more threads: ${seen}`)
         .toBeLessThanOrEqual(moreRecord[work].threadVisits / (SMALL.threads + 1))
     }
-    // The room hands out a detached copy of the records it shows, once per publish however many listeners there are.
-    expect(owner.publish.recordCopies, `publish copied the record more than once: ${seen}`).toBeLessThanOrEqual(1)
+    // The room hands out the record's own records, which every change replaces rather than edits (#1327): a publish
+    // copies none of them, however many listeners there are. The desktop room copies the room it holds, not the record.
+    expect(owner.publish.recordCopies, `publish copied the record: ${seen}`).toBe(0)
     expect(owner.publish.deepEquals, `publish compared the whole record: ${seen}`).toBe(0)
   })
 })

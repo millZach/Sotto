@@ -5,6 +5,7 @@ import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { failureUnseen } from '../../../shared/threadFailures'
+import { localeFormatter } from './localeFormat'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -96,10 +97,12 @@ export function providerGlyph(provider: string): string {
   return glyph === '' ? '?' : glyph
 }
 
+const clockTime = localeFormatter({ hour: 'numeric', minute: '2-digit' })
+/** "2:02 pm" in the window's own locale; empty when the moment cannot be read. One formatter serves every call (#1328). */
 export function clockLabel(at: number): string {
   const date = new Date(at)
   if (!Number.isFinite(date.valueOf())) return ''
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLocaleLowerCase()
+  return clockTime(date).toLocaleLowerCase()
 }
 
 /** "4 min", "2 h", "3 d": how long a working thread has been at it. */

@@ -81,6 +81,16 @@ The broadcast's omission was measured on the owner's catalog (`node:v8`'s `seria
 approximates what Electron's structured clone puts on the wire): an unchanged repeat fell from 649 KB to
 1.1 KB, and detecting "unchanged" costs about 0.5 ms per publish across both windows.
 
+### Unchanged thread records
+
+The shell still carried every thread's record on every broadcast. At the owner's scale (about 290 threads) that
+was most of what main spent serializing for the window, and the window spent longer than that in its state
+sharing. ADR-0028's October 22 amendment (#1330) has each broadcast carry only the changed thread records since
+the window's last one, with what went and the order, and the page rebuild the whole array, handing back the
+records it holds for threads that did not change. A streaming broadcast fell from 261 KB to 12.5 KB, main's
+encode and serialize from 1.31 ms to 1.02 ms, and the page's read and sharing from 5.7 ms to 0.47 ms
+(`tests/perf/windowChangedThreads.perf.test.ts`, on Owl; stable measured about the same).
+
 Putting the catalog back together happens in the page (`wrapAgentBridge`,
 `src/renderer/src/agents/agentStateCatalogs.ts`), not in the preload that first receives the broadcast:
 `contextBridge` clones every argument a main-world listener is called with on its way back across the
