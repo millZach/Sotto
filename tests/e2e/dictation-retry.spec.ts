@@ -56,8 +56,8 @@ test('keeps a turned-away dictation and delivers it when the widget pill is pres
 
     await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })
     await expect(widget.locator('.widget-shell[data-status="success"]')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('heading', { level: 1, name: /^(Pasted|Copied)\.$/ })).toBeVisible()
-    await expect(page.getByTestId('dictate-last')).toContainText(E2E_TRANSCRIPT)
+    await expect(page.getByRole('heading', { level: 1, name: /^(Pasted( into .+)?|Copied)\.$/ })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Today' })).toContainText(E2E_TRANSCRIPT)
     await page.screenshot({ path: resolve(evidenceRoot, 'dictate-recovered.png') })
   })
 })
@@ -85,7 +85,7 @@ test('lets go of a turned-away dictation when Discard recording is pressed', asy
     await page.getByRole('button', { name: 'Discard recording' }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
     await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('dictate-last')).toHaveCount(0)
+    await expect(page.locator('.journal-entry')).toHaveCount(0)
   }, { appearance: 'light' })
 })
 

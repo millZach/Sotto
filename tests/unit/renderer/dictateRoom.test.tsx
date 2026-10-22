@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,10 +10,10 @@ import {
   countWords,
   dictateSentence,
   formatElapsed,
-  transcriptStamp,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { MICROPHONE_NOT_SET_UP_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type DictationState } from '../../../src/shared/dictation'
+import type { DictationRecord } from '../../../src/shared/dictationRecord'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -27,12 +27,20 @@ const entries: readonly HistoryEntry[] = [
   { id: 'newest', text: 'Send the launch summary to the team before lunch.', createdAt: Date.now(), durationMs: 8_000, language: 'en', modelPreset: 'instant' },
 ]
 
+// Newest first, as main lists them.
+const records: readonly DictationRecord[] = [
+  { id: 'newest', createdAt: entries[1]!.createdAt, durationMs: 8_000, words: 9, app: 'Microsoft Outlook' },
+  { id: 'older', createdAt: 1_000, durationMs: 3_000, words: 6 },
+]
+
 const baseProps = {
   settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, llmApiKey: crypto.randomUUID() },
   speechModel: { state: 'ready' as const },
   platform: 'win32' as const,
   dictation: { status: 'idle' as const },
-  entries,
+  // Newest first, as main lists them.
+  entries: [entries[1]!, entries[0]!],
+  records,
   historyStatus: 'ready' as const,
   onStart: vi.fn(async () => undefined),
   onStop: vi.fn(async () => undefined),
@@ -41,6 +49,7 @@ const baseProps = {
 }
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
+const roomCss = readFileSync(join(process.cwd(), 'src/renderer/src/features/dictate/dictate.css'), 'utf8')
 
 function room(container: HTMLElement): HTMLElement {
   const surface = container.querySelector('.dictate')
@@ -75,29 +84,6 @@ describe('DictateRoom', () => {
     expect(container).not.toHaveTextContent('Copied — paste manually')
   })
 
-  it('uses local calendar days for Yesterday across both daylight-saving changes', context => {
-    const previousTimezone = process.env.TZ
-    process.env.TZ = 'America/Los_Angeles'
-    try {
-      const dates = [
-        ['2026-03-09T12:00:00', '2026-03-08T00:00:00', '2026-03-07T23:30:00'],
-        ['2026-11-02T12:00:00', '2026-11-01T00:00:00', '2026-10-31T23:30:00'],
-      ]
-      if (dates.some(([today, yesterday]) => new Date(today!).getTimezoneOffset() === new Date(yesterday!).getTimezoneOffset())) {
-        context.skip('This worker does not apply America/Los_Angeles at runtime; the dates must cross a DST offset change.')
-      }
-      for (const [today, yesterday, dayBefore] of dates) {
-        expect(new Date(today!).getTimezoneOffset()).not.toBe(new Date(yesterday!).getTimezoneOffset())
-        const now = new Date(today!).valueOf()
-        expect(transcriptStamp(new Date(yesterday!).valueOf(), now).label).toBe('Yesterday')
-        expect(transcriptStamp(new Date(dayBefore!).valueOf(), now).label).not.toBe('Yesterday')
-      }
-    } finally {
-      if (previousTimezone === undefined) delete process.env.TZ
-      else process.env.TZ = previousTimezone
-    }
-  })
-
   it('keeps selectable completed text and normal controls through failed and successful Copy retries', async () => {
     const onCopy = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     const onDismissRecovery = vi.fn()
@@ -116,38 +102,58 @@ describe('DictateRoom', () => {
     expect(onDismissRecovery).toHaveBeenCalledWith(entries[0]!.id)
   })
 
-  it('says it is ready, offers the one pill and the shortcut, and shows only the newest transcript', () => {
-    const { container } = render(<DictateRoom {...baseProps} />)
+  it('says it is ready in the compact bar, offers the one pill and the shortcut, then the Journal and its stats', () => {
+    const { container } = render(<DictateRoom {...baseProps} now={entries[1]!.createdAt} />)
 
     expect(screen.getByRole('region', { name: 'Dictation' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Start dictation' })).toBeEnabled()
     expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
     expect(room(container)).toHaveAttribute('data-status', 'idle')
+    expect(container.querySelector('.dictate__bar .voice-wave')).not.toBeNull()
+    // Every transcript by day, a week at a time, not only the newest.
     expect(screen.getByText('Send the launch summary to the team before lunch.')).toBeVisible()
     expect(screen.queryByText('An older note with five words.')).not.toBeInTheDocument()
-    expect(screen.getByText('9 words')).toBeInTheDocument()
-    const copy = screen.getByRole('button', { name: 'Copy transcript' })
-    expect(copy).toHaveTextContent('Copy')
-    expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show the 7 days before' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Today' })).toHaveTextContent('Microsoft Outlook · 9 words · 68 wpm')
+    expect(screen.getByRole('searchbox', { name: 'Search transcripts' })).toBeVisible()
+    expect(screen.getByRole('complementary', { name: 'Your dictation' })).toHaveTextContent('9 words in 1 dictation')
   })
 
-  it('copies the newest transcript through the caller', async () => {
+  it('copies a transcript through the caller', async () => {
     const user = userEvent.setup()
     const onCopy = vi.fn(async () => true)
-    render(<DictateRoom {...baseProps} onCopy={onCopy} />)
-    await user.click(screen.getByRole('button', { name: 'Copy transcript' }))
+    render(<DictateRoom {...baseProps} onCopy={onCopy} now={entries[1]!.createdAt} />)
+    await user.click(within(screen.getByRole('region', { name: 'Today' })).getByRole('button', { name: 'Copy transcript' }))
     expect(onCopy).toHaveBeenCalledWith('Send the launch summary to the team before lunch.')
   })
 
-  it('hides the transcript row when history is off, still loading, or empty', () => {
+  it('says History is off, is still loading, or holds nothing yet, under the bar', () => {
     const { rerender } = render(<DictateRoom {...baseProps} settings={{ ...baseProps.settings, historyEnabled: false }} />)
-    expect(screen.queryByRole('button', { name: 'Copy transcript' })).not.toBeInTheDocument()
+    expect(screen.getByText(/^History is off\. New dictations keep their numbers only/)).toBeVisible()
     rerender(<DictateRoom {...baseProps} historyStatus="loading" />)
+    expect(screen.getByRole('heading', { name: 'Loading transcripts.' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Copy transcript' })).not.toBeInTheDocument()
-    rerender(<DictateRoom {...baseProps} entries={[]} />)
-    expect(screen.queryByRole('button', { name: 'Copy transcript' })).not.toBeInTheDocument()
+    rerender(<DictateRoom {...baseProps} entries={[]} records={[]} />)
+    expect(screen.getByRole('heading', { name: 'Nothing here yet.' })).toBeVisible()
     expect(screen.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
+  })
+
+  it('moves from the bar to the search, the More menu, the chips and the rows, in the order the eye does', async () => {
+    const user = userEvent.setup()
+    render(<DictateRoom {...baseProps} now={entries[1]!.createdAt} />)
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Start dictation' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('searchbox', { name: 'Search transcripts' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'More transcript actions' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'All' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Microsoft Outlook' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getAllByRole('button', { name: /^Transcript from/ })[0]).toHaveFocus()
   })
 
   it('starts and stops for the matching states and ticks a clock inside the sentence while listening', async () => {
@@ -186,10 +192,17 @@ describe('DictateRoom', () => {
 
     rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'success', sessionId: 'one', text: 'hello', output: 'pasted' }} />)
     expect(screen.getByRole('heading', { level: 1, name: 'Pasted.' })).toBeVisible()
-    expect(screen.getByText('9 words')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start dictation' })).toBeEnabled()
 
-    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'success', sessionId: 'one', text: 'hello', output: 'copied' }} />)
+    // Once its record is in, the bar says where the dictation went, and keeps the shortcut under it.
+    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'success', sessionId: 'newest', text: 'hello', output: 'pasted' }} />)
+    expect(screen.getByRole('heading', { level: 1, name: 'Pasted into Microsoft Outlook.' })).toBeVisible()
+    expect(screen.getByText(/in any app/)).toBeVisible()
+
+    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'success', sessionId: 'older', text: 'hello', output: 'pasted' }} />)
+    expect(screen.getByRole('heading', { level: 1, name: 'Pasted.' })).toBeVisible()
+
+    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'success', sessionId: 'newest', text: 'hello', output: 'copied' }} />)
     expect(screen.getByRole('heading', { level: 1, name: 'Copied.' })).toBeVisible()
 
     rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'cancelled', sessionId: 'one' }} />)
@@ -375,7 +388,7 @@ describe('DictateRoom', () => {
     const resting = barHeights(rendered.container)
     expect(resting).toHaveLength(7)
     expect(resting[3]!).toBeGreaterThan(resting[0]!)
-    expect(resting[0]).toBe(14)
+    expect(resting[0]).toBe(6)
     rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'listening', sessionId: 'one', startedAt: 0, level: 1 }} />)
     const bars = screen.getByTestId('listening-bars')
     expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
@@ -386,25 +399,20 @@ describe('DictateRoom', () => {
     expect(bars).not.toHaveAttribute('data-speaking')
   })
 
-  it('keeps the hero geometry, the sentence scale, and the reduced-motion wave override in the stylesheet', () => {
-    expect(globalCss).toMatch(/\.dictate\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\) auto;/su)
-    expect(globalCss).toMatch(/\.dictate__sentence\s*\{[^}]*font-size:\s*44px;/su)
-    expect(globalCss).toMatch(/\.dictate__sentence\s*\{[^}]*'opsz' 96/su)
-    expect(globalCss).toMatch(/\.dictate__text\s*\{[^}]*-webkit-line-clamp:\s*3;/su)
+  it('keeps the stats column, its compact row below 900 pixels of room, two-line rows and the reduced-motion wave in the stylesheets', () => {
+    expect(roomCss).toMatch(/\.dictate\s*\{[^}]*container:\s*dictate-room \/ inline-size;/su)
+    expect(roomCss).toMatch(/\.dictate__layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 300px;/su)
+    expect(roomCss).toMatch(/@container dictate-room \(max-width: 899px\)\s*\{[\s\S]*?\.journal-stats \[data-wide\]\s*\{\s*display:\s*none;/su)
+    expect(roomCss).toMatch(/\.journal-entry__text\s*\{[^}]*-webkit-line-clamp:\s*2;/su)
     expect(globalCss).toMatch(/:root\[data-reduced-motion='on'\] \.voice-wave \.voice-wave__bar\s*\{[^}]*animation:\s*none;/su)
   })
 
-  it('formats the clock, the word count, the stamp, and each state sentence', () => {
+  it('formats the clock, the word count, and each state sentence', () => {
     expect(formatElapsed(0)).toBe('00:00')
     expect(formatElapsed(83_400)).toBe('01:23')
     expect(formatElapsed(Number.NaN)).toBe('00:00')
     expect(countWords('  one two   three ')).toBe(3)
     expect(countWords('')).toBe(0)
-    const now = new Date(2026, 6, 12, 19, 30).valueOf()
-    expect(transcriptStamp(now - 60_000, now).label).toMatch(/^\d{2}:\d{2}$/u)
-    expect(transcriptStamp(now - 86_400_000, now).label).toBe('Yesterday')
-    expect(transcriptStamp(now - 5 * 86_400_000, now).label).toMatch(/Jul/u)
-    expect(transcriptStamp(Number.NaN, now)).toEqual({ label: 'Saved' })
     const copy = platformCopy('win32')
     expect(dictateSentence({ status: 'idle' }, copy).sentence).toBe('Ready when you are.')
     expect(dictateSentence({ status: 'requesting-permission', sessionId: 'a' }, copy)).toMatchObject({ sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail })

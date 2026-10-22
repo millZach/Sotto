@@ -11,6 +11,7 @@ import {
 import { speechModelSummary } from '../../components/SpeechModelStatus'
 import type { SpeechModelStatus } from '../../../../shared/speechModel'
 import type { HistoryEntry } from '../../../../shared/history'
+import type { DictationRecord } from '../../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
@@ -19,6 +20,11 @@ import { VoiceWave, type VoiceWaveStage } from '../../components/VoiceWave'
 import { platformCopy, type PlatformCopy } from '../../platformCopy'
 import { linuxKeyWords } from '../omarchy/linuxKeys'
 import type { HistoryStatus } from '../../state/AppContext'
+import { Journal } from './Journal'
+import { JournalStats } from './JournalStats'
+import { journalStats, startOfDay } from './journalFacts'
+
+export { countWords } from '../../../../shared/dictationRecord'
 
 export interface DictateRoomProps {
   readonly settings: AppSettings
@@ -28,7 +34,10 @@ export interface DictateRoomProps {
   readonly speechModelName?: string
   readonly platform: SottoPlatform
   readonly dictation: DictationState
+  /** Saved transcripts, for the Journal. */
   readonly entries: readonly HistoryEntry[]
+  /** Every dictation record (ADR-0100), for the stats column and each row's app. */
+  readonly records?: readonly DictationRecord[]
   readonly recovery?: readonly HistoryEntry[]
   readonly onDismissRecovery?: (id: string) => void
   readonly historyStatus: HistoryStatus
@@ -40,6 +49,15 @@ export interface DictateRoomProps {
   readonly onDismiss?: () => Promise<void>
   readonly onOpenSettings: () => void
   readonly onCopy: (text: string) => Promise<boolean>
+  /** Deletes a transcript and its record. */
+  readonly onDelete?: (id: string) => Promise<boolean>
+  /** Clear history: every transcript and every record. */
+  readonly onClear?: () => Promise<boolean>
+  /** Controlled Journal search text, so it survives leaving the room. */
+  readonly query?: string | undefined
+  readonly onQueryChange?: ((query: string) => void) | undefined
+  /** The instant the Journal counts days from; captures pin it. */
+  readonly now?: number | undefined
 }
 
 const TIMER_TICK_MS = 250
@@ -51,27 +69,6 @@ export function formatElapsed(milliseconds: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-
-export function countWords(text: string): number {
-  const trimmed = text.trim()
-  return trimmed === '' ? 0 : trimmed.split(/\s+/u).length
-}
-
-/** The transcript stamp: clock time today, "Yesterday" before that, then a short date. */
-export function transcriptStamp(createdAt: number, now: number): { dateTime?: string; label: string } {
-  const date = new Date(createdAt)
-  if (!Number.isFinite(date.valueOf())) return { label: 'Saved' }
-  const startOfToday = new Date(now)
-  startOfToday.setHours(0, 0, 0, 0)
-  const dateTime = date.toISOString()
-  if (createdAt >= startOfToday.valueOf()) {
-    return { dateTime, label: date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) }
-  }
-  const startOfYesterday = new Date(startOfToday)
-  startOfYesterday.setDate(startOfYesterday.getDate() - 1)
-  if (createdAt >= startOfYesterday.valueOf()) return { dateTime, label: 'Yesterday' }
-  return { dateTime, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 }
 
 function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = false): string {
@@ -100,6 +97,8 @@ export function dictateSentence(
   microphoneSkipped = false,
   speechModelReady = true,
   speechModelChosen = true,
+  /** The delivered app of the dictation that just finished, when its record has one. */
+  deliveredApp?: string,
 ): { sentence: string; detail?: string; tone: 'normal' | 'error' } {
   // Setup was finished without a microphone, so the resting room says so
   // rather than offering a start that could only fail.
@@ -119,7 +118,7 @@ export function dictateSentence(
     case 'requesting-permission': return { sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
     case 'listening': return { sentence: 'Listening.', tone: 'normal' }
     case 'processing': return { sentence: 'Turning speech into text.', tone: 'normal' }
-    case 'success': return { sentence: state.output === 'pasted' ? 'Pasted.' : 'Copied.', tone: 'normal' }
+    case 'success': return { sentence: state.output === 'pasted' ? deliveredApp === undefined ? 'Pasted.' : `Pasted into ${deliveredApp}.` : 'Copied.', tone: 'normal' }
     case 'cancelled': return { sentence: 'Cancelled.', tone: 'normal' }
     case 'error': return { sentence: 'Dictation needs attention.', detail: errorDetail(state.code, copy, state.kept === true, state.retried === true), tone: 'error' }
     default: return { sentence: 'Ready when you are.', tone: 'normal' }
@@ -133,9 +132,9 @@ function waveStage(state: DictationState): VoiceWaveStage {
 }
 
 /**
- * The Dictate room: the wave at hero size, one sentence saying what the
- * machine is doing, one pill, and the last transcript on a hairline. There is
- * nothing else on the page on purpose; History holds the rest.
+ * The Dictate room as a Journal (#1293): a compact dictate bar (the small wave, one sentence saying what the machine
+ * is doing, the button and the shortcut), then every transcript by day, with the stats column beside it. Errors, a
+ * kept recording and text to recover keep the bar's sentence and buttons, and the recovered text sits under the bar.
  */
 export function DictateRoom({
   settings,
@@ -144,6 +143,7 @@ export function DictateRoom({
   platform,
   dictation,
   entries,
+  records = [],
   recovery = [],
   onDismissRecovery,
   historyStatus,
@@ -153,9 +153,13 @@ export function DictateRoom({
   onDismiss,
   onOpenSettings,
   onCopy,
+  onDelete = async () => false,
+  onClear = async () => false,
+  query,
+  onQueryChange,
+  now: pinnedNow,
 }: DictateRoomProps): ReactNode {
   const [submitting, setSubmitting] = useState(false)
-  const [copying, setCopying] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const copy = platformCopy(platform)
   const configured = speechModel === null || speechModel.state === 'ready'
@@ -168,7 +172,9 @@ export function DictateRoom({
   const linuxKeys = linuxKeyWords(settings)
   const linuxStop = linuxKeys.hold === undefined ? `Press ${linuxKeys.press} to stop.` : `Release ${linuxKeys.hold}, or press ${linuxKeys.press} to stop.`
   const linuxStart = linuxKeys.hold === undefined ? `press ${linuxKeys.press} to talk` : `hold ${linuxKeys.hold} to talk, or press ${linuxKeys.press}`
-  const said = dictateSentence(dictation, copy, microphoneSkipped, configured, speechModel?.state !== 'missing')
+  // The dictation that just finished shares its id with its record, which says where it went and how it went.
+  const finished = dictation.status === 'success' ? records.find((record) => record.id === dictation.sessionId) : undefined
+  const said = dictateSentence(dictation, copy, microphoneSkipped, configured, speechModel?.state !== 'missing', finished?.app)
 
   useEffect(() => {
     if (!listening) return
@@ -177,22 +183,23 @@ export function DictateRoom({
     return () => clearInterval(timer)
   }, [listening, sessionId])
 
-  const latest = useMemo(
-    () => entries.reduce<HistoryEntry | null>((best, entry) => (best === null || entry.createdAt > best.createdAt ? entry : best), null),
-    [entries],
-  )
-  const showLatest = settings.historyEnabled && historyStatus === 'ready' && latest !== null
+  // The Journal's days move on with the clock: once a minute is close enough for Today and Yesterday.
+  useEffect(() => {
+    if (pinnedNow !== undefined) return
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [pinnedNow])
+  // To the minute for the feed's labels, and to the day for the stats, so neither the recording timer's ticks nor the
+  // minute count the year of records again; only a dictation, a delete or a new day does.
+  const journalNow = pinnedNow ?? Math.floor(now / 60_000) * 60_000
+  const statsDay = startOfDay(journalNow)
+  const typingWpm = settings.typingSpeedWpm
+  const stats = useMemo(() => journalStats(records, statsDay, typingWpm), [records, statsDay, typingWpm])
 
   const invoke = async (operation: () => Promise<void>): Promise<void> => {
     if (submitting) return
     setSubmitting(true)
     try { await operation() } finally { setSubmitting(false) }
-  }
-
-  const copyLatest = async (): Promise<void> => {
-    if (copying || latest === null) return
-    setCopying(true)
-    try { await onCopy(latest.text) } catch { /* the notice belongs to the caller */ } finally { setCopying(false) }
   }
 
   let actionLabel = microphoneSkipped ? 'Microphone needed' : configured ? 'Start dictation' : modelLabel
@@ -237,7 +244,7 @@ export function DictateRoom({
       if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog')) return
       if (document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], dialog[open]') !== null) return
       // Decide once every other handler has had the press: one that claimed it,
-      // such as the client-update card closing, keeps it.
+      // such as the client-update card or an open Journal row closing, keeps it.
       setTimeout(() => {
         if (!event.defaultPrevented) void dismiss()
       }, 0)
@@ -252,74 +259,92 @@ export function DictateRoom({
     : { 'aria-live': 'polite' as const }
 
   const elapsedMs = listening ? now - dictation.startedAt : 0
-  const stamp = latest === null ? null : transcriptStamp(latest.createdAt, now)
-  const words = latest === null ? 0 : countWords(latest.text)
+
+  // Under the sentence: the shortcut. It starts a new dictation, which lets a kept recording go, so it is not offered
+  // as another way to press Try again; a kept recording that failed because the speech model was not ready still
+  // points at Settings.
+  let hint: ReactNode = null
+  let settingsButton = false
+  if (dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE') {
+    hint = null
+  } else if (kept) {
+    settingsButton = modelProblem
+  } else if (configured && !microphoneSkipped) {
+    if (platform === 'linux') {
+      hint = listening
+        ? settings.autoPaste
+          ? `${linuxStop} Sotto copies, then pastes into the focused window on Hyprland.`
+          : `${linuxStop} Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.`
+        : `With Sotto’s compositor bindings: ${linuxStart}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
+    } else {
+      hint = <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>
+    }
+  } else {
+    hint = microphoneSkipped ? null : speechModelSummary(speechModel, speechModelName)
+    settingsButton = true
+  }
 
   return (
     <section className="dictate" aria-label="Dictation" data-status={dictation.status} data-stage={stage}>
-      <div className="dictate__hero">
-        <VoiceWave
-          stage={stage}
-          value={listening ? dictation.level : 0}
-          label="Microphone activity"
-          size="hero"
-        />
-        <div className="dictate__state" aria-atomic="true" {...liveProps}>
-          <h1 className="dictate__sentence">
-            {said.sentence}
-            {listening ? (
-              <time dateTime={`PT${Math.floor(Math.max(0, elapsedMs) / 1_000)}S`} aria-label={`Recording time ${formatElapsed(elapsedMs)}`}>
-                {formatElapsed(elapsedMs)}
-              </time>
-            ) : null}
-          </h1>
-          {said.detail === undefined ? null : <p className="dictate__detail">{said.detail}</p>}
+      <div className="dictate__layout">
+        <div className="dictate__bar">
+          <VoiceWave
+            stage={stage}
+            value={listening ? dictation.level : 0}
+            label="Microphone activity"
+            size="deck"
+          />
+          <div className="dictate__words">
+            <div className="dictate__state" aria-atomic="true" {...liveProps}>
+              <h1 className="dictate__sentence">
+                {said.sentence}
+                {listening ? (
+                  <time dateTime={`PT${Math.floor(Math.max(0, elapsedMs) / 1_000)}S`} aria-label={`Recording time ${formatElapsed(elapsedMs)}`}>
+                    {formatElapsed(elapsedMs)}
+                  </time>
+                ) : null}
+              </h1>
+              {said.detail === undefined ? null : <p className="dictate__detail">{said.detail}</p>}
+            </div>
+            {hint === null ? null : <p className="dictate__hint">{hint}</p>}
+          </div>
+          <div className="dictate__actions">
+            <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
+            {dismiss === undefined ? null : (
+              <Button variant="secondary" disabled={submitting} onClick={() => void invoke(dismiss)}>
+                {kept ? 'Discard recording' : 'Dismiss'}
+              </Button>
+            )}
+            {settingsButton ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null}
+          </div>
         </div>
-        <div className="dictate__actions">
-          <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
-          {dismiss === undefined ? null : (
-            <Button variant="secondary" disabled={submitting} onClick={() => void invoke(dismiss)}>
-              {kept ? 'Discard recording' : 'Dismiss'}
-            </Button>
-          )}
-          {/* The shortcut starts a new dictation, which lets a kept recording go,
-              so it is not offered as another way to press Try again. A kept
-              recording that failed because the speech model was not ready still points at Settings. */}
-          {dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE' ? null : kept ? (modelProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
-            <span className="dictate__hint">
-              {platform === 'linux'
-                ? listening
-                  ? settings.autoPaste
-                    ? `${linuxStop} Sotto copies, then pastes into the focused window on Hyprland.`
-                    : `${linuxStop} Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.`
-                  : `With Sotto’s compositor bindings: ${linuxStart}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
-                : <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>}
-            </span>
-          ) : (
-            <>
-              {microphoneSkipped ? null : <span className="dictate__hint">{speechModelSummary(speechModel, speechModelName)}</span>}
-              <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button>
-            </>
-          )}
+        {recovery.length > 0 ? (
+          <section className="dictate__recovery" aria-label="Completed text to recover">
+            <h2>Your text is still here</h2>
+            <p>Copy it when you are ready. It stays here until you dismiss it or close Sotto.</p>
+            {recovery.map(entry => <RecoveredTranscript key={entry.id} entry={entry} onCopy={onCopy} onDismiss={() => onDismissRecovery?.(entry.id)} />)}
+          </section>
+        ) : null}
+        <div className="dictate__stats">
+          <JournalStats stats={stats} typingWpm={typingWpm} />
+        </div>
+        <div className="dictate__journal">
+          <Journal
+            entries={entries}
+            records={records}
+            historyEnabled={settings.historyEnabled}
+            status={historyStatus}
+            now={journalNow}
+            chips={stats.chips}
+            query={query}
+            onQueryChange={onQueryChange}
+            onCopy={onCopy}
+            onDelete={onDelete}
+            onClear={onClear}
+            onOpenSettings={onOpenSettings}
+          />
         </div>
       </div>
-      {recovery.length > 0 ? (
-        <section className="dictate__recovery" aria-label="Completed text to recover">
-          <h2>Your text is still here</h2>
-          <p>Copy it when you are ready. It stays here until you dismiss it or close Sotto.</p>
-          {recovery.map(entry => <RecoveredTranscript key={entry.id} entry={entry} onCopy={onCopy} onDismiss={() => onDismissRecovery?.(entry.id)} />)}
-        </section>
-      ) : null}
-      {showLatest && latest !== null && stamp !== null ? (
-        <div className="dictate__last" data-testid="dictate-last">
-          <div className="dictate__when">
-            <b>{stamp.dateTime === undefined ? stamp.label : <time dateTime={stamp.dateTime}>{stamp.label}</time>}</b>
-            {words} {words === 1 ? 'word' : 'words'}
-          </div>
-          <p className="dictate__text">{latest.text}</p>
-          <Button variant="secondary" aria-label="Copy transcript" disabled={copying} onClick={() => void copyLatest()}>Copy</Button>
-        </div>
-      ) : null}
     </section>
   )
 }

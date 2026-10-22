@@ -2,6 +2,8 @@
 
 Accepted by Zach on October 21, 2026 (#1292), so the Journal (#1293) can count dictation without depending on its text. It relates to [ADR-0016](0016-sotto-owned-history-on-an-event-store.md) (Keep local history writes no text while it is off), [ADR-0055](0055-a-failed-dictation-is-kept-in-memory-until-tried-again-or-discarded.md) and [ADR-0071](0071-dictation-transcribes-on-this-computer-with-parakeet.md) (dictation audio never reaches disk; both stand), and [ADR-0078](0078-usage-keeps-numeric-history-on-its-own-host.md) (numbers kept apart from transcript history, the same way Usage keeps its own).
 
+Amended 2026-10-21: [ADR-0101](0101-the-dictate-room-is-a-journal-and-the-history-page-is-gone.md) removes the History page. Where this record says a transcript is listed in History, it is listed in the Dictate room's Journal; the records, their file and what History on, off, retention, Delete and Clear history do to them stand.
+
 It amends what **Keep local history** governs for dictation. Before, it decided whether anything about a dictation was kept. Now it decides only whether the transcript's text is saved; the numbers are kept either way. It also changes one behaviour: transcripts saved before history was turned off used to disappear from History after a restart with it off. They now stay listed.
 
 ## The dictation record

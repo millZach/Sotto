@@ -131,6 +131,25 @@ describe('SettingsView', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('saves Typing speed under Dictation, which the Dictate room counts time saved against, within 10 to 150 (#1293)', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Dictation')
+    const speed = screen.getByRole('textbox', { name: 'Typing speed' })
+    expect(speed).toHaveValue('40')
+    expect(screen.getByText(/The Dictate room counts the time dictation saves you against it/)).toBeVisible()
+    await user.clear(speed)
+    await user.type(speed, '9')
+    await user.tab()
+    expect(update).not.toHaveBeenCalled()
+    expect(screen.getByText('Enter a whole number between 10 and 150.')).toBeVisible()
+    await user.clear(speed)
+    await user.type(speed, '72')
+    await user.tab()
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ typingSpeedWpm: 72 }))
+  })
+
   it('does not let an older numeric save clobber a newer draft, but accepts newer external authority', async () => {
     const user = userEvent.setup()
     const pending = deferred<boolean>()

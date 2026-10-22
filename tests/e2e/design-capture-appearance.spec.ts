@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { DESIGN_CAPTURE_BUILT_IN_THEMES, DESIGN_CAPTURE_DEFAULT_THEME, DESIGN_CAPTURE_MINIMUM_WIDTH } from '../../scripts/design-capture-matrix.mjs'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { appThemes, assertDictateState, assertFocusPresentation, assertRenderedRoom, captureFullSurface, capturePage, captureSection, setAppearance, setMainWindowWidth, startSettingsAtHeading } from './support/designCapture'
-import { openPage } from './support/sottoLaunch'
+import { openJournalRow, openPage } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -32,13 +32,13 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'dictate-ready-light.png', { theme: 'light' })
       await assertFocusPresentation(page.getByRole('tab', { name: 'Threads' }))
       await capturePage(page, 'focus-switch-tab-light.png', { focusTarget: 'tab', focus: true, theme: 'light' })
-      await assertFocusPresentation(page.getByRole('link', { name: 'History' }))
+      await assertFocusPresentation(page.getByRole('link', { name: 'Settings' }))
       await capturePage(page, 'focus-navigation-light.png', { focusTarget: 'navigation', focus: true, theme: 'light' })
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-listening-light.png', { theme: 'light' })
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await assertDictateState(page, 'success', /^pasted\.$/i)
+      await assertDictateState(page, 'success', /^pasted into sotto\.$/i)
       await capturePage(page, 'dictate-pasted-light.png', { theme: 'light' })
     })
 
@@ -58,16 +58,16 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
-      await page.getByRole('link', { name: 'History' }).click()
+      await openPage(page, 'Dictate')
       await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
       await assertFocusPresentation(page.getByRole('searchbox', { name: 'Search transcripts' }))
       await capturePage(page, 'focus-input-light.png', { focusTarget: 'input', focus: true, theme: 'light' })
-      await assertFocusPresentation(page.getByRole('button', { name: 'Clear history' }))
+      await openJournalRow(page)
+      await assertFocusPresentation(page.getByRole('button', { name: 'Delete saved transcript' }))
       await capturePage(page, 'focus-destructive-light.png', { focusTarget: 'destructive', focus: true, theme: 'light' })
-      await page.locator('.history-entry__toggle').first().click()
       await page.getByRole('button', { name: 'Copy transcript' }).first().click()
-      await expect(page.getByRole('status')).toContainText('Transcript copied')
-      await capturePage(page, 'history-populated-light.png', { theme: 'light' })
+      await expect(page.getByRole('status').filter({ hasText: 'Transcript copied' })).toBeAttached()
+      await capturePage(page, 'dictate-journal-open-light.png', { theme: 'light' })
 
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()

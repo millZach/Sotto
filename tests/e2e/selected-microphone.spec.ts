@@ -131,7 +131,7 @@ test('Settings tests the selected input and clears its result when the choice ch
     await run()
     await expect(state).toHaveAttribute('data-state', 'ready')
     expect(await page.evaluate(() => (window.selectedMicrophoneFixture.requests.at(-1)!.audio as MediaTrackConstraints).deviceId)).toBeUndefined()
-    await page.getByRole('link', { name: 'History', exact: true }).click()
+    await page.getByRole('link', { name: 'Help', exact: true }).click()
     await expect.poll(() => page.evaluate(() => window.selectedMicrophoneFixture.streams.every(stream => stream.getTracks().every(track => track.readyState === 'ended')))).toBe(true)
     await page.evaluate(() => window.selectedMicrophoneFixture.context.close())
   } finally { await closeSotto(launched) }

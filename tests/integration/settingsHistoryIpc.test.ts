@@ -328,6 +328,16 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
     })
 
+  it('persists the typing speed the Dictate room counts time saved against, and refuses one out of bounds (#1293)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { typingSpeedWpm: 65 })).resolves.toMatchObject({ typingSpeedWpm: 65 })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ typingSpeedWpm: 65 })
+    for (const typingSpeedWpm of [9, 151, 40.5]) {
+      await expect(ipc.invoke(SETTINGS_UPDATE, { typingSpeedWpm })).rejects.toThrow('Invalid IPC payload')
+    }
+    expect(settings.update).toHaveBeenCalledOnce()
+  })
+
   it('refuses the removed Threads in flight limit, which is no longer on the allow-list (#1183)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).rejects.toThrow('Invalid IPC payload')

@@ -43,7 +43,7 @@ import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBrid
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 /** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
-export type AppNavigation = 'onboarding' | 'home' | 'history' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'
