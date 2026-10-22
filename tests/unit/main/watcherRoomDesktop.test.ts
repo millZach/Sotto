@@ -5,7 +5,7 @@ import { createWatcherRoomDesktop } from '../../../src/main/agents/watcherRoomDe
 import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
-  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW,
   type WatcherHandoverRead, type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
 import { deferred } from '../../fixtures/deferred'
@@ -39,6 +39,7 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     readHandover: vi.fn((): WatcherHandoverRead => ({ status: 'refused', code: 'TARGET_CHANGED', message: 'There is no handover to read.', retryable: false })),
     continueWithHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
+    startNew: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
   }
   const send = vi.fn((state: WatcherRoomState) => { order.push(`send:${state.recoveryNotice}`); return available })
   const desktop = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost, watcher: service, send, schedule: clock.schedule })
@@ -133,7 +134,7 @@ describe('desktop Watcher room publication', () => {
       for (const answer of [desktop.bridge.get(), desktop.bridge.open({ provider: 'codex', modelId: 'model' }),
         desktop.bridge.prepareStopAll(), desktop.bridge.stopAll({ confirmationId: randomUUID() }),
         desktop.bridge.setPermission({ runtimeMode: 'full-access' }), desktop.bridge.watchThread({ target: { hostId: randomUUID(), threadId: 'worker' } }),
-        desktop.bridge.unwatchThread({ target: { hostId: randomUUID(), threadId: 'worker' } })]) {
+        desktop.bridge.unwatchThread({ target: { hostId: randomUUID(), threadId: 'worker' } }), desktop.bridge.startNew()]) {
         expect(await answer).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
       }
       expect(clock.entries).toHaveLength(0)
@@ -163,7 +164,7 @@ describe('desktop Watcher room publication', () => {
 
   it.each([
     [WATCHER_GET, undefined], [WATCHER_OPEN, { provider: 'codex', modelId: 'model' }],
-    [WATCHER_PREPARE_STOP_ALL, undefined], [WATCHER_STOP_ALL, { confirmationId: randomUUID() }],
+    [WATCHER_PREPARE_STOP_ALL, undefined], [WATCHER_STOP_ALL, { confirmationId: randomUUID() }], [WATCHER_START_NEW, undefined],
   ])('flushes pending room facts before the actual %s IPC answer, including tied timestamps', async (channel, input) => {
     const f = fixture(), ipc = createIpcHarness(); ipc.cleanup()
     const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
