@@ -136,18 +136,21 @@ export class ThreadRecordsBroadcast {
   /** `threads` encoded against what the window was last sent, and the commit that makes it the base once delivered. */
   encode(threads: readonly AgentThread[]): { payload: AgentThreadsBroadcast; commit: () => void } {
     const revision = ++this.revision
+    const base = this.base
+    // One walk of the threads builds the records, the order and what changed: the broadcast runs on every publish.
     const records = new Map<string, AgentThread>()
-    for (const thread of threads) records.set(thread.id, thread)
-    const order = threads.map(thread => thread.id)
+    const order: string[] = []
+    const changed: AgentThread[] = []
+    for (const thread of threads) {
+      records.set(thread.id, thread)
+      order.push(thread.id)
+      const sent = base?.records.get(thread.id)
+      if (sent === undefined || !samePlainData(sent, thread)) changed.push(thread)
+    }
     const unique = records.size === threads.length
     const resets = this.resets
     const commit = (): void => { if (resets === this.resets) this.base = unique ? { revision, records, order } : null }
-    const base = this.base
     if (base === null || !unique) return { payload: { revision, base: null, changed: [...threads] }, commit }
-    const changed = threads.filter(thread => {
-      const sent = base.records.get(thread.id)
-      return sent === undefined || !samePlainData(sent, thread)
-    })
     const removed = base.order.filter(id => !records.has(id))
     const moved = order.length !== base.order.length || order.some((id, index) => base.order[index] !== id)
     return { payload: { revision, base: base.revision, changed, ...(removed.length ? { removed } : {}), ...(moved ? { order } : {}) }, commit }
