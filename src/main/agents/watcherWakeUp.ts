@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { activityBodySize } from '../../shared/activityBodies'
+import type { AgentActivity } from '../../shared/agentActivity'
 import { capabilitiesForThread, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
@@ -9,6 +11,7 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
+import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
 
 const RETRY_LIMIT = 8
 const RETRY_MAX_MS = 60_000
@@ -35,8 +38,42 @@ interface Progress { fingerprint: string; connected: boolean; connectedAt: numbe
  * bodies count at their whole size, so output growing on its host is progress (ADR-0025, October 18 amendment).
  */
 export function watcherProgressFingerprint(thread: AgentThread): string {
-  return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
-    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activityBodySize(activity, 'text'), activityBodySize(activity, 'output'), ...activity.cut?.diffs ? [activity.cut.diffs] : [], activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.subagentSummary, thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
+  // The digest of JSON of [status, lastTurn, messages, activities, subagentSummary, backgroundWork, monitoring, requests],
+  // put together from each part's JSON so a long history's records are not turned into JSON again on every pass (#1331).
+  const head = `${json(thread.status)},${json(thread.lastTurn)},${json(thread.messages.map(message => [message.id, message.text.length]))}`
+  const tail = `${json(thread.subagentSummary)},${json(thread.backgroundWork?.map(work => [work.id, work.type]))},${json(thread.monitoring?.map(work => work.id))},${json(thread.requests.map(card => [card.id, card.kind]))}`
+  const activities = thread.activities, rest = `[${head},${tail}]`
+  // A certified array is frozen to its last record and only ever replaced, so the same array with the same other facts
+  // is the same fingerprint. Messages and the rest are read every time: they may change in place.
+  const certified = activities != null && isImmutableActivities(activities)
+  const last = certified ? fingerprints.get(activities) : undefined
+  if (last?.rest === rest) return last.digest
+  const digest = createHash('sha256').update(`[${head},${activitiesJson(activities)},${tail}]`).digest('hex')
+  if (certified) fingerprints.set(activities, { rest, digest })
+  return digest
+}
+/** What JSON.stringify writes for a value as an array element: `null` for undefined. */
+const json = (value: unknown): string => JSON.stringify(value) ?? 'null'
+/** Each certified activity array's last fingerprint, and the thread's other facts it was worked out with. */
+const fingerprints = new WeakMap<readonly AgentActivity[], { rest: string; digest: string }>()
+/** Each certified record's part of a fingerprint, as JSON: such a record is frozen and only ever replaced, never edited. */
+const activityParts = new WeakMap<AgentActivity, string>()
+const activityPart = (activity: AgentActivity): string => json([activity.id, activity.status, activity.startedAt, activity.completedAt,
+  activityBodySize(activity, 'text'), activityBodySize(activity, 'output'), ...activity.cut?.diffs ? [activity.cut.diffs] : [],
+  activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length])])
+/** The activities' part as JSON.stringify writes `activities?.map(activityPart)`: an empty slot is `null`, as `map` keeps it. */
+function activitiesJson(activities: readonly AgentActivity[] | undefined | null): string {
+  if (activities == null) return 'null'
+  const parts = new Array<string>(activities.length)
+  for (let index = 0; index < activities.length; index++) {
+    if (!(index in activities)) { parts[index] = 'null'; continue }
+    const activity = activities[index]!
+    if (!isImmutableActivity(activity)) { parts[index] = activityPart(activity); continue }
+    let part = activityParts.get(activity)
+    if (part === undefined) activityParts.set(activity, part = activityPart(activity))
+    parts[index] = part
+  }
+  return `[${parts.join(',')}]`
 }
 /**
  * A send turned away because the user sent to that thread themselves: they took it over, or their message changed its
