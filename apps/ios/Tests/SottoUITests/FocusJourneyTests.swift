@@ -1113,16 +1113,14 @@ import XCTest
         XCTAssertTrue(reply.waitForExistence(timeout: 5), "Conversation opens from the bar")
     }
 
-    /// With the bar away, the reader sees the strip it uncovered under the status bar. A card they have there stays put
-    /// while Watcher writes above it, rather than being pushed down to where the bar was (#1278). Then the permission under
-    /// it is answered on the laptop and leaves: the page's end carries the card down, and the page puts it back in the
-    /// strip through a mark lower down the card, whose point is inside the scroll view's page (#1288). Ten of the user's
-    /// follow-ups wait under the cards, so the page has enough under the card, once the permission has gone, to scroll it
-    /// back there on any phone.
-    /// Watcher writes its next words when the journey says so, once the card is in the strip: on CI's SE, placing it took
-    /// longer than the fixture's two minutes of timed writing, and words arriving while the page is read put the card back
-    /// above the box after each move.
-    func testACardInTheStripTheBarUncoversStaysPutWhileWatcherWrites() {
+    /// With the bar away, a reader who scrolls to a card waiting on them and lets go has the bar back (#1288): while a card
+    /// is held the bar stays, so there is no strip it uncovered for the page to keep the card in. The journey lets go with
+    /// the card's top in that strip, under the status bar, and the card comes down only as far as the bar's bottom, whole
+    /// above the box. It stays there while Watcher writes above it, and when the permission under it is answered on the
+    /// laptop and leaves. Ten of the user's follow-ups wait under the cards, so the page has enough under the card, once
+    /// the permission has gone, to keep it there on any phone. Watcher writes its next words when the journey says so,
+    /// once the reader is on the card, so nothing moves the page while the journey places the reader.
+    func testStoppingOnACardBringsTheBarBackAndTheCardStaysPutWhileWatcherWrites() {
         launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-writes-when-asked",
                                "--ui-watcher-two-cards", "--ui-watcher-queued-below"])
         openWatcher()
@@ -1137,45 +1135,57 @@ import XCTest
         showWatcherBar()
         let owl = app.buttons["watcher-to-top"].frame
         let strip = (top: owl.minY - 4, bottom: owl.maxY + 8)
-        let target = (strip.top + strip.bottom) / 2
         let conversation = app.buttons["watcher-section-conversation"]
         let reply = byID("watcher-reply")
-        let windowTop = app.windows.firstMatch.frame.minY
-        var steps: [String] = []
+        let window = app.windows.firstMatch
+        let windowTop = window.frame.minY
         func barAway() -> Bool { !conversation.exists || conversation.frame.maxY <= windowTop + 1 }
-        // Reads the page down, with the bar going away, until the card's top sits in the strip and its foot above the box.
-        // The card comes up to the strip from below, with the finger moving up the page only: going back up the page
-        // brings the bar back, by design, so a last move that way would leave the bar over the strip. The first move up
-        // slides the bar away, so it starts with the card well below the strip; the rest come nearer in smaller steps.
-        // A card that went past the strip, or is too near it with the bar still there, goes back down well below it and
-        // comes up again. Each look reads the frames once, and there are at most eight moves: on CI's SE every query takes
-        // a second or two, and fourteen moves with two looks each ran for minutes.
-        var placed = false
+        var steps: [String] = []
+        // Reads the page down, with the bar going away, until the card's top is just under where the page meets the box:
+        // out of view, so the reader is on no card and the bar stays away. The box's glass starts above the band's
+        // bottom, so 30 points above it is still short of the 56 points of a card the reader must see to be on it. A card
+        // too high, or a bar still there, goes back up the page, which brings the bar back by design, and comes down again.
+        // Each look reads the frames once, and there are at most eight moves: on CI's SE every query takes a second or two.
+        var ready = false
         for attempt in 0...8 {
-            let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
+            let band = watcherBand
+            let top = lead.frame.minY
             let away = barAway()
-            steps.append("card \(top) to \(foot), strip \(strip.top) to \(strip.bottom), box at \(box), bar away \(away)")
-            placed = away && top >= strip.top + 4 && top <= strip.bottom - 8 && foot <= box
-            if placed || attempt == 8 { break }
-            let off = top - target
-            let move: String
-            if off < 0 || (!away && off < 240) {
-                move = "back down below the strip"
-                dragWatcher(down: false, by: 220)
-            } else if !away {
-                move = "up, to slide the bar away"
-                dragWatcher(down: true, by: 100)
+            steps.append("card top \(top), band \(band.top) to \(band.bottom), bar away \(away)")
+            ready = away && top >= band.bottom - 30 && top <= band.bottom + 20
+            if ready || attempt == 8 { break }
+            if top < band.bottom - 30 || (!away && top < band.bottom + 60) {
+                steps.append("back up the page, the card well under the box")
+                dragWatcher(down: false, by: min(max(band.bottom + 80 - top, 40), 220))
             } else {
-                move = "up toward the strip"
-                dragWatcher(down: true, by: min(max(off, 24), 200))
+                steps.append("down toward the box")
+                dragWatcher(down: true, by: min(top - (band.bottom - 5), 220))
             }
-            steps.append(move)
             _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
         }
-        if !placed { explain("watcher-card-not-in-strip", steps.joined(separator: "\n")) }
-        XCTAssertTrue(placed, "The card's top sits in the strip the bar uncovered (\(steps.last ?? ""))")
+        if !ready { explain("watcher-card-not-under-the-box", steps.joined(separator: "\n")) }
+        XCTAssertTrue(ready, "With the bar away, the card waits just under the box (\(steps.last ?? ""))")
+        // One slow drag from the band's foot to the middle of the strip, and let go: the card's top comes up into the strip.
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let from = origin.withOffset(CGVector(dx: watcherDragX, dy: watcherBand.bottom - 4 - windowTop))
+        let to = origin.withOffset(CGVector(dx: watcherDragX, dy: (strip.top + strip.bottom) / 2 - windowTop))
+        from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.15)
+        waitForWatcherBar(away: false, "Stopping on the card brings the bar back")
+        // The card comes down below the bar, if the bar came back over it, and sits whole above the box.
+        var seen = "no look found the card"
+        var matches = 0
+        let placed = NSPredicate { _, _ in
+            guard lead.exists, card.exists else { seen = "the card is missing"; matches = 0; return false }
+            let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
+            seen = "card \(top) to \(foot), the bar's bottom at \(strip.bottom), the box at \(box)"
+            matches = top >= strip.bottom - 1 && foot <= box ? matches + 1 : 0
+            return matches >= 2
+        }
+        let whole = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 10)
+        if whole != .completed { explain("watcher-card-not-below-the-bar", seen) }
+        XCTAssertEqual(whole, .completed, "The card sits whole between the bar and the box (\(seen))")
         let start = lead.frame.minY
-        // Watcher's words grow above the card, twice, and the card stays where the reader has it, with the bar still away.
+        // Watcher's words grow above the card, twice, and the card stays where the reader has it, with the bar still there.
         for _ in 0..<2 {
             let before = writing.label
             CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
@@ -1184,26 +1194,26 @@ import XCTest
             XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher keeps writing")
             _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
             let now = lead.frame.minY
-            if abs(now - start) > 2 { explain("watcher-card-left-the-strip", "card top \(now), was \(start), strip \(strip.top) to \(strip.bottom)") }
-            XCTAssertEqual(now, start, accuracy: 2, "The card stays where the reader has it in the strip the bar uncovered")
+            if abs(now - start) > 2 { explain("watcher-card-moved-while-held", "card top \(now), was \(start), the bar's bottom at \(strip.bottom)") }
+            XCTAssertEqual(now, start, accuracy: 2, "The card stays where the reader has it below the bar")
         }
-        waitForWatcherBar(away: true, "The bar stays away while Watcher writes")
+        waitForWatcherBar(away: false, "The bar stays while the reader is on the card")
         XCTAssertTrue(app.buttons["A fresh account for each run"].isHittable, "The card's answers can be pressed")
-        capture("watcher-card-in-uncovered-strip-dark")
+        capture("watcher-card-held-bar-back-dark")
         // Babysit #845 release notes's permission, under the card, is answered on the laptop and leaves the page.
         let permission = byID("watcher-card-notes845")
-        XCTAssertTrue(permission.exists, "The permission is still under the card the reader has in the strip")
+        XCTAssertTrue(permission.exists, "The permission is still under the card the reader is on")
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                              CFNotificationName("app.sotto.ui.watcher-notes-answered" as CFString), nil, nil, true)
         XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
         let back = NSPredicate { _, _ in lead.exists && abs(lead.frame.minY - start) <= 2 }
         _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: back, object: nil)], timeout: 5)
         let after = lead.frame.minY
-        if abs(after - start) > 2 { explain("watcher-card-left-the-strip-after-removal", "card top \(after), was \(start), strip \(strip.top) to \(strip.bottom)") }
-        XCTAssertEqual(after, start, accuracy: 2, "Once the permission under it has gone, the card is back where the reader has it in the strip")
-        waitForWatcherBar(away: true, "The bar stays away as the page puts the card back")
+        if abs(after - start) > 2 { explain("watcher-card-moved-after-removal", "card top \(after), was \(start), the bar's bottom at \(strip.bottom)") }
+        XCTAssertEqual(after, start, accuracy: 2, "Once the permission under it has gone, the card is back where the reader has it")
+        waitForWatcherBar(away: false, "The bar stays as the page puts the card back")
         XCTAssertTrue(app.buttons["A fresh account for each run"].isHittable, "The card's answers can still be pressed")
-        capture("watcher-card-in-uncovered-strip-after-removal-dark")
+        capture("watcher-card-held-bar-back-after-removal-dark")
     }
 
     /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and

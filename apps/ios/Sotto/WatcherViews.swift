@@ -333,7 +333,8 @@ private final class WatcherFollow {
     /// How far above the bar's place the reader sees the page: the bar's height while it is away, otherwise none.
     var uncovered: CGFloat = 0
     /// The top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away. Which card the
-    /// reader is on, and where it is kept, are measured from here, so a card in the strip the bar uncovered stays put.
+    /// reader is on, and where it is kept, are measured from here, so a reader who stops on a card in the strip the bar
+    /// uncovered is held on that card, and it comes down only as far as the bar that comes back over it (#1288).
     var visibleTop: CGFloat { top - uncovered }
     /// Where each card waiting on the user sits, by the card's key.
     var cards: [String: CGRect] = [:]
@@ -364,6 +365,9 @@ private final class WatcherFollow {
     func quiet() { quietUntil = Date().addingTimeInterval(0.6) }
     /// Whether the move the page just made was the user's.
     var userMoved: Bool { WatcherFollow.seesLetGo ? userScrolling : Date() >= quietUntil }
+    /// The page keeps the reader on a card, which keeps the bar shown (#1288). Not while the user moves the page, which
+    /// the page never does under them: the card they are on is decided again where they let go.
+    var holdsCard: Bool { held != nil && !userScrolling }
     func settle() {
         let place = WatcherReaderPlace(newest: newest, end: end, top: visibleTop, dockTop: dockTop, cards: cards)
         held = place.heldCard
@@ -372,8 +376,8 @@ private final class WatcherFollow {
     }
     /// The bar slid away or came back, and the top of what the reader sees moved with it. The held card's offset is
     /// measured again from the new top, so the card stays where it is on the screen rather than moving by the bar's height
-    /// at the page's next change. Returns true when that would leave it under the bar that came back, or under the box,
-    /// so the page has to move it back into view.
+    /// at the page's next change. Returns true when that would leave it under the bar that came back, as it does when the
+    /// reader stops on a card in the strip it uncovered, or under the box, so the page has to move it back into view.
     func uncover(_ value: CGFloat) -> Bool {
         let before = visibleTop
         uncovered = value
@@ -432,8 +436,6 @@ private struct WatcherConversationPane: View {
     private static let sendingID = "watcher-sending"
     /// The mark at a waiting card's top, to scroll the card back where the reader left it.
     private static func cardID(_ key: String) -> String { "watcher-needs-you-" + key }
-    /// The mark `WatcherReaderPlace.lowMark` down a waiting card, for a card the reader has in the strip the bar uncovered.
-    private static func lowCardID(_ key: String) -> String { "watcher-needs-you-low-" + key }
 
     var body: some View {
         let page = model.watcherPage(hostID)
@@ -497,7 +499,8 @@ private struct WatcherConversationPane: View {
                     // How far the page has scrolled from its top, short of the bounce past its end, which would read as
                     // going back up.
                     let offset = min(follow.top - frame.minY, max(0, frame.height - (follow.dockTop - follow.top)))
-                    if let away = follow.slide.moved(to: offset, counts: !resized && follow.userMoved) { slideBar(away) }
+                    if let away = follow.slide.moved(to: offset, counts: !resized && follow.userMoved,
+                                                     holding: follow.holdsCard) { slideBar(away) }
                 })
             }
             .watcherScrollAnchor(holdingCard: holdingCard)
@@ -516,8 +519,9 @@ private struct WatcherConversationPane: View {
                 if follow.following { toNewest(proxy, to: newest) } else { keepHeldCard(proxy, animated: true) }
             }
             .background(barReader)
-            // VoiceOver turning on brings the bar back over a card the reader has in the strip it uncovered: the page moves
-            // the card back into view. A bar the user brought back by moving the page is left to where they let go.
+            // The reader stopping on a card in the strip the bar uncovered brings the bar back over it (#1288), and so does
+            // VoiceOver turning on: the page moves the card down below the bar. A bar the user brought back by moving the
+            // page is left to where they let go.
             .onChange(of: uncovered, initial: true) { _, value in
                 if follow.uncover(value), WatcherFollow.seesLetGo, !follow.userScrolling { keepHeldCard(proxy, animated: true) }
             }
@@ -567,9 +571,13 @@ private struct WatcherConversationPane: View {
     }
 
     /// Decides where the page stands (`WatcherFollow.settle`), and tells the scroll anchor whether the reader is on a card.
+    /// A reader on a card has the bar back, if it had slid away (#1288). The page can't hold a card in the strip the bar
+    /// uncovered: on CI's SE, putting one back there missed by 57 points one way and, through a mark lower down the card,
+    /// by 42 the other.
     private func settle() {
         follow.settle()
         setHoldingCard(follow.held != nil)
+        if follow.holdsCard { slideBar(false) }
     }
     /// The page follows the newest words again, and no card is held.
     private func resumeFollowing() {
@@ -624,9 +632,7 @@ private struct WatcherConversationPane: View {
     /// looks once more after it has settled: the box rose over it, or the page changed around it and its bottom carried
     /// the card off. The box moving slides it, as the box does; a change in the page puts it back at once, so it never
     /// drifts. Requests made in the same moment scroll once. None scrolls while the user moves the page; the page owes it
-    /// to them for when they let go. A card put back at once is looked at twice more, each time aiming again by as far as
-    /// the last scroll missed (`WatcherReaderPlace.corrected`): on CI's SE, `scrollTo` put a card in the strip the bar
-    /// uncovered 57 points above where it was asked to (#1288).
+    /// to them for when they let go.
     private func keepHeldCard(_ scroll: ScrollViewProxy, animated: Bool) {
         let box = follow
         guard box.held != nil else { return }
@@ -636,34 +642,18 @@ private struct WatcherConversationPane: View {
         let still = reduceMotion || !animated
         Task { @MainActor in
             await Task.yield()
-            var aimed = Self.place(box, scroll, request: request, still: still, after: nil)
-            // A sliding card is mid-scroll a moment later, so only a card put back at once is measured where it landed.
-            for _ in 0..<(still ? 2 : 1) {
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                aimed = Self.place(box, scroll, request: request, still: still, after: still ? aimed : nil) ?? aimed
-            }
+            Self.place(box, scroll, request: request, still: still)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            Self.place(box, scroll, request: request, still: still)
         }
     }
-    /// Scrolls the held card back where the reader left it, if it moved and nothing asked to scroll since, and returns
-    /// which mark it scrolled to and where. After `aimed`, the last such scroll of the same card, it aims that mark again
-    /// by as far as the card missed.
-    private static func place(_ box: WatcherFollow, _ scroll: ScrollViewProxy, request: Int, still: Bool,
-                              after aimed: (key: String, low: Bool, y: CGFloat)?) -> (key: String, low: Bool, y: CGFloat)? {
-        guard box.followRequests == request, !box.userScrolling, let key = box.held, let frame = box.cards[key] else { return nil }
-        let aim: (key: String, low: Bool, y: CGFloat)
-        if let aimed, aimed.key == key {
-            guard let y = WatcherReaderPlace.corrected(aimed.y, card: frame, offset: box.heldOffset, top: box.visibleTop,
-                                                       dockTop: box.dockTop, viewTop: box.top) else { return nil }
-            aim = (key, aimed.low, y)
-        } else {
-            guard let next = WatcherReaderPlace.scroll(card: frame, offset: box.heldOffset, top: box.visibleTop,
-                                                       dockTop: box.dockTop, viewTop: box.top) else { return nil }
-            aim = (key, next.low, next.y)
-        }
+    /// Scrolls the held card back where the reader left it, if it moved and nothing asked to scroll since.
+    private static func place(_ box: WatcherFollow, _ scroll: ScrollViewProxy, request: Int, still: Bool) {
+        guard box.followRequests == request, !box.userScrolling, let key = box.held, let frame = box.cards[key],
+              let y = WatcherReaderPlace.anchor(card: frame, offset: box.heldOffset, top: box.visibleTop, dockTop: box.dockTop,
+                                                viewTop: box.top) else { return }
         box.quiet()
-        let id = aim.low ? lowCardID(key) : cardID(key)
-        withAnimation(still ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(id, anchor: UnitPoint(x: 0.5, y: aim.y)) }
-        return aim
+        withAnimation(still ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(cardID(key), anchor: UnitPoint(x: 0.5, y: y)) }
     }
     /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
     /// scroll has run, for words whose height settled after it. Requests made in the same moment scroll once, and only the
@@ -730,18 +720,13 @@ private struct WatcherConversationPane: View {
     }
     /// A card waiting on the user, where the page can say where it sits, so a reader can be held on it, and scroll to a
     /// mark with no height at its top, which puts the card's top at any point of the page whatever the card's height
-    /// (`WatcherReaderPlace.anchor`), or to a second mark `WatcherReaderPlace.lowMark` down it, for a card in the strip
-    /// the bar uncovered (`WatcherReaderPlace.scroll`). Every card is taller than that, so the second mark adds no room.
+    /// (`WatcherReaderPlace.anchor`).
     private func waiting<Card: View>(_ key: String, @ViewBuilder _ card: () -> Card) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: 0).id(Self.cardID(key)).accessibilityHidden(true)
-            ZStack(alignment: .topLeading) {
-                card()
-                    .background(reader { follow.cards[key] = $0 })
-                    .onDisappear { follow.cards[key] = nil }
-                Color.clear.frame(height: 0).id(Self.lowCardID(key)).padding(.top, WatcherReaderPlace.lowMark)
-                    .accessibilityHidden(true)
-            }
+            card()
+                .background(reader { follow.cards[key] = $0 })
+                .onDisappear { follow.cards[key] = nil }
         }
     }
 }
