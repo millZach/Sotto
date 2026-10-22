@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { ArrowUp, ChevronDown, List } from 'lucide-react'
+import { ArrowUp, ChevronDown, List, Waypoints } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -85,7 +85,9 @@ function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: 
       Watched<span className="watcher-tabs__count" aria-hidden="true">{count}</span>
     </button>
     <button type="button" role="tab" data-tab="visualize" id={ids.pictureTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'visualize'} tabIndex={tab === 'visualize' ? 0 : -1}
-      aria-controls={tab === 'visualize' ? ids.picturePanel : undefined} title="See what Watcher is doing as a picture" onClick={() => show('visualize')}>Visualize</button>
+      aria-controls={tab === 'visualize' ? ids.picturePanel : undefined} aria-label="Visualize" title="See what Watcher is doing as a picture" onClick={() => show('visualize')}>
+      <Waypoints size={14} className="watcher-tabs__icon" aria-hidden="true" /><span className="watcher-tabs__label">Visualize</span>
+    </button>
   </div>
 }
 
