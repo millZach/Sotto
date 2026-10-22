@@ -1713,6 +1713,18 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
 })
 
+/**
+ * Changes a thread on the coordinator's copy at once. Its thread records are the workspace's publication, frozen
+ * (ADR-0016, October 22), so the record is replaced in the copy's own thread list rather than written into.
+ */
+function reshow(f: Awaited<ReturnType<typeof fixture>>, threadId: string, change: (thread: AgentThread) => AgentThread): void {
+  const threads = f.control.watcherSnapshot().threads
+  const at = threads.findIndex(thread => thread.id === threadId)
+  threads[at] = change(threads[at]!)
+}
+const showLinks = (f: Awaited<ReturnType<typeof fixture>>, threadId: string, links: NonNullable<AgentThread['pullRequests']>): void =>
+  reshow(f, threadId, thread => ({ ...thread, pullRequests: links }))
+
 /** A worker's linked pull request and GitHub's read of its checks: news that wakes Watcher on its own. */
 function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: string) {
   const url = 'https://github.com/synthetic/project/pull/5'
@@ -1720,7 +1732,7 @@ function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: strin
   // The workspace's record holds a thread's links, so a later snapshot keeps them; the coordinator's copy shows them now.
   const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
   record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
-  f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  showLinks(f, threadId, links)
   return { url, read: { url, head: 'synthetic-head', observedAt: new Date().toISOString(), availability: 'available' as const, checks: 'failed' as const, checkCount: 1 } }
 }
 
@@ -1728,11 +1740,10 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const target = f.service.state().current!.target
-  const master = f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
   expect(f.control.canDeliverWatcherNews(target)).toBe(true) // Busy is queueable.
   expect(f.control.canDeliverWatcherNews({ ...target, hostId: randomUUID() })).toBe(false)
-  if (unavailable === 'workspace-settled') master.workspaceSettledAt = new Date().toISOString()
-  if (unavailable === 'archived') master.archivedAt = new Date().toISOString()
+  if (unavailable === 'workspace-settled') reshow(f, f.id, master => ({ ...master, workspaceSettledAt: new Date().toISOString() }))
+  if (unavailable === 'archived') reshow(f, f.id, master => ({ ...master, archivedAt: new Date().toISOString() }))
   if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)()
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = false
   expect(f.control.canDeliverWatcherNews(target)).toBe(false)
@@ -1740,7 +1751,7 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
   await f.service.wakes.drained()
   expect(deliver).not.toHaveBeenCalled()
-  delete master.workspaceSettledAt; delete master.archivedAt
+  reshow(f, f.id, master => { const recovered = { ...master }; delete recovered.workspaceSettledAt; delete recovered.archivedAt; return recovered })
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = true
   if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)
   f.service.wakes.observe()
@@ -1849,7 +1860,7 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   const link = (threadId: string, links: ReturnType<typeof pr>[]) => {
     const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
     record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
-    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+    showLinks(f, threadId, links)
   }
   link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true)])
   link(second.target.threadId, [pr(7, 'open')])
@@ -1886,7 +1897,7 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
     const links = Array.from({ length: 20 }, (_, index) => ({ url: `https://github.com/synthetic/project/pull/${at * 20 + index + 1}`, number: at * 20 + index + 1,
       title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }))
     record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
-    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+    showLinks(f, threadId, links)
   })
   for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,
     observedAt: new Date(Date.now() + number * 1_000).toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })

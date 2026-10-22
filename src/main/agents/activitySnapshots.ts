@@ -1,7 +1,7 @@
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentHostSnapshot, AgentModel } from '../../shared/agents'
 import type { ActivitySubscriptionOptions, AgentHost } from './host'
-import { cloneHostSnapshot, copyUnshared } from './cloneHostSnapshot'
+import { cloneHostSnapshot, copyOver, copyUnshared } from './cloneHostSnapshot'
 
 /** Only objects copied and recursively frozen here may cross the internal activity subscription
  * without another copy. Object.isFrozen alone says nothing about a caller's nested objects. */
@@ -43,6 +43,22 @@ export function isImmutableModels(models: readonly AgentModel[] | undefined): bo
 export function certifyActivityView(state: { models: AgentModel[] }, threads: Iterable<{ activities?: AgentActivity[] | undefined }>): void {
   for (const thread of threads) if (thread.activities && !isImmutableActivities(thread.activities)) thread.activities = immutableActivities(thread.activities)
   if (!isImmutableModels(state.models)) state.models = immutableModels(state.models)
+}
+
+/**
+ * Each of `records` copied, frozen and owned, as `immutableActivities` copies a list, keeping every part of the record of
+ * `previous` at the same place that it still equals. `previous` holds what this returned for the same records last time,
+ * undefined where there was none. A record that has not changed comes back as its previous itself, for the cost of reading
+ * it; one that has changed comes back new, sharing every part of its previous that has not. A list inside a record is
+ * matched by position, so a list that grew at its end keeps every item it had. Each record always equals a fresh copy of
+ * its source, with the same keys in the same order, because a part is kept only when it is equal to the source that a
+ * copy would have read. The list itself is the caller's own and stays writable.
+ *
+ * Each record is copied on its own, so two places that hold one object hold two equal copies. That is how the workspace's
+ * publication shares a thread that has not changed since the last one (#1326).
+ */
+export function immutableUpdates<T>(records: readonly T[], previous: readonly (T | undefined)[]): T[] {
+  return copyOver(records, previous, isOwned, own)
 }
 
 /** A private subscription snapshot: mutable metadata belongs to this consumer, while certified

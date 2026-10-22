@@ -27,12 +27,13 @@ function count(kind: string, value: unknown): void {
   if (threads && threads.length >= counter.threads) { counter.whole++; counter.kinds.set(kind, (counter.kinds.get(kind) ?? 0) + 1) }
 }
 /** The objects a copy made: those in the copy that are not the very objects of what it copied. Shared trees cost nothing. */
-const { fresh } = await vi.hoisted(() => import('./support/copyAccounting'))
+const { fresh, freshEachOver } = await vi.hoisted(() => import('./support/copyAccounting'))
 /** Every copier main has, counted where it makes the objects, so a copy made inside another is counted once. */
-const made = vi.hoisted(() => (kind: string, copy: unknown, original: unknown): void => {
-  if (!counter.measuring) return
+const made = vi.hoisted(() => (kind: string, copy: unknown, original: unknown): number => {
+  if (!counter.measuring) return 0
   const objects = fresh(copy, original)
   counter.objects += objects; counter.objectKinds.set(kind, (counter.objectKinds.get(kind) ?? 0) + objects)
+  return objects
 })
 vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/cloneHostSnapshot')>()
@@ -41,6 +42,18 @@ vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
     clonePlainData: <T>(value: T): T => { count('clonePlainData', value); const copy = original.clonePlainData(value); made('clonePlainData', copy, value); return copy },
     copyUnshared: <T>(value: T, shared: (value: object) => boolean, seal?: (copy: object) => void): T => {
       const copy = original.copyUnshared(value, shared, seal); made(seal ? 'certified copy' : 'activity snapshot', copy, value); return copy
+    },
+    // The thread records the workspace publishes again, copied only where they changed since its last publication (#1326).
+    // It is one copy when it made anything, and none when it kept every record.
+    copyOver: <T>(values: readonly T[], previous: readonly (T | undefined)[], shared: (value: object) => boolean, seal: (copy: object) => void): T[] => {
+      const copy = original.copyOver(values, previous, shared, seal)
+      if (!counter.measuring) return copy
+      const objects = freshEachOver(copy, values, previous)
+      if (objects) {
+        count('publication update', values)
+        counter.objects += objects; counter.objectKinds.set('publication update', (counter.objectKinds.get('publication update') ?? 0) + objects)
+      }
+      return copy
     } }
 })
 // A shown thread's history without its hidden delegation news (ADR-0081): made again only when that history changed, never
@@ -132,9 +145,16 @@ async function measure(threads: number, owl: boolean) {
  * while a thread streams copies Watcher's record no times at all, and Owl makes 10.4 to 10.7 copies per update, from
  * 12.4. The Owl budget is 11 copies and no copy of the record.
  */
+/*
+ * October 22, 2026: the workspace's activity publication hands out a thread that has not changed since the last one as
+ * the very record that one carried, frozen, and copies again only what changed (#1326). It was the last whole-state copy
+ * on this path. With 200 threads, Owl copies 7.7 objects per thread per update, from 16.8, and stable 9.7, from 18.9, and
+ * no update copies the whole state. The copier calls stay at about 10.4 on Owl and 8.8 on stable: the whole copy became
+ * one copy of what changed. What is left is the adapter's copy of every thread for its subscribers (#925).
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 11, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 11, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 11, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {

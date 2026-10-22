@@ -5,7 +5,8 @@
   "src/main/agents/activitySnapshots.ts": {
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 2,
-    "copyUnshared(": 1
+    "copyUnshared(": 1,
+    "copyOver(": 1
   },
   "src/main/agents/claude.ts": {
     "structuredClone(": 3,
@@ -106,8 +107,7 @@
   },
   "src/main/agents/workspace.ts": {
     "structuredClone(": 6,
-    "cloneHostSnapshot(": 1,
-    "cloneActivitySnapshot(": 1
+    "cloneHostSnapshot(": 1
   },
   "src/main/hosts/busyHost.ts": {
     "shell()": 1

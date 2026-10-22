@@ -188,6 +188,49 @@ workspace's. Sharing a thread that has not changed through those layers as well 
 copy guard's pipeline, not on the owner's machine; the next profile of an Owl build will say what the change is worth
 there.
 
+### October 22: a thread that did not change is not copied again
+
+A one-minute profile of 0.1.38-owl.20261021.2 on Windows had main busy for about 30 s of 62. The workspace's publish
+took about 3.6 s of that, nearly all of it in `cloneActivitySnapshot`: its full copy (2.3 s) and its certified copy
+(1.8 s), so even the path meant to share certified activity copied most of the snapshot. It ran once per provider chunk.
+
+The workspace's activity publication now hands out a thread that has not changed since the last one as the very record
+that one carried, frozen and owned, and copies again only what changed, keeping what did not (ADR-0016, October 22
+amendment, #1326). The catalog, the projects and the providers are kept the same way. The guards count the new copier,
+`copyOver`, as one copy per publication, sized by the objects it made; a record it keeps as it was counts nothing, and a
+publication that kept every record is no copy.
+
+Per coordinator update while one thread streams, with 200 threads (the counts move a little with how many broadcasts a
+run makes):
+
+| | Objects copied per frame | Per thread per update | Copier calls | Whole-state copies |
+| --- | ---: | ---: | ---: | ---: |
+| Owl before | 1,347 | 16.8 | 10.4 | 1 |
+| Owl after | 607 to 693 | 7.6 to 7.7 | 10.3 to 10.4 | 0 |
+| Stable before | 1,511 | 18.9 | 8.9 | 1 |
+| Stable after | 661 to 775 | 8.8 to 9.7 | 8.7 to 8.8 | 0 |
+
+The workspace's share of the objects is now about two per frame: the streaming thread's record and what in it changed.
+The whole copy became one copy of what changed, so the copier calls stay where they were. The budgets fall to 9 objects
+per thread per update on Owl and 11 on stable, and to no whole-state copy; the copier-call budgets stay at 11 and 9.5.
+The objects left are almost all the adapter's copy of every thread for its subscribers, which is #925's.
+
+At the owner's scale (`ownerScaleWorkBudget.perf.test.ts`), per update or per action:
+
+| | Objects copied, Owl | Objects copied, stable | Whole-state copies, Owl | Whole-state copies, stable |
+| --- | ---: | ---: | ---: | ---: |
+| One thread streaming | 8,100 to 5,809 | 4,457 to 2,176 | 1.85 to 0.85 | 1.92 to 0.92 |
+| Three threads streaming | 9,995 to 5,903 | 6,190 to 2,106 | 1.85 to 0.85 | 1.85 to 0.85 |
+| Saving an answer draft | 25,906 to 8,216 | 30,597 to 12,943 | 4 to 0 | 4 to 0 |
+| Typing in a composer | 27,326 to 18,908 | 19,776 to 9,955 | 4 | 5 |
+| Opening a thread | 42,446 to 29,819 | 34,859 to 20,829 | 10 | 11 |
+| Sending a message | 104,535 to 67,108 | 88,581 to 49,805 | 19 to 13 | 20 to 14 |
+
+No count rose. Every count that fell has its budget lowered to the new count, with the same room. What Owl's copied
+objects grow by along the history is unchanged (2,968 per streamed update on one thread, 21,386 per send: Watcher's room,
+#1248), but it is now a larger share of a smaller count, so the growth that test holds it to rose with it, from 1.579 to
+2.045 times on one streaming thread.
+
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state
