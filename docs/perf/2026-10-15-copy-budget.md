@@ -253,9 +253,9 @@ At the owner's scale, Owl's objects copied (before both, #1327 alone, #1326 alon
 Owl's copier calls fall to 9.85 per streamed update on one thread, 15 per answer draft and 136 per send. Stable's counts are #1326's. What Owl's copied objects grow by along the
 history is #1327's, 1,896 per streamed update on one thread, as a share of #1326's smaller count: 1.77 times. The reads
 of a thread out of a list moved with #1330, whose broadcast walks the threads once to find the records that changed. On
-Owl they rose from 6,042 to 6,154 per streamed update, 14,024 to 14,610 per thread opened and 36,801 to 37,973 per
-send, and those budgets are today's counts exactly. On stable they fell, for example 13,979 to 13,292 per thread opened
-and 26,110 to 24,904 per send, and those budgets fell with them.
+Owl they rose from 6,002 to 6,114 per streamed update, 13,904 to 14,490 per thread opened and 36,561 to 37,733 per
+send, and those budgets are today's counts exactly. On stable they fell, for example 13,847 to 13,172 per thread opened
+and 25,846 to 24,664 per send, and those budgets fell with them. Both sides count #1350's host router reuse.
 
 ## When a guard goes red
 
