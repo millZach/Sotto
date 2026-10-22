@@ -2,6 +2,7 @@ import type { AgentMessage, AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
+import { parsePrototypeSource, replySource, requestSource } from './prototypeSources'
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
@@ -13,12 +14,13 @@ export function eventSlot(event: WatcherEvent): string {
  * in, or the reply that named its page.
  */
 export function watcherPrototypeSource(event: Pick<WatcherEvent, 'requestCardId' | 'messageId'>): string | undefined {
-  return event.requestCardId !== undefined ? `request:${event.requestCardId}` : event.messageId !== undefined ? `reply:${event.messageId}` : undefined
+  return event.requestCardId !== undefined ? requestSource(event.requestCardId) : event.messageId !== undefined ? replySource(event.messageId) : undefined
 }
 /** What a `prototype-ready` event carries to name a mark's source, or undefined when the source is too long to carry. */
 export function watcherPrototypeFields(source: string): Pick<WatcherEvent, 'requestCardId' | 'messageId'> | undefined {
-  const [, kind, id] = /^(request|reply):([\s\S]{1,512})$/u.exec(source) ?? []
-  return id === undefined ? undefined : kind === 'request' ? { requestCardId: id } : { messageId: id }
+  const parsed = parsePrototypeSource(source)
+  if (!parsed || parsed.id.length > 512) return undefined
+  return parsed.kind === 'request' ? { requestCardId: parsed.id } : { messageId: parsed.id }
 }
 export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: readonly WatcherEvent[]): WatcherEvent[] {
   const events = new Map(earlier.map(event => [eventSlot(event), event]))

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AGENT_THREAD_EXCERPT_MAX, isVisualMessage, QUESTION_PAGES_MAX, type AgentHostSnapshot, type AgentMessage, type AgentRequest, type AgentThread, type QuestionPage } from '../../shared/agents'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { replySource, requestSource } from './prototypeSources'
 import { isSottoRequest } from './sottoRequests'
 
 /**
@@ -291,7 +292,7 @@ export class QuestionPages {
     const present = new Set<string>()
     let changed = false
     const look = (thread: AgentThread, reply: ReplyToSearch): void => {
-      const key = keyOf(thread.id, `reply:${reply.id}`)
+      const key = keyOf(thread.id, replySource(reply.id))
       present.add(key)
       if (!this.entries.has(key)) this.searchReply(key, thread, snapshot, reply)
     }
@@ -302,7 +303,7 @@ export class QuestionPages {
       let threadChanged = false
       const requests = thread.requests.map(request => {
         const asked = request.kind === 'question' && !isSottoRequest(request.id)
-        const key = keyOf(thread.id, `request:${request.id}`)
+        const key = keyOf(thread.id, requestSource(request.id))
         if (asked) {
           present.add(key)
           const entry = this.entries.get(key)
@@ -340,7 +341,7 @@ export class QuestionPages {
    * all, two seconds apart; a timer brings that snapshot when no other does. Once found, a question's pages stay as they are.
    */
   private search(key: string, thread: AgentThread, snapshot: AgentHostSnapshot, request: AgentRequest, previous?: Entry): void {
-    const entry = this.begin(key, thread.id, `request:${request.id}`, QUESTION_PAGE_SEARCHES, previous)
+    const entry = this.begin(key, thread.id, requestSource(request.id), QUESTION_PAGE_SEARCHES, previous)
     const summary = thread.summary?.lastAssistant?.text
     this.find(key, entry, thread, snapshot, async () => {
       const stored = thread.messages.length ? undefined : await this.options.messages?.(thread.id)
@@ -351,7 +352,7 @@ export class QuestionPages {
 
   /** Looks for a reply's pages, once, after the reply searches asked before it: a reply's words do not change. */
   private searchReply(key: string, thread: AgentThread, snapshot: AgentHostSnapshot, reply: ReplyToSearch): void {
-    const entry = this.begin(key, thread.id, `reply:${reply.id}`, 1)
+    const entry = this.begin(key, thread.id, replySource(reply.id), 1)
     const known = reply.text ?? (reply.summary !== undefined && reply.summary.length < AGENT_THREAD_EXCERPT_MAX ? reply.summary : undefined)
     // A reply that names no page settles at once, without waiting its turn: most replies name none.
     if (known !== undefined && pageMentions([known]).length === 0) { this.settle(key, entry, [], []); return }

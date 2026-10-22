@@ -1,6 +1,7 @@
 import { isVisualMessage, type AgentHostSnapshot, type AgentMessage, type AgentThread, type PrototypeReady as PrototypeReadyMark, type QuestionPage } from '../../shared/agents'
 import { settledIn } from './finishedUnread'
 import type { QuestionPages, ReplyToSearch } from './questionPages'
+import { replySource, requestSource } from './prototypeSources'
 import { isSottoRequest } from './sottoRequests'
 
 /** How many cleared sources are kept, newest last; the oldest go once the list is full. */
@@ -172,7 +173,7 @@ export class PrototypeReady {
     for (const request of thread.requests) {
       if (request.kind !== 'question' || isSottoRequest(request.id)) continue
       waits = true
-      const source = `request:${request.id}`
+      const source = requestSource(request.id)
       if (mark || this.cleared.has(keyOf(thread.id, source))) continue
       const working = this.pages.searched(thread.id, source)?.working
       if (working?.length) mark = { source, pages: working as QuestionPage[] }
@@ -185,31 +186,31 @@ export class PrototypeReady {
       const before = this.asked.get(thread.id)
       if (before !== undefined) {
         this.asked.delete(thread.id)
-        this.add(thread.id, `reply:${before}`)
+        this.add(thread.id, replySource(before))
         const kept = this.kept.get(thread.id)
-        if (kept) { this.add(thread.id, `reply:${kept.messageId}`); this.kept.delete(thread.id) }
+        if (kept) { this.add(thread.id, replySource(kept.messageId)); this.kept.delete(thread.id) }
       }
       // The newest reply that names a working page takes the mark, from any reply that held it before.
       const reply = this.wantedReply(thread)
-      const working = reply && this.pages.searched(thread.id, `reply:${reply.id}`)?.working
+      const working = reply && this.pages.searched(thread.id, replySource(reply.id))?.working
       if (working?.length) {
         if (this.kept.get(thread.id)?.messageId !== reply!.id) this.keep(thread.id, reply!.id, reply!.createdAt)
-        return { source: `reply:${reply!.id}`, pages: working as QuestionPage[] }
+        return { source: replySource(reply!.id), pages: working as QuestionPage[] }
       }
     }
     const kept = this.kept.get(thread.id)
     if (!kept) return mark
-    if (this.cleared.has(keyOf(thread.id, `reply:${kept.messageId}`)) || this.repliedAfterKept(thread, kept)) { this.kept.delete(thread.id); return mark }
+    if (this.cleared.has(keyOf(thread.id, replySource(kept.messageId))) || this.repliedAfterKept(thread, kept)) { this.kept.delete(thread.id); return mark }
     if (mark) return mark
-    const working = this.pages.searched(thread.id, `reply:${kept.messageId}`)?.working
-    return working?.length ? { source: `reply:${kept.messageId}`, pages: working as QuestionPage[] } : undefined
+    const working = this.pages.searched(thread.id, replySource(kept.messageId))?.working
+    return working?.length ? { source: replySource(kept.messageId), pages: working as QuestionPage[] } : undefined
   }
 
   /** The newest reply when it could earn the mark: its turn has ended, nothing waits, the user has not replied or opened it. */
   private wantedReply(thread: AgentThread): NewestReply | undefined {
     if (thread.status === 'running' || thread.requests.length) return undefined
     const reply = newestReplyOf(thread)
-    if (!reply || this.cleared.has(keyOf(thread.id, `reply:${reply.id}`)) || repliedAfter(thread, reply)) return undefined
+    if (!reply || this.cleared.has(keyOf(thread.id, replySource(reply.id))) || repliedAfter(thread, reply)) return undefined
     if (this.began !== undefined && !(Date.parse(reply.createdAt) >= this.began)) return undefined
     return reply
   }

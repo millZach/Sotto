@@ -2,6 +2,7 @@ import { AGENT_THREAD_EXCERPT_MAX, type AgentHostSnapshot, type AgentQuestionAns
 import { settledIn } from './finishedUnread'
 import { questionValues } from './nativeRequests'
 import { newestReply, requestWords, saysPrototype, type PageSearch } from './questionPages'
+import { requestSource } from './prototypeSources'
 import { isSottoRequest, SOTTO_REQUEST_PREFIX } from './sottoRequests'
 
 /** What Sotto answers a prototype question with when it found no page that opens (ADR-0108), word for word. */
@@ -253,7 +254,7 @@ export class PrototypeQuestions {
     }
     if (entry.state === 'sending' && (closed || this.now() - entry.since >= PROTOTYPE_HOLD_MAX_MS)) this.unconfirmed(record, request.id)
     if (entry.state !== 'held' && entry.state !== 'next' && entry.state !== 'undecided') return entry.state
-    const search = this.options.searched(threadId, `request:${request.id}`)
+    const search = this.options.searched(threadId, requestSource(request.id))
     if (entry.state === 'undecided') {
       if (search?.finished) entry.state = search.aboutPrototype ? 'held' : 'shown'
       else if (closed || this.now() - entry.since >= PROTOTYPE_HOLD_MAX_MS) entry.state = 'shown'
