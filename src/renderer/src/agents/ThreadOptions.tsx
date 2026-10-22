@@ -12,6 +12,7 @@ import { providerKey } from './threadFacts'
 import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
+import { WatchOnSendToggle } from '../watcher/WatchControls'
 import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
 import { useSaveOrchestrating } from '../watcher/orchestratingRole'
 import './threadChips.css'
@@ -283,7 +284,8 @@ export function watcherPermissionFixedReason(state: AgentState, thread: AgentThr
  * caption beside the chips says what is still in force. A refusal puts the chip back and says so under the chips,
  * with Try again; a result the provider never gave keeps the choice on the chip and says what comes next. Those
  * lines go in `noticeSlot` when the composer gives one, a row of its own under the chips and the send button, so
- * they never move the row; otherwise under the chips. Focus stays on the chip a choice was made from. New thread
+ * they never move the row; otherwise under the chips. Focus stays on the chip a choice was made from. Before the first
+ * send, Watch follows the permissions where Watcher is on (`WatchOnSendToggle`). New thread
  * and New terminal show the same three controls laid out in full.
  */
 export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false, continueOffer }: {
@@ -472,6 +474,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
+      {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only). */}
+      {!watcher && thread.nativeSessionStarted === false ? <WatchOnSendToggle threadId={thread.id} /> : null}
     </div>
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? `Starting a new Watcher on ${PROVIDER_LABELS[replacing.provider]}…` : caption}</span>

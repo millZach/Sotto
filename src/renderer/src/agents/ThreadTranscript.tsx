@@ -6,6 +6,8 @@ import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type A
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
+import { useWatchActions } from '../watcher/watcherRoom'
+import { watchAfterSend } from '../watcher/watchOnSend'
 import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
@@ -471,6 +473,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
 }): ReactNode {
   const { draft } = useThreadComposer(store, row.thread.id)
+  const watchActions = useWatchActions()
   const [settingAside, setSettingAside] = useState(false)
   const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const restored = submission?.restoredAs !== undefined && draft.draftId === submission.restoredAs
@@ -510,7 +513,9 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
     <span role={announcesFailure ? 'alert' : undefined}>{detail}</span>
     <div className="thread-message__delivery-actions">
       {status === 'failed' && submission !== undefined ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)}
-        onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)}>Retry</Button> : null}
+        onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)
+          // A first send retried still carries the Watch pressed on its composer.
+          .then(sent => watchAfterSend(row.thread.id, sent, watchActions))}>Retry</Button> : null}
       {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>Restore prompt</Button> : null}
       {/* Checking again refreshes the provider, which is global-lane work. */}
       {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy || settingAside} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
