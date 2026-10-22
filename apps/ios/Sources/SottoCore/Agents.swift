@@ -328,6 +328,15 @@ public enum AgentsRoster {
         return (below + [agents(owner.subagentSummary)]).joined(separator: "|")
     }
 
+    /// How often an open sheet reads its agents again while one of them runs: five seconds. The computer tells the phone
+    /// nothing of an agent's new update or next task until its counts change, so this is how an opened agent shows them.
+    public static let followInterval: UInt64 = 5_000_000_000
+    /// Whether an open sheet keeps reading its agents again: while any agent it shows is running. One the computer can
+    /// no longer confirm is not followed, since it may never change again.
+    public static func followsAgents(_ rows: [SubagentRow]) -> Bool {
+        rows.contains { $0.status == "running" }
+    }
+
     /// The top bar's count, from the thread list alone: delegated threads, both levels, and the provider's sub-agents.
     /// Nil when the thread has neither, so the control is not there.
     public static func count(_ owner: ThreadSummary, in threads: [ThreadSummary], failuresSeen: Bool = true) -> AgentsCount? {

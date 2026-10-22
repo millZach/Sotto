@@ -184,6 +184,19 @@ final class AgentsRosterTests: XCTestCase {
                        running.detailsKey)
     }
 
+    func testAnOpenSheetFollowsItsAgentsOnlyWhileOneRuns() {
+        // A running agent's new update moves its revision and not the thread's counts, so only reading again shows it.
+        let before = AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a1", title: "A", status: "running", revision: 4), depth: 0, quiet: false)
+        let after = AgentsRoster.agentRow(SubagentRow(id: "a", assignmentId: "a1", title: "A", status: "running", revision: 5), depth: 0, quiet: false)
+        XCTAssertNotEqual(before.detailsKey, after.detailsKey)
+        XCTAssertTrue(AgentsRoster.followsAgents([SubagentRow(id: "done", title: "Done", status: "completed"), SubagentRow(id: "a", title: "A", status: "running")]))
+        XCTAssertTrue(AgentsRoster.followsAgents([SubagentRow(id: "flow", title: "Flow", status: "running", kind: "workflow")]))
+        // Nothing running, or only an agent the computer can no longer confirm: the sheet stops reading.
+        XCTAssertFalse(AgentsRoster.followsAgents([SubagentRow(id: "done", title: "Done", status: "completed"), SubagentRow(id: "lost", title: "Lost", status: "unknown")]))
+        XCTAssertFalse(AgentsRoster.followsAgents([]))
+        XCTAssertEqual(AgentsRoster.followInterval, 5_000_000_000)
+    }
+
     func testTheSheetReadsAgainWhenADelegatedThreadsLastMonitorEnds() throws {
         let owner = try thread("owner")
         let watching = try thread("claude", #", "delegatedBy":"owner", "monitoring":[{"id":"00000000-0000-4000-8000-000000000009","label":"Watch CI"}]"#)

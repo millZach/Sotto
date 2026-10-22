@@ -90,7 +90,8 @@ private struct AgentsPresenter: ViewModifier {
 
 /// The sheet: the thread's delegated threads and agents in one list, newest start first, under a line that counts them
 /// and says what needs the user and what is working. It reads what the computer's delegation record and the provider's
-/// agents say when it opens, and again when the thread list says one of them changed.
+/// agents say when it opens, and again when the thread list says one of them changed. While an agent runs it reads the
+/// agents again every few seconds, since nothing tells the phone of an agent's new update until its counts change.
 private struct AgentsSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -173,6 +174,8 @@ private struct AgentsSheet: View {
         }
         .refreshable { await refresh() }
         .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
+        // Ends when nothing is running or the sheet goes.
+        .task(id: AgentsRoster.followsAgents(page?.rows ?? [])) { if AgentsRoster.followsAgents(page?.rows ?? []) { await follow() } }
         .presentationBackground { SheetBackdrop(wash: false) }
         .presentationCornerRadius(Radius.xl)
         .accessibilityAction(.escape) { dismiss() }
@@ -182,6 +185,16 @@ private struct AgentsSheet: View {
     private func refresh() async {
         refreshes += 1
         await load()
+    }
+
+    /// The agents alone, read again while one runs. An opened agent reads its task and result again only when its run,
+    /// revision or status moves. A read that fails leaves the list as it was and is tried at the next one.
+    private func follow() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: AgentsRoster.followInterval)
+            guard !Task.isCancelled, !loading else { continue }
+            if let next = try? await model.readSubagents(ref), !Task.isCancelled { page = next }
+        }
     }
 
     private func load() async {
