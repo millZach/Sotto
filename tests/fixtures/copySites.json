@@ -101,6 +101,9 @@
     "watcherRecord()": 1,
     "clonePlainData(": 1
   },
+  "src/main/agents/threadStore.ts": {
+    "clonePlainData(": 1
+  },
   "src/main/agents/watcherRoomDesktop.ts": {
     "clonePlainData(": 1
   },
