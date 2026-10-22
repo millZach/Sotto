@@ -164,6 +164,48 @@ it('fences a wake-up at the native writer when Watcher stops its worker during p
   } finally { gate.release() }
 }, 60_000)
 
+// Stop on Watcher stops its requests and holds the queues of the threads it started for the user's review (ADR-0073).
+// A babysitting wake-up arriving at such a thread once it rests used to sit as Queued, with nothing to say why or to
+// release it; it is paused by Watcher instead, and Resume queue sends it.
+it('pauses the wake-up of a resting worker by Watcher after the user stops Watcher, and Resume queue sends it', async () => {
+  const f = await fixture()
+  await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic worker completion')
+  await expect.poll(() => f.control.shell().host.threads.find(item => item.id === f.target.threadId)?.lastTurn?.status).toBe('completed')
+  await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+  await expect.poll(() => f.service.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+  await f.control.deliverWakeUp(f.target.threadId, { pullRequest: { url: 'https://github.com/synthetic/project/pull/4', number: 4, title: 'Synthetic pull request' },
+    startedBy: 'agent', startedAt: new Date().toISOString(), head: null, ended: null, changes: [{ kind: 'checks-passed', count: 1, required: true }] }, { tool: false })
+  const wakeUp = () => f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)
+  await expect.poll(() => wakeUp()?.status).toBe('paused')
+  expect(wakeUp()).toMatchObject({ pausedBy: 'watcher', error: 'Watcher stopped this thread, so its queue waits for you. Review the thread and resume its queue when ready.' })
+  const sent = async () => (await f.native.driver.requests()).some(item => item.method === 'turn/start' && JSON.stringify(item.params).includes('pull/4'))
+  expect(await sent()).toBe(false)
+  expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.target.threadId })).error).toBeNull()
+  await expect.poll(sent).toBe(true)
+  await expect.poll(() => wakeUp()).toBeUndefined()
+}, 60_000)
+
+// The user's own send in the thread is the review too: it ends the hold, and the queue Watcher's stop paused goes on.
+it('puts a wake-up paused by Watcher back once the user sends in the thread, and sends it after their turn', async () => {
+  const f = await fixture()
+  await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic worker completion')
+  await expect.poll(() => f.control.shell().host.threads.find(item => item.id === f.target.threadId)?.lastTurn?.status).toBe('completed')
+  await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+  await expect.poll(() => f.service.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+  await f.control.deliverWakeUp(f.target.threadId, { pullRequest: { url: 'https://github.com/synthetic/project/pull/5', number: 5, title: 'Synthetic pull request' },
+    startedBy: 'agent', startedAt: new Date().toISOString(), head: null, ended: null, changes: [{ kind: 'checks-passed', count: 1, required: true }] }, { tool: false })
+  const wakeUp = () => f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)
+  await expect.poll(() => wakeUp()?.pausedBy).toBe('watcher')
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.target.threadId, draftId: randomUUID(), text: 'Synthetic user look' })).error).toBeNull()
+  expect(f.service.preserveUserQueue(f.target.threadId)).toBe(false)
+  await expect.poll(() => wakeUp()).toMatchObject({ status: 'queued' })
+  expect(wakeUp()).not.toHaveProperty('pausedBy')
+  const sent = async () => (await f.native.driver.requests()).some(item => item.method === 'turn/start' && JSON.stringify(item.params).includes('pull/5'))
+  expect(await sent()).toBe(false)
+  await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic user turn completion')
+  await expect.poll(sent).toBe(true)
+}, 60_000)
+
 // A takeover keeps a dispatching item and removes a failed one, and Watcher reads a queued send's failure from its item.
 // The pump lets Watcher read it as soon as the failure is saved; a cancel that removes the item first reports it instead.
 // Either way the send is failed and refunded once, and the taken-over thread holds no reservation.

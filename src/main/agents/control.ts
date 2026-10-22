@@ -8,7 +8,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -3438,6 +3438,17 @@ export class AgentControl {
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (separated) this.pumpFollowups() })
         continue
       }
+      // A pause a Watcher stop made lasts as long as its hold: once the user's own command ended it, the queue goes on.
+      // Only Watcher can say the hold ended, so without it the pause stays for Resume queue.
+      if (items.some(item => item.threadId === threadId && item.status === 'paused' && item.pausedBy === 'watcher')
+        && this.watcherHooks && !this.watcherHooks.preserveUserQueue(threadId)) {
+        this.pumping.add(threadId)
+        let released = false
+        void this.followupStore.releaseWatcherPause(threadId).then(() => { released = true })
+          .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (released) this.pumpFollowups() })
+        continue
+      }
       // A steer may have selected any queue item. Reconcile its late echo before the queue head.
       const echoed = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
       const head = echoed ?? items.find(item => item.threadId === threadId && !held(item))
@@ -3485,10 +3496,10 @@ export class AgentControl {
         // Stop lifts. They are paused for the user's Resume first, as a turn that did not finish pauses them (ADR-0073).
         const stopHeld = (item: Readonly<QueuedFollowup>): boolean => this.isUserFollowup(item) && item.id !== first.id
         if (step === 'send' && this.watcherHooks?.preserveUserQueue(threadId)
-          && items.some(item => item.threadId === threadId && item.status === 'queued' && stopHeld(item))) {
+          && items.some(item => item.threadId === threadId && (item.status === 'queued' || item.pausedBy === 'watcher') && stopHeld(item))) {
           this.pumping.add(threadId)
           let paused = false
-          void this.followupStore.pauseUserPrompts(threadId, 'Watcher stopped this thread. Review the queue and resume it when ready.', stopHeld)
+          void this.followupStore.pauseUserPrompts(threadId, WATCHER_STOP_PAUSE, stopHeld)
             .then(() => { paused = true })
             .catch(() => { this.state.error = 'Could not pause the follow-up queue. The news was not sent.' })
             .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
@@ -3505,18 +3516,24 @@ export class AgentControl {
           continue
         }
       }
-      if (first.status === 'queued' && terminalBlocked) {
-        // A machine Stop fences its own sends. A user's queue remains intact and waits for explicit review.
-        if (!first.watcherOperationId && this.watcherHooks?.preserveUserQueue(threadId)) continue
+      // A machine Stop fences its own sends. A user's queue, and Sotto's wake-up in it, waits for the user's review
+      // (ADR-0073), so once the thread rests the queue is paused by Watcher and says so: Resume queue is that review.
+      // A hidden wake-up never pauses, as above.
+      const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
+      // Whatever joins the queue behind a pause, such as later news, is paused with it, so the queue says why it waits.
+      const stopHeld = !confirmed && thread && !isThreadTurnRunning(thread)
+        && items.some(item => item.threadId === threadId && item.status === 'queued' && !item.watcherOperationId && !isHiddenWakeUp(item))
+        && this.watcherHooks?.preserveUserQueue(threadId)
+      if (stopHeld || first.status === 'queued' && terminalBlocked) {
         this.pumping.add(threadId)
         let paused = false
-        void this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.')
+        void (stopHeld ? this.followupStore.pause(threadId, WATCHER_STOP_PAUSE, 'watcher')
+          : this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.'))
           .then(() => { paused = true })
           .catch(() => { this.state.error = 'Could not pause the follow-up queue.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
         continue
       }
-      const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       const ready = (item: Readonly<QueuedFollowup>): boolean => isDelegationOnlyWakeUp(item) ? this.delegationNewsReady(threadId, item) : this.followupReady(threadId, item)
       if (!confirmed && (first.status !== 'queued' || !ready(first))) continue
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {

@@ -797,6 +797,8 @@ export const agentFollowupSchema = z.object({
   status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
   error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
   wakeUp: z.literal(true).optional().catch(undefined),
+  // A queue Watcher's stop holds for the user's review (ADR-0073) is paused by Watcher, and says so.
+  pausedBy: z.literal('watcher').optional().catch(undefined),
 })
 export type AgentFollowup = z.infer<typeof agentFollowupSchema>
 export const agentDeliverySchema = z.object({
