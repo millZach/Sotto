@@ -74,7 +74,9 @@ export async function removeFolderContents(root: string, options: FolderRemovalO
   }
   const removeChildren = async (directory: string, keep?: ReadonlySet<string>): Promise<void> => {
     const names: string[] = []
-    const handle = await opendir(directory)
+    // A folder something else removed between its lstat and here is already what this removal wanted.
+    const handle = await opendir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+    if (!handle) return
     for await (const entry of handle) if (!keep?.has(entry.name)) names.push(entry.name)
     for (let offset = 0; offset < names.length; offset += PARALLEL) {
       // Every removal in a batch settles before a failure is reported, so nothing is still deleting once the caller hears.
