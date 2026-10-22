@@ -14,7 +14,7 @@ import { useRef } from 'react'
  */
 
 type Plain = Record<string, unknown>
-type SharedArrays = WeakMap<readonly unknown[], readonly unknown[]>
+type SharedArrays = WeakMap<object, unknown>
 
 function isPlain(value: unknown): value is Plain {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
@@ -85,6 +85,11 @@ export function share<T>(previous: unknown, next: T): T {
  * Remember their reconciled arrays, so a later shell can compare identities rather
  * than walk the same history again. Weak keys release histories when their source
  * arrays leave the connection's cache. Each new array still reconciles normally.
+ *
+ * A plain object reconciled into another one is remembered the same way. The page hands
+ * every broadcast the thread records it was last sent for threads that did not change
+ * (issue #1330), so a record once reconciled meets the state's own record by identity
+ * on every broadcast after it, rather than being walked again each time.
  */
 export function createStateSharing(): typeof share {
   const arrays: SharedArrays = new WeakMap()
@@ -100,7 +105,13 @@ function shareValue<T>(previous: unknown, next: T, arrays?: SharedArrays): T {
     return result as T
   }
   if (previous instanceof Map && next instanceof Map) return shareMap(previous, next, arrays) as T
-  if (isPlain(previous) && isPlain(next)) return shareObject(previous, next, arrays) as T
+  if (isPlain(previous) && isPlain(next)) {
+    const remembered = arrays?.get(next)
+    if (remembered !== undefined) return shareValue(previous, remembered) as T
+    const result = shareObject(previous, next, arrays)
+    if (result !== next) arrays?.set(next, result)
+    return result as T
+  }
   return next
 }
 

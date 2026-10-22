@@ -23,9 +23,12 @@ function fullState(models: AgentModel[], clientHosts?: { hostId: string; models:
   })
 }
 
-/** A raw broadcast payload, as it would cross the wire once encoded by AgentStateBroadcaster. */
+let threadsRevision = 0
+/** A raw broadcast payload, as it would cross the wire once encoded by AgentStateBroadcaster: every thread listed. */
 function broadcast(hostModels: unknown, clientHosts?: { hostId: string; models: unknown }[]): unknown {
-  return { ...fullState([]), host: { ...fullState([]).host, models: hostModels, ...(clientHosts ? { clientHosts } : {}) } }
+  const host = fullState([]).host
+  return { ...fullState([]), host: { ...host, models: hostModels, ...(clientHosts ? { clientHosts } : {}),
+    threads: { revision: ++threadsRevision, base: null, changed: host.threads } } }
 }
 
 /** A fake bridge whose `onState` hands back the raw handler the wrapper registered, so a test can feed

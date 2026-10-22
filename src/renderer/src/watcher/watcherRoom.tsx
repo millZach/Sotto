@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
-import { isWatchedRow, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { isWatchedRow, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { firstMessage, useFirstMessageDelivery } from './watcherFirstMessage'
@@ -41,6 +41,8 @@ export interface WatcherRoom {
   readonly settle: (result: WatcherRoomResult) => string | null
   /** Stop all: main's preview of what it would stop, then the stop that preview confirms. Null without a bridge. */
   readonly stopAll: { readonly prepare: WatcherBridge['prepareStopAll']; readonly stop: WatcherBridge['stopAll'] } | null
+  /** The merge queue and merge turns for Watcher's picture (#1339), read only while it shows. Null where the bridge offers none. */
+  readonly readMergeTurns: (() => Promise<WatcherMergeTurnsRead>) | null
 }
 
 /** The bridge's three handover calls, together or not at all. */
@@ -183,9 +185,10 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {
-    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, readMergeTurns } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
       startNew: startNew === undefined ? null : () => startNew.call(bridge),
+      readMergeTurns: readMergeTurns === undefined ? null : () => readMergeTurns.call(bridge),
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
       handover: readHandover === undefined || continueWithHandover === undefined || dismissHandover === undefined ? null : {
         read: () => readHandover.call(bridge),
@@ -231,6 +234,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     unwatchThread: manage.watch?.unwatchThread ?? null,
     handover: manage.handover,
     startNew: manage.startNew,
+    readMergeTurns: manage.readMergeTurns,
     stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
   }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage])
   return <WatcherRoomContext.Provider value={value}>

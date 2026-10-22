@@ -217,7 +217,16 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   remote.native.event({ type: 'ready', threadId: (await remote.native.snapshot()).threads.find(item => item.title === input.title)!.id, text: 'Synthetic completion' })
   await f.socket.command({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.status).toBe('idle'))
-  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic second prompt', delivery: 'now' })).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+  // A merge turn's mark is the desktop's alone (#1339): the owning host is sent the send without it, and the picture has it.
+  const forwarded = vi.spyOn(f.socket as unknown as { call(request: { op: string }): Promise<unknown> }, 'call')
+  const second = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic second prompt', delivery: 'now', mergeTurn: { pullRequest: 1291 } })
+  const packet = forwarded.mock.calls.map(([request]) => request).find(request => request.op === 'watcher-control')
+  forwarded.mockRestore()
+  expect(second).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+  expect(packet).toBeDefined()
+  expect(JSON.stringify(packet)).not.toContain('mergeTurn')
+  if (second.status !== 'ok' || !('receipt' in second)) throw new Error('send-refused')
+  expect(f.watcher.readMergeTurns()).toMatchObject({ status: 'ok', turns: [{ operationId: second.receipt.operationId, target: first.target, pullRequest: 1291 }] })
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok', stopRequested: true })
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.status).toBe('idle'))
   const settled = await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
@@ -1279,6 +1288,34 @@ it('refunds only an exact fenced absence and rejects a late packet for that oper
   const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
   await socket.connect()
   expect(await socket.watcherControl(packet!)).toMatchObject({ code: 'OPERATION_NOT_RECORDED' })
+})
+
+it('reads a replaced Watcher’s unconfirmed start under that Watcher’s own identity (#1325)', async () => {
+  const f = await master(), original = f.socket.watcherControl.bind(f.socket), read = f.socket.watcherRead.bind(f.socket)
+  // The host admits the start and its reply is lost, and no read reaches the host until Watcher has been replaced.
+  let packet: WatcherHostControl | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async input => { packet = input; await original(input); throw new Error('synthetic-lost-reply') })
+  const reads = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic-read-held'))
+  expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
+  expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('uncertain')
+  // Watcher's turn ends with its start unconfirmed. While the thread it started there may still be working, a provider
+  // change waits: a host stops a thread only for the Watcher that started it.
+  const binding = f.workspace.registry.byThread(f.id)!
+  const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
+  native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
+  expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
+    message: 'A thread Watcher started on another computer is still working, and only this Watcher can stop it there. Wait for it to finish, or stop it with Stop all, then change its provider. Nothing was changed.' })
+  // Its slot freed, as when that thread finishes, the move goes through with the start still unconfirmed.
+  await f.control.updateWatcher(record => { record.reservations = [] })
+  expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
+  expect(f.watcher.state().history.at(-1)!.target.threadId).toBe(f.id)
+  // The host keeps the start under the Watcher that made it, so it is read under that one, and its receipt comes back.
+  reads.mockImplementation(read)
+  await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+  expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('accepted')
 })
 
 it.each(['Stop', 'Stop all'])('%s fences the owning request and removes its admitted machine queue', async action => {
