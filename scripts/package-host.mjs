@@ -17,7 +17,8 @@ export async function packageHost({
   releaseDir = resolve(root, process.env.SOTTO_HOST_RELEASE_DIR || 'release'),
   version,
 } = {}) {
-  if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Build and verify the host archive with Node 24')
+  const [major, minor, patch] = process.versions.node.split('.').map(Number)
+  if (major !== 24 || minor < 22 || (minor === 22 && patch < 1)) throw new Error('Build and verify the host archive with Node 24.22.1 or a later Node 24')
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const packagedVersion = version ?? pkg.version
   if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","sherpa-onnx-node","zod"]') throw new Error('Production dependency policy changed')

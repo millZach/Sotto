@@ -306,6 +306,10 @@ it('refuses an older patch of the right major when the range names a patch floor
   const [, minor = 0, patch = 0] = process.versions.node.split('.').map(Number)
   expect(check({ installPath: configuration.installPath, nodeRange: `>=${major}.${minor}.${patch} <${major + 1}` })).toMatchObject({ status: 0 })
   expect(check({ installPath: configuration.installPath, nodeRange: `>=${major}.${minor}.${patch + 1} <${major + 1}` })).toMatchObject({ status: 3, stdout: process.versions.node })
+  // An older archive that asks for less still meets the desktop's floor, but not its upper bound.
+  await writeFile(join(configuration.installPath, 'runtime-manifest.json'), JSON.stringify({ node: `>=${major} <${major + 1}` }))
+  expect(check({ installPath: configuration.installPath, nodeRange: `>=${major}.${minor}.${patch + 1} <${major + 1}` })).toMatchObject({ status: 3, stdout: process.versions.node })
+  expect(check({ installPath: configuration.installPath, nodeRange: `>=1 <2` })).toMatchObject({ status: 0 })
 })
 const posix = process.platform !== 'win32'
 function probe(configuration: Configuration, env: NodeJS.ProcessEnv): Promise<Outcome> {

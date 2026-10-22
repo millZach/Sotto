@@ -745,7 +745,7 @@ The Omarchy rows show each piece’s state before setup changes a file. **Set up
 
 If Sotto closes during setup or removal, the row says it stopped before finishing. **Try again** continues that operation; **Remove** can undo unfinished setup. The first key backup stays through updates. Later file edits stay yours.
 
-The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
+The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24.22.1 or a later Node 24:
 
 ```sh
 npm ci
@@ -818,7 +818,7 @@ The packaged `resources` directory contains the Claude SDK history helper, `READ
 
 ### Linux packages
 
-On forge with Node 24 and a clean checkout:
+On forge with Node 24.22.1 or a later Node 24 and a clean checkout:
 
 ```sh
 mise exec node@24.22.1 -- npm ci

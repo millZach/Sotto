@@ -186,7 +186,7 @@ Installation and publication are manual owner actions, separate from these comma
 
 ## Linux host archive
 
-The host is a Node process, not a Linux desktop app. For a stable release, use the same clean, CI-green main commit as the desktop, Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host:release`. That command runs `release:check` and packages the checked stable version in the archive, runtime manifest and bundled host. The desktop can then find the matching versioned archive. The ordinary `package:host` and the CI job **Host archive and socket contract (Linux)** stay offline and use the checkout manifest version for verification. CI retains its archive for review and never publishes a release.
+The host is a Node process, not a Linux desktop app. For a stable release, use the same clean, CI-green main commit as the desktop, Node 24.22.1 or a later Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host:release`. That command runs `release:check` and packages the checked stable version in the archive, runtime manifest and bundled host. The desktop can then find the matching versioned archive. The ordinary `package:host` and the CI job **Host archive and socket contract (Linux)** stay offline and use the checkout manifest version for verification. CI retains its archive for review and never publishes a release.
 
 `package:host` builds only the headless entry. It produces `release/Sotto-host-X.Y.Z-linux-x64.tar.gz` and a matching `.tar.gz.sha256` sidecar on the x64 Linux runner. Local builds carry their actual platform and architecture in the filename; a Windows smoke build is not a Linux release. There is no cross-platform native-module copy or Electron packaging step.
 
