@@ -1,104 +1,201 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, buildRoute, FLIGHT, FLIGHT_ENDS, frameDelay, frameDue, frameSleep, gridFor, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST, LIGHT_INK_BOOST,
-  MAX_RIPPLES, owlAt, placeStars, quietAt, RIPPLE_LIFE, rippleAt, sceneInk, starStrength, STILL_RIPPLE_LIFE, type SceneMeasure,
+  addRipple, along, CELL, COLUMN_GAP, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk,
+  starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
+import { RAIL_OWL, spriteCells } from '../../../src/renderer/src/watcher/owlFamily'
 import { watchResolution } from '../../../src/renderer/src/watcher/watchResolution'
 
-/** Watcher's room at 1280 by 800, its pane above the floating switch: the composer near the bottom, the intro above it. */
-function measure(patch: Partial<SceneMeasure> = {}): SceneMeasure {
-  return {
-    width: 1280, height: 746, header: 48,
-    composer: { x: 260, y: 570, w: 760, h: 130 }, perchTop: 570,
-    intro: { x: 405, y: 250, w: 470, h: 280 }, words: [{ x: 405, y: 290, w: 470, h: 30 }],
-    ...patch,
-  }
+/**
+ * Watcher's pane for a window `width` by `height`: the floating switch's band below it, the header at the top, and the
+ * composer in the new thread's 760-pixel column near the bottom, the way the room lays it out.
+ */
+function room(width: number, height: number, patch: Partial<SceneMeasure> = {}): SceneMeasure {
+  const gutter = Math.max(24, (width - 760) / 2), pane = height - 54
+  return { width, height: pane, header: 48, composer: { x: gutter, y: pane - 150, w: width - gutter * 2, h: 110 }, words: [], ...patch }
 }
 
 const near = (value: number, expected: number): void => expect(value).toBeCloseTo(expected, 6)
+const home: WatcherOwlState = { at: 'home', side: 'left', flight: null, next: 0 }
 
-describe('the night scene’s layout and route', () => {
-  it('ends the route on the composer’s top-right corner, 24 owl units in, at every size', () => {
-    for (const [width, height, composer] of [[1600, 946, { x: 420, y: 760, w: 760, h: 130 }], [1280, 746, { x: 260, y: 570, w: 760, h: 130 }], [820, 506, { x: 24, y: 360, w: 772, h: 120 }]] as const) {
-      const layout = layoutScene(measure({ width, height, composer, perchTop: composer.y }))
-      const route = buildRoute(layout)
-      for (const t of [FLIGHT_ENDS, FLIGHT_ENDS + 0.5, FLIGHT_ENDS + 60]) {
-        const { pose, stage } = owlAt(t, layout, route, { still: false })
-        expect(stage).toBe('perched')
-        near(pose.x, composer.x + composer.w - 24 * layout.s)
-        near(pose.y, composer.y + 1)
-      }
-      // The drop lands where the owl then perches, so it does not jump on landing.
-      const landing = owlAt(FLIGHT_ENDS - 1e-6, layout, route, { still: false }).pose
-      expect(Math.hypot(landing.x - layout.end.x, landing.y - layout.end.y)).toBeLessThan(0.01)
+/** Whether a whole owl of half-width `half` stands in a margin, clear of the column. */
+function clearOfColumn(layout: SceneLayout, x: number, half: number): boolean {
+  return x + half < layout.column.left - OWL_GAP || x - half > layout.column.right + OWL_GAP
+}
+
+describe('the night scene in the margins', () => {
+  it('lays everything out beside the column and nothing in it', () => {
+    for (const [width, height] of [[1600, 1000], [1280, 800], [1100, 720]] as const) {
+      const layout = layoutScene(room(width, height))
+      expect(layout.mode, `${width}x${height}`).toBe('trees')
+      expect(layout.column).toEqual({ left: layout.composer.x, right: layout.composer.x + layout.composer.w })
+      const half = 20 * layout.s
+      for (const place of [layout.home, layout.visit, layout.composerPerch.left, layout.composerPerch.right]) expect(clearOfColumn(layout, place.x, half), `${width}x${height}`).toBe(true)
+      expect(layout.left.x).toBeLessThan(layout.column.left)
+      expect(layout.right.x).toBeGreaterThan(layout.column.right)
+      expect(layout.moon.x - layout.moon.r).toBeGreaterThan(layout.column.right)
+      for (const spot of layout.spots) expect(clearOfColumn(layout, spot.x, 18), `${spot.kind} at ${spot.x}`).toBe(true)
     }
   })
 
-  it('flies from the left tree’s branch to the right tree’s, and lands on what stands on the composer', () => {
-    const layout = layoutScene(measure())
-    const route = buildRoute(layout)
-    expect(along(route, 0)).toEqual(layout.left.perch)
-    near(along(route, 1).x, layout.right.perch.x)
-    near(along(route, 1).y, layout.right.perch.y)
-    const stages = [0.5, FLIGHT.watch + 0.1, FLIGHT.watch + FLIGHT.takeoff + 1, FLIGHT.watch + FLIGHT.takeoff + FLIGHT.fly + 0.5, FLIGHT_ENDS - 0.5]
-      .map(t => owlAt(t, layout, route, { still: false }).stage)
-    expect(stages).toEqual(['watching', 'taking-off', 'flying', 'resting', 'dropping'])
-    // The handover offer stands on the composer: the owl lands on its top edge instead, still at the composer's corner.
-    const offered = layoutScene(measure({ perchTop: 480 }))
-    expect(offered.end).toEqual({ x: 260 + 760 - 24 * offered.s, y: 481 })
+  it('fills the limb across from Watcher’s owl first, then Watcher’s tree, then the ground', () => {
+    const layout = layoutScene(room(1600, 1000))
+    const kinds = layout.spots.map(spot => spot.kind)
+    const firstTree = kinds.indexOf('tree'), firstGround = kinds.indexOf('ground')
+    expect(kinds[0]).toBe('limb')
+    expect(firstTree).toBeGreaterThan(0)
+    expect(firstGround).toBeGreaterThan(firstTree)
+    expect(kinds.slice(0, firstTree).every(kind => kind === 'limb')).toBe(true)
+    expect(kinds.slice(firstGround).every(kind => kind === 'ground')).toBe(true)
+    // The limb's spots run from the column outward, so the first sits nearest Watcher's owl across the room.
+    const limb = layout.spots.slice(0, firstTree)
+    expect(limb.every(spot => spot.x > layout.column.right)).toBe(true)
+    expect(limb.map(spot => spot.x)).toEqual([...limb.map(spot => spot.x)].sort((a, b) => a - b))
+    expect(layout.spots.slice(firstTree, firstGround).every(spot => spot.x < layout.column.left)).toBe(true)
+    expect(layout.spots.length).toBeGreaterThan(20)
+    expect(layoutScene(room(1280, 800)).spots.length).toBeLessThan(layout.spots.length)
   })
 
-  it('draws the owl a quarter smaller than the prototype, held between its smallest and largest', () => {
-    near(layoutScene(measure({ width: 1600, height: 1000 })).s, 2.025)
-    near(layoutScene(measure({ width: 820, height: 506 })).s, 1.125)
-    near(layoutScene(measure({ width: 2560, height: 1600 })).s, 2.1)
+  it('gives a margin under 160 pixels a rail of owl eyes, and a margin with no room for it nothing', () => {
+    expect(layoutScene(room(760 + TREES_MIN_MARGIN * 2, 800)).mode).toBe('trees')
+    const rail = layoutScene(room(760 + (TREES_MIN_MARGIN - 1) * 2, 800))
+    expect(rail.mode).toBe('rail')
+    // At the smallest window the room leaves 16-pixel margins: the eyes go down the right one first, then the left.
+    const smallest = layoutScene(room(820, 560, { composer: { x: 16, y: 356, w: 788, h: 110 } }))
+    expect(smallest.mode).toBe('rail')
+    const right = smallest.spots.filter(spot => spot.x > smallest.column.right), left = smallest.spots.filter(spot => spot.x < smallest.column.left)
+    expect(right.length).toBeGreaterThan(10)
+    expect(left.length).toBe(right.length)
+    expect(smallest.spots[0]!.x).toBeGreaterThan(smallest.column.right)
+    // Every glyph of every pair of eyes falls in a margin.
+    for (const spot of smallest.spots) {
+      expect(spot.kind).toBe('rail')
+      const cells = spriteCells([RAIL_OWL], spot.x, spot.y, CELL)
+      for (let c = cells.c0; c < cells.c0 + cells.w; c++) expect(owlRoom(smallest, (c + 0.5) * CELL.w), `eyes at ${spot.x}`).toBe(true)
+    }
+    // Narrower than that, as a pane squeezed beside a thread can be, there is no margin to draw in.
+    const none = layoutScene(room(560, 800, { composer: { x: 10, y: 600, w: 540, h: 110 } }))
+    expect(none.mode).toBe('none')
+    expect(none.spots).toEqual([])
   })
 
-  it('keeps words clear, the header band quiet and the intro in a soft oval of quiet', () => {
-    const layout = layoutScene(measure())
-    expect(quietAt(layout, 640, 300)).toBe(0)
-    near(quietAt(layout, 1000, 10), 0.1)
-    near(quietAt(layout, 640, 400), 0.12)
-    expect(quietAt(layout, 1200, 400)).toBe(1)
+  it('draws nothing in the column or under words, quiets the header band, and fades toward the column', () => {
+    const layout = layoutScene(room(1600, 1000, { words: [{ x: 20, y: 300, w: 200, h: 20 }] }))
+    const { left, right } = layout.column
+    expect(quietAt(layout, (left + right) / 2, 400)).toBe(0)
+    expect(quietAt(layout, left - COLUMN_GAP + 1, 400)).toBe(0)
+    expect(quietAt(layout, 100, 310)).toBe(0)
+    near(quietAt(layout, 200, 10), 0.1)
+    expect(quietAt(layout, 200, 400)).toBe(1)
+    expect(quietAt(layout, left - 12, 400)).toBeLessThan(0.5)
+    expect(inMargin(layout, left - COLUMN_GAP - 1)).toBe(true)
+    expect(inMargin(layout, right + COLUMN_GAP - 1)).toBe(false)
   })
 })
 
-describe('the night scene in reduced motion', () => {
-  it('starts settled on the composer, with no flight, no turn and no blink', () => {
-    const layout = layoutScene(measure())
-    const route = buildRoute(layout)
-    for (const t of [0, 1, FLIGHT.watch + 1, 2.03, FLIGHT_ENDS + 1.3 + 4.7 * 3 + 0.05]) {
-      const { pose, stage } = owlAt(t, layout, route, { still: true, look: { x: 0, y: 0, t: Math.max(0, t - 0.5) } })
+describe('Watcher’s owl', () => {
+  const layout = layoutScene(room(1600, 1000))
+
+  it('sits in its own tree and, with motion reduced, holds still there', () => {
+    for (const t of [0, 1, 2.03, 30]) {
+      const { pose, stage } = owlAt(t, layout, { ...home, at: 'tree', flight: planFlight(layout, home, 'tree', 0) }, { still: true, look: { x: 0, y: 0, t: Math.max(0, t - 0.5) } })
       expect(stage).toBe('perched')
-      expect([pose.x, pose.y, pose.turn, pose.gx, pose.gy, pose.blink, pose.spread]).toEqual([layout.end.x, layout.end.y, 0, 0, 0, false, 0])
+      expect([pose.x, pose.y, pose.turn, pose.gx, pose.gy, pose.blink, pose.spread]).toEqual([layout.home.x, layout.home.y, 0, 0, 0, false, 0])
     }
   })
 
-  it('stops drawing once nothing moves, and keeps the stars still', () => {
-    expect(frameDelay('perched', 0, true)).toBeNull()
-    expect(frameDelay('perched', 1, true)).toBe(33)
-    const star = { i: 0, base: 0.55, phase: 1, speed: 1.2, accent: false }
-    expect(new Set([0, 0.7, 3.1].map(t => starStrength(star, t, true)))).toEqual(new Set([0.55]))
-    expect(new Set([0, 0.7, 3.1].map(t => starStrength(star, t, false))).size).toBe(3)
+  it('flies now and then to the other tree or the composer’s branch and back, never anywhere else', () => {
+    expect(['tree', 'composer']).toContain(nextPlace('home', 0.2))
+    expect(nextPlace('home', 0.2)).toBe('tree')
+    expect(nextPlace('home', 0.8)).toBe('composer')
+    expect(nextPlace('tree', 0.1)).toBe('composer')
+    expect(nextPlace('tree', 0.9)).toBe('home')
+    expect(nextPlace('composer', 0.1)).toBe('home')
+    expect(stayAt('home', 0)).toBe(OWL_STAY.home[0])
+    expect(stayAt('home', 1)).toBe(OWL_STAY.home[1])
+    expect(stayAt('composer', 0.5)).toBeLessThan(OWL_STAY.home[0])
   })
 
-  it('turns a press into a spot that brightens in place and fades, with nothing bent', () => {
+  it('crosses to the other tree past the moon, and lands where it then sits', () => {
+    const flight = planFlight(layout, home, 'tree', 10)
+    expect(along(flight.route, 0)).toEqual(layout.home)
+    near(along(flight.route, 1).x, layout.visit.x)
+    near(along(flight.route, 1).y, layout.visit.y)
+    // It passes over the moon on its way across.
+    const closest = Math.min(...flight.route.samples.map(p => Math.hypot(p.x - layout.moon.x, p.y - layout.moon.y)))
+    expect(closest).toBeLessThan(layout.moon.r * 1.2)
+    const mid = owlAt(10 + flight.dur / 2, layout, { ...home, flight }, { still: false })
+    expect(mid.stage).toBe('flying')
+    expect(mid.pose.spread).toBeGreaterThan(0.5)
+    const landing = owlAt(10 + flight.dur - 1e-6, layout, { ...home, flight }, { still: false }).pose
+    expect(Math.hypot(landing.x - layout.visit.x, landing.y - layout.visit.y)).toBeLessThan(0.5)
+  })
+
+  it('perches on the composer’s branch on the side of the tree it comes from', () => {
+    const fromHome = planFlight(layout, home, 'composer', 0)
+    expect(fromHome.side).toBe('left')
+    near(along(fromHome.route, 1).x, layout.composerPerch.left.x)
+    near(along(fromHome.route, 1).y, layout.composerPerch.left.y)
+    const fromTree = planFlight(layout, { at: 'tree', side: 'left' }, 'composer', 0)
+    expect(fromTree.side).toBe('right')
+    near(along(fromTree.route, 1).x, layout.composerPerch.right.x)
+    near(along(fromTree.route, 1).y, layout.composerPerch.right.y)
+    const sitting = owlAt(5, layout, { at: 'composer', side: 'right', flight: null, next: 99 }, { still: false }).pose
+    expect([sitting.x, sitting.y]).toEqual([layout.composerPerch.right.x, layout.composerPerch.right.y])
+  })
+
+  it('turns to watch a newcomer, and to look where the margin was pressed', () => {
+    const watching = owlAt(10.5, layout, home, { still: false, watch: { at: layout.moon, since: 10 } }).pose
+    expect(watching.turn).toBeCloseTo(1, 5)
+    expect(watching.gx).toBeGreaterThan(1)
+    expect(watching.blink).toBe(false)
+    const looked = owlAt(10.5, layout, home, { still: false, look: { x: 0, y: layout.home.y, t: 10 } }).pose
+    expect(looked.turn).toBeLessThan(-0.5)
+    expect(owlAt(13, layout, home, { still: false, look: { x: 0, y: layout.home.y, t: 10 } }).pose.gx).toBe(0)
+  })
+})
+
+describe('the night scene’s pace, stars and ripples', () => {
+  it('draws at 30 frames a second while anything moves, checks 8 a second at rest, and stops when it holds still', () => {
+    expect(frameDelay(true, 0, false)).toBe(MOVING_MS)
+    expect(frameDelay(false, 2, false)).toBe(MOVING_MS)
+    expect(frameDelay(false, 0, false)).toBe(IDLE_CHECK_MS)
+    expect(frameDelay(false, 0, true)).toBeNull()
+    expect(frameDelay(false, 1, true)).toBe(MOVING_MS)
+  })
+
+  it('twinkles the stars in half-second steps, and not at all when the scene holds still', () => {
+    const star = { i: 0, base: 0.55, phase: 1, speed: 1.2, accent: false }
+    expect(new Set([0, 0.7, 3.1].map(t => starStrength(star, twinkleStep(t, true), true)))).toEqual(new Set([0.55]))
+    expect(starStrength(star, twinkleStep(1.05, false), false)).toBe(starStrength(star, twinkleStep(1.45, false), false))
+    expect(new Set([0, 0.7, 3.1].map(t => starStrength(star, twinkleStep(t, false), false))).size).toBe(3)
+  })
+
+  it('scatters stars only in the margins’ open sky, below the header and above the far hills', () => {
+    const layout = layoutScene(room(1600, 1000))
+    const grid = gridFor(layout.width, layout.height)
+    const ink = new Float32Array(grid.cols * grid.rows)
+    for (let c = 0; c < grid.cols; c++) ink[10 * grid.cols + c] = 1
+    const stars = placeStars(layout, grid, ink)
+    expect(stars.length).toBeGreaterThan(20)
+    for (const star of stars) {
+      const row = Math.floor(star.i / grid.cols), col = star.i % grid.cols
+      expect(row).not.toBe(10)
+      expect(inMargin(layout, (col + 0.5) * grid.cw)).toBe(true)
+      expect(row * grid.ch).toBeGreaterThanOrEqual(layout.header)
+      expect(row * grid.ch).toBeLessThanOrEqual(layout.horizon - layout.sky * 0.08)
+    }
+  })
+
+  it('turns a press into a spot that brightens in place and fades when motion is reduced, with nothing bent', () => {
     const out = { ring: 0, dx: 0, dy: 0 }
     const ripples = [{ x: 100, y: 100, t: 0 }]
     expect(rippleAt(100, 100, ripples, 0.1, true, out).ring).toBeGreaterThan(0.5)
     expect([out.dx, out.dy]).toEqual([0, 0])
     expect(rippleAt(300, 100, ripples, 0.1, true, out).ring).toBe(0)
     expect(rippleAt(100, 100, ripples, STILL_RIPPLE_LIFE, true, out).ring).toBe(0)
-  })
-})
-
-describe('the night scene’s pace and ripples', () => {
-  it('draws at 30 frames a second while the owl flies or a ripple runs, 10 while it sits, and none when nothing moves', () => {
-    expect(frameDelay('flying', 0, false)).toBe(33)
-    expect(frameDelay('watching', 0, false)).toBe(33)
-    expect(frameDelay('perched', 2, false)).toBe(33)
-    expect(frameDelay('perched', 0, false)).toBe(100)
   })
 
   it('sends a ring out with its echo behind it, bending the landscape as it passes, and lets ripples expire', () => {
@@ -114,6 +211,22 @@ describe('the night scene’s pace and ripples', () => {
     expect(liveRipples(ripples, RIPPLE_LIFE - 0.01, false)).toHaveLength(1)
     expect(liveRipples(ripples, RIPPLE_LIFE + 0.01, false)).toHaveLength(0)
     expect(liveRipples(ripples, STILL_RIPPLE_LIFE + 0.01, true)).toHaveLength(0)
+  })
+
+  it('keeps a ripple that starts later, as the moon’s does for a staggered newcomer, and leaves it out until it starts', () => {
+    const out = { ring: 0, dx: 0, dy: 0 }
+    const later = [{ x: 0, y: 0, t: 5 }]
+    expect(liveRipples(later, 1, false)).toHaveLength(1)
+    expect(rippleReach(later[0]!, 1, false)).toBe(0)
+    expect(rippleAt(0, 0, later, 1, false, out).ring).toBe(0)
+    expect(rippleAt(193, 0, later, 5.45, false, out).ring).toBeGreaterThan(0.2)
+  })
+
+  it('keeps no more than twelve ripples, dropping the oldest', () => {
+    let ripples = [{ x: 0, y: 0, t: 0 }]
+    for (let k = 1; k <= 14; k++) ripples = addRipple(ripples, { x: k, y: k, t: k / 100 })
+    expect(ripples).toHaveLength(MAX_RIPPLES)
+    expect(ripples[0]!.x).toBe(3)
   })
 
   /**
@@ -134,40 +247,17 @@ describe('the night scene’s pace and ripples', () => {
   }
   const mean = (gaps: readonly number[]): number => gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length
 
-  it('paces frames from when the last one started: about 30 a second moving and 10 sitting, on 60 and 144 hertz displays', () => {
+  it('paces frames from when the last one started: about 30 a second moving and 8 checks at rest, on 60 and 144 hertz displays', () => {
     for (const period of [1000 / 60, 1000 / 144]) {
-      const moving = mean(drawnGaps(period, 33)), sitting = mean(drawnGaps(period, 100))
+      const moving = mean(drawnGaps(period, MOVING_MS)), resting = mean(drawnGaps(period, IDLE_CHECK_MS))
       expect(1000 / moving, `moving at ${Math.round(1000 / period)} Hz`).toBeGreaterThan(27)
       expect(1000 / moving, `moving at ${Math.round(1000 / period)} Hz`).toBeLessThanOrEqual(31)
-      expect(1000 / sitting, `sitting at ${Math.round(1000 / period)} Hz`).toBeGreaterThan(9)
-      expect(1000 / sitting, `sitting at ${Math.round(1000 / period)} Hz`).toBeLessThanOrEqual(10.5)
+      expect(1000 / resting, `resting at ${Math.round(1000 / period)} Hz`).toBeGreaterThan(7)
+      expect(1000 / resting, `resting at ${Math.round(1000 / period)} Hz`).toBeLessThanOrEqual(8.5)
     }
-    // Waiting for the next frame and then the 33 ms on top of it, as the first version did, came to 20 a second.
     expect(frameDue(33, 0, 33)).toBe(true)
     expect(frameSleep(1, 0, 100)).toBe(79)
     expect(frameSleep(1, 0, 33)).toBe(12)
-  })
-
-  it('keeps no more than eight ripples, dropping the oldest', () => {
-    let ripples = [{ x: 0, y: 0, t: 0 }]
-    for (let k = 1; k <= 10; k++) ripples = addRipple(ripples, { x: k, y: k, t: k / 100 })
-    expect(ripples).toHaveLength(MAX_RIPPLES)
-    expect(ripples[0]!.x).toBe(3)
-  })
-
-  it('scatters stars only in the open sky, below the header and above the far hills', () => {
-    const layout = layoutScene(measure())
-    const grid = gridFor(layout.width, layout.height)
-    const ink = new Float32Array(grid.cols * grid.rows)
-    for (let c = 0; c < grid.cols; c++) ink[10 * grid.cols + c] = 1
-    const stars = placeStars(layout, grid, ink)
-    expect(stars.length).toBeGreaterThan(20)
-    for (const star of stars) {
-      const row = Math.floor(star.i / grid.cols)
-      expect(row).not.toBe(10)
-      expect(row * grid.ch).toBeGreaterThanOrEqual(layout.header * 0.4)
-      expect(row * grid.ch).toBeLessThanOrEqual(layout.horizon - layout.sky * 0.08)
-    }
   })
 })
 
