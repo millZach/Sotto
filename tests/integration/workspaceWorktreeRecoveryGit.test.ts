@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -54,4 +54,27 @@ describe("durable project/thread organization", () => {
     }
   })
 
+  it('repairs on Refresh a thread folder a Git removal left half done (#1297)', async () => {
+    const f = await fixture()
+    const repository = f.adapters.codex.state.projects[0]!.path
+    await writeFile(join(repository, 'tracked.txt'), 'baseline')
+    await initializeGitRepository(repository, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    await local(f)
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'
+    f.adapters.codex.emit()
+    await f.host.snapshot()
+    const worktree = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.worktree!
+    // What a `git worktree remove` killed at its deadline left: no `.git`, some files gone, Git's registration kept.
+    await rm(join(worktree.path!, '.git'))
+    await rm(join(worktree.path!, 'tracked.txt'))
+    expect(await git(repository, ['worktree', 'list', '--porcelain'])).toMatch(/prunable/u)
+
+    const refreshed = (await f.host.updateThreadWorktree('local', false)).threads.find(thread => thread.id === 'local')!.worktree!
+    expect(refreshed).toMatchObject({ status: 'ready', branch: worktree.branch, reclaimedAt: undefined, dirty: false })
+    expect(await readFile(join(worktree.path!, 'tracked.txt'), 'utf8')).toBe('baseline')
+    expect(await git(repository, ['worktree', 'list', '--porcelain'])).not.toMatch(/prunable|locked/u)
+    expect(await f.host.execute(send())).toEqual({ accepted: true })
+  })
 })

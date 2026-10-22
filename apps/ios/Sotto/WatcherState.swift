@@ -313,25 +313,13 @@ struct WatcherReaderPlace: Equatable {
         guard abs(spare) > 1 else { return 0 }
         return min(max((wanted - top) / spare, 0), 1)
     }
-
-    /// Whether the box puts Watcher's permission chip away for the card the reader is on. Watcher's own card never does:
-    /// its request is about Watcher's permissions, so the chip is part of what the reader needs beside it. A thread's card
-    /// does only when it can't sit whole between the header and the box with the chip over the box, as a question with its
-    /// answers can't on a small phone. A card that fits keeps the chip. The room is always the one with the chip in place,
-    /// never the one putting it away leaves, so putting the chip away never brings it back.
-    /// - Parameters:
-    ///   - card: the held card's frame; `own`, whether it is Watcher's own card; `top`, the bottom of the header.
-    ///   - dockTopWithChip: the top of the box with the chip over it.
-    static func putsChipAway(card: CGRect, own: Bool, top: CGFloat, dockTopWithChip: CGFloat) -> Bool {
-        !own && card.height > dockTopWithChip - top + 1
-    }
 }
 
 // MARK: - Words
 
 enum WatcherWords {
     /// The bar's owl, which goes to the top of Watcher's page.
-    static let toTop = "Go to the top, where Watcher’s state is"
+    static let toTop = "Go to the top, where Watcher’s state and permissions are"
     /// What Watcher did, in a word or two.
     static func action(_ action: String) -> String {
         switch action {
