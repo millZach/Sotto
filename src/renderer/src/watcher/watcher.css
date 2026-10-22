@@ -380,12 +380,13 @@
 
 /* ---------- New Watcher ---------- */
 /* Zach's pick A of the New Watcher prototype: one of the composer's own chips, first in its footer where an ordinary
-   thread says where it runs. Unavailable, it is dimmed by colour rather than opacity, so its focus ring keeps full
-   strength, and it stays in the Tab order so its reason can be heard. */
+   thread says where it runs. Unavailable, its words keep the muted text colour, which holds 4.5:1 on the composer, and
+   it says so by its edge instead: a dashed hairline, its icon dimmed, no hover fill and the not-allowed cursor. Its focus
+   ring keeps full strength, and it stays in the Tab order so its reason can be heard. */
 .thread-chip.watcher-new { flex: none; padding: 0 10px 0 9px; }
 .thread-chip.watcher-new[aria-disabled='true'], .thread-chip.watcher-new[aria-disabled='true']:hover {
-  border-color: color-mix(in srgb, var(--tt-field-border) 55%, transparent); background: transparent;
-  color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); cursor: not-allowed; }
+  border-style: dashed; border-color: var(--tt-field-border); background: transparent; color: var(--tt-text-muted); cursor: not-allowed; }
+.thread-chip.watcher-new[aria-disabled='true'] > svg { color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
 
 /* ---------- The handover after a provider change or New Watcher (ADR-0073) ---------- */
 /* Zach's pick B of the continue prototype, in place: a strip over the new Watcher's composer, edged in the accent, says
