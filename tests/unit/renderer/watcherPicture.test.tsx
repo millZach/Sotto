@@ -166,7 +166,9 @@ describe("Watcher's picture in its room", () => {
     const { publish } = renderRoom({ status: 'ok', queue: [], turns: [] })
     await screen.findByRole('button', { name: /^Footer links: / })
     publish(roomState({ receipts: [send('accepted')], observedAt: new Date(NOW + 1_000).toISOString() }))
-    await waitFor(() => expect(document.querySelector('.watcher-picture__mark')).not.toBeNull(), { timeout: 3_000 })
+    // The send is held until the next merge read, which waits three seconds after the one opening the room made, and at
+    // most four: the mark comes when either ends, so the wait is generous rather than the gap itself (#1358).
+    await waitFor(() => expect(document.querySelector('.watcher-picture__mark')).not.toBeNull(), { timeout: 10_000 })
     expect(document.querySelector('.watcher-picture__blob')).toBeNull()
     expect(document.querySelector('.watcher-picture__mark [data-kind]')).toHaveAttribute('data-kind', 'steer')
   })
