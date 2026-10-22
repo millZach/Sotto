@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { ArrowUp, ChevronDown, List } from 'lucide-react'
+import { ArrowUp, ChevronDown, List, Waypoints } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -45,23 +45,28 @@ import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type Watche
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { unlistedStatus, WatcherWatchedView, watchedCount } from './WatcherWatched'
+import { WatcherPicture } from './WatcherPicture'
 import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
 
-const ROOM_TABS: readonly RoomTab[] = ['conversation', 'watched']
+const ROOM_TABS: readonly RoomTab[] = ['conversation', 'watched', 'visualize']
 const TAB_KEYS: Readonly<Record<string, (index: number) => number>> = {
   ArrowLeft: index => (index + ROOM_TABS.length - 1) % ROOM_TABS.length, ArrowRight: index => (index + 1) % ROOM_TABS.length,
   Home: () => 0, End: () => ROOM_TABS.length - 1,
 }
 
+/** The tabs' and their panels' IDs, for each panel to be named by its tab. */
+interface TabIds { readonly watchedTab: string; readonly watchedPanel: string; readonly pictureTab: string; readonly picturePanel: string }
+
 /**
- * Conversation and Watched, beside All threads, once Watcher runs (Zach's pick on October 13, 2026, watch B): what
- * Watcher's pane shows, its conversation or the threads it watches, with how many it watches. The count replaces "2 of
- * 4 watched", since watching has no limit; the arrow keys move between the two, as the room switch's do.
+ * Conversation, Watched and Visualize, beside All threads, once Watcher runs (Zach's picks on October 13, 2026, watch B,
+ * and October 22, the picture as a third tab): what Watcher's pane shows, its conversation, the threads it watches with
+ * how many, or its picture of them (#1339). The count replaces "2 of 4 watched", since watching has no limit; the arrow
+ * keys move between the tabs, as the room switch's do.
  */
-function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: number; readonly ids: { readonly watchedTab: string; readonly watchedPanel: string } }): ReactNode {
+function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: number; readonly ids: TabIds }): ReactNode {
   const list = useRef<HTMLDivElement>(null)
   const show = (next: RoomTab): void => roomView.set({ tab: next })
   return <div ref={list} className="watcher-tabs" role="tablist" aria-label="Watcher’s view"
@@ -79,6 +84,10 @@ function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: 
       aria-controls={tab === 'watched' ? ids.watchedPanel : undefined} aria-label={`Watched, ${count} ${count === 1 ? 'thread' : 'threads'}`} onClick={() => show('watched')}>
       Watched<span className="watcher-tabs__count" aria-hidden="true">{count}</span>
     </button>
+    <button type="button" role="tab" data-tab="visualize" id={ids.pictureTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'visualize'} tabIndex={tab === 'visualize' ? 0 : -1}
+      aria-controls={tab === 'visualize' ? ids.picturePanel : undefined} aria-label="Visualize" title="See what Watcher is doing as a picture" onClick={() => show('visualize')}>
+      <Waypoints size={14} className="watcher-tabs__icon" aria-hidden="true" /><span className="watcher-tabs__label">Visualize</span>
+    </button>
   </div>
 }
 
@@ -87,7 +96,7 @@ interface HeaderParts {
   readonly room: WatcherRoom | null
   readonly count: number
   readonly tab: RoomTab
-  readonly tabIds: { readonly watchedTab: string; readonly watchedPanel: string }
+  readonly tabIds: TabIds
   readonly listOpen: boolean
   readonly listButton: React.RefObject<HTMLButtonElement | null>
   readonly onToggleList: () => void
@@ -412,7 +421,9 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const [focusedPane, setFocusedPane] = useState<'watcher' | 'beside'>('watcher')
   const watchedTab = useId()
   const watchedPanel = useId()
-  const tabIds = useMemo(() => ({ watchedTab, watchedPanel }), [watchedTab, watchedPanel])
+  const pictureTab = useId()
+  const picturePanel = useId()
+  const tabIds = useMemo(() => ({ watchedTab, watchedPanel, pictureTab, picturePanel }), [watchedTab, watchedPanel, pictureTab, picturePanel])
   const area = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -563,7 +574,8 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   else if (watcherRow === undefined) watcherContent = room.state?.creationStopped === true ? <>{header}<WatcherStartStopped room={room} /></> : status('Opening Watcher…')
   else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} describe={describe} press={press} answering={answering} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
     watched={tab === 'watched' ? <WatcherWatchedView room={room} state={state} groups={groups} id={watchedPanel} labelledBy={watchedTab} onOpen={openThread}
-      onShowAll={from => toggleList(from, true)} /> : null}
+      onShowAll={from => toggleList(from, true)} />
+      : tab === 'visualize' ? <WatcherPicture room={room} state={state} entries={entries} id={picturePanel} labelledBy={pictureTab} onOpen={openThread} /> : null}
     focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
 
   // The night scene behind the room while it is empty: the first entry with its composer, or Watcher's conversation
@@ -589,7 +601,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
       <div className="thread-workspace__body">
         <div className="thread-panes">
           <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
+            <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} />

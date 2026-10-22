@@ -908,11 +908,35 @@ export type AgentModelCatalogBroadcast =
   | { revision: number; models: AgentModel[] }
   | AgentModelCatalogRevision
 export type AgentClientHostBroadcast = Omit<AgentClientHost, 'models'> & { models: AgentModelCatalogBroadcast }
-export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts'> & {
+/**
+ * `host.threads` as it crosses the `AGENT_STATE` broadcast (issue #1330, ADR-0028's October 22 amendment): the thread
+ * records that changed since the last broadcast the window was sent, not every one. `base` names the broadcast these
+ * changes are measured from; a window that holds another one cannot apply them and reads `AGENT_GET` instead, which
+ * also tells main to send the next broadcast complete. A complete one has a null `base` and every record in `changed`,
+ * in order. Like the catalogs, nothing parses this shape: the page puts the whole ordered array back
+ * (`src/renderer/src/agents/agentStateThreads.ts`) before any reader sees the state.
+ */
+export interface AgentThreadsBroadcast {
+  /** Names this broadcast's threads, for the next one to be measured from. Main's counter only advances. */
+  revision: number
+  /** The broadcast these changes are measured from, or null when `changed` is every thread. */
+  base: number | null
+  /** Each thread record new or changed since `base`, whole; every record, in order, when `base` is null. */
+  changed: AgentThread[]
+  /** The Sotto thread IDs of threads `base` had and this broadcast does not. Absent when none went. */
+  removed?: string[]
+  /** Every thread's Sotto ID in order, when the order or the threads differ from `base`'s. Absent when they do not. */
+  order?: string[]
+}
+export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
   models: AgentModelCatalogBroadcast
   clientHosts?: AgentClientHostBroadcast[]
+  threads: AgentThreadsBroadcast
 }
-/** What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`. */
+/**
+ * What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`
+ * and its threads by `AgentThreadsBroadcast`.
+ */
 export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
 
 const PRIMARY_CATALOG_KEY = '__primary__'

@@ -1,6 +1,7 @@
 import type { AgentClientHost, AgentFollowup, AgentMessage, AgentThread } from '../../../shared/agents'
 import type { AgentBabysitEnded, AgentBabysitting, BabysitEndedReason } from '../../../shared/babysitting'
 import { pullRequestKey } from '../../../shared/gitPullRequests'
+import { localeFormatter } from './localeFormat'
 
 /**
  * What the window says about babysitting (ADR-0061, variant C): the Pull request surface's line, the sidebar row's
@@ -47,8 +48,10 @@ export function babysittingWord(thread: Pick<AgentThread, 'babysitting'>): strin
   return numbers.length > 2 ? `Babysitting ${numbers.length} pull requests` : `Babysitting ${pullRequestNumbers(numbers)}`
 }
 
-const time = (at: Date): string => at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLocaleLowerCase()
-const day = (at: Date): string => at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+const clockTime = localeFormatter({ hour: 'numeric', minute: '2-digit' })
+const shortDay = localeFormatter({ month: 'short', day: 'numeric' })
+const time = (at: Date): string => clockTime(at).toLocaleLowerCase()
+const day = (at: Date): string => shortDay(at)
 /** A moment as "2:02 pm" today, or "Oct 7, 2:02 pm" before; empty when it cannot be read. */
 export function babysitClock(iso: string, now = new Date()): string {
   const at = new Date(iso)

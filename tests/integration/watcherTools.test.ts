@@ -1814,6 +1814,18 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
 })
 
+/**
+ * Changes a thread on the coordinator's copy at once. Its thread records are the workspace's publication, frozen
+ * (ADR-0016, October 22), so the record is replaced in the copy's own thread list rather than written into.
+ */
+function reshow(f: Awaited<ReturnType<typeof fixture>>, threadId: string, change: (thread: AgentThread) => AgentThread): void {
+  const threads = f.control.watcherSnapshot().threads
+  const at = threads.findIndex(thread => thread.id === threadId)
+  threads[at] = change(threads[at]!)
+}
+const showLinks = (f: Awaited<ReturnType<typeof fixture>>, threadId: string, links: NonNullable<AgentThread['pullRequests']>): void =>
+  reshow(f, threadId, thread => ({ ...thread, pullRequests: links }))
+
 /** A worker's linked pull request and GitHub's read of its checks: news that wakes Watcher on its own. */
 function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: string) {
   const url = 'https://github.com/synthetic/project/pull/5'
@@ -1821,7 +1833,7 @@ function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: strin
   // The workspace's record holds a thread's links, so a later snapshot keeps them; the coordinator's copy shows them now.
   const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
   record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
-  f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  showLinks(f, threadId, links)
   return { url, read: { url, head: 'synthetic-head', observedAt: new Date().toISOString(), availability: 'available' as const, checks: 'failed' as const, checkCount: 1 } }
 }
 
@@ -1829,11 +1841,10 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const target = f.service.state().current!.target
-  const master = f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
   expect(f.control.canDeliverWatcherNews(target)).toBe(true) // Busy is queueable.
   expect(f.control.canDeliverWatcherNews({ ...target, hostId: randomUUID() })).toBe(false)
-  if (unavailable === 'workspace-settled') master.workspaceSettledAt = new Date().toISOString()
-  if (unavailable === 'archived') master.archivedAt = new Date().toISOString()
+  if (unavailable === 'workspace-settled') reshow(f, f.id, master => ({ ...master, workspaceSettledAt: new Date().toISOString() }))
+  if (unavailable === 'archived') reshow(f, f.id, master => ({ ...master, archivedAt: new Date().toISOString() }))
   if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)()
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = false
   expect(f.control.canDeliverWatcherNews(target)).toBe(false)
@@ -1841,7 +1852,7 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
   await f.service.wakes.drained()
   expect(deliver).not.toHaveBeenCalled()
-  delete master.workspaceSettledAt; delete master.archivedAt
+  reshow(f, f.id, master => { const recovered = { ...master }; delete recovered.workspaceSettledAt; delete recovered.archivedAt; return recovered })
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = true
   if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)
   f.service.wakes.observe()
@@ -1950,7 +1961,7 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   const link = (threadId: string, links: ReturnType<typeof pr>[]) => {
     const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
     record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
-    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+    showLinks(f, threadId, links)
   }
   link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true)])
   link(second.target.threadId, [pr(7, 'open')])
@@ -1963,6 +1974,8 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   if (read.status !== 'ok') throw new Error('read refused')
   // The draft passed first but is not queued; the rest go in the order their checks passed.
   expect(read.mergeQueue.map(item => [item.target.threadId, item.pullRequest.number])).toEqual([[second.target.threadId, 7], [first.target.threadId, 5]])
+  // Watcher's picture reads the same queue, worked out without building the room (#1339).
+  expect(f.service.readMergeTurns()).toEqual({ status: 'ok', queue: read.mergeQueue, turns: [] })
   expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
     expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' })])
   expect(read.staleNotes).toEqual([
@@ -1987,7 +2000,7 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
     const links = Array.from({ length: 20 }, (_, index) => ({ url: `https://github.com/synthetic/project/pull/${at * 20 + index + 1}`, number: at * 20 + index + 1,
       title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }))
     record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
-    f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+    showLinks(f, threadId, links)
   })
   for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,
     observedAt: new Date(Date.now() + number * 1_000).toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
@@ -2122,4 +2135,27 @@ it('asks Watcher to read its state after any Compact context for its conversatio
   expect(f.service.stateNote()).toContain('call read_state')
   await f.call('read_state', {})
   expect(f.service.stateNote()).toBeUndefined()
+})
+
+it('remembers a send that gives a thread its merge turn for the picture alone, and sends it as any other (#1339)', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  expect(f.service.readMergeTurns()).toEqual({ status: 'ok', queue: [], turns: [] })
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now' as const, text: 'Synthetic GO MERGE #1291' }
+  const sent = await f.call('send_to_thread', { ...input, mergeTurn: { pullRequest: 1291 } })
+  if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('send refused')
+  // The send went as it would have unmarked: the same words, and the record keeps no new key, so an older build reads it.
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith('Synthetic GO MERGE #1291'))).toBe(true))
+  const operation = f.service.state().receipts.find(item => item.id === sent.receipt.operationId)!
+  expect(Object.keys(operation)).not.toContain('mergeTurn')
+  expect(watcherRecordSchema.safeParse(f.control.watcherRecord()).success).toBe(true)
+  // A retry of the same call without the mark reads the same receipt: the mark is not part of what the send is.
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'ok', receipt: { operationId: sent.receipt.operationId } })
+  expect(f.service.readMergeTurns()).toMatchObject({ status: 'ok', turns: [{ operationId: sent.receipt.operationId, target: first.target, pullRequest: 1291 }] })
+  // A plain send is no merge turn.
+  const plain = await f.call('send_to_thread', { ...input, retryKey: randomUUID(), delivery: 'queue', text: 'Synthetic check-in' })
+  expect(plain).toMatchObject({ status: 'ok' })
+  expect(f.service.readMergeTurns()).toMatchObject({ turns: [{ pullRequest: 1291 }] })
+  expect((f.service.readMergeTurns() as { turns: unknown[] }).turns).toHaveLength(1)
 })
