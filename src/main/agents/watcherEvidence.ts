@@ -49,6 +49,12 @@ export class WatcherEvidenceStore {
    * only: after a restart a fact is first seen again, so what Watcher was told before is not told again for it.
    */
   private readonly returning = new Map<string, Map<string, { returns: number; present: boolean }>>()
+  /**
+   * When Sotto first saw each pull request's checks pass on the commit they passed on, by its checks slot (#1274): a
+   * read only refreshes the time a fact was seen, so the time it began is kept here, for Watcher's merge queue. In memory
+   * only: after a restart a pass counts from Sotto's first read of it.
+   */
+  private readonly passing = new Map<string, Map<string, { head: string | undefined; since: string }>>()
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
     const id = evidenceIdentity(slot, input)
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
@@ -56,6 +62,7 @@ export class WatcherEvidenceStore {
     const item = parsed.data
     const key = targetKey(item.target), entries = this.entries.get(key) ?? new Map<string, WatcherEvidence>()
     const previous = entries.get(slot)
+    if (slot.endsWith(':checks')) this.notePassing(key, slot, item, previous)
     // Clock-only refreshes preserve ordering; only a real change becomes a recent fact.
     if (previous?.id !== id) entries.delete(slot)
     entries.set(slot, item)
@@ -75,6 +82,26 @@ export class WatcherEvidenceStore {
         ...connected && unread?.availability === 'unavailable' && (unread.reason === 'read-failed' || unread.reason === 'rate-limited') ? { freshness: 'stale' as const, availability: 'unavailable' as const, ...(unread.reason ? { reason: unread.reason } : {}) } : {},
       }
     })
+  }
+  private notePassing(key: string, slot: string, item: WatcherEvidence, previous: WatcherEvidence | undefined): void {
+    const passing = this.passing.get(key) ?? new Map<string, { head: string | undefined; since: string }>()
+    const kept = passing.get(slot)
+    if (item.checksState !== 'passed') passing.delete(slot)
+    else if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
+    while (passing.size > EVIDENCE_CACHE_MAX) passing.delete(passing.keys().next().value!)
+    if (passing.size) this.passing.set(key, passing); else this.passing.delete(key)
+  }
+  /**
+   * Since when a pull request's checks have passed on the commit it is on, as Sotto first saw them pass, or undefined
+   * while they have not: what its evidence says now decides, so a pass a newer head or a failing read ended is gone.
+   */
+  checksPassedSince(target: WatcherThreadTarget, url: string): string | undefined {
+    const key = targetKey(target), entries = this.entries.get(key), link = pullRequestKey(url) ?? url
+    for (const prefix of ['pr:', 'host:github:']) {
+      const slot = `${prefix}${link}:checks`, item = entries?.get(slot), kept = this.passing.get(key)?.get(slot)
+      if (item?.checksState === 'passed' && kept && kept.head === item.headId) return kept.since
+    }
+    return undefined
   }
   knownIdentities(target: WatcherThreadTarget): string[] {
     return [...this.entries.get(targetKey(target))?.values() ?? []]
@@ -165,6 +192,7 @@ export class WatcherEvidenceStore {
     for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key)
     for (const key of this.attending.keys()) if (!targets.has(key)) this.attending.delete(key)
     for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
+    for (const key of this.passing.keys()) if (!targets.has(key)) this.passing.delete(key)
   }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false

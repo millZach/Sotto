@@ -11,7 +11,7 @@ afterEach(() => { cleanup(); gate.usage = false })
 describe('Usage navigation', () => {
   it.each([true, false])('asks the feature answer before adding a page link (%s)', enabled => {
     gate.usage = enabled
-    render(<><AppShell navigation="history" platform="win32" onMaximize={() => undefined} onMinimize={() => undefined} onClose={() => undefined}><p>Room</p></AppShell><PageLinks className="pages" linkClassName="page" /></>)
+    render(<><AppShell navigation="help" platform="win32" onMaximize={() => undefined} onMinimize={() => undefined} onClose={() => undefined}><p>Room</p></AppShell><PageLinks className="pages" linkClassName="page" /></>)
     expect(screen.queryAllByRole('link', { name: 'Usage' })).toHaveLength(enabled ? 2 : 0)
   })
   it('uses the existing sidebar beside Usage and the Threads page when its feature is hidden', () => {

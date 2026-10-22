@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { FAILURES_SEEN_MAX, FailuresSeen } from '../../../src/main/agents/failuresSeen'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 
-type Shape = Partial<Pick<AgentThread, 'status' | 'requests' | 'lastTurn' | 'clientConnected' | 'settledAt'>>
+type Shape = Partial<Pick<AgentThread, 'status' | 'requests' | 'lastTurn' | 'clientConnected' | 'settledAt' | 'workspaceSettledAt' | 'projectId'>>
 
 function thread(id: string, shape: Shape = {}): AgentThread {
   return { id, title: id, projectId: 'project', modelId: 'model', status: 'idle', messages: [], requests: [], ...shape }
@@ -15,7 +15,7 @@ function thread(id: string, shape: Shape = {}): AgentThread {
 function snapshot(threads: AgentThread[], extra: Partial<AgentHostSnapshot> = {}): AgentHostSnapshot {
   return { ...structuredClone(EMPTY_AGENT_HOST), connected: true, threads, ...extra }
 }
-const failed = (id: string, turn = 't1'): AgentThread => thread(id, { status: 'error', lastTurn: { id: turn, status: 'failed' } })
+const failed = (id: string, turn = 't1', shape: Shape = {}): AgentThread => thread(id, { status: 'error', lastTurn: { id: turn, status: 'failed' }, ...shape })
 const permission = { id: 'p1', kind: 'permission' as const, text: 'Run the build?', options: [] }
 /** What a client names for Dismiss all: each thread with the failure the host published for it, read from these threads. */
 function rows(seen: FailuresSeen, threads: AgentThread[], ...ids: string[]): { threadId: string; failure: string }[] {
@@ -242,5 +242,30 @@ describe('a failed thread a client has seen', () => {
     expect(seen.publish({ ...thread('b'), failureSeen: true, failureId: 'old' })).toEqual(thread('b'))
     const same = thread('b')
     expect(seen.publish(same)).toBe(same)
+  })
+})
+
+describe('a settled failed thread (#1279)', () => {
+  const at = '2026-10-21T12:00:00.000Z'
+  it('is seen once it is settled in the workspace, by itself or by its project', () => {
+    const seen = new FailuresSeen()
+    seen.track(snapshot([failed('a'), failed('b', 't1', { projectId: 'other' }), failed('c')]))
+    expect(seen.has('a')).toBe(false)
+    const projects = [{ id: 'other', title: 'Other', path: '/other', workspaceSettledAt: at }]
+    expect(seen.track(snapshot([failed('a', 't1', { workspaceSettledAt: at }), failed('b', 't1', { projectId: 'other' }), failed('c')], { projects }))).toBe(true)
+    expect(seen.has('a')).toBe(true)
+    expect(seen.has('b')).toBe(true)
+    expect(seen.has('c')).toBe(false)
+    // Restoring it brings nothing back: the failure was seen.
+    seen.track(snapshot([failed('a')]))
+    expect(seen.has('a')).toBe(true)
+    expect(seen.publish(failed('a'))).toMatchObject({ failureSeen: true })
+  })
+
+  it('is seen when it fails while settled, but one that asks is still the user\'s to answer', () => {
+    const seen = new FailuresSeen()
+    seen.track(snapshot([failed('a', 't1', { workspaceSettledAt: at }), failed('b', 't1', { workspaceSettledAt: at, requests: [permission] })]))
+    expect(seen.has('a')).toBe(true)
+    expect(seen.has('b')).toBe(false)
   })
 })

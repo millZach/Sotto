@@ -57,13 +57,13 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
     { title: 'Transcription', body: <p>A speech model transcribes your speech on this computer. Choose it in Settings → Transcription: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</p> },
   ]
   const privacy: Topic[] = [
-    { title: 'Privacy', body: <p>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. History stays on this computer.</p> },
+    { title: 'Privacy', body: <p>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer.</p> },
   ]
   const troubleshooting: Topic[] = [
     { title: 'Microphone access', body: <p>{copy.helpMicrophoneAccess}</p> },
     { title: 'Paste fallback', body: <p>{copy.helpPasteFallback}</p> },
     ...(copy.accessibilityHelp === null ? [] : [{ title: 'Paste permissions', body: <p>{copy.accessibilityHelp}</p> }]),
-    { title: 'Reset safely', body: <p>Resetting settings reopens first-run setup, but does not clear transcript history. Use the separate History controls when you want to remove saved text.</p> },
+    { title: 'Reset safely', body: <p>Resetting settings reopens first-run setup, but does not clear transcript history. Delete a transcript, or use Clear history in the Dictate room or in Settings, when you want to remove saved text.</p> },
   ]
 
   return (
@@ -84,7 +84,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
             <dl className="help-keys">
               {linux ? null : <div><dt>Start or stop dictation</dt><dd><ShortcutKey accelerator={shortcut} platform={platform} /></dd></div>}
               {!linux && <div><dt>Cancel recording</dt><dd><kbd className="tt-kbd">Esc</kbd></dd></div>}
-              <div><dt>Search history</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
+              <div><dt>Search transcripts</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
               <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{linux ? 'Super' : modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
             </dl>
           </section>

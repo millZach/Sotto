@@ -172,6 +172,18 @@ export function loopbackServerUrl(said: string): string | undefined {
 }
 /** Readiness is read from the first lines a server prints; anything past this is never held. */
 const READY_SCAN_BYTES = 64 * 1024
+/**
+ * How long a start that failed waits for its server to be gone before it says why. Ending it takes a moment, and on
+ * Windows a look at the process table for what it left; a server that will not end does not hold the answer forever.
+ */
+const FAILED_START_STOP_MS = 5_000
+/** Settles once `work` has, or after `ms`, whichever comes first. */
+function settledWithin(work: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise(done => {
+    const timer = setTimeout(done, ms); timer.unref()
+    void work.then(() => { clearTimeout(timer); done() }, () => { clearTimeout(timer); done() })
+  })
+}
 
 export interface OpenCodeServerLaunch {
   readonly executable: string
@@ -189,7 +201,8 @@ export interface OpenCodeServerLaunch {
  * One `opencode serve --hostname=127.0.0.1 --port=0` (ADR-0038, ADR-0087), started with its own password. It is ready
  * once it prints the address it listens on; the address is all Sotto reads from its output, and nothing it prints is
  * kept or logged, since OpenCode prints a generated password when it is given none. It stops with its whole process
- * tree, because a running tool's processes outlive a server stopped alone on Windows.
+ * tree, because a running tool's processes outlive a server stopped alone on Windows. A start that fails stops it the
+ * same way and says why only once it has gone.
  */
 export class OpenCodeServer {
   readonly closed: Promise<void>
@@ -229,8 +242,9 @@ export class OpenCodeServer {
         if (ready) return
         ready = true; clearTimeout(timer)
         launch.log?.('opencode-server-failed')
-        void killTree(child, closed, startedAt).then(forget, forget)
-        reject(error)
+        // Why it failed is told once the server and what it left are gone, so nothing of it still runs in its folder when
+        // the caller hears. A stop that cannot finish is waited for only so long, and carries on after.
+        void settledWithin(killTree(child, closed, startedAt).then(forget, forget), FAILED_START_STOP_MS).then(() => reject(error))
       }
       const timer = setTimeout(() => fail(new OpenCodeUncertain('OpenCode did not start in time.')), launch.timeoutMs)
       child.stdout!.setEncoding('utf8')

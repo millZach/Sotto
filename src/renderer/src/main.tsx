@@ -9,7 +9,7 @@ import './styles/global.css'
 import './agents/threads.css'
 import './agents/threadSidebar.css'
 import './agents/threadsChrome.css'
-import './features/history/history.css'
+import './features/dictate/dictate.css'
 import './styles/crossing-settings.css'
 import { applyAppearance, readCachedAppearance } from './state/appearance'
 

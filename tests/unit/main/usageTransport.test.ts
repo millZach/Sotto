@@ -41,6 +41,24 @@ describe('Usage routing', () => {
       expect(second.service.usageRefresh).toHaveBeenCalledWith(['grok'])
     } finally { router.dispose() }
   })
+  it('reads a provider held to Owl from no computer, and every provider when none is held', async () => {
+    const held = new DesktopHostRouter(emptyDesktopState, { heldProviders: new Set(['muse']) })
+    const open = new DesktopHostRouter(emptyDesktopState, { heldProviders: new Set() })
+    const first = connection(LOCAL), second = connection(LOCAL)
+    held.add(first); open.add(second)
+    try {
+      await held.usageRead({ timeZone: 'UTC' })
+      expect(first.service.usageRead).toHaveBeenLastCalledWith({ timeZone: 'UTC', providerIds: ['codex', 'claude', 'grok', 'devin', 'opencode'] })
+      await held.usageRead({ providerIds: ['muse'] })
+      expect(first.service.usageRead).toHaveBeenLastCalledWith({ providerIds: [] })
+      await held.usageRefresh({ providerIds: ['muse', 'codex'] })
+      expect(first.service.usageRefresh).toHaveBeenLastCalledWith(['codex'])
+      await open.usageRead({ timeZone: 'UTC' })
+      expect(second.service.usageRead).toHaveBeenLastCalledWith({ timeZone: 'UTC' })
+      await open.usageRefresh({})
+      expect(second.service.usageRefresh).toHaveBeenLastCalledWith(undefined)
+    } finally { held.dispose(); open.dispose() }
+  })
   it('returns partial failures, saved offline hosts and unsupported connections without a wire call', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     const first = connection(LOCAL), old = connection(REMOTE, { supportsUsage: false })
@@ -140,12 +158,30 @@ describe('Usage transport boundary', () => {
     call.mockResolvedValue({ ...result, activity: { text: 'bad reply' } } as never)
     await expect(client.usageRead({})).rejects.toThrow()
   })
+  it('names Muse and OpenCode only to a host that counts them', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired' }), call = vi.fn(async () => result)
+    Object.assign(client, { features: ['usage-dashboard', 'usage-history'], call })
+    await client.usageRead({ providerIds: ['muse', 'codex', 'opencode'] })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { providerIds: ['codex'] } }, undefined, undefined, 15000)
+    // Only Muse chosen: an earlier host has none of its work, and an empty filter reads nothing rather than everything.
+    await client.usageRead({ providerIds: ['muse'] })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { providerIds: [] } }, undefined, undefined, 15000)
+    await client.usageRead({})
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: {} }, undefined, undefined, 15000)
+    await client.usageRefresh(['muse', 'grok'])
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['grok'] }, undefined, undefined, 15000)
+    Object.assign(client, { features: ['usage-dashboard', 'usage-history', 'usage-muse-opencode'] })
+    await client.usageRead({ providerIds: ['muse', 'opencode'] })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { providerIds: ['muse', 'opencode'] } }, undefined, undefined, 15000)
+    await client.usageRefresh(['muse'])
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['muse'] }, undefined, undefined, 15000)
+  })
   it('adds strict optional v1 operations without changing old operations', () => {
     const base = { v: 1, id: 'request', session: 'authenticated' }
     expect(hostRequestSchema.safeParse({ ...base, op: 'shell' }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'usage-read', query: { timeZone: 'UTC', providerIds: ['codex'] } }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'usage-read', query: { hostIds: [LOCAL] } }).success).toBe(false)
-    expect(hostRequestSchema.safeParse({ ...base, op: 'usage-refresh', providerIds: Array(5).fill('codex') }).success).toBe(false)
+    expect(hostRequestSchema.safeParse({ ...base, op: 'usage-refresh', providerIds: Array(7).fill('codex') }).success).toBe(false)
     expect(hostRequestSchema.safeParse({ ...base, op: 'usage-clear', request: { expectedRevision: 1, approved: true } }).success).toBe(false)
   })
   it('registers nothing on stable and authorizes bounded main-window requests before invoking the service', async () => {

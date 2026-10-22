@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 
-import type { TrayIconSource } from '../../../src/main/platformProfile'
+import { MAC_TRAY_GUID, type TrayIconSource } from '../../../src/main/platformProfile'
 import { createTrayResource } from '../../../src/main/tray/trayIcon'
 import { getReleaseTrack, releaseTrackName } from '../../../src/shared/releaseTrack'
 
@@ -46,8 +46,9 @@ function createHarness(
     markTemplate: vi.fn((templateIcon: typeof icon) => {
       void templateIcon
     }),
-    createTray: vi.fn((trayIcon: typeof icon) => {
+    createTray: vi.fn((trayIcon: typeof icon, guid: string | null) => {
       void trayIcon
+      void guid
       if (options.failCreate === true) throw new Error('secret native tray detail')
       return tray
     }),
@@ -61,6 +62,7 @@ function createOptions(
   source: TrayIconSource,
   tooltip = 'Sotto',
   unpackagedIconPath: string | null = null,
+  guid: string | null = null,
 ) {
   return {
     source,
@@ -71,6 +73,7 @@ function createOptions(
       `/Applications/Sotto.app/Contents/Resources/${relativePath}`,
     loadImageIcon: harness.loadImageIcon,
     markTemplate: harness.markTemplate,
+    guid,
     createTray: harness.createTray,
     tooltip,
   }
@@ -84,7 +87,7 @@ describe('createTrayResource', () => {
     expect(harness.loadImageIcon).toHaveBeenCalledExactlyOnceWith(options.resolveResourcePath('icon.png'))
     expect(harness.getFileIcon).not.toHaveBeenCalled()
     expect(harness.markTemplate).not.toHaveBeenCalled()
-    expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon, null)
   })
 
   it('loads and validates the executable icon before constructing the tray', async () => {
@@ -99,7 +102,7 @@ describe('createTrayResource', () => {
     })
     expect(harness.loadImageIcon).not.toHaveBeenCalled()
     expect(harness.markTemplate).not.toHaveBeenCalled()
-    expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon, null)
     expect(harness.tray.setToolTip).toHaveBeenCalledWith('Sotto')
   })
 
@@ -122,7 +125,7 @@ describe('createTrayResource', () => {
     expect(harness.loadImageIcon).toHaveBeenCalledWith('C:/Sotto/build/icon.ico')
     expect(harness.getFileIcon).not.toHaveBeenCalled()
     expect(harness.markTemplate).not.toHaveBeenCalled()
-    expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon, null)
   })
 
   it('fails with a finite error when the unpackaged brand icon is missing', async () => {
@@ -174,8 +177,19 @@ describe('createTrayResource', () => {
     )
     expect(harness.getFileIcon).not.toHaveBeenCalled()
     expect(harness.markTemplate).toHaveBeenCalledWith(harness.icon)
-    expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon, null)
     expect(harness.tray.setToolTip).toHaveBeenCalledWith('Sotto')
+  })
+
+  it('creates the macOS tray under its fixed identity', async () => {
+    const harness = createHarness()
+
+    await createTrayResource(
+      createOptions(harness, TEMPLATE_SOURCE, 'Sotto', null, MAC_TRAY_GUID),
+    )
+
+    expect(harness.createTray).toHaveBeenCalledOnce()
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon, MAC_TRAY_GUID)
   })
 
   it.each([

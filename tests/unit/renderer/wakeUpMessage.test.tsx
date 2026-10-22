@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentFollowup, AgentMessage, AgentState } from '../../../src/shared/agents'
 import { isWakeUpFollowup, isWakeUpMessage, messageSpeaker, wakeUpMarkdown } from '../../../src/renderer/src/agents/babysitting'
-import { MessageList, QueuedMessage, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
+import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { ThreadFollowups } from '../../../src/renderer/src/agents/ThreadFollowups'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -98,17 +98,5 @@ describe('a wake-up waiting in the follow-up queue', () => {
     expect(screen.getByRole('button', { name: 'Move queued message 1 down' })).not.toHaveAttribute('aria-disabled')
     fireEvent.click(within(wakeUp).getByRole('button', { name: 'Remove the wake-up from the queue' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'remove-followup', threadId: 'footer-links', itemId: 'w' }))
-  })
-
-  it('is echoed in the transcript as Sotto’s, word for word, where it will go', () => {
-    render(<QueuedMessage item={followup('w', WAKE_UP, true)} />)
-    const echo = screen.getByRole('article', { name: 'Queued wake-up from Sotto' })
-    expect(echo).toHaveAttribute('data-from', 'sotto')
-    expect(echo.querySelector('header')).toHaveTextContent('SottoWake-upQueued')
-    expect(echo).toHaveTextContent('- Check CI / *build* failed')
-    expect(echo.querySelector('ul')).toBeNull()
-    cleanup()
-    render(<QueuedMessage item={followup('a', 'Then add a changelog entry.')} />)
-    expect(screen.getByRole('article', { name: 'Queued message' }).querySelector('header')).toHaveTextContent('You')
   })
 })

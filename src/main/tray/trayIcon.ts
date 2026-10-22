@@ -29,7 +29,9 @@ export interface CreateTrayResourceOptions<
   readonly resolveResourcePath: (relativePath: string) => string
   readonly loadImageIcon: (path: string) => Icon
   readonly markTemplate: (icon: Icon) => void
-  readonly createTray: (icon: Icon) => TrayResource
+  /** Passed to `createTray` as the tray's fixed identity; null leaves it to the system. */
+  readonly guid: string | null
+  readonly createTray: (icon: Icon, guid: string | null) => TrayResource
   /** What the tray's tooltip names: the running build, "Sotto", or "Sotto Owl" on that track. */
   readonly tooltip: string
 }
@@ -77,7 +79,7 @@ export async function createTrayResource<
     if (options.source.kind === 'template') {
       options.markTemplate(icon)
     }
-    tray = options.createTray(icon)
+    tray = options.createTray(icon, options.guid)
     tray.setToolTip(options.tooltip)
     return tray
   } catch {

@@ -43,8 +43,10 @@ export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
     let group: WatcherGroup = 'Idle'
     const project = state.host.projects.find(project => project.id === thread.projectId && project.hostId === thread.hostId)
     if (!isThreadClosed(thread)) {
-      if (thread.requests.length || thread.status === 'error' || thread.lastTurn?.status === 'failed') group = 'Needs you'
-      else if (!isWorkspaceThreadSettled(thread, project)) {
+      // A settled thread was put aside: only a question or permission still waits on the user there, not an error.
+      const settled = isWorkspaceThreadSettled(thread, project)
+      if (thread.requests.length || !settled && (thread.status === 'error' || thread.lastTurn?.status === 'failed')) group = 'Needs you'
+      else if (!settled) {
         const landingAt = Date.parse(observation?.landing?.observedAt ?? '')
         const landing = available && observation?.fresh && observation.landing?.fresh && Number.isFinite(landingAt) && landingAt <= now
         const openPr = thread.pullRequests?.some(pr => pr.state === 'open') || thread.worktree?.git?.pullRequest?.state === 'open'

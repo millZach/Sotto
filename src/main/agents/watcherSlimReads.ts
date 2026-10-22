@@ -62,6 +62,17 @@ function addressShared(items: readonly { url: string; summary: WatcherPullReques
   return items.map(({ url, summary }) => summary.number !== undefined && counts.get(summary.number)! > 1 && summary.url === undefined ? { ...summary, url } : summary)
 }
 
+/**
+ * A thread's open pull requests as its links list them, each with its summary from what the evidence says, its address
+ * kept when another shares its number: the open pull requests of a slim roster row and of read_state (#1274).
+ */
+export function watcherOpenPullRequests<P extends { readonly number: number; readonly url: string; readonly state: 'open' | 'closed' | 'merged' }>(
+  pullRequests: readonly P[], evidence: readonly WatcherEvidence[]): { pr: P; summary: WatcherPullRequestSummary }[] {
+  const said = summariesByKey(evidence), open = pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
+  const summaries = addressShared(open.map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
+  return open.map((pr, index) => ({ pr, summary: summaries[index]! }))
+}
+
 type Rows = Extract<WatcherToolOutput<'list_threads'>, { status: 'ok' }>['rows']
 type FullRow = Extract<Rows[number], { evidence: unknown }>
 /**
@@ -69,9 +80,7 @@ type FullRow = Extract<Rows[number], { evidence: unknown }>
  * it, and its open pull requests' summaries in place of every evidence fact.
  */
 export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false) {
-  const said = summariesByKey(row.evidence)
-  const open = addressShared(row.pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
-    .map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
+  const open = watcherOpenPullRequests(row.pullRequests, row.evidence).map(item => item.summary)
   // Why it needs the user or is not watched: its last turn's failure, and its newest participation's takeover or stop.
   const latest = row.participation.at(-1)
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
