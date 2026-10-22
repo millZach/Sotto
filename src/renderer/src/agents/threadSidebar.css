@@ -46,7 +46,7 @@
 .thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px 10px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
 .threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
 .threads-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
-.threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--threads-field); font-size: 13px; font-weight: 400; }
+.threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--threads-field); font-size: 13.5px; font-weight: 400; }
 .threads-search .tt-input::-webkit-search-cancel-button { display: none; }
 .threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; translate: 0 -50%; }
 /* Needs attention: how many failed turns no client has shown, under the search, with Dismiss all beside it (ADR-0092).
@@ -62,7 +62,7 @@
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
-.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; font-size: 12.5px; text-align: left; cursor: pointer; }
+.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; font-size: 13.5px; text-align: left; cursor: pointer; }
 .thread-nav__settled:hover { background: var(--threads-hover); color: var(--tt-text); }
 .thread-nav__settled > span { color: var(--tt-text-2); }
 .thread-folder__chevron { flex: none; transition: transform .16s ease; }
@@ -109,7 +109,7 @@
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; }
 @media (hover: none) { .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; } }
 .thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
-.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 30px; padding: 0 8px 0 10px; border-radius: 7px; }
+.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 34px; padding: 0 8px 0 10px; border-radius: 7px; }
 .thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
 /* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
    fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
@@ -127,13 +127,13 @@
 :root[data-theme='light'] .thread-nav__mark[data-provider='devin'] { --threads-provider-fill: var(--tt-provider-devin); }
 .thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
 .thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
-.thread-nav__rename { font-size: 13px; font-weight: 500; }
+.thread-nav__rename { font-size: 14px; font-weight: 500; }
 .thread-workspace__rename { font-size: inherit; font-weight: inherit; }
 :is(.thread-nav__rename, .thread-workspace__rename)[aria-invalid] { border-color: var(--tt-danger, #d46a6a); }
 /* 14px is the floor for a row title: the 760px window recomposes around it and never shrinks the type. */
-.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
 .thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
-.thread-nav__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-nav__time { color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* What a row that wants you says where the clock would be; the whole sentence is the row's accessible description. */
 .thread-nav__needs { max-width: 96px; overflow: hidden; color: var(--tt-attention); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__row:is(:hover, :focus-within, [data-current]) :is(.thread-nav__time, .thread-nav__needs) { visibility: hidden; }
@@ -180,7 +180,7 @@
 .thread-nav__expanded { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .thread-nav__expanded[hidden] { display: none; }
 .thread-nav__collapse { flex: none; -webkit-app-region: no-drag; }
-.thread-nav[data-mode='threads'] .thread-folder__toggle { font-size: 14px; font-weight: 500; }
+.thread-nav[data-mode='threads'] .thread-folder__toggle { font-size: 14.5px; font-weight: 500; }
 .thread-nav[data-mode='threads'] .thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: block; }
 .thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
 .thread-folder__head:is(:hover, :focus-within) .thread-folder__count { visibility: hidden; }

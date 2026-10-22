@@ -30,7 +30,7 @@
    the switch takes the first line at full width and the icons sit under it, the update control last. */
 .thread-nav__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; margin-top: auto; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
 .thread-nav__foot .thread-nav__seg { display: flex; flex: 1 0 100%; }
-.thread-nav__foot .thread-nav__seg button { flex: 1; padding: 0 9px; }
+.thread-nav__foot .thread-nav__seg button { flex: 1; height: 28px; padding: 0 9px; font-size: 14px; }
 .thread-nav__pages { display: flex; align-items: center; }
 .thread-nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--tt-text-muted); text-decoration: none; }
 .thread-nav__page:hover, .thread-nav__page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }
