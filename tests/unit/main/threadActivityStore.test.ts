@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentActivity } from '../../../src/shared/agentActivity'
+import { agentActivitySchema, type AgentActivity } from '../../../src/shared/agentActivity'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
 
@@ -209,6 +209,42 @@ describe('thread activity store', () => {
     store.close()
     store.open()
     expect(store.readActivities('thread')).toEqual(records)
+  })
+
+  it('hands out what the disk holds, checked once, in the same content and order from every read (#1333)', async () => {
+    const { path, store } = await fixture()
+    store.syncActivities('thread', [activity('a'), activity('b'), activity('c')])
+    store.close()
+    // A row as an older or newer Sotto might have left it: fields out of order and one this schema does not know.
+    const payload = { status: 'completed', unknownField: 'dropped', output: 'Rewritten', title: 'Run tests', kind: 'command', sequence: 4, turnId: 'turn', id: 'b' }
+    inspect(path).prepare('UPDATE activities SET payload = ? WHERE thread_id = ? AND activity_id = ?').run(JSON.stringify(payload), 'thread', 'b')
+    store.open()
+    const expected = [activity('a'), agentActivitySchema.parse(payload), activity('c')]
+    const unkept = store.readActivities('thread', { keep: false })
+    const fromDisk = store.readActivities('thread')
+    const held = store.readActivities('thread')
+    for (const read of [unkept, fromDisk, held]) {
+      expect(read).toEqual(expected)
+      expect(JSON.stringify(read)).toBe(JSON.stringify(expected))
+    }
+    expect(held[1]).not.toHaveProperty('unknownField')
+    expect(held).not.toBe(fromDisk)
+    expect(held[0]).not.toBe(fromDisk[0])
+    expect(held[0]!.steps).not.toBe(fromDisk[0]!.steps)
+  })
+
+  it('checks a record against the schema when it comes off the disk and not again on each later read (#1333)', async () => {
+    const { store } = await fixture()
+    store.syncActivities('thread', Array.from({ length: 5 }, (_, index) => activity(`work-${index}`)))
+    store.close()
+    store.open()
+    const parse = vi.spyOn(agentActivitySchema, 'parse')
+    expect(store.readActivities('thread')).toHaveLength(5)
+    expect(parse).toHaveBeenCalledTimes(5)
+    parse.mockClear()
+    store.readActivities('thread')
+    store.readActivities('thread', { keep: false })
+    expect(parse).not.toHaveBeenCalled()
   })
 
   it('rolls back both rows and cached comparisons when a write fails, including an epoch reset', async () => {

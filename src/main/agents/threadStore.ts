@@ -8,6 +8,7 @@ import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
+import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
@@ -477,13 +478,19 @@ export class ThreadStore {
   /**
    * A caller owns its returned records, including nested plan steps and file changes. With `keep: false` a read of records
    * this store does not hold leaves them unheld, for a caller that only looks (#918).
+   *
+   * Every held record was checked against the schema when it came off the disk or was saved, so a read hands out a copy
+   * of it rather than checking it again: checking each of two thousand records twice was a quarter of the longest freezes
+   * main had (#1333). The copy keeps the caller's records apart from the held ones, which a later save compares against;
+   * it shares the strings, so it costs a few milliseconds where the second check cost tens. A read runs when a stored
+   * thread is first looked at, for an adapter or for Watcher, never on each update.
    */
   readActivities(threadId: string, options: { keep?: boolean } = {}): AgentActivity[] {
     const held = this.activityStates.get(threadId)
     if (held === undefined && options.keep === false) {
       return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(storedActivity)
     }
-    return [...(held ?? this.activityState(threadId)).records.values()].map(({ activity }) => agentActivitySchema.parse(activity))
+    return clonePlainData(Array.from((held ?? this.activityState(threadId)).records.values(), ({ activity }) => activity))
   }
 
   /** The identities of a thread's stored records, read without the records. */
