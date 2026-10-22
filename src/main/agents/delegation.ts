@@ -379,28 +379,43 @@ export class DelegationService {
    * or main names the thread.
    */
   views(threadId: string): { readonly made: DelegationView[]; readonly received: DelegatedView[] } {
-    const made: DelegationView[] = [], received: DelegationRecord[] = []
-    const refused = this.refusals.filter(item => item.delegatingThreadId === threadId)
-    let finished = 0, next = refused.length - 1
+    return this.viewsOf([threadId]).get(threadId)!
+  }
+  /**
+   * `views` for several threads in one pass over the record, newest first, so a read that needs many threads' views,
+   * as the iPhone's Agents view does (ADR-0103), costs one walk of the history however many rows it shows.
+   */
+  viewsOf(threadIds: readonly string[]): ReadonlyMap<string, { readonly made: DelegationView[]; readonly received: DelegatedView[] }> {
+    interface Reading { readonly made: DelegationView[]; readonly received: DelegationRecord[]; readonly refused: RefusedDelegation[]; finished: number; next: number }
+    const readings = new Map<string, Reading>()
+    for (const threadId of threadIds) if (!readings.has(threadId)) readings.set(threadId, { made: [], received: [], refused: [], finished: 0, next: 0 })
+    for (const item of this.refusals) readings.get(item.delegatingThreadId)?.refused.push(item)
+    for (const reading of readings.values()) reading.next = reading.refused.length - 1
     // Newest first through both lists at once: a refusal is a finished delegation that never started.
-    const refusedAfter = (createdAt: string): void => {
-      for (; next >= 0 && refused[next]!.createdAt > createdAt; next--) {
-        if (finished < DELEGATION_VIEWS_MAX && made.length < DELEGATION_VIEWS_MAX * 2) { made.push(this.refusedView(refused[next]!)); finished++ }
+    const refusedAfter = (reading: Reading, createdAt: string): void => {
+      for (; reading.next >= 0 && reading.refused[reading.next]!.createdAt > createdAt; reading.next--) {
+        if (reading.finished < DELEGATION_VIEWS_MAX && reading.made.length < DELEGATION_VIEWS_MAX * 2) { reading.made.push(this.refusedView(reading.refused[reading.next]!)); reading.finished++ }
       }
     }
     for (let index = this.records.length - 1; index >= 0; index--) {
       const record = this.records[index]!
-      if (record.delegatingThreadId === threadId) {
-        refusedAfter(record.createdAt)
-        if ((finished < DELEGATION_VIEWS_MAX || this.open(record)) && made.length < DELEGATION_VIEWS_MAX * 2) {
-          made.push(this.view(record))
-          if (!this.open(record)) finished++
+      const making = readings.get(record.delegatingThreadId)
+      if (making) {
+        refusedAfter(making, record.createdAt)
+        if ((making.finished < DELEGATION_VIEWS_MAX || this.open(record)) && making.made.length < DELEGATION_VIEWS_MAX * 2) {
+          making.made.push(this.view(record))
+          if (!this.open(record)) making.finished++
         }
       }
-      if (record.delegatedThreadId === threadId && received.length < DELEGATION_VIEWS_MAX) received.push(record)
+      const receiving = readings.get(record.delegatedThreadId)
+      if (receiving && receiving.received.length < DELEGATION_VIEWS_MAX) receiving.received.push(record)
     }
-    refusedAfter('')
-    return { made: made.reverse(), received: received.reverse().map(record => this.view(record)) }
+    const views = new Map<string, { readonly made: DelegationView[]; readonly received: DelegatedView[] }>()
+    for (const [threadId, reading] of readings) {
+      refusedAfter(reading, '')
+      views.set(threadId, { made: reading.made.reverse(), received: reading.received.reverse().map(record => this.view(record)) })
+    }
+    return views
   }
   /**
    * The newest brief `threadId` was sent that Sotto still holds, for Tools › Agents when a row is opened: the user
@@ -408,13 +423,19 @@ export class DelegationService {
    * snapshot, and never a reply. Undefined when none is held, as with Keep local history off after a restart.
    */
   brief(threadId: string): string | undefined {
-    for (let index = this.records.length - 1; index >= 0; index--) {
+    return this.briefsOf([threadId]).get(threadId)
+  }
+  /** `brief` for several threads in one pass over the record, newest first, stopping once each has its brief. */
+  briefsOf(threadIds: readonly string[]): ReadonlyMap<string, string> {
+    const wanted = new Set(threadIds), briefs = new Map<string, string>()
+    for (let index = this.records.length - 1; index >= 0 && briefs.size < wanted.size; index--) {
       const record = this.records[index]!
-      if (record.delegatedThreadId !== threadId || record.deliveryState === 'queued') continue
+      const threadId = record.delegatedThreadId
+      if (!wanted.has(threadId) || briefs.has(threadId) || record.deliveryState === 'queued') continue
       const message = this.options.host.threadMessage(threadId, record.messageId)
-      if (message?.role === 'user') return message.text.slice(0, DELEGATION_BRIEF_MAX)
+      if (message?.role === 'user') briefs.set(threadId, message.text.slice(0, DELEGATION_BRIEF_MAX))
     }
-    return undefined
+    return briefs
   }
   /**
    * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,

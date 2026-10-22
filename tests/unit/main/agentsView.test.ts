@@ -9,13 +9,19 @@ import type { DelegatedView, DelegationView, RefusedView } from '../../../src/sh
 const view = (thread: string, fields: Partial<DelegatedView> = {}): DelegatedView => ({ id: randomUUID(), thread, action: 'start', work: 'code-review',
   rootUserMessageId: 'root', anchorMessageId: 'root', briefMessageId: 'brief', outcome: 'working', told: false, createdAt: '2026-10-21T10:00:00.000Z', waiting: false, ...fields })
 
-/** A delegation record that answers from fixed views, and counts how often each thread's are read. */
+/** A delegation record that answers from fixed views, and keeps each read it is asked for. */
 function record(made: Record<string, DelegationView[]>, received: Record<string, DelegatedView[]> = {}, briefs: Record<string, string> = {}) {
-  const reads = new Map<string, number>()
+  const viewReads: string[][] = [], briefReads: string[][] = []
   return {
-    reads,
-    views(threadId: string) { reads.set(threadId, (reads.get(threadId) ?? 0) + 1); return { made: made[threadId] ?? [], received: received[threadId] ?? [] } },
-    brief: (threadId: string) => briefs[threadId],
+    viewReads, briefReads,
+    viewsOf(threadIds: readonly string[]) {
+      viewReads.push([...threadIds])
+      return new Map(threadIds.map(id => [id, { made: made[id] ?? [], received: received[id] ?? [] }]))
+    },
+    briefsOf(threadIds: readonly string[]) {
+      briefReads.push([...threadIds])
+      return new Map(threadIds.flatMap(id => briefs[id] === undefined ? [] : [[id, briefs[id]!] as const]))
+    },
   }
 }
 
@@ -34,8 +40,22 @@ describe('the iPhone’s read of a thread’s delegated threads (ADR-0103)', () 
       { thread: 'check', by: 'review', work: 'research', outcome: 'stopped', startedAt: '2026-10-21T10:06:00.000Z', outcomeAt: '2026-10-21T10:07:00.000Z', waiting: false, brief: 'Check the retry docs.' },
     ] })
     expect(JSON.stringify(read)).not.toContain('reply')
-    // Each thread's record is read once, and a thread below another owner's never.
-    expect(Object.fromEntries(delegation.reads)).toEqual({ owner: 1, review: 1 })
+    // The record is read once for every row's views and once for their briefs, and a thread below another owner's never.
+    expect(delegation.viewReads).toEqual([['owner', 'review', 'check']])
+    expect(delegation.briefReads).toEqual([['review', 'check']])
+  })
+
+  it('reads the record once for views and once for briefs however many rows it shows', () => {
+    const made: Record<string, DelegationView[]> = { owner: [] }, threads: { id: string, delegatedBy?: string }[] = [{ id: 'owner' }]
+    for (let index = 0; index < 40; index++) {
+      const thread = `agent-${index}`, child = `helper-${index}`
+      made.owner!.push(view(thread)); made[thread] = [view(child)]
+      threads.push({ id: thread, delegatedBy: 'owner' }, { id: child, delegatedBy: thread })
+    }
+    const delegation = record(made)
+    expect(threadDelegations(delegation, threads, 'owner').threads).toHaveLength(80)
+    expect(delegation.viewReads).toHaveLength(1)
+    expect(delegation.briefReads).toHaveLength(1)
   })
 
   it('reads a start its delegating thread’s record no longer holds from the thread’s own, and leaves out a thread the record does not know', () => {

@@ -224,6 +224,11 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
   // Opening its roster row reads the whole brief it was sent from its own record, never the reply.
   expect(f.service.brief(waiting.thread)).toBe('Synthetic brief')
   expect(f.service.brief('another-thread')).toBeUndefined()
+  // The iPhone's Agents view reads many threads' views and briefs in one pass each, and they agree with the one-thread reads.
+  const many = f.service.viewsOf([parent, waiting.thread, 'another-thread'])
+  expect([...many.keys()]).toEqual([parent, waiting.thread, 'another-thread'])
+  for (const threadId of [parent, waiting.thread, 'another-thread']) expect(many.get(threadId)).toEqual(f.service.views(threadId))
+  expect(f.service.briefsOf([waiting.thread, 'another-thread'])).toEqual(new Map([[waiting.thread, 'Synthetic brief']]))
   // A call that waits for nothing goes on at once; the card says the answer comes later.
   f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, work: 'research' }))
   expect(f.service.views(parent).made[1]).toMatchObject({ outcome: 'working', waiting: false, wait: { seconds: 0, wentOnAt: expect.any(String) } })
