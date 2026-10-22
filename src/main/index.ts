@@ -118,6 +118,7 @@ import { createPasteCommands } from './output/pasteCommand'
 import { createHyprlandPasteAdapter, sanitizeLinuxPasteText } from './output/pasteCommand.linux'
 import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
+import { createHyprlandFocusedApp, createLsappinfoFocusedApp } from './output/focusedApp'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
@@ -135,6 +136,7 @@ import { e2eUpdater } from './updates/e2eUpdater'
 import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
+import type { HistoryLogEvent } from './storage/historyRepository'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
 import {
   WidgetPlacementRepository,
@@ -302,7 +304,8 @@ type NativeDiagnostic =
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
-  | 'history-temp-cleanup-failed'
+  | HistoryLogEvent
+  | 'delivered-app-unreadable'
   | 'checkpoint-unavailable'
   | 'worktree-cleanup-reclaimed'
   | 'worktree-cleanup-skipped'
@@ -1196,6 +1199,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     buildPasteInvocation: pasteCommands.oneShot,
     keepWidgetVisibleDuringPaste: platform === 'linux',
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
+    // The delivered app (ADR-0100). A test run delivers into Sotto's own window.
+    readFocusedApp: e2eConfiguration !== null
+      ? async () => 'Sotto'
+      : platform === 'win32'
+        ? async () => warmPaste?.readForegroundApp() ?? null
+        : platform === 'darwin' ? createLsappinfoFocusedApp() : createHyprlandFocusedApp(),
+    log: logOperational,
   })
   // Copy image waits for any dictation still being pasted, and only an image Electron can read reaches the clipboard.
   // A test run never touches the real clipboard. Linux goes through wl-copy like text does. Under Wayland a wl-copy

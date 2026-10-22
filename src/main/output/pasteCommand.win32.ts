@@ -91,11 +91,106 @@ ${PASTE_TYPE_DEFINITION}
 if (-not [SottoPaste]::SendCtrlV()) { exit 1 }
 exit 0`
 
+// The delivered app (ADR-0100): the display name of the process that owns the
+// foreground window, from its file description, then its product name, then
+// its file name. Nothing is read from the window or the app itself, no title
+// and no contents, and no permission is involved. A UWP app's window belongs to
+// Application Frame Host, so its hosted process is named instead.
+// It compiles in the helper's one Add-Type, after the usings it adds.
+const FOREGROUND_USINGS = `using System.Diagnostics;
+using System.IO;
+using System.Text;`
+
+const FOREGROUND_TYPE_DEFINITION = `public static class SottoForeground
+{
+    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc callback, IntPtr parameter);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder name, ref uint size);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    private static string ImagePath(uint processId)
+    {
+        IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            StringBuilder path = new StringBuilder(1024);
+            uint size = (uint)path.Capacity;
+            return QueryFullProcessImageName(process, 0, path, ref size) ? path.ToString() : null;
+        }
+        finally
+        {
+            CloseHandle(process);
+        }
+    }
+
+    public static string AppName()
+    {
+        IntPtr window = GetForegroundWindow();
+        if (window == IntPtr.Zero) return null;
+        uint processId;
+        GetWindowThreadProcessId(window, out processId);
+        if (processId == 0) return null;
+        string path = ImagePath(processId);
+        if (path == null) return null;
+        if (string.Equals(Path.GetFileName(path), "ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            uint hosted = 0;
+            EnumChildWindows(window, delegate (IntPtr child, IntPtr parameter)
+            {
+                uint childProcess;
+                GetWindowThreadProcessId(child, out childProcess);
+                if (childProcess == 0 || childProcess == processId) return true;
+                hosted = childProcess;
+                return false;
+            }, IntPtr.Zero);
+            string hostedPath = hosted == 0 ? null : ImagePath(hosted);
+            if (hostedPath != null) path = hostedPath;
+        }
+        string name = null;
+        try
+        {
+            FileVersionInfo info = FileVersionInfo.GetVersionInfo(path);
+            name = string.IsNullOrWhiteSpace(info.FileDescription) ? info.ProductName : info.FileDescription;
+        }
+        catch
+        {
+            name = null;
+        }
+        if (string.IsNullOrWhiteSpace(name)) name = Path.GetFileNameWithoutExtension(path);
+        return name;
+    }
+}`
+
 // Long-lived helper: pays the Add-Type compile (~750 ms) once at spawn, then
-// answers 'paste' commands over stdin in a few milliseconds each.
+// answers 'paste' commands over stdin in a few milliseconds each, and 'app'
+// with the delivered app's name in base64 UTF-8, or 'app' alone without one.
 const PASTE_HELPER_SCRIPT = `$ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
+${FOREGROUND_USINGS}
 ${PASTE_TYPE_DEFINITION}
+
+${FOREGROUND_TYPE_DEFINITION}
 '@
 
 $reader = [Console]::In
@@ -105,6 +200,14 @@ $writer.Flush()
 while ($true) {
   $line = $reader.ReadLine()
   if ($null -eq $line -or $line -eq 'exit') { break }
+  if ($line -eq 'app') {
+    $name = $null
+    try { $name = [SottoForeground]::AppName() } catch { $name = $null }
+    if ([string]::IsNullOrWhiteSpace($name)) { $writer.WriteLine('app') }
+    else { $writer.WriteLine('app ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($name))) }
+    $writer.Flush()
+    continue
+  }
   if ($line -ne 'paste') { continue }
   $accepted = $false
   try { $accepted = [SottoPaste]::SendCtrlV() } catch { $accepted = $false }
