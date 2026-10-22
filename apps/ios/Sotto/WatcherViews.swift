@@ -18,6 +18,8 @@ struct WatcherView: View {
     @EnvironmentObject var model: AppModel
     let hostID: String
     @State private var section = Pane.conversation
+    /// Counts presses on the bar's owl, each of which takes the open pane to its top, where Watcher's hero is.
+    @State private var toTop = 0
     @State private var stopPreview: WatcherStopPreview?
     @State private var reviewing: ReviewedCard?
     enum Pane: Hashable { case conversation, watched }
@@ -25,11 +27,11 @@ struct WatcherView: View {
     var body: some View {
         Group {
             switch section {
-            case .conversation: WatcherConversationPane(hostID: hostID) { reviewing = $0 }
-            case .watched: WatchedPane(hostID: hostID, stopAll: prepareStop)
+            case .conversation: WatcherConversationPane(hostID: hostID, toTop: toTop) { reviewing = $0 }
+            case .watched: WatchedPane(hostID: hostID, toTop: toTop, stopAll: prepareStop)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { WatcherHeader(hostID: hostID, section: $section) }
+        .safeAreaInset(edge: .top, spacing: 0) { WatcherBar(hostID: hostID, section: $section) { toTop += 1 } }
         .background(Palette.canvas)
         .background(TabItemAccessibility(title: "Watcher", value: model.watcherTab.spoken))
         .navigationTitle("Watcher")
@@ -76,19 +78,70 @@ struct WatcherView: View {
 
 // MARK: - Header
 
-/// Watcher's name, its model and computer, its state, and Conversation | Watched, pinned over the page in glass.
-private struct WatcherHeader: View {
+/// The slim bar pinned over Watcher's page in glass (#1275, Zach's pick A of
+/// `docs/prototypes/iphone-watcher-room-prototype.html`): the owl, which goes to the top of the page where Watcher's hero
+/// is, and Conversation | Watched. Watcher's name, state and computer scroll away with the page, in `WatcherHero`, so
+/// the conversation has the room, as a thread's title does on its page.
+private struct WatcherBar: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    let hostID: String
+    @Binding var section: WatcherView.Pane
+    let toTop: () -> Void
+    var body: some View {
+        let page = model.watcherPage(hostID)
+        HStack(spacing: Space.s2) {
+            owl
+            SectionSwitch(section: $section, watched: page?.watched.count ?? 0)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.top, Space.s1)
+        .padding(.bottom, Space.s2)
+        .background {
+            // Glass that reaches up under the status bar, rounded where it meets the page.
+            Color.clear
+                .glass(in: UnevenRoundedRectangle(bottomLeadingRadius: Radius.xl, bottomTrailingRadius: Radius.xl, style: .continuous))
+                .ignoresSafeArea(edges: .top)
+        }
+    }
+    /// Once the hero has scrolled off, Watcher's state is the light on the owl, and VoiceOver reads it as the owl's value.
+    private var owl: some View {
+        let state = WatcherStatePill.state(model, hostID)
+        return Button(action: toTop) {
+            WatcherOwlMark(size: 22)
+                .foregroundStyle(Palette.ink)
+                .frame(width: 44, height: 44)
+                .background(Palette.fillSoft, in: Circle())
+                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                .overlay(alignment: .topTrailing) {
+                    Light(tone: state.tone, size: 7, breathing: state.tone == .accent)
+                        .padding(2)
+                        .background(Palette.raised, in: Circle())
+                        .offset(x: -1, y: 2)
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(WatcherWords.toTop)
+        .accessibilityValue(state.word)
+        .accessibilityIdentifier("watcher-to-top")
+    }
+}
+
+/// Watcher's name, its state, and its model and computer, at the top of each of its panes, where they scroll away with
+/// the page as a thread's title does (#1275, pick A). The bar's owl brings them back.
+private struct WatcherHero: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dynamicTypeSize) private var typeSize
     let hostID: String
-    @Binding var section: WatcherView.Pane
+    /// Where the bar's owl scrolls each pane to.
+    static let id = "watcher-hero"
     var body: some View {
-        let page = model.watcherPage(hostID)
-        VStack(alignment: .leading, spacing: Space.s3) {
-            // The state sits beside the name, as the design draws it, and a long model line wraps under the name rather
-            // than push the state onto a row of its own. At accessibility sizes the state goes under the name.
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // The state sits beside the name, as the design draws it. At accessibility sizes it goes under the name.
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: Space.s2) {
                     title
@@ -101,37 +154,26 @@ private struct WatcherHeader: View {
                     WatcherStatePill(hostID: hostID)
                 }
             }
-            SectionSwitch(section: $section, watched: page?.watched.count ?? 0)
+            if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
+            Rectangle().fill(Palette.hairline).frame(height: 1).padding(.top, Space.s2)
         }
-        .padding(.horizontal, Space.gutter)
-        .padding(.top, Space.s2)
-        .padding(.bottom, Space.s3)
-        .background {
-            // Glass that reaches up under the status bar, rounded where it meets the page.
-            Color.clear
-                .glass(in: UnevenRoundedRectangle(bottomLeadingRadius: Radius.xl, bottomTrailingRadius: Radius.xl, style: .continuous))
-                .ignoresSafeArea(edges: .top)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .id(Self.id)
     }
     private var title: some View {
         HStack(spacing: Space.s3) {
-            WatcherOwlMark(size: 24)
+            WatcherOwlMark(size: 28)
                 .foregroundStyle(Palette.ink)
-                .frame(width: 40, height: 40)
-                .background(Palette.raised, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                .frame(width: 48, height: 48)
+                .background(Palette.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Watcher").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
-                    .accessibilityAddTraits(.isHeader)
-                // Caption size, as the design draws it: at the small one the line pushed the state off the name's row on
-                // an iPhone SE.
-                if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
-            }
+            Text("Watcher").font(.sotto(.display, .bold)).tracking(-0.6).foregroundStyle(Palette.ink)
+                .accessibilityAddTraits(.isHeader)
         }
     }
     private var subtitleText: some View {
-        Text(subtitle).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+        Text(subtitle).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
     }
     /// With Watcher on more than one paired computer, the line naming the computer opens a menu of them.
     private var computerMenu: some View {
@@ -167,7 +209,7 @@ private struct WatcherStatePill: View {
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     var body: some View {
-        let state = self.state
+        let state = Self.state(model, hostID)
         HStack(spacing: 6) {
             Light(tone: state.tone, size: 7, breathing: state.tone == .accent)
             Text(state.word)
@@ -184,7 +226,7 @@ private struct WatcherStatePill: View {
         .accessibilityLabel("Watcher, " + state.word)
         .accessibilityIdentifier("watcher-state")
     }
-    private var state: (word: String, tone: Light.Tone, ink: ThemeRole, fill: ThemeRole) {
+    static func state(_ model: AppModel, _ hostID: String) -> (word: String, tone: Light.Tone, ink: ThemeRole, fill: ThemeRole) {
         guard model.online(hostID) else { return ("Can’t reach it", .off, Palette.muted, Palette.fillSoft) }
         guard let page = model.watcherPage(hostID), let current = page.current else { return ("Not started", .off, Palette.muted, Palette.fillSoft) }
         if page.needsYou.contains(where: { page.isOwn($0) }) { return ("Needs you", .warning, Palette.warningText, Palette.warning.opacity(Tint.accentPill)) }
@@ -305,10 +347,14 @@ private struct WatcherConversationPane: View {
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
+    /// Presses on the bar's owl: each one scrolls the page to its top, to Watcher's hero.
+    let toTop: Int
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var follow = WatcherFollow()
+    /// The height between the bar and the box, so a short conversation sits at the bottom with the hero still at the top.
+    @State private var visible: CGFloat = 0
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
@@ -329,6 +375,9 @@ private struct WatcherConversationPane: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                    // In to the page's gutter, as on Watched, rather than the conversation's narrower margin.
+                    WatcherHero(hostID: hostID).padding(.horizontal, Space.gutter - Space.s4)
+                    Spacer(minLength: 0)
                     notes(page)
                     if !items.isEmpty || sending != nil {
                         // The conversation and the words on their way, whose bottom is the newest words.
@@ -369,7 +418,7 @@ private struct WatcherConversationPane: View {
                 .padding(.horizontal, Space.s4)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s4)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: visible, alignment: .topLeading)
                 .background(reader { frame in
                     // A change of the page's height (new words, a card or a follow-up arriving or leaving, anywhere on
                     // the page) puts the card the reader is on back where they left it. Only a frame the page scrolled
@@ -418,6 +467,24 @@ private struct WatcherConversationPane: View {
                 resumeFollowing()
                 toNewest(proxy, to: newest)
             }
+            .onChange(of: toTop) { _, _ in toHero(proxy) }
+        }
+    }
+
+    /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
+    /// where they stand is decided again once the page has stopped.
+    private func toHero(_ scroll: ScrollViewProxy) {
+        let box = follow
+        box.followRequests += 1
+        box.missedFollow = false
+        box.held = nil
+        box.following = false
+        setHoldingCard(false)
+        let still = reduceMotion
+        withAnimation(still ? nil : .easeOut(duration: 0.35)) { scroll.scrollTo(WatcherHero.id, anchor: .top) }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: still ? 120_000_000 : 450_000_000)
+            if !box.userScrolling { settle() }
         }
     }
 
@@ -469,19 +536,25 @@ private struct WatcherConversationPane: View {
         GeometryReader { proxy in
             let bottom = proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
             Color.clear
-                .onAppear { follow.top = bottom }
-                .onChange(of: bottom) { _, value in follow.top = value }
+                .onAppear { follow.top = bottom; updateVisible() }
+                .onChange(of: bottom) { _, value in follow.top = value; updateVisible() }
         }
+    }
+    private func updateVisible() {
+        guard follow.dockTop < .greatestFiniteMagnitude / 2 else { return }
+        let next = max(0, follow.dockTop - follow.top)
+        if abs(next - visible) > 0.5 { visible = next }
     }
     /// The top of the box, which moves when it changes height or the keyboard opens or closes. A reader who saw the newest
     /// words before it moved still sees them after, and a reader on a card still sees all of it.
     private func dockReader(_ scroll: ScrollViewProxy, newest: String) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.dockTop = proxy.frame(in: .global).minY }
+                .onAppear { follow.dockTop = proxy.frame(in: .global).minY; updateVisible() }
                 .onChange(of: proxy.frame(in: .global).minY) { _, value in
                     let wasFollowing = follow.following
                     follow.dockTop = value
+                    updateVisible()
                     if wasFollowing { toNewest(scroll, to: newest) }
                     else if follow.held != nil { placeChip(); keepHeldCard(scroll, animated: true) }
                     else { settle() }
@@ -1373,13 +1446,25 @@ private struct WatchedPane: View {
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
+    /// Presses on the bar's owl: each one scrolls the page to its top, to Watcher's hero.
+    let toTop: Int
     let stopAll: () -> Void
     @State private var picking = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        ScrollViewReader { proxy in
+            list
+                .onChange(of: toTop) { _, _ in
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.35)) { proxy.scrollTo(WatcherHero.id, anchor: .top) }
+                }
+        }
+    }
+    private var list: some View {
         let page = model.watcherPage(hostID)
         let manages = model.offersWatcherManage(hostID)
-        ScrollView {
+        return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                WatcherHero(hostID: hostID).padding(.top, Space.s4)
                 FeedbackBanner().padding(.top, Space.s3)
                 if let page {
                     if manages { lead(page).padding(.top, Space.s4) } else { meterRow(page).padding(.top, Space.s4) }
