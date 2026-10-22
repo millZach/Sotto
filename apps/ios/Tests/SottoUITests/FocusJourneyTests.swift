@@ -643,6 +643,54 @@ import XCTest
         capture("thread-glow-top")
     }
 
+    /// A thread's pull request on an Owl computer (ADR-0102): the chip opens a sheet that reads it from GitHub, shows where
+    /// it stands, its failing check first with how long it took, and starts and stops babysitting. Once read, the chip
+    /// carries the checks.
+    func testThePullRequestChipOpensItsSheetAndBabysitsIt() {
+        launch(Self.fixture + ["--ui-pull-request"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let chip = app.buttons["pull-request-chip"]
+        scrollThread(to: chip, towardStart: true)
+        XCTAssertEqual(chip.label, "Show pull request 721, draft", "Before the sheet has read it, the chip says nothing of its checks")
+        XCTAssertTrue(text("Branch feat/frosted-window-and-pane-terminal").exists, "The branch and changes still read as one sentence")
+        chip.tap()
+
+        let title = byID("pull-request-title")
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "The sheet reads the pull request when it opens")
+        XCTAssertEqual(title.label, "Let the window frost and put a terminal in the bottom third")
+        XCTAssertTrue(byID("pull-request-standing-0").label.hasPrefix("A check failed"), "Where it stands starts with the checks")
+        XCTAssertTrue(byID("pull-request-standing-1").label.hasPrefix("Changes requested"))
+        XCTAssertTrue(byID("pull-request-standing-2").label.hasPrefix("3 commits behind main"))
+        capture("pull-request-sheet-top")
+
+        app.buttons["pull-request-jump-checks"].tap()
+        let failing = labelled("Gates (Windows), Failed, 14 minutes 2 seconds")
+        XCTAssertTrue(failing.waitForExistence(timeout: 5), "The failing check comes first, with how long it took")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Lint, Passed")).firstMatch.exists, "Passed checks fold away while one fails")
+        app.buttons["pull-request-passed-checks"].tap()
+        XCTAssertTrue(text("Lint, Passed").waitForExistence(timeout: 5), "Show passed opens them in place")
+        capture("pull-request-sheet-checks")
+
+        let babysit = app.buttons["babysit-pull-request"]
+        XCTAssertTrue(babysit.waitForExistence(timeout: 5), "Babysit pull request is docked at the bottom")
+        XCTAssertEqual(babysit.label, "Babysit pull request #721")
+        babysit.tap()
+        let stop = app.buttons["stop-babysitting"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5), "Once the computer babysits it, the dock offers Stop babysitting")
+        XCTAssertTrue(text("Babysitting since").exists)
+        capture("pull-request-sheet-babysitting")
+        stop.tap()
+        XCTAssertTrue(babysit.waitForExistence(timeout: 5), "Stopping offers Babysit pull request again")
+
+        app.buttons["pull-request-close"].tap()
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
+        let read = NSPredicate(format: "label == %@", "Show pull request 721, draft. Checks: 1 failing, 1 running, 2 passed")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: read, evaluatedWith: chip)], timeout: 5), .completed, "Once read, the chip says its checks")
+    }
+
     /// Each run of steps between two messages is one line. The working run names the step running now; a finished run
     /// says how many steps it had and how long they took. A press opens a run's steps in place and another folds them.
     func testARunOfStepsOpensInPlaceAndFoldsAgain() {

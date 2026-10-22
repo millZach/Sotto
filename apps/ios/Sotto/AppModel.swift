@@ -1157,9 +1157,9 @@ struct HeldDetail {
     @Published private var receiptFollowers: [String: ReceiptFollower] = [:]
     private struct ReceiptFollower { let token: UUID; let generation: UUID? }
     /// The kinds that read as sending. A thread or project creation keeps its own sheet and its own wait.
-    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "terminal-answer", "watcher-answer", "interrupt", "steer", "remove", "compact"]
+    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "terminal-answer", "watcher-answer", "interrupt", "steer", "remove", "compact", "babysit", "stop-babysitting"]
     /// The kinds whose refusal the computer says only in its shell's error, said here as feedback.
-    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact"]
+    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact", "babysit", "stop-babysitting"]
     /// A receipt the computer says is still being carried out is read again this often, this many times: about ten minutes.
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
@@ -1225,6 +1225,9 @@ struct HeldDetail {
     @Published private(set) var watcherPermissionPicks: [String: String] = [:]
     /// What the last Watch or Stop watching press did, said with Undo for a few seconds.
     @Published private(set) var watchNotice: WatchNotice?
+    /// Each pull request as this iPhone last read it while running, by computer and pull request, for the chip's dot
+    /// (ADR-0102). Kept in memory only, and read again whenever its sheet opens.
+    @Published private(set) var pullRequestReads: [String: PullRequestDetail] = [:]
     private var watchNoticeDismissal: Task<Void, Never>?
     /// This iPhone's own preferences: alert switches and new-thread defaults.
     var preferences = PhonePreferences()
@@ -1415,6 +1418,8 @@ struct HeldDetail {
             let shell = decode(Shell.self, shellObject)
             var features = arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"]
             if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature] }
+            // The pull request journey: the laptop is an Owl computer that offers the pull request sheet and babysitting.
+            if arguments.contains("--ui-pull-request") && host == laptop { features += [Self.pullRequestViewFeature, Self.babysitFeature] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         if watching {
@@ -3234,4 +3239,102 @@ struct HeldDetail {
             connections[hostID]?.disconnect(); feedback = words
         }
     }
+}
+
+// MARK: - A thread's pull request (ADR-0102)
+
+extension AppModel {
+    static let pullRequestViewFeature = "pull-request-view"
+    static let babysitFeature = "pull-request-babysit"
+    /// Whether this computer offers the pull request sheet: one whose Owl answer turns it on lists `pull-request-view`.
+    /// Without it the chip stays as it was, with no dot and no sheet.
+    func offersPullRequestSheet(_ hostID: String) -> Bool { live[hostID]?.features.contains(Self.pullRequestViewFeature) == true }
+    /// Whether the sheet offers Babysit pull request and Stop babysitting on this computer (ADR-0061).
+    func offersBabysitting(_ hostID: String) -> Bool {
+        offersPullRequestSheet(hostID) && live[hostID]?.features.contains(Self.babysitFeature) == true
+    }
+    private static func pullRequestReadKey(_ hostID: String, _ url: String) -> String? { PullRequests.key(url).map { hostID + "/" + $0 } }
+    /// The pull request as this iPhone last read it, or nil before its sheet has opened since the app started.
+    func lastPullRequest(_ ref: ThreadRef, url: String) -> PullRequestDetail? {
+        Self.pullRequestReadKey(ref.hostID, url).flatMap { pullRequestReads[$0] }
+    }
+    /// Reads the pull request from GitHub through the thread's computer: when its sheet opens, and when it is refreshed.
+    /// GitHub is never read ahead of time.
+    func readPullRequest(_ ref: ThreadRef, url: String) async throws -> PullRequestRead {
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            let detail = try JSONDecoder().decode(PullRequestDetail.self, from: JSONSerialization.data(withJSONObject: Self.fixturePullRequest(url: url)))
+            keepPullRequest(detail, on: ref.hostID)
+            return .detail(detail)
+        }
+        #endif
+        guard offersPullRequestSheet(ref.hostID), online(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
+            throw ClientError.rejected("\(name(ref.hostID)) can’t be reached, so the pull request wasn’t read. Reconnect and try again.")
+        }
+        let read = try await connection.call(try PullRequests.request(threadID: ref.threadID, url: url), as: PullRequestRead.self)
+        guard generations[ref.hostID] == epoch else { throw ClientError.disconnected }
+        if case .detail(let detail) = read { keepPullRequest(detail, on: ref.hostID) }
+        return read
+    }
+    private func keepPullRequest(_ detail: PullRequestDetail, on hostID: String) {
+        guard let key = Self.pullRequestReadKey(hostID, detail.url), pullRequestReads[key] != detail else { return }
+        pullRequestReads[key] = detail
+    }
+    /// The pull requests the thread babysits and why babysitting each last ended, as its computer says.
+    func babysitting(_ ref: ThreadRef) -> (current: [ThreadBabysitting], ended: [ThreadBabysitEnded]) {
+        let summary = self.thread(ref)
+        return (summary?.babysitting?.items ?? [], summary?.babysitEnded?.items ?? [])
+    }
+    /// A babysitting press on the thread still on its way to its computer, or not yet confirmed.
+    func babysitPress(_ ref: ThreadRef) -> PendingOperation? {
+        pending(for: ref).first { $0.kind == "babysit" || $0.kind == "stop-babysitting" }
+    }
+    func canChangeBabysitting(_ ref: ThreadRef) -> Bool { offersBabysitting(ref.hostID) && canAct(on: ref) }
+    /// The user's own Babysit pull request or Stop babysitting (ADR-0061). It grants nothing, and like any thread command
+    /// it is marked before it goes and never sent twice.
+    func setBabysitting(_ on: Bool, url: String, in ref: ThreadRef) async {
+        guard canChangeBabysitting(ref) else { return }
+        #if DEBUG && os(iOS)
+        if isUIFixture { babysitFixture(on, url: url, in: ref); return }
+        #endif
+        await act(on: ref, kind: on ? "babysit" : "stop-babysitting") { try Commands.babysit(threadID: ref.threadID, url: url, on: on) }
+    }
+
+    #if DEBUG && os(iOS)
+    /// The working thread's draft pull request in the pull request journey, as a host on the Owl track reads it.
+    private static func fixturePullRequest(url: String) -> [String: Any] {
+        let stamp = ISO8601DateFormatter()
+        // Every time is counted back from one moment, so a check's length comes out whole however the seconds fall.
+        let now = Date()
+        func at(_ secondsAgo: Double) -> String { stamp.string(from: now.addingTimeInterval(-secondsAgo)) }
+        func check(_ name: String, _ status: String, started: Double, took: Double?) -> [String: Any] {
+            ["name": name, "status": status, "url": "https://github.com/millZach/Sotto/actions/runs/1", "description": NSNull(),
+             "startedAt": at(started), "completedAt": took.map { at(started - $0) as Any } ?? NSNull()]
+        }
+        return ["number": 721, "url": url, "title": "Let the window frost and put a terminal in the bottom third",
+                "body": "## What this does\nFrosts the window and puts a **terminal** in the bottom third.\n\n- Tooltips read the theme\n- The drawer opens with `Ctrl+J`",
+                "state": "open", "draft": true, "baseBranch": "main", "headBranch": "feat/frosted-window-and-pane-terminal", "crossRepository": false,
+                "reviewDecision": "changes_requested", "mergeable": "mergeable", "checksUnknown": false, "mergedAt": NSNull(), "behindBy": 3,
+                "reviews": [["author": "ollie-dev", "state": "approved", "url": NSNull()], ["author": "chloe-r", "state": "changes_requested", "url": NSNull()]],
+                "checks": [check("Gates (Windows)", "failure", started: 30 * 60, took: 14 * 60 + 2), check("Package (macOS)", "pending", started: 6 * 60 + 10, took: nil),
+                           check("Lint", "success", started: 30 * 60, took: 112), check("Typecheck", "success", started: 30 * 60, took: 67)],
+                "files": [["path": "src/renderer/src/agents/TerminalDrawer.tsx", "additions": 120, "deletions": 30],
+                          ["path": "src/renderer/src/agents/terminalTooltips.ts", "additions": 40, "deletions": 12], ["path": "CONTEXT.md", "additions": 2, "deletions": 0]],
+                "changedFiles": 3, "mergeMethods": ["squash"], "autoMergeAllowed": false, "autoMerge": NSNull(), "canUpdateBranch": true, "linked": NSNull(), "branch": true]
+    }
+    /// Babysitting starts or stops on the fixture's computer, which sends the thread back with it.
+    private func babysitFixture(_ on: Bool, url: String, in ref: ThreadRef) {
+        guard var object = fixtureShells[ref.hostID], var host = object["host"] as? [String: Any], var threads = host["threads"] as? [[String: Any]],
+              let index = threads.firstIndex(where: { $0["id"] as? String == ref.threadID }), let number = PullRequests.address(url)?.number else { return }
+        if on {
+            threads[index]["babysitting"] = [["url": url, "number": number, "startedBy": "user", "startedAt": ISO8601DateFormatter().string(from: Date())]]
+        } else {
+            threads[index].removeValue(forKey: "babysitting")
+        }
+        host["threads"] = threads; object["host"] = host; fixtureShells[ref.hostID] = object
+        guard let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: object)) else { return }
+        update(ref.hostID) { $0.shell = shell }
+    }
+    #endif
 }
