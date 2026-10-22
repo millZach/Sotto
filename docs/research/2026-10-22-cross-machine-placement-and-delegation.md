@@ -105,7 +105,7 @@ To stop the asking for forge, either change that rule's `action` to `accept` for
 ADR-0104 has the design. In short:
 
 1. **Stop needing SSH for moves.** Branches go over the host socket as Git bundles (ADR-0105 decision 8), on the tailnet connection or the SSH connection's existing forward, so no move ever signs in. This removes the case that matters most: a move nobody is watching.
-2. **Look before asking, without a probe sign-in**, since a probe would itself ask for an approval. Sotto reads this computer's `tailscale status --json` when a machine is added and when a saved host connects: a device that publishes SSH host keys runs Tailscale SSH and may be held. When Sotto sees a hold on a host, it records when. Then it can say "Tailscale may ask you to approve this in your browser" before a press rather than after.
+2. **Look before asking, without a probe sign-in**, since a probe would itself ask for an approval. Sotto reads this computer's `tailscale status --json` when a machine is added and when a saved host connects: a device that publishes SSH host keys runs Tailscale SSH and may be held. When Sotto sees a hold on a host, it records when, and keeps the record until Tailscale SSH is turned off there, since a sign-in that later goes straight in may only mean an approval that lasts up to 168 hours. Then it can say "Tailscale may ask you to approve this in your browser" before a press rather than after.
 3. **Say what is wrong in plain words** and what to do, with the two fixes that need no browser: change the `check` rule covering Sotto's machines to `accept` (an extra `accept` rule does nothing), which the tailnet's admin does, or use the machine's own SSH server, with Tailscale SSH off or on another port, which Tailscale SSH does not hold.
 4. **Fall back to the socket.** Anything that can go over the socket does. What still needs SSH (Add host, pairing, grants, Stop host, Start at boot, Phones…, Forget) keeps today's approval wait.
 
@@ -131,15 +131,15 @@ After that, forge and the Mac talk over each other's tailnet listener (HTTPS on 
 
 **Trust.** A link is a pairing, so it is admission, not authority (ADR-0004). A linked machine has its own closed list: send a branch (it can only send, never fetch), start and drive delegated threads for its own parents, offer a move, read host facts. Its starts are held to Ask for approval unless the owner gave that link **link-start** at setup, and are capped by the desktop's new-thread default, which the desktop now sends each host as **desktop defaults**.
 
-**What a compromised host can reach.** It can start threads on a linked machine in projects both have, brief them, read their replies, and push branches into `refs/sotto/incoming`. At Ask for approval those threads run no command without the user's press, but an agent may still read files without asking, so a brief could ask it to read the project and report back. It cannot answer anything, widen a thread, reach the desktop, read a thread it did not start, update or stop another host, or read credentials. Every thread it starts is visible and named as started by that machine. **Remove link** ends it.
+**What a compromised host can reach.** Through the link it can start threads on a linked machine in projects both have, brief them, read their replies, and push branches into `refs/sotto/incoming`. What those threads can do is their permission's. At Ask for approval they run no command without the user's press, but an agent may still read files without asking, so a brief could ask it to read files and report back. With link-start, a thread may start as wide as the desktop's new-thread default. At Full access, a compromised host could have it read the account's keys and sign-ins on the linked machine and send them back in its reply. So link-start trusts the other machine as far as the owner's default reaches; the setup must say so, and it can be left off for a machine trusted less. Whatever the permission, the link answers nothing, widens no thread, reaches no desktop and reads no thread it did not start. Every thread it starts is visible and named as started by that machine. **Remove link** ends it.
 
-**Tailnet policy.** The default policy lets every machine reach every other. With narrower access controls or grants, each linked pair needs a rule letting one reach the other's Serve port. Sotto shows the rule and never edits the policy.
+**Tailnet policy.** The default policy lets every machine reach every other. With narrower access controls or grants, each linked pair needs a rule letting one reach the other's Serve port. Sotto writes it with the machines' tailnet addresses, since a bare name works only when the policy's `hosts` section defines it, shows it, and never edits the policy.
 
 **Unattended.** Linux hosts start at boot (ADR-0054). A Mac host runs only after someone starts it, until a start at boot for macOS is decided. Links reconnect with backoff and renew their sessions with the token.
 
 **How a remote parent's outcomes travel.** The child's machine keeps its record and pushes outcome changes over the link. The parent's machine turns them into the parent's hidden wake-up, with an answered child's reply, as today. After a drop, every open delegation is read exactly; what cannot be proved stays `unknown`, and nothing is resent.
 
-**How a move travels.** A move is ADR-0089's "continue", on another machine: a new thread. Both machines keep a move record with states. The source is fenced first, the branch goes as a bundle, the handover and facts block are built on the source machine (where the history is), the target starts the new thread, and the source is settled once the new thread's first turn ends. Only a proved absence on the target unfences the source.
+**How a move travels.** A move is ADR-0089's "continue", on another machine: a new thread. Both machines keep a move record with states. The source is fenced first, the branch goes as a bundle, the handover and facts block are built on the source machine (where the history is), the target starts the new thread, and the source is settled once the new thread's first turn ends. Only a proved absence on the target, or its answer that it stopped and settled the thread it made, unfences the source.
 
 **What the desktop still does.** Settings, saved hosts and SSH, every link's setup and removal, Watcher (which lives on the desktop and pauses while it sleeps), the window, dictation, its own machine's phones, sending desktop defaults, and re-pointing watches after a move.
 
@@ -160,7 +160,7 @@ After that, forge and the Mac talk over each other's tailnet listener (HTTPS on 
 
 ---
 
-## 5. A thread on another machine delegating (#1310)
+## 5. A thread on another machine delegating (#1310, #1316)
 
 **Step one: children on the parent's own machine (A).** The host builds the delegation service and the tool server for its own threads, on its own loopback with its own tokens (`runtime.ts:237` stops skipping them). What it needs from the desktop:
 
@@ -169,7 +169,7 @@ After that, forge and the Mac talk over each other's tailnet listener (HTTPS on 
 - **A read for the roster.** The desktop already joins every host's threads. The parent's Tools › Agents shows its children with their machine.
 - **The Owl answer.** The host's own track decides (`src/host/index.ts:102`). Every Owl release publishes the Linux host archive, so forge stays on the desktop's track.
 
-**Step two: children on another machine (B).** In scope since October 21. Through the desktop's existing connections first (relay): the host asks the desktop, which starts the child under the same rules and reports back. Then over host links (ADR-0105), so it keeps working while the laptop sleeps. A child on This computer is always reached through the desktop's connection, and only while the desktop is connected; otherwise `delegate` refuses by name.
+**Step two: children on another machine (#1316).** In scope since October 21. Through the desktop's existing connections first (relay): the host asks the desktop, which starts the child under the same rules and reports back. Then over host links (ADR-0105), so it keeps working while the laptop sleeps. A child on This computer is always reached through the desktop's connection, and only while the desktop is connected; otherwise `delegate` refuses by name.
 
 ADR-0081 decision 10 is amended (ADR-0105 decision 6). Limits: none (#1183); the four-prompt budget is enforced on the parent's machine; the warning above ten working threads is counted on each machine.
 
@@ -234,7 +234,7 @@ ADR-0081 decision 10 is amended (ADR-0105 decision 6). Limits: none (#1183); the
 
 | # | Work | Issues | Size | Before building |
 | --- | --- | --- | --- | --- |
-| 0 | This note and the two Proposed ADRs | | S | Zach's answers to the decisions below |
+| 0 | This note and the two Proposed ADRs | | S | Zach's acceptance of the ADRs |
 | 1 | Sends allowed, starts still refused | #1145 | S | Nothing: Zach chose the words (keep the start refusal) |
 | 2 | Worktree cleanup never leaves a half-deleted worktree | #1297 | S–M | Nothing; no UI |
 | 3 | Host backpressure for `detail` pushes, and reconnect when far behind (what #1089 still lacks) | #1089 | M | Nothing; no UI |
@@ -245,10 +245,10 @@ ADR-0081 decision 10 is amended (ADR-0105 decision 6). Limits: none (#1183); the
 | 8 | Start from a branch, and the snapshot for test runs | #1033 rest | M | Clarifying question on the words for "from my branch" and "with my uncommitted changes" |
 | 9 | Test routing: test runs, one per machine with a queue, a reused test worktree, the reply contract | #1312 | M | Clarifying questions; prototype of the queue's line on the delegation card |
 | 10 | A Mac host archive with every Owl, then a verification note | #1314 | M | Nothing; needs a Mac that stays on |
-| 11 | A thread on another machine delegates to its own machine; desktop defaults sent to hosts | #1310 A | M–L | Prototype of a remote parent's roster |
-| 12 | Children on another machine through the desktop | #1310 B (relay) | M | Clarifying question on the refusal when the laptop is away |
+| 11 | A thread on another machine delegates to its own machine; desktop defaults sent to hosts | #1310 | M–L | Prototype of a remote parent's roster |
+| 12 | Children on another machine through the desktop | #1316 | M | Clarifying question on the refusal when the laptop is away |
 | 13 | Move a thread: continue on another machine, with the move record, through the desktop | #1178 | L | **Prototype and clarifying questions first** (where Move lives, the move's states, Keep it here) |
-| 14 | Host links: setup, linked delegation, host-to-host moves | ADR-0105, #1310 B | L | **Prototype and clarifying questions first** (the setup dialog, link-start, the link's row) |
+| 14 | Host links: setup, linked delegation, host-to-host moves | ADR-0105, #1316 | L | **Prototype and clarifying questions first** (the setup dialog, link-start, the link's row) |
 | 15 | Suggest moving a thread to a machine with room | #1309 | S–M | **Prototype and clarifying questions first** |
 | 16 | Bring commits back to the parent's branch | #1030 | S–M | Prototype exists (variant B); any time after step 8 |
 
@@ -272,40 +272,39 @@ Steps 1 to 3 can run in parallel, and so can 5 and 6. Step 7 needs nothing from 
 10. Sends to wider-permission threads are allowed; starts are still refused (#1145).
 11. Stable stays untouched; all of this is Owl.
 
+### Answered by Zach on October 22, on the question card
+
+12. **Host links (ADR-0105):** relay first, then links. The operations are built with the desktop as the only caller, and host links are added once a Mac is connected. This also settles #1316: children on another machine go through the desktop first.
+13. **Link-start at setup:** offered, and on by default, with its sentence on the press, as for a desktop's own grant on September 29.
+14. **Zach's own tailnet:** leave `check` on for forge for now, and decide again once branches move over the socket.
+15. **Test runs:** the call says it is a test run; Sotto does not spot test commands.
+
 ### Still open, with recommendations
 
-Asked on the question card on October 21; the answers go here when they come.
-
-1. **Host links (ADR-0105).** Accept them as the destination, built after the desktop relay and after a Mac is connected? *Recommended: yes.* The alternative, relay only, never works with the laptop asleep.
-2. **Children on another machine from a remote parent (#1310 B).** Through the desktop first, then over links? *Recommended: yes*, since it lands weeks sooner and covers Windows tests on the laptop, which need the laptop awake anyway.
-3. **Link-start at setup.** When linking two machines, is "Let forge start threads on the Mac that act without asking, up to your new-thread default" offered and on by default, as Zach chose for a desktop's own grant on September 29? *Recommended: offered, on by default, with the sentence on the press.* Without it, an unattended test worker on a linked machine stops at its first command.
-4. **Zach's own tailnet.** Leave `check` on, change forge's rule to `accept`, or turn Tailscale SSH off on forge? *Recommended: leave it* until branches move over the socket, then decide from how often it still asks.
-5. **What counts as a test run** for the one-per-machine queue: the call marks it (`delegate` says it is a test run), or Sotto spots a test command? *Recommended: the call marks it.* Spotting commands means reading what agents run, and guesses wrong.
-6. **Desktop defaults on hosts.** The desktop sends each host its new-thread default and worker roles, which hosts keep. *Recommended: yes*; they are settings, not keys, and a host without them holds starts to Ask for approval.
-7. **The bundle cap** for one branch transfer. *Recommended: 256 MiB*, refused in plain words above it.
-8. **Sotto's other tools on remote threads** (`sotto_visual`, `sotto_pull_requests`) with step 11. *Recommended: yes, each its own small change*; the browser stays this computer's.
-9. **A Mac that also runs Sotto's desktop app** already has a local host. *Recommended: pair the Mac as a headless host only if it is a machine that stays on for tests.*
+1. **Desktop defaults on hosts.** The desktop sends each host its new-thread default and worker roles, which hosts keep. *Recommended: yes*; they are settings, not keys, and a host without them holds starts to Ask for approval.
+2. **The bundle cap** for one branch transfer. *Recommended: 256 MiB*, refused in plain words above it.
+3. **Sotto's other tools on remote threads** (`sotto_visual`, `sotto_pull_requests`) with step 11. *Recommended: yes, each its own small change*; the browser stays this computer's.
+4. **A Mac that also runs Sotto's desktop app** already has a local host. *Recommended: pair the Mac as a headless host only if it is a machine that stays on for tests.*
+5. **The words** for each step's refusals and receipts, asked when each step is built.
 
 ---
 
-## 12. Issue text that is now stale
+## 12. Issue text corrected on October 22
 
-For the thread rewording the issues:
+The review's list of stale issue text was fixed on GitHub, and the changes are recorded on #1023:
 
-- #1032: the per-machine limit bullet, its "per-machine limits hold through restart" proof and the room's "2 of 4" line. Fold #1313 and #1312's `os` choice in, or delete the overlapping bullets so each piece has one owner.
-- #1033: the transport (over the socket, not SSH, if ADR-0105 is accepted) and the snapshot for test runs.
-- #1178: "PERMISSION_TOO_WIDE fix in progress" (fixed by #1196); the agent-written handoff document (now the fixed handover plus Sotto's facts block).
-- #1145: the line cite (`watcher.ts:703-717`, called for sends at `:2071` and `:2393`).
-- #1309: reword to suggestions only; add #1311 and #1089 to Waits for.
-- #1310: "limits stay as ADR-0081 sets them" contradicts #1183. Split A and B; say remote threads lack all of Sotto's tools.
-- #1311: add the platform notes and work placed but not started.
-- #1314: add the prerequisites and the Owl workflow step.
-- #1023: decision 6 ("each machine has its own limit").
+- #1309 is now "Suggest moving a thread to a machine with room", waiting on #1311 and #1089 too.
+- #1310 is part A, children on the parent's own machine. #1316 is new: part B, children on other machines.
+- #1311 has the platform notes and work placed but not started.
+- #1312 is now "Send test runs to a machine of the right system, one at a time". Its `os` choice moved to #1032.
+- #1313 is folded into #1032 and #1033 and left open for Zach to close.
+- #1314 has the Mac prerequisites and the Owl workflow step.
+- The stale text in #1032, #1033, #1145, #1178 and #1023 is corrected.
 
 ## Not verified in this pass
 
 - Anything live on forge or a Mac.
-- `git bundle` of a bare commit with a temporary ref, and its size on Sotto's repository.
+- A bundle of a named outgoing ref, and its size on Sotto's repository. (`git bundle create` refuses a bare commit hash; the review reproduced that.)
 - Tailscale's local `whois` from a headless host's account without operator rights.
 - macOS memory pressure from `sysctl`.
 - Apple's OpenSSH with the launcher's options.

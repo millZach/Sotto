@@ -27,7 +27,7 @@ So from this computer Sotto can know whether a machine answers with Tailscale SS
 **2. Sotto looks before it asks.** No extra connection is made to find out, since a probe sign-in would itself ask for an approval. Sotto uses two things it already has:
 
 - **What this computer's Tailscale says.** When Add host lists a device, and each time a saved host connects, main reads whether the device publishes SSH host keys (`tailscale.ts` already does). A device that does answers SSH with Tailscale SSH and may be held. One that does not, a Windows machine or a Mac on the standalone app among them, is reached by its own SSH server, and Tailscale never holds it.
-- **What Sotto saw.** When the launcher reads Tailscale's banner on a host, Sotto records when, for that saved host, beside its tailnet state (`remote-host-tailnet.json`). Nothing else: no URL, no banner text. A host held once is a host Tailscale asks for, until a sign-in goes straight in more than a check period (12 hours) after the last approval.
+- **What Sotto saw.** When the launcher reads Tailscale's banner on a host, Sotto records when, for that saved host, beside its tailnet state (`remote-host-tailnet.json`). Nothing else: no URL, no banner text. A host held once is a host Tailscale may ask for. A sign-in that goes straight in later proves nothing, since an approval can last up to 168 hours and another approval may explain it, so Sotto keeps the record and says "may ask". It forgets it only when the device stops publishing SSH host keys, that is, when Tailscale SSH is turned off there.
 
 **3. It says so in plain words, where the press is.** A prototype comes first. What it should show:
 
@@ -53,7 +53,7 @@ So from this computer Sotto can know whether a machine answers with Tailscale SS
 
 - An agent's move at night no longer waits on a browser, because it no longer signs in.
 - The owner learns, before pressing, that a press will ask for an approval, and learns once why, and what would stop it.
-- Sotto's knowledge is a hint: a host that went straight in may ask next time, and Sotto words it as "may ask". The approval wait of ADR-0025 stays the thing that copes with a hold.
+- Sotto's knowledge is a hint: a host that went straight in may ask next time, and a host held once may never ask again, so Sotto words it as "may ask" either way. The approval wait of ADR-0025 stays the thing that copes with a hold.
 - If Tailscale changes its banner's words, Sotto stops recognising a hold and falls back to today's timeout sentence. The banner's words are matched in one place (`tailscaleApproval.ts`) so a change is one edit.
 - A Mac reached by Remote Login is never held, since its Tailscale app does not run Tailscale SSH.
 
