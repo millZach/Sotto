@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { layoutScene, type SceneMeasure } from '../../../src/renderer/src/watcher/nightScene'
 import {
-  ARRIVAL_STAGGER, assignSpots, blinking, EMERGE, FADE, glowStep, moodOf, owlGlyphs, owlKey, OwlFamily, spriteCells, type FamilyOwl, type OwlMood, type WatchedOwl,
+  ARRIVAL_STAGGER, assignSpots, blinking, EMERGE, FADE, glowStep, moodOf, owlGlyphs, owlKey, OwlFamily, pileLabel, spriteCells, type FamilyOwl, type OwlMood, type WatchedOwl,
 } from '../../../src/renderer/src/watcher/owlFamily'
 
 /** Watcher's pane for a window `width` by `height`, its composer in the 760-pixel column near the bottom. */
@@ -49,6 +49,13 @@ describe('a thread owl’s mood', () => {
     expect(owlGlyphs({ owl: owl('awake'), flying: false }, 0.05, { rail: false, still: true })[0]).toBe('{o,o}')
     expect(glowStep(3, true)).toBe(0.5)
     expect(new Set([0, 0.45, 0.9, 1.35].map(t => glowStep(t, false))).size).toBeGreaterThan(1)
+  })
+
+  it('labels the pile "+N", and on the rail never cuts a number short', () => {
+    expect(pileLabel(3, false)).toBe('+3')
+    expect(pileLabel(12, false)).toBe('+12')
+    expect(pileLabel(9, true)).toBe('+9')
+    expect(pileLabel(12, true)).toBe('9+')
   })
 
   it('stands a sprite’s feet on its spot, centred', () => {
@@ -169,6 +176,31 @@ describe('the thread owls coming and going', () => {
     held.update(watched(1), 0, 'still')
     held.update(watched(3), 1, 'still')
     expect(held.owls.every(item => item.animation === null)).toBe(true)
+  })
+
+  it('with motion reduced, lets the pile’s oldest appear in a freed spot rather than fly to it', () => {
+    const capacity = layout.spots.length
+    const family = new OwlFamily(layout)
+    family.update(watched(capacity + 2), 0, 'fade')
+    family.update(watched(capacity + 2).slice(1), 5, 'fade')
+    family.step(5 + FADE + 0.01)
+    const promoted = family.owls.find(item => item.spot === 0)!
+    expect(promoted.animation?.kind).toBe('appear')
+    expect(family.poses(5 + FADE + 0.3).every(pose => !pose.flying)).toBe(true)
+  })
+
+  it('turns an owl back to its spot when its thread is watched again on the way to the moon', () => {
+    const family = new OwlFamily(layout)
+    family.update(watched(2), 0, 'fly')
+    family.update(watched(1), 10, 'fly')
+    const going = family.owls[1]!
+    expect(going.animation?.kind).toBe('leave')
+    family.update(watched(2), 10.5, 'fly')
+    expect(going.animation?.kind).toBe('hop')
+    family.step(30)
+    expect(family.owls.map(item => item.key)).toContain(going.key)
+    const back = family.poses(30).find(pose => pose.owl.key === going.key)!
+    expect([back.x, back.y]).toEqual([layout.spots[1]!.x, layout.spots[1]!.y])
   })
 
   it('takes a thread’s new mood and title where its owl sits', () => {

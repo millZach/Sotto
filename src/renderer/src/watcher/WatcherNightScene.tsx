@@ -4,8 +4,8 @@ import {
   addRipple, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
   type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from './nightScene'
-import { NightScenePainter } from './nightScenePainter'
-import { OwlFamily, type FamilyMotion, type OwlMood, type WatchedOwl } from './owlFamily'
+import { NightScenePainter, type SceneFrame } from './nightScenePainter'
+import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
 import { watchResolution } from './watchResolution'
 import type { OpenThread } from './WatcherOverview'
 import './nightScene.css'
@@ -117,6 +117,9 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   const [targets, setTargets] = useState<readonly Target[]>([])
   const [tip, setTip] = useState<Target | null>(null)
   const origin = useRef<number | null>(null)
+  // The owls and where Watcher's owl sits outlive the scene stepping away, as for Visualize: it comes back with every
+  // owl where it was.
+  const kept = useRef<{ family: OwlFamily | null; watcher: WatcherOwlState }>({ family: null, watcher: { at: 'home', side: 'left', flight: null, next: 0 } })
   const stillRef = useRef(still)
   const owlsRef = useRef(owls)
   const leaving = useRef(phase === 'leaving')
@@ -135,6 +138,13 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   useEffect(() => { leaving.current = phase === 'leaving' }, [phase])
   useEffect(() => { stillRef.current = still; wakeRef.current() }, [still])
   useEffect(() => { owlsRef.current = owls; takeOwlsRef.current() }, [owls])
+  // A tip that is showing answers Escape, as everything that opens does.
+  useEffect(() => {
+    if (tip === null) return
+    const close = (event: KeyboardEvent): void => { if (event.key === 'Escape') setTip(null) }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [tip])
 
   const mounted = phase !== 'gone'
   useEffect(() => {
@@ -154,8 +164,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     let measured = ''
     let inked = ''
     let layout: SceneLayout | null = null
-    let family: OwlFamily | null = null
-    let watcher: WatcherOwlState = { at: 'home', side: 'left', flight: null, next: 0 }
+    let family: OwlFamily | null = kept.current.family
+    let watcher: WatcherOwlState = kept.current.watcher
     let ripples: Ripple[] = []
     let look: Look | null = null
     let stage: OwlStage | null = null
@@ -193,9 +203,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       }
     }
     /** The perched thread owls' buttons, and the pile's, changed only when they move or their words do. */
-    const syncTargets = (t: number): void => {
+    const syncTargets = (t: number, poses: readonly ThreadOwlPose[], pile: SceneFrame['pile']): void => {
       if (family === null) return
-      const poses = family.poses(t)
       const byKey = new Map(family.owls.map(item => [item.key, item] as const))
       const next: Target[] = []
       for (const box of painter.targets(poses, t, stillRef.current)) {
@@ -203,11 +212,10 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
         if (item === undefined || item.threadId === null) continue
         next.push({ key: item.key, box, title: item.title, words: MOOD_WORDS[item.mood], open: { threadId: item.threadId, atRequest: item.mood === 'waiting' } })
       }
-      const marker = family.marker, count = family.pileCount
-      if (marker !== null && count > 0) {
-        const w = (String(count).length + 1) * 7 + 10
-        const x = Math.max(0, Math.min((layout?.width ?? w) - w, marker.x - w / 2))
-        next.push({ key: 'pile', box: { x, y: marker.y - 16, w, h: 18 }, title: `${count} more`, words: 'Press to see every watched thread on Watched.', open: null })
+      if (pile !== null) {
+        const w = pileLabel(pile.count, layout?.mode === 'rail').length * 7 + 10
+        const x = Math.max(0, Math.min((layout?.width ?? w) - w, pile.spot.x - w / 2))
+        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: `${pile.count} more`, words: 'Press to see every watched thread on Watched.', open: null })
       }
       const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
       if (key !== targetKey) { targetKey = key; setTargets(next) }
@@ -224,13 +232,13 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       ripples = liveRipples(ripples, t, isStill)
       const trees = layout.mode === 'trees'
       const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill, look, watch: family.newcomer(t) }) : null
-      const marker = family.marker, count = family.pileCount
-      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: family.poses(t), whirl: family.whirl(t),
-        pile: marker !== null && count > 0 ? { spot: marker, count } : null })
+      const marker = family.marker, count = family.pileCount, poses = family.poses(t)
+      const pile = marker !== null && count > 0 ? { spot: marker, count } : null
+      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: poses, whirl: family.whirl(t), pile })
       if (painted && counted) pane.dataset.nightSceneFrames = String(++frames)
       const nextStage = owlNow?.stage ?? 'perched'
       if (nextStage !== stage) { stage = nextStage; owl.dataset.owl = stage }
-      syncTargets(t)
+      syncTargets(t, poses, pile)
       const looking = look !== null && t - look.t < 1.8
       delay = frameDelay(family.moving(t) || owlNow?.stage === 'flying' || looking, ripples.length, isStill)
       schedule()
@@ -293,7 +301,12 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       if (watcher.next === 0) watcher = { ...watcher, next: t + stayAt('home', Math.random()) }
       ripples = []
       if (family === null) { family = new OwlFamily(next); family.update(owlsRef.current, t, motion()) }
-      else family.relayout(next, t)
+      else {
+        // Back from stepping away, or a new size: every owl keeps its spot, and threads watched or let go meanwhile
+        // come and go now.
+        family.relayout(next, t)
+        takeOwls()
+      }
       readInk()
       wake()
     }
@@ -339,6 +352,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
 
     return () => {
       disposed = true
+      kept.current = { family, watcher }
       wakeRef.current = () => undefined
       takeOwlsRef.current = () => undefined
       halt()
@@ -366,6 +380,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     {/* The owls' buttons answer the pointer only; Watched is the keyboard's way to the same threads. */}
     <div className="watcher-scene watcher-scene--owls" data-leaving={fading} aria-hidden="true">
       {targets.map(target => <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
+        aria-label={target.open === null ? 'Show every watched thread' : `Open ${target.title} beside Watcher`}
         style={{ left: target.box.x, top: target.box.y, width: target.box.w, height: target.box.h }}
         onPointerEnter={() => setTip(target)} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
         onClick={event => {

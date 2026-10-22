@@ -135,13 +135,16 @@ export class OwlFamily {
   private joined = 0
   private lastArrival = Number.NEGATIVE_INFINITY
   private placed = false
+  /** How the last update said owls should move, for an owl that leaves the pile between updates. */
+  private motion: FamilyMotion = 'fly'
+  /** The pile's spot, worked out whenever the spots are, so a frame never works it out again for each owl. */
+  private pileSpot: Spot | null = null
 
   constructor(private layout: SceneLayout) {}
 
   /** The last spot, while it holds the "+N" pile. */
   get marker(): Spot | null {
-    const spots = this.layout.spots
-    return spots.length > 0 && assignSpots(this.owls, spots.length).pile ? spots[spots.length - 1]! : null
+    return this.pileSpot
   }
 
   /** How many owls wait in the "+N" pile. */
@@ -165,10 +168,19 @@ export class OwlFamily {
     const incoming = new Map(watched.map(owl => [owl.key, owl] as const))
     const whirlpools: number[] = []
     const instant = motion === 'still' || !this.placed
+    this.motion = motion
     for (const owl of this.owls) {
       const next = incoming.get(owl.key)
-      if (next !== undefined && !leaving(owl)) { owl.title = next.title; owl.threadId = next.threadId; owl.mood = next.mood; continue }
-      if (next !== undefined || leaving(owl)) continue
+      if (next !== undefined) {
+        owl.title = next.title; owl.threadId = next.threadId; owl.mood = next.mood
+        // Watched again on its way out: it turns back to the spot it still holds, or reappears there.
+        if (leaving(owl)) {
+          const at = this.poseOf(owl, t)
+          owl.animation = motion === 'fly' && at !== null ? { kind: 'hop', t0: t, from: { x: at.x, y: at.y }, dur: HOP } : instant ? null : { kind: 'appear', t0: t, dur: FADE }
+        }
+        continue
+      }
+      if (leaving(owl)) continue
       if (instant || this.spotOf(owl) === null) { owl.animation = { kind: 'fade', t0: t, dur: 0 }; continue }
       if (motion === 'fade') { owl.animation = { kind: 'fade', t0: t, dur: FADE }; continue }
       const from = this.spotOf(owl)!, dur = flightTime(from, this.layout.moon)
@@ -276,13 +288,15 @@ export class OwlFamily {
 
   private reconcile(t: number, animate: boolean): void {
     const was = new Map(this.owls.map(owl => [owl.key, owl.spot] as const))
-    const { spots } = assignSpots(this.owls, this.layout.spots.length)
-    const from = this.marker
+    const capacity = this.layout.spots.length
+    const { spots, pile } = assignSpots(this.owls, capacity)
+    const from = this.pileSpot
+    this.pileSpot = pile ? this.layout.spots[capacity - 1]! : null
     for (const owl of this.owls) {
       owl.spot = spots.get(owl.key) ?? -1
-      // An owl that waited in the pile hops from it to the spot that freed up.
+      // An owl that waited in the pile hops from it to the spot that freed up, or with motion reduced appears there.
       if (animate && was.get(owl.key) === -1 && owl.spot >= 0 && owl.animation === null) {
-        owl.animation = from === null ? { kind: 'appear', t0: t, dur: FADE } : { kind: 'hop', t0: t, from, dur: HOP }
+        owl.animation = from === null || this.motion !== 'fly' ? { kind: 'appear', t0: t, dur: FADE } : { kind: 'hop', t0: t, from, dur: HOP }
       }
     }
   }
@@ -296,6 +310,14 @@ export const PERCHED_OWL = ['{o,o}', '/)__)', ' " " '] as const
 export const FLYING_OWL = [['\\{o,o}/', ' (__) '], ['-{o,o}-', ' (__) '], ['/{o,o}\\', ' (__) ']] as const
 /** On the rail, a thread owl is its eyes: two glyphs, so they fit the smallest window's 16-pixel margins. */
 export const RAIL_OWL = 'oo'
+
+/**
+ * The "+N" pile's label. On the rail, which has room for two glyphs, more than nine reads "9+", so it never shows a
+ * cut-off number.
+ */
+export function pileLabel(count: number, rail: boolean): string {
+  return rail && count > 9 ? '9+' : `+${count}`
+}
 
 /** Whether a working owl is mid-blink at `t`: about once every six seconds, each at its own moment. */
 export function blinking(order: number, t: number): boolean {

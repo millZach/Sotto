@@ -25,7 +25,7 @@ import { BrowserPageRouteContext } from '../tools/webLinks'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherTakeovers, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { rowStatus } from '../agents/threadFacts'
-import { threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
+import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView, type RoomTab } from './WatcherBeside'
@@ -368,9 +368,11 @@ function focusInlineAsk(threadId: string, requestId: string | undefined): boolea
  * change one.
  */
 function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null): readonly WatchedOwl[] {
+  // One pass over the threads for the index, then a look-up a row, so the work grows with the threads and no faster.
+  const idOf = useMemo(() => threadAddressIndex(state), [state])
   return useShared(useMemo<readonly WatchedOwl[]>(() => room === null ? [] : watchedRows(room).map(row => ({
-    key: owlKey(row.target), title: row.title, threadId: threadForTarget(state, row.target)?.id ?? null, mood: moodOf(row),
-  })), [room, state]))
+    key: owlKey(row.target), title: row.title, threadId: idOf(row.target) ?? null, mood: moodOf(row),
+  })), [room, idOf]))
 }
 
 /**

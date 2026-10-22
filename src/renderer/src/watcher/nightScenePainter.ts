@@ -3,7 +3,7 @@ import {
   smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
   type Grid, type Limb, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
-import { glowStep, owlGlyphs, spriteCells, type ThreadOwlPose } from './owlFamily'
+import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
 
 /**
  * Draws Watcher's night scene in the room's side margins, on two canvases: the landscape on one, under everything in
@@ -543,7 +543,7 @@ export class NightScenePainter {
     // The "+N" pile reads as a small label in the last spot, not as more grass.
     let pileCells: ReturnType<typeof spriteCells> | null = null
     if (frame.pile !== null) {
-      pileCells = spriteCells([`+${frame.pile.count}`], frame.pile.spot.x, frame.pile.spot.y, { w: cw, h: ch })
+      pileCells = spriteCells([pileLabel(frame.pile.count, rail)], frame.pile.spot.x, frame.pile.spot.y, { w: cw, h: ch })
       for (let c = pileCells.c0 - 1; c <= pileCells.c0 + pileCells.w; c++) clear(c, pileCells.r0)
       if (!rail) {
         const [x0, x1] = this.withinMargin(pileCells.c0 * cw - 3.5, (pileCells.c0 + pileCells.w) * cw + 3.5)
@@ -584,7 +584,7 @@ export class NightScenePainter {
       }
     }
     if (frame.pile !== null && pileCells !== null) {
-      const label = `+${frame.pile.count}`
+      const label = pileLabel(frame.pile.count, rail)
       for (let j = 0; j < label.length; j++) glyph(pileCells.c0 + j, pileCells.r0, label[j]!, inkAt(ink.ink, 0.95))
     }
     return true
