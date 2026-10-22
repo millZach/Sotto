@@ -1116,8 +1116,9 @@ import XCTest
     /// With the bar away, the reader sees the strip it uncovered under the status bar. A card they have there stays put
     /// while Watcher writes above it, rather than being pushed down to where the bar was (#1278). Then the permission under
     /// it is answered on the laptop and leaves: the page's end carries the card down, and the page puts it back in the
-    /// strip by lining its top up with a point above the scroll view's own top. Ten of the user's follow-ups wait under the
-    /// cards, so the page has enough under the card, once the permission has gone, to scroll it back there on any phone.
+    /// strip through a mark lower down the card, whose point is inside the scroll view's page (#1288). Ten of the user's
+    /// follow-ups wait under the cards, so the page has enough under the card, once the permission has gone, to scroll it
+    /// back there on any phone.
     /// Watcher writes its next words when the journey says so, once the card is in the strip: on CI's SE, placing it took
     /// longer than the fixture's two minutes of timed writing, and words arriving while the page is read put the card back
     /// above the box after each move.

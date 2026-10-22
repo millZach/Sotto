@@ -1539,6 +1539,55 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(123 + carried * (700 - 123), 80, accuracy: 0.0001, "The card's top lands where the reader has it")
     }
 
+    /// CI's SE with the bar away (#1288): the status bar ends at 20, the bar's place at 84 and the box starts at 519.2. The
+    /// reader has Fix login test's question, 348 points tall, 42 points below the status bar, at 62, and Watcher's next
+    /// line carries it 20.5 points down. Its top mark would need a point above the visible page, which put the card at 4.5
+    /// on CI; the mark 120 points down it lines up inside the page instead.
+    func testACardInTheStripOnTheSEGoesBackThroughItsLowerMark() throws {
+        let carried = CGRect(x: 16, y: 82.5, width: 343, height: 348)
+        let top = try XCTUnwrap(WatcherReaderPlace.anchor(card: carried, offset: 42, top: 20, dockTop: 519.2, viewTop: 84))
+        XCTAssertLessThan(top, 0, "The top mark would need a point above the visible page")
+        let aim = try XCTUnwrap(WatcherReaderPlace.scroll(card: carried, offset: 42, top: 20, dockTop: 519.2, viewTop: 84))
+        XCTAssertTrue(aim.low, "The page scrolls to the mark lower down the card")
+        XCTAssertEqual(aim.y, (62 + 120 - 84) / 435.2, accuracy: 0.0001)
+        XCTAssertTrue((0...1).contains(aim.y), "Its point is inside the visible page")
+        XCTAssertEqual(84 + aim.y * 435.2 - WatcherReaderPlace.lowMark, 62, accuracy: 0.0001, "The card's top lands at 62")
+        XCTAssertNil(WatcherReaderPlace.scroll(card: carried.offsetBy(dx: 0, dy: -20.5), offset: 42, top: 20, dockTop: 519.2,
+                                               viewTop: 84), "Where the reader has it, nothing moves")
+
+        // Under the bar, the top mark's point is inside the page, and the page goes on using it.
+        let below = CGRect(x: 16, y: 170, width: 343, height: 348)
+        let under = try XCTUnwrap(WatcherReaderPlace.scroll(card: below, offset: 66, top: 84, dockTop: 519.2, viewTop: 84))
+        XCTAssertFalse(under.low)
+        XCTAssertEqual(under.y, 66 / 435.2, accuracy: 0.0001)
+    }
+
+    /// A scroll that misses is aimed again by as far as it missed, until the card is within a point of where it goes. Here
+    /// `scrollTo` lines marks up from 29.3 rather than from the bar's place at 84, the straight line through what CI saw: the
+    /// top mark aimed for 62 put the card at 4.5. The lower mark misses by 42 points too, and two more looks put it back.
+    func testAHeldCardTheScrollMissesIsAimedAgainUntilItLands() throws {
+        func lands(_ y: CGFloat, low: Bool) -> CGFloat { 29.3 + y * (519.2 - 29.3) - (low ? WatcherReaderPlace.lowMark : 0) }
+        var card = CGRect(x: 16, y: 82.5, width: 343, height: 348)
+        let top = try XCTUnwrap(WatcherReaderPlace.anchor(card: card, offset: 42, top: 20, dockTop: 519.2, viewTop: 84))
+        XCTAssertEqual(lands(top, low: false), 4.5, accuracy: 0.1, "Where CI saw the card")
+
+        let aim = try XCTUnwrap(WatcherReaderPlace.scroll(card: card, offset: 42, top: 20, dockTop: 519.2, viewTop: 84))
+        var y = aim.y
+        card.origin.y = lands(y, low: aim.low)
+        XCTAssertEqual(card.minY, 19.6, accuracy: 0.1, "The first scroll misses")
+        for _ in 0..<2 {
+            guard let next = WatcherReaderPlace.corrected(y, card: card, offset: 42, top: 20, dockTop: 519.2, viewTop: 84) else { break }
+            y = next
+            card.origin.y = lands(y, low: aim.low)
+        }
+        XCTAssertEqual(card.minY, 62, accuracy: 1, "Two more looks put the card back where the reader has it")
+        XCTAssertNil(WatcherReaderPlace.corrected(y, card: card, offset: 42, top: 20, dockTop: 519.2, viewTop: 84))
+
+        // A scroll that lands where it was aimed needs no second look.
+        let right = CGRect(x: 16, y: 62, width: 343, height: 348)
+        XCTAssertNil(WatcherReaderPlace.corrected(aim.y, card: right, offset: 42, top: 20, dockTop: 519.2, viewTop: 84))
+    }
+
     /// When the bar comes back, or slides away, the top of what the reader sees moves by its height. The held card stays
     /// where it is on the screen: its offset is measured again from the new top, so the page's next change doesn't move
     /// it by the bar's height. Only a card the bar comes back over moves, as far as keeps it in view.

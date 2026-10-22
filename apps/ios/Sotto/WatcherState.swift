@@ -305,8 +305,8 @@ struct WatcherReaderPlace: Equatable {
     /// top up with, or nil when it is already within a point of where it goes. The page scrolls to a mark with no height at
     /// the card's top rather than to the card, so the point is the same for a card of any height, even one exactly as tall
     /// as the visible page. That page starts at `viewTop`, the bottom of the bar's place, even while the bar is away and
-    /// the reader sees the strip above it (#1278): a card the reader has in that strip lines up at a point above the
-    /// visible page's top, a fraction below 0.
+    /// the reader sees the strip above it (#1278): a card the reader has in that strip would line up at a point above the
+    /// visible page's top, a fraction below 0, which `scroll` avoids by using the card's lower mark.
     /// - Parameters:
     ///   - card: the card's frame now; `offset`, its top's distance below `top` where the reader left it.
     ///   - top: the top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away;
@@ -319,6 +319,33 @@ struct WatcherReaderPlace: Equatable {
         let page = dockTop - viewTop
         guard page > 1 else { return nil }
         return (wanted - viewTop) / page
+    }
+
+    /// How far down each waiting card its second mark sits: farther than the bar is tall, so a card the reader has in the
+    /// strip the bar uncovered goes back through a point inside the visible page rather than above it.
+    static let lowMark: CGFloat = 120
+
+    /// Which of the held card's two marks the page scrolls to, and the point (`anchor`) it lines that mark up with. A card
+    /// the reader has in the strip the bar uncovered needs a point above the visible page's top for its top mark, and on
+    /// CI's SE `scrollTo` put a card wanted at 62 at 4.5 for one (#1288). Its mark `lowMark` down the card lines up inside
+    /// the page instead. A card taller than the room whose top is far above the page may still need a point above it.
+    static func scroll(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat,
+                       viewTop: CGFloat) -> (low: Bool, y: CGFloat)? {
+        guard let y = anchor(card: card, offset: offset, top: top, dockTop: dockTop, viewTop: viewTop) else { return nil }
+        if y >= 0 { return (false, y) }
+        return (true, y + lowMark / (dockTop - viewTop))
+    }
+
+    /// The point to line the same mark up with again, when scrolling it to `aimed` left the card's top at `card.minY`
+    /// rather than where it goes: `aimed` moved by the miss, as a fraction of the visible page. Nil when the card is within
+    /// a point of where it goes. However `scrollTo` lines the page up, as long as a point lower down the page puts the mark
+    /// lower on the screen, each look brings the card nearer.
+    static func corrected(_ aimed: CGFloat, card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat,
+                          viewTop: CGFloat) -> CGFloat? {
+        let missed = card.minY - (top + kept(offset, height: card.height, top: top, dockTop: dockTop))
+        let page = dockTop - viewTop
+        guard abs(missed) > 1, page > 1 else { return nil }
+        return aimed - missed / page
     }
 
     /// The held card's offset once the top of what the reader sees moves from `before` to `top`, as it does when the bar
