@@ -839,18 +839,113 @@ it('leaves user queues untouched when a machine Stop loses its guard before inte
 })
 
 
-it('waits for active worker slots before replacing the master provider', async () => {
+it('replaces the master provider while a worker it started still works, and keeps its slot until it finishes (#1325)', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   await f.finish(f.id)
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const model = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
   expect(f.service.startsInFlight()).toBe(1)
-  expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
-  expect(f.service.state().current!.target.threadId).toBe(f.id)
+  expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
+  expect(f.service.state().current!.target.threadId).not.toBe(f.id)
+  expect(f.service.state().history.at(-1)!.target.threadId).toBe(f.id)
+  // The worker belongs to the record, not the conversation: its slot is held until it finishes, then freed.
+  expect(f.service.startsInFlight()).toBe(1)
   await f.finish(first.target.threadId)
   expect(f.service.startsInFlight()).toBe(0)
-  expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'ok' })
+})
+
+it('changes Watcher’s model with its send queued for a working thread, while a provider change waits for that send (#1325)', async () => {
+  const f = await fixture()
+  f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const other = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.id !== f.model.id)!
+  const first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic queued brief' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  // Watcher's own turn holds the change, and the refusal says so.
+  expect(await f.service.open({ provider: 'codex', modelId: other.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
+    message: 'Watcher is working. Wait for this turn to finish, or stop it, then change its model or effort. Nothing was changed.' })
+  await f.finish(f.id)
+  // The fake provider takes the new model as a real one does, so main sees it confirmed.
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    const thread = f.workspace.adapters.codex.state.threads.find(item => 'threadId' in command && item.id === command.threadId)
+    if (thread && command.type === 'configure-thread') Object.assign(thread, command.modelId ? { modelId: command.modelId } : {}, command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {})
+    return execute(command)
+  })
+  // Resting, Watcher takes the new model while its send waits queued and the thread it started still works.
+  expect(await f.service.open({ provider: 'codex', modelId: other.id, reasoningEffort: 'low' })).toMatchObject({ status: 'ok', state: { current: { target: { threadId: f.id } } } })
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!.modelId).toBe(other.id)
+  expect(f.control.watcherRecord().operations.find(item => item.id === (queued as { receipt: { operationId: string } }).receipt.operationId)!.deliveryState).toBe('queued')
+  // A new Watcher could not send that queued brief, so a provider change waits for it and says what to do.
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
+  expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
+    message: 'Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then change its provider. Nothing was changed.' })
+  expect(f.service.state()).toMatchObject({ current: { target: { threadId: f.id } }, history: [] })
+})
+
+it('changes Watcher’s model or effort while a send to another thread has been unconfirmed for days, set aside and through a restart, as Settings asks (#1325)', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const other = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.id !== f.model.id)!
+  // The provider never says whether the brief arrived, and takes a model change as a real one does.
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.text === 'Synthetic lost brief') return { accepted: false, uncertain: true }
+    const thread = f.workspace.adapters.codex.state.threads.find(item => 'threadId' in command && item.id === command.threadId)
+    if (thread && command.type === 'configure-thread') Object.assign(thread, command.modelId ? { modelId: command.modelId } : {}, command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {})
+    return execute(command)
+  })
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic lost brief' })
+  expect(sent).toMatchObject({ receipt: { deliveryState: 'uncertain' } })
+  const operationId = (sent as { receipt: { operationId: string } }).receipt.operationId
+  await f.control.updateWatcher(record => { Object.assign(record.operations.find(item => item.id === operationId)!, { createdAt: '2026-10-20T19:32:52.723Z', updatedAt: '2026-10-20T19:33:12.949Z' }) })
+  await f.finish(f.id)
+  // Watcher rests. A send to another thread that nothing can settle never holds its own model or effort.
+  expect(await f.service.open({ provider: 'codex', modelId: other.id, reasoningEffort: 'low' })).toMatchObject({ status: 'ok', state: { current: { target: { threadId: f.id } } } })
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!.modelId).toBe(other.id)
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('uncertain')
+  // Set aside in its own thread, as the owner's were, then Sotto restarts: loading reads the delivery as unconfirmed again
+  // and marks the send so once more, and the change still goes through.
+  const draftId = f.control.watcherRecord().operations.find(item => item.id === operationId)!.draftId!
+  expect((await f.control.commandShell({ type: 'set-aside-send', threadId: first.target.threadId, draftId })).error).toBeNull()
+  f.service.close(); await f.tools.close(); f.control.dispose(); await f.control.closed()
+  const control = f.create(), service = new WatcherService({ directory: f.root, host: f.workspace.host, control, historyEnabled: () => true })
+  const tools = new WatcherToolServer(service); f.workspace.host.useWatcherTools(tools)
+  cleanups.push(async () => { service.close(); await tools.close(); control.dispose(); await control.closed() })
+  await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(control.watcherSendRecords().deliveries.find(item => item.draftId === draftId)).toMatchObject({ status: 'uncertain', setAside: true })
+  expect(control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('uncertain')
+  expect(await service.open({ provider: 'codex', modelId: f.model.id, reasoningEffort: 'low' })).toMatchObject({ status: 'ok', state: { current: { target: { threadId: f.id } } } })
+  expect(control.watcherSnapshot().threads.find(thread => thread.id === f.id)!.modelId).toBe(f.model.id)
+})
+
+it('lets a Watcher send whose prompt the user set aside hold nothing open, while it stays unconfirmed (#1325)', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const native = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command =>
+    command.type === 'send' && command.text === 'Synthetic unconfirmed brief' ? { accepted: false, uncertain: true } : native(command))
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic unconfirmed brief' })
+  expect(sent).toMatchObject({ receipt: { deliveryState: 'uncertain' } })
+  const operation = f.control.watcherRecord().operations.find(item => item.id === (sent as { receipt: { operationId: string } }).receipt.operationId)!
+  const settle = () => f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
+  expect(await settle()).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  // Continue with a new message, in the worker's own thread: Sotto will never send that prompt again.
+  expect((await f.control.commandShell({ type: 'set-aside-send', threadId: first.target.threadId, draftId: operation.draftId! })).error).toBeNull()
+  // The user's fresh message there is confirmed, which lets automatic work go on (#1156).
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic fresh user message' })).error).toBeNull()
+  await f.finish(first.target.threadId)
+  expect(await settle()).not.toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
+  // Nothing proves it arrived, so its receipt still says so.
+  expect(f.control.watcherRecord().operations.find(item => item.id === operation.id)!.deliveryState).toBe('uncertain')
 })
 
 

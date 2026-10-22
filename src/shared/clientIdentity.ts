@@ -1,4 +1,4 @@
-import type { AgentState } from './agents'
+import type { AgentState, AgentThread } from './agents'
 
 /** Client-only keys. The host continues to address its entities by their original Sotto IDs. */
 export function hostEntityKey(hostId: string | undefined, id: string): string {
@@ -32,15 +32,18 @@ const opaque = new Set(['messages', 'activities', 'messageDeltas', 'activityDelt
 
 /** Only named Sotto references cross the identity boundary; arbitrary strings are never rewritten. */
 export function mapHostReferences<T>(value: T, map: (id: string) => string): T {
-  function visit(input: unknown): unknown {
-    if (Array.isArray(input)) return input.map(visit)
-    if (input === null || typeof input !== 'object' || Object.prototype.toString.call(input) !== '[object Object]') return input
-    return Object.fromEntries(Object.entries(input).map(([name, child]) => [name,
-      (references.has(name) || name === 'ownerId' && 'kind' in input && input.kind === 'thread') && typeof child === 'string' ? map(child)
-        : referenceLists.has(name) && Array.isArray(child) ? child.map(id => typeof id === 'string' ? map(id) : id)
-          : opaque.has(name) ? child : visit(child)]))
-  }
-  return visit(value) as T
+  return mapValue(value, map) as T
+}
+function mapValue(input: unknown, map: (id: string) => string): unknown {
+  if (Array.isArray(input)) return input.map(item => mapValue(item, map))
+  if (input === null || typeof input !== 'object' || Object.prototype.toString.call(input) !== '[object Object]') return input
+  return Object.fromEntries(Object.entries(input).map(([name, child]) => [name, mapEntry(input, name, child, map)]))
+}
+/** One field of `parent` as `mapHostReferences` writes it: a reference keyed, a list of references keyed, anything else walked. */
+function mapEntry(parent: object, name: string, child: unknown, map: (id: string) => string): unknown {
+  return (references.has(name) || name === 'ownerId' && 'kind' in parent && parent.kind === 'thread') && typeof child === 'string' ? map(child)
+    : referenceLists.has(name) && Array.isArray(child) ? child.map(id => typeof id === 'string' ? map(id) : id)
+      : opaque.has(name) ? child : mapValue(child, map)
 }
 
 /**
@@ -58,25 +61,133 @@ export function clientThreadId(hostId: string | undefined, id: string, threadHos
  * its broadcast rate, and the catalog keeps its identity for the revision check at the IPC boundary (#917).
  */
 export function clientAgentState(state: AgentState): AgentState {
+  return projectClientAgentState(state).output
+}
+
+/**
+ * One host's state projected for clients (`clientAgentState`), with what it was projected from, so the next projection
+ * of that host can reuse each part whose input holds the same values.
+ */
+export interface ClientAgentStateProjection {
+  readonly hostId: string | undefined
+  readonly input: AgentState
+  readonly output: AgentState
+  /** The state's own fields and its host's across the identity boundary, before the host's projects and threads are keyed. */
+  readonly fields: Readonly<Record<string, unknown>>
+  readonly hostFields: Readonly<Record<string, unknown>>
+  /** The records the output's threads were made from, in order: a list of its own, so reading it visits no host's list. */
+  readonly threads: readonly AgentThread[]
+}
+
+type Fields = Readonly<Record<string, unknown>>
+
+/**
+ * `clientAgentState(state)`, reusing what `previous`, a projection of the same host, made wherever the input holds the
+ * same values: each field of the state and of its host that is the same object or the same plain data, the projects
+ * when those are, and each thread whose record holds the same values field for field. The router projects every host
+ * on every broadcast, and a host that had not changed was rewritten whole each time (#1335). The values are the ones
+ * `clientAgentState` gives; only unchanged parts keep their identity, and nothing in a projection is written into.
+ */
+export function projectClientAgentState(state: AgentState, previous?: ClientAgentStateProjection): ClientAgentStateProjection {
   const hostId = state.hostId ?? state.host.hostId
-  if (hostId === undefined) return state
+  if (hostId === undefined) return { hostId, input: state, output: state, fields: {}, hostFields: {}, threads: [] }
+  const last = previous?.hostId === hostId ? previous : undefined
+  if (last?.input === state) return last
   const key = (id: string): string => hostEntityKey(hostId, id)
-  const { threads, models, ...host } = state.host
-  const mapped = mapHostReferences({ ...state, host }, key)
-  return { ...mapped, hostId,
-    host: { ...mapped.host, models,
-      projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
-      // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0089), are named as the
-      // window names threads, so their links find them.
-      threads: threads.map(thread => {
-        const own = thread.hostId ?? hostId
-        return { ...thread, id: clientThreadId(hostId, thread.id, thread.hostId), projectId: hostEntityKey(own, thread.projectId),
-          ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
-          ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
-          ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
-          // So is the thread one began from (#1028), so its note opens it.
-          ...(thread.startedFrom ? { startedFrom: keyedLinks(thread.startedFrom, own) } : {}) }
-      }) } }
+  const field = (before: Fields | undefined, made: Fields | undefined, parent: Fields, name: string): unknown =>
+    before && made && Object.hasOwn(before, name) && samePlainData(before[name], parent[name]) ? made[name] : mapEntry(parent, name, parent[name], key)
+  const host = state.host as unknown as Fields
+  const hostFields: Record<string, unknown> = {}
+  for (const name of Object.keys(host)) if (name !== 'threads' && name !== 'models') hostFields[name] = field(last?.input.host as unknown as Fields | undefined, last?.hostFields, host, name)
+  const fields: Record<string, unknown> = {}
+  for (const name of Object.keys(state)) fields[name] = name === 'host' ? hostFields : field(last?.input as unknown as Fields | undefined, last?.fields, state as unknown as Fields, name)
+  const mapped = fields as unknown as AgentState, mappedHost = hostFields as unknown as AgentState['host']
+  const projects = last && mappedHost.projects === last.hostFields.projects ? last.output.host.projects
+    : mappedHost.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) }))
+  // A host whose list is the one it had keeps every record of it: nothing in a published list is written into.
+  const kept = last && state.host.threads === last.input.host.threads
+  const threads: AgentThread[] = kept ? [] : [...state.host.threads]
+  const projected = kept ? last.output.host.threads : projectThreads(threads, hostId, last)
+  return { hostId, input: state, fields, hostFields, threads: kept ? last.threads : threads,
+    output: { ...mapped, hostId, host: { ...mappedHost, models: state.host.models, projects, threads: projected } } }
+}
+
+/** The host's threads as clients name them, each reused from `last` while its record holds the same values. */
+function projectThreads(threads: readonly AgentThread[], hostId: string, last: ClientAgentStateProjection | undefined): AgentThread[] {
+  const made = last?.output.host.threads
+  const before = last?.threads
+  let positions: Map<string, number> | undefined
+  let unchanged = before !== undefined && made !== undefined && threads.length === made.length
+  const projected = threads.map((thread, position) => {
+    if (before && made) {
+      let at = position
+      if (before[at]?.id !== thread.id) at = (positions ??= new Map(before.map((item, index) => [item.id, index]))).get(thread.id) ?? -1
+      const prior = at < 0 ? undefined : before[at]
+      if (prior && sameThreadRecord(prior, thread)) {
+        if (at !== position) unchanged = false
+        return made[at]!
+      }
+    }
+    unchanged = false
+    return clientThread(thread, hostId)
+  })
+  return unchanged ? made! : projected
+}
+
+/** One thread as clients name it, from a host whose state names `hostId`. */
+function clientThread(thread: AgentThread, hostId: string): AgentThread {
+  const own = thread.hostId ?? hostId
+  return { ...thread, id: clientThreadId(hostId, thread.id, thread.hostId), projectId: hostEntityKey(own, thread.projectId),
+    // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0089), are named as the
+    // window names threads, so their links find them.
+    ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
+    ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
+    ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
+    // So is the thread one began from (#1028), so its note opens it.
+    ...(thread.startedFrom ? { startedFrom: keyedLinks(thread.startedFrom, own) } : {}) }
+}
+
+/**
+ * Whether two thread records hold the same fields with the same values: each the same value, or two empty lists. A
+ * host builds a new record around the same fields for every thread on each broadcast, and what a published field holds
+ * is never written into, so the same object holds the same values.
+ */
+function sameThreadRecord(left: AgentThread, right: AgentThread): boolean {
+  if (left === right) return true
+  const a = left as unknown as Fields, b = right as unknown as Fields
+  // Counted rather than listed, so the comparison makes nothing: each of one record's fields is on the other with the
+  // same value, and the other has no more fields than it.
+  let fields = 0
+  for (const name in a) {
+    fields++
+    const value = a[name], other = b[name]
+    if (value !== other && !(Array.isArray(value) && Array.isArray(other) && value.length === 0 && other.length === 0)) return false
+    if (other === undefined && !Object.hasOwn(b, name)) return false
+  }
+  for (const name in b) { void name; if (--fields < 0) return false }
+  return fields === 0
+}
+
+/**
+ * Whether two values are the same plain data: equal primitives, the same object, or lists and plain objects whose
+ * entries are, under the same names in the same order. Anything else, such as a date or a map, must be the same object.
+ */
+function samePlainData(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left)) {
+    if (!Array.isArray(right) || left.length !== right.length) return false
+    for (let index = 0; index < left.length; index++) if ((index in left) !== (index in right) || !samePlainData(left[index], right[index])) return false
+    return true
+  }
+  if (Array.isArray(right) || Object.prototype.toString.call(left) !== '[object Object]' || Object.prototype.toString.call(right) !== '[object Object]') return false
+  const names = Object.keys(left), others = Object.keys(right)
+  if (names.length !== others.length) return false
+  for (let index = 0; index < names.length; index++) {
+    const name = names[index]!
+    if (name !== others[index] || !samePlainData((left as Fields)[name], (right as Fields)[name])) return false
+  }
+  return true
 }
 
 /**
