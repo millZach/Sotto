@@ -1,0 +1,617 @@
+<!-- PROTOTYPE, throwaway: three variants of the prototype-ready mark and the link-missing mark for issue #1351, switchable via ?variant=. -->
+<!doctype html>
+<!--
+  Not shipped, not tested, not wired to anything. Mock data only.
+
+    A  "Needs you" line and row mark. A waiting prototype counts as needing Zach: needs-you line, Needs you group,
+       a quiet page mark on the sidebar row and a slim strip above the composer. Link missing: a muted row where
+       Open the prototype would be.
+    B  Sotto card in the transcript. The waiting prototype is a card with nothing to answer, the row gets a question's
+       waiting dot, the Overview puts it under Ready for review. Link missing: a banner line at the top of the card.
+    C  Minimal status words. No new chrome: the row's status says "Prototype ready", the needs-you line lists it like a
+       question, and the reply carries an Open the prototype row. Link missing: one quiet sentence and a dead row.
+
+  Bottom bar: arrows (or the arrow keys outside a text field) switch variants; Light flips the palette.
+  Scenario panel: drives the mock state and reads it back.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto, prototype ready for review (prototype)</title>
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-sunken: oklch(0.13 0.008 265); --tt-field: oklch(0.155 0.008 265);
+  --tt-elevated: oklch(0.19 0.008 265); --tt-outside: oklch(0.08 0.006 265);
+  --tt-text: oklch(0.975 0.005 280); --tt-text-2: oklch(0.86 0.01 270); --tt-text-muted: oklch(0.76 0.013 265);
+  --tt-hairline: oklch(0.3 0.02 265); --tt-field-border: oklch(0.38 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-accent-text: oklch(0.78 0.1 183); --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-attention: oklch(0.8 0.13 80); --tt-attention-text: oklch(0.84 0.12 82);
+  --tt-hover: oklch(0.24 0.03 200 / .7); --tt-selected: oklch(0.714 0.104 183 / .16); --tt-selected-border: oklch(0.714 0.104 183 / .5);
+  --tt-focus-ring: oklch(0.78 0.1 183);
+  --tt-font: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-sunken: oklch(0.962 0.005 85); --tt-field: oklch(0.993 0.003 85);
+  --tt-elevated: oklch(0.945 0.006 85); --tt-outside: oklch(0.9 0.006 85);
+  --tt-text: oklch(0.2 0.01 265); --tt-text-2: oklch(0.33 0.012 265); --tt-text-muted: oklch(0.45 0.012 265);
+  --tt-hairline: oklch(0.87 0.007 85); --tt-field-border: oklch(0.77 0.01 85);
+  --tt-accent: oklch(0.52 0.1 183); --tt-accent-text: oklch(0.47 0.09 183); --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-attention: oklch(0.66 0.14 70); --tt-attention-text: oklch(0.47 0.11 62);
+  --tt-hover: oklch(0.93 0.02 185); --tt-selected: oklch(0.92 0.035 185); --tt-selected-border: oklch(0.52 0.1 183 / .45);
+  --tt-focus-ring: oklch(0.52 0.1 183);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--tt-outside); color: var(--tt-text); font: 14px/1.5 var(--tt-font); overflow-x: hidden; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg { flex: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+code { font-family: var(--tt-mono); font-size: .9em; overflow-wrap: anywhere; }
+
+/* Page layout: surfaces stacked, scenario panel fixed on the right on wide screens. */
+.page { max-width: 1260px; margin: 0 auto; padding: 20px 20px 110px; display: grid; gap: 22px; }
+@media (min-width: 1200px) { .page { margin: 0 340px 0 max(20px, calc((100vw - 1600px) / 2 + 20px)); } }
+.intro h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+.intro p { margin: 0; color: var(--tt-text-muted); max-width: 70ch; }
+.cap { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--tt-text-muted); }
+.frame { border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-canvas); overflow: hidden; min-width: 0; }
+.strip { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.strip i { width: 9px; height: 9px; border-radius: 50%; background: var(--tt-hairline); }
+
+/* Threads page. */
+.threads { display: grid; grid-template-columns: 270px minmax(0, 1fr); height: 640px; }
+.side { background: var(--tt-sunken); border-right: 1px solid var(--tt-hairline); padding: 12px 8px; overflow: auto; min-width: 0; }
+.side__proj { padding: 4px 10px 8px; font-weight: 600; }
+.srow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 1px 8px; width: 100%; padding: 9px 10px; border: 0; border-radius: 10px; background: none; text-align: left; cursor: pointer; }
+.srow:hover { background: var(--tt-hover); }
+.srow[aria-current='true'] { background: var(--tt-selected); }
+.srow__glyph { grid-row: 1; color: var(--tt-text-muted); display: grid; place-items: center; height: 21px; }
+.srow__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
+.srow__when { font-size: 12.5px; color: var(--tt-text-muted); }
+.srow__status { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--tt-text-muted); }
+.srow__status[data-tone='working'] { color: var(--tt-accent-text); }
+.srow__status[data-tone='needs'] { color: var(--tt-attention-text); }
+.srow__status[data-tone='proto'] svg { color: var(--tt-accent-text); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-attention); flex: none; }
+
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 20px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; overflow: hidden; }
+.pane__head b { color: var(--tt-text); font-size: 15.5px; font-weight: 500; white-space: nowrap; }
+.pane__scroll { flex: 1 1 0; overflow-y: auto; min-height: 0; padding: 0 20px; }
+.transcript { max-width: 760px; margin: 0 auto; padding: 22px 0 10px; font-size: 15px; }
+.msg { margin: 0 0 18px; }
+.msg[data-role='user'] { margin-left: max(24px, 16%); padding: 10px 14px; background: var(--tt-elevated); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.msg p { margin: 0 0 8px; }
+.live { display: flex; gap: 8px; align-items: center; color: var(--tt-accent-text); font-size: 13.5px; margin-bottom: 14px; }
+.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); }
+
+/* Link rows, as ADR-0085 draws them. */
+.rows { display: grid; gap: 6px; }
+.lrow { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; padding: 7px 12px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: none; color: var(--tt-text); text-align: left; text-decoration: none; cursor: pointer; width: 100%; }
+.lrow:hover { background: var(--tt-hover); }
+.lrow > svg { color: var(--tt-text-muted); }
+.lrow > svg:first-child { color: var(--tt-accent-text); }
+.lrow > span { display: grid; flex: 1; min-width: 0; }
+.lrow strong { font-size: 14px; font-weight: 600; }
+.lrow small { overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.lrow[aria-disabled='true'] { cursor: default; border-style: dashed; }
+.lrow[aria-disabled='true']:hover { background: none; }
+.lrow[aria-disabled='true'] > svg:first-child, .lrow[aria-disabled='true'] strong { color: var(--tt-text-muted); }
+.nolink { display: flex; gap: 12px; align-items: flex-start; padding: 9px 12px; border: 1px dashed var(--tt-field-border); border-radius: 9px; color: var(--tt-text-muted); font-size: 13.5px; }
+.nolink svg { margin-top: 2px; }
+.reply-rows { margin-top: 10px; max-width: 520px; }
+
+/* Request card. */
+.card { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-attention); border-radius: 12px; background: var(--tt-sunken); }
+.card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.card__head strong { font-size: 15px; font-weight: 600; }
+.card__note { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.card--sotto { margin: 4px 0 18px; border-left-color: var(--tt-accent); }
+.card--sotto .card__head svg { color: var(--tt-accent-text); align-self: center; }
+.tag { display: inline-block; padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 99px; color: var(--tt-text-muted); font-size: 12px; line-height: 18px; font-weight: 500; }
+.dock { flex: none; padding: 0 20px; }
+.dock__inner { max-width: 760px; margin: 0 auto; }
+.qcard { display: grid; gap: 12px; padding: 16px 18px; border: 1px solid var(--tt-field-border); border-left: 2px solid var(--tt-attention); border-radius: 14px; background: var(--tt-field); margin-bottom: 10px; animation: arrive .18s ease-out; }
+.qcard fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 10px; min-width: 0; }
+.qcard legend { padding: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.qcard legend .prompt { font-size: 16px; font-weight: 600; }
+.qcard__banner { margin: -4px -6px 0; padding: 7px 10px; border-radius: 8px; background: oklch(from var(--tt-attention) l c h / .12); color: var(--tt-attention-text); font-size: 13.5px; display: flex; gap: 8px; align-items: flex-start; }
+@supports not (color: oklch(from red l c h)) { .qcard__banner { background: var(--tt-elevated); } }
+.qcard__banner svg { margin-top: 2px; }
+.qcard__quiet { margin: -4px 0 0; color: var(--tt-text-muted); font-size: 13.5px; }
+.opts { display: grid; gap: 4px; }
+.opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; padding: 10px 8px; border: 1px solid transparent; border-radius: 9px; cursor: pointer; font-size: 15px; }
+.opt:hover { background: var(--tt-hover); }
+.opt:has(input:checked) { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.opt input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--tt-accent); }
+.opt small { display: block; color: var(--tt-text-muted); font-size: 13px; }
+.rec { color: var(--tt-text-muted); }
+.qcard__foot { display: flex; justify-content: flex-end; }
+.btn { min-height: 34px; padding: 0 15px; border: 1px solid var(--tt-field-border); border-radius: 9px; background: var(--tt-elevated); cursor: pointer; font-size: 14px; }
+.btn:hover { background: var(--tt-hover); }
+.btn--primary { background: var(--tt-accent); color: var(--tt-on-accent); border-color: transparent; font-weight: 600; }
+.btn--primary:hover { background: var(--tt-accent); filter: brightness(1.08); }
+.btn--quiet { border-color: transparent; background: none; color: var(--tt-text-2); }
+
+/* Variant A: the strip above the composer. */
+.ready { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 8px 8px 14px; margin-bottom: 10px; border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-accent); border-radius: 12px; background: var(--tt-sunken); animation: arrive .18s ease-out; }
+.ready__title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.ready__title svg { color: var(--tt-accent-text); }
+.ready .lrow { width: auto; flex: 1 1 260px; min-height: 40px; margin-left: auto; }
+.ready .lrow strong { font-weight: 600; }
+
+/* Composer. */
+.compose { flex: none; padding: 0 20px 18px; }
+.compose__inner { max-width: 760px; margin: 0 auto; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-field); padding: 10px 12px 8px; }
+.compose textarea { display: block; width: 100%; min-height: 44px; resize: none; border: 0; background: transparent; font-size: 15px; padding: 2px 4px; outline: none; }
+.compose textarea::placeholder { color: var(--tt-text-muted); }
+.compose__inner:focus-within { border-color: var(--tt-focus-ring); }
+.tools { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.pill { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 99px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.send { margin-left: auto; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--tt-accent); color: var(--tt-on-accent); cursor: pointer; }
+
+/* Watcher's room and the Overview. */
+.room { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); min-height: 520px; }
+.wpane { display: flex; flex-direction: column; min-width: 0; }
+.whead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 20px 8px; }
+.whead b { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.whead b svg { color: var(--tt-accent-text); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: 99px; background: none; font-size: 13px; color: var(--tt-text-2); cursor: pointer; }
+.chip:hover { background: var(--tt-hover); }
+.chip[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.glance { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 0 20px 10px; font-size: 13.5px; min-height: 30px; }
+.glance h2 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--tt-attention-text); }
+.glance ul { display: contents; list-style: none; }
+.glance li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.glance__name { border: 0; padding: 2px 2px; background: none; color: var(--tt-text); text-decoration: underline; text-decoration-color: var(--tt-hairline); text-underline-offset: 3px; cursor: pointer; }
+.glance__name:hover { text-decoration-color: currentColor; }
+.glance__why { color: var(--tt-text-muted); }
+.glance__sep { color: var(--tt-text-muted); }
+.glance__none { color: var(--tt-text-muted); }
+.ring { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--tt-attention); flex: none; align-self: center; }
+.ring[data-tone='proto'] { border-color: var(--tt-accent); }
+.wconv { flex: 1; padding: 6px 20px 10px; border-top: 1px solid var(--tt-hairline); overflow: auto; }
+.wconv .transcript { padding-top: 16px; }
+.news { display: flex; gap: 10px; align-items: baseline; margin: 0 0 14px; padding: 8px 12px; border-radius: 10px; background: var(--tt-sunken); border: 1px solid var(--tt-hairline); font-size: 14px; animation: arrive .18s ease-out; }
+.news b { font-size: 12.5px; color: var(--tt-text-muted); font-weight: 600; flex: none; }
+.signed { display: block; font-size: 12.5px; color: var(--tt-text-muted); margin-bottom: 2px; }
+.over { border-left: 1px solid var(--tt-hairline); background: var(--tt-sunken); padding: 12px 10px; overflow: auto; min-width: 0; }
+.over__head { display: flex; justify-content: space-between; align-items: center; padding: 2px 8px 6px; font-weight: 600; }
+.over__head span { font-size: 12.5px; color: var(--tt-text-muted); font-weight: 400; }
+.group h3 { display: flex; align-items: center; gap: 8px; margin: 12px 8px 4px; font-size: 12.5px; font-weight: 600; color: var(--tt-text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.group h3 .count { font-weight: 400; letter-spacing: 0; text-transform: none; }
+.group[data-tone='needs'] h3 { color: var(--tt-attention-text); }
+.orow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 7px 8px; border-radius: 9px; }
+.orow:hover { background: var(--tt-hover); }
+.orow__t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orow__s { grid-column: 2; font-size: 12.5px; color: var(--tt-text-muted); }
+.orow__s[data-tone='needs'] { color: var(--tt-attention-text); }
+.orow .btn { grid-row: 1 / span 2; grid-column: 3; min-height: 30px; padding: 0 10px; font-size: 13px; }
+.orow__glyph { color: var(--tt-text-muted); display: grid; place-items: center; }
+
+/* Phone. */
+.phones { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.phone { width: 300px; max-width: 100%; height: 560px; border: 1px solid var(--tt-field-border); border-radius: 36px; padding: 10px; background: var(--tt-outside); }
+.phone__screen { height: 100%; border-radius: 28px; background: var(--tt-canvas); overflow: hidden; display: flex; flex-direction: column; }
+.phone__bar { padding: 14px 18px 8px; font-size: 13px; color: var(--tt-text-muted); display: flex; justify-content: space-between; }
+.phone__list { padding: 0 12px; flex: 1; }
+.phone__sheet { margin-top: auto; border-radius: 20px 20px 0 0; background: var(--tt-field); border-top: 1px solid var(--tt-field-border); padding: 8px 14px 14px; display: grid; gap: 10px; max-height: 80%; overflow: auto; }
+.phone__grab { width: 36px; height: 5px; border-radius: 3px; background: var(--tt-hairline); justify-self: center; }
+.phone__sheet .qcard { border: 0; padding: 0; margin: 0; background: none; animation: none; }
+.phone__empty { margin: auto; padding: 20px; text-align: center; color: var(--tt-text-muted); font-size: 13.5px; }
+.phone-note { max-width: 46ch; color: var(--tt-text-muted); font-size: 13.5px; margin: 0; }
+
+/* Scenario panel. */
+.scen { background: var(--tt-elevated); border: 1px solid var(--tt-field-border); border-radius: 12px; padding: 0; font-size: 13.5px; }
+.scen summary { padding: 10px 14px; font-weight: 600; cursor: pointer; }
+.scen__body { padding: 0 12px 12px; display: grid; gap: 6px; }
+.scen__body .btn { text-align: left; min-height: 36px; padding: 6px 12px; line-height: 1.35; }
+.scen__body .btn span { color: var(--tt-text-muted); margin-right: 6px; }
+.readout { margin: 6px 0 0; padding: 10px 12px; border-radius: 9px; background: var(--tt-canvas); border: 1px solid var(--tt-hairline); font-size: 13px; display: grid; gap: 4px; }
+.readout div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; }
+.readout dt { color: var(--tt-text-muted); }
+.readout dd { margin: 0; }
+@media (min-width: 1200px) { .scen { position: fixed; top: 16px; right: 16px; width: 308px; max-height: calc(100vh - 110px); overflow: auto; z-index: 5; } }
+
+/* Variant bar. */
+.bar { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 20px); padding: 5px; border: 1px solid var(--tt-field-border); border-radius: 99px; background: var(--tt-elevated); box-shadow: 0 10px 30px rgb(0 0 0 / .35); }
+.bar button { min-width: 38px; height: 38px; border: 0; border-radius: 99px; background: none; cursor: pointer; padding: 0 12px; }
+.bar button:hover { background: var(--tt-hover); }
+.bar__label { padding: 0 8px; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bar__label b { margin-right: 6px; }
+
+@keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Narrow: everything stacks. */
+@media (max-width: 860px) {
+  .page { padding: 12px 10px 100px; gap: 18px; }
+  .threads { grid-template-columns: 1fr; height: auto; }
+  .side { border-right: 0; border-bottom: 1px solid var(--tt-hairline); }
+  .pane__scroll { flex: none; max-height: 440px; padding: 0 14px; }
+  .wconv { flex: none; }
+  .dock, .compose { padding-left: 12px; padding-right: 12px; }
+  .room { grid-template-columns: 1fr; }
+  .over { border-left: 0; border-top: 1px solid var(--tt-hairline); }
+  .whead, .glance, .wconv { padding-left: 14px; padding-right: 14px; }
+  .msg[data-role='user'] { margin-left: 12px; }
+  .bar__label { font-size: 12.5px; }
+  .bar button { padding: 0 9px; }
+  .phone { margin: 0 auto; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="intro">
+    <h1>Prototype ready for review, and checked prototype questions</h1>
+    <p>Issue #1351. Drive the story with Scenario; switch variants with the bar at the bottom. All data is made up.</p>
+  </header>
+
+  <details class="scen" id="scen" open>
+    <summary>Scenario</summary>
+    <div class="scen__body">
+      <button type="button" class="btn" data-step="1"><span>1</span>Thread replies with a prototype</button>
+      <button type="button" class="btn" data-step="2"><span>2</span>Zach opens the page</button>
+      <button type="button" class="btn" data-step="3"><span>3</span>Zach replies in the thread</button>
+      <button type="button" class="btn" data-step="4"><span>4</span>Thread asks about a prototype without a link</button>
+      <button type="button" class="btn" data-step="5"><span>5</span>Thread re-asks with the link</button>
+      <button type="button" class="btn" data-step="6"><span>6</span>A minute passes, no fix</button>
+      <button type="button" class="btn btn--quiet" data-step="reset">Reset the scenario</button>
+      <dl class="readout" id="readout" aria-live="polite"></dl>
+    </div>
+  </details>
+
+  <section aria-labelledby="cap-threads">
+    <h2 class="cap" id="cap-threads">Threads page</h2>
+    <div class="frame">
+      <div class="threads">
+        <nav class="side" aria-label="Threads">
+          <div class="side__proj">Sotto</div>
+          <div id="sideRows"></div>
+        </nav>
+        <section class="pane" aria-label="Thread">
+          <div class="pane__head" id="paneHead"></div>
+          <div class="pane__scroll" id="paneScroll"><div class="transcript" id="transcript"></div></div>
+          <div class="dock"><div class="dock__inner" id="dock"></div></div>
+          <form class="compose" id="compose">
+            <div class="compose__inner">
+              <textarea id="prompt" rows="2" placeholder="What would you like to do next?" aria-label="Prompt"></textarea>
+              <div class="tools"><span class="pill" id="model">Opus 5.5</span><span class="pill">High</span>
+                <button class="send" type="submit" aria-label="Send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button></div>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="cap-room">
+    <h2 class="cap" id="cap-room">Watcher's room, with the Overview open</h2>
+    <div class="frame">
+      <div class="room">
+        <section class="wpane" aria-label="Watcher">
+          <div class="whead">
+            <b><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 4c2 1.5 4 2 7 2s5-.5 7-2v9a7 7 0 0 1-14 0Z"/><circle cx="9" cy="11" r="2"/><circle cx="15" cy="11" r="2"/><path d="m11 15 1 1 1-1"/></svg>Watcher</b>
+            <button type="button" class="chip" aria-pressed="true" id="allThreads">All threads <span id="allCount">7</span></button>
+            <button type="button" class="chip">Conversation</button>
+            <button type="button" class="chip">Watched 1</button>
+          </div>
+          <div id="glance"></div>
+          <div class="wconv"><div class="transcript" id="wconv"></div></div>
+        </section>
+        <aside class="over" aria-label="Overview" id="over"></aside>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="cap-phone">
+    <h2 class="cap" id="cap-phone">iPhone question sheet</h2>
+    <div class="phones">
+      <div class="phone" aria-label="iPhone mock"><div class="phone__screen" id="phone"></div></div>
+      <p class="phone-note">The sheet follows the desktop card: a held question is not here either, and a link-missing question carries the same mark.</p>
+    </div>
+  </section>
+</main>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="bar__label" id="label" aria-live="polite"></span>
+  <button type="button" id="next" aria-label="Next variant">&rarr;</button>
+  <button type="button" id="theme" aria-pressed="false">Light</button>
+</div>
+
+<script>
+const VARIANTS = {
+  A: '"Needs you" line and row mark',
+  B: 'Sotto card in the transcript',
+  C: 'Minimal status words',
+}
+const KEYS = Object.keys(VARIANTS)
+const PAGE_S = 'settings-restyle-prototype.html'
+const PAGE_U = 'localhost:8075'
+
+const ICON = {
+  page: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg>',
+  pageSm: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
+  out: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>',
+  unlink: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7M15 7h2a5 5 0 0 1 4 8M8 12h3M2 2l20 20"/></svg>',
+  warn: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
+  claude: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>',
+  codex: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2.5 20.5 7.3v9.4L12 21.5l-8.5-4.8V7.3Z"/></svg>',
+  grok: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m7 17 10-10"/></svg>',
+}
+const THREADS = [
+  { id: 's', title: 'Settings restyle', provider: 'Claude Code', glyph: 'claude', model: 'Opus 5.5', when: '2m' },
+  { id: 'u', title: 'Usage chart', provider: 'Codex', glyph: 'codex', model: 'GPT-5.5', when: '4m' },
+  { id: 't', title: 'Fix tray icon', provider: 'Grok Build', glyph: 'grok', model: 'Grok 5', when: '9m' },
+  { id: 'r', title: 'Release notes', provider: 'Claude Code', glyph: 'claude', model: 'Sonnet 5.5', when: '1h' },
+]
+const OTHERS = [
+  { id: 'h', title: 'Host update journey', glyph: 'codex', group: 'Ready for review', word: 'PR #1096 open' },
+  { id: 'm', title: 'Remote thread backlog', glyph: 'claude', group: 'Landing', word: 'Merging #1090' },
+  { id: 'q', title: 'Memory cleanup', glyph: 'grok', group: 'Quiet', word: 'Done yesterday' },
+]
+const GROUPS = ['Needs you', 'Ready for review', 'Working', 'Landing', 'Quiet', 'Idle']
+const HOLD_SECONDS = 60
+
+const params = new URLSearchParams(location.search)
+const S = {
+  variant: KEYS.includes((params.get('variant') || '').toUpperCase()) ? params.get('variant').toUpperCase() : 'A',
+  proto: 'before',   // before | marked | opened | replied
+  q: 'none',         // none | held | fixed | missing | answered
+  heldAt: 0, news: [], sel: 's', said: { s: [], u: [], t: [], r: [] },
+}
+const $ = id => document.getElementById(id)
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const marked = () => S.proto === 'marked'
+const qShown = () => S.q === 'fixed' || S.q === 'missing'
+
+/* What each thread's row says. */
+function status(id) {
+  if (id === 's') {
+    if (S.proto === 'before' || S.proto === 'replied') return { label: 'Working', tone: 'working' }
+    if (S.proto === 'opened') return { label: 'Done' }
+    if (S.variant === 'A') return { label: 'Prototype ready', tone: 'proto', icon: true }
+    if (S.variant === 'B') return { label: 'Prototype to review', tone: 'needs', dot: true }
+    return { label: 'Prototype ready' }
+  }
+  if (id === 'u') return qShown() ? { label: 'Needs your answer', tone: 'needs', dot: true } : { label: 'Working', tone: 'working' }
+  if (id === 't') return { label: 'Working', tone: 'working' }
+  return { label: 'Done' }
+}
+
+/* Where each thread sits in the Overview, and its words there. */
+function overview() {
+  const rows = []
+  const s = status('s')
+  if (marked()) rows.push({ id: 's', group: S.variant === 'B' ? 'Ready for review' : 'Needs you', word: S.variant === 'A' ? 'Prototype to review' : S.variant === 'B' ? 'Prototype to review' : 'Prototype ready', proto: true })
+  else rows.push({ id: 's', group: S.proto === 'opened' ? 'Idle' : 'Working', word: s.label })
+  rows.push(qShown() ? { id: 'u', group: 'Needs you', word: 'Needs your answer', ask: true } : { id: 'u', group: 'Working', word: 'Working' })
+  rows.push({ id: 't', group: 'Working', word: 'Working' })
+  rows.push({ id: 'r', group: 'Idle', word: 'Done' })
+  OTHERS.forEach(o => rows.push({ ...o, other: true }))
+  return rows
+}
+const thread = id => THREADS.find(t => t.id === id) || OTHERS.find(t => t.id === id)
+
+function openRow(id, name, extra = '') {
+  return `<button type="button" class="lrow" id="${id}" data-act="open" aria-label="Open the prototype, ${esc(name)}"${extra}>${ICON.page}<span><strong>Open the prototype</strong><small>${esc(name)}</small></span>${ICON.out}</button>`
+}
+
+function renderSide() {
+  $('sideRows').innerHTML = THREADS.map(t => {
+    const st = status(t.id)
+    return `<button type="button" class="srow" id="row-${t.id}" data-sel="${t.id}" ${S.sel === t.id ? 'aria-current="true"' : ''} aria-label="${esc(t.title)}, ${t.provider}, ${esc(st.label)}">
+      <span class="srow__glyph">${ICON[t.glyph]}</span><span class="srow__title">${esc(t.title)}</span><span class="srow__when">${t.when}</span>
+      <span class="srow__status" data-tone="${st.tone || ''}">${st.dot ? '<i class="dot"></i>' : ''}${st.icon ? ICON.pageSm : ''}${esc(st.label)}</span></button>`
+  }).join('')
+}
+
+function replyS() {
+  return `<p>The prototype is at <code>docs/prototypes/${PAGE_S}</code>, three variants: A keeps one column and quiets the section rules, B puts each section in a card, C moves the section names into an index on the left. Arrow keys switch them.</p><p>Tell me which one to build.</p>`
+}
+
+function transcriptFor(id) {
+  const out = []
+  const user = t => out.push(`<div class="msg" data-role="user">${esc(t)}</div>`)
+  const agent = h => out.push(`<div class="msg" data-role="agent">${h}</div>`)
+  if (id === 's') {
+    user('Restyle the Settings page so the sections read as one column. Make a prototype first.')
+    if (S.proto === 'before') { agent('<p>Reading the Settings stylesheet and the theme roles first.</p>'); out.push('<div class="live">Working</div>') }
+    else {
+      let h = replyS()
+      if (S.variant === 'C') h += `<div class="rows reply-rows">${openRow('open-s-reply', PAGE_S)}</div>`
+      agent(h)
+      if (S.variant === 'B' && marked()) out.push(`<section class="card card--sotto" aria-label="Prototype ready for review, from Sotto">
+        <div class="card__head">${ICON.page}<strong>Prototype ready for review</strong><span class="tag">Sotto</span></div>
+        <div class="rows">${openRow('open-s-card', PAGE_S)}</div>
+        <p class="card__note">Opening it or replying clears this.</p></section>`)
+    }
+  } else if (id === 'u') {
+    user('Try a stacked chart for the usage page and show me a prototype.')
+    if (S.q === 'none') { agent('<p>Drawing the chart from last week\'s totals.</p>'); out.push('<div class="live">Working</div>') }
+    else {
+      agent('<p>I made two variants of the usage chart: stacked bars, and a stepped area that shows each day\'s limit.</p>')
+      if (S.q === 'held') out.push('<div class="live">Working</div>')
+      if (S.q === 'fixed' || S.q === 'answered') agent(`<p>The prototype is at <code>http://${PAGE_U}/</code>. Press 1 or 2 to switch the variants.</p>`)
+    }
+  } else if (id === 't') {
+    user('The tray icon is blurry at 150% scaling. Fix it.')
+    agent('<p>The icon is drawn at 16 px and scaled up. I am adding 24 and 32 px versions and picking one by the display\'s scale.</p>')
+    out.push('<div class="live">Working</div>')
+  } else {
+    user('Write the release notes for 0.42.')
+    agent('<p>Done. The notes are in <code>docs/release/notes-0.42.md</code>, grouped by what changed for the user.</p>')
+  }
+  S.said[id].forEach(m => { user(m); out.push('<div class="live">Working</div>') })
+  return out.join('')
+}
+
+/* The question card. Its mark depends on the variant when the link is missing. */
+function questionCard(place) {
+  const missing = S.q === 'missing'
+  const p = place === 'phone' ? 'ph-' : ''
+  let banner = '', quiet = '', rows = ''
+  if (missing && S.variant === 'B') banner = `<p class="qcard__banner">${ICON.warn}<span><b>Link missing:</b> this question is about a prototype, but names no page that opens.</span></p>`
+  if (missing && S.variant === 'C') quiet = '<p class="qcard__quiet">This question names no page Sotto can open.</p>'
+  if (!missing) rows = `<div class="rows" role="group" aria-label="Pages for this question">${openRow(p + 'open-u', PAGE_U)}</div>`
+  else if (S.variant === 'A') rows = `<p class="nolink">${ICON.unlink}<span>No working link. Sotto asked the thread for the prototype's page and it did not add one.</span></p>`
+  else if (S.variant === 'C') rows = `<div class="rows"><div class="lrow" role="link" aria-disabled="true" tabindex="0" aria-label="Open the prototype: no link">${ICON.page}<span><strong>Open the prototype: no link</strong><small>The thread named no page</small></span></div></div>`
+  return `<section class="qcard" aria-label="Question from Usage chart${missing ? ', link missing' : ''}">
+    ${banner}
+    <fieldset><legend><span class="tag">Chart</span><span class="prompt">Which usage chart should I build?</span></legend>
+      ${quiet}${rows}
+      <div class="opts">
+        <label class="opt"><input type="radio" name="${p}q" value="Stacked bars." checked><span>Stacked bars <span class="rec">(recommended)</span><small>One bar a day, split by model.</small></span></label>
+        <label class="opt"><input type="radio" name="${p}q" value="Stepped area."><span>Stepped area<small>Shows each day's limit as a line above the area.</small></span></label>
+      </div>
+    </fieldset>
+    <div class="qcard__foot"><button type="button" class="btn btn--primary" id="${p}answer" data-act="answer">Send answer</button></div>
+  </section>`
+}
+
+function renderPane() {
+  const t = thread(S.sel)
+  $('paneHead').innerHTML = `<b>${esc(t.title)}</b><span>/ Sotto</span><span aria-hidden="true">${ICON[t.glyph]}</span><span>${t.provider}</span>`
+  $('transcript').innerHTML = transcriptFor(S.sel)
+  let dock = ''
+  if (S.sel === 's' && marked() && S.variant === 'A') dock = `<div class="ready" role="status" aria-label="Prototype ready for review">
+      <span class="ready__title">${ICON.page}Prototype ready for review</span>
+      ${openRow('open-s-strip', PAGE_S)}</div>`
+  if (S.sel === 'u' && qShown()) dock = questionCard('pane')
+  $('dock').innerHTML = dock
+  $('prompt').setAttribute('aria-label', `Prompt for ${t.title}`)
+  $('model').textContent = t.model
+}
+
+function renderGlance() {
+  const rows = overview().filter(r => r.group === 'Needs you')
+  const why = r => r.ask ? 'question' : S.variant === 'A' ? 'prototype to review' : 'prototype'
+  const name = (r, label) => `<button type="button" class="glance__name" id="gl-${r.id}" data-sel="${r.id}" aria-label="${esc(label)}">${esc(thread(r.id).title)}</button>`
+  let html = ''
+  if (rows.length) html += `<h2>${rows.length} need${rows.length === 1 ? 's' : ''} you</h2><ul>${rows.map(r => `<li><span class="ring" data-tone="${r.proto ? 'proto' : 'needs'}" aria-hidden="true"></span>${name(r, r.proto ? `Open ${thread(r.id).title}, a prototype to review` : `Open ${thread(r.id).title} at its question`)}<span class="glance__why" aria-hidden="true">${why(r)}</span></li>`).join('')}</ul>`
+  if (S.variant === 'B' && marked()) html += `${rows.length ? '<span class="glance__sep" aria-hidden="true">·</span>' : ''}<span><span class="glance__why">Prototype:</span> ${name({ id: 's' }, 'Open Settings restyle, a prototype to review')}</span>`
+  $('glance').innerHTML = html ? `<section class="glance" aria-label="Needs you">${html}</section>` : ''
+}
+
+function renderWatcher() {
+  const items = [
+    '<div class="msg" data-role="user">Keep an eye on Fix tray icon, and tell me when anything is ready for me.</div>',
+    '<div class="msg" data-role="agent"><span class="signed">Watcher</span><p>Watching Fix tray icon. It is adding larger icon sizes now.</p></div>',
+    ...S.news.map(n => `<div class="news" role="status"><b>Sotto</b><span>${esc(n)}</span></div>`),
+  ]
+  $('wconv').innerHTML = items.join('')
+}
+
+function renderOverview() {
+  const rows = overview()
+  $('allCount').textContent = rows.length
+  const html = GROUPS.map(g => {
+    const list = rows.filter(r => r.group === g)
+    if (!list.length) return ''
+    return `<section class="group" data-tone="${g === 'Needs you' ? 'needs' : ''}"><h3>${g}<span class="count">${list.length}</span></h3>${list.map(r => {
+      const t = thread(r.id)
+      const act = r.ask ? `<button type="button" class="btn" id="ov-ans-${r.id}" data-sel="${r.id}" aria-label="Open to answer, ${esc(t.title)}">Open to answer</button>`
+        : r.proto && S.variant !== 'C' ? `<button type="button" class="btn" id="ov-open-${r.id}" data-act="open" aria-label="Open the prototype, ${PAGE_S}">Open the prototype</button>` : ''
+      const tone = r.ask || (r.proto && S.variant !== 'B') ? 'needs' : ''
+      return `<div class="orow"><span class="orow__glyph" aria-hidden="true">${ICON[t.glyph]}</span><span class="orow__t">${esc(t.title)}</span>${act}<span class="orow__s" data-tone="${tone}">${r.proto && S.variant === 'A' ? ICON.pageSm + ' ' : ''}${esc(r.word)}</span></div>`
+    }).join('')}</section>`
+  }).join('')
+  $('over').innerHTML = `<div class="over__head">All threads<span>by what you must do</span></div>${html}`
+}
+
+function renderPhone() {
+  const sheet = qShown() ? `<div class="phone__sheet" aria-label="Question sheet"><span class="phone__grab"></span>${questionCard('phone')}</div>`
+    : '<p class="phone__empty">No question is waiting.</p>'
+  const list = THREADS.slice(0, 3).map(t => { const st = status(t.id); return `<div class="srow" style="cursor:default"><span class="srow__glyph">${ICON[t.glyph]}</span><span class="srow__title">${esc(t.title)}</span><span class="srow__when">${t.when}</span><span class="srow__status" data-tone="${st.tone || ''}">${st.dot ? '<i class="dot"></i>' : ''}${st.icon ? ICON.pageSm : ''}${esc(st.label)}</span></div>` }).join('')
+  $('phone').innerHTML = `<div class="phone__bar"><span>9:41</span><span>Sotto</span></div><div class="phone__list">${list}</div>${sheet}`
+}
+
+function renderReadout() {
+  const left = Math.max(0, HOLD_SECONDS - Math.floor((Date.now() - S.heldAt) / 1000))
+  const proto = { before: 'Not marked. Still working on the prototype.', marked: 'Marked "Prototype ready for review". Stays until Zach opens the page or replies.', opened: 'Not marked. Zach opened the page.', replied: 'Not marked. Zach replied in the thread.' }[S.proto]
+  const q = { none: 'None asked yet.', held: `Held. Zach sees no card. Sotto sent the thread back to add the page. Shows anyway in ${left} s.`, fixed: 'Shown, with its Open the prototype row.', missing: 'Shown, marked link missing.', answered: 'Answered.' }[S.q]
+  const lines = [['Variant', `${S.variant}: ${VARIANTS[S.variant]}`], ['Settings restyle', proto], ['Usage chart question', q], ['Watcher news', S.news.length ? `${S.news.length} line${S.news.length > 1 ? 's' : ''}` : 'None']]
+  $('readout').innerHTML = lines.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')
+}
+
+function render() {
+  const focused = document.activeElement && document.activeElement.id
+  document.documentElement.dataset.variant = S.variant
+  $('label').innerHTML = `<b>${S.variant}</b><span>${esc(VARIANTS[S.variant])}</span>`
+  $('label').title = `${S.variant}: ${VARIANTS[S.variant]}`
+  renderSide(); renderPane(); renderGlance(); renderWatcher(); renderOverview(); renderPhone(); renderReadout()
+  if (focused && !$(focused)) $(`row-${S.sel}`).focus({ preventScroll: true })
+  else if (focused && $(focused) && document.activeElement !== $(focused)) $(focused).focus({ preventScroll: true })
+}
+
+/* Scenario steps. */
+let timer = 0
+function step(n) {
+  if (n === '1') {
+    S.proto = 'marked'; S.sel = 's'
+    if (!S.news.some(x => x.startsWith('Settings restyle'))) S.news.push('Settings restyle has a prototype ready for review.')
+  }
+  if (n === '2' && S.proto === 'marked') S.proto = 'opened'
+  if (n === '3' && S.proto === 'marked') { S.proto = 'replied'; S.said.s.push('Go with A, but keep the section names bold.') }
+  if (n === '4') { S.q = 'held'; S.heldAt = Date.now(); S.sel = 'u'; tick() }
+  if (n === '5') { S.q = 'fixed'; S.sel = 'u' }
+  if (n === '6') { S.q = 'missing'; S.sel = 'u' }
+  if (n === 'reset') Object.assign(S, { proto: 'before', q: 'none', heldAt: 0, news: [], sel: 's', said: { s: [], u: [], t: [], r: [] } })
+  render()
+}
+function tick() {
+  clearInterval(timer)
+  timer = setInterval(() => {
+    if (S.q !== 'held') return clearInterval(timer)
+    if (Date.now() - S.heldAt >= HOLD_SECONDS * 1000) { clearInterval(timer); S.q = 'missing'; render() } else renderReadout()
+  }, 1000)
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-step], [data-sel], [data-act]')
+  if (!b) return
+  if (b.dataset.step) return step(b.dataset.step)
+  if (b.dataset.sel) { S.sel = b.dataset.sel; render(); return }
+  if (b.dataset.act === 'open') {
+    if (b.id.includes('open-u')) return
+    if (S.proto === 'marked') { S.proto = 'opened'; render() }
+  }
+  if (b.dataset.act === 'answer') { const ph = b.id.startsWith('ph-'); S.q = 'answered'; S.said.u.push(document.querySelector(`input[name="${ph ? 'ph-q' : 'q'}"]:checked`)?.value || 'Stacked bars.'); render() }
+})
+$('compose').addEventListener('submit', e => {
+  e.preventDefault()
+  const text = $('prompt').value.trim() || 'Looks good. Carry on.'
+  if (S.sel === 's' && S.proto === 'marked') S.proto = 'replied'
+  S.said[S.sel].push(text); $('prompt').value = ''; render()
+})
+$('prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('compose').requestSubmit() } })
+
+function setVariant(k) {
+  S.variant = k
+  const url = new URL(location.href); url.searchParams.set('variant', k); history.replaceState(null, '', url)
+  render()
+}
+const move = d => setVariant(KEYS[(KEYS.indexOf(S.variant) + d + KEYS.length) % KEYS.length])
+$('prev').onclick = () => move(-1)
+$('next').onclick = () => move(1)
+document.addEventListener('keydown', e => {
+  if (e.target.closest('textarea, input, [role="radiogroup"]') || e.altKey || e.ctrlKey || e.metaKey) return
+  if (e.key === 'ArrowLeft') move(-1)
+  if (e.key === 'ArrowRight') move(1)
+})
+$('theme').onclick = () => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  $('theme').setAttribute('aria-pressed', String(light))
+}
+render()
+</script>
+</body>
+</html>
