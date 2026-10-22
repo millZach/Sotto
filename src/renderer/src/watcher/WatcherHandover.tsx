@@ -65,7 +65,11 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       const area = strip.current?.closest('.thread-workspace__compose')
-      if (event.key !== 'Escape' || event.defaultPrevented || !(event.target instanceof Node) || !area?.contains(event.target) || strip.current?.contains(event.target)) return
+      if (event.key !== 'Escape' || !(event.target instanceof Element) || !area?.contains(event.target) || strip.current?.contains(event.target)) return
+      // The prompt editor's own keymap takes every Escape to select around the caret, which leaves nothing open; there,
+      // only a composer menu that is open keeps the key.
+      const editor = event.target.closest('.prompt-editor')
+      if (event.defaultPrevented && (editor === null || editor.getAttribute('aria-expanded') === 'true')) return
       event.preventDefault()
       putAway.current()
     }

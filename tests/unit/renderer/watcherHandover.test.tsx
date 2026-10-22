@@ -197,6 +197,20 @@ describe('the handover over the new Watcher’s composer', () => {
     expect(sends(command)).toHaveLength(0)
   })
 
+  it('puts the offer away even when the prompt editor’s own keymap takes Escape, unless a composer menu is open', async () => {
+    const { bridge } = renderRoom(roomState())
+    const pane = await watcherPane()
+    const box = within(pane).getByRole('textbox', { name: 'Watcher message' })
+    // The built editor's keymap prevents every Escape; the test editor does not, so this one stands in for it.
+    box.addEventListener('keydown', event => { if (event.key === 'Escape') event.preventDefault() })
+    box.setAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(bridge.dismissHandover).not.toHaveBeenCalled()
+    box.setAttribute('aria-expanded', 'false')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    await waitFor(() => expect(bridge.dismissHandover).toHaveBeenCalledTimes(1))
+  })
+
   it('leaves the offer when Escape closes something open in the composer', async () => {
     const user = userEvent.setup()
     const { bridge } = renderRoom(roomState())
