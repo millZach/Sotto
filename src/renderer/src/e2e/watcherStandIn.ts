@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { handoverCountsSchema } from '../../../shared/agents'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
 import { stopAllRunning, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
@@ -20,6 +21,13 @@ export const watcherStandInSeedSchema = z.object({
   stopResults: z.record(z.string(), z.object({ status: z.enum(['stopped', 'requested', 'refused', 'uncertain']), message: z.string() }).strict()).optional(),
   /** How long Stop all's stop takes to answer, so a run can act while it is still going. */
   stopDelayMs: z.number().int().min(0).max(60_000).optional(),
+  /**
+   * What New Watcher starts: the new Watcher's identity, and the handover of the current one it offers, with its words
+   * for Read it. The current Watcher goes to history, as main does. Without it, New Watcher refuses.
+   */
+  startNew: z.object({ created: watcherIdentitySchema, counts: handoverCountsSchema, text: z.string() }).strict().optional(),
+  /** New Watcher refuses with this, as main does while Watcher's deliveries are still pending. */
+  startNewRefusal: z.string().optional(),
 }).strict()
 export type WatcherStandInSeed = z.infer<typeof watcherStandInSeedSchema>
 
@@ -88,6 +96,20 @@ export function createE2EWatcherBridge(): WatcherBridge | undefined {
       return { status: 'ok', results, state: publish({ watchedThreads: state.watchedThreads.map(row => stopped.some(item => same(item, row.target))
         ? { ...row, status: 'idle', backgroundWorkCount: 0 } : row) }) }
     },
+    // New Watcher as main answers it: the current Watcher to history and the seeded one current, on the same choices,
+    // with the last one's handover offered until it is put away.
+    startNew: async () => {
+      if (seed.startNewRefusal !== undefined) return { ...NOT_HERE, code: 'THREAD_BUSY', message: seed.startNewRefusal, retryable: true }
+      const last = state.current
+      if (seed.startNew === undefined || last === null) return { ...NOT_HERE, message: 'This test run starts no new Watcher.' }
+      const created = { ...seed.startNew.created, provider: last.provider }
+      return { status: 'ok', state: publish({ current: created, history: [...state.history, last],
+        handover: { source: last.target, provider: last.provider, counts: seed.startNew.counts } }) }
+    },
+    readHandover: async () => state.handover == null || seed.startNew === undefined ? { ...NOT_HERE, code: 'TARGET_CHANGED', message: 'There is no handover to read.' }
+      : { status: 'ok', text: seed.startNew.text, counts: state.handover.counts },
+    continueWithHandover: async () => ({ status: 'ok', state }),
+    dismissHandover: async () => ({ status: 'ok', state: publish({ handover: null }) }),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
 }

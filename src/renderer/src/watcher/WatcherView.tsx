@@ -35,6 +35,7 @@ import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
+import { NewWatcherNote, newWatcherNoteFacts } from './WatcherNew'
 import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
@@ -241,11 +242,12 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   // Its reading position is kept for a trip to another room, as a beside thread's is for its next opening, and for a
   // look at Watched.
   useKeptReadingPosition(row.thread, WATCHER_PANE_ID, watched === null)
-  // The first entry's composer had focus and is gone, or the room opened before Watcher's thread arrived: focus left
-  // with nowhere to be goes to Watcher's own composer.
+  // The first entry's composer had focus and is gone, the room opened before Watcher's thread arrived, or New Watcher
+  // or a provider change took the last Watcher's composer away: focus left with nowhere to be goes to Watcher's own composer.
+  const threadId = row.thread.id
   useLayoutEffect(() => {
     if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
-  }, [])
+  }, [threadId])
   // Each reply in which Watcher changed files itself carries a line saying so (`WatcherOwnChangeFor`).
   const room = useWatcherRoom()
   const ownChanges = room?.state?.ownChanges
@@ -254,6 +256,10 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   // (ADR-0073), and while it stands a send carries it.
   const offer = room?.state?.handover ?? null
   const offered = offer !== null && room?.handover != null
+  // A Watcher that replaced another says so while its conversation is empty: on which model, and what carried on.
+  const note = newWatcherNoteFacts(state, row.thread, room?.state ?? null)
+  const noteModel = note?.model, noteCarries = note?.carries
+  const empty = useMemo(() => noteModel === undefined ? undefined : <NewWatcherNote model={noteModel} carries={noteCarries ?? null} />, [noteModel, noteCarries])
   const gate = useMemo(() => watcherSendGate(room?.handover, room?.settle, offered), [room?.handover, room?.settle, offered])
   // Each action Watcher took is a receipt card under the reply of the turn that took it, where main's record places it,
   // and each thread the user took over is a quiet line in the conversation, after the turn it came in (ADR-0073).
@@ -288,7 +294,7 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
     <WatcherConversationContext.Provider value={conversation}><WatcherAskAnsweringContext.Provider value={answering}>
       <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
-        error={error} now={now} watcherHeader={header} watcherBody={watched}
+        error={error} now={now} watcherHeader={header} watcherBody={watched} watcherEmpty={empty}
         notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
     </WatcherAskAnsweringContext.Provider></WatcherConversationContext.Provider>
   </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>

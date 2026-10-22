@@ -265,13 +265,13 @@ const providerNameOf = (thread: AgentThread): string | undefined => thread.provi
  * Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. One
  * the user set aside is not: Sotto never sends it again, whatever became of it (#1156).
  */
-const sending = (state: AgentState, threadId: string): boolean =>
+export const promptOnItsWay = (state: AgentState, threadId: string): boolean =>
   state.deliveries?.some(delivery => delivery.threadId === threadId && !delivery.setAside
     && (delivery.status === 'queued' || delivery.status === 'submitting' || delivery.status === 'uncertain')) === true
 
 /** Why Watcher's permissions are fixed now, as a thread's are while it works: main refuses a change until then. */
 export function watcherPermissionFixedReason(state: AgentState, thread: AgentThread): string | undefined {
-  return thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id)
+  return thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
     ? 'Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.' : undefined
 }
 
@@ -347,7 +347,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
    * (#1192), and its chip keeps its mark until the provider reports it. They do not read the coordinator's busy mark, which covers the very save a press starts and outlives its
    * reply: a save in flight fixes nothing, and main's thread lane runs the saves and any prompt in order.
    */
-  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id) || unconfirmed.has('permissions')
+  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
   const unconfirmedKey = [...unconfirmed].join(',')
   useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, unconfirmedKey])
@@ -373,7 +373,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     heading: (name: string) => `Continue in a new thread on ${name}`,
     note: 'Picking one starts a new thread there with a handover of this one. This thread stays as it is.' }
   // Continuing needs the thread at rest, not its own provider: a thread whose provider went away can still continue elsewhere.
-  const continueFixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id)
+  const continueFixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
   const pickerFixed = continuations.length > 0 ? continueFixed : fixed
   // Where the thread's own model cannot change in place, its chip lists that model and the providers it may continue on.
   const continueOnly = (current: readonly AgentModel[]): AgentModel[] => [...current.filter(model => model.id === catalogEntry(current, thread.modelId)?.id), ...continuations]

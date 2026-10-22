@@ -100,7 +100,8 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
     }}>
     <div className="watcher-handover__lead">
       <CornerDownRight size={15} aria-hidden="true" />
-      <p role="status">Sending starts the new Watcher with a <strong>handover</strong> of the last one, from {PROVIDER_LABELS[offer.provider]}.</p>
+      {/* After New Watcher, the last one was on the same provider, so the strip names none. */}
+      <p role="status">Sending starts the new Watcher with a <strong>handover</strong> of the last one{offer.provider === room.state?.current?.provider ? '' : `, from ${PROVIDER_LABELS[offer.provider]}`}.</p>
       <button type="button" className="watcher-handover__dismiss tt-focusable" aria-label="Don’t hand over: start the new Watcher without it"
         title="Don’t hand over: start the new Watcher without it" onClick={() => void dismiss()}><X size={15} aria-hidden="true" /></button>
     </div>
