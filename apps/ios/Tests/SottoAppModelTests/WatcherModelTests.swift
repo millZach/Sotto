@@ -1469,23 +1469,36 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(hidden, 0, accuracy: 0.0001)
     }
 
-    /// The box puts Watcher's permission chip away only for a held card that can't sit whole above it with the chip there.
-    /// A card that fits keeps the chip, and the room is the one with the chip in place, so putting it away never brings it
-    /// back.
-    func testThePermissionChipIsPutAwayOnlyForACardTooTallToFitOverIt() {
+    /// The box puts Watcher's permission chip away only for a thread's held card that can't sit whole above it with the
+    /// chip there. A card that fits keeps the chip, and the room is the one with the chip in place, so putting it away never
+    /// brings it back.
+    func testThePermissionChipIsPutAwayOnlyForAThreadsCardTooTallToFitOverIt() {
         // An iPhone SE: the header ends at 146, and the box with the chip over it starts at 460, 314 points of room. The
         // chip and its spacing take 52 points of the box.
         let question = CGRect(x: 16, y: 146, width: 343, height: 348)
-        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, top: 146, dockTopWithChip: 460),
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, own: false, top: 146, dockTopWithChip: 460),
                       "A question with its answers is taller than the room with the chip, so the chip goes")
         // With the chip away the box starts at 512, but the room is still worked out with the chip in place.
-        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, top: 146, dockTopWithChip: 512 - 52),
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, own: false, top: 146, dockTopWithChip: 512 - 52),
                       "Putting the chip away leaves the decision where it was")
-        let own = CGRect(x: 16, y: 200, width: 343, height: 220)
-        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: own, top: 146, dockTopWithChip: 460),
-                       "Watcher's own card fits whole above the box, so the chip stays")
-        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: CGRect(x: 16, y: 146, width: 343, height: 314.5), top: 146,
-                                                       dockTopWithChip: 460), "A card as tall as the room fits")
+        let worker = CGRect(x: 16, y: 200, width: 343, height: 240)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: worker, own: false, top: 146, dockTopWithChip: 460),
+                       "A thread's card that fits whole above the box keeps the chip")
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: CGRect(x: 16, y: 146, width: 343, height: 314.5), own: false,
+                                                       top: 146, dockTopWithChip: 460), "A card as tall as the room fits")
+    }
+
+    /// Watcher's own card always keeps the chip, however tall it is: its request is about Watcher's permissions. On the SE,
+    /// with Watcher's held line in the box, the own card of a phone without Can answer is about 265 points against about
+    /// 273 of room, close enough that a rule by fit alone put the chip away on CI.
+    func testWatchersOwnCardAlwaysKeepsThePermissionChip() {
+        let own = CGRect(x: 16, y: 270, width: 343, height: 267)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: own, own: true, top: 146, dockTopWithChip: 419))
+        let tall = CGRect(x: 16, y: 146, width: 343, height: 400)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: tall, own: true, top: 146, dockTopWithChip: 419),
+                       "Even an own card taller than the room keeps the chip")
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: tall, own: false, top: 146, dockTopWithChip: 419),
+                      "A thread's card as tall goes without it")
     }
 
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {
