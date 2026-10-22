@@ -21,6 +21,7 @@ import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
 import { FollowupStore } from '../../src/main/agents/followups'
+import { watchRoomFixedPoint } from '../fixtures/watcherRoomFixedPoint'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -36,7 +37,12 @@ async function fixture(history = true) {
     historyEnabled: () => history })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
-  cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
+  // The window passes the room update on unparsed (#1336), so every room this Watcher publishes must be what the parse gives.
+  const room = watchRoomFixedPoint(service)
+  cleanups.push(async () => {
+    room.unsubscribe(); service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop()
+    expect(room.published()).toBeGreaterThan(0); expect(room.failures()).toEqual([])
+  })
   await f.control.start()
   await f.control.commandShell({ type: 'connect', provider: 'codex' })
   await service.recover()
