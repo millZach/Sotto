@@ -1289,21 +1289,24 @@ it('reads a replaced Watcher’s unconfirmed start under that Watcher’s own id
   const reads = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic-read-held'))
   expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
   expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('uncertain')
-  // Watcher's turn ends with its start unconfirmed, and the user moves Watcher to another provider: that holds nothing back.
+  // Watcher's turn ends with its start unconfirmed. While the thread it started there may still be working, a provider
+  // change waits: a host stops a thread only for the Watcher that started it.
   const binding = f.workspace.registry.byThread(f.id)!
   const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
   native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
+  expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
+    message: 'A thread Watcher started on another computer is still working, and only this Watcher can stop it there. Wait for it to finish, or stop it with Stop all, then change its provider. Nothing was changed.' })
+  // Its slot freed, as when that thread finishes, the move goes through with the start still unconfirmed.
+  await f.control.updateWatcher(record => { record.reservations = [] })
   expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
   expect(f.watcher.state().history.at(-1)!.target.threadId).toBe(f.id)
   // The host keeps the start under the Watcher that made it, so it is read under that one, and its receipt comes back.
   reads.mockImplementation(read)
   await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
   expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('accepted')
-  // Its worker is still working, so its slot stays held, as it would have under the replaced Watcher.
-  expect(f.watcher.startsInFlight()).toBe(1)
 })
 
 it.each(['Stop', 'Stop all'])('%s fences the owning request and removes its admitted machine queue', async action => {

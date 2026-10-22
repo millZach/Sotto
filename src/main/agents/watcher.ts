@@ -1500,7 +1500,8 @@ export class WatcherService implements WatcherControlHooks {
    * What holds Watcher back from changing its model or effort, changing provider or being replaced, said as the refusal;
    * null when nothing does. Only Watcher's own work holds it: its turn, a request card, a tool call under way, or a message
    * on its way to it. A replacement also waits for its sends queued behind a working thread, which a new Watcher could not
-   * send. Threads it started that are still working and deliveries not yet confirmed carry on and are tracked as before,
+   * send, and for threads it started on a paired host that are still working, which a host stops only for the Watcher that
+   * started them. Threads it started on this computer and deliveries not yet confirmed carry on and are tracked as before,
    * since they belong to the record and not to a conversation (ADR-0073, #1325).
    */
   private changeHeld(record: Readonly<WatcherRecord>, thread: AgentThread, change: 'model' | 'provider' | 'new'): string | null {
@@ -1518,7 +1519,11 @@ export class WatcherService implements WatcherControlHooks {
     if (change === 'model') return null
     let queued = 0
     for (const operation of record.operations) if (operation.deliveryState === 'queued') queued++
-    if (queued === 0) return null
+    if (queued === 0) {
+      const local = this.hostId()
+      const remote = record.reservations.some(item => item.target.hostId !== local && record.operations.some(operation => operation.id === item.operationId && operation.action === 'start'))
+      return remote ? `A thread Watcher started on another computer is still working, and only this Watcher can stop it there. Wait for it to finish, or stop it with Stop all, then ${then}. Nothing was changed.` : null
+    }
     return queued === 1 ? `Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then ${then}. Nothing was changed.`
       : `Watcher has ${queued} messages queued for threads that are still working, which a new Watcher could not send. Wait until they have gone, or stop them with Stop all, then ${then}. Nothing was changed.`
   }
@@ -2964,11 +2969,12 @@ ${operation.draftId}`)
         if (projection.hostId !== host.hostId || JSON.stringify(projection.master) !== JSON.stringify(master)) throw new Error('wrong-watcher-host')
         const exact = new Map<string, Extract<ReturnType<typeof watcherToolSchemas.read_operation.output.parse>, { status: 'ok' }>['receipt'] | null>()
         const projected = new Set(projection.operations.map(item => item.id))
+        let masterOf: ((operation: Readonly<WatcherOperation>) => WatcherIdentity | undefined) | undefined
         for (const operation of this.record().operations.filter(item => item.target.hostId === host.hostId
           && ['dispatching', 'uncertain'].includes(item.deliveryState) && !this.active.has(item.id) && !projected.has(item.id))) {
           try {
             // The host keeps a receipt under the Watcher conversation that made it, so a replaced one's is read under its own.
-            const result = watcherToolSchemas.read_operation.output.parse(await this.remote.read(host.hostId, { master: this.operationMaster(operation) ?? master,
+            const result = watcherToolSchemas.read_operation.output.parse(await this.remote.read(host.hostId, { master: (masterOf ??= this.operationMasters())(operation) ?? master,
               call: { name: 'read_operation', input: { operationId: operation.id } } }))
             if (result.status === 'refused' && result.code === 'OPERATION_NOT_RECORDED') exact.set(operation.id, null)
             else if (result.status === 'ok' && result.receipt.operationId === operation.id && result.receipt.requestId === operation.requestId
@@ -3052,10 +3058,15 @@ ${operation.draftId}`)
     if (beforeObservation !== digest(this.record())) await this.options.control.updateWatcher(() => undefined)
     this.publish()
   }
-  /** The Watcher conversation, current or in Watcher history, whose request an operation belongs to. */
-  private operationMaster(operation: Readonly<WatcherOperation>): WatcherIdentity | undefined {
-    const record = this.view(), request = record.requests.find(item => item.id === operation.requestId)
-    return request && [record.current, ...record.history].find(identity => identity && key(identity.target) === key(request.watcher)) || undefined
+  /**
+   * The Watcher conversation, current or in Watcher history, whose request each operation belongs to. Built once for a
+   * reconcile pass that needs it, so a pass's reads do not each search the record.
+   */
+  private operationMasters(): (operation: Readonly<WatcherOperation>) => WatcherIdentity | undefined {
+    const record = this.view(), identities = new Map<string, WatcherIdentity>()
+    for (const identity of [...record.history, ...record.current ? [record.current] : []]) identities.set(key(identity.target), identity)
+    const watchers = new Map(record.requests.map(request => [request.id, key(request.watcher)]))
+    return operation => { const watcher = watchers.get(operation.requestId); return watcher === undefined ? undefined : identities.get(watcher) }
   }
   /** The socket supplies the authenticated client, live guard and answer policy; none can be submitted as an argument. */
   async admitRemote(raw: WatcherHostControl, clientId: string, guard: () => void, mayAnswer: () => boolean = () => false): Promise<unknown> {
