@@ -45,6 +45,8 @@ const answerEvidence = evidenceDirectory('artifacts/watcher-answer')
 const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
 /** Watcher's header in the macOS layout, clear of the traffic lights in a narrow pane (#1214): captures for its note. */
 const macEvidence = evidenceDirectory('artifacts/macos-traffic-light-room')
+/** New Watcher in Watcher's composer (Zach's pick A of prototype/new-watcher-button): captures for its note. */
+const newWatcherEvidence = evidenceDirectory('artifacts/new-watcher-button')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -73,7 +75,9 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
   readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[]
   /** More of the projection, from the host's ID and the request's: receipts and takeovers. */
   readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
-  readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number }): Promise<void> {
+  readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number
+  /** The thread New Watcher makes the new Watcher, emptied first; without it, New Watcher refuses. */
+  readonly startNew?: string }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -96,20 +100,25 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     ...options.permissionConfirms === false ? { permissionConfirms: false } : {},
     ...options.stopResults ? { stopResults: options.stopResults } : {},
     ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
+    ...options.startNew ? { startNew: { created: { ...identity, target: target(options.startNew), creationOperationId: randomUUID(), createdAt: at(0) },
+      counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: true },
+      text: 'This is a handover from another Sotto thread. The history below is context, not a new request.\n\nThe user:\nFind why the visual gate flakes and fix the footer links. Keep an eye on both.' } } : {},
   }
   if (options.more) {
     const more = options.more(hostId!, requestId)
     seed.state = { ...seed.state, ...more, ...more.requests ? {} : { requests: seed.state.requests },
       ...more.watchedThreads ? {} : { watchedThreads: seed.state.watchedThreads } }
   }
-  await page.evaluate(async ({ key, seed, master, history, extra, activities }) => {
+  await page.evaluate(async ({ key, seed, master, history, extra, activities, emptied }) => {
     localStorage.setItem(key, JSON.stringify(seed))
+    if (emptied !== null) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: emptied, text: '', messages: [], status: 'idle' })
     if (history) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: [
       { id: 'watcher-ask', role: 'user', text: 'Find why the visual gate flakes and fix the footer links. Keep an eye on both.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 29)).toISOString() },
       { id: 'watcher-reply', role: 'assistant', text: 'Started Visual gate flake on Claude Code and Footer links on Codex, and I am watching both. Visual gate flake is asking to run the unit suite. Only you can allow that, in its own pane.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 33)).toISOString() },
       ...extra,
     ], ...activities.length ? { activities } : {} })
-  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false, extra: [...options.messages ?? []], activities: [...options.activities ?? []] })
+  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false, extra: [...options.messages ?? []], activities: [...options.activities ?? []],
+    emptied: options.startNew ?? null })
   await page.reload()
   await openThreads(page)
 }
@@ -371,7 +380,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -381,10 +390,12 @@ test.describe("Watcher's room on the built app", () => {
     const news = /^news-/u
     const answer = /^answer-/u
     const mac = /^mac-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key))],
+    const fresh = /^new-watcher-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
       [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
-      [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))]] as const
+      [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))],
+      [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -1811,6 +1822,130 @@ test.describe("Watcher's room on the built app", () => {
     }, ['codex', 'claude'])
   })
 
+  test('New Watcher: first in the composer, unavailable while Watcher works, and a press brings the new Watcher with the handover', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      const captureNew = (name: string): Promise<void> => captureInto(newWatcherEvidence, launched, name)
+      const kept = (appearance: 'dark' | 'light', width: number): boolean => width !== 1600 && (appearance === 'dark' || width === 1280)
+      await openThreads(page)
+      // Streaming WAV stall is on Watcher's model, so it stands for the new Watcher, emptied.
+      await seedRoom(page, { current: true, startNew: 'wav-stall' })
+      await openRoom(page)
+      await resizeContentWindow(launched, 1280, 800)
+      const pane = watcherPane(page)
+      const button = pane.getByRole('button', { name: 'New Watcher', exact: true })
+      await expect(button).toBeVisible()
+      await expect(button).toHaveAttribute('title', 'Start a new Watcher with a handover of this one')
+      await expect(button).not.toHaveAttribute('aria-disabled', 'true')
+      // Watcher always runs on this computer, so its composer does not say so.
+      await expect(pane.locator('.thread-host-chip')).toHaveCount(0)
+      // The keyboard reaches it after the message and the paperclip, which is off for a model that takes no images, and
+      // before the model.
+      const paperclip = pane.getByRole('button', { name: 'Attach screenshots' })
+      expect(await paperclip.evaluate((clip, chip) => Boolean(clip.compareDocumentPosition(chip!) & Node.DOCUMENT_POSITION_FOLLOWING), await button.elementHandle())).toBe(true)
+      await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
+      await page.keyboard.press('Tab')
+      if (await paperclip.isEnabled()) await page.keyboard.press('Tab')
+      await expect(button).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(pane.getByRole('combobox', { name: 'Thread model' })).toBeFocused()
+      // The captures show the chip at rest, with the composer focused as the room opens.
+      await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height, [800, 540])
+          await settle(page)
+          expect(await pageBoundProblems(page), `the idle chip at ${width}x${height}, ${appearance}`).toEqual([])
+          await roomEdges(page, width, height)
+          await expect(button).toBeInViewport({ ratio: 1 })
+          await contrastHolds(page, `new-watcher-idle-${appearance}-${width}x${height}`)
+          if (kept(appearance, width)) await captureNew(`idle-${appearance}-${width}x${height}.png`)
+        }
+      }
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+      await resizeContentWindow(launched, 1280, 800)
+
+      // While Watcher works, it stays in the Tab order, says why, and a press does nothing.
+      await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'stream', threadId, messageId: 'watcher-working', text: 'Checking the release.', status: 'running' }), CURRENT)
+      await expect(button).toHaveAttribute('aria-disabled', 'true')
+      await expect(button).toHaveAttribute('title', 'Wait for Watcher to finish before starting a new one.')
+      await expect(button).toHaveAccessibleDescription('Wait for Watcher to finish before starting a new one.')
+      await button.focus()
+      await page.keyboard.press('Enter')
+      await expect(pane.getByRole('region', { name: 'Handover of the last Watcher' })).toHaveCount(0)
+      await settle(page)
+      await captureNew('busy-dark-1280x800.png')
+      await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: 'Both are still running.' }), CURRENT)
+      await expect(button).not.toHaveAttribute('aria-disabled', 'true')
+
+      // Enter starts the new Watcher at once: the handover over its composer, Continue, its empty room's note, and focus
+      // in its composer.
+      await button.focus()
+      await page.keyboard.press('Enter')
+      const strip = pane.getByRole('region', { name: 'Handover of the last Watcher' })
+      await expect(strip).toContainText('Sending starts the new Watcher with a handover of the last one.')
+      await expect(strip).not.toContainText('from Codex')
+      await expect(strip).toContainText('It carries all 2 messages.')
+      await expect(pane.getByRole('button', { name: 'Continue with the handover' })).toBeVisible()
+      await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toBeFocused()
+      const note = pane.locator('.watcher-new-note')
+      await expect(note).toContainText(/^New Watcher on .+\.The last conversation is in Watcher history on the Threads page\. Watcher still watches your 2 threads, and the threads it started keep working\.$/u)
+      await expect(pane.getByText('What is next for this thread?')).toHaveCount(0)
+      // The new Watcher has said nothing yet, so there is nothing to hand over again.
+      await expect(button).toHaveAccessibleDescription('This Watcher is new, so there is nothing to hand over yet.')
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height, [800, 540])
+          await settle(page)
+          expect(await pageBoundProblems(page), `after the press at ${width}x${height}, ${appearance}`).toEqual([])
+          await roomEdges(page, width, height)
+          await expect(strip).toBeInViewport()
+          await expect(pane.getByRole('button', { name: 'Continue with the handover' })).toBeInViewport()
+          await contrastHolds(page, `new-watcher-after-${appearance}-${width}x${height}`)
+          if (kept(appearance, width)) await captureNew(`after-${appearance}-${width}x${height}.png`)
+        }
+      }
+      // Escape in the composer puts the offer away, and the send button sends again.
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+      await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
+      await page.keyboard.press('Escape')
+      await expect(strip).toHaveCount(0)
+      await expect(pane.getByRole('button', { name: 'Send prompt' })).toBeVisible()
+    }))
+  })
+
+  test('against main’s own Watcher, New Watcher starts one on the same model with the last one’s handover', async () => {
+    test.setTimeout(4 * 60_000)
+    await withMainWatcher('sotto-e2e-new-watcher-', { reply: 'Watcher here. Release notes is missing the install line.' }, async (launched) => {
+      const { page } = launched
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await page.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Check the release notes and tell me what is missing.')
+      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+      const pane = watcherPane(page)
+      await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. Release notes is missing the install line.')
+      await expect.poll(async () => (await mainRoom(page)).currentOptions?.status).toBe('idle')
+      const before = await mainRoom(page)
+      const button = pane.getByRole('button', { name: 'New Watcher', exact: true })
+      await expect(button).not.toHaveAttribute('aria-disabled', 'true')
+      await button.click()
+      const strip = pane.getByRole('region', { name: 'Handover of the last Watcher' })
+      await expect(strip).toContainText('Sending starts the new Watcher with a handover of the last one.')
+      await expect(strip).not.toContainText(/, from /u)
+      const after = await mainRoom(page)
+      expect(after.current?.target).not.toEqual(before.current!.target)
+      expect(after).toMatchObject({ current: { provider: before.current!.provider },
+        currentOptions: { modelId: before.currentOptions!.modelId, runtimeMode: before.currentOptions!.runtimeMode },
+        history: [expect.objectContaining({ target: before.current!.target })], handover: { source: before.current!.target, provider: before.current!.provider } })
+      await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toBeFocused()
+      await expect(pane.locator('.watcher-new-note')).toContainText('The last conversation is in Watcher history on the Threads page.')
+      await expect(button).toHaveAccessibleDescription('This Watcher is new, so there is nothing to hand over yet.')
+    })
+  })
+
   test('stable shows nothing of Watcher, even with a projection seeded', async () => {
     await onReleaseTrack('stable', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
@@ -1823,6 +1958,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(page.getByRole('button', { name: /^Watch |^Stop watching/ })).toHaveCount(0)
       await expect(page.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveCount(0)
       await expect(page.locator('.watcher-dock')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'New Watcher' })).toHaveCount(0)
       // Stable lists the thread the projection names as Watcher, since stable has no Watcher to give it to.
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })
       await threads.getByRole('button', { name: /^Settled/ }).click()
