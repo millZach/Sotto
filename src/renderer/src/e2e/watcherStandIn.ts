@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { handoverCountsSchema } from '../../../shared/agents'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
-import { stopAllRunning, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { stopAllRunning, watcherMergeTurnsReadSchema, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
 /** Where an end-to-end run leaves the projection the room should show, before it reloads the window. */
 export const WATCHER_STAND_IN_KEY = 'sotto.e2e.watcherRoom'
@@ -28,6 +28,13 @@ export const watcherStandInSeedSchema = z.object({
   startNew: z.object({ created: watcherIdentitySchema, counts: handoverCountsSchema, text: z.string() }).strict().optional(),
   /** New Watcher refuses with this, as main does while Watcher's deliveries are still pending. */
   startNewRefusal: z.string().optional(),
+  /** What main reads for Watcher's picture (#1339); without it, the picture has no merge turns to read. */
+  mergeTurns: watcherMergeTurnsReadSchema.optional(),
+  /**
+   * Later projections, each published this long after the window first listens, so a run can watch the picture move:
+   * a send delivered, a reply, a question for the user. Each replaces the parts of the projection it names.
+   */
+  script: z.array(z.object({ afterMs: z.number().int().min(0).max(120_000), state: watcherRoomStateSchema.partial() }).strict()).max(20).optional(),
 }).strict()
 export type WatcherStandInSeed = z.infer<typeof watcherStandInSeedSchema>
 
@@ -48,6 +55,7 @@ export function createE2EWatcherBridge(): WatcherBridge | undefined {
   const seed = watcherStandInSeedSchema.parse(JSON.parse(raw))
   let state: WatcherRoomState = seed.state
   const listeners = new Set<(next: WatcherRoomState) => void>()
+  let scripted = false
   const publish = (patch: Partial<WatcherRoomState>): WatcherRoomState => {
     state = { ...state, ...patch, observedAt: new Date().toISOString() }
     for (const listener of [...listeners]) listener(state)
@@ -110,6 +118,15 @@ export function createE2EWatcherBridge(): WatcherBridge | undefined {
       : { status: 'ok', text: seed.startNew.text, counts: state.handover.counts },
     continueWithHandover: async () => ({ status: 'ok', state }),
     dismissHandover: async () => ({ status: 'ok', state: publish({ handover: null }) }),
-    onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    ...seed.mergeTurns ? { readMergeTurns: async () => seed.mergeTurns! } : {},
+    onChanged: listener => {
+      // The script starts with the first listener, the room's own.
+      if (listeners.size === 0 && !scripted) {
+        scripted = true
+        for (const step of seed.script ?? []) setTimeout(() => publish(step.state as Partial<WatcherRoomState>), step.afterMs)
+      }
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
   }
 }

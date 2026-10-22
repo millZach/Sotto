@@ -1439,6 +1439,31 @@ struct HeldDetail {
                 waiting = cards + [Self.fixtureNotesPermission(laptop: laptop, mayAnswer: watcherAnswers)]
             }
             if keepsWriting { page["needsYou"] = [[String: Any]]() }
+            // With --ui-watcher-nothing-waits, no card waits on the user, so the bar slides as the user reads (#1288).
+            if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
+            // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue at the page's end, so
+            // the conversation has page enough to read down on the largest iPhone with no card waiting, or once one is
+            // answered, and the bar has a page to slide away from (#1278).
+            if arguments.contains("--ui-watcher-queued-below") {
+                page["followups"] = (1...10).map { n -> [String: Any] in
+                    ["itemId": "queued-\(n)", "draftId": "queued-draft-\(n)", "text": "Look at #845’s checks again, \(n) of 10",
+                     "status": "queued"]
+                }
+            }
+            // With --ui-watcher-many-watched, Watcher watches six more of the fixture's threads, so Watched is taller than
+            // the largest iPhone's screen and the bar has a page to slide away from there too (#1278).
+            if arguments.contains("--ui-watcher-many-watched") {
+                let more: [(String, String, String, String)] = [
+                    (laptop, "release", "Choose the release target", "claude"), (laptop, "iphone", "Refine the iPhone thread view", "codex"),
+                    (laptop, "wiring", "Clean up the wiring schedule", "claude"), (laptop, "drives", "Compare motor drive options", "codex"),
+                    (studio, "lighting", "Update the lighting plan", "codex"), (laptop, "settings", "Simplify the settings screen", "codex")
+                ]
+                let rows = more.map { host, id, title, provider -> [String: Any] in
+                    ["target": ["hostId": host, "threadId": id], "title": title, "provider": provider, "status": "running",
+                     "connected": true, "watched": true, "takenOver": false, "backgroundWorkCount": 0]
+                }
+                page["watchedThreads"] = (page["watchedThreads"] as? [[String: Any]] ?? []) + rows
+            }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
             if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }

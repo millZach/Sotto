@@ -1274,8 +1274,7 @@ test.describe("Watcher's room on the built app", () => {
   })
 
   test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
-    // The header off macOS: the tile, the name, All threads, the tabs, then Stop all (while it shows) and More Watcher
-    // actions, on one row. On macOS the header starts past the traffic lights and takes two rows in a narrow pane, which
+    // The header off macOS: the tile, the name, All threads, the three tabs, then Stop all while it shows, on one row. On macOS the header starts past the traffic lights and takes two rows in a narrow pane, which
     // its own journey checks.
     test.skip(process.platform === 'darwin', 'The macOS header has its own journey')
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
@@ -1295,7 +1294,7 @@ test.describe("Watcher's room on the built app", () => {
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         labels: labels.map(node => node.textContent ?? ''),
         present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), conversation: present('[data-tab="conversation"]'),
-          watched: present('[data-tab="watched"]'), stopAll: present('.watcher-stop-all__button'), more: present('.watcher-actions > button') },
+          watched: present('[data-tab="watched"]'), visualize: present('[data-tab="visualize"]'), stopAll: present('.watcher-stop-all__button') },
         // A label or count cut off by its own control, or the name cut to an ellipsis.
         clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
@@ -1359,7 +1358,8 @@ test.describe("Watcher's room on the built app", () => {
                 // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
                 // styles keep it (from NAME_FROM pixels with Stop all, 450 without).
                 const { name, ...always } = reading.present
-                expect.soft(always, where).toEqual({ tile: true, list: true, conversation: true, watched: true, stopAll, more: true })
+                // More Watcher actions went with the Threads in flight limit (#1183); Visualize came with Watcher's picture (#1339).
+                expect.soft(always, where).toEqual({ tile: true, list: true, conversation: true, watched: true, visualize: true, stopAll })
                 if (reading.pane >= (stopAll ? NAME_FROM : 450) + 1) expect.soft(name, `the name shown, ${where}`).toBe(true)
                 for (const [index, part] of reading.parts.entries()) {
                   for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
