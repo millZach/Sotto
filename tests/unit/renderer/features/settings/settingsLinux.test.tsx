@@ -1,6 +1,6 @@
 import { baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
@@ -83,7 +83,8 @@ describe('Settings on Linux', () => {
     expect(screen.getByText('F9 and Super+Ctrl+X')).toBeVisible()
     expect(screen.getByText('The owl in the bar')).toBeVisible()
     expect(screen.getByText('The Omarchy theme')).toBeVisible()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    // The setup asks for nothing typed; Typing speed elsewhere on the page is a field of its own.
+    expect(within(screen.getByLabelText('Omarchy setup')).queryByRole('textbox')).not.toBeInTheDocument()
     expect(f.calls).toEqual([])
     await userEvent.click(screen.getByRole('button', { name: 'Set up all three' }))
     expect(f.calls).toEqual([{ type: 'setup', pieces: ['keys', 'owl', 'theme'], keys: 'unconfirmed' }])

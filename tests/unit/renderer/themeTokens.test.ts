@@ -303,7 +303,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/interactiveVisual.css',
       'src/renderer/src/agents/visualStepper.css',
       'src/renderer/src/components/listeningBars.css',
-      'src/renderer/src/features/history/history.css',
+      'src/renderer/src/features/dictate/dictate.css',
       'src/renderer/src/features/usage/usage.css',
       'src/renderer/src/features/performance/mainActivity.css',
       'src/renderer/src/features/memory/memory.css',

@@ -18,6 +18,8 @@ import {
   QUESTION_PAGE_OPEN,
   SYSTEM_SETTINGS_OPEN,
   DICTATION_REQUEST,
+  DICTATION_RECORD_GET,
+  DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
   HISTORY_DELETE,
@@ -86,7 +88,8 @@ import {
   type WidgetPresentationPayload,
 } from '../../shared/contracts'
 import { speechModelIdSchema, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
-import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
+import { finishedDictationSchema, type HistoryEntry } from '../../shared/history'
+import type { DictationRecord } from '../../shared/dictationRecord'
 import {
   settingsSchema,
   worktreeCleanupRulesSchema,
@@ -112,6 +115,7 @@ const settingKeys = [
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
+  'typingSpeedWpm',
   'formatWhitespace',
   'autoCopy',
   'autoPaste',
@@ -268,14 +272,19 @@ export interface SettingsIpcService {
 }
 
 export interface HistoryIpcService {
+  /** Every saved transcript, including those kept from before Keep local history was turned off; only read while it is off. */
   list(options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
+  /** Keeps a finished dictation's record, and its transcript while `enabled` (ADR-0100). */
   add(
     entry: HistoryEntry,
     options: { readonly enabled: boolean; readonly retention: number | 'unlimited' },
   ): Promise<HistoryEntry[]>
   search(query: string, options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
+  /** Deletes a dictation's transcript and its record. */
   delete(id: string): Promise<boolean>
   clear(): Promise<void>
+  listRecords(): Promise<DictationRecord[]>
+  getRecord(id: string): Promise<DictationRecord | null>
 }
 
 export interface StartupIpcService {
@@ -313,14 +322,21 @@ export interface DictationIpcService {
   publishWidgetState(state: z.infer<typeof widgetSnapshotSchema>): void | Promise<void>
 }
 
-export interface OutputIpcService {
-  deliver(
-    text: string,
-    options: Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'> & {
-      readonly restoreWidget?: boolean
-    },
-  ): OutputOutcome | Promise<OutputOutcome>
+type OutputIpcOptions = Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'> & {
+  readonly restoreWidget?: boolean
 }
+
+export interface OutputIpcService {
+  deliver(text: string, options: OutputIpcOptions): OutputOutcome | Promise<OutputOutcome>
+  /** Delivers a dictation and reads the delivered app: the name of the app that had focus, or null when it could not be read. */
+  deliverDictation?(
+    text: string,
+    options: OutputIpcOptions,
+  ): Promise<{ readonly outcome: OutputOutcome; readonly app: string | null }>
+}
+
+/** How many delivered apps main holds for dictations whose history has not arrived yet. One is in flight at a time. */
+const DELIVERED_APPS_HELD = 8
 
 export interface TranscriptPolishIpcService {
   polish(
@@ -484,6 +500,8 @@ export function registerIpc(
   const ownership = activeOwnership ?? new Map<string, symbol>()
   handlerOwners.set(ipcMain, ownership)
   const ownedChannels: string[] = []
+  /** Delivered apps by dictation id, from a dictation's delivery until its history arrives. */
+  const deliveredApps = new Map<string, string>()
 
   const register = <Input, Result>(
     channel: string,
@@ -560,13 +578,17 @@ export function registerIpc(
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
 
+    // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
     register(HISTORY_LIST, noPayloadSchema, 0, async () => {
       const settings = await dependencies.settings.get()
       return dependencies.history.list({ enabled: settings.historyEnabled })
     })
-    register(HISTORY_ADD, historyEntrySchema.strict(), 1, async (entry) => {
+    // Every finished dictation keeps its record; Keep local history decides only whether its text is saved (ADR-0100).
+    register(HISTORY_ADD, finishedDictationSchema, 1, async (entry) => {
       const settings = await dependencies.settings.get()
-      return dependencies.history.add(entry, {
+      const app = deliveredApps.get(entry.id)
+      deliveredApps.delete(entry.id)
+      return dependencies.history.add(app === undefined ? entry : { ...entry, app }, {
         enabled: settings.historyEnabled,
         retention: settings.historyRetention,
       })
@@ -577,6 +599,9 @@ export function registerIpc(
     })
     register(HISTORY_DELETE, historyIdSchema, 1, (id) => dependencies.history.delete(id))
     register(HISTORY_CLEAR, noPayloadSchema, 0, () => dependencies.history.clear())
+    register(DICTATION_RECORDS_LIST, noPayloadSchema, 0, () => dependencies.history.listRecords())
+    // One record, so the window takes in a new dictation without reading every record again.
+    register(DICTATION_RECORD_GET, historyIdSchema, 1, (id) => dependencies.history.getRecord(id))
 
     register(HOTKEY_GET, noPayloadSchema, 0, () => dependencies.hotkeys.current())
     register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>
@@ -763,14 +788,29 @@ export function registerIpc(
         return UNAVAILABLE
       }
       const settings = await dependencies.settings.get()
-      return dependencies.output.deliver(request.text, {
+      const options = {
         autoPaste: request.autoPaste && settings.autoPaste,
         pasteDelayMs: Math.min(
           1_000,
           Math.max(50, request.pasteDelayMs, settings.pasteDelayMs),
         ),
         restoreWidget: settings.showWidgetWhenIdle,
-      })
+      }
+      const { dictationId } = request
+      if (dictationId === undefined || dependencies.output.deliverDictation === undefined) {
+        return dependencies.output.deliver(request.text, options)
+      }
+      // The delivered app waits here for the dictation's history, which follows its delivery.
+      const delivered = await dependencies.output.deliverDictation(request.text, options)
+      if (delivered.app !== null) {
+        deliveredApps.delete(dictationId)
+        deliveredApps.set(dictationId, delivered.app)
+        for (const stale of deliveredApps.keys()) {
+          if (deliveredApps.size <= DELIVERED_APPS_HELD) break
+          deliveredApps.delete(stale)
+        }
+      }
+      return delivered.outcome
     })
     register(OUTPUT_COPY_IMAGE, outputImageRequestSchema, 1, async (request): Promise<CommandResult> => {
       if (dependencies.imageClipboard === undefined) return UNAVAILABLE

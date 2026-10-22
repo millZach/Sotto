@@ -643,6 +643,54 @@ import XCTest
         capture("thread-glow-top")
     }
 
+    /// A thread's pull request on an Owl computer (ADR-0102): the chip opens a sheet that reads it from GitHub, shows where
+    /// it stands, its failing check first with how long it took, and starts and stops babysitting. Once read, the chip
+    /// carries the checks.
+    func testThePullRequestChipOpensItsSheetAndBabysitsIt() {
+        launch(Self.fixture + ["--ui-pull-request"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let chip = app.buttons["pull-request-chip"]
+        scrollThread(to: chip, towardStart: true)
+        XCTAssertEqual(chip.label, "Show pull request 721, draft", "Before the sheet has read it, the chip says nothing of its checks")
+        XCTAssertTrue(text("Branch feat/frosted-window-and-pane-terminal").exists, "The branch and changes still read as one sentence")
+        chip.tap()
+
+        let title = byID("pull-request-title")
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "The sheet reads the pull request when it opens")
+        XCTAssertEqual(title.label, "Let the window frost and put a terminal in the bottom third")
+        XCTAssertTrue(byID("pull-request-standing-0").label.hasPrefix("A check failed"), "Where it stands starts with the checks")
+        XCTAssertTrue(byID("pull-request-standing-1").label.hasPrefix("Changes requested"))
+        XCTAssertTrue(byID("pull-request-standing-2").label.hasPrefix("3 commits behind main"))
+        capture("pull-request-sheet-top")
+
+        app.buttons["pull-request-jump-checks"].tap()
+        let failing = labelled("Gates (Windows), Failed, 14 minutes 2 seconds")
+        XCTAssertTrue(failing.waitForExistence(timeout: 5), "The failing check comes first, with how long it took")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Lint, Passed")).firstMatch.exists, "Passed checks fold away while one fails")
+        app.buttons["pull-request-passed-checks"].tap()
+        XCTAssertTrue(text("Lint, Passed").waitForExistence(timeout: 5), "Show passed opens them in place")
+        capture("pull-request-sheet-checks")
+
+        let babysit = app.buttons["babysit-pull-request"]
+        XCTAssertTrue(babysit.waitForExistence(timeout: 5), "Babysit pull request is docked at the bottom")
+        XCTAssertEqual(babysit.label, "Babysit pull request #721")
+        babysit.tap()
+        let stop = app.buttons["stop-babysitting"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5), "Once the computer babysits it, the dock offers Stop babysitting")
+        XCTAssertTrue(text("Babysitting since").exists)
+        capture("pull-request-sheet-babysitting")
+        stop.tap()
+        XCTAssertTrue(babysit.waitForExistence(timeout: 5), "Stopping offers Babysit pull request again")
+
+        app.buttons["pull-request-close"].tap()
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
+        let read = NSPredicate(format: "label == %@", "Show pull request 721, draft. Checks: 1 failing, 1 running, 2 passed")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: read, evaluatedWith: chip)], timeout: 5), .completed, "Once read, the chip says its checks")
+    }
+
     /// Each run of steps between two messages is one line. The working run names the step running now; a finished run
     /// says how many steps it had and how long they took. A press opens a run's steps in place and another folds them.
     func testARunOfStepsOpensInPlaceAndFoldsAgain() {
@@ -788,9 +836,9 @@ import XCTest
         XCTAssertEqual(light.value as? String, "Selected")
         openWatcher()
     }
-    /// The part of Watcher's conversation a press reaches: below its pinned glass header and above its reply box, with
-    /// anything the box carries over it. XCTest calls a row under the header hittable, but a press there lands on the
-    /// header (on CI it opened Watched instead of a card's Review question).
+    /// The part of Watcher's conversation a press reaches: below its pinned glass bar and above its reply box, with
+    /// anything the box carries over it. XCTest calls a row under the bar hittable, but a press there lands on the bar
+    /// (on CI it opened Watched instead of a card's Review question).
     private var watcherBand: (top: CGFloat, bottom: CGFloat) {
         // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
         // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
@@ -823,7 +871,7 @@ import XCTest
             return (.infinity, -.infinity)
         }
         let header = element("watcher-section-conversation")
-        // The header's glass ends the switch's own padding and the header's bottom padding below Conversation | Watched.
+        // The bar's glass ends the switch's own padding and the bar's bottom padding below Conversation | Watched.
         let top = (header?.frame.maxY ?? window.frame.minY) + 16
         let tabs = elements.first { $0.elementType == .tabBar }
         var bottom = tabs?.frame.minY ?? window.frame.maxY
@@ -974,6 +1022,57 @@ import XCTest
         XCTAssertEqual(XCTWaiter.wait(for: [working], timeout: 10), .completed, "VoiceOver hears the working dot as Working")
     }
 
+    /// Watcher's name, state and computer head its page and scroll away with the conversation, as a thread's title does
+    /// (#1275, Zach's pick A). The slim bar stays, with Conversation | Watched, which still switches, and its owl, which
+    /// carries Watcher's state, brings the hero back.
+    func testWatchersHeroScrollsAwayUnderItsSlimBar() {
+        launch(Self.watcher)
+        openWatcher()
+        let owl = app.buttons["watcher-to-top"]
+        XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
+        XCTAssertEqual(owl.label, "Go to the top, where Watcher’s state is")
+        XCTAssertEqual(owl.value as? String, "Working", "The owl says Watcher's state once the hero has scrolled off")
+        let conversation = app.buttons["watcher-section-conversation"]
+        let watched = app.buttons["watcher-section-watched"]
+        XCTAssertTrue(conversation.isHittable && watched.isHittable, "Conversation | Watched sit in the bar")
+        let bar = conversation.frame.maxY
+        let state = byID("watcher-state")
+        // Reading at the conversation's end, the hero has scrolled off under the bar.
+        revealInWatcher(app.buttons["watcher-card-review"])
+        XCTAssertLessThanOrEqual(state.frame.maxY, bar, "Watcher's state scrolls away with the conversation (\(state.frame), bar at \(bar))")
+        XCTAssertEqual(conversation.frame.maxY, bar, accuracy: 1, "The bar stays")
+        capture("watcher-hero-away-dark")
+        // The switch still works from the bar, and Watched has the hero at its top too.
+        watched.tap()
+        XCTAssertTrue(byID("watcher-watched-lead").waitForExistence(timeout: 5), "Watched opens from the bar")
+        XCTAssertGreaterThanOrEqual(state.frame.minY, bar, "Watched opens at its top, with Watcher's hero")
+        XCTAssertTrue(text("Codex · GPT-6.1 Sol on Laptop").isHittable, "With Watcher's model and computer")
+        capture("watcher-hero-watched-dark")
+        conversation.tap()
+        XCTAssertTrue(byID("watcher-reply").waitForExistence(timeout: 5), "Conversation opens from the bar")
+        // The owl goes to the top of the conversation, where the hero is.
+        let reply = byID("watcher-reply")
+        var seen = "no look found Watcher's state"
+        var matches = 0
+        let atTop = NSPredicate { _, _ in
+            guard state.exists else { seen = "Watcher's state is missing"; matches = 0; return false }
+            let frame = state.frame
+            seen = "state \(frame), bar at \(bar), the box at \(reply.frame.minY)"
+            matches = frame.minY >= bar && frame.maxY <= reply.frame.minY ? matches + 1 : 0
+            return matches >= 2
+        }
+        owl.tap()
+        let shown = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 20)
+        if shown != .completed { explain("watcher-hero-not-shown", seen) }
+        XCTAssertEqual(shown, .completed, "The owl brings Watcher's hero back into view (\(seen))")
+        capture("watcher-hero-dark")
+        watcherInLight()
+        owl.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 20), .completed,
+                       "The owl brings Watcher's hero back into view in light (\(seen))")
+        capture("watcher-hero-light")
+    }
+
     /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and
     /// the line saying what watching means in its reply box.
     func testAReceiptRowOpensItsThread() {
@@ -1074,6 +1173,115 @@ import XCTest
         openWatcher()
         revealInWatcher(app.buttons["A fresh account for each run"])
         capture("watcher-card-light")
+    }
+
+    /// A worker's question that arrives while Watcher writes stays where the reader scrolls to it: Watcher's words go on
+    /// growing above it and never push it under the box, so it is answered there. Once it is answered, the page follows
+    /// Watcher's words again (#1277).
+    func testAWaitingCardStaysAboveTheBoxWhileWatcherKeepsWriting() {
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing"])
+        openWatcher()
+        let writing = text("Checking the threads I watch.")
+        XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
+        XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 15),
+                      "Fix login test's question arrives while Watcher writes")
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.exists, "Watcher's permissions sit over the box while the page follows Watcher's words")
+        let choice = app.buttons["A fresh account for each run"]
+        revealInWatcher(choice)
+        // Watcher goes on writing above the card while the reader is on it.
+        let before = writing.label
+        let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the card")
+        // The chip over the box is put away while the reader is on the card, so the card fits whole above the box on the SE.
+        XCTAssertTrue(waitUntilGone(permissions), "Watcher's permissions are put away while the reader is on the card")
+        stays(choice, "The card's answer")
+        // More words come, and the card is still where the reader left it.
+        let later = writing.label
+        let more = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != later }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [more], timeout: 20), .completed, "Watcher keeps writing")
+        stays(choice, "The card's answer")
+        capture("watcher-card-held-dark")
+        choice.tap()
+        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        // Send answer sits at the card's foot; the card is kept whole above the box without the reader scrolling to it.
+        let send = app.buttons["watcher-card-send"]
+        stays(send, "Send answer")
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
+        XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
+        // With the card answered, the page follows Watcher's words again: the end of its reply comes into view above the box.
+        let band = watcherBand
+        var seen = "no look found the reply's frame"
+        let following = NSPredicate { _, _ in
+            guard writing.exists else { seen = "the reply is missing"; return false }
+            let frame = writing.frame
+            guard !frame.isEmpty else { return false }
+            seen = "reply \(frame), between \(band.top) and \(band.bottom)"
+            return frame.maxY > band.top && frame.maxY <= band.bottom + 1
+        }
+        let followed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: following, object: nil)], timeout: 20)
+        if followed != .completed { explain("watcher-not-following-after-answer", seen) }
+        XCTAssertEqual(followed, .completed, "Once the card is answered, Watcher's new words are followed again (\(seen))")
+        capture("watcher-card-answered-following-dark")
+    }
+
+    /// With two cards waiting, a reader on the whole one is kept on it while Watcher writes, not moved to the lower one the
+    /// box cuts off, and the lower one leaving, answered on the laptop, leaves the whole one where the reader has it
+    /// (#1277). The journey has the laptop answer only once the reader is held on the question with the permission still
+    /// under it, and the permission leaves with no change to Watcher's conversation, so only the page's height moves.
+    func testAWholeCardStaysAnswerableOverALowerOneWhileWatcherWrites() {
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing", "--ui-watcher-two-cards"])
+        openWatcher()
+        let writing = text("Checking the threads I watch.")
+        XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
+        let permission = byID("watcher-card-notes845")
+        XCTAssertTrue(permission.waitForExistence(timeout: 15), "Babysit #845 release notes's permission arrives while Watcher writes")
+        // The question from its title to its answers, with the permission under it.
+        revealInWatcher(byID("watcher-card-login"))
+        let choice = app.buttons["A fresh account for each run"]
+        revealInWatcher(choice)
+        let before = writing.label
+        let grew = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in writing.exists && writing.label != before }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [grew], timeout: 20), .completed, "Watcher's reply grows while the reader is on the question")
+        XCTAssertTrue(waitUntilGone(app.buttons["watcher-permissions"]), "Watcher's permissions are put away while the reader is on the question")
+        stays(choice, "The question's answer")
+        XCTAssertTrue(permission.exists, "The permission is still under the question the reader is held on")
+        // The permission is answered on the laptop and leaves the page. The question doesn't move with the page's end.
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName("app.sotto.ui.watcher-notes-answered" as CFString), nil, nil, true)
+        XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
+        stays(choice, "The question's answer, once the permission under it has gone,")
+        capture("watcher-two-cards-held-dark")
+        choice.tap()
+        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        let send = app.buttons["watcher-card-send"]
+        stays(send, "Send answer")
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
+    }
+
+    /// Waits for `element` to sit whole above Watcher's box and be pressable, two looks in a row, so a page passing through
+    /// on its way under the box doesn't count. The band is read before the wait and the wait reads only the element and the
+    /// box: on CI's SE each query can take a second or two.
+    private func stays(_ element: XCUIElement, _ what: String) {
+        let reply = byID("watcher-reply")
+        let band = watcherBand
+        var seen = "no look found \(what)"
+        var matches = 0
+        let placed = NSPredicate { _, _ in
+            guard element.exists else { seen = "\(what) is missing"; matches = 0; return false }
+            let frame = element.frame
+            guard !frame.isEmpty else { matches = 0; return false }
+            seen = "\(what) \(frame), between \(band.top) and \(band.bottom), the box at \(reply.frame.minY)"
+            let inPlace = frame.minY >= band.top && frame.maxY <= band.bottom && frame.maxY <= reply.frame.minY && element.isHittable
+            matches = inPlace ? matches + 1 : 0
+            return matches >= 2
+        }
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 20)
+        if result != .completed { explain("watcher-card-under-the-box", seen) }
+        XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
     }
 
     /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,

@@ -46,6 +46,7 @@ const customSettings = {
   holdShortcuts: ['Fn', 'Control+Alt'],
   maxRecordingSeconds: 300,
   soundCues: false,
+  typingSpeedWpm: 55,
   speechModel: null,
   formatWhitespace: false,
   autoCopy: true,
@@ -94,6 +95,13 @@ const customSettings = {
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('counts time saved against 40 words a minute for older profiles, keeps a chosen typing speed, and refuses one out of bounds', () => {
+    expect(parseSettings({}).typingSpeedWpm).toBe(40)
+    expect(parseSettings({ typingSpeedWpm: 72 }).typingSpeedWpm).toBe(72)
+    for (const unusable of [9, 151, 40.5, '60']) expect(parseSettings({ typingSpeedWpm: unusable }).typingSpeedWpm).toBe(40)
+    expect(settingsSchema.shape.typingSpeedWpm.safeParse(150).success).toBe(true)
+    expect(settingsSchema.shape.typingSpeedWpm.safeParse(10).success).toBe(true)
+  })
   it('defaults older profiles to the shared checkout and retains explicit global and project choices', () => {
     expect(parseSettings({})).toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
     expect(parseSettings({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }))
@@ -316,6 +324,7 @@ describe('settings', () => {
       holdShortcuts: [],
       maxRecordingSeconds: 60,
       soundCues: true,
+      typingSpeedWpm: 40,
       speechModel: null,
       formatWhitespace: true,
       autoCopy: true,

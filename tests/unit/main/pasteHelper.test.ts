@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 import {
   createWarmPasteAdapter,
+  HELPER_APP_TIMEOUT_MS,
+  parseForegroundAppReply,
   type HelperProcessLike,
 } from '../../../src/main/output/pasteHelper'
 import { OutputService, PASTE_SETTLE_MS, type PasteProcessAdapter } from '../../../src/main/output/outputService'
@@ -380,5 +382,93 @@ describe('createWarmPasteAdapter', () => {
     expect(processes[0]?.killed).toBe(true)
     await expect(adapter.run(buildPasteInvocation())).resolves.toBe(true)
     expect(fallback.calls).toBe(1)
+  })
+})
+
+describe('warm helper delivered app', () => {
+  const encoded = (name: string): string => `app ${Buffer.from(name, 'utf8').toString('base64')}\n`
+
+  it('asks the foreground app ahead of the paste queued after it, before and after ready', async () => {
+    const helper = new FakeHelperProcess()
+    const fallback = fallbackAdapter()
+    const adapter = createWarmPasteAdapter({ spawnHelper: () => helper, fallback })
+    const app = adapter.readForegroundApp()
+    const paste = adapter.run(buildPasteInvocation())
+    expect(helper.writes).toEqual([])
+
+    helper.emit('ready\n')
+    expect(helper.writes).toEqual(['app\n', 'paste\n'])
+    helper.emit(`${encoded('Microsoft Teams')}ok\n`)
+
+    await expect(app).resolves.toBe('Microsoft Teams')
+    await expect(paste).resolves.toBe(true)
+    const again = adapter.readForegroundApp()
+    expect(helper.writes.at(-1)).toBe('app\n')
+    helper.emit(encoded('Café Ünïcode'))
+    await expect(again).resolves.toBe('Café Ünïcode')
+    expect(fallback.calls).toBe(0)
+  })
+
+  it('answers null when the helper reads no name, or the name is unreadable', async () => {
+    const helper = new FakeHelperProcess()
+    const adapter = createWarmPasteAdapter({ spawnHelper: () => helper, fallback: fallbackAdapter() })
+    adapter.start()
+    helper.emit('ready\n')
+    const none = adapter.readForegroundApp()
+    const blank = adapter.readForegroundApp()
+    helper.emit(`app\n${encoded(' \u0000 ')}`)
+    await expect(none).resolves.toBeNull()
+    await expect(blank).resolves.toBeNull()
+  })
+
+  it('goes on without a name after its deadline and keeps later answers with their own commands', async () => {
+    vi.useFakeTimers()
+    try {
+      const helper = new FakeHelperProcess()
+      const adapter = createWarmPasteAdapter({ spawnHelper: () => helper, fallback: fallbackAdapter() })
+      adapter.start()
+      helper.emit('ready\n')
+      const late = adapter.readForegroundApp()
+      const paste = adapter.run(buildPasteInvocation())
+      await vi.advanceTimersByTimeAsync(HELPER_APP_TIMEOUT_MS)
+      await expect(late).resolves.toBeNull()
+
+      helper.emit(`${encoded('Late app')}fail\n`)
+      await expect(paste).resolves.toBe(false)
+      expect(helper.killed).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers null without a fallback process when the helper is gone', async () => {
+    const helper = new FakeHelperProcess()
+    const fallback = fallbackAdapter()
+    const adapter = createWarmPasteAdapter({ spawnHelper: () => helper, fallback })
+    const app = adapter.readForegroundApp()
+    helper.exit(1)
+    await expect(app).resolves.toBeNull()
+    adapter.dispose()
+    await expect(adapter.readForegroundApp()).resolves.toBeNull()
+    expect(fallback.calls).toBe(0)
+  })
+
+  it('parses only the helper\'s app answer', () => {
+    expect(parseForegroundAppReply(encoded('Outlook').trim())).toBe('Outlook')
+    expect(parseForegroundAppReply('app')).toBeNull()
+    expect(parseForegroundAppReply('ok')).toBeNull()
+    expect(parseForegroundAppReply('app not base64!')).toBeNull()
+  })
+
+  it('reads the app\'s file description and never a window title', () => {
+    const script = Buffer.from(buildPasteHelperInvocation().args[5] ?? '', 'base64').toString('utf16le')
+    expect(script).toContain('GetForegroundWindow')
+    expect(script).toContain('FileDescription')
+    expect(script).toContain("$line -eq 'app'")
+    expect(script).not.toMatch(/GetWindowText|MainWindowTitle|WM_GETTEXT/u)
+    // One Add-Type compiles both types, so the helper starts no slower than before.
+    expect(script.match(/Add-Type/gu)).toHaveLength(1)
+    const oneShot = Buffer.from(buildPasteInvocation().args[5] ?? '', 'base64').toString('utf16le')
+    expect(oneShot).not.toContain('SottoForeground')
   })
 })

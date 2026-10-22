@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 
+import { MAX_TRANSCRIPTION_SAMPLES } from '../../shared/audio'
 import type { SpeechEngine, SpeechEngineLoader } from './speechEngine'
 
 /** The FluidAudio model versions Sotto's Core ML helper loads. */
@@ -17,14 +18,25 @@ export interface CoreMlEngineOptions {
 const DEFAULT_LOAD_TIMEOUT_MS = 120_000
 /** How long a disposed helper gets to finish and exit on its own before it is killed. */
 const DISPOSE_GRACE_MS = 2_000
-/** The helper refuses longer requests (protocol 1), so they are refused here before they reach it. */
-const MAX_SAMPLES = 16_000 * 60
 /**
- * A request's deadline: 20 seconds plus twice the audio's length. Parakeet takes about a hundredth
+ * The longest request: Sotto's longest recording, which the helper also accepts (protocol 2). A
+ * recording whose segments could not be sent goes whole, up to five minutes; FluidAudio windows it
+ * itself. Anything longer cannot come from the recorder, so it is refused before the helper sees it.
+ */
+const MAX_SAMPLES = MAX_TRANSCRIPTION_SAMPLES
+/**
+ * The longest any request may take, however long its audio. Five minutes of audio takes under a
+ * second, so this only shortens how long a hung helper holds main's transcription queue.
+ */
+const MAX_REQUEST_MS = 120_000
+/** The protocol this engine speaks; a helper built before it refuses long requests, so it is not used. */
+const HELPER_PROTOCOL = 2
+/**
+ * A request's deadline: 20 seconds plus twice the audio's length, at most MAX_REQUEST_MS. Parakeet takes about a hundredth
  * of the audio's length, so only a hung helper reaches it; it is then stopped, which drains main's
  * transcription queue and lets Try again start it afresh.
  */
-const requestDeadlineMs = (sampleCount: number): number => 20_000 + (sampleCount / 16_000) * 2_000
+export const requestDeadlineMs = (sampleCount: number): number => Math.min(20_000 + (sampleCount / 16_000) * 2_000, MAX_REQUEST_MS)
 
 interface Pending {
   readonly resolve: (text: string) => void
@@ -43,7 +55,7 @@ function parseLine(line: string): Record<string, unknown> | null {
 
 /**
  * Spawns the helper on a FluidAudio model folder; resolves once it prints {"ready":true}. The helper
- * speaks protocol 1: binary requests on stdin, one JSON line per answer on stdout, in request order.
+ * speaks protocol 2: binary requests on stdin, one JSON line per answer on stdout, in request order.
  * Stderr is ignored, not read: FluidAudio's own prints land there, and nothing the helper says is
  * ever logged, so transcript text cannot reach a log by that road. Once the helper exits for any
  * reason the engine is dead; every pending and later transcribe rejects, and the caller loads again.
@@ -81,7 +93,7 @@ export function createCoreMlEngineLoader(helperPath: string, version: CoreMlMode
       const engine: SpeechEngine = {
         transcribe(samples) {
           if (dead) return Promise.reject(dead)
-          if (samples.length > MAX_SAMPLES) return Promise.reject(new Error('Core ML request is longer than a minute'))
+          if (samples.length > MAX_SAMPLES) return Promise.reject(new Error('Core ML request is longer than the longest recording'))
           const id = nextId++
           const header = Buffer.alloc(8)
           header.writeUInt32LE(id, 0)
@@ -129,7 +141,12 @@ export function createCoreMlEngineLoader(helperPath: string, version: CoreMlMode
         const message = parseLine(line)
         if (!message || dead) return
         if (!ready) {
-          if (message.ready === true) {
+          if (message.ready === true && message.protocol !== HELPER_PROTOCOL) {
+            // A helper left from an earlier build (a development checkout that was not rebuilt). The speech model's status
+            // says only that it failed, so the way out goes to main's log, where the developer running it reads it.
+            console.warn('coreml-helper-outdated', { protocol: message.protocol ?? 1, expected: HELPER_PROTOCOL, rebuild: 'node scripts/build-coreml-asr.mjs' })
+            fail(new Error(`Core ML helper speaks protocol ${String(message.protocol ?? 1)}, not ${HELPER_PROTOCOL}; rebuild it with scripts/build-coreml-asr.mjs`))
+          } else if (message.ready === true) {
             ready = true
             clearTimeout(loadTimer)
             resolveLoad(engine)

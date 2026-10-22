@@ -54,8 +54,25 @@ export const gitPullRequestCheckSchema = z.object({
   status: z.enum(['success', 'failure', 'cancelled', 'pending', 'action-required', 'skipped', 'neutral']),
   url: z.string().max(2_048).nullable(),
   description: line.nullable(),
+  /**
+   * When a check run started and finished, as GitHub records them, so a reader can say how long it took or has taken so
+   * far (#1281). Null until it has, and for a status another service posted, which records neither. A host before #1281
+   * sends neither.
+   */
+  startedAt: z.string().max(64).nullable().optional(),
+  completedAt: z.string().max(64).nullable().optional(),
 })
 export type GitPullRequestCheck = z.infer<typeof gitPullRequestCheckSchema>
+
+/** One file the pull request changes, with the lines it adds and removes, as GitHub counts them (#1281). */
+export const gitPullRequestFileSchema = z.object({
+  path: z.string().max(4_096),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+})
+export type GitPullRequestFile = z.infer<typeof gitPullRequestFileSchema>
+/** The most changed files a pull request read lists; `changedFiles` says how many there are in all. */
+export const GIT_PULL_REQUEST_FILES_MAX = 100
 
 /**
  * A reviewer's latest review that took a side, approving or asking for changes, as GitHub keeps one per
@@ -120,6 +137,12 @@ export const gitPullRequestDetailSchema = z.object({
   linked: z.enum(['created', 'linked', 'checkout']).nullable(),
   /** Whether this is the pull request of the branch the thread's folder is on. */
   branch: z.boolean(),
+  /**
+   * The files it changes, the first hundred in GitHub's order, each with its added and removed lines, and how many it
+   * changes in all (#1281). Absent when GitHub did not say, and from a host before #1281.
+   */
+  files: z.array(gitPullRequestFileSchema).max(GIT_PULL_REQUEST_FILES_MAX).optional(),
+  changedFiles: z.number().int().nonnegative().optional(),
 })
 export type GitPullRequestDetail = z.infer<typeof gitPullRequestDetailSchema>
 
@@ -140,6 +163,13 @@ export type GitPullRequestLimited = z.infer<typeof gitPullRequestLimitedSchema>
 export const gitPullRequestResultSchema = z.union([gitPullRequestDetailSchema, gitPullRequestLimitedSchema]).nullable()
 /** What a pull request read answers: the detail, a rate-limit refusal, or null when the thread has none to show. */
 export type GitPullRequestRead = GitPullRequestDetail | GitPullRequestLimited | null
+/**
+ * Why a host could not read a pull request, for a client that says what to do next in its own words (#1290): GitHub's
+ * command line tool is not installed, it is not signed in, the host cannot reach GitHub, or GitHub did not give the
+ * pull request (not found, an answer Sotto could not read, a read that did not finish). Never gh's or GitHub's text.
+ */
+export const GIT_PULL_REQUEST_READ_FAILURES = ['gh-missing', 'gh-signed-out', 'offline', 'unreadable'] as const
+export type GitPullRequestReadFailure = typeof GIT_PULL_REQUEST_READ_FAILURES[number]
 /** Whether a read was held back by GitHub's rate limit rather than answered. */
 export const isPullRequestLimited = (read: GitPullRequestRead): read is GitPullRequestLimited => read !== null && 'limited' in read
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'

@@ -759,9 +759,9 @@ test.describe("Watcher's room on the built app", () => {
       expect(order).not.toContain('More Watcher actions')
       expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('Stop all threads Watcher started, 2 threads'))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
-      expect(indexOf('History')).toBeGreaterThan(indexOf('Watcher message'))
-      expect(order.slice(indexOf('History'), indexOf('History') + 6)).toEqual(['History', 'Usage', 'Settings', 'Help', 'Watcher', 'Check for updates'])
-      for (const name of ['Settings', 'Help', 'History'] as const) {
+      expect(indexOf('Usage')).toBeGreaterThan(indexOf('Watcher message'))
+      expect(order.slice(indexOf('Usage'), indexOf('Usage') + 5)).toEqual(['Usage', 'Settings', 'Help', 'Watcher', 'Check for updates'])
+      for (const name of ['Settings', 'Help'] as const) {
         await openPage(page, name)
         await expect(switchTab(page, 'Dictate')).toHaveAttribute('tabindex', '0')
         await switchTab(page, 'Dictate').focus()

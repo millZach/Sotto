@@ -118,7 +118,12 @@ public struct Health: Decodable, Equatable, Sendable {
         guard status == "ready" else { throw ClientError.rejected("Sotto on that computer is still starting. Try again in a moment.") }
     }
 }
-public struct WireFailure: Decodable, Sendable { public let code: String; public let message: String }
+public struct WireFailure: Decodable, Sendable {
+    public let code: String; public let message: String
+    /// Why a pull request read was refused (`gh-missing`, `gh-signed-out`, `offline`, `unreadable`), from a host since
+    /// #1290; nil on every other refusal and from an older host.
+    public let reason: String?
+}
 public struct Receipt: Decodable, Sendable {
     public let status: String; public let error: WireFailure?; public let answerDelivered: Bool?
     public let watcherStop: WatcherStopReceipt?
@@ -209,6 +214,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public var kind: String? = nil
     public var watchedByWatcher: Bool? = nil
+    /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
+    /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
+    public var delegatedBy: String? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
@@ -223,6 +231,10 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
+    /// The pull requests the thread babysits, and why babysitting each last ended on its own (ADR-0061), for the pull
+    /// request sheet (ADR-0102). Read item by item, so a later host's record never fails the thread. Older hosts send none.
+    public var babysitting: ThreadList<ThreadBabysitting>? = nil
+    public var babysitEnded: ThreadList<ThreadBabysitEnded>? = nil
 }
 /// What the thread page reads from a thread's worktree record (`agentWorktreeSchema` in src/shared/agents.ts): its
 /// mode, its branch and the Git status the host last read there (`gitStatusSchema` in src/shared/gitStatus.ts).

@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
 import { WIDGET_ERROR_CODES, type WidgetSnapshot } from './dictation'
-import type { HistoryEntry } from './history'
+import type { DictationRecord } from './dictationRecord'
+import type { FinishedDictation, HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
@@ -160,6 +161,8 @@ export const outputDeliveryRequestSchema = z
     text: z.string().max(200_000),
     autoPaste: z.boolean(),
     pasteDelayMs: z.number().int().min(50).max(1_000),
+    /** Set for a dictation: main reads the delivered app and keeps it for the dictation's record (ADR-0100). */
+    dictationId: z.string().min(1).max(256).optional(),
   })
   .strict()
 
@@ -386,10 +389,15 @@ export interface SottoBridge {
   onSettingsChanged(listener: (settings: AppSettings) => void): Unsubscribe
 
   listHistory(): Promise<HistoryEntry[]>
-  addHistory(entry: HistoryEntry): Promise<HistoryEntry[]>
+  /** Reports a finished dictation. Main keeps its record, and its transcript while Keep local history is on. */
+  addHistory(entry: FinishedDictation): Promise<HistoryEntry[]>
   searchHistory(query: string): Promise<HistoryEntry[]>
   deleteHistory(id: string): Promise<boolean>
   clearHistory(): Promise<void>
+  /** Every dictation record, newest first (ADR-0100): numbers and the delivered app, never text. */
+  listDictationRecords(): Promise<DictationRecord[]>
+  /** One dictation's record, or null when it has none; read after a dictation instead of every record again. */
+  getDictationRecord(id: string): Promise<DictationRecord | null>
 
   getHotkey(): Promise<string | null>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>

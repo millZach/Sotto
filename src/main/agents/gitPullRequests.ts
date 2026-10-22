@@ -1,13 +1,36 @@
 import { z } from 'zod'
 import {
   parsePullRequestReference, pullRequestAddress, pullRequestKey,
-  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod, type GitPullRequestReview,
+  GIT_PULL_REQUEST_FILES_MAX,
+  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
-import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
+import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from './gitStatus'
 
-/** Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. */
-export class GitPullRequestRefusal extends Error {}
+/**
+ * Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. A read gh could not make also
+ * carries why, in the host protocol's words, for a phone that cannot be sent the reason itself (#1290).
+ */
+export class GitPullRequestRefusal extends Error {
+  constructor(message: string, readonly failure?: GitPullRequestReadFailure) { super(message) }
+}
+/**
+ * Why a pull request read failed, for the host to tell a phone without gh's or GitHub's words: what the refusal says,
+ * else `unreadable`. Anything that is not a refusal from the read (no such thread, no reader on this host) is `unreadable`.
+ */
+export const pullRequestReadFailureOf = (error: unknown): GitPullRequestReadFailure =>
+  error instanceof GitPullRequestRefusal && error.failure ? error.failure : 'unreadable'
+/**
+ * Why gh could not read a pull request, told apart the way babysitting tells its reads apart (ADR-0061): gh not on
+ * PATH, a sign-in GitHub refused, or GitHub never reached. Anything else is GitHub's answer, and `unreadable`.
+ */
+function ghReadFailure(error: unknown): GitPullRequestReadFailure {
+  if (error instanceof GitUnavailableError) return 'gh-missing'
+  const message = error instanceof Error ? error.message : ''
+  if (isSignInRefusal(message)) return 'gh-signed-out'
+  if (isUnreachableAnswer(message)) return 'offline'
+  return 'unreadable'
+}
 /**
  * A read GitHub's rate limit held back (#820): GitHub refused it, or reported no points left on the sign-in's rate limit.
  * The message says so in plain words for a press; the Pull request surface says it with `retryAt` in its own clock.
@@ -34,7 +57,8 @@ const MERGE_SETTINGS = 'mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
  * took a side, how far its head is behind its base, the repository's merge methods when they are not kept already, and
  * GitHub's reading of the rate limit. `mergeStateStatus` says BEHIND only where the repository requires up-to-date
  * branches, so the commits are counted instead, the same number GitHub's own out-of-date banner shows; the head is
- * named by GitHub's own `refs/pull/<number>/head`, which the base repository has for a fork's pull request too.
+ * named by GitHub's own `refs/pull/<number>/head`, which the base repository has for a fork's pull request too. The
+ * changed files with their counts and each check run's times are read for the iPhone's pull request sheet (#1281).
  */
 export function pullRequestQuery(withMergeSettings: boolean): string {
   return `query PullRequestDetail($owner: String!, $name: String!, $number: Int!, $pullRef: String!) {
@@ -46,9 +70,10 @@ export function pullRequestQuery(withMergeSettings: boolean): string {
       headRepositoryOwner { login } autoMergeRequest { mergeMethod } viewerCanUpdateBranch
       baseRef { compare(headRef: $pullRef) { behindBy } }
       latestOpinionatedReviews(last: 50) { nodes { state url author { login } } }
+      changedFiles files(first: ${GIT_PULL_REQUEST_FILES_MAX}) { nodes { path additions deletions } }
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
         __typename
-        ... on CheckRun { name status conclusion detailsUrl checkSuite { workflowRun { workflow { name } } } }
+        ... on CheckRun { name status conclusion detailsUrl startedAt completedAt checkSuite { workflowRun { workflow { name } } } }
         ... on StatusContext { context state targetUrl description }
       } } } } } }
     }
@@ -59,7 +84,7 @@ export function pullRequestQuery(withMergeSettings: boolean): string {
 const loose = <T extends z.ZodTypeAny>(schema: T) => schema.nullable().optional()
 const rawContextSchema = z.object({
   __typename: loose(z.string()), name: loose(z.string()), context: loose(z.string()), status: loose(z.string()), conclusion: loose(z.string()), state: loose(z.string()),
-  detailsUrl: loose(z.string()), targetUrl: loose(z.string()), description: loose(z.string()),
+  detailsUrl: loose(z.string()), targetUrl: loose(z.string()), description: loose(z.string()), startedAt: loose(z.string()), completedAt: loose(z.string()),
   checkSuite: loose(z.object({ workflowRun: loose(z.object({ workflow: loose(z.object({ name: loose(z.string()) })) })) })),
 })
 const rawPullRequestSchema = z.object({
@@ -69,6 +94,8 @@ const rawPullRequestSchema = z.object({
   headRepositoryOwner: loose(z.object({ login: loose(z.string()) })), autoMergeRequest: loose(z.object({ mergeMethod: loose(z.string()) })),
   viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })),
   latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
+  changedFiles: loose(z.number().int().nonnegative()),
+  files: loose(z.object({ nodes: loose(z.array(loose(z.object({ path: loose(z.string()), additions: loose(z.number().int().nonnegative()), deletions: loose(z.number().int().nonnegative()) })))) })),
   commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ statusCheckRollup: loose(z.object({ contexts: loose(z.object({ nodes: loose(z.array(loose(rawContextSchema))) })) })) })) })))) })),
 })
 const rawAnswerSchema = z.object({
@@ -152,7 +179,8 @@ export function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<strin
 /** A check as GraphQL names it, in the shape `gh pr view --json statusCheckRollup` gave it. */
 function rawCheckOf(node: z.infer<typeof rawContextSchema>): RawCheck {
   return { __typename: node.__typename, name: node.name, context: node.context, status: node.status, conclusion: node.conclusion, state: node.state,
-    detailsUrl: node.detailsUrl, targetUrl: node.targetUrl, description: node.description, workflowName: node.checkSuite?.workflowRun?.workflow?.name }
+    detailsUrl: node.detailsUrl, targetUrl: node.targetUrl, description: node.description, startedAt: node.startedAt, completedAt: node.completedAt,
+    workflowName: node.checkSuite?.workflowRun?.workflow?.name }
 }
 /** A check as the Pull request surface reads it; babysitting reads its checks the same way (ADR-0061). */
 export function checkOf(raw: RawCheck): GitPullRequestCheck {
@@ -172,7 +200,17 @@ export function checkOf(raw: RawCheck): GitPullRequestCheck {
   const own = (isStatus ? raw.context : raw.name)?.trim() || 'Check'
   const name = !isStatus && raw.workflowName?.trim() && raw.workflowName.trim() !== own ? `${raw.workflowName.trim()} / ${own}` : own
   const url = (isStatus ? raw.targetUrl : raw.detailsUrl) ?? null
-  return { name: cut(name, 500), status, url: url && /^https:\/\//iu.test(url) ? cut(url, 2_048) : null, description: raw.description ? cut(raw.description, 2_000) : null }
+  // A check run's times, for how long it took (#1281); a status names neither, and a read that asked for neither leaves them out.
+  const times = !isStatus && (raw.startedAt !== undefined || raw.completedAt !== undefined)
+    ? { startedAt: timeOf(raw.startedAt), completedAt: timeOf(raw.completedAt) } : {}
+  return { name: cut(name, 500), status, url: url && /^https:\/\//iu.test(url) ? cut(url, 2_048) : null, description: raw.description ? cut(raw.description, 2_000) : null, ...times }
+}
+/** A time GitHub gave, kept only when it reads as one. */
+const timeOf = (value: string | null | undefined): string | null => value && !Number.isNaN(Date.parse(value)) ? cut(value, 64) : null
+/** The changed files GitHub listed, each with a path; one it sent back empty is left out. */
+function filesOf(nodes: ReadonlyArray<{ path?: string | null | undefined; additions?: number | null | undefined; deletions?: number | null | undefined } | null | undefined>): GitPullRequestFile[] {
+  return nodes.flatMap((node): GitPullRequestFile[] => node?.path ? [{ path: cut(node.path, 4_096), additions: node.additions ?? 0, deletions: node.deletions ?? 0 }] : [])
+    .slice(0, GIT_PULL_REQUEST_FILES_MAX)
 }
 /** The reviews that took a side, with a GitHub link only; a reviewer GitHub no longer names (a deleted account) is left out. */
 function reviewsOf(nodes: ReadonlyArray<{ state?: string | null | undefined; url?: string | null | undefined; author?: { login?: string | null | undefined } | null | undefined } | null | undefined>): GitPullRequestReview[] {
@@ -266,7 +304,7 @@ export class GitPullRequests {
       // GitHub can answer the pull request and refuse a part of it (a comparison it cannot make, reviews a token may not
       // read); gh then fails with what it did read on its output, and the rest is shown as unknown.
       const partial = partialAnswer(error)
-      if (!partial) throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim())
+      if (!partial) throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim(), ghReadFailure(error))
       answer = partial
     }
     this.rateLimit.answered(repository.host, asked, answer.data.rateLimit, answer.data.viewer?.login ?? null)
@@ -294,6 +332,9 @@ export class GitPullRequests {
       autoMerge: raw.autoMergeRequest ? { method: methodOf(raw.autoMergeRequest.mergeMethod) } : null,
       mergedAt: raw.mergedAt ? cut(raw.mergedAt, 64) : null,
       behindBy: raw.baseRef?.compare?.behindBy ?? null, canUpdateBranch: raw.viewerCanUpdateBranch === true,
+      // Files GitHub refused, or did not list, are left out rather than read as none.
+      ...(raw.files?.nodes ? { files: filesOf(raw.files.nodes) } : {}),
+      ...(typeof raw.changedFiles === 'number' ? { changedFiles: raw.changedFiles } : {}),
     }
   }
 

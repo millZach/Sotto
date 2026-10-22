@@ -104,6 +104,8 @@ export interface HostService {
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
    * threads say Needs attention until their next turn. */
   readonly supportsFailureSeen?: boolean
+  /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
+  readonly supportsPullRequestView?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
@@ -263,7 +265,9 @@ export class LocalHostService implements HostService {
   /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
   constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
-    threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined } }) {
+    threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
+    /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
+    pullRequestView?: boolean }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -275,6 +279,7 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {

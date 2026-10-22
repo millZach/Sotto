@@ -132,7 +132,7 @@ test('idle widget returns after auto-paste and stays WS_EX_TOPMOST', async () =>
       await assertWidgetNativeTopmost(launched.app, `dictation reveal ${cycle}`)
 
       await triggerShortcut(launched.page)
-      await expect(launched.page.getByText('Pasted.', { exact: true })).toBeVisible({
+      await expect(launched.page.getByText(/^Pasted( into .+)?\.$/)).toBeVisible({
         timeout: 15_000,
       })
       await expect.poll(async () => {
