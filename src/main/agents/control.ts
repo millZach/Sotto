@@ -178,8 +178,57 @@ type Saved = z.infer<typeof savedSchema>
 function setAsideUpdatesHeld(item: Pick<AgentDelivery, 'setAside' | 'updatesResumed'>): boolean {
   return item.setAside === true && item.updatesResumed !== true
 }
-/** A write handed to the store: the state it carries, serialized and by outbox, and its landing. */
-type QueuedWrite = { serialized: string; outbox: Saved['outbox']; written: Promise<void> }
+/**
+ * The sections of `agents.json` that are only ever replaced, never edited: the Watcher record (`mutateWatcher`) and the
+ * receipt ledgers (`trimReceipts`). Together they are most of the file on a machine that has used Watcher, so each is
+ * serialized once per object and its text kept with it (#1332). An object is frozen as its text is kept, so the text is
+ * always what that object serializes to: a write into it throws rather than reaching the file late.
+ */
+const REPLACED_SECTIONS: ReadonlySet<string> = new Set<keyof Saved>(['watcher', 'deliveredDrafts', 'obsoleteDrafts', 'deliveredPromptDigests', 'answeredRequests'])
+/**
+ * How a replaced section reads while the state is serialized around it. One already kept is replaced by a stand-in
+ * string, read as `token` (`"key":` and the stand-in's own JSON); one not kept yet is serialized in place between two
+ * marker keys, read as `open` and `close`, so its text can be cut out of the same serialization. Each is looked for and
+ * must be found exactly once: anything else is the user's own words matching it, and the state is serialized whole.
+ */
+const SECTION_MARKS = new Map([...REPLACED_SECTIONS].map(key => {
+  const name = JSON.stringify(key), standIn = `\u0000sotto-saved-section\u0000${key}`, value = JSON.stringify(standIn)
+  const before = `\u0000sotto-saved-section-before\u0000${key}`, after = `\u0000sotto-saved-section-after\u0000${key}`
+  return [key, { name, standIn, value, token: `${name}:${value}`, before, after, open: `${JSON.stringify(before)}:0,${name}:`, close: `,${JSON.stringify(after)}:0` }]
+}))
+type SectionMark = NonNullable<ReturnType<typeof SECTION_MARKS.get>>
+/**
+ * `agents.json` as the text between its replaced sections and the sections' texts: the file is `parts[0]`, then
+ * `sections[0]`, then `parts[1]`, and so on. The split follows the file's own keys, so two of these are the same file
+ * exactly when their parts and sections are the same. A section kept since the last save is the very string that save
+ * held, so comparing it costs nothing. A file serialized whole is one part and no sections.
+ */
+type SavedText = { readonly parts: readonly string[]; readonly sections: readonly string[] }
+function joinSavedText({ parts, sections }: SavedText): string {
+  let text = parts[0]!
+  for (const [index, section] of sections.entries()) text += section + parts[index + 1]!
+  return text
+}
+function sameSavedText(one: SavedText, other: SavedText): boolean {
+  if (one.sections.length !== other.sections.length) return joinSavedText(one) === joinSavedText(other)
+  return one.sections.every((section, index) => section === other.sections[index])
+    && one.parts.every((part, index) => part === other.parts[index])
+}
+/** Where `text` is in `whole`, when it is there exactly once. */
+function onlyPlace(whole: string, text: string): number | undefined {
+  const at = whole.indexOf(text)
+  return at >= 0 && whole.indexOf(text, at + 1) < 0 ? at : undefined
+}
+/** A write handed to the store: the state it carries, as its text and by outbox, and its landing. */
+type QueuedWrite = { text: SavedText; outbox: Saved['outbox']; written: Promise<void> }
+const frozenSaved = new WeakSet<object>()
+/** Freezes saved data all the way down. Plain schema data, so every container is an array or a plain object. */
+function freezeSaved(value: unknown): void {
+  if (value === null || typeof value !== 'object' || frozenSaved.has(value)) return
+  frozenSaved.add(value)
+  for (const key of Object.keys(value)) freezeSaved((value as Record<string, unknown>)[key])
+  Object.freeze(value)
+}
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
 /** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
@@ -401,6 +450,8 @@ export class AgentControl {
     // costs more than copying it, and both grow with every prompt and wake-up Watcher has had, so an unchanged record stays.
     if (isDeepStrictEqual(next, this.watcher)) { this.watcherUnpruned = false; return }
     this.watcher = watcherRecordSchema.parse(next)
+    // The parse made every container afresh, so freezing it reaches nothing the caller still holds.
+    freezeSaved(this.watcher)
     this.watcherUnpruned = false
     this.watcherMessageDisplay?.update(this.watcher.requests)
   }
@@ -786,6 +837,7 @@ export class AgentControl {
     }
     const saved = await this.store.read()
     this.watcher = saved.watcher
+    freezeSaved(this.watcher)
     this.watcherUnpruned = this.dependencies.watcherEnabled === true && (saved.watcher.promptTurns?.length ?? 0) > WATCHER_PROMPT_TURNS_KEPT
     this.watcherMessageDisplay?.update(this.watcher.requests)
     if (this.dependencies.watcherEnabled !== true) {
@@ -1520,7 +1572,7 @@ export class AgentControl {
     this.syncLegacyDraft()
     const { configuration, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing } = this.state
     // At most eight reservations, so a build from before #1183 can still read the file (`watcherRecordForDisk`).
-    const saved = { configuration, watcher: watcherRecordForDisk(this.watcher), providerUpgrade: this.state.providerUpgrade ?? null,
+    const saved = { configuration, watcher: this.watcherForDisk(), providerUpgrade: this.state.providerUpgrade ?? null,
       ...this.savedDormant,
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId,
       draftAttachments: this.dormantLegacyDraft?.draftThreadId === draftThreadId ? this.dormantLegacyDraft.draftAttachments : this.state.draftAttachments ?? [], composing,
@@ -1615,8 +1667,69 @@ export class AgentControl {
     }
     return saved
   }
-  private serializeSaved(saved: Saved): string {
-    return JSON.stringify(saved)
+  /**
+   * `watcherRecordForDisk` of the live record, worked out once per record. The record is frozen and only ever replaced,
+   * so the same record always gives the same view, and the view's text is kept with it like any replaced section.
+   */
+  private watcherOnDisk: { from: WatcherRecord; record: WatcherRecord } | undefined
+  private watcherForDisk(): WatcherRecord {
+    if (this.watcherOnDisk?.from !== this.watcher) this.watcherOnDisk = { from: this.watcher, record: watcherRecordForDisk(this.watcher) }
+    return this.watcherOnDisk.record
+  }
+  /** Text of each replaced section, by the object it was serialized from (`REPLACED_SECTIONS`). */
+  private readonly replacedSectionText = new WeakMap<object, string>()
+  /**
+   * The saved state's text, joining to exactly `JSON.stringify(saved)`, from one serialization of the state as before:
+   * the same keys in the same order, each replaced section already kept stood in for, and each not kept yet serialized
+   * in place and kept as it is cut out (`SECTION_MARKS`).
+   */
+  private savedText(saved: Saved): SavedText {
+    const rest: Record<string, unknown> = {}
+    const replaced: { mark: SectionMark; section: object; kept: string | undefined }[] = []
+    for (const key of Object.keys(saved)) {
+      const value: unknown = saved[key as keyof Saved]
+      const mark = SECTION_MARKS.get(key)
+      if (!mark || value === null || typeof value !== 'object') { rest[key] = value; continue }
+      const kept = this.replacedSectionText.get(value)
+      if (kept !== undefined) rest[key] = mark.standIn
+      else { rest[mark.before] = 0; rest[key] = value; rest[mark.after] = 0 }
+      replaced.push({ mark, section: value, kept })
+    }
+    const whole = JSON.stringify(rest)
+    // Each section's span in `whole`: where the text before it ends, what of the span that text still needs (the key, when
+    // markers came before it), where the text after it starts, and the section's text.
+    const spans: { start: number; cut: number; key: string; end: number; text: string; section: object; kept: boolean }[] = []
+    for (const { mark, section, kept } of replaced) {
+      if (kept !== undefined) {
+        const at = onlyPlace(whole, mark.token)
+        if (at === undefined) return this.savedWhole(saved)
+        spans.push({ start: at, cut: at + mark.name.length + 1, key: '', end: at + mark.token.length, text: kept, section, kept: true })
+      } else {
+        const open = onlyPlace(whole, mark.open), close = onlyPlace(whole, mark.close)
+        if (open === undefined || close === undefined || close < open + mark.open.length) return this.savedWhole(saved)
+        spans.push({ start: open, cut: open, key: `${mark.name}:`, end: close + mark.close.length, text: whole.slice(open + mark.open.length, close), section, kept: false })
+      }
+    }
+    spans.sort((one, other) => one.start - other.start)
+    const parts: string[] = []
+    let from = 0
+    for (const { start, cut, key, end } of spans) {
+      if (start < from) return this.savedWhole(saved)
+      parts.push(key ? whole.slice(from, cut) + key : whole.slice(from, cut))
+      from = end
+    }
+    parts.push(whole.slice(from))
+    for (const { section, text, kept } of spans) if (!kept) this.keepSectionText(section, text)
+    return { parts, sections: spans.map(span => span.text) }
+  }
+  /** The state serialized whole, for a state whose own words match a section's stand-in or markers. */
+  private savedWhole(saved: Saved): SavedText {
+    return { parts: [JSON.stringify(saved)], sections: [] }
+  }
+  /** Keeps a replaced section's text with it, and freezes it, so the text stays what it serializes to. */
+  private keepSectionText(section: object, text: string): void {
+    freezeSaved(section)
+    this.replacedSectionText.set(section, text)
   }
   async privacyChanged(): Promise<void> {
     const revision = ++this.privacyRevision
@@ -1652,11 +1765,12 @@ export class AgentControl {
   private async persist(closing = false): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
     // Most calls follow a provider snapshot that changed nothing saved, so the state is serialized to compare
-    // and never copied: the store serializes what it writes as it is handed it.
+    // and never copied: the store writes the text it is handed. Sections only ever replaced keep their text, so
+    // such a call serializes only the sections that can change in place, and joins the file only to write it.
     const saved = this.savedOverLiveState()
-    const serialized = this.serializeSaved(saved)
+    const text = this.savedText(saved)
     const queued = this.queuedWrite
-    if (queued && (serialized === queued.serialized || (!closing && this.onlySettledSettings(saved, saved.outbox, queued)))) {
+    if (queued && (sameSavedText(text, queued.text) || (!closing && this.onlySettledSettings(saved, saved.outbox, queued)))) {
       // The newest queued write already carries this state, so it is durable when that write lands. A write
       // still in flight is waited for rather than repeated, and its failure is this call's failure.
       await queued.written
@@ -1664,8 +1778,8 @@ export class AgentControl {
       const outbox = structuredClone(saved.outbox)
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
-      const written = this.store.write(saved, serialized)
-      const current: QueuedWrite = { serialized, outbox, written }
+      const written = this.store.write(saved, joinSavedText(text))
+      const current: QueuedWrite = { text, outbox, written }
       this.queuedWrite = current
       try {
         await written
@@ -1698,7 +1812,7 @@ export class AgentControl {
     if (!this.settledSettings.size) return false
     const kept = queued.outbox.filter(item => !this.settledSettings.has(item.id))
     if (kept.length === queued.outbox.length || JSON.stringify(kept) !== JSON.stringify(outbox)) return false
-    return this.serializeSaved({ ...saved, outbox: queued.outbox }) === queued.serialized
+    return sameSavedText(this.savedText({ ...saved, outbox: queued.outbox }), queued.text)
   }
   private draftSignatures(drafts: readonly Saved['threadDrafts'][number][]): Map<string, string> {
     return new Map(drafts.map(draft => [draft.threadId, this.draftSignature(draft)]))
