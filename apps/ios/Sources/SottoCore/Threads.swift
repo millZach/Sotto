@@ -79,7 +79,10 @@ public struct HostedThread: Identifiable, Sendable {
     public var reachable: Bool { status == .online }
     /// Finished while nothing showed it, and not opened since on either device, by its computer's word (ADR-0046).
     /// Only a computer this iPhone can reach says it now, and only of a thread with nothing left running or asked.
-    public var finishedUnread: Bool { reachable && thread.finishedUnread == true && ThreadState(thread) == .done }
+    /// Settled is quiet: a settled thread never says Just finished.
+    public var finishedUnread: Bool { reachable && !settled && thread.finishedUnread == true && ThreadState(thread) == .done }
+    /// Its last turn failed and it asks nothing: its row says Turn failed. Settled is quiet, so a settled thread never does.
+    public var failed: Bool { reachable && !settled && ThreadState(thread) == .failed }
 }
 
 /// One request waiting on the user, with the thread and computer it belongs to.
@@ -130,6 +133,32 @@ public enum ThreadGroups {
                          status: computer.status, project: projects[thread.projectId]?.title, thread: thread,
                          settled: isSettled(thread, project: projects[thread.projectId]))
         }
+    }
+    /// Where each delegated thread is reached from, by row ID: the top of its delegation (ADR-0081), as the desktop's
+    /// sidebar works it out (`delegationTops` in src/renderer/src/agents/threadFacts.ts). The top is the thread at the end
+    /// of its `delegatedBy` links on the same computer. A delegated thread whose delegating thread isn't listed here is the
+    /// top of its own, so it keeps its row and is never out of reach; so is every thread in a loop of links, and an open
+    /// thread whose delegating thread is settled. Threads no thread started are not in the map.
+    public static func delegationTops(_ rows: [HostedThread]) -> [String: String] {
+        let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func parent(_ row: HostedThread) -> HostedThread? {
+            row.thread.delegatedBy.flatMap { byID[ThreadRef(hostID: row.ref.hostID, threadID: $0).id] }
+        }
+        // A link holds unless it would put an open thread under a settled one.
+        func linked(_ child: HostedThread, _ parent: HostedThread) -> Bool { !parent.settled || child.settled }
+        var tops: [String: String] = [:]
+        for row in rows {
+            guard var top = parent(row), linked(row, top) else { continue }
+            var seen: Set<String> = [row.id]
+            var loop = false
+            while let up = parent(top), linked(top, up) {
+                if seen.contains(top.id) { loop = true; break }
+                seen.insert(top.id)
+                top = up
+            }
+            if !loop && !seen.contains(top.id) { tops[row.id] = top.id }
+        }
+        return tops
     }
     /// Match shared/threadActivity.ts: workspace settlement is inherited, while an explicit active
     /// provider override clears provider settlement but never an archive or workspace grouping.

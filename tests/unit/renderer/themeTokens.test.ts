@@ -22,11 +22,14 @@ import {
   type Rgba,
 } from '../../fixtures/renderer/themeTokenResolver'
 import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
+import { visionDistance } from '../../fixtures/renderer/colourVision'
 
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const tokenBlocks = parseTokenBlocks(tokensCss)
 
 const combinations = MODES.flatMap(mode => THEME_IDS.map(id => [mode, id] as const))
+/** Usage's chart series: six hues, then Other's grey. */
+const CHART_SERIES = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5', 'chart-6'] as const
 
 function palette(mode: Mode, themeId: string, options: PaintOptions = {}): (name: string) => Rgba {
   const declarations = rootDeclarations(mode, themeId, options, tokenBlocks)
@@ -107,6 +110,31 @@ describe('main-window theme tokens', () => {
     expect(contrast(color('update-text'), color('update-surface'))).toBeGreaterThanOrEqual(4.5)
     for (const provider of ['codex', 'claude', 'grok'] as const) {
       expect(contrast(color('provider-ink'), color(`provider-${provider}`)), `${provider} badge`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it.each(combinations)('%s mode of %s draws every chart series and Other at 3:1 on the room and the surface', (mode, id) => {
+    const color = palette(mode, id)
+    // Usage draws its charts on the room; the surface is checked too, for a chart that moves onto a card.
+    for (const series of [...CHART_SERIES, 'chart-other'] as const) {
+      for (const surface of ['canvas', 'surface'] as const) {
+        expect(contrast(color(series), color(surface)), `${series} on ${surface}`).toBeGreaterThanOrEqual(3)
+      }
+    }
+  })
+
+  it.each(MODES)('%s mode keeps every two chart series apart, with full colour vision and with protanopia and deuteranopia', (mode) => {
+    const color = palette(mode, DEFAULT_THEME_ID)
+    const other = color('chart-other')
+    for (const [index, first] of CHART_SERIES.entries()) {
+      for (const second of CHART_SERIES.slice(index + 1)) {
+        // Lines cross and models keep their colour wherever they are drawn, so every pair can meet, not only neighbours.
+        expect(visionDistance(color(first), color(second), 'normal'), `${first} and ${second}`).toBeGreaterThanOrEqual(15)
+        for (const vision of ['protan', 'deutan'] as const) expect(visionDistance(color(first), color(second), vision), `${first} and ${second}, ${vision}`).toBeGreaterThanOrEqual(8)
+      }
+      // Other is the one grey: told apart by having no hue, and still apart from each series for red-green readers.
+      expect(visionDistance(color(first), other, 'normal'), `${first} and Other`).toBeGreaterThanOrEqual(12)
+      for (const vision of ['protan', 'deutan'] as const) expect(visionDistance(color(first), other, vision), `${first} and Other, ${vision}`).toBeGreaterThanOrEqual(8)
     }
   })
 
@@ -208,7 +236,7 @@ describe('main-window theme tokens', () => {
     const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
     const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
-    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
+    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
       if (constants.has(name) || !/^(#|rgb\(|oklch\((?!from (var|color-mix)\())/u.test(value)) continue
@@ -254,6 +282,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/threadChips.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
+      'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/branchToolbar.css',
       'src/renderer/src/agents/gitActionButton.css',
@@ -274,7 +303,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/interactiveVisual.css',
       'src/renderer/src/agents/visualStepper.css',
       'src/renderer/src/components/listeningBars.css',
-      'src/renderer/src/features/history/history.css',
+      'src/renderer/src/features/dictate/dictate.css',
       'src/renderer/src/features/usage/usage.css',
       'src/renderer/src/features/performance/mainActivity.css',
       'src/renderer/src/features/memory/memory.css',

@@ -1,7 +1,20 @@
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
+import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 
 /** How many marks are kept, newest last; a thread forgotten while marked is dropped once the list is full. */
 export const FINISHED_UNREAD_MAX = 200
+
+/**
+ * Which of the snapshot's threads are settled, as every client files them: settled in Sotto's workspace by itself, by its
+ * project or with the thread that delegated to it (ADR-0081), or closed by its provider. Settled is quiet (#1279): a
+ * settled thread neither keeps nor earns Just finished, and its failed turn is seen. Read once per snapshot; the projects
+ * are few, and a set is made only when one is settled.
+ */
+export function settledIn(snapshot: Pick<AgentHostSnapshot, 'projects'>): (thread: AgentThread) => boolean {
+  let projects: Set<string> | undefined
+  for (const project of snapshot.projects) if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) (projects ??= new Set()).add(project.id)
+  return thread => isWorkspaceThreadSettled(thread) || projects?.has(thread.projectId) === true || isThreadClosed(thread)
+}
 
 /** A thread is still at it while its turn runs or work the turn started runs on in the background. */
 const busy = (thread: AgentThread): boolean => thread.status === 'running' || (thread.backgroundWork?.length ?? 0) > 0
@@ -14,6 +27,7 @@ const busy = (thread: AgentThread): boolean => thread.status === 'running' || (t
  * What a client shows is what it observes: the desktop window its panes, a phone the thread it has open. A thread shown
  * when it finishes never earns the mark, and showing a marked thread clears it. A provider that disconnects ends a
  * thread's work without finishing it, so a thread whose provider is gone earns nothing; it is not working any more either.
+ * Settling a thread reads its finish too, and a settled thread earns nothing for work it finishes afterwards (#1279).
  */
 export class FinishedUnread {
   /** Threads busy in the last snapshot, with their provider connected. Ephemeral: a restart starts from what it sees. */
@@ -34,9 +48,12 @@ export class FinishedUnread {
   /** Reads one snapshot of the threads; true when a mark was earned or lost. */
   track(snapshot: AgentHostSnapshot): boolean {
     const live = new Set<string>()
+    const settled = settledIn(snapshot)
     let changed = false
     for (const thread of snapshot.threads) {
       if (this.dormant?.(thread.id)) continue
+      // Settled is quiet, whether or not its provider is connected: settling is the user's word that it is done with.
+      if (settled(thread)) { changed = this.marks.delete(thread.id) || changed; continue }
       // A disconnect neither finishes a thread nor clears what it finished; it only stops counting as work.
       if (!snapshot.connected || !isThreadProviderConnected(snapshot, thread)) continue
       if (busy(thread)) { live.add(thread.id); changed = this.marks.delete(thread.id) || changed; continue }

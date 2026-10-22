@@ -7,7 +7,7 @@ import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
 
 describe('DictationController', () => {
-  it('keeps text and publishes clipboard unavailability without history or transcript on the widget', async () => {
+  it('keeps text and publishes clipboard unavailability without a transcript on the widget', async () => {
     const harness = createHarness({
       platform: 'linux', currentSettings: settings({ historyEnabled: false }),
       deliverOutput: async () => 'clipboard-unavailable' as const,
@@ -21,7 +21,8 @@ describe('DictationController', () => {
     expect(widget).toMatchObject({ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })
     expect(widgetSnapshotSchema.safeParse(widget).success).toBe(true)
     expect(widget).not.toHaveProperty('text')
-    expect(harness.addHistory).not.toHaveBeenCalled()
+    // History is off, so main keeps only the dictation's record; the window reports it either way.
+    expect(harness.addHistory).toHaveBeenCalledOnce()
     expect(harness.setTimer).not.toHaveBeenCalled()
   })
 
@@ -35,6 +36,7 @@ describe('DictationController', () => {
       text: 'hello world',
       autoPaste: true,
       pasteDelayMs: 150,
+      dictationId: 'session',
     })
     expect(harness.addHistory).toHaveBeenCalledWith({
       id: 'session',
@@ -168,7 +170,7 @@ describe('DictationController', () => {
       expect.objectContaining({ id: 'first', text: 'hello world' }),
       expect.objectContaining({ id: 'second', text: 'hello world' }),
     ])
-    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(harness.addHistory.mock.calls.map(([entry]) => entry.id)).toEqual(['first', 'second'])
     expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(2)
     expect(JSON.stringify(snapshots(harness))).not.toContain('hello world')
   })
@@ -198,13 +200,23 @@ describe('DictationController', () => {
     expect(widget).not.toContain('C:/secret')
   })
 
-  it('skips history when disabled but still delivers output', async () => {
+  it('reports a dictation for its record when history is disabled, and delivers output', async () => {
     const harness = createHarness({ currentSettings: settings({ historyEnabled: false }) })
     await harness.controller.start()
     await harness.controller.stop()
     expect(harness.deliverOutput).toHaveBeenCalledTimes(1)
-    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ id: 'session', durationMs: 500 }))
     expect(harness.controller.getState().status).toBe('success')
+  })
+
+  it('does not fail a dictation whose record could not be kept while history is disabled', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ historyEnabled: false }),
+      addHistory: async () => { throw new Error('records unavailable') },
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    expect(harness.controller.getState()).toMatchObject({ status: 'success', output: 'pasted' })
   })
 
   it('contains optional cue failures and obeys the session cue setting', async () => {

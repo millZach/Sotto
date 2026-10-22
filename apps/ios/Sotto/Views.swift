@@ -26,7 +26,7 @@ struct MainTabs: View {
                     .background(TabItemAccessibility(title: "Watcher", value: watcher.spoken))
             }
                 .tabItem { Label("Threads", systemImage: "bubble.left") }
-                .badge(waitingCount + unreadFinishedCount)
+                .badge(threadsBadge)
                 .tag(Tab.threads)
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone. Its owl carries a dot
             // while Watcher works, and its badge counts what needs the user that only Watcher's page shows.
@@ -66,10 +66,13 @@ struct MainTabs: View {
         tab = .watcher
         watcherPath = NavigationPath()
     }
-    private var waitingCount: Int { ThreadGroups.waiting(model.lists).count + model.terminalRows.filter { $0.reachable && $0.terminal.state == .needsYou }.count }
-    /// Recent threads that finished while nothing showed them and have not been opened on either device (ADR-0046).
-    private var unreadFinishedCount: Int {
-        FocusThreads(model.lists, opened: model.selected).unreadFinishedCount
+    /// The requests Needs you shows, and the Recent threads that finished while nothing showed them and have not been
+    /// opened on either device (ADR-0046), with the terminals' own. A delegated thread counts only through the row that
+    /// stands for it (ADR-0081).
+    private var threadsBadge: Int {
+        let groups = FocusThreads(model.lists, opened: model.selected)
+        return groups.requestCount + groups.unreadFinishedCount
+            + model.terminalRows.filter { $0.reachable && $0.terminal.state == .needsYou }.count
             + model.terminalRows.filter { $0.finishedUnread && $0.ref != model.selectedTerminal }.count
     }
 }
