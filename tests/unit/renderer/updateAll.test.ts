@@ -3,7 +3,7 @@ import type { AgentClientHost, ProviderClientUpdate } from '../../../src/shared/
 import type { UpdateStatus } from '../../../src/shared/contracts'
 import type { HostStatus } from '../../../src/shared/hosts'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
-import { clientKey, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
+import { clientKey, clientsJoining, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
 
 const FORGE = '6f0d1c5e-8c5b-4f8e-9a51-1f6f3f8d2a10'
 const FORGE_HOST = '2a6c8e41-3b8f-4d4e-8a3f-7d1c2b9e5f60'
@@ -378,5 +378,46 @@ describe('a host still being checked (ADR-0077, Sol, review)', () => {
       pass(['sotto', hostKey(FORGE)], { joining: new Set([FORGE]) }))
     expect(offered.phase).toBe('running')
     expect(offered.items[1]).toMatchObject({ state: 'running', detail: 'Starting…', target: '0.1.38-owl.20261014.2' })
+  })
+})
+
+describe('clients found behind while a press is under way (ADR-0077, October 21 amendment)', () => {
+  const downloading = status({ phase: 'downloading', version: '0.1.38-owl.20261021.1', percent: 40 })
+  const ready = status({ phase: 'downloaded', version: '0.1.38-owl.20261021.1', problem: null })
+
+  it('joins a client a press of Update all did not see, while the press runs or Sotto waits for its restart', () => {
+    const found = client({ id: 'codex', installed: '0.155.1', published: '0.158.0' })
+    const running = updateAllView(sources({ app: downloading, local: [client(), found] }), pass(['sotto', clientKey('local', 'claude')], { pressed: true }))
+    expect(clientsJoining(running, pass(['sotto', clientKey('local', 'claude')], { pressed: true })).map(item => item.key)).toEqual([clientKey('local', 'codex')])
+    const waiting = pass(['sotto'], { pressed: true })
+    expect(clientsJoining(updateAllView(sources({ app: ready, local: [found] }), waiting), waiting).map(item => item.key)).toEqual([clientKey('local', 'codex')])
+    // A host's client joins too, before the host's own update that waits for its line.
+    const forgePass = pass([hostKey(FORGE)], { pressed: true, after: new Set([FORGE]) })
+    const view = updateAllView(sources({ clientHosts: [forgeClients([found])], hostUpdates: [hostUpdate()] }), forgePass)
+    expect(clientsJoining(view, forgePass).map(item => item.key)).toEqual([clientKey(FORGE, 'codex')])
+  })
+
+  it('joins nothing without a press, after a lone Try again, or once the press is over', () => {
+    const view = (given: UpdateAllPass | null) => updateAllView(sources({ local: [client()] }), given)
+    expect(clientsJoining(view(null), null)).toEqual([])
+    const retried = pass([clientKey('local', 'grok')])
+    expect(clientsJoining(view(retried), retried)).toEqual([])
+    const over = pass([clientKey('local', 'grok')], { pressed: true })
+    expect(clientsJoining(view(over), over)).toEqual([])
+  })
+
+  it('offers a client again when a release newer than the one the press asked for appears after its update', () => {
+    const key = clientKey('local', 'claude')
+    const asked = pass([key], { pressed: true, targets: new Map([[key, '2.1.42']]), ranBefore: new Map([[key, undefined]]) })
+    // Updated to the release asked for, it is done.
+    const done = updateAllView(sources({ local: [client({ installed: '2.1.42', behind: false, state: 'updated', ranAt: '2026-10-21T10:00:00.000Z' })] }), asked)
+    expect(done.items[0]).toMatchObject({ key, state: 'done' })
+    // A newer release set that finding aside: it is a new offer, not a step still starting, and it joins the press.
+    const renewed = updateAllView(sources({ app: downloading, local: [client({ installed: '2.1.42', published: '2.1.45' })] }), { ...asked, touched: new Set([...asked.touched, 'sotto']) })
+    expect(renewed.items.find(item => item.key === key)).toMatchObject({ state: 'offered', versions: { from: '2.1.42', to: '2.1.45' } })
+    expect(clientsJoining(renewed, { ...asked, touched: new Set([...asked.touched, 'sotto']) }).map(item => item.key)).toEqual([key])
+    // An update to a release newer than the one asked for is still the press's own, and done.
+    const further = updateAllView(sources({ local: [client({ installed: '2.1.45', published: '2.1.45', behind: false, state: 'updated', ranAt: '2026-10-21T10:00:00.000Z' })] }), asked)
+    expect(further.items[0]).toMatchObject({ key, state: 'done' })
   })
 })

@@ -1,0 +1,15 @@
+/* Watcher's night scene (Zach's pick on October 21, 2026): an ASCII night behind Watcher's room while it is empty, drawn
+   on two canvases in Watcher's pane. The landscape sits under everything the pane holds; the owl sits over the composer
+   and under every menu, panel and toast that opens there. Neither is ever pressed. The canvases take their inks from
+   the probe's computed colours (WatcherNightScene.tsx), so a theme change repaints them and no colour is written here. */
+
+/* The pane is its own stacking context, so the landscape's negative layer stays inside it, over the room's surface. */
+.watcher-pane { isolation: isolate; }
+.watcher-scene { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 1; transition: opacity 700ms ease; }
+.watcher-scene--land { z-index: -1; }
+.watcher-scene--owl { z-index: 3; }
+/* Once the room has a conversation the scene fades out, and then it is gone. */
+.watcher-scene[data-leaving] { opacity: 0; }
+/* The scene's inks, read and never seen: the text colour for its ink, the accent for its accent, and the glyph face. */
+.watcher-scene__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
+  color: var(--tt-text); background-color: var(--tt-accent); font-family: var(--tt-font-mono); }

@@ -9,6 +9,7 @@ import { ownedE2EProfile } from './e2eProfile'
 import { firstSottoWindow } from './sottoLaunch'
 import { agentState } from './agentAccess'
 import { textContrast } from './textContrast'
+import { claudeAssistant, claudeUser, codexMeta, codexTaskStarted, codexTokenCount, codexTurnContext, codexUserMessage, jsonl } from '../../fixtures/usageHistory/lines'
 
 export const usageWait = { timeout: 30_000 }
 export const SELECTED_USAGE_MODEL = 'claude-sonnet-4-6'
@@ -148,4 +149,59 @@ export async function waitForNativePrompt(harness: Awaited<ReturnType<typeof usa
     nativeId = alias.sessionId
   }).toPass(usageWait)
   return nativeId
+}
+
+/**
+ * Seven models' prompts on each of the last fourteen days, oldest first: five Claude models in Claude Code's own
+ * transcripts and two Codex models in a Codex CLI rollout, all outside Sotto. Invented numbers.
+ */
+export const SEEDED_USAGE_MODELS: ReadonlyArray<{ readonly providerId: 'claude' | 'codex'; readonly modelId: string; readonly name: string; readonly prompts: readonly number[]; readonly input: number; readonly output: number }> = [
+  { providerId: 'claude', modelId: 'claude-opus-5-5', name: 'Claude Opus 5.5', prompts: [6, 8, 7, 0, 9, 10, 8, 3, 0, 11, 12, 9, 10, 5], input: 40_000, output: 900 },
+  { providerId: 'codex', modelId: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', prompts: [3, 4, 2, 0, 5, 6, 4, 1, 0, 6, 7, 5, 6, 3], input: 30_000, output: 700 },
+  { providerId: 'claude', modelId: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', prompts: [2, 2, 3, 0, 2, 3, 1, 1, 0, 3, 2, 2, 3, 1], input: 20_000, output: 500 },
+  { providerId: 'claude', modelId: 'claude-fable-5', name: 'Claude Fable 5', prompts: [0, 0, 0, 0, 1, 2, 2, 1, 0, 2, 3, 2, 2, 1], input: 60_000, output: 1_200 },
+  { providerId: 'claude', modelId: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', prompts: [1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1], input: 8_000, output: 300 },
+  { providerId: 'codex', modelId: 'gpt-6-mini', name: 'GPT-6 Mini', prompts: [1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0], input: 6_000, output: 200 },
+  { providerId: 'claude', modelId: 'claude-opus-4-6', name: 'Claude Opus 4.6', prompts: [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], input: 30_000, output: 600 },
+]
+
+/** Writes the seeded history where the importer reads it, under the harness's own home. Returns every prompt it holds. */
+export async function seedUsageHistory(home: string): Promise<number> {
+  const claude = join(home, '.claude', 'projects', 'usage-fixture')
+  await mkdir(claude, { recursive: true })
+  // A day's prompts sit a few minutes apart before now on that calendar day, so today's never lands in the future.
+  const at = (back: number, step: number): string => { const date = new Date(Date.now() - 20 * 60_000 - step * 7_000); date.setDate(date.getDate() - back); return date.toISOString() }
+  let prompts = 0
+  const codexTurns: Array<{ when: string; turn: string; modelId: string; last: { input: number; cached: number; output: number } }> = []
+  for (const [order, model] of SEEDED_USAGE_MODELS.entries()) {
+    for (const [index, count] of model.prompts.entries()) {
+      if (count === 0) continue
+      const back = model.prompts.length - 1 - index
+      prompts += count
+      if (model.providerId === 'claude') {
+        const session = randomUUID()
+        const lines = Array.from({ length: count }, (_, step) => [
+          claudeUser({ session, uuid: randomUUID(), at: at(back, order * 20 + step * 2) }),
+          claudeAssistant({ session, id: `msg_${model.modelId}_${index}_${step}`, model: model.modelId, at: at(back, order * 20 + step * 2 + 1),
+            usage: { input: model.input / 10, read: model.input * 0.8, write: model.input / 10, output: model.output } }),
+        ]).flat()
+        await writeFile(join(claude, `${session}.jsonl`), jsonl(lines))
+      } else {
+        for (let step = 0; step < count; step++) {
+          codexTurns.push({ when: at(back, order * 20 + step * 2), turn: `turn-${model.modelId}-${index}-${step}`, modelId: model.modelId,
+            last: { input: model.input, cached: model.input * 0.7, output: model.output } })
+        }
+      }
+    }
+  }
+  const sessions = join(home, '.codex', 'sessions', '2026', '10', '21')
+  await mkdir(sessions, { recursive: true })
+  // One Codex CLI session in time order, its running totals rising turn by turn as Codex writes them.
+  let running = { input: 0, cached: 0, output: 0 }
+  const turns = codexTurns.sort((a, b) => a.when.localeCompare(b.when)).flatMap(({ when, turn, modelId, last }) => {
+    running = { input: running.input + last.input, cached: running.cached + last.cached, output: running.output + last.output }
+    return [codexTaskStarted({ turn, at: when }), codexTurnContext({ turn, model: modelId, at: when }), codexUserMessage({ at: when }), codexTokenCount({ at: when, total: running, last })]
+  })
+  await writeFile(join(sessions, 'rollout-2026-10-21T09-00-00-usage-fixture.jsonl'), jsonl([codexMeta({ id: 'usage-fixture-codex', originator: 'codex-tui', at: at(14, 0) }), ...turns]))
+  return prompts
 }

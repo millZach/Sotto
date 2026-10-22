@@ -180,6 +180,7 @@ describe('provider switch history scan', () => {
     const host = new ConfiguredProviderHost({ hosts, provider: () => 'codex' })
     const sink = memorySink()
     await host.scanUsageHistory!(sink.sink, new AbortController().signal)
-    expect(sink.tokens.map(row => [row.providerId, row.modelId])).toEqual([['claude', 'native:claude:model:claude-opus-5-5']])
+    // Every scan is projected under the provider that read it, whatever its rows said; Muse has none of its own (ADR-0083).
+    expect(sink.tokens.map(row => [row.providerId, row.modelId])).toEqual([['claude', 'native:claude:model:claude-opus-5-5'], ['muse', 'native:muse:model:claude-opus-5-5']])
   })
 })

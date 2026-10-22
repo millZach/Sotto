@@ -1165,3 +1165,71 @@ describe('a remote thread after its host restarts (#1098)', () => {
     router.dispose()
   })
 })
+
+describe('a new version of Sotto has each host check its clients afresh (ADR-0077)', () => {
+  const reading = (state: 'idle' | 'updated' | 'failed' | 'queued') => ({ id: 'codex' as const, installed: '0.155.1', published: '0.158.0', behind: true,
+    channel: 'npm' as const, canInstall: true, checkedAt: '2026-10-21T00:00:00.000Z', state })
+  const checks = (item: ReturnType<typeof fixture>) => item.command.mock.calls.filter(([command]) => command.type === 'check-client-updates').length
+
+  it('asks each connected host that offers client updates, and never this computer, which its coordinator checks', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), offering = fixture(REMOTE, 'remote')
+    const older = fixture('33333333-3333-4333-8333-333333333333', 'remote'), away = fixture('44444444-4444-4444-8444-444444444444', 'remote')
+    offering.state.clientUpdates = [reading('idle')]
+    router.add(local.connection); router.add({ ...offering.connection, offersClientUpdates: () => true })
+    router.add(older.connection); router.add({ ...away.connection, offersClientUpdates: () => true, available: () => false })
+    await router.checkHostClientsAfresh()
+    expect(offering.command).toHaveBeenCalledWith({ type: 'check-client-updates' }, desktopWindowClient())
+    expect([checks(local), checks(older), checks(away)]).toEqual([0, 0, 0])
+  })
+
+  it('asks a host that keeps what its updates said whatever they said, and leaves an older one holding a finding to its own check', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const keeping = (['updated', 'failed'] as const).map((state, index) => {
+      const host = fixture(`5555555${index}-5555-4555-8555-555555555555`, 'remote')
+      host.state.clientUpdates = [reading(state)]
+      router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true })
+      return host
+    })
+    // A host on another Sotto may set a finding aside when it checks, while a press may still be reading it.
+    const older = fixture('66666666-6666-4666-8666-666666666666', 'remote'), olderIdle = fixture('88888888-8888-4888-8888-888888888888', 'remote')
+    older.state.clientUpdates = [reading('updated')]; olderIdle.state.clientUpdates = [reading('idle')]
+    router.add({ ...older.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => false })
+    router.add({ ...olderIdle.connection, offersClientUpdates: () => true })
+    await router.checkHostClientsAfresh()
+    expect([...keeping, older, olderIdle].map(checks)).toEqual([1, 1, 0, 1])
+  })
+
+  it('asks a host whose update line runs once the line is empty, and only once, deciding from what the host pushed', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), host = fixture(REMOTE, 'remote')
+    let broadcast: (state: AgentState) => void = () => undefined
+    host.state.clientUpdates = [reading('queued')]; host.state.clientUpdateRun = { total: 1, done: 0 }
+    // A read of the host's state copies its retained drafts, so the pushes below must not make one.
+    const shell = vi.fn(() => host.state), view = vi.fn(() => host.state)
+    router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true,
+      service: { ...host.connection.service, shell, view, subscribe: listener => { broadcast = listener; return () => undefined } } as DesktopHostConnection['service'] })
+    await router.checkHostClientsAfresh()
+    expect(checks(host)).toBe(0)
+    shell.mockClear(); view.mockClear()
+    // Still running in what it pushed: still owed.
+    broadcast({ ...host.state, clientUpdates: [reading('updated')] })
+    expect(checks(host)).toBe(0)
+    // The push says the line is empty, whatever a read of the host would say.
+    const empty = { ...host.state, clientUpdates: [reading('updated')] }
+    delete empty.clientUpdateRun
+    broadcast(empty)
+    await vi.waitFor(() => { expect(checks(host)).toBe(1) })
+    broadcast(empty)
+    expect(checks(host)).toBe(1)
+    expect([shell.mock.calls.length, view.mock.calls.length]).toEqual([0, 0])
+  })
+
+  it('does not ask a host that would enumerate a provider this build holds, and carries on past a host that refuses', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), muse = fixture(REMOTE, 'remote'), refusing = fixture('77777777-7777-4777-8777-777777777777', 'remote')
+    muse.state.host.providers = [{ id: 'muse', name: 'Muse', capabilities: muse.state.host.capabilities, connection: 'connected', version: '1.4.8' }]
+    refusing.command.mockRejectedValueOnce(new Error('The host did not answer.'))
+    router.add({ ...muse.connection, offersClientUpdates: () => true }); router.add({ ...refusing.connection, offersClientUpdates: () => true })
+    await expect(router.checkHostClientsAfresh()).resolves.toBeUndefined()
+    expect(checks(muse)).toBe(0)
+    expect(checks(refusing)).toBe(1)
+  })
+})

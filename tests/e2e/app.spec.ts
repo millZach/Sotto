@@ -14,8 +14,11 @@ import { TRANSCRIPTION_KEPT_DETAIL } from '../../src/shared/dictation'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { closeSotto, e2eEnvironment, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
 
 const evidence = evidenceDirectory('artifacts/review-quit-drain')
+const recordEvidence = evidenceDirectory('artifacts/dictation-record')
 
 /** Onboarding, and then the Dictate page the dictation tests work on. */
 async function completeOnboarding(page: Page): Promise<void> {
@@ -153,6 +156,67 @@ test('keeps history disabled without blocking dictation', async () => {
     await expect(launched.page.getByRole('heading', { name: 'History is off.' })).toBeVisible()
   } finally {
     await closeSotto(launched)
+  }
+})
+
+test('keeps a dictation record with history on and off, and lists older transcripts after a restart with it off', async () => {
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-' })).directory
+  let launched = await launchSotto('success', directory)
+  const records = async (): Promise<{ id: string; words: number; durationMs: number; app?: string }[]> =>
+    (await readFile(join(directory, 'dictation-records.jsonl'), 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as never)
+  try {
+    await completeOnboarding(launched.page)
+    await dictateWithButton(launched.page)
+    await expect(launched.page.getByRole('heading', { name: 'Pasted.' })).toBeVisible()
+    await launched.page.evaluate(async () => window.sotto!.updateSettings({ historyEnabled: false }))
+    await dictateWithButton(launched.page)
+    await expect(launched.page.getByRole('heading', { name: 'Pasted.' })).toBeVisible()
+
+    // Both dictations keep their numbers and the app Sotto delivered them into; only the first kept its text.
+    await expect.poll(async () => (await records()).length).toBe(2)
+    const kept = await records()
+    for (const record of kept) {
+      expect(record.app).toBe('Sotto')
+      expect(record.words).toBeGreaterThan(0)
+    }
+    expect(await readFile(join(directory, 'dictation-records.jsonl'), 'utf8')).not.toContain(DETERMINISTIC_TRANSCRIPT.split(' ')[1]!)
+    const saved = JSON.parse(await readFile(join(directory, 'history.json'), 'utf8')) as { id: string; app?: string }[]
+    expect(saved).toHaveLength(1)
+    expect(saved[0]!.app).toBe('Sotto')
+    expect(await launched.page.evaluate(async () => (await window.sotto!.listDictationRecords()).length)).toBe(2)
+    await closeSotto(launched)
+
+    launched = await launchSotto('success', directory)
+    await openPage(launched.page, 'History')
+    await expect(launched.page.getByText('History is off. Older transcripts are still here.')).toBeVisible()
+    await expect(launched.page.locator('.history-entry')).toHaveCount(1)
+    await mkdir(recordEvidence, { recursive: true })
+    await resizeContentWindow(launched, 1280, 800)
+    await launched.page.screenshot({ path: join(recordEvidence, 'history-off-after-restart-1280x800.png'), animations: 'disabled' })
+    await resizeContentWindow(launched, 820, 560)
+    await launched.page.screenshot({ path: join(recordEvidence, 'history-off-after-restart-820x560.png'), animations: 'disabled' })
+    await launched.page.locator('.history-entry__toggle').click()
+    await launched.page.getByRole('button', { name: 'Delete saved transcript' }).click()
+    await launched.page.getByRole('dialog').getByRole('button', { name: 'Delete transcript', exact: true }).click()
+    await expect(launched.page.locator('.history-entry')).toHaveCount(0)
+    expect((await records()).map(record => record.id)).toEqual(kept.filter(record => record.id !== saved[0]!.id).map(record => record.id))
+
+    // The Keep local history description says what is kept with it off.
+    await openPage(launched.page, 'Settings')
+    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    const description = launched.page.getByText("With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name.", { exact: false })
+    await description.scrollIntoViewIfNeeded()
+    await expect(description).toBeVisible()
+    await launched.page.screenshot({ path: join(recordEvidence, 'keep-local-history-dark-820x560.png'), animations: 'disabled' })
+    await launched.page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
+    await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await resizeContentWindow(launched, 1280, 800)
+    await description.scrollIntoViewIfNeeded()
+    await launched.page.screenshot({ path: join(recordEvidence, 'keep-local-history-light-1280x800.png'), animations: 'disabled' })
+
+  } finally {
+    await closeSotto(launched)
+    await removeOwnedE2EProfile(directory)
   }
 })
 

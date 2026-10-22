@@ -237,7 +237,7 @@ export function ProvidersSettings(): ReactNode {
     <div className="providers-updates">
       <div>
         <h4>Check for client updates</h4>
-        <p>{!held.has('muse') ? "Checks each client's published version, at most once an hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version, at most hourly. Only the package name is sent.'}</p>
+        <p>{!held.has('muse') ? "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
       </div>
       <Toggle label="Check for client updates" checked={checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />

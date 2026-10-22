@@ -178,6 +178,9 @@ export class PairedClients {
     return this.file.clients.some(client => client.clientId === clientId) ? clientId : undefined
   }
 
+  /** Whether a client is paired now: false from the moment it is unpaired. */
+  isPaired(clientId: string): boolean { return this.loaded && this.file.clients.some(client => client.clientId === clientId) }
+
   /** Unpairs a client. Its token and every session signed for it stop working at once. */
   async revoke(clientId: string): Promise<boolean> {
     this.requireLoaded()

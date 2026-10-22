@@ -50,6 +50,7 @@ export default tseslint.config(
       'artifacts/model-menu-wheel/**',
       'artifacts/new-thread-defaults-every-host/**',
       'artifacts/usage-dashboard/**',
+      'artifacts/usage-chart-split/**',
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',

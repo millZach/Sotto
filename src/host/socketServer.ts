@@ -18,7 +18,7 @@ import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
 import { REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from './remoteCommands'
 import type { HostSelfUpdate } from './selfUpdate'
-import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageReadBeforeHistory, type UsageLocalHostRead } from '../shared/usageDashboard'
+import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBeforeMuse, usageReadBeforeHistory, usageReadBeforeMuse, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
@@ -96,9 +96,15 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; gone: AbortController; usageHistory: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
-/** A desktop from before history import is sent only the Usage read its strict schemas know (ADR-0083). */
-const usageForPeer = (peer: Peer, read: UsageLocalHostRead): UsageLocalHostRead => peer.usageHistory ? read : usageReadBeforeHistory(read)
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
+/**
+ * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
+ * strict schemas know (ADR-0083).
+ */
+const usageForPeer = (peer: Peer, read: UsageLocalHostRead): UsageLocalHostRead => {
+  const providers = peer.usageMuseOpenCode ? read : usageReadBeforeMuse(read)
+  return peer.usageHistory ? providers : usageReadBeforeHistory(providers)
+}
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
 interface WireShell { state: HostWireShell; carries: number | null }
 export interface SocketServerOptions {
@@ -240,9 +246,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
+    // Offered with client updates: the coordinator's check keeps what an update already run said (ADR-0077).
+    && (feature !== 'client-update-outcomes' || options.clientUpdates === true)
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
     && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
+    && (feature !== 'usage-muse-opencode' || (service.supportsUsage === true && service.usageRead !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
@@ -400,7 +409,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
     // Watcher's phone state is the host's own, so it is filtered for this peer as the shell was (#1107).
-    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true)) : undefined
+    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true, peer.watcherPhoneSteer === true)) : undefined
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
     const rows = peer.terminals && options.terminals ? { ...projected, terminals: watcherFor(peer, options.terminals.phoneRows()) } : projected
@@ -783,6 +792,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       const mayAnswer = () => options.mayAnswer?.(peer.client) ?? false
       // A phone that never negotiated management knows nothing of standing watches, and is shown none (ADR-0073).
       const standing = peer.watcherPhoneManage === true
+      // A phone that negotiated steering is shown the user's follow-ups waiting for Watcher and may steer it (#1229).
+      const steer = peer.watcherPhoneSteer === true
       guard()
       // Watching, sending to or answering in a thread of a provider this phone does not know is refused before Watcher hears
       // of it, and every answer is Watcher's phone state filtered for this phone as its shell is (#1107).
@@ -807,12 +818,12 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
             const outcome = previous.receipt.watcherManage
             if (!outcome) throw new Refusal('unavailable')
-            return outcome.status === 'refused' ? outcome : phone.get(mayAnswer())
+            return outcome.status === 'refused' ? outcome : phone.get(mayAnswer(), standing, steer)
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
           const action = request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch'
-          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer).then(result => {
+          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer, steer).then(result => {
             receipt.watcherManage = result.status === 'refused' ? result : { status: 'ok' }
             receipt.status = 'completed'
             return result
@@ -823,19 +834,49 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-read': await observe(); return phone.get(mayAnswer(), standing)
+        case 'watcher-phone-read': await observe(); return phone.get(mayAnswer(), standing, steer)
+        case 'watcher-phone-remove-followup': {
+          if (!steer || !offers(peer, 'watcher-phone-steer')) throw new Refusal('invalid_request')
+          // As a management change: its outcome is kept under the request's ID, so a lost acknowledgement reads it and a
+          // retry removes nothing more.
+          const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
+          const previous = receipts.get(peer.client.clientId, request.id)
+          if (previous) {
+            if (previous.digest !== digest) throw new Refusal('invalid_request')
+            await previous.task
+            guard()
+            if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
+            const outcome = previous.receipt.watcherManage
+            if (!outcome) throw new Refusal('unavailable')
+            return outcome.status === 'refused' ? outcome : phone.get(mayAnswer(), standing, steer)
+          }
+          if (!receipts.makeRoom()) throw new Refusal('busy')
+          const receipt: HostReceipt = { status: 'pending' }
+          const task = phone.removeFollowup(request.request, peer.client, guard, mayAnswer, standing).then(result => {
+            receipt.watcherManage = result.status === 'refused' ? result : { status: 'ok' }
+            receipt.status = 'completed'
+            return result
+          }).catch(() => {
+            receipt.status = 'completed'; receipt.error = { code: 'unavailable', message: errors.unavailable }
+            throw new Refusal('unavailable')
+          })
+          receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
+          return task
+        }
         case 'watcher-phone-send': {
+          // Only a phone that negotiated steering may ask for a steer; an older phone's send is unchanged (#1229).
+          if (request.request.delivery !== undefined && (!steer || !offers(peer, 'watcher-phone-steer'))) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
           if (previous) {
             if (previous.digest !== digest) throw new Refusal('invalid_request')
             await previous.task
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
-            return { status: 'ok', draftId: request.request.draftId, state: phone.state(mayAnswer(), standing) }
+            return { status: 'ok', draftId: request.request.draftId, state: phone.state(mayAnswer(), standing, steer) }
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const task = phone.send(request.request, peer.client, guard, mayAnswer, standing).then(result => {
+          const task = phone.send(request.request, peer.client, guard, mayAnswer, standing, steer).then(result => {
             receipt.status = 'completed'
             if (result.status === 'refused') receipt.error = { code: 'unavailable', message: result.message }
             return result
@@ -853,11 +894,11 @@ export async function startSocketServer(options: SocketServerOptions) {
             guard()
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
             const outcome = previous.receipt.watcherStop!
-            return outcome.status === 'refused' ? outcome : { ...outcome, state: phone.state(mayAnswer(), standing) }
+            return outcome.status === 'refused' ? outcome : { ...outcome, state: phone.state(mayAnswer(), standing, steer) }
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const task = phone.stop(request.confirmationId, peer.client, guard, mayAnswer, standing).then(result => {
+          const task = phone.stop(request.confirmationId, peer.client, guard, mayAnswer, standing, steer).then(result => {
             receipt.watcherStop = result.status === 'refused' ? result : { status: 'ok', results: result.results }
             receipt.status = 'completed'
             return result
@@ -874,7 +915,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           const result = await command(peer, { ...request, op: 'command', command: input }, target)
           guard()
           if (result.error) throw new Refusal('unavailable')
-          return phone.get(mayAnswer(), standing)
+          return phone.get(mayAnswer(), standing, steer)
         }
       } })()
       // Stop all's result keeps a row for every thread its confirmation listed, so a phone hears which it could not stop.
@@ -902,9 +943,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherPhone = (request.accepts?.includes('watcher-phone') ?? false) && offers(peer, 'watcher-phone')
         peer.watcherPhoneStop = peer.watcherPhone && (request.accepts?.includes('watcher-phone-stop-all') ?? false) && offers(peer, 'watcher-phone-stop-all')
         peer.watcherPhoneManage = peer.watcherPhone && (request.accepts?.includes('watcher-phone-manage') ?? false) && offers(peer, 'watcher-phone-manage')
+        peer.watcherPhoneSteer = peer.watcherPhone && (request.accepts?.includes('watcher-phone-steer') ?? false) && offers(peer, 'watcher-phone-steer')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.terminals = (request.accepts?.includes('terminals') ?? false) && offers(peer, 'terminals')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
+        peer.usageMuseOpenCode = (request.accepts?.includes('usage-muse-opencode') ?? false) && offers(peer, 'usage-muse-opencode')
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         // A provider is sent to this client only once its hello says it knows the provider (#1107).
         peer.unknownProviders = providersUnknownTo(request.accepts)
@@ -1047,10 +1090,17 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       case 'usage-read':
         if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
-        try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRead(request.query))) } catch { throw new Refusal('unavailable') }
+        {
+          // An earlier desktop's totals hold only the providers it can name, so it is read for those alone.
+          const query = peer.usageMuseOpenCode ? request.query : { ...request.query, providerIds: usageProvidersBeforeMuse(request.query.providerIds) }
+          try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRead(query))) } catch { throw new Refusal('unavailable') }
+        }
       case 'usage-refresh':
         if (!offers(peer, 'usage-dashboard') || !service.usageRefresh) throw new Refusal('invalid_request')
-        try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRefresh(request.providerIds))) } catch { throw new Refusal('unavailable') }
+        {
+          const providerIds = peer.usageMuseOpenCode ? request.providerIds : usageProvidersBeforeMuse(request.providerIds)
+          try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRefresh(providerIds))) } catch { throw new Refusal('unavailable') }
+        }
       case 'usage-clear':
         if (!offers(peer, 'usage-dashboard') || !service.usageClear) throw new Refusal('invalid_request')
         if (remoteUsageRefusal(request.op, options.mayAnswer?.(peer.client) ?? false)) throw new Refusal('forbidden')
@@ -1267,7 +1317,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, gone: new AbortController(), usageHistory: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
@@ -1294,13 +1344,17 @@ export async function startSocketServer(options: SocketServerOptions) {
   // The descriptor is also the body of /v1/health: a client reads the host's Sotto version and features
   // there before it opens a session, so it never has to find out what the host supports by trying it.
   const descriptor: HostDescriptor = { v: 1, hostId, pid: process.pid, port: address.port, sottoVersion, features: [...features] }
+  // While this listener serves Watcher's phone page, it says whether a phone that queued a follow-up for Watcher is still
+  // paired and admitted, so the follow-up goes under that phone's guard as its own send would (#1229).
+  const releasePhoneAdmission = features.includes('watcher-phone')
+    ? service.watcherPhone?.useAdmission(clientId => pairing.isPaired(clientId) && admits(clientId)) : undefined
   /** Closes every socket whose session ended, and every phone's while phones are not admitted. */
   const dropRefused = (): void => { for (const peer of peers) if (!authenticated(peer) || !admits(peer.client.clientId)) peer.frames.close() }
   const expiry = setInterval(dropRefused, 1000)
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeTerminals?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeTerminals?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     server.removeAllListeners('request')
     server.removeAllListeners('upgrade')
     server.removeAllListeners('connection')
