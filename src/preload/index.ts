@@ -319,11 +319,12 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     // puts them back from what the broadcast sent it, the same way it does for an omitted broadcast catalog.
     // See src/renderer/src/agents/agentStateCatalogs.ts.
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command)),
-    // The broadcast may omit a model catalog this window already has (issue #286), coded as
+    // The broadcast may omit a model catalog this window already has (issue #286), and carries only the
+    // thread records that changed since this window's last broadcast (issue #1330), coded as
     // AgentStateBroadcast rather than AgentState. This crosses to the page unreassembled on purpose:
     // contextBridge copies whatever a listener is called with back across the isolated-world boundary,
     // so putting the catalog back here would clone it again on the way out, defeating most of what
-    // omitting it saved. The page puts it back; see src/renderer/src/agents/agentStateCatalogs.ts.
+    // omitting it saved. The page puts both back; see src/renderer/src/agents/agentStateCatalogs.ts.
     onState: (listener: (state: import('../shared/agents').AgentStateBroadcast) => void) => subscribe(renderer, AGENT_STATE,
       trustedState<Record<string, unknown>>('host'), raw => listener(raw as import('../shared/agents').AgentStateBroadcast)),
   })

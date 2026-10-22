@@ -21,6 +21,9 @@ export interface AgentIpcOptions {
   readonly encodeReceipt: (state: AgentState) => AgentCommandReceipt
   /** The working-copy choices for a project; without it the window is told they are unavailable. */
   readonly workingCopyOptions?: (projectId: string) => Promise<AgentWorkingCopyOptions>
+  /** Told when the window reads the whole state, before it is read: `AgentStateBroadcaster.windowRead`, so the next
+   * broadcast lists every thread record (issue #1330). */
+  readonly windowRead?: () => void
 }
 
 /**
@@ -29,7 +32,7 @@ export interface AgentIpcOptions {
  * the client that sent it, which is the line a remote client would cross (ADR-0016).
  */
 export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; startHandover?: (threadId: string) => Promise<AgentStartHandover | null>; activityBody?: (request: AgentActivityBodyRequest) => Promise<AgentActivity | null>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], options: AgentIpcOptions): () => void {
-  const { workingCopyOptions, encodeReceipt } = options
+  const { workingCopyOptions, encodeReceipt, windowRead } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     const [projectId] = z.tuple([agentWorkingCopyOptionsRequestSchema]).parse(args)
@@ -56,6 +59,8 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   // so neither the first state nor a command's answer carries every thread's history across the bridge.
   ipc.handle(AGENT_GET, event => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
+    // A window that reads the whole state holds nothing the next broadcast's threads could be measured from.
+    windowRead?.()
     return control.shell()
   })
   ipc.handle(AGENT_THREAD_DETAIL_GET, (event, payload) => {
