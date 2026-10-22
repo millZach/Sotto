@@ -363,7 +363,7 @@ function childPath(directory: string, name: string): string {
  * entry a case-insensitive file system could take for that name. A link, an entry of another type, or a
  * name that differs only in case is read with `lstat`.
  */
-async function lstatInListing(directory: string, children: readonly Dirent[], name: string): Promise<Dirent | Stats | undefined> {
+async function lstatInListing(directory: string, children: readonly Dirent[], name: string, read: (path: string) => Promise<Stats>): Promise<Dirent | Stats | undefined> {
   const folded = name.toUpperCase()
   let alike = false
   for (const child of children) {
@@ -371,19 +371,33 @@ async function lstatInListing(directory: string, children: readonly Dirent[], na
     if (child.name.length === name.length && child.name.toUpperCase() === folded) alike = true
   }
   if (!alike) return undefined
-  return lstat(join(directory, name)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+  return read(join(directory, name)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+}
+
+/** What a listing or an `lstat` says an entry is. A junction is a link to both. */
+function entryKind(info: Dirent | Stats | undefined): 'file' | 'directory' | 'link' | 'other' | 'none' {
+  return !info ? 'none' : info.isSymbolicLink() ? 'link' : info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'
+}
+
+/** The walk saw an entry become something else while it was reading the folder. */
+function changedDuringWalk(): Error {
+  return new Error('The files changed while Sotto was checking them. Nothing was removed. Choose Remove worktree again to review them.')
 }
 
 /**
  * A long walk (dependency folders included) otherwise awaits one fs promise after another with
  * nothing in between, and Electron's main thread also forwards keyboard input to the window: a walk
  * of thousands of entries can leave typing stuck for its whole run. Call the returned function once
- * per entry visited; every `YIELD_INTERVAL`th call gives the event loop a turn.
+ * per entry visited; every `YIELD_INTERVAL`th call gives the event loop a turn and answers true.
  */
 export const YIELD_INTERVAL = 256
-export function periodicYield(): () => Promise<void> {
+export function periodicYield(): () => Promise<boolean> {
   let visited = 0
-  return async () => { if (++visited % YIELD_INTERVAL === 0) await new Promise(resolve => setImmediate(resolve)) }
+  return async () => {
+    if (++visited % YIELD_INTERVAL !== 0) return false
+    await new Promise(resolve => setImmediate(resolve))
+    return true
+  }
 }
 
 /**
@@ -825,56 +839,83 @@ export class ThreadWorktrees {
     const canonicalRoot = await realpath(path)
     let outsideLink: string | undefined
     const yieldPeriodically = periodicYield()
-    // Each directory is read once, and a plain file's or directory's type comes from that listing. A
-    // dependency folder of a few hundred thousand entries otherwise cost an lstat each, and up to three
-    // more per directory for its .git, HEAD and objects, all on main's thread (#1329). A file is read only
-    // when a row counts it; a link, or anything the listing cannot settle, is read with lstat as before.
-    const visit = async (directory: string, directoryLocal: string, entries: readonly Dirent[], row?: { path: string; bytes: number; fileCount: number }, gitMetadata = false, indexRoot = path): Promise<void> => {
+    // Each directory is listed with its entries' types, and a plain file's or directory's type comes from
+    // that listing. A dependency folder of a few hundred thousand entries otherwise cost an lstat each, and
+    // up to three more per directory for its .git, HEAD and objects, all on main's thread (#1329). A file is
+    // read only when a row counts it; a link, or anything the listing cannot settle, is read with lstat.
+    //
+    // A listing is only as current as the moment it was read, and this walk is the last check before the
+    // folder is deleted. `waits` counts everything the walk waits on (Git, the file system, a turn of the
+    // event loop), and a listing records the count it was read at. A folder Git has run in is read again,
+    // itself, its listing and its markers, before it is walked. A folder whose walk waited on anything
+    // after its listing was read is listed again once its entries are done: an entry that has since become
+    // something else refuses the walk, and a new one is read with lstat and walked like the rest. So no
+    // entry's type is trusted from earlier than an lstat at its turn would have read it. A folder replaced
+    // by a link after its listing can be read through before that second listing refuses the walk; the
+    // walk only reads, so nothing is removed either way.
+    let waits = 0
+    const waited = async <T>(read: Promise<T>): Promise<T> => { try { return await read } finally { waits++ } }
+    const git = (cwd: string, args: string[]) => waited(this.git(cwd, args))
+    const fresh = (entryPath: string) => waited(lstat(entryPath))
+    const root = normalize(path)
+    const list = async (directory: string): Promise<{ entries: readonly Dirent[]; at: number }> => {
+      const entries = await waited(readdir(directory, { withFileTypes: true }))
+      // The worktree's own .git is its registration, not part of its contents.
+      return { entries: directory === root ? entries.filter(entry => entry.name !== '.git') : entries, at: waits }
+    }
+    /** A folder's .git, and whether its HEAD and objects make it a candidate bare repository. */
+    const repositoryMarkers = async (full: string, children: readonly Dirent[]) => {
+      const gitMarker = await lstatInListing(full, children, '.git', fresh)
+      const bareCandidate = !gitMarker && await lstatInListing(full, children, 'HEAD', fresh).then(info => info?.isFile() === true, () => false) && await lstatInListing(full, children, 'objects', fresh).then(info => info?.isDirectory() === true, () => false)
+      return { gitMarker, bareCandidate }
+    }
+    const visit = async (directory: string, directoryLocal: string, listing: { entries: readonly Dirent[]; at: number } | undefined, row?: { path: string; bytes: number; fileCount: number }, gitMetadata = false, indexRoot = path): Promise<void> => {
       const childPrefix = directoryLocal ? `${directoryLocal}/` : ''
       // The rows that hold this directory count every file directly in it. Each was added before the
       // directory was visited, and a row added while it is walked holds only something inside it.
       const enclosingRows = childPrefix ? items.filter(item => item.path.endsWith('/') && childPrefix.startsWith(item.path)) : []
-      for (const entry of entries) {
-        await yieldPeriodically()
-        const full = childPath(directory, entry.name)
-        const local = childPrefix + entry.name
-        let info: Stats | undefined = entry.isFile() || entry.isDirectory() ? undefined : await lstat(full)
-        const isLink = info?.isSymbolicLink() === true
-        const isDirectory = info ? info.isDirectory() && !isLink : entry.isDirectory()
-        if (isLink) {
-          const target = resolve(directory, await readlink(full))
-          const canonical = await realpath(target).catch(() => target)
-          const delta = relative(canonicalRoot, canonical)
-          if (isAbsolute(delta) || delta === '..' || delta.startsWith(`..${sep}`)) outsideLink ??= local
-        }
+      /** One entry of this directory; `listed` is its listing's entry when that says a plain file or directory. */
+      const visitEntry = async (name: string, listed: Dirent | undefined): Promise<void> => {
+        if (await yieldPeriodically()) waits++
+        const full = childPath(directory, name)
+        const local = childPrefix + name
         const ignoredPath = ignoredSet.has(local) ? local : ignoredSet.has(local + '/') ? local + '/' : undefined
         const summary = ignoredPath ? { path: ignoredPath, bytes: 0, fileCount: 0 } : row
         if (ignoredPath) items.push(summary!)
-        if (isDirectory) {
-          const children = await readdir(full, { withFileTypes: true })
+        const counted = Boolean(summary) || enclosingRows.some(item => item !== summary)
+        // A file a row counts is read for its size, and what that read finds is what it is now.
+        const info: Stats | undefined = !listed || (listed.isFile() && counted) ? await fresh(full) : undefined
+        const type = entryKind(info ?? listed)
+        if (type === 'link') {
+          const target = resolve(directory, await waited(readlink(full)))
+          const canonical = await waited(realpath(target)).catch(() => target)
+          const delta = relative(canonicalRoot, canonical)
+          if (isAbsolute(delta) || delta === '..' || delta.startsWith(`..${sep}`)) outsideLink ??= local
+        }
+        if (type === 'directory') {
+          let children = await list(full)
           // Dependencies need link inspection but never become rows. A gitlink belongs to the parent index.
           // Inside Git metadata, and for a .git folder itself, no marker is ever used, so none is read.
-          const markers = !gitMetadata && entry.name !== '.git'
-          const gitMarker = markers ? await lstatInListing(full, children, '.git') : undefined
-          const bareCandidate = markers && !gitMarker && await lstatInListing(full, children, 'HEAD').then(info => info?.isFile() === true, () => false) && await lstatInListing(full, children, 'objects').then(info => info?.isDirectory() === true, () => false)
-          const bare = bareCandidate && (await this.git(full, ['rev-parse', '--is-bare-repository'])).trim() === 'true'
-          if (!gitMetadata && entry.name !== '.git' && (gitMarker || bare)) {
+          const markers = !gitMetadata && name !== '.git'
+          const { gitMarker, bareCandidate } = markers ? await repositoryMarkers(full, children.entries) : { gitMarker: undefined, bareCandidate: false }
+          const bare = bareCandidate && (await git(full, ['rev-parse', '--is-bare-repository'])).trim() === 'true'
+          if (markers && (gitMarker || bare)) {
             const indexedPath = relative(indexRoot, full).split(sep).join('/')
-            const indexEntry = await this.git(indexRoot, ['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', indexedPath])
+            const indexEntry = await git(indexRoot, ['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', indexedPath])
             const submodule = indexEntry.split('\0').some(record => record.startsWith('160000 ') && record.slice(record.indexOf('\t') + 1) === indexedPath)
-            const status = bare ? '' : await this.git(full, ['status', '--porcelain', '--untracked-files=all', '-z'])
-            const ignoredModule = submodule ? (await this.git(full, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])).split('\0').filter(item => item && !DEPENDENCY_FOLDER.test(item)) : []
+            const status = bare ? '' : await git(full, ['status', '--porcelain', '--untracked-files=all', '-z'])
+            const ignoredModule = submodule ? (await git(full, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])).split('\0').filter(item => item && !DEPENDENCY_FOLDER.test(item)) : []
             // A submodule's .git file points into metadata removed with the parent worktree.
             // Its history is at risk even when its checkout matches the parent's recorded commit.
             const kind = !submodule && gitMarker?.isFile() ? 'worktree' : 'repository'
-            const history = kind === 'repository' ? { unpushedCommitCount: Number((await this.git(full, ['rev-list', '--count', '--all', '--not', '--remotes'])).trim()) } : {}
+            const history = kind === 'repository' ? { unpushedCommitCount: Number((await git(full, ['rev-list', '--count', '--all', '--not', '--remotes'])).trim()) } : {}
             if (submodule) {
-              const directory = gitMarker!.isFile() ? resolve(full, (await readFile(join(full, '.git'), 'utf8')).trim().replace(/^gitdir: /u, '')) : join(full, '.git')
-              inspectedSubmoduleDirectories.add(pathKey(await realpath(directory)))
+              const directory = gitMarker!.isFile() ? resolve(full, (await waited(readFile(join(full, '.git'), 'utf8'))).trim().replace(/^gitdir: /u, '')) : join(full, '.git')
+              inspectedSubmoduleDirectories.add(pathKey(await waited(realpath(directory))))
             }
             if (!submodule && gitMarker?.isFile()) {
-              const commonDirectory = (await this.git(full, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()
-              const registration = registeredWorktrees(await this.git(commonDirectory, ['worktree', 'list', '--porcelain', '-z'])).find(item => pathKey(item.path) === pathKey(full))
+              const commonDirectory = (await git(full, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()
+              const registration = registeredWorktrees(await git(commonDirectory, ['worktree', 'list', '--porcelain', '-z'])).find(item => pathKey(item.path) === pathKey(full))
               if (registration?.locked) throw new Error('A nested worktree is locked. Nothing was removed. Unlock it in its own repository, then choose Remove worktree again.')
               const delta = relative(canonicalRoot, commonDirectory)
               // A repository inside the removed folder loses its own registry with it.
@@ -890,18 +931,37 @@ export class ThreadWorktrees {
               if (addIgnored(repositoryPath)) items.push({ path: repositoryPath, bytes: 0, fileCount: 0 })
             }
           }
-          await visit(full, local, children, entry.name === 'node_modules' ? undefined : summary, gitMetadata || entry.name === '.git' || bare, gitMarker && !gitMetadata && entry.name !== '.git' ? full : indexRoot)
-        } else if (summary || enclosingRows.some(item => item !== summary)) {
-          info ??= await lstat(full)
-          if (summary) { summary.bytes += info.size; summary.fileCount++ }
+          if (gitMarker || bareCandidate) {
+            // Git ran here, so what the folder held before it ran is not what is walked or removed. The
+            // folder itself, its listing and its markers are read again; a folder that has become a link,
+            // or a repository that has become another kind, refuses the walk.
+            if (entryKind(await fresh(full)) !== 'directory') throw changedDuringWalk()
+            children = await list(full)
+            const now = await repositoryMarkers(full, children.entries)
+            if (entryKind(now.gitMarker) !== entryKind(gitMarker) || now.bareCandidate !== bareCandidate) throw changedDuringWalk()
+          }
+          await visit(full, local, children, name === 'node_modules' ? undefined : summary, gitMetadata || name === '.git' || bare, gitMarker && markers ? full : indexRoot)
+        } else if (counted) {
+          // A link or an entry of another type was read above; a plain file a row counts was too.
+          if (summary) { summary.bytes += info!.size; summary.fileCount++ }
           // Nested repository rows can overlap an ignored parent row. Count their contents too,
           // including ignored files that their own status output does not name.
-          for (const item of enclosingRows) if (item !== summary) { item.bytes += info.size; item.fileCount++ }
+          for (const item of enclosingRows) if (item !== summary) { item.bytes += info!.size; item.fileCount++ }
         }
       }
+      const first = listing?.at === waits ? listing : await list(directory)
+      for (const entry of first.entries) await visitEntry(entry.name, entry.isFile() || entry.isDirectory() ? entry : undefined)
+      if (waits === first.at) return
+      // The walk waited on something after the listing was read, so it is read again: an entry that has
+      // become something else refuses the walk, and a new one is walked.
+      const listed = new Map(first.entries.map(entry => [entry.name, entryKind(entry)]))
+      for (const entry of (await list(directory)).entries) {
+        const before = listed.get(entry.name)
+        if (before === undefined) await visitEntry(entry.name, undefined)
+        else if (before !== entryKind(entry)) throw changedDuringWalk()
+      }
     }
-    // The worktree's own .git is its registration, not part of its contents.
-    await visit(normalize(path), '', (await readdir(path, { withFileTypes: true })).filter(entry => entry.name !== '.git'))
+    await visit(root, '', undefined)
     // Deinitializing a submodule empties its checkout but keeps its history in this worktree's
     // Git directory. Force removal destroys that metadata too, including recursive submodules.
     const rootMarker = await lstat(join(path, '.git'))
@@ -944,7 +1004,9 @@ export class ThreadWorktrees {
               repositories.push({ path: repositoryPath, changeCount: 0, unpushedCommitCount, kind: 'repository' })
               addIgnored(repositoryPath)
               if (!existingRow) items.push(row)
-              await visit(directory, relative(path, directory).split(sep).join('/'), await readdir(directory, { withFileTypes: true }), row, true)
+              // Git ran in this metadata since it was found to be a folder; a link there now is not walked.
+              if (entryKind(await lstat(directory)) !== 'directory') throw changedDuringWalk()
+              await visit(directory, relative(path, directory).split(sep).join('/'), undefined, row, true)
             }
           }
           await retainedModules(join(directory, 'modules'))
