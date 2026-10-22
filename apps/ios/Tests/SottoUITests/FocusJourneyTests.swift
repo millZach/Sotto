@@ -1138,16 +1138,34 @@ import XCTest
         let reply = byID("watcher-reply")
         let windowTop = app.windows.firstMatch.frame.minY
         var steps: [String] = []
+        func barAway() -> Bool { !conversation.exists || conversation.frame.maxY <= windowTop + 1 }
         // Reads the page down, with the bar going away, until the card's top sits in the strip and its foot above the box.
         func inStrip() -> Bool {
             let top = lead.frame.minY, foot = card.frame.maxY, box = reply.frame.minY
-            let away = !conversation.exists || conversation.frame.maxY <= windowTop + 1
+            let away = barAway()
             steps.append("card \(top) to \(foot), strip \(strip.top) to \(strip.bottom), box at \(box), bar away \(away)")
             return away && top >= strip.top + 4 && top <= strip.bottom - 8 && foot <= box
         }
-        for _ in 0..<8 where !inStrip() {
+        // The card comes up to the strip from below, with the finger moving up the page only: going back up the page
+        // brings the bar back, by design, so a last move that way would leave the bar over the strip. The first move up
+        // slides the bar away, so it starts with the card well below the strip; the rest come nearer in smaller steps.
+        // A card that went past the strip, or is too near it with the bar still there, goes back down well below it and
+        // comes up again.
+        for _ in 0..<14 where !inStrip() {
             let off = lead.frame.minY - target
-            if off > 30 { dragWatcher(down: true, by: min(off + 8, 220)) } else { dragWatcher(down: false, by: 80) }
+            let away = barAway()
+            let move: String
+            if off < 0 || (!away && off < 240) {
+                move = "back down below the strip"
+                dragWatcher(down: false, by: 220)
+            } else if !away {
+                move = "up, to slide the bar away"
+                dragWatcher(down: true, by: 100)
+            } else {
+                move = "up toward the strip"
+                dragWatcher(down: true, by: min(max(off, 24), 200))
+            }
+            steps.append(move)
             _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
         }
         let placed = inStrip()
