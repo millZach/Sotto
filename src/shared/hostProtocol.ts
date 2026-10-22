@@ -106,8 +106,10 @@ export function shellForProtocolV1<T extends AgentState>(state: T) {
  * A shell as a client reads it. `host.modelsRevision` is sent only to a client that accepts
  * `model-catalog-revision`. The desktop's own client accepts it, and puts a catalog the host left out back
  * before it reads the shell, so it reads `modelsRevision` as optional and `host.models` stays required, as v1 has it.
+ * `terminals` is always empty: the retired feature's list, sent only to a client whose hello still accepts it (ADR-0106).
  */
 const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional(),
+  terminals: z.tuple([]).optional(),
   watcher: watcherPhoneStateSchema.optional(),
   host: agentHostSnapshotSchema.extend({ modelsRevision: z.number().int().positive().optional() }) })
 /** Older hosts carry retired fields; strip them before the strict domain schemas read them. */
@@ -420,7 +422,7 @@ export type HostErrorCode = 'unauthenticated' | 'invalid_request' | 'stale_reque
 export interface HostProtocolError { code: HostErrorCode; message: string; reason?: GitPullRequestReadFailure | undefined }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
-export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined }
+export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: [] | undefined }
 /**
  * A shell as it crosses the socket. To a client that accepts `model-catalog-revision` its `host` names the
  * catalog's revision and leaves `models` out when this connection was already sent that revision; to every
