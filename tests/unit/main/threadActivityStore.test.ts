@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentActivitySchema, type AgentActivity } from '../../../src/shared/agentActivity'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
-import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
+import { immutableActivities, isImmutableActivity } from '../../../src/main/agents/activitySnapshots'
 
 const stores: ThreadStore[] = []
 const databases: DatabaseSync[] = []
@@ -245,6 +245,33 @@ describe('thread activity store', () => {
     store.readActivities('thread')
     store.readActivities('thread', { keep: false })
     expect(parse).not.toHaveBeenCalled()
+  })
+
+  it('shares its held records, frozen and owned, with a caller that keeps them as they are (#1333)', async () => {
+    const { store } = await fixture()
+    store.syncActivities('thread', [activity('a'), activity('b')])
+    store.close()
+    store.open()
+    const parse = vi.spyOn(agentActivitySchema, 'parse')
+    const held = store.readActivities('thread', { shared: true })
+    expect(held).toEqual([activity('a'), activity('b')])
+    expect(parse).toHaveBeenCalledTimes(2)
+    parse.mockClear()
+    const again = store.readActivities('thread', { shared: true })
+    expect(parse).not.toHaveBeenCalled()
+    expect(again[0]).toBe(held[0])
+    for (const record of held) {
+      expect(isImmutableActivity(record)).toBe(true)
+      expect(Object.isFrozen(record.steps)).toBe(true)
+    }
+    // A read for a caller that edits still gets its own copy, apart from what is held.
+    const copy = store.readActivities('thread')
+    expect(copy[0]).not.toBe(held[0])
+    copy[0]!.steps![0]!.text = 'Reader changed its own copy'
+    expect(store.readActivities('thread', { shared: true })[0]!.steps![0]!.text).toBe(activity('a').steps![0]!.text)
+    // Saving the shared records back is known by identity and writes nothing.
+    store.syncActivities('thread', [...held])
+    expect(store.readActivities('thread', { shared: true })[0]).toBe(held[0])
   })
 
   it('rolls back both rows and cached comparisons when a write fails, including an epoch reset', async () => {

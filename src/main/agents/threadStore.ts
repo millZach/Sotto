@@ -7,7 +7,7 @@ import { DatabaseSync, type SQLOutputValue, type StatementSync } from 'node:sqli
 import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
-import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
+import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
 import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
@@ -390,7 +390,7 @@ export class ThreadStore {
       const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
       const records: ActivityState['records'] = new Map()
       for (const row of rows) {
-        const activity = storedActivity(row)
+        const activity = ownBuiltActivity(storedActivity(row))
         records.set(activity.id, { position: Number(row.position), activity })
       }
       state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records }
@@ -477,20 +477,24 @@ export class ThreadStore {
 
   /**
    * A caller owns its returned records, including nested plan steps and file changes. With `keep: false` a read of records
-   * this store does not hold leaves them unheld, for a caller that only looks (#918).
+   * this store does not hold leaves them unheld, for a caller that only looks (#918). With `shared` the caller gets the held
+   * records themselves, frozen and owned (`ownBuiltActivity`), read from the disk the first time: for a caller that keeps
+   * records as they are and replaces rather than edits them, as the workspace does with every list it holds. They are
+   * shared rather than copied, and a later save of the same records knows them by identity.
    *
    * Every held record was checked against the schema when it came off the disk or was saved, so a read hands out a copy
    * of it rather than checking it again: checking each of two thousand records twice was a quarter of the longest freezes
-   * main had (#1333). The copy keeps the caller's records apart from the held ones, which a later save compares against;
-   * it shares the strings, so it costs a few milliseconds where the second check cost tens. A read runs when a stored
-   * thread is first looked at, for an adapter or for Watcher, never on each update.
+   * main had (#1333). The copy keeps the caller's records apart from the held ones; it shares the strings, so it costs a
+   * few milliseconds where the second check cost tens. The copy is for Watcher, an adapter's restore and the start; the
+   * workspace reads `shared` and copies nothing.
    */
-  readActivities(threadId: string, options: { keep?: boolean } = {}): AgentActivity[] {
+  readActivities(threadId: string, options: { keep?: boolean; shared?: boolean } = {}): AgentActivity[] {
     const held = this.activityStates.get(threadId)
-    if (held === undefined && options.keep === false) {
+    if (held === undefined && options.keep === false && options.shared !== true) {
       return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(storedActivity)
     }
-    return clonePlainData(Array.from((held ?? this.activityState(threadId)).records.values(), ({ activity }) => activity))
+    const records = Array.from((held ?? this.activityState(threadId)).records.values(), ({ activity }) => activity)
+    return options.shared === true ? records : clonePlainData(records)
   }
 
   /** The identities of a thread's stored records, read without the records. */
@@ -592,7 +596,7 @@ export class ThreadStore {
         next.records.set(activity.id, { position, activity: prior!.activity, ...(input ? { input } : {}) })
         if (prior!.position !== position) moved.push({ id: activity.id, position })
       } else {
-        const record = { position, activity: agentActivitySchema.parse(activity), ...(input ? { input } : {}) }
+        const record = { position, activity: ownBuiltActivity(agentActivitySchema.parse(activity)), ...(input ? { input } : {}) }
         next.records.set(activity.id, record)
         changed.push(record)
       }
