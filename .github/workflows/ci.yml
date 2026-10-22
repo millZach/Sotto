@@ -486,7 +486,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # The Mac app's Core ML speech helper (built on FluidAudio) builds on Apple silicon and answers protocol 1.
+  # The Mac app's Core ML speech helper (built on FluidAudio) builds on Apple silicon and answers protocol 2.
   coreml-asr:
     name: Core ML speech helper (macOS)
     needs: changes
@@ -513,4 +513,4 @@ jobs:
           test -x "$helper"
           version=$("$helper" --version)
           echo "$version"
-          test "$version" = '{"protocol":1}'
+          test "$version" = '{"protocol":2}'

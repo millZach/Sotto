@@ -1,8 +1,8 @@
 // Sotto's Core ML speech helper. It loads one FluidAudio Parakeet model folder and
-// transcribes audio that Sotto sends on stdin. Sotto speaks protocol version 1:
-//   sotto-coreml-asr --version                      prints {"protocol":1}
-//   sotto-coreml-asr <modelDirectory> <v2|v3|ultra> prints {"ready":true}, or {"error":"load"} and exits 1
-// Each request on stdin is little-endian: uint32 id, uint32 sample count (at most 960000),
+// transcribes audio that Sotto sends on stdin. Sotto speaks protocol version 2:
+//   sotto-coreml-asr --version                      prints {"protocol":2}
+//   sotto-coreml-asr <modelDirectory> <v2|v3|ultra> prints {"protocol":2,"ready":true}, or {"error":"load"} and exits 1
+// Each request on stdin is little-endian: uint32 id, uint32 sample count (at most 4800000),
 // then that many float32 samples at 16 kHz mono. Each response is one JSON line on stdout,
 // in request order: {"id":N,"text":"..."} or {"id":N,"error":"failed"}. stdin EOF exits 0.
 // FluidAudio prints its own logs to stdout, so the helper keeps the real stdout for
@@ -11,7 +11,12 @@
 import FluidAudio
 import Foundation
 
-let maxSampleCount: UInt32 = 16_000 * 60
+// Sotto's longest recording, 300 seconds at 16 kHz (MAX_TRANSCRIPTION_SAMPLES in src/shared/audio.ts).
+// The model itself reads 15 seconds at a time; FluidAudio cuts anything longer into windows that
+// overlap by 2 seconds and merges their words there, as it already did for 15 to 60 seconds. On
+// speech with no pause at a seam that merge can still drop or repeat a word or two.
+// Protocol 1 stopped at 60 seconds, which refused a long recording sent whole.
+let maxSampleCount: UInt32 = 16_000 * 300
 
 // Keep the real stdout for protocol lines; library prints go to stderr.
 let protocolFd = dup(1)
@@ -63,7 +68,7 @@ func littleEndianUInt32(_ bytes: [UInt8], at index: Int) -> UInt32 {
 
 let arguments = CommandLine.arguments
 if arguments.count == 2 && arguments[1] == "--version" {
-  send(["protocol": 1])
+  send(["protocol": 2])
   exit(0)
 }
 
@@ -82,7 +87,8 @@ do {
   send(["error": "load"])
   exit(1)
 }
-send(["ready": true])
+// The ready line names the protocol, so Sotto refuses a helper older than itself before using it.
+send(["ready": true, "protocol": 2])
 
 while let header = readExactly(8) {
   let id = littleEndianUInt32(header, at: 0)
