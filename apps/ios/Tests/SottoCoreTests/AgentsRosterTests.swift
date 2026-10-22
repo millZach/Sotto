@@ -162,7 +162,8 @@ final class AgentsRosterTests: XCTestCase {
         XCTAssertEqual(page.rows.first?.kind, "workflow")
         XCTAssertEqual(page.rows.first?.revision, 3)
         let rows = AgentsRoster.rows(owner: try thread("owner"), threads: [], delegations: nil, agents: page.rows)
-        XCTAssertEqual(rows.map(\.id), ["agent:flow", "agent:one", "agent:two"])
+        // The agent that started last is first under its workflow, as everywhere in the sheet.
+        XCTAssertEqual(rows.map(\.id), ["agent:flow", "agent:two", "agent:one"])
         XCTAssertEqual(rows.map(\.workflow), [true, false, false])
         XCTAssertEqual(rows.map(\.level), [1, 2, 2])
         XCTAssertEqual(rows[0].spokenLabel, "Check the drawer, workflow, Working")
@@ -208,6 +209,25 @@ final class AgentsRosterTests: XCTestCase {
         let nested = AgentsRoster.nested(rows)
         XCTAssertEqual(nested.map(\.row.id), ["a", "b", "c", "d", "e"])
         XCTAssertEqual(nested.map(\.depth), [0, 1, 0, 0, 1])
+    }
+
+    func testAgentsUnderOneParentShowNewestFirstWithEachFamilyTogether() throws {
+        // The computer sends them oldest first, by sequence.
+        let rows = [
+            SubagentRow(id: "flow", sequence: 1, title: "Check the drawer", status: "running", startedAt: at(10), kind: "workflow"),
+            SubagentRow(id: "older", parentId: "flow", sequence: 2, title: "Read the tests", status: "completed", startedAt: at(9)),
+            SubagentRow(id: "helper", parentId: "older", sequence: 3, title: "Count the files", status: "completed", startedAt: at(8.5)),
+            SubagentRow(id: "newer", parentId: "flow", sequence: 4, title: "Read the docs", status: "running", startedAt: at(8)),
+            SubagentRow(id: "seen", parentId: "flow", sequence: 5, title: "Check the links", status: "unknown", lastObservedAt: at(7)),
+            SubagentRow(id: "solo", sequence: 6, title: "Run the suite", status: "running", startedAt: at(2)),
+        ]
+        let nested = AgentsRoster.nested(rows)
+        // An agent whose start was not reported goes by when it was last seen; the older agent keeps its own under it.
+        XCTAssertEqual(nested.map(\.row.id), ["solo", "flow", "seen", "newer", "older", "helper"])
+        XCTAssertEqual(nested.map(\.depth), [0, 0, 1, 1, 1, 2])
+        let sheet = AgentsRoster.rows(owner: try thread("owner"), threads: [], delegations: nil, agents: rows)
+        XCTAssertEqual(sheet.map(\.id), ["agent:solo", "agent:flow", "agent:seen", "agent:newer", "agent:older", "agent:helper"])
+        XCTAssertEqual(sheet.map(\.level), [1, 1, 2, 2, 2, 3])
     }
 
     func testWordsMatchTheDesktop() {

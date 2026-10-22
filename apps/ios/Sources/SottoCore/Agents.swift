@@ -366,7 +366,7 @@ public enum AgentsRoster {
                 if !agentBlock.isEmpty { blocks.append(Block(start: agentStart, index: blocks.count, rows: agentBlock)) }
                 agentBlock = []
                 // An agent whose start was not reported goes by when it was last seen.
-                agentStart = entry.row.startedAt.flatMap { Stamp.date($0) } ?? entry.row.lastObservedAt.flatMap { Stamp.date($0) }
+                agentStart = started(entry.row)
             }
             agentBlock.append(agentRow(entry.row, depth: entry.depth, quiet: quiet))
         }
@@ -393,13 +393,19 @@ public enum AgentsRoster {
         return (title.isEmpty ? "Agents" : title, detail.isEmpty ? ((summary?.unknown ?? 0) > 0 ? "Activity not confirmed" : "None working") : detail)
     }
 
-    /// Reported agents in the order they started, each followed by the agents reported under it. A row whose parent is
-    /// missing, or a loop of parents, still shows once, at the top (`nestedSubagents` in AgentsSurface.tsx).
+    /// Reported agents newest start first, each followed by the agents reported under it, newest first too, so a
+    /// workflow's latest agent is the first under it. The computer sends them oldest first; agents whose starts are the
+    /// same or unknown keep its order. A row whose parent is missing, or a loop of parents, still shows once, at the top
+    /// (`nestedSubagents` in AgentsSurface.tsx).
     public static func nested(_ rows: [SubagentRow]) -> [(row: SubagentRow, depth: Int)] {
         let ids = Set(rows.map(\.id))
+        let newestFirst = rows.enumerated().sorted { one, other in
+            let first = started(one.element) ?? .distantPast, second = started(other.element) ?? .distantPast
+            return first != second ? first > second : one.offset < other.offset
+        }.map { $0.element }
         var children: [String: [SubagentRow]] = [:]
         var roots: [SubagentRow] = []
-        for row in rows {
+        for row in newestFirst {
             if let parent = row.parentId, parent != row.id, ids.contains(parent) { children[parent, default: []].append(row) } else { roots.append(row) }
         }
         var result: [(row: SubagentRow, depth: Int)] = []
@@ -410,8 +416,12 @@ public enum AgentsRoster {
             for child in children[row.id] ?? [] { visit(child, depth + 1) }
         }
         for row in roots { visit(row, 0) }
-        for row in rows { visit(row, 0) }
+        for row in newestFirst { visit(row, 0) }
         return result
+    }
+    /// When an agent started, or when it was last seen where its start was not reported.
+    static func started(_ row: SubagentRow) -> Date? {
+        row.startedAt.flatMap { Stamp.date($0) } ?? row.lastObservedAt.flatMap { Stamp.date($0) }
     }
 
     static func threadRow(_ thread: ThreadSummary, level: Int, by: ThreadSummary?, record: DelegatedThreadRecord?, read: Bool, quiet: Bool,
