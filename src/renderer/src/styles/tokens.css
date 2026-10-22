@@ -302,7 +302,20 @@
   --tt-provider-claude: #e3b58e;
   --tt-provider-grok: #c9baff;
   --tt-provider-devin: #a5d8f5;
+  --tt-provider-opencode: #ece3d0;
   --tt-provider-ink: #080b0a;
+  /* Chart series (Usage's split chart). Constants per mode like the provider marks: a theme carries T3 Code's
+     roles, which name no categorical hues. Six hues and an Other grey, each at least 3:1 on every built-in theme's
+     canvas and surface, and every pair, Other included, apart for protanopia and deuteranopia (Machado 2009, OKLab
+     distance at least 8 in both modes; themeTokens.test.ts holds both). Slot 1 to 6: blue, orange, cyan, magenta,
+     violet, amber. */
+  --tt-chart-1: #3792fd;
+  --tt-chart-2: #b85207;
+  --tt-chart-3: #1dcaf7;
+  --tt-chart-4: #bf3584;
+  --tt-chart-5: #8054d6;
+  --tt-chart-6: #c99414;
+  --tt-chart-other: #9e9e9e;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
   --tt-backdrop: rgb(0 0 0 / 38%);
   /* The effort control (ADR-0019): a pill track in the card, and the colourway chosen in Settings → Appearance
@@ -349,7 +362,16 @@
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;
   --tt-provider-devin: #8fcaef;
+  /* OpenCode's mark is drawn straight from its token in both modes, so the light one is already dark enough to read. */
+  --tt-provider-opencode: #625843;
   --tt-provider-ink: #0b0d0c;
+  --tt-chart-1: #0554a3;
+  --tt-chart-2: #883c04;
+  --tt-chart-3: #0f91b2;
+  --tt-chart-4: #980563;
+  --tt-chart-5: #885ee0;
+  --tt-chart-6: #a07506;
+  --tt-chart-other: #747474;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 60%, transparent);
   --tt-backdrop: rgb(20 24 22 / 22%);
   --tt-shadow-sm: 0 1px 2px rgb(20 24 22 / 10%);

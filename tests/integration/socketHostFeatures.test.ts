@@ -9,6 +9,7 @@ import { desktopWindowClient, type HostService } from '../../src/main/agents/hos
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
+import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
@@ -108,14 +109,68 @@ describe('host facts over the socket (#1031)', () => {
   })
 })
 
+describe('the iPhone’s pull request sheet (#1281)', () => {
+  it('is offered, phones included, only by a host whose Owl answer turns it on, and leaves the pull request read and babysitting as they were', async () => {
+    const base: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      gitPullRequest: async () => null, supportsBabysitting: true,
+    }
+    for (const [service, offered] of [[{ ...base, supportsPullRequestView: true }, true], [base, false], [{ ...base, supportsPullRequestView: false }, false]] as const) {
+      // The desktop's phone listener, which serves phones only.
+      const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+      try {
+        const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
+        const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+        const features = (await client.connect()).features ?? []
+        expect(features.includes('pull-request-view')).toBe(offered)
+        expect(features).toEqual(expect.arrayContaining(['git-pull-request', 'pull-request-babysit']))
+        expect(server.descriptor.features.includes('pull-request-view')).toBe(offered)
+      } finally { await server.close() }
+    }
+  })
+  it('says why a pull request read failed as a reason beside today’s refusal, and never sends gh’s words (#1290)', async () => {
+    let failure: Error = new Error('unset')
+    const service: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      gitPullRequest: async () => { throw failure }, supportsPullRequestView: true,
+    }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
+    const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      await phone.call('hello', { op: 'hello', accepts: [] })
+      const said = 'gh auth login as octocat at https://token@github.com'
+      const cases: Array<[Error, string]> = [
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'gh-signed-out'), 'gh-signed-out'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'gh-missing'), 'gh-missing'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'offline'), 'offline'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`), 'unreadable'],
+        [new Error(said), 'unreadable'],
+      ]
+      for (const [index, [error, reason]] of cases.entries()) {
+        failure = error
+        const answer = await phone.call(`pr-${index}`, { op: 'git-pull-request', request: { threadId: 'thread-1', reference: 'https://github.com/o/r/pull/42' } })
+        // The code and sentence an older phone reads are today's; the reason is beside them, and nothing gh said is.
+        expect(answer).toMatchObject({ ok: false, error: { code: 'unavailable', message: 'The host could not complete this request. Refresh the thread before trying again.', reason } })
+        expect(JSON.stringify(answer)).not.toMatch(/octocat|token@|gh auth/u)
+      }
+      // Any other refusal carries no reason.
+      const other = await phone.call('host-facts', { op: 'host-facts' }) as { error: Record<string, unknown> }
+      expect(other.error).not.toHaveProperty('reason')
+    } finally { phone.frames.close(); await server.close() }
+  })
+})
+
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes'] })
     const listener = JSON.parse(await readFile(join(fixture.root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes'] })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes'], capabilities: { mayAnswer: false } })
   })
 
   it('takes the user’s Babysit pull request from a paired client, and refuses one the thread does not know in words (ADR-0061)', async () => {
@@ -277,11 +332,12 @@ describe('model catalog revisions (#699)', () => {
       expect(answered).toMatchObject({ ok: true }); expect(answered.result!.host).toMatchObject({ modelsRevision: first })
       expect(answered.result!.host).not.toHaveProperty('models')
 
-      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time.
-      const olderPush = await nextShell(older, publish)
-      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
+      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time. Its answer
+      // comes first: a push of the shell it was already pushed is not sent again, and one after an answer is.
       const olderAnswer = await older.call('select', { op: 'command', command: { type: 'select-project', projectId: 'project' } }) as Frame
       expect(olderAnswer.result!.host!.models).toEqual(models); expect(olderAnswer.result!.host).not.toHaveProperty('modelsRevision')
+      const olderPush = await nextShell(older, publish)
+      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
 
       // A changed catalog goes whole once, under a new revision, then is named again.
       models = syntheticModelCatalog(6)

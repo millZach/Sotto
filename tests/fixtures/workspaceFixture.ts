@@ -6,11 +6,13 @@ import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { FakeProviderHost } from './fakeProviderHost'
 
-export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number; watcherEnabled?: boolean; history?: boolean }) {
+/** `adapters` carries the fake providers of a workspace that stopped over into a new one on the same `root`, as a restart keeps the providers' own threads. */
+export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number; watcherEnabled?: boolean; history?: boolean
+  adapters?: { codex: FakeProviderHost; claude: FakeProviderHost; grok: FakeProviderHost } }) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-workspace-'))
   const registry = new ThreadRegistry(root)
-  const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
-  for (const [id, adapter] of Object.entries(adapters)) {
+  const adapters = options?.adapters ?? { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
+  if (!options?.adapters) for (const [id, adapter] of Object.entries(adapters)) {
     adapter.state.projects[0]!.path = join(root, id)
     await mkdir(adapter.state.projects[0]!.path, { recursive: true })
     adapter.state.models[0]!.reasoningEfforts = ['low', 'high']
@@ -21,7 +23,7 @@ export async function workspaceFixture(root?: string, options?: { worktreeRefres
   let history = options?.history ?? true
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
     threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost() } })
+    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() } })
   const host = new WorkspaceHost(native, root, () => history, options?.worktreeRefreshDelayMs, options?.watcherEnabled ?? true)
   await host.initialize()
   let stopping: Promise<void> | undefined

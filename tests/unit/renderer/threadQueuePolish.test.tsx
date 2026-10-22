@@ -192,6 +192,23 @@ describe('queue presentation', () => {
     expect(within(queue).getByRole('button', { name: 'Check again' })).toBeInTheDocument()
   })
 
+  it('keeps an unanswered admission in a collapsed queue, since the transcript no longer shows it', async () => {
+    shortWindow(true)
+    const state = manualState({ running: true })
+    state.followups = [followup({ id: ids(1), text: 'Already waiting' })]
+    const { live, prompt } = mount(state)
+    const answer = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => request.type === 'queue-followup' ? null : answer(request))
+    type(prompt(), 'Lost on the way')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    await waitFor(() => expect(within(queue).getByText('Unconfirmed')).toBeInTheDocument())
+    expect(within(queue).getByRole('button', { name: /Queued 1/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(queue).toHaveTextContent('Lost on the way')
+    expect(within(queue).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    expect(requests(live, 'queue-followup')).toHaveLength(1)
+  })
+
   it('keeps the user queue available despite retired assignment data', () => {
     const state = manualState({ running: true })
 

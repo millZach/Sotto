@@ -35,8 +35,9 @@ export class OwlGitHubProvider extends GitHubProvider {
 
   protected override createRequestOptions(url: URL, headers?: OutgoingHttpHeaders | null): RequestOptions {
     // Upstream returns { tag, ...manifest }, so manifest.tag is not trusted.
-    // Both owl.yml and the fallback are fetched inside the actual selected tag.
-    const match = /^\/millZach\/Sotto-releases\/releases\/download\/([^/]+)\/(?:owl|latest)\.yml$/u.exec(url.pathname)
+    // The channel file and the fallback are fetched inside the actual selected tag:
+    // owl.yml and latest.yml on Windows, owl-mac.yml and latest-mac.yml on a Mac.
+    const match = /^\/millZach\/Sotto-releases\/releases\/download\/([^/]+)\/(?:owl|latest)(?:-mac)?\.yml$/u.exec(url.pathname)
     if (match && url.hostname === 'github.com') this.selectedTag = match[1]!
     return super.createRequestOptions(url, headers)
   }

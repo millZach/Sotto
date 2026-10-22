@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageTokens } from '../../shared/threadUsage'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
-import type { UsageTokenObservation } from '../../shared/usageDashboard'
+import type { UsageProviderId, UsageTokenObservation } from '../../shared/usageDashboard'
 
 /** Facts supplied by the adapter, never inferred from a ledger's latest update. */
 export interface NativeUsageContext {
@@ -23,17 +23,18 @@ type Ledger = z.infer<typeof ledgerSchema>
 const SYNTHETIC = '<synthetic>'
 const GROK_REPORTED_COST = 'grok-reported-cost'
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+/** A token or time figure as a provider reported it: a non-negative safe integer, or undefined for anything else. */
+export const tokenCount = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 function codexTokens(value: unknown): UsageTokens {
   const row = object(value)
-  return { input: count(row.inputTokens), output: count(row.outputTokens), cached: count(row.cachedInputTokens), cacheWrite: count(row.cacheWriteInputTokens) }
+  return { input: tokenCount(row.inputTokens), output: tokenCount(row.outputTokens), cached: tokenCount(row.cachedInputTokens), cacheWrite: tokenCount(row.cacheWriteInputTokens) }
 }
 export function claudeTokens(value: unknown): UsageTokens {
-  const row = object(value); const input = count(row.input_tokens); const cached = count(row.cache_read_input_tokens); const write = count(row.cache_creation_input_tokens)
+  const row = object(value); const input = tokenCount(row.input_tokens); const cached = tokenCount(row.cache_read_input_tokens); const write = tokenCount(row.cache_creation_input_tokens)
   const creation = object(row.cache_creation)
   return { input: input !== undefined && cached !== undefined && write !== undefined ? input + cached + write : undefined,
-    output: count(row.output_tokens), cached, cacheWrite: write,
-    cacheWrite5m: count(creation.ephemeral_5m_input_tokens), cacheWrite1h: count(creation.ephemeral_1h_input_tokens) }
+    output: tokenCount(row.output_tokens), cached, cacheWrite: write,
+    cacheWrite5m: tokenCount(creation.ephemeral_5m_input_tokens), cacheWrite1h: tokenCount(creation.ephemeral_1h_input_tokens) }
 }
 
 /**
@@ -54,7 +55,7 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
  * The identity of one usage row as the store holds it. History read from a provider's own records reuses it, so a row
  * the ledger already counted learns its date instead of being counted again (ADR-0083).
  */
-export function nativeUsageKey(provider: 'codex' | 'claude' | 'grok', kind: 'row' | 'group', id: string, identity: string): string {
+export function nativeUsageKey(provider: UsageProviderId, kind: 'row' | 'group', id: string, identity: string): string {
   return createHash('sha256').update(JSON.stringify(['sotto-usage', provider, kind, id, identity])).digest('hex')
 }
 /** A Codex request's ledger entry key: its turn and the thread's running totals once it was counted. */
@@ -79,6 +80,12 @@ export class NativeUsage {
   private readonly streaming = new Map<string, string>()
   private writing: Promise<void> | undefined
   private readonly dirty = new Set<string>()
+  /**
+   * Each ledger as the file last held it, by the ledger object. The ledger is written whole about once a second while a
+   * reply streams, and one thread's ledger changes in that time; serializing every thread's every request again was about
+   * a second of a busy minute (October 19, 2026). Every change to a ledger goes through `ledger()` or ends in `save()`, and each forgets it.
+   */
+  private serializedLedgers = new WeakMap<Ledger, string>()
   private readonly failed = new Set<string>()
   /** When the last write started, by the monotonic clock: a wall clock set back must not hold writes back. */
   private lastWriteAt = Number.NEGATIVE_INFINITY
@@ -233,14 +240,16 @@ export class NativeUsage {
   }
   compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
     const ledger = this.ledger(id)
-    const changed = ledger.view.contextUsed !== count(used) || ledger.view.contextUpdatedAt !== updatedAt || ledger.contextCompacted !== true
-    ledger.view.contextUsed = count(used)
+    const changed = ledger.view.contextUsed !== tokenCount(used) || ledger.view.contextUpdatedAt !== updatedAt || ledger.contextCompacted !== true
+    ledger.view.contextUsed = tokenCount(used)
     ledger.view.contextUpdatedAt = updatedAt
     ledger.contextCompacted = true
     this.save(id, changed, true)
   }
   private ledger(id: string): Ledger {
-    return this.data[id] ??= { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
+    const known = this.data[id]
+    if (known) { this.serializedLedgers.delete(known); return known }
+    return this.data[id] = { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
   }
   private summarize(ledger: Ledger): void {
     const entries = Object.values(ledger.entries)
@@ -258,6 +267,8 @@ export class NativeUsage {
   }
   /** `now`: a turn ended, so this is written without waiting out the interval. */
   private save(id: string, changed = true, now = false): void {
+    const ledger = this.data[id]
+    if (ledger) this.serializedLedgers.delete(ledger)
     if (changed) {
       this.summarize(this.data[id]!)
       this.dirty.add(id)
@@ -309,8 +320,16 @@ export class NativeUsage {
   private serialized(): string {
     const flagged = Object.values(this.data).filter(ledger => ledger.view.persistenceError)
     for (const ledger of flagged) delete ledger.view.persistenceError
-    try { return JSON.stringify(this.data) }
-    finally { for (const ledger of flagged) ledger.view.persistenceError = true }
+    try {
+      // The same text `JSON.stringify(this.data)` gives, with the ledgers nothing changed since the last write kept as they were.
+      const parts: string[] = []
+      for (const [id, ledger] of Object.entries(this.data)) {
+        let text = this.serializedLedgers.get(ledger)
+        if (text === undefined) { text = JSON.stringify(ledger); this.serializedLedgers.set(ledger, text) }
+        parts.push(`${JSON.stringify(id)}:${text}`)
+      }
+      return `{${parts.join(',')}}`
+    } finally { for (const ledger of flagged) ledger.view.persistenceError = true }
   }
   private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens, reported?: { readonly usd: number; readonly rate: string }): boolean {
     if (model === SYNTHETIC || !Object.values(tokens).some(value => value !== undefined)) return false
@@ -356,8 +375,8 @@ export class NativeUsage {
     if (!reset) { ledger.total = total; ledger.model = model }
     ledger.view.latest = last
     ledger.view.modelId = model
-    ledger.view.contextUsed = count(object(usage.last).totalTokens)
-    ledger.view.contextWindow = count(usage.modelContextWindow) || undefined
+    ledger.view.contextUsed = tokenCount(object(usage.last).totalTokens)
+    ledger.view.contextWindow = tokenCount(usage.modelContextWindow) || undefined
     ledger.view.updatedAt = new Date().toISOString()
     ledger.view.contextUpdatedAt = ledger.view.updatedAt
     this.save(id)
@@ -376,7 +395,7 @@ export class NativeUsage {
       if (event.type === 'message_stop') this.streaming.delete(id)
       if (event.type === 'message_delta') {
         const ledger = this.data[id]; const key = this.streaming.get(id); const entry = key ? ledger?.entries[key] : undefined
-        const output = count(object(event.usage).output_tokens)
+        const output = tokenCount(object(event.usage).output_tokens)
         if (ledger && key && entry && output !== undefined && output >= (entry.tokens.output ?? 0)) {
           const tokens = { ...entry.tokens, output }
           const changed = this.record(ledger, key, entry.model, tokens)
@@ -420,11 +439,11 @@ export class NativeUsage {
     this.save(id, changed || before !== JSON.stringify([ledger.view, ledger.latestId, ledger.contextCompacted]))
   }
   elapsed(id: string, elapsed: unknown, contextWindow?: unknown): void {
-    if (count(elapsed) === undefined && !count(contextWindow)) return
+    if (tokenCount(elapsed) === undefined && !tokenCount(contextWindow)) return
     const ledger = this.ledger(id)
-    const changed = ledger.view.elapsedMs !== count(elapsed) || ledger.view.contextWindow !== (count(contextWindow) || ledger.view.contextWindow)
-    ledger.view.elapsedMs = count(elapsed)
-    ledger.view.contextWindow = count(contextWindow) || ledger.view.contextWindow
+    const changed = ledger.view.elapsedMs !== tokenCount(elapsed) || ledger.view.contextWindow !== (tokenCount(contextWindow) || ledger.view.contextWindow)
+    ledger.view.elapsedMs = tokenCount(elapsed)
+    ledger.view.contextWindow = tokenCount(contextWindow) || ledger.view.contextWindow
     // The turn's duration comes with its end, which is written at once.
     this.save(id, changed, true)
   }
@@ -438,13 +457,13 @@ export class NativeUsage {
     if (update.sessionUpdate !== 'turn_completed' || !update.usage) return
     const meta = object(params._meta)
     const identity = typeof update.prompt_id === 'string' ? update.prompt_id
-      : typeof meta.eventId === 'string' && count(meta.agentTimestampMs) !== undefined ? `${meta.eventId}:${meta.agentTimestampMs}` : undefined
-    const tokens = (row: Record<string, unknown>): UsageTokens => ({ input: count(row.inputTokens), output: count(row.outputTokens), cached: count(row.cachedReadTokens), cacheWrite: count(row.cacheCreationTokens) })
+      : typeof meta.eventId === 'string' && tokenCount(meta.agentTimestampMs) !== undefined ? `${meta.eventId}:${meta.agentTimestampMs}` : undefined
+    const tokens = (row: Record<string, unknown>): UsageTokens => ({ input: tokenCount(row.inputTokens), output: tokenCount(row.outputTokens), cached: tokenCount(row.cachedReadTokens), cacheWrite: tokenCount(row.cacheCreationTokens) })
     const ledger = this.ledger(id)
     if (identity && this.usageEnabled) {
       const models = Object.entries(object(usage.modelUsage)).sort(([a], [b]) => a.localeCompare(b))
       const rows = models.filter(([, row]) => Object.values(tokens(object(row))).some(value => value !== undefined))
-      const at = count(meta.agentTimestampMs)
+      const at = tokenCount(meta.agentTimestampMs)
       const facts = { phase: context?.phase ?? 'replay', ...context,
         at: at !== undefined ? new Date(at).toISOString() : context?.at, groupId: identity } satisfies NativeUsageContext
       // Aggregate fallback and each exact model have independent identities. The aggregate retires
@@ -499,18 +518,18 @@ export class NativeUsage {
     if (identity) {
       ledger.seen.push(identity)
       const models = Object.entries(object(usage.modelUsage))
-      const ticks = count(usage.costUsdTicks)
+      const ticks = tokenCount(usage.costUsdTicks)
       // Grok reports what the turn cost (docs.x.ai cost tracking: 1 USD = 10^10 ticks). Its Build models have no published list price.
       if (ticks !== undefined) this.record(ledger, identity, models.length === 1 ? models[0]![0] : selectedModel, tokens(usage), { usd: ticks / 10_000_000_000, rate: GROK_REPORTED_COST })
       else if (models.length) for (const [model, row] of models) this.record(ledger, `${identity}:${model}`, model, tokens(object(row)))
       else this.record(ledger, identity, selectedModel, tokens(usage))
     } else ledger.incomplete = true
-    const timestamp = count(meta.agentTimestampMs)
+    const timestamp = tokenCount(meta.agentTimestampMs)
     if (!ledger.view.latest || timestamp === undefined || timestamp >= Date.parse(ledger.view.updatedAt)) {
       ledger.view.latest = tokens(usage); ledger.view.modelId = selectedModel
       // Native turn usage aggregates model calls. It is not a current context size.
       ledger.view.contextUsed = undefined; ledger.view.contextWindow = undefined
-      ledger.view.elapsedMs = count(usage.apiDurationMs); ledger.view.elapsedKind = 'api'
+      ledger.view.elapsedMs = tokenCount(usage.apiDurationMs); ledger.view.elapsedKind = 'api'
       if (identity || timestamp !== undefined || before !== JSON.stringify([ledger.view, ledger.incomplete])) {
         ledger.view.updatedAt = new Date(timestamp ?? Date.now()).toISOString()
       }

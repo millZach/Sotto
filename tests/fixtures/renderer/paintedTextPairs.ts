@@ -56,9 +56,18 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('success', [['bubble'], ['bubble', hover], ['canvas', hover]], 'Copied, on a message and in the bubble'),
   ...each('warning', [['sidebar'], ['sidebar', hover], ['surface-elevated'], ['canvas'], ['code-bg'], ['field'], [followups], [followups, hover]], 'warning text and code strings'),
   pair('warning-text', ['warning-surface'], 'warning card'),
+  // The sidebar's Needs attention line and its Dismiss all, and the pane's failed turn notice (ADR-0092).
+  ...each('text', [['warning-surface'], ['warning-surface', hover]], 'Dismiss all and the lead of the failed turn notice'),
+  pair('text-2', ['warning-surface'], 'failed turn notice'),
   ...each('warning-on-tint', [['selected'], ['bubble']], 'needs you or a branch problem on the current row, a failed send'),
   ...each('error-text', [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['sidebar'], ['error-surface'], ['terminal-background'], ...hovered.slice(0, 3), glass[0]], 'error text'),
   ...each('error-on-tint', [['selected'], ['bubble']], 'unavailable tab, selected; a link that would not open'),
+  // Tools › Agents: a delegated thread's outcome on the roster (the panel is the sidebar's tone), on a waiting row's tint
+  // and on the opened row's selected tone, where failed and unknown take their on-tint tones (agentsSurface.css).
+  ...['activity', 'error-text', 'warning-text', 'warning-on-tint', 'text-muted', 'text-2'].map(ink => pair(ink, ['sidebar'], 'delegated thread outcome')),
+  ...['activity', 'error-on-tint', 'warning-on-tint', 'text-muted', 'text-2', 'text'].map(ink => pair(ink, ['sidebar', 'selected'], 'delegated thread on the opened row')),
+  // A waiting row's word is always Needs your approval or Needs your answer.
+  ...['warning-on-tint', 'text-muted', 'text-2', 'text'].map(ink => pair(ink, ['sidebar', '--delegated-needs'], 'delegated thread on the waiting row')),
   // Answers: highlighted code on its block and message text in the room and the bubble (rich-messages.css).
   ...RICH_CODE_INKS.map(ink => pair(ink, ['code-bg'], 'highlighted code')),
   ...RICH_TEXT_INKS.flatMap(ink => each(ink, [['canvas'], ['bubble']], 'message text')),
@@ -85,6 +94,7 @@ export function withPaintedLayers(declarations: Map<string, string>): Map<string
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')
   declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups))
+  declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs'))
   return declarations
 }
 

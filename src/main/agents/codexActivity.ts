@@ -65,10 +65,16 @@ export const codexItemSchema = z.preprocess(value => {
   kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
 }))
 type Item = z.infer<typeof codexItemSchema>
+/** One agent as a conversation observed it: where it was last reported, and its compact identity. */
+type Child = { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
 const opaque = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex')
 const codexActivityId = (turnId: string, itemId: string): string => `codex-activity-${opaque(turnId, itemId)}`
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
+/** How many of one agent's assignments a conversation remembers having opened, so a reread recognises them. */
+const OPENED_KEPT = 200
+/** How many messages held live a conversation remembers the time of. */
+const MESSAGES_TIMED = 200
 /** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
 const ROOT_PATH = '/root'
 const parentPath = (path: string): string => path.slice(0, path.lastIndexOf('/')) || ROOT_PATH
@@ -88,9 +94,41 @@ const contentText = (value: unknown[] | null | undefined): string | undefined =>
 /** Observational native activity. Never sends commands, reads child transcripts or creates threads. */
 export class CodexActivityProjection {
   private readonly summaries = new Map<string, Map<number, string>>()
-  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }>()
+  /**
+   * Each conversation's agents, by native thread ID. A fork carries its source's history, which names the source's agents
+   * too (#1028), so an agent is looked up in the conversation that is reading it, never in another.
+   */
+  private readonly agentsOf = new WeakMap<ActivityConversation, Map<string, Child>>()
+  /**
+   * The conversation each native agent's own notifications reach: the first to see it, or the one that saw it live. A
+   * fork that reads its source's history later does not take the source's agents from it.
+   */
+  private readonly owners = new Map<string, Child>()
   /** Multi-agent v2 agent paths to native child thread IDs, per conversation, so a nested agent finds its parent. */
   private readonly paths = new WeakMap<ActivityConversation, Map<string, string>>()
+  /**
+   * Native agents whose own thread has a turn running, from their own notifications: started, until it ends or the
+   * conversation's runtime does. Kept by the conversation those notifications reach, so a fork reading its source's
+   * history never takes the source's live work for its own.
+   */
+  private readonly working = new WeakMap<ActivityConversation, Set<string>>()
+  /**
+   * A message to a finished multi-agent v2 agent, per conversation and native ID, not yet shown to be work: when it came,
+   * and how. The newest one waits; the agent's own turn starting, or a later completion in the same conversation's items,
+   * makes it the agent's next assignment (#1261).
+   */
+  private readonly messaged = new WeakMap<ActivityConversation, Map<string, { item: Item; context: Context; senderPath: string; at?: number }>>()
+  /**
+   * The multi-agent v2 assignments each conversation has opened live, by native agent ID, newest last and at most
+   * OPENED_KEPT each: a reread of that conversation's history recognises one by these even once its record has left the
+   * bounded activity window (#1261). A history read adds none, so replaying old assignments never pushes out new ones.
+   */
+  private readonly opened = new WeakMap<ActivityConversation, Map<string, Set<string>>>()
+  /**
+   * When each message held live came, by its item's activity ID, per conversation, the newest MESSAGES_TIMED kept: however
+   * often history is read again before the agent starts, its assignment is timed from the message.
+   */
+  private readonly messageTimes = new WeakMap<ActivityConversation, Map<string, number>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
@@ -228,7 +266,7 @@ export class CodexActivityProjection {
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]
       const assignment = item.tool === 'spawnAgent' || (item.tool === 'sendInput' && item.prompt != null)
       activity.agents = ids.map(child => {
-        const owner = this.children.get(child)
+        const owner = this.child(thread, child)
         const prior = previous?.agents?.find(agent => agent.id === agentId(child)) ?? owner?.agent
         const assignmentId = assignment ? id : prior?.assignmentId
         const sameAssignment = prior?.assignmentId === assignmentId
@@ -237,7 +275,7 @@ export class CodexActivityProjection {
         const observedAt = context.phase === 'history' ? prior?.observedAt : iso(this.now())
         const agent: ObservedAgent = { ...(sameAssignment ? prior : {}), id: agentId(child), status: childStatus,
           ...(assignmentId ? { assignmentId } : {}),
-          ...(item.senderThreadId && this.children.has(item.senderThreadId) ? { parentId: agentId(item.senderThreadId) } : {}),
+          ...(item.senderThreadId && this.child(thread, item.senderThreadId) ? { parentId: agentId(item.senderThreadId) } : {}),
           ...(assignment && item.prompt != null ? { prompt: item.prompt, title: item.prompt.split(/\r?\n/u)[0]!.slice(0, 1_000) } : {}),
           ...(assignment && item.model ? { model: item.model } : {}),
           ...(observedAt ? { observedAt } : {}),
@@ -245,7 +283,7 @@ export class CodexActivityProjection {
           ...(item.agentsStates?.[child]?.message != null ? { message: item.agentsStates[child]!.message! } : {}),
           ...(isTerminalActivity(mappedStatus(childStatus, 'unknown')) && observedAt ? { completedAt: sameAssignment && prior?.completedAt ? prior.completedAt : observedAt } : {}),
         }
-        this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent) })
+        this.setChild(thread, child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent) }, context.phase !== 'history')
         return agent
       })
     }
@@ -259,30 +297,78 @@ export class CodexActivityProjection {
    * or `interrupted` each time it finishes. Every item for one assignment folds into one record in the turn the
    * assignment began, so a busy agent does not fill the bounded activity window. The task name the parent gave it is
    * its title; its task words reach Codex encrypted and are never seen. Items naming the reporting agent or one of its
-   * ancestors are its own replies upward, not work it started.
+   * ancestors are its own replies upward, not work it started. `held` is a message an agent was sent once it had finished,
+   * shown since to have started work, with when it came; `live` when the agent's own turn starting showed it.
    */
-  private subAgentActivity(thread: ActivityConversation, item: Item, context: Context, senderPath: string): void {
+  private subAgentActivity(thread: ActivityConversation, item: Item, context: Context, senderPath: string, held?: { readonly at: number | undefined; readonly live?: boolean }): void {
     const child = item.agentThreadId, path = item.agentPath
     if (!child || !path || !path.startsWith(`${ROOT_PATH}/`) || `${senderPath}/`.startsWith(`${path}/`)) return
     const status = item.kind === 'started' || item.kind === 'interacted' ? 'running' : item.kind === 'completed' ? 'completed' : item.kind === 'interrupted' ? 'interrupted' : undefined
     if (!status) return
+    if (!held) {
+      // An agent that completes again after a message it was sent once finished ran a turn for it: that message is the
+      // assignment this ends. A start or a newer message replaces a waiting one. A history read is in its own order, so
+      // its items act only on a message it held itself: one held live waits for live evidence, and a reread's earlier
+      // items come before it.
+      const waiting = this.messaged.get(thread)?.get(child)
+      if (waiting && (context.phase !== 'history' || waiting.context.phase === 'history')) {
+        this.messaged.get(thread)!.delete(child)
+        if (status !== 'running') this.subAgentActivity(thread, waiting.item, waiting.context, waiting.senderPath, { at: waiting.at })
+      }
+      if (status !== 'running' && context.phase !== 'history') this.working.get(thread)?.delete(child)
+    }
     const paths = this.paths.get(thread) ?? new Map<string, string>()
     paths.set(path, child); this.paths.set(thread, paths)
-    const prior = this.children.get(child)?.agent
+    const prior = this.child(thread, child)?.agent
     const itemActivityId = codexActivityId(context.turnId, item.id)
     const priorFinished = !!prior && isTerminalActivity(mappedStatus(prior.status, 'unknown'))
     // The same item reported again, started and then completed, is the same assignment. Arriving after the agent
     // finished, it cannot make the agent working again, or the work handed to it next would not read as new.
     if (prior?.assignmentId === itemActivityId && status === 'running' && priorFinished) return
+    // A message to an agent that has finished is no work by itself. Codex reports send_message, which leaves it in the
+    // agent's mail, and followup_task, which also starts the agent's turn, both as `interacted` (codex-cli 0.163). It
+    // waits until the agent is seen working: its own turn starting, as a follow-up's does at once, or a later completion.
+    // One that starts nothing leaves the agent finished, so its parent's turn is not held for work that never began (#1261).
+    // History says only what its items say: the agent's live state is evidence for a live item alone, and only in the
+    // conversation its notifications reach.
+    const working = context.phase !== 'history' && this.owners.get(child)?.thread === thread && this.working.get(thread)?.has(child) === true
+    // A message this conversation already opened as one of the agent's assignments was shown to be work when it came: a
+    // reread of the same history takes it as that assignment again, so its later completion ends it and not the one before.
+    if (!held && item.kind === 'interacted' && priorFinished && !working && this.opened.get(thread)?.get(child)?.has(itemActivityId) !== true) {
+      const waiting = this.messaged.get(thread) ?? new Map<string, { item: Item; context: Context; senderPath: string; at?: number }>()
+      const existing = waiting.get(child)
+      // A history read never replaces a message held live with an older one. Reaching that same message, it takes the
+      // message over, keeping when it came, so the history's own later completion can end it, as after a runtime ended.
+      if (context.phase === 'history' && existing && existing.context.phase !== 'history') {
+        if (existing.item.id === item.id) waiting.set(child, { ...existing, context })
+      } else {
+        const times = this.messageTimes.get(thread) ?? new Map<string, number>()
+        if (context.phase !== 'history') {
+          times.delete(itemActivityId); times.set(itemActivityId, this.now())
+          while (times.size > MESSAGES_TIMED) times.delete(times.keys().next().value!)
+          this.messageTimes.set(thread, times)
+        }
+        const at = times.get(itemActivityId)
+        waiting.set(child, { item, context, senderPath, ...at !== undefined ? { at } : {} })
+      }
+      this.messaged.set(thread, waiting)
+      return
+    }
     // A start, or work handed to an agent that had finished, is a new assignment; a message to a working agent is not.
     const assignment = prior?.assignmentId !== itemActivityId && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || priorFinished))
     const assignmentId = assignment || !prior?.assignmentId ? itemActivityId : prior.assignmentId
+    if (assignment && (context.phase !== 'history' || held?.live === true)) {
+      const opened = this.opened.get(thread) ?? new Map<string, Set<string>>(), ids = opened.get(child) ?? new Set<string>()
+      ids.delete(assignmentId); ids.add(assignmentId)
+      while (ids.size > OPENED_KEPT) ids.delete(ids.values().next().value!)
+      opened.set(child, ids); this.opened.set(thread, opened)
+    }
     const record = thread.activities?.find(activity => activity.id === assignmentId)
     // An assignment whose record left the bounded window still reports, under a record of its own.
     const id = record || !this.seen.get(thread)?.has(assignmentId) ? assignmentId : itemActivityId
     // History names no times. A reread keeps the times this assignment's record already holds, not the agent's latest.
     const recorded = record?.agents?.find(agent => agent.id === agentId(child))
-    const observedAt = context.phase === 'history' ? undefined : iso(this.now())
+    const observedAt = held ? iso(held.at) : context.phase === 'history' ? undefined : iso(this.now())
     const parent = paths.get(parentPath(path))
     const title = path.slice(path.lastIndexOf('/') + 1)
     const model = item.model ?? prior?.model
@@ -293,7 +379,7 @@ export class CodexActivityProjection {
       ...(assignment && observedAt ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
       ...(isTerminalActivity(status) && observedAt ? { completedAt: !assignment && prior?.completedAt ? prior.completedAt : observedAt } : {}),
     }
-    this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent), path })
+    this.setChild(thread, child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent), path }, context.phase !== 'history')
     this.put(thread, { id, turnId: record?.turnId ?? context.turnId, sequence: 0, kind: 'subagent', title, status,
       ...(context.afterMessageId ? { afterMessageId: context.afterMessageId } : {}),
       ...(observedAt && !record ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
@@ -361,8 +447,27 @@ export class CodexActivityProjection {
       title: willRetry ? 'Codex is retrying' : 'Codex error', status: 'failed', error: message, afterMessageId: thread.messages.at(-1)?.id })
   }
 
+  /**
+   * This conversation's runtime ended: what its agents' own notifications said of them is no longer live, so none of them
+   * is taken as working from it. A message one was sent after it finished then waits for a completion, as history's does.
+   */
+  runtimeEnded(thread: ActivityConversation): void { this.working.delete(thread) }
+
+  /** The native thread of one of this conversation's agents, by its roster identity (#1028); undefined when its history names none. */
+  agentThread(thread: ActivityConversation, id: string): string | undefined {
+    for (const native of this.agentsOf.get(thread)?.keys() ?? []) if (agentId(native) === id) return native
+    return undefined
+  }
+  private child(thread: ActivityConversation, native: string): Child | undefined { return this.agentsOf.get(thread)?.get(native) }
+  private setChild(thread: ActivityConversation, native: string, entry: Child, live: boolean): void {
+    const own = this.agentsOf.get(thread) ?? new Map<string, Child>()
+    own.set(native, entry); this.agentsOf.set(thread, own)
+    const owner = this.owners.get(native)
+    if (!owner || owner.thread === thread || live) this.owners.set(native, entry)
+  }
+
   childNotification(child: string, method: string, params: unknown): ActivityConversation | undefined {
-    const owner = this.children.get(child)
+    let owner = this.owners.get(child)
     if (!owner) return undefined
     if (method === 'item/started' || method === 'item/completed') {
       const nested = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() }).safeParse(params)
@@ -376,6 +481,14 @@ export class CodexActivityProjection {
     const status = method === 'turn/started' ? 'running' : method === 'turn/completed' ? payload.data.turn?.status
       : method === 'thread/status/changed' ? ({ active: 'running', idle: 'unknown', systemError: 'errored', notLoaded: 'unknown' } as Record<string, string>)[payload.data.status?.type ?? ''] : undefined
     if (!status) return undefined
+    if (status === 'running') {
+      const working = this.working.get(owner.thread) ?? new Set<string>()
+      working.add(child); this.working.set(owner.thread, working)
+      // Its own turn starting shows a message it was sent once finished handed it work: that is its next assignment.
+      const waiting = this.messaged.get(owner.thread)?.get(child)
+      this.messaged.get(owner.thread)?.delete(child)
+      if (waiting) { this.subAgentActivity(owner.thread, waiting.item, waiting.context, waiting.senderPath, { at: waiting.at ?? this.now(), live: true }); owner = this.owners.get(child)! }
+    } else this.working.get(owner.thread)?.delete(child)
     const prior = owner.agent
     // A late status notification cannot restart a completed assignment. A new input item can.
     if (isTerminalActivity(mappedStatus(prior.status, 'unknown')) && !isTerminalActivity(mappedStatus(status, 'unknown'))) return owner.thread

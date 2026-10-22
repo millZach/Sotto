@@ -1,3 +1,4 @@
+import { owlLinuxFileNames } from './owl-linux-package.mjs'
 import { stablePackagePlan } from './stable-package.mjs'
 
 export const REHEARSAL_WARNING = 'REHEARSAL ONLY — NOT PUBLISHABLE. Main, CI and stable version were not checked. Do not install, upload or publish these artifacts.'
@@ -39,21 +40,41 @@ export function linuxPackageSources(recipe) {
   return sources
 }
 
-export function rewriteLinuxPkgbuild(recipe, version, hashes) {
-  stablePackagePlan('linux', version)
-  if (hashes.length !== linuxPackageSources(recipe).length + 1 || hashes.some(hash => !/^[a-f0-9]{64}$/u.test(hash))) {
-    throw new Error('Every Linux package source needs a lower-case SHA-256 checksum.')
-  }
-  const replacements = [
-    [/^pkgver=.*$/gmu, `pkgver=${version}`],
-    [/^pkgrel=.*$/gmu, 'pkgrel=1'],
-    [/^sha256sums=\([\s\S]*?\)\s*$/gmu, `sha256sums=(${hashes.map(hash => `'${hash}'`).join('\n            ')})\n`],
-  ]
+function replaceOnce(recipe, replacements, message) {
   for (const [pattern, replacement] of replacements) {
-    if ([...recipe.matchAll(pattern)].length !== 1) throw new Error('The Linux recipe must have one pkgver, pkgrel and sha256sums list.')
+    if ([...recipe.matchAll(pattern)].length !== 1) throw new Error(message)
     recipe = recipe.replace(pattern, replacement)
   }
   return recipe
+}
+
+function rewriteVersionAndSums(recipe, pkgver, hashes) {
+  if (hashes.length !== linuxPackageSources(recipe).length + 1 || hashes.some(hash => !/^[a-f0-9]{64}$/u.test(hash))) {
+    throw new Error('Every Linux package source needs a lower-case SHA-256 checksum.')
+  }
+  return replaceOnce(recipe, [
+    [/^pkgver=.*$/gmu, `pkgver=${pkgver}`],
+    [/^pkgrel=.*$/gmu, 'pkgrel=1'],
+    [/^sha256sums=\([\s\S]*?\)\s*$/gmu, `sha256sums=(${hashes.map(hash => `'${hash}'`).join('\n            ')})\n`],
+  ], 'The Linux recipe must have one pkgver, pkgrel and sha256sums list.')
+}
+
+export function rewriteLinuxPkgbuild(recipe, version, hashes) {
+  stablePackagePlan('linux', version)
+  return rewriteVersionAndSums(recipe, version, hashes)
+}
+
+/**
+ * The same recipe for a Sotto Owl (ADR-0099). pkgver becomes the Owl's pacman version, and the release version and
+ * archive name, which stable takes from pkgver, name the Owl prerelease and its tarball. package() is untouched.
+ */
+export function rewriteOwlLinuxPkgbuild(recipe, version, hashes) {
+  const names = owlLinuxFileNames(version)
+  const updated = replaceOnce(recipe, [
+    [/^_version="\$\{pkgver\}"$/gmu, `_version="${version}"`],
+    [/^_archive_name="Sotto-\$\{_version\}-linux-x64"$/gmu, `_archive_name="${names.tarballFolder}"`],
+  ], 'The Linux recipe must take its release version from pkgver and name its archive after it, once each.')
+  return rewriteVersionAndSums(updated, names.pkgver, hashes)
 }
 
 export function linuxChecksumLines(artifacts) {

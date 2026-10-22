@@ -10,11 +10,15 @@ import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { agentActivitySchema, type AgentActivity } from '../../src/shared/agentActivity'
 import { type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../../src/shared/agents'
+import { applyAgentThreadDetailDelta } from '../../src/shared/agentThreadDetail'
 import { hostPushSchema } from '../../src/shared/hostProtocol'
+import { cutActivityBodies } from '../../src/shared/activityBodies'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
+/** A detail as a desktop that accepts `activity-bodies` holds it. */
+const cutDetail = (detail: AgentThreadDetail): AgentThreadDetail => ({ ...detail, activities: detail.activities?.map(record => cutActivityBodies(record)) })
 
 const { pair } = fixture
 
@@ -202,7 +206,7 @@ describe('thread detail over the socket', () => {
       const legacy = await rawPeer(server.descriptor.port, session())
       try {
         // This detail-only service has no native Check implementation, so it must not advertise answer-check.
-        expect(await legacy.call('hello', { op: 'hello', afterSeq: 0 })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'background-refresh'] } })
+        expect(await legacy.call('hello', { op: 'hello', afterSeq: 0 })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'background-refresh', 'provider-opencode', 'activity-bodies'] } })
         await legacy.call('observe', { op: 'observe', threadIds: ['streaming'] })
         stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello, world!')] }
         stream.emit(delta(2, 3, '!'))
@@ -278,9 +282,11 @@ describe('thread detail over the socket', () => {
       expect(deltaPush(wholePeer)!.delta).toEqual({ threadId: 'streaming', baseRevision: 2, revision: 3, messageDeltas: [], activityDeltas: [{ record: grown }, { id: 'plan', removed: true }] })
       await expect.poll(() => detailPush(summariesNoDeltas, 3)).toBeTruthy()
       expect(detailPush(summariesNoDeltas, 3)!.detail).toEqual(summarised(stream.current))
-      // The desktop's own client never asks for summaries and keeps every record whole.
+      // The desktop's own client never asks for summaries: it keeps every record with its bodies cut (ADR-0025, October 18
+      // amendment), and fetches one whole when its row opens.
       await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(3)
-      expect(client.threadDetail('streaming')).toEqual(stream.current)
+      expect(client.threadDetail('streaming')).toEqual(cutDetail(stream.current))
+      expect(await client.activityBody('streaming', 'build')).toEqual(grown)
 
       // A whole detail the service publishes, and the detail a client reads, follow the same rule.
       stream.current = { ...stream.current, revision: 4 }
@@ -291,7 +297,7 @@ describe('thread detail over the socket', () => {
       expect(detailPush(wholePeer, 4)!.detail).toEqual(stream.current)
       expect((await summaries.call('read', { op: 'detail', threadId: 'streaming' })).result).toEqual(summarised(stream.current))
       expect((await wholePeer.call('read', { op: 'detail', threadId: 'streaming' })).result).toEqual(stream.current)
-      expect(await client.readThreadDetail('streaming')).toEqual(stream.current)
+      expect(await client.readThreadDetail('streaming')).toEqual(cutDetail(stream.current))
     } finally { for (const peer of peers) peer.frames.close(); await client.close(); await server.close() }
   })
 
@@ -336,6 +342,150 @@ describe('thread detail over the socket', () => {
       expect(connected()).toBe(true)
       expect(pushErrors).toEqual([])
     } finally { store.close(); await client.close(); await server.close() }
+  })
+
+  it('holds a thread\'s updates for a client that stops reading and sends them folded once it drains, instead of every delta or a closed socket (#1089)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    // Sixteen command records of 60 KB, each round growing every one of them: about a megabyte a delta, as a busy
+    // thread's running commands are. Forty such deltas queued for a client that has stopped reading would pass the
+    // socket's hard cap of twice the frame limit, and the host would close it. From halfway, each round also removes the
+    // oldest record and adds one, as a thread past its record limit does, so most deltas carry a removal.
+    const rounds = 40, outputBytes = 60 * 1024, sliding = 21
+    const firstAt = (round: number): number => Math.max(0, round - sliding + 1)
+    const recordsAt = (round: number): AgentActivity[] => Array.from({ length: 16 }, (_, offset) => firstAt(round) + offset).map(index => ({ id: 'command-' + index, turnId: 'turn', sequence: index + 1,
+      kind: 'command', status: 'running', title: 'Run step ' + index, command: 'step ' + index, output: String(round).padStart(4, '0') + 'x'.repeat(outputBytes) }))
+    stream.current = { threadId: 'streaming', revision: 1, messages: [message('Hello')], activities: [] }
+    const slow = await rawPeer(server.descriptor.port, session()), steady = await rawPeer(server.descriptor.port, session())
+    // A client from before the freeze takes whole details only.
+    const legacy = await rawPeer(server.descriptor.port, session())
+    const deltasOf = (peer: typeof slow) => peer.messages.filter(item => item.event === 'detail-delta').map(item => item.delta as AgentThreadDetailDelta)
+    const wholesOf = (peer: typeof slow) => peer.messages.filter(item => item.event === 'detail').map(item => item.detail as AgentThreadDetail)
+    try {
+      for (const peer of [slow, steady, legacy]) {
+        await peer.call('hello', { op: 'hello', ...peer === legacy ? {} : { accepts: ['detail-delta'] } })
+        await peer.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      }
+      const opened = wholesOf(slow)[0]!
+      expect(opened.revision).toBe(1)
+      slow.stream.pause(); legacy.stream.pause()
+      for (let round = 1; round <= rounds; round++) {
+        const activityDeltas: AgentThreadDetailDelta['activityDeltas'] = [...round >= sliding ? [{ id: 'command-' + firstAt(round - 1), removed: true as const }] : [], ...recordsAt(round).map(record => ({ record }))]
+        stream.current = { ...stream.current, revision: round + 1, activities: recordsAt(round) }
+        stream.emit({ threadId: 'streaming', baseRevision: round, revision: round + 1, messageDeltas: [], activityDeltas })
+        // A client that keeps reading is sent every round's delta, so the host has run this publish for every peer.
+        await expect.poll(() => deltasOf(steady).some(delta => delta.revision === round + 1)).toBe(true)
+      }
+      expect(deltasOf(steady)).toHaveLength(rounds)
+      slow.stream.resume(); legacy.stream.resume()
+      // Still connected, and once it reads again it is sent what changed while it was behind.
+      await expect.poll(() => deltasOf(slow).at(-1)?.revision, { timeout: 30_000 }).toBe(rounds + 1)
+      expect(slow.frames.isClosed).toBe(false)
+      const received = deltasOf(slow)
+      // What was already on its way when it stopped, then the rest folded into one, removals and all: not one a round.
+      expect(received.length).toBeLessThan(rounds / 4)
+      expect(received.at(-1)!.activityDeltas.filter(item => 'removed' in item).length).toBeGreaterThan(1)
+      // Each follows the revision the one before it brought, so the client applies them all and holds the newest.
+      let held: AgentThreadDetail | null = opened
+      for (const delta of received) { expect(delta.baseRevision).toBe(held!.revision); held = applyAgentThreadDetailDelta(held!, delta) }
+      expect(held).toEqual(stream.current)
+      expect(wholesOf(slow)).toHaveLength(1)
+      expect(await slow.call('still-open', { op: 'receipt', commandId: 'none' })).toMatchObject({ ok: true, result: { status: 'unknown' } })
+      // The older client is sent the newest whole once, rather than a whole a round, and holds what the host does.
+      await expect.poll(() => wholesOf(legacy).at(-1)?.revision, { timeout: 30_000 }).toBe(rounds + 1)
+      expect(legacy.frames.isClosed).toBe(false)
+      expect(wholesOf(legacy).length).toBeLessThan(rounds / 4)
+      expect(wholesOf(legacy).at(-1)).toEqual(stream.current)
+      expect(deltasOf(legacy)).toEqual([])
+    } finally { slow.frames.close(); steady.frames.close(); legacy.frames.close(); await client.close(); await server.close() }
+  })
+
+  it('sends a thread opened while the client is behind as it stands once it drains, with the changes made while it waited (#1089)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const slowSession = session()
+    const slow = await rawPeer(server.descriptor.port, slowSession), steady = await rawPeer(server.descriptor.port, session())
+    // Whether the service has published the quiet thread whole, which it does as the slow client starts observing it.
+    let quietPublished = false
+    const emit = stream.emit
+    stream.emit = update => { if (update.threadId === 'quiet' && !('messageDeltas' in update)) quietPublished = true; emit(update) }
+    try {
+      for (const peer of [slow, steady]) {
+        await peer.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+        await peer.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      }
+      // The slow client stops reading, and a streaming thread's output backs its socket up.
+      slow.stream.pause()
+      for (let round = 1; round <= 3; round++) {
+        stream.current = { threadId: 'streaming', revision: round + 1, messages: [message('Hello' + 'x'.repeat(round * 4 * 1024 * 1024))] }
+        stream.emit(delta(round, round + 1, 'x'.repeat(4 * 1024 * 1024)))
+        await expect.poll(() => steady.messages.some(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === round + 1)).toBe(true)
+      }
+      // It opens the quiet thread while behind. The thread's first whole is held for it, and the thread changes after.
+      slow.frames.send({ v: 1, id: 'open-quiet', session: slowSession, op: 'observe', threadIds: ['streaming', 'quiet'] })
+      await expect.poll(() => quietPublished).toBe(true)
+      stream.quiet = { threadId: 'quiet', revision: 2, messages: [message('Quiet, then more')] }
+      stream.emit({ threadId: 'quiet', baseRevision: 1, revision: 2, messageDeltas: [{ id: 'reply', appendText: ', then more' }], activityDeltas: [] })
+      // Past the publish window, so the change has reached the listener while the client is still behind.
+      await new Promise(resolve => setTimeout(resolve, AGENT_STATE_PUBLISH_INTERVAL_MS * 4))
+      slow.stream.resume()
+      await expect.poll(() => slow.messages.some(item => item.id === 'open-quiet'), { timeout: 30_000 }).toBe(true)
+      // Nothing more is published for the quiet thread, so what it holds now is all it would ever be sent.
+      await expect.poll(() => {
+        let held: AgentThreadDetail | null = null
+        for (const item of slow.messages) {
+          if (item.threadId !== 'quiet') continue
+          if (item.event === 'detail') held = item.detail as AgentThreadDetail
+          if (item.event === 'detail-delta' && held) held = applyAgentThreadDetailDelta(held, item.delta as AgentThreadDetailDelta) ?? held
+        }
+        return held
+      }, { timeout: 10_000 }).toEqual(stream.quiet)
+      expect(slow.frames.isClosed).toBe(false)
+    } finally { slow.frames.close(); steady.frames.close(); await client.close(); await server.close() }
+  })
+
+  it('sends a client that read a thread whole while behind no held delta from before that read (#1089)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const slowSession = session()
+    const slow = await rawPeer(server.descriptor.port, slowSession), steady = await rawPeer(server.descriptor.port, session())
+    let round = 0
+    const grow = async (bytes: number): Promise<void> => {
+      round++
+      stream.current = { threadId: 'streaming', revision: round + 1, messages: [message(stream.current.messages[0]!.text + 'x'.repeat(bytes))] }
+      stream.emit(delta(round, round + 1, 'x'.repeat(bytes)))
+      await expect.poll(() => steady.messages.some(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === round + 1)).toBe(true)
+    }
+    try {
+      for (const peer of [slow, steady]) {
+        await peer.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+        await peer.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      }
+      // The slow client stops reading and falls behind, with a delta held for it.
+      slow.stream.pause()
+      for (let index = 0; index < 3; index++) await grow(4 * 1024 * 1024)
+      await grow(16)
+      // It reads the thread whole while behind; the answer goes behind what is already in its socket, not behind what is
+      // held. Then the thread changes again.
+      const reads = stream.reads
+      slow.frames.send({ v: 1, id: 'read', session: slowSession, op: 'detail', threadId: 'streaming' })
+      await expect.poll(() => stream.reads).toBeGreaterThan(reads)
+      await grow(16)
+      await new Promise(resolve => setTimeout(resolve, AGENT_STATE_PUBLISH_INTERVAL_MS * 4))
+      slow.stream.resume()
+      await expect.poll(() => slow.messages.some(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === round + 1)
+        || slow.messages.some(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === round + 1), { timeout: 30_000 }).toBe(true)
+      // Read in order as the client does, every delta starts from what it holds, so it never has to read the thread again.
+      let held: AgentThreadDetail | null = null
+      for (const item of slow.messages) {
+        if (item.event === 'detail') held = item.detail as AgentThreadDetail
+        else if (item.id === 'read') held = (item as { result: AgentThreadDetail }).result
+        else if (item.event === 'detail-delta') {
+          const next = item.delta as AgentThreadDetailDelta
+          if (next.revision <= held!.revision) continue
+          expect(next.baseRevision).toBe(held!.revision)
+          held = applyAgentThreadDetailDelta(held!, next)
+        }
+      }
+      expect(held).toEqual(stream.current)
+    } finally { slow.frames.close(); steady.frames.close(); await client.close(); await server.close() }
   })
 
   it('reads the whole thread once when a delta does not follow the revision the client holds', async () => {

@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles } from './host'
-import { subscribeActivitySnapshots } from './activitySnapshots'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
+import { asActivityPublication, subscribeActivitySnapshots } from './activitySnapshots'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink } from './usageHistory/sink'
 
@@ -198,6 +198,8 @@ export class SottoThreadHost implements AgentHost {
       },
     })))
   }
+  /** The role table names no thread or session, so it passes through as it is. */
+  useWorkerRoles(roles: WorkerRoleSource): void { this.inner.useWorkerRoles?.(roles) }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
     if (this.observed) this.observeThreads(this.observed)
@@ -228,6 +230,21 @@ export class SottoThreadHost implements AgentHost {
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider || !this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable for this thread.')
     return this.inner.rollbackThread(binding.sessionId, removedUserMessages, expectedUserMessageIds)
+  }
+  /**
+   * A fork names its source by Sotto thread ID (#1028). Both threads reach the adapter by its own session IDs: the new
+   * thread's is reserved and saved before the adapter asks the provider, as creation's is, so the copy is bound to it.
+   */
+  async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    await this.registry.load()
+    const source = this.registry.byThread(request.source.threadId)
+    if (!source || source.provider !== this.provider || !this.inner.forkThread) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+    const existing = this.registry.byThread(request.threadId)
+    const binding = this.registry.reserve(request.threadId, this.provider, existing?.sessionId ?? randomUUID(), source.projectId)
+    await this.registry.flush()
+    const result = await this.inner.forkThread({ ...request, threadId: binding.sessionId, source: { ...request.source, threadId: source.sessionId } })
+    await this.registry.flush().catch(() => { console.warn('registry-flush-deferred') })
+    return result
   }
   /** Cached history reaches the adapter under the provider's own session ID, the way every read does. */
   async restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
@@ -280,7 +297,7 @@ export class SottoThreadHost implements AgentHost {
   }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return subscribeActivitySnapshots(this.inner, snapshot => {
-      if (this.registry.loaded) listener(this.mapSnapshot(snapshot))
+      if (this.registry.loaded) listener(asActivityPublication(this.mapSnapshot(snapshot), snapshot))
     }, options)
   }
 

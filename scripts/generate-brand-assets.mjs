@@ -11,7 +11,10 @@ import { log } from 'node:console'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { deflateSync } from 'node:zlib'
 import sharp from 'sharp'
+
+import { DOCK_COVERAGE_SIZE } from '../src/main/dock/coverage.mjs'
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const buildDir = path.join(repoRoot, 'build')
@@ -156,6 +159,25 @@ await writeFile(path.join(buildDir, 'installer-sidebar.bmp'), bmp24(sidebar, 164
 
 await trayTemplate()
 
+// The Dock icon follows the theme (src/main/dock/dockIcon.ts). Main cannot draw
+// SVG, so the icon's shapes are written as coverage it paints: per pixel the
+// tile's alpha, then the glyph's, deflated.
+async function dockCoverage() {
+  const svg = iconSvg.toString('utf8')
+  const alpha = async (source) => sharp(Buffer.from(source), { density: (72 * DOCK_COVERAGE_SIZE) / 96 })
+    .resize(DOCK_COVERAGE_SIZE, DOCK_COVERAGE_SIZE).ensureAlpha().extractChannel(3).raw().toBuffer()
+  const tile = await alpha(svg.replace(/<(path|circle)\b[^>]*\/>/g, ''))
+  const glyph = await alpha(svg.replace(/<rect\b[^>]*\/>/g, ''))
+  const coverage = Buffer.alloc(tile.length * 2)
+  for (let i = 0; i < tile.length; i += 1) {
+    coverage[i * 2] = tile[i]
+    coverage[i * 2 + 1] = glyph[i]
+  }
+  await mkdir(path.join(repoRoot, 'resources', 'dock'), { recursive: true })
+  await writeFile(path.join(repoRoot, 'resources', 'dock', 'mark-coverage.bin'), deflateSync(coverage, { level: 9 }))
+}
+await dockCoverage()
+
 // The phone apps wear the same icon on the phones' canvas, and Android's round
 // launcher icon is the tile's colour as a circle under the same owl.
 const PHONE_CANVAS = '#1c1d27'
@@ -178,5 +200,5 @@ async function phoneIcons() {
 await phoneIcons()
 
 log(
-  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png, the Linux hicolor icons, the iPhone app icon and the Android launcher icons',
+  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png, resources/dock/mark-coverage.bin, the Linux hicolor icons, the iPhone app icon and the Android launcher icons',
 )

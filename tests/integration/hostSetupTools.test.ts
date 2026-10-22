@@ -22,6 +22,7 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
+import { headerList } from '../fixtures/mcpHeaders'
 
 // The host setup tools (ADR-0035, issue #431): the fake providers are given `sotto_host_setup` for the setup thread
 // and no other, the endpoint a provider was given reaches the tool as that Sotto thread, and the tool checks and
@@ -63,7 +64,7 @@ describe.each(factories)('%s host setup tools', (provider, factory) => {
       const start = records.find(record => record.method === 'thread/start')?.params as { config: { mcp_servers: Record<string, { url: string; default_tools_approval_mode: string; tool_timeout_sec: number; http_headers: Record<string, string> }> } }
       const entry = start.config.mcp_servers[HOST_SETUP_MCP_SERVER]!
       expect(entry).toMatchObject({ default_tools_approval_mode: 'approve', tool_timeout_sec: 600 })
-      given = { url: entry.url, headers: Object.entries(entry.http_headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.http_headers) }
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch!.params!.frame as { args: string[] }).args
@@ -72,7 +73,7 @@ describe.each(factories)('%s host setup tools', (provider, factory) => {
       // Sotto's own tools carry no native prompt; adding asks in the thread itself.
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
       expect(allowed).toEqual(expect.arrayContaining(['host_status', 'host_check', 'host_add'].map(tool => `mcp__${HOST_SETUP_MCP_SERVER}__${tool}`)))
-      given = { url: entry.url, headers: Object.entries(entry.headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.headers) }
     } else {
       const servers = records.filter(record => record.method === 'session/new').map(record => record.params?.mcpServers as { name: string; url: string; headers: { name: string; value: string }[] }[]).find(value => value?.length)!
       const entry = servers.find(server => server.name === HOST_SETUP_MCP_SERVER)!

@@ -225,8 +225,12 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
  * takes the press back (ADR-0019). The chip wears the colourway at the model's highest level, and the composer
  * around it reads that mark for its outline and this wrapper's arrival mark for its tide.
  */
-export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName }: {
+export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, label = OPTION_CHIP_NAMES.effort, pending = false, describedBy }: {
   readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => void
+  /** An effort the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
+  readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
+  /** The chip's name, where a page shows more than one effort control and each must say whose effort a press changes. */
+  readonly label?: string | undefined
   readonly onUltrathink?: (() => void) | undefined; readonly hasUltrathink?: boolean | undefined
   /** The model's own default level, offered as the card's Default button when the model reports one. */
   readonly defaultValue?: string | undefined
@@ -259,8 +263,10 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
-    <button ref={trigger} type="button" role="combobox" aria-label={OPTION_CHIP_NAMES.effort} title={OPTION_CHIP_NAMES.effort} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-      className="thread-chip tt-focusable" data-effort-top={top} disabled={disabled} onClick={() => setOpen(current => !current)}>
+    <button ref={trigger} type="button" role="combobox" aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+      className="thread-chip tt-focusable" data-effort-top={top} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
+      disabled={disabled} onClick={() => setOpen(current => !current)}>
+      {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       <span>{level ? effortLabel(level) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open && <EffortSurface value={level} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}

@@ -6,6 +6,7 @@ import {
   UPDATE_STARTUP_DELAY_MS,
   UpdateService,
   describeProblem,
+  newVersionListener,
   waitingVersion,
   type UpdaterAdapter,
   type UpdaterEvent,
@@ -17,7 +18,7 @@ import { deferred } from '../../fixtures/deferred'
 import { e2eUpdater } from '../../../src/main/updates/e2eUpdater'
 
 /** Stable answers every Owl feature off. */
-const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false }
+const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false, 'continue-on-provider': false, 'continue-agent-thread': false, opencode: false, 'dictation-hold-shortcuts': false, 'main-freeze': false, 'iphone-pull-request-view': false, 'iphone-agents-view': false }
 
 type Emit = (event: UpdaterEvent) => void
 
@@ -609,6 +610,31 @@ describe('describeProblem', () => {
     expect(describeProblem(42)).toBeNull()
     expect(describeProblem(new Error('   '))).toBeNull()
     expect(describeProblem({})).toBeNull()
+  })
+})
+
+describe('a new version of Sotto has every machine check its clients afresh (ADR-0077)', () => {
+  it('hears each version once, when it is first offered, and not for its download or the checks after it', () => {
+    const found = vi.fn()
+    const hear = newVersionListener(found)
+    hear({ phase: 'checking' })
+    hear({ phase: 'up-to-date' })
+    expect(found).not.toHaveBeenCalled()
+    hear({ phase: 'available', version: '0.1.38', problem: null })
+    for (const percent of [10, 40, 90]) hear({ phase: 'downloading', version: '0.1.38', percent })
+    hear({ phase: 'downloaded', version: '0.1.38', problem: null })
+    hear({ phase: 'checking' })
+    hear({ phase: 'available', version: '0.1.38', problem: 'offline', failedStep: 'download' })
+    expect(found.mock.calls).toEqual([['0.1.38']])
+    // A newer release found later is new again.
+    hear({ phase: 'available', version: '0.1.39', problem: null })
+    expect(found.mock.calls).toEqual([['0.1.38'], ['0.1.39']])
+  })
+
+  it('hears a download already under way when Sotto starts as a version found', () => {
+    const found = vi.fn()
+    newVersionListener(found)({ phase: 'downloading', version: '0.1.40', percent: 5 })
+    expect(found).toHaveBeenCalledWith('0.1.40')
   })
 })
 

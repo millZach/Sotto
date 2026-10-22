@@ -62,7 +62,7 @@ describe('owned cached Watcher room inputs', () => {
     const f = fixture()
     try {
       f.state.host.projects[0]!.providerId = 'muse'
-      Object.assign(f.socket, { dormantMuseThreads: new Map([['two', 'project']]) })
+      Object.assign(f.socket, { dormantProviderThreads: new Map([['two', { projectId: 'project', provider: 'muse' }]]) })
       expect(f.socket.watcherRoomThreads!(['one', 'two'])).toEqual([
         { id: 'one', title: 'One', status: 'running', connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [{ id: 'question', kind: 'question' }] }])
     } finally { f.close() }
@@ -72,9 +72,11 @@ describe('owned cached Watcher room inputs', () => {
     const f = fixture()
     try {
       Object.assign(f.socket, { watcherRoomThreads: undefined })
-      const shell = vi.spyOn(f.socket, 'shell')
+      // The fallback reads the host's state once, in place: the view, not a copied shell (October 19, 2026).
+      const view = vi.spyOn(f.socket, 'view'), shell = vi.spyOn(f.socket, 'shell')
       expect(f.router.watcherHosts().roomThreads!(remoteId, ['one', 'two'])).toHaveLength(2)
-      expect(shell).toHaveBeenCalledTimes(1)
+      expect(view).toHaveBeenCalledTimes(1)
+      expect(shell).not.toHaveBeenCalled()
     } finally { f.close() }
   })
 
@@ -85,17 +87,18 @@ describe('owned cached Watcher room inputs', () => {
         target: { hostId: remoteId, threadId }, requestId: 'request', startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 })) })
     const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
       hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
-    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false, streamingPublishCost: optimized })
-    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
+    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: optimized })
+    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
     const remote: WatcherRemoteHosts = f.router.watcherHosts()
-    const room = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'shell')
+    // The router reads a remote host's whole state through its view, in place, rather than a copied shell (October 19, 2026).
+    const room = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'view')
     Object.assign(service, { remote }) // No reconciliation/observer work is part of this state-only check.
     Object.assign(legacy, { remote })
     const timestamp = vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-10-14T00:00:00.000Z')
     try {
       expect(service.state()).toEqual(legacy.state())
       room.mockClear(); snapshot.mockClear(); shell.mockClear()
-      const expected = new Map(watcherRoomInputs(f.state.host, ['one', 'two'], false).map(row => [row.id, row]))
+      const expected = new Map(watcherRoomInputs(f.state.host, ['one', 'two'], new Set(['muse'])).map(row => [row.id, row]))
       for (const state of [service.state(), (service.get() as { state: ReturnType<WatcherService['state']> }).state]) {
         for (const row of state.watchedThreads) {
           const input = expected.get(row.target.threadId)
@@ -104,8 +107,10 @@ describe('owned cached Watcher room inputs', () => {
         }
       }
       expect(room).toHaveBeenCalledTimes(optimized ? 2 : 0)
-      expect(snapshot.mock.calls.length).toBe(optimized ? 0 : 18)
-      expect(shell.mock.calls.length).toBe(optimized ? 0 : 18)
+      // Without the room inputs, each read reads the paired host's state once per thread it finds and once for the host,
+      // rather than again for every target's thread and project (#1231).
+      expect(snapshot.mock.calls.length).toBe(optimized ? 0 : 10)
+      expect(shell.mock.calls.length).toBe(optimized ? 0 : 10)
       if (optimized) expect(room).toHaveBeenCalledWith(remoteId, ['one', 'two', 'missing'])
     } finally { timestamp.mockRestore(); service.close(); legacy.close(); f.close() }
   })
@@ -124,8 +129,8 @@ describe('owned cached Watcher room inputs', () => {
       createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
     const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
       hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
-    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false, streamingPublishCost: true })
-    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
+    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: true })
+    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
     const remote = f.router.watcherHosts(), read = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'shell')
     Object.assign(service, { remote }); Object.assign(legacy, { remote })
     const timestamp = vi.spyOn(Date.prototype, 'toISOString').mockReturnValue(at)

@@ -19,6 +19,7 @@
 .host-provider__mark .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
 .host-provider__mark .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
 .host-provider__mark .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.host-provider__mark .provider-mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
 .hosts-settings .host-provider__state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: 13px; }
 .hosts-settings .host-provider__detail { margin: 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .host-provider__act { align-self: end; min-width: 0; }
@@ -117,3 +118,6 @@
 .host-client-updates__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
 @media (max-width: 700px) { .host-providers { padding-left: 0; } .host-providers__toggle.tt-button { margin-left: 0; } }
+
+/* A connected OpenCode's Model sources on this host (#1107): the block this computer's OpenCode tile has, under the tiles. */
+.host-providers__panel .oc-sources { margin-top: 0; padding: 14px 0; }

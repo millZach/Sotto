@@ -1,4 +1,4 @@
-import type { UsageBridge, UsageDashboardRead, UsageModelAggregate, UsageProviderId, UsageQuery } from '../../../../shared/usageDashboard'
+import type { UsageBridge, UsageDashboardRead, UsageLimitProviderId, UsageModelAggregate, UsageProviderId, UsageQuery } from '../../../../shared/usageDashboard'
 import type { UsageProviderLimits, UsageSummary } from './usagePresentation'
 
 export type UsageTab = 'overview' | 'subscriptions' | 'models'
@@ -29,7 +29,7 @@ export interface UsagePage {
   readonly cleared: boolean
   readonly hostName: (hostId: string) => string
   readonly modelName: (row: Pick<UsageModelAggregate, 'modelId' | 'providerId'>) => string
-  readonly providerAccount: (providerId: UsageProviderId, hostId: string) => string
+  readonly providerAccount: (providerId: UsageLimitProviderId, hostId: string) => string
   readonly announce: (text: string) => void
   readonly openTab: (tab: UsageTab) => void
   readonly openProvider: (providerId: UsageProviderId) => void

@@ -101,6 +101,51 @@ describe('the Update all card', () => {
     await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'update' }))
   })
 
+  it('puts a client found behind while the press runs into its machine’s line, without another press (ADR-0077, October 21 amendment)', async () => {
+    const actions = provideApp(available)
+    const command = provideAgents(agentState({ local: [behind()], forge: [] }))
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate()] })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: Sotto, 1 client and forge' }))
+    await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(1))
+    expect(command).toHaveBeenCalledTimes(1)
+    // The checks a new version of Sotto started answer after the press: Codex on this computer and Grok Build on forge.
+    provideAgents(agentState({ local: [behind({ state: 'updating' }), behind({ id: 'codex', installed: '0.155.1', published: '0.158.0' })],
+      forge: [behind({ id: 'grok', installed: '1.0.41', published: '1.0.43' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledWith({ id: FORGE, action: 'update', providers: ['grok'] }))
+    expect(vi.mocked(useOptionalAgents).mock.results.at(-1)?.value.command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['codex'] })
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
+    expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets no client join a step’s own Try again once the press it came from is over (review)', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    const codex = (patch: Partial<ProviderClientUpdate> = {}) => behind({ id: 'codex', installed: '0.155.1', published: '0.158.0', ...patch })
+    const current = behind({ installed: '2.1.42', published: '2.1.42', behind: false })
+    const first = provideAgents(agentState({ local: [codex(), current] }))
+    const hosts = hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: 1 client' }))
+    await waitFor(() => expect(first).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['codex'] }))
+    // Codex fails, and the press is over.
+    provideAgents(agentState({ local: [codex({ state: 'failed', ranAt: 'now', error: 'npm ERR! network' }), current] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
+    // Later Claude Code falls behind. It is offered, not put in the line.
+    const later = provideAgents(agentState({ local: [codex({ state: 'failed', ranAt: 'now', error: 'npm ERR! network' }), behind({ installed: '2.1.42', published: '2.1.45' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    const step = await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
+    fireEvent.click(within(step).getByRole('button', { name: /^Try again/u }))
+    await waitFor(() => expect(later).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['codex'] }))
+    // The retried step runs; Claude Code still waits for its own press.
+    provideAgents(agentState({ local: [codex({ state: 'updating' }), behind({ installed: '2.1.42', published: '2.1.45' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await screen.findByRole('listitem', { name: 'Update Codex, in progress' })
+    const calls = vi.mocked(useOptionalAgents).mock.results.flatMap(result => (result.value as { command: ReturnType<typeof vi.fn> }).command.mock.calls)
+    expect(calls).not.toContainEqual([expect.objectContaining({ type: 'queue-client-updates', providers: expect.arrayContaining(['claude']) })])
+  })
+
   // The incident of October 16, 2026: forge restarted with Codex in its line, and the step spun on Starting… for good.
   it('says a host client whose line was lost did not update, and Try again puts it back in the line', async () => {
     provideApp({ ...available, phase: { phase: 'unsupported' } })

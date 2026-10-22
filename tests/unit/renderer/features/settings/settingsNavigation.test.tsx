@@ -53,15 +53,17 @@ describe('SettingsView', () => {
     // The column continues into the sidebar foot (the room switch, then the page links) before the room itself.
     await user.tab()
     expect(screen.getByRole('tablist', { name: 'Page' })).toContainElement(document.activeElement as HTMLElement)
-    for (const name of ['History', 'Settings', 'Help']) {
+    for (const name of ['Settings', 'Help']) {
       await user.tab()
       expect(screen.getByRole('link', { name })).toHaveFocus()
     }
     await user.tab()
     expect(screen.getByRole('tabpanel', { name: 'Transcription' })).toHaveFocus()
     await user.tab()
+    expect(screen.getByRole('combobox', { name: 'Speech model' })).toHaveFocus()
+    await user.tab()
     expect(screen.getByRole('switch', { name: 'Whitespace formatting' })).toHaveFocus()
-    expect(screen.queryByRole('textbox', { name: 'Global shortcut' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Press to start and stop' })).not.toBeInTheDocument()
     screen.getByRole('tab', { name: 'Transcription' }).focus()
     await user.keyboard('{End}')
     expect(screen.getByRole('tab', { name: 'Git' })).toHaveFocus()
@@ -106,7 +108,7 @@ describe('SettingsView', () => {
     render(<div><SettingsView {...baseProps()} /></div>)
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     expect(screen.getByRole('combobox', { name: 'Microphone' })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Global shortcut' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Sound cues' })).toBeVisible()
     expect(screen.getByRole('radiogroup', { name: 'Maximum recording time' })).toBeVisible()
     await selectCategory('Transcription')

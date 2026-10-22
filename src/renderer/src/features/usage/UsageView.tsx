@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { servedModelName } from '../../../../shared/modelCatalog'
-import type { UsageBridge, UsageDashboardRead, UsageHostRead, UsageProviderId, UsageQuery, UsageSource } from '../../../../shared/usageDashboard'
+import type { UsageBridge, UsageDashboardRead, UsageHostRead, UsageLimitProviderId, UsageProviderId, UsageQuery, UsageSource } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { roomKeyTarget } from '../../components/AppShell'
+import { useHeldProviders } from '../../state/owlFeature'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { ActionMenu, ChoiceMenu, type ChoiceOption } from './UsageMenu'
 import { Models } from './UsageModels'
@@ -21,7 +22,6 @@ const TAB_NAMES: Record<UsageTab, string> = { overview: 'Overview', subscription
 type Range = '7' | '30' | '90' | 'all' | 'custom'
 const RANGES: readonly ChoiceOption<Range>[] = [{ value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }, { value: 'all', label: 'All time' }, { value: 'custom', label: 'Choose dates' }]
 const PLACES: readonly ChoiceOption<UsageWhere>[] = [{ value: 'all', label: 'Everywhere' }, { value: 'sotto', label: 'In Sotto' }, { value: 'outside', label: 'Outside Sotto' }]
-const PROVIDER_CHOICES: readonly ChoiceOption<UsageProviderId | 'all'>[] = [{ value: 'all', label: 'All providers' }, ...USAGE_PROVIDERS.map(id => ({ value: id, label: PROVIDER_NAMES[id] }))]
 const QUOTA_FRESH_MS = 60_000
 const DAYS_MAX = 366
 const currentDate = (): Date => new Date()
@@ -87,6 +87,10 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const raw = usage.read
   const read = useMemo<UsageDashboardRead>(() => ({ hosts: (raw?.hosts ?? []).map(host => scopeHost(host, sources)) }), [raw, sources])
   const summary = useMemo(() => presentUsage(read), [read])
+  // A provider held to Owl has no usage on this run (ADR-0072), so the menu does not offer it.
+  const held = useHeldProviders()
+  const providerChoices = useMemo<readonly ChoiceOption<UsageProviderId | 'all'>[]>(() => [{ value: 'all', label: 'All providers' },
+    ...USAGE_PROVIDERS.filter(id => !held.has(id)).map(id => ({ value: id, label: PROVIDER_NAMES[id] }))], [held])
   const clock = now().getTime()
   const limits = providerLimits(read, clock)
 
@@ -100,7 +104,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   }, [connections, localId, read, state?.host.hostId])
   // One name per served model on every computer, online or not: a client catalog's names differ between versions and hosts.
   const modelName = (row: { modelId: string; providerId: UsageProviderId }): string => servedModelName(row.providerId, row.modelId)
-  const providerAccount = (providerId: UsageProviderId, owner: string): string => {
+  const providerAccount = (providerId: UsageLimitProviderId, owner: string): string => {
     const statuses = state?.host.clientHosts?.find(item => item.hostId === owner)?.providers ?? (owner === localId || owner === state?.host.hostId ? state?.host.providers : undefined)
     return statuses?.find(item => item.id === providerId)?.account ?? PROVIDER_ACCOUNTS[providerId]
   }
@@ -248,7 +252,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
           onClick={() => setTab(value)} onKeyDown={event => onTabKey(event, index)}>{TAB_NAMES[value]}</button>)}</div>
         <div className="usage-filters">
           {activityFilters ? <ChoiceMenu name="Date range" value={range} options={RANGES} onChoose={setRange} /> : null}
-          {activityFilters ? <ChoiceMenu name="Provider" value={provider} options={PROVIDER_CHOICES} onChoose={setProvider} /> : null}
+          {activityFilters ? <ChoiceMenu name="Provider" value={provider} options={providerChoices} onChoose={setProvider} /> : null}
           <ChoiceMenu name="Computer" value={hostId} options={computerChoices} onChoose={setHostId} />
           {activityFilters ? <ChoiceMenu name="Where" value={where} options={PLACES} onChoose={setWhere} /> : null}
         </div>

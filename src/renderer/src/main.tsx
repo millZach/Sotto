@@ -9,7 +9,7 @@ import './styles/global.css'
 import './agents/threads.css'
 import './agents/threadSidebar.css'
 import './agents/threadsChrome.css'
-import './features/history/history.css'
+import './features/dictate/dictate.css'
 import './styles/crossing-settings.css'
 import { applyAppearance, readCachedAppearance } from './state/appearance'
 
@@ -27,7 +27,7 @@ const e2e = window.sottoE2E
 const settingsBridge = window.sotto === undefined ? undefined : createE2ESettingsBridge(window.sotto, e2e !== undefined)
 const controllerFactory = e2e === undefined ? undefined : createE2EControllerFactory(e2e.scenario)
 // An end-to-end run can seed Watcher's projection; otherwise the room reads main's own bridge.
-const watcherBridge = e2e === undefined ? undefined : createE2EWatcherBridge(window.sotto)
+const watcherBridge = e2e === undefined ? undefined : createE2EWatcherBridge()
 
 createRoot(rootElement).render(
   <StrictMode>

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { assertDictateState, assertFocusPresentation, captureFullSurface, capturePage, captureSection, startSettingsAtHeading } from './support/designCapture'
-import { openPage } from './support/sottoLaunch'
+import { openJournalRow, openPage } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -32,7 +32,7 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-3-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
 
       await forward.click()
-      await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-4-speech-model.png', { category: 'onboarding', state: 'speech-model' })
 
       await forward.click()
@@ -77,15 +77,15 @@ test.describe('authoritative design-review captures', () => {
       await assertFocusPresentation(threadsTab)
       await capturePage(page, 'focus-switch-tab.png', { focusTarget: 'tab', focus: true })
 
-      const historyNavigation = page.getByRole('link', { name: 'History' })
-      await assertFocusPresentation(historyNavigation)
+      const settingsNavigation = page.getByRole('link', { name: 'Settings' })
+      await assertFocusPresentation(settingsNavigation)
       await capturePage(page, 'focus-navigation.png', { focusTarget: 'navigation', focus: true })
 
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-listening.png', { category: 'dictate', state: 'listening' })
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await assertDictateState(page, 'success', /^pasted\.$/i)
+      await assertDictateState(page, 'success', /^pasted into sotto\.$/i)
       await capturePage(page, 'dictate-pasted.png', { category: 'dictate', state: 'success-pasted' })
     })
 
@@ -114,29 +114,36 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
-      await page.getByRole('link', { name: 'History' }).click()
+      await openPage(page, 'Dictate')
       await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
-      const historySearch = page.getByRole('searchbox', { name: 'Search transcripts' })
-      await assertFocusPresentation(historySearch)
+      const journalSearch = page.getByRole('searchbox', { name: 'Search transcripts' })
+      await assertFocusPresentation(journalSearch)
       await capturePage(page, 'focus-input.png', { focusTarget: 'input', focus: true })
-      const clearHistory = page.getByRole('button', { name: 'Clear history' })
-      await assertFocusPresentation(clearHistory)
+      await openJournalRow(page)
+      await assertFocusPresentation(page.getByRole('button', { name: 'Delete saved transcript' }))
       await capturePage(page, 'focus-destructive.png', { focusTarget: 'destructive', focus: true })
-      await page.locator('.history-entry__toggle').first().click()
       await page.getByRole('button', { name: 'Copy transcript' }).first().click()
-      await expect(page.getByRole('status')).toContainText('Transcript copied')
-      await capturePage(page, 'history-populated.png', { category: 'history', state: 'populated-feedback' })
+      await expect(page.getByRole('status').filter({ hasText: 'Transcript copied' })).toBeAttached()
+      await capturePage(page, 'dictate-journal-open.png', { category: 'dictate', state: 'journal-open-feedback' })
+      await page.keyboard.press('Escape')
 
-      await historySearch.fill('installer')
-      await capturePage(page, 'history-search.png')
-      await historySearch.fill('')
-      await page.getByRole('button', { name: 'Clear history' }).click()
+      await page.getByRole('button', { name: 'More transcript actions' }).click()
+      await expect(page.getByRole('menuitem', { name: 'Clear history' })).toBeFocused()
+      await capturePage(page, 'dictate-journal-more.png', { category: 'dictate', state: 'journal-more-menu' })
+      await page.keyboard.press('Escape')
+
+      await journalSearch.fill('installer')
+      await capturePage(page, 'dictate-journal-search.png', { category: 'dictate', state: 'journal-search' })
+      await journalSearch.fill('')
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: false }) })
+      await expect(page.getByText(/^History is off\./)).toBeVisible()
+      await capturePage(page, 'dictate-journal-off.png', { category: 'dictate', state: 'journal-off' })
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: true }) })
+      await page.getByRole('button', { name: 'More transcript actions' }).click()
+      await page.getByRole('menuitem', { name: 'Clear history' }).click()
       await page.getByRole('button', { name: 'Clear all transcripts' }).click()
       await expect(page.getByRole('heading', { name: 'Nothing here yet.' })).toBeVisible()
-      await capturePage(page, 'history-empty.png', { category: 'history', state: 'empty-feedback' })
-      await page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: false }) })
-      await capturePage(page, 'history-off.png')
-      await page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: true }) })
+      await capturePage(page, 'dictate-journal-empty.png', { category: 'dictate', state: 'journal-empty-feedback' })
 
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()

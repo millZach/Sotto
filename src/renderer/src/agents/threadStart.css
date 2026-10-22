@@ -1,0 +1,49 @@
+/* A thread that began from another (#1028): Sotto's note on where it began, and the handover it starts from. */
+.thread-start-note { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 18px; padding: 10px 14px; border: 1px dashed var(--tt-hairline); border-radius: var(--tt-radius-md);
+  color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.thread-start-note > svg { flex: none; margin-top: 2px; color: var(--tt-text-2); }
+.thread-start-note > p { flex: 1 1 auto; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.thread-start-note strong { color: var(--tt-text); font-weight: 600; }
+.thread-start-note__open { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+/* The handover, as Sotto's on the user's side, as Watcher's handover is (ADR-0073). */
+.thread-start-handover { margin-bottom: 10px; }
+.thread-start-handover__lead { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.55; }
+.thread-start-handover__lead strong { font-weight: 600; }
+.thread-start-handover__ledger { margin: 4px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.thread-start-handover__disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13px; cursor: pointer; }
+.thread-start-handover__disclose:disabled { color: var(--tt-text-muted); cursor: progress; }
+.thread-start-handover__disclose > svg { transition: transform 150ms ease; }
+.thread-start-handover__disclose[aria-expanded='true'] > svg { transform: rotate(90deg); }
+.thread-start-handover__text { max-height: min(200px, 28vh); margin-top: 8px; padding: 10px 12px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken);
+  color: var(--tt-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.thread-start-handover__error { margin: 6px 0 0; color: var(--tt-error-text); font-size: 13px; line-height: 1.45; }
+
+/* Continue as a thread, in an agent's row of the Agents roster: the press, then the form it opens in place. */
+.agent-continue { margin-top: 10px; }
+.agent-continue__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.agent-continue__why { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.agent-continue__form { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.agent-continue__form[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); }
+.agent-continue__form h4 { margin: 0 0 4px; color: var(--tt-text); font-size: 13.5px; font-weight: 600; }
+.agent-continue__form p { margin: 0 0 6px; }
+.agent-continue__form[data-tone='error'] p { color: var(--tt-error-text); }
+.agent-continue__choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.agent-continue__choices .tt-select { width: auto; min-width: 0; max-width: 100%; }
+.agent-continue__where { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 13px; }
+.agent-continue__fine { color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
+.agent-continue__error { margin: 6px 0 0; color: var(--tt-error-text); font-size: 13px; line-height: 1.45; }
+
+/* Fork from here, in the transcript (#1028, E5b): the press under a reply, its card, and what the fork does not carry. */
+.thread-message__fork { position: absolute; right: 0; bottom: 0; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+.thread-message__fork:hover, .thread-message__fork[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.thread-message__fork[aria-disabled='true'] { cursor: default; }
+.thread-message:has(> .thread-message__fork) { padding-bottom: 30px; }
+.thread-message:hover .thread-message__fork, .thread-message:focus-within .thread-message__fork, .thread-message__fork[aria-expanded='true'] { opacity: 1; }
+.fork-card { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.fork-card h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.fork-card p { margin: 0 0 6px; }
+.fork-card__stays { margin: 0 0 12px; padding-left: 14px; border-left: 2px dashed var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.6; }
+.thread-message[data-not-carried] { padding-left: 14px; border-left: 2px dashed var(--tt-hairline); }
+
+@media (prefers-reduced-motion: reduce) { .thread-start-handover__disclose > svg, .thread-message__fork { transition: none; } }

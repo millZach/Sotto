@@ -9,13 +9,9 @@ import { platformCopy } from '../../../../../src/renderer/src/platformCopy'
 import { type HotkeyChangeResult } from '../../../../../src/shared/contracts'
 
 describe('SettingsView', () => {
-  it('does not save or announce unchanged shortcut and numeric fields on blur', async () => {
+  it('does not save or announce unchanged numeric fields on blur', async () => {
     const props = baseProps()
     render(<SettingsView {...props} />)
-    const hotkey = screen.getByRole('textbox', { name: 'Global shortcut' })
-    fireEvent.blur(hotkey)
-    fireEvent.change(hotkey, { target: { value: 'Control+Shift+Space' } })
-    fireEvent.blur(hotkey)
     await selectCategory('Output')
     for (const name of ['Paste delay', 'Success message duration']) {
       const input = screen.getByRole('textbox', { name })
@@ -102,66 +98,19 @@ describe('SettingsView', () => {
     expect(delay).toHaveValue('275')
   })
 
-  it('rolls back a conflicting hotkey with a specialized finite message', async () => {
+  it('records a new shortcut, keeps the old one on conflict and follows newer settings', async () => {
     const user = userEvent.setup()
-    const replace = vi.fn(async () => ({ ok: false as const, reason: 'conflict' as const }))
-    render(<SettingsView {...baseProps({ onReplaceHotkey: replace })} />)
-    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
-    await user.clear(input)
-    await user.type(input, 'Ctrl+Alt+Space')
-    await user.tab()
-    expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+Space')
-    expect(input).toHaveValue('Ctrl+Shift+Space')
-    expect(screen.getByRole('alert')).toHaveTextContent(/another application is already using/i)
-  })
-
-  it('shows Windows-friendly shortcut text and translates edits to Electron canonical form', async () => {
-    const user = userEvent.setup()
-    const replace = vi.fn(async () => ({ ok: true as const }))
-    render(<SettingsView {...baseProps({ onReplaceHotkey: replace })} />)
-    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
-
-    expect(input).toHaveValue('Ctrl+Shift+Space')
-    expect(input).not.toHaveValue(expect.stringContaining('CommandOrControl'))
-    await user.clear(input)
-    await user.type(input, 'Ctrl+Alt+M')
-    await user.tab()
-
-    expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+M')
-  })
-
-  it('rolls a delayed hotkey conflict back to the newest authoritative shortcut', async () => {
-    const user = userEvent.setup()
-    let resolve!: (result: HotkeyChangeResult) => void
-    const replace = vi.fn(() => { const pending = deferred<HotkeyChangeResult>(); resolve = pending.resolve; return pending.promise })
+    const replace = vi.fn(async (): Promise<HotkeyChangeResult> => ({ ok: false, reason: 'conflict' }))
     const props = baseProps({ onReplaceHotkey: replace })
     const rendered = render(<SettingsView {...props} />)
-    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
-    await user.clear(input)
-    await user.type(input, 'Ctrl+Alt+Space')
-    await user.tab()
-    rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, hotkey: 'Ctrl+Shift+M' }} />)
-    resolve({ ok: false, reason: 'conflict' })
-    await waitFor(() => expect(input).toHaveValue('Ctrl+Shift+M'))
-  })
-
-  it('does not let an older hotkey result clobber a newer draft, but accepts newer external authority', async () => {
-    const user = userEvent.setup()
-    const pending = deferred<HotkeyChangeResult>()
-    const props = baseProps({ onReplaceHotkey: vi.fn(() => pending.promise) })
-    const rendered = render(<SettingsView {...props} />)
-    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
-    await user.clear(input)
-    await user.type(input, 'Ctrl+Alt+Space')
-    await user.tab()
-    await user.clear(input)
-    await user.type(input, 'Ctrl+Shift+N')
-    rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, hotkey: 'Ctrl+Alt+Space' }} />)
-    pending.resolve({ ok: false, reason: 'conflict' })
-    await act(async () => undefined)
-    expect(input).toHaveValue('Ctrl+Shift+N')
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))
+    for (const code of ['ControlLeft', 'AltLeft', 'KeyM']) fireEvent.keyDown(window, { code, key: code })
+    fireEvent.keyUp(window, { code: 'KeyM', key: 'm' })
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+M'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Another app already uses Ctrl + Alt + M. Ctrl + Shift + Space still works.')
+    expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toBeVisible()
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, hotkey: 'Alt+M' }} />)
-    expect(input).toHaveValue('Alt+M')
+    expect(screen.getByRole('button', { name: 'Change shortcut, Alt M' })).toBeVisible()
   })
 
   it('rejects invalid numeric drafts before IPC and enforces documented bounds', async () => {
@@ -180,6 +129,25 @@ describe('SettingsView', () => {
     await user.type(duration, 'not a number')
     await user.tab()
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('saves Typing speed under Dictation, which the Dictate room counts time saved against, within 10 to 150 (#1293)', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Dictation')
+    const speed = screen.getByRole('textbox', { name: 'Typing speed' })
+    expect(speed).toHaveValue('40')
+    expect(screen.getByText(/The Dictate room counts the time dictation saves you against it/)).toBeVisible()
+    await user.clear(speed)
+    await user.type(speed, '9')
+    await user.tab()
+    expect(update).not.toHaveBeenCalled()
+    expect(screen.getByText('Enter a whole number between 10 and 150.')).toBeVisible()
+    await user.clear(speed)
+    await user.type(speed, '72')
+    await user.tab()
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ typingSpeedWpm: 72 }))
   })
 
   it('does not let an older numeric save clobber a newer draft, but accepts newer external authority', async () => {
@@ -270,7 +238,7 @@ describe('SettingsView', () => {
     await user.click(screen.getByRole('switch', { name: 'Whitespace formatting' }))
     await selectCategory('Application')
     await user.click(screen.getByRole('switch', { name: 'Start minimized' }))
-    expect(screen.getByText('Saves transcripts on this computer to search and reuse. Turning it off deletes saved checkpoints right away.')).toBeInTheDocument()
+    expect(screen.getByText("Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away.")).toBeInTheDocument()
     await user.click(screen.getByRole('switch', { name: 'Keep local history' }))
     expect(update).toHaveBeenCalledWith({ reducedMotion: 'on' })
     expect(update).toHaveBeenCalledWith({ maxRecordingSeconds: 120 })
@@ -280,7 +248,7 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ historyEnabled: false })
   })
 
-  it('renders the macOS copy row and canonicalizes shortcuts through the darwin aliases', async () => {
+  it('renders the macOS copy row and records shortcuts with the darwin modifiers', async () => {
     const user = userEvent.setup()
     const macCopy = platformCopy('darwin')
     const replace = vi.fn(async () => ({ ok: true as const }))
@@ -294,15 +262,12 @@ describe('SettingsView', () => {
     expect(screen.getByText(macCopy.settingsAutoPasteDescription)).toBeVisible()
     await selectCategory('Dictation')
     expect(screen.getByRole('option', { name: macCopy.settingsMicrophoneDefaultOption })).toBeVisible()
-    expect(screen.getByText(macCopy.settingsGlobalShortcutDescription)).toBeVisible()
 
-    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
-    expect(input).toHaveValue('Command+Shift+Space')
-    await user.clear(input)
-    await user.type(input, 'Control+Shift+Space')
-    await user.tab()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Command Shift Space' }))
+    for (const code of ['ControlLeft', 'ShiftLeft', 'Space']) fireEvent.keyDown(window, { code, key: code })
+    fireEvent.keyUp(window, { code: 'Space', key: ' ' })
 
-    expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('Control+Shift+Space'))
   })
 })
 

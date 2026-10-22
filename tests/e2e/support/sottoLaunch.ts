@@ -182,7 +182,7 @@ export async function completeFirstRunSetup(page: Page, options: FirstRunSetupOp
 /**
  * Opens the Threads page from wherever the window happens to be. Sotto now
  * opens on Threads, so the common case is that the workspace is already there and
- * nothing is clicked. The sidebar alone also appears beside Dictate, History and Help.
+ * nothing is clicked. The sidebar alone also appears beside Dictate and Help.
  * Otherwise the page is reached through the footer link on
  * the pages that still have a footer, and through the Dictate/Threads switch on
  * the pages that do not.
@@ -200,7 +200,7 @@ export async function openThreads(page: Page): Promise<void> {
 }
 
 /** The pages a spec can reach by name; Dictate is a switch tab rather than a link. */
-export type SottoPageName = 'History' | 'Memory' | 'Settings' | 'Help' | 'Dictate'
+export type SottoPageName = 'Memory' | 'Settings' | 'Help' | 'Dictate'
 
 /**
  * Opens one of the named pages. The sidebar foot on Threads and the footer on
@@ -213,6 +213,14 @@ export async function openPage(page: Page, name: SottoPageName): Promise<void> {
     return
   }
   await page.getByRole('link', { name, exact: true }).click()
+}
+
+/** Opens the newest transcript in the Dictate room's Journal from the keyboard, the way a row opens in place. */
+export async function openJournalRow(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: /^Transcript from/ }).first()
+  await toggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 }
 
 /**

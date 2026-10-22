@@ -311,6 +311,11 @@ export interface NativeRuntimeDependencies {
   readonly registerIpc: () => () => void
   readonly publishIdleWidgetState?: (settings: AppSettings) => Promise<void>
   readonly dictationCommands?: { start(): Promise<void>; dispose(): void }
+  /** Extra press and hold shortcuts; startup applies them leniently, skipping any that fail. */
+  readonly dictationShortcuts?: {
+    apply(set: { press: readonly string[]; hold: readonly string[] }, mode: 'lenient'): unknown
+    dispose(): void
+  }
   readonly log: (code: NativeRuntimeDiagnostic) => void
 }
 
@@ -414,6 +419,10 @@ export class NativeRuntimeController implements RuntimeController {
     this.runTeardownStep(protocolCleanup, 'native-protocol-cleanup-failed')
     this.runTeardownStep(permissionCleanup, 'native-permission-cleanup-failed')
     this.runTeardownStep(
+      () => this.dependencies.dictationShortcuts?.dispose(),
+      'native-hotkey-cleanup-failed',
+    )
+    this.runTeardownStep(
       () => this.dependencies.hotkeys.dispose(),
       'native-hotkey-cleanup-failed',
     )
@@ -436,6 +445,11 @@ export class NativeRuntimeController implements RuntimeController {
       this.dependencies.log('native-hotkey-registration-failed')
       this.assertRunning()
     }
+    this.dependencies.dictationShortcuts?.apply(
+      { press: [settings.hotkey, ...settings.pressShortcuts], hold: settings.holdShortcuts },
+      'lenient',
+    )
+    this.assertRunning()
     this.dependencies.startup.set(settings.launchAtStartup)
     this.assertRunning()
     this.dependencies.tray.update({ dictating: false, autoPaste: settings.autoPaste })

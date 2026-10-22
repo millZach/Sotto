@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
-import type { SpeechModelStatus } from '../../shared/speechModel'
+import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
-import { HistoryView } from './features/history/HistoryView'
 import { UsageView } from './features/usage/UsageView'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { ThreadsTour } from './features/onboarding/ThreadsTour'
@@ -111,20 +110,25 @@ export function applyDocumentPreferences(
  * beside the sidebar, or the corner of a page that owns its window): what this
  * page keeps. Threads has no foot line, so it says nothing here.
  */
-function FooterStatus({ navigation, settings, historyKept, speechModel }: {
+/** The chosen model's name, for the lines that say it is ready; generic until the list says which. */
+function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choice: string | null): string {
+  const chosen = models?.find((model) => model.id === choice)
+  if (chosen !== undefined) return chosen.name
+  if (choice === null) return PARAKEET_V3.name
+  return sottoSpeechModel(choice)?.name ?? 'The speech model'
+}
+
+function FooterStatus({ navigation, speechModel, speechModelName }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
-  readonly settings: AppSettings
   readonly speechModel: SpeechModelStatus | null
-  /** Whether History still holds transcripts the user could clear. */
-  readonly historyKept: boolean
+  readonly speechModelName: string
 }): ReactNode {
   switch (navigation) {
-    case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'usage': return 'Numeric usage stays on each computer.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: return speechModelSummary(speechModel)
+    default: return speechModelSummary(speechModel, speechModelName)
   }
 }
 
@@ -134,14 +138,26 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const usageEnabled = useOwlFeature('usage')
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
+  // Set when main refused the last choice, so the picker can say why nothing changed.
+  const [speechModelRefused, setSpeechModelRefused] = useState(false)
+  const chooseSpeechModel = useCallback((id: string): void => {
+    setSpeechModelRefused(false)
+    void app.actions.chooseSpeechModel(id).then(chosen => { setSpeechModelRefused(!chosen) })
+  }, [app.actions])
+  // The models on this computer can change while Sotto runs (another app downloads or deletes one),
+  // so the list is read again whenever a page that offers them opens.
+  const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || app.navigation === 'settings'
+  useEffect(() => {
+    if (offersSpeechModels) void app.actions.refreshSpeechModels()
+  }, [offersSpeechModels, app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
-  const [historyQuery, setHistoryQuery] = useState('')
-  const [historyClearOpen, setHistoryClearOpen] = useState(false)
+  // The Journal's search outlives the room, so leaving Dictate and coming back finds it as it was.
+  const [journalQuery, setJournalQuery] = useState('')
   // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
   const [threadsTour, setThreadsTour] = useState(false)
-  const [historySearchRequest, setHistorySearchRequest] = useState(0)
+  const [journalSearchRequest, setJournalSearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
   const microphoneMountedRef = useRef(false)
@@ -217,16 +233,17 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       if (!app.settings?.onboardingComplete || document.querySelector('dialog[open], [role="dialog"]')) return
       if (event.key.toLowerCase() !== 'k' || !(app.platform === 'darwin' ? event.metaKey : event.ctrlKey)) return
       event.preventDefault()
-      app.actions.navigate('history')
-      setHistorySearchRequest(value => value + 1)
+      // Ctrl+K (Cmd+K on macOS) opens the Dictate room on the Journal's search.
+      app.actions.navigate('home')
+      setJournalSearchRequest(value => value + 1)
     }
     window.addEventListener('keydown', search)
     return () => window.removeEventListener('keydown', search)
   }, [app.actions, app.platform, app.settings?.onboardingComplete])
 
   useEffect(() => {
-    if (historySearchRequest > 0 && app.navigation === 'history') document.querySelector<HTMLInputElement>('.history-find__input')?.focus()
-  }, [historySearchRequest, app.navigation])
+    if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
+  }, [journalSearchRequest, app.navigation])
 
   const releaseMicrophone = useCallback((controller: MicrophoneTestController): Promise<void> => {
     const existing = microphoneReleasesRef.current.get(controller)
@@ -357,8 +374,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           microphoneLevel={microphoneLevel}
           settings={app.settings}
           onUpdateSettings={app.actions.updateSettings}
+          speechModels={app.speechModels}
+          speechModelChoice={app.speechModelChoice}
           speechModel={app.speechModel}
-          onDownloadSpeechModel={downloadSpeechModel}
+          onChooseSpeechModel={chooseSpeechModel}
+          speechModelRefused={speechModelRefused}
+          onRetrySpeechModel={downloadSpeechModel}
           shortcut={app.settings.hotkey}
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
@@ -387,7 +408,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} settings={app.settings} speechModel={app.speechModel} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
+    const statusText = <FooterStatus navigation={navigation} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} />
+    // An end-to-end run counts the Journal's days from the instant its dictations are stamped near.
+    const journalNow = window.sottoE2E === undefined ? undefined : E2E_THREADS_NOW
     const threadWorkspace = (
       <ThreadWorkspace
         updateControl={updateControl}
@@ -406,22 +429,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       case 'watcher':
         view = watcherPage ? <WatcherView updateControl={updateControl} now={captureNow} /> : threadWorkspace
         break
-      case 'history':
-        view = <HistoryView
-          entries={app.history}
-          enabled={app.settings.historyEnabled}
-          status={app.historyStatus}
-          query={historyQuery}
-          onQueryChange={setHistoryQuery}
-          clearOpen={historyClearOpen}
-          onClearOpenChange={setHistoryClearOpen}
-          onOpenDictate={() => app.actions.navigate('home')}
-          onOpenSettings={() => app.actions.navigate('settings')}
-          onCopy={app.actions.copyHistory}
-          onDelete={app.actions.deleteHistory}
-          onClear={app.actions.clearHistory}
-        />
-        break
       case 'usage':
         view = usageEnabled ? <UsageView /> : threadWorkspace
         break
@@ -435,12 +442,16 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
+          onReplaceDictationShortcuts={app.actions.replaceDictationShortcuts}
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
           onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
           speechModel={app.speechModel}
           onDownloadSpeechModel={downloadSpeechModel}
+          speechModels={app.speechModels}
+          onChooseSpeechModel={chooseSpeechModel}
+          speechModelRefused={speechModelRefused}
           onCheckForUpdates={updateFlow.check}
           onDownloadUpdate={updateFlow.download}
           // The press opens the same confirmation the footer control uses; the
@@ -449,15 +460,17 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
+        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
         view = <DictateRoom
           settings={app.settings}
           speechModel={app.speechModel}
+          speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
           entries={app.history}
+          records={app.dictationRecords}
           recovery={app.dictationRecovery}
           onDismissRecovery={app.actions.dismissDictationRecovery}
           historyStatus={app.historyStatus}
@@ -467,6 +480,11 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onDismiss={app.actions.dismiss}
           onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
+          onDelete={app.actions.deleteHistory}
+          onClear={app.actions.clearHistory}
+          query={journalQuery}
+          onQueryChange={setJournalQuery}
+          now={journalNow}
         />
     }
 

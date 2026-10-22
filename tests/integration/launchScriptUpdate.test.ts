@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { describe, afterEach, expect, it, vi } from 'vitest'
-import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
 
 /**
@@ -83,6 +83,14 @@ it('downloads, checks and installs a version beside a flat install, then restart
   expect(await readdir(join(configuration.installPath, 'versions', '.incoming'))).toEqual([])
   expect(await pointer(configuration)).toBeNull()
   expect(alive(old.pid as number)).toBe(true)
+  // Lock folders a removal moved aside: one whose remover was killed before it removed it goes when versions are pruned,
+  // and one whose remover still runs stays.
+  const killed = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => killed.once('exit', resolve))
+  const versions = join(configuration.installPath, 'versions')
+  const leftBy = (pid: number): string => `.update-lock.${pid}.0b6c1c51-4c54-4a39-9a3a-1f0e1c2d3e4f.removing`
+  await mkdir(join(versions, leftBy(killed.pid!)))
+  await mkdir(join(versions, leftBy(process.pid)))
 
   const restarted = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW })
   const ready = last(restarted)
@@ -97,7 +105,8 @@ it('downloads, checks and installs a version beside a flat install, then restart
   await expect(readFile(join(configuration.installPath, 'host', 'index.js'), 'utf8')).resolves.toBeTruthy()
   expect(await launch(configuration)).toMatchObject({ owned: true, pid: ready.pid })
   // No update lock is left behind.
-  expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+  expect(await readdir(versions)).toEqual(expect.not.arrayContaining(['.update-lock', leftBy(killed.pid!)]))
+  expect(await readdir(versions)).toEqual(expect.arrayContaining([leftBy(process.pid)]))
 })
 
 it('receives and installs a full Owl archive, reuses identical retries and never replaces different published version files', async () => {
@@ -184,6 +193,98 @@ it('starts the old version again, and points back at it, when the new one does n
   expect(running.entry).toBe(join(configuration.installPath, 'host', 'index.js'))
   // A flat install has no pointer, and none is left pointing at the version that failed.
   expect(await pointer(configuration)).toBeNull()
+})
+
+describe('a restart a host asked for over its own socket (ADR-0088)', () => {
+  const statusOf = (configuration: Configuration): Promise<unknown> =>
+    readFile(join(configuration.dataDirectory, 'host-update-status.json'), 'utf8').then(text => JSON.parse(text) as unknown, () => null)
+  const resultFileOf = (configuration: Configuration): string => join(configuration.dataDirectory, 'host-update-status.json')
+  async function installNew(configuration: Configuration, entry: string): Promise<void> {
+    const archive = tarGz(hostRelease(NEW, entry))
+    expect(last(await receive(configuration, FILE, archive))).toMatchObject({ type: 'update-received' })
+    expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(archive) }))).toMatchObject({ type: 'update-installed' })
+  }
+
+  const ATTEMPT = 'a1b2c3d4e5f60718'
+  it('writes why it stopped before touching anything, and how a restart that went ahead ended', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    const resultFile = resultFileOf(configuration)
+    // Not installed yet: refused before anything was touched, and the file says so.
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: 'f'.repeat(16) }))).toEqual({ type: 'error', reason: 'update-missing' })
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: 'f'.repeat(16), version: NEW, state: 'finished', result: { type: 'error', reason: 'update-missing' } })
+    await rm(resultFile)
+    await installNew(configuration, await fakeHost())
+    // The host that asked has already answered its desktop, so the restart goes ahead without waiting, and tidies the mark away.
+    const answered = `${resultFile}.${ATTEMPT}.answered`
+    await writeFile(answered, '')
+    const ready = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT, answerWaitMs: 60_000 }))
+    hosts.push(ready.pid as number)
+    expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
+    // Only what the desktop reads of the result is kept.
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: ready.pid } })
+    expect(alive(old.pid as number)).toBe(false)
+    expect(await pointer(configuration)).toBe(`${NEW}\n`)
+    await expect(readFile(answered)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('stops without touching anything once the host that asked has given up and claimed the attempt', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    await installNew(configuration, await fakeHost())
+    const resultFile = resultFileOf(configuration)
+    await writeFile(`${resultFile}.${ATTEMPT}.claim`, 'host')
+    const abandoned = JSON.stringify({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }) + '\n'
+    await writeFile(resultFile, abandoned)
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(await readFile(resultFile, 'utf8')).toBe(abandoned)
+    // Even with the status file gone, as a later attempt clears it, the claim still stops this attempt.
+    await rm(resultFile)
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    await expect(readFile(resultFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(alive(old.pid as number)).toBe(true)
+    expect(await pointer(configuration)).toBeNull()
+    expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+  })
+
+  it('does not go ahead when it cannot write that it has passed its checks', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    await installNew(configuration, await fakeHost())
+    const resultFile = resultFileOf(configuration)
+    // A folder where the status file goes: the status cannot be written there.
+    await mkdir(resultFile, { recursive: true })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(alive(old.pid as number)).toBe(true)
+    expect(await pointer(configuration)).toBeNull()
+    expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+  })
+
+  it('records a rollback, and writes nothing to a file outside the data folder or without an attempt', async () => {
+    const configuration = await fixture()
+    await launch(configuration)
+    await installNew(configuration, 'process.exit(1)\n')
+    const outside = join(configuration.directory, 'status.json')
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: outside, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'update-missing' })
+    await expect(readFile(outside)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: resultFileOf(configuration) }))).toEqual({ type: 'error', reason: 'update-missing' })
+    expect(await statusOf(configuration)).toBeNull()
+    // No host says it answered, as when the host that asked has gone: the restart waits its whole few seconds, as it would
+    // for a host, then goes ahead anyway.
+    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile: resultFileOf(configuration), attempt: ATTEMPT }))
+    hosts.push((await descriptor(configuration)).pid)
+    expect(restarted).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } })
+  })
+
+  it('reads its configuration as its last argument when it runs as a file, as it does in a transient unit', async () => {
+    const configuration = await fixture()
+    const script = join(configuration.directory, 'host-update-restart.cjs')
+    await writeFile(script, LAUNCH_SCRIPT_SOURCE)
+    const child = spawn(process.execPath, [script, JSON.stringify({ ...configuration, op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) })], { shell: false, windowsHide: true })
+    children.push(child)
+    expect(last(await collect(child))).toEqual({ type: 'error', reason: 'update-missing' })
+  })
 })
 
 it('restarts from one installed version to the next and keeps only the running one and the one before it', async () => {
@@ -290,17 +391,78 @@ it('installs and restarts one update at a time in a folder, and takes over a loc
   expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-missing' })
 })
 
-it('downloads without the lock, so a cancelled download still finishing never holds up the next update', async () => {
+it('leaves exactly one owner when several updates take over the same stale lock at once', async () => {
+  const configuration = await fixture()
+  // A releases page that never answers: whichever update owns the lock waits in its download, holding it.
+  let requests = 0
+  const silent = createServer(() => { requests++ })
+  await new Promise<void>(done => silent.listen(0, '127.0.0.1', done))
+  pages.push({ close: () => new Promise(done => { silent.closeAllConnections(); silent.close(() => done()) }) })
+  const releasesUrl = `http://127.0.0.1:${(silent.address() as { port: number }).port}`
+  const lock = join(configuration.installPath, 'versions', '.update-lock')
+  // The lock of an update whose process has gone.
+  const gone = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => gone.once('exit', resolve))
+  await mkdir(lock, { recursive: true }); await writeFile(join(lock, 'pid'), String(gone.pid))
+  for (let round = 0; round < 4; round++) {
+    requests = 0
+    const contenders = Array.from({ length: 4 }, () => launchScriptChild({ ...configuration, op: 'update-fetch', version: NEW, releasesUrl }, undefined, child => children.push(child)))
+    const outcomes = contenders.map(child => collect(child))
+    // All but one find the lock held; the one that owns it waits in its download. Each update's own answer is compared, so
+    // a failure says whether two owned the lock or one ended some other way.
+    await vi.waitFor(async () => {
+      const ends = await Promise.all(contenders.map(async (child, index) => child.exitCode === null ? 'running' : String(last(await outcomes[index]!).reason)))
+      expect(ends.sort()).toEqual(['running', 'update-busy', 'update-busy', 'update-busy'])
+      expect(requests).toBe(1)
+    }, { timeout: 30_000, interval: 50 })
+    const owner = contenders.find(child => child.exitCode === null)!
+    expect(Number(await readFile(join(lock, 'pid'), 'utf8'))).toBe(owner.pid)
+    // The owner is killed, as a stopped download is: its lock is stale for the next round.
+    owner.kill()
+    await outcomes[contenders.indexOf(owner)]
+  }
+  expect((await readdir(join(configuration.installPath, 'versions'))).filter(name => name.startsWith('.update-lock.'))).toEqual([])
+})
+
+it('refuses while another update takes over a stale lock, and clears a turn left by one that was killed', async () => {
+  const configuration = await fixture()
+  const install = { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }
+  const versions = join(configuration.installPath, 'versions')
+  const gone = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => gone.once('exit', resolve))
+  const place = async (name: string, pid: number): Promise<void> => {
+    await mkdir(join(versions, name), { recursive: true }); await writeFile(join(versions, name, 'pid'), String(pid))
+  }
+  await place('.update-lock', gone.pid!)
+  // An update in the middle of its turn: the stale lock is its to take over, and it stays as it was.
+  const taking = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore', windowsHide: true })
+  children.push(taking)
+  await new Promise(resolve => taking.once('spawn', resolve))
+  await place('.update-lock.takeover', taking.pid!)
+  expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-busy' })
+  expect(Number(await readFile(join(versions, '.update-lock', 'pid'), 'utf8'))).toBe(gone.pid)
+  // That update is killed partway through its turn: the next one clears the turn, takes the lock over and gives it up after.
+  taking.kill()
+  await vi.waitFor(() => expect(alive(taking.pid!)).toBe(false), { timeout: 30_000 })
+  expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-missing' })
+  expect((await readdir(versions)).filter(name => name.startsWith('.update-lock'))).toEqual([])
+})
+
+it('downloads under the lock, which a download that was stopped gives up to the next update', async () => {
   const configuration = await fixture()
   // A releases page that never answers: the download waits, as one does after Cancel update until it notices.
   const silent = createServer(() => undefined)
   await new Promise<void>(done => silent.listen(0, '127.0.0.1', done))
   pages.push({ close: () => new Promise(done => { silent.closeAllConnections(); silent.close(() => done()) }) })
   const pending = run(configuration, { op: 'update-fetch', version: NEW, releasesUrl: `http://127.0.0.1:${(silent.address() as { port: number }).port}` })
-  await new Promise(resolve => setTimeout(resolve, 300))
-  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }))).toEqual({ type: 'error', reason: 'update-missing' })
+  await vi.waitFor(async () => expect(await readFile(join(configuration.installPath, 'versions', '.update-lock', 'pid'), 'utf8')).toMatch(/^\d+$/u))
+  // An update over SSH, or one a host runs on itself over its socket, waits its turn while the download runs.
+  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }))).toEqual({ type: 'error', reason: 'update-busy' })
+  expect(last(await run(configuration, { op: 'update-fetch', version: NEW, releasesUrl: 'http://127.0.0.1:1' }))).toEqual({ type: 'error', reason: 'update-busy' })
   for (const child of children) if (child.exitCode === null) child.kill()
   await pending
+  // The stopped download's lock names a process that has gone, so the next update takes it over.
+  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }))).toEqual({ type: 'error', reason: 'update-missing' })
 })
 
 it('says another program has the host\'s port when a host with a gone process left its record and cannot start', async () => {

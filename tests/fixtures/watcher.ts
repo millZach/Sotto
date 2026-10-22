@@ -11,7 +11,7 @@ export const centerProject = { hostId: centerHostId, projectId: 'project' }
 const mutation = { requestId: centerRequestId, retryKey: centerRetryKey }
 const receipt = { operationId: centerOperationId, target: centerTarget, requestId: centerRequestId,
   deliveryState: 'accepted', receiptId: 'receipt', cardId: 'card', messageId: 'message' }
-const limits = { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }
+const limits = { promptCount: 1, promptLimit: 4 }
 const state = { status: 'idle', stopped: true, settled: true, backgroundWorkCount: 0, observedAt: centerTime, freshness: 'fresh' }
 const page = { nextCursor: null, observedAt: centerTime, staleHosts: [] }
 const permission = { kind: 'runtime', mode: 'approval-required' }
@@ -38,12 +38,20 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
   list_projects: { input: {}, output: { status: 'ok', projects: [{ target: centerProject, title: 'Project', displayRoot: 'D:/Project',
     workers: [{ provider: 'devin', modelId: 'model', reasoningEfforts: [], defaultPermission: null, permissionComparable: false }],
     controlAvailable: false, readsAvailable: true, readOnlyProfileAvailable: false, freshness: 'fresh' }], ...page } },
+  keep_state: { input: { rules: ['Full test suites run in CI, not on the laptop.'] }, output: { status: 'ok',
+    kept: { decisions: [], rules: ['Full test suites run in CI, not on the laptop.'], issues: [], updatedAt: centerTime } } },
+  read_state: { input: {}, output: { status: 'ok', watching: [{ target: centerTarget, title: 'Worker', waitsOn: 'Its turn to finish.',
+    pullRequests: [{ number: 5, state: 'open', checks: 'passed' }] }], nextCursor: null,
+    mergeQueue: [{ target: centerTarget, title: 'Worker', pullRequest: { number: 5, state: 'open', checks: 'passed' }, checksPassedAt: centerTime }],
+    settlesFinishedThreads: true, pendingSettles: [{ target: centerTarget, title: 'Worker', settlesWhen: 'Its pull request #5 merges or closes.' }],
+    kept: { decisions: ['Merge #4 once CI is green?'], rules: [], issues: [], updatedAt: null },
+    staleNotes: [{ list: 'decisions', index: 0, reasons: ['Names pull request #4, which is merged.'] }], contextTokens: 120_000, compactAtTokens: 400_000 } },
   list_machines: { input: {}, output: { status: 'ok', machines: [
-    { hostId: centerHostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', runningThreads: 1, inFlight: 1, inFlightLimit: 4,
+    { hostId: centerHostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', runningThreads: 1,
       facts: { observedAt: centerTime, os: { family: 'windows', name: 'Windows 11', version: '10.0.26200' }, architecture: 'x64',
         totalMemoryBytes: 34_359_738_368, freeMemoryBytes: 12_884_901_888, logicalCpuCount: 24 } },
     { hostId: '22222222-2222-4222-8222-222222222222', name: 'Older host', thisComputer: false, connected: true, factsState: 'unknown', facts: null,
-      note: 'This machine’s host does not report what kind of machine it is.', runningThreads: null, inFlight: 0, inFlightLimit: 4 }], observedAt: centerTime } },
+      note: 'This machine’s host does not report what kind of machine it is.', runningThreads: null }], observedAt: centerTime } },
   list_working_copies: { input: { project: centerProject }, output: { status: 'ok', project: centerProject, revision: 'choices-1',
     choices: [{ choiceId: 'shared-1', kind: 'shared', branch: 'main', occupied: false, locked: false, limitations: [] }], baseRefs: [{ choiceId: 'base-1', name: 'main' }], ...page } },
   read_operation: { input: { operationId: centerOperationId }, output: { status: 'ok', receipt, limits, action: 'send', state } },

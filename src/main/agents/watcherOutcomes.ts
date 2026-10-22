@@ -17,7 +17,7 @@ export interface WatcherTurnOutcome {
   readonly replyMessageId?: string
 }
 
-interface Turn { readonly anchor: number; readonly turnId: string; status: AgentActivity['status']; readonly steered: boolean
+interface Turn { readonly anchor: number; readonly messageId: string; readonly turnId: string; status: AgentActivity['status']; readonly steered: boolean
   readonly startedAt?: string | undefined; readonly completedAt?: string | undefined; readonly observed: boolean; nativeTurnId?: string }
 
 /**
@@ -31,7 +31,7 @@ function turnsOf(thread: AgentThread, messages: readonly AgentMessage[]): Turn[]
   const turns = new Map<number, Turn>()
   for (const activity of thread.activities ?? []) if (activity.kind === 'turn') {
     const anchor = user(activity.turnId) ?? user(activity.afterMessageId)
-    if (anchor !== undefined) turns.set(anchor, { anchor, turnId: activity.turnId, status: activity.status, steered: activity.steered === true, startedAt: activity.startedAt,
+    if (anchor !== undefined) turns.set(anchor, { anchor, messageId: messages[anchor]!.id, turnId: activity.turnId, status: activity.status, steered: activity.steered === true, startedAt: activity.startedAt,
       completedAt: activity.completedAt, observed: activity.timingSource === 'observed' })
   }
   // The thread's newest turn as its provider reports it, which can be ahead of the activity record. Only an exact match
@@ -41,7 +41,7 @@ function turnsOf(thread: AgentThread, messages: readonly AgentMessage[]): Turn[]
     const anchor = user(last.messageId) ?? user(last.id)
     const known = [...turns.values()].find(turn => turn.turnId === last.id || anchor !== undefined && turn.anchor === anchor)
     if (known && known.anchor === Math.max(...turns.keys())) { known.status = last.status; known.nativeTurnId = last.id }
-    else if (!known && anchor !== undefined && anchor > Math.max(-1, ...turns.keys())) turns.set(anchor, { anchor, turnId: last.id, status: last.status, steered: false, observed: false, nativeTurnId: last.id })
+    else if (!known && anchor !== undefined && anchor > Math.max(-1, ...turns.keys())) turns.set(anchor, { anchor, messageId: messages[anchor]!.id, turnId: last.id, status: last.status, steered: false, observed: false, nativeTurnId: last.id })
   }
   return [...turns.values()].sort((a, b) => a.anchor - b.anchor)
 }
@@ -98,6 +98,9 @@ export function watcherTurnOutcome(operation: Pick<WatcherOperation, 'messageId'
  * whole seconds (Codex), where a shared second says nothing about order, so there the newer turn keeps it.
  */
 function turnOfReply(turns: readonly Turn[], position: number, message: AgentMessage): Turn | undefined {
+  // A live adapter's exact Sotto anchor survives replay and timestamp correction. A missing retained turn does not
+  // permit assigning its reply elsewhere. Older messages without this proof keep the historical timestamp fallback.
+  if (message.turnMessageId !== undefined) return turns.find(turn => turn.messageId === message.turnMessageId)
   const above = turns.filter(turn => turn.anchor < position)
   const written = Date.parse(message.createdAt)
   const at = above.findLastIndex(turn => turn.startedAt === undefined || Number.isNaN(written) || Date.parse(turn.startedAt) <= written)
@@ -106,6 +109,34 @@ function turnOfReply(turns: readonly Turn[], position: number, message: AgentMes
   if (turn.observed && turn.startedAt !== undefined && Date.parse(turn.startedAt) === written && before?.completedAt !== undefined
     && Date.parse(before.completedAt) >= written) return before
   return turn
+}
+
+/**
+ * The reply the thread's newest turn gave, for its news (#1190): its last worker message that belongs to that turn by the
+ * rule outcomes use, so a steer shown above an earlier turn's reply never takes it. Undefined when the newest turn cannot
+ * be placed or wrote nothing.
+ */
+export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | undefined {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), newest = turns.at(-1), last = thread.lastTurn
+  // A newest turn Sotto cannot place is not the newest it placed: it has no reply to give, never an earlier turn's.
+  if (!newest || !last || newest.nativeTurnId !== last.id && newest.turnId !== last.id) return undefined
+  return messages.findLast((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest)
+}
+
+/**
+ * Whether the turn a brief began, by its Sotto anchor, is still the thread's newest (#1190): the newest turn Sotto placed,
+ * and the provider's newest turn is that same turn, by its ID, its native ID or its anchor. A turn the provider started by
+ * itself, as Claude Code does to report background work, has no anchor and is not the brief's. A steer read into the
+ * brief's turn begins none of its own. A brief whose turn cannot be placed reads as newest, so nothing is claimed of it.
+ */
+export function watcherBriefTurnIsNewest(thread: AgentThread, turnMessageId: string): boolean {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), brief = turns.find(turn => turn.messageId === turnMessageId)
+  if (!brief) return true
+  if (turns.at(-1) !== brief) return false
+  const last = thread.lastTurn
+  return !last || last.id === brief.turnId || last.id === brief.nativeTurnId || last.messageId === turnMessageId
 }
 
 /** The newest turn's Sotto anchor, for naming the delegation a turn's news answers. */

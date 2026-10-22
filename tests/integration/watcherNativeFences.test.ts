@@ -94,18 +94,17 @@ it('refunds a native question appearing during preparation before any writer dis
   } finally { gate.release(); await machine }
 }, 60_000)
 
-it('holds capacity for a lost native creation acknowledgement and never creates it twice', async () => {
-  const f = await fixture(2_000); f.settings.watcherInFlightLimit = 2
+it('keeps a lost native creation acknowledgement held as uncertain and never creates it twice', async () => {
+  const f = await fixture(2_000)
   await writeFile(join(f.native.root, 'script.json'), JSON.stringify({ delay: { method: 'thread/start', ms: 3000 }, suppressNotifications: true }))
   const input = { requestId: f.requestId, retryKey: randomUUID(), project: { hostId: f.control.hostId()!, projectId: f.project.id },
     modelId: f.model.id, title: 'Synthetic uncertain creation', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic unsent first prompt' }
   const result = (await f.tools.call(f.id, 'start_thread', input)).structuredContent!
   expect(result).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { deliveryState: 'uncertain' } })
-  expect(f.service.state().inFlight).toBe(2)
+  expect(f.service.startsInFlight()).toBe(2)
   const count = (await f.native.driver.requests()).filter(item => item.method === 'thread/start').length
   expect((await f.tools.call(f.id, 'start_thread', input)).structuredContent).toEqual(result)
   expect((await f.native.driver.requests()).filter(item => item.method === 'thread/start')).toHaveLength(count)
-  expect((await f.tools.call(f.id, 'start_thread', { ...input, retryKey: randomUUID() })).structuredContent).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
 }, 60_000)
 
 it('fences a saved user queue at the native writer when machine Stop arrives during preparation', async () => {
@@ -219,10 +218,11 @@ it.each(['while it is dispatching', 'just after its failure is saved'])('fails a
     if (when === 'while it is dispatching') takeover()
     gate.release()
     await vi.waitFor(() => expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('failed'))
-    expect(f.service.state().watchedThreads.find(item => item.target.threadId === f.target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send')
-    // The first prompt stays counted; the failed queued one is refunded once. The taken-over thread holds no place.
+    // The thread stays watched through the user's instruction.
+    expect(f.service.state().watchedThreads.find(item => item.target.threadId === f.target.threadId)).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
+    // The first prompt stays counted; the failed queued one is refunded once. The thread the user sent to holds no place.
     expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
-    expect(f.control.watcherRecord().reservations).toEqual([]); expect(f.service.state().inFlight).toBe(0)
+    expect(f.control.watcherRecord().reservations).toEqual([]); expect(f.service.startsInFlight()).toBe(0)
     const messageId = f.service.state().receipts.find(item => item.id === operationId)!.messageId; expect(messageId).toBeTruthy()
     expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
     // Were the same message to show up in the thread after all, the send was delivered and takes its refunded prompt back.

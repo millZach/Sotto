@@ -2,11 +2,12 @@ import { z } from 'zod'
 
 import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
 import { WIDGET_ERROR_CODES, type WidgetSnapshot } from './dictation'
-import type { HistoryEntry } from './history'
+import type { DictationRecord } from './dictationRecord'
+import type { FinishedDictation, HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
-import type { SpeechModelStatus } from './speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from './speechModel'
 import type { SottoPlatform } from './platform'
 import { widgetPaletteSchema } from './themeBranding'
 
@@ -160,6 +161,8 @@ export const outputDeliveryRequestSchema = z
     text: z.string().max(200_000),
     autoPaste: z.boolean(),
     pasteDelayMs: z.number().int().min(50).max(1_000),
+    /** Set for a dictation: main reads the delivered app and keeps it for the dictation's record (ADR-0100). */
+    dictationId: z.string().min(1).max(256).optional(),
   })
   .strict()
 
@@ -259,8 +262,8 @@ const updateProblemSchema = z.string().min(1).max(240)
 
 /**
  * One observable step of the update lifecycle. `unsupported` is the honest
- * answer for a development run, an E2E run, and the macOS build, none of which
- * ship an update feed. `failed` is a check that could not be completed; a
+ * answer for a development run, an E2E run, stable on a Mac and Linux, none of
+ * which has an update feed it can take. `failed` is a check that could not be completed; a
  * download or install that fails keeps its phase and carries the failure as
  * `problem`, so the offer (or the installer already on disk) is never lost and
  * the same control simply offers to try again.
@@ -307,9 +310,28 @@ export type UpdateStatus = z.infer<typeof updateStatusSchema>
 export type UnavailableResult = Readonly<{ ok: false; reason: 'unavailable' }>
 export type CommandResult = Readonly<{ ok: true }> | UnavailableResult
 
+/** `message` is Linux's: Sotto's keys are Hyprland bindings, and the row shows why one could not change in Hyprland's own terms. */
 export type HotkeyChangeResult =
   | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable' }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; message?: string | undefined }>
+
+/** Every dictation shortcut at once; `press[0]` is `settings.hotkey`. */
+export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[] }>
+
+/** A refused change names the chord that failed when one did; the previous shortcuts stay in force. */
+export type DictationShortcutsResult =
+  | Readonly<{ ok: true }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string | undefined; message?: string | undefined }>
+
+/** `unsupported-key`: a key outside the shortcut table was pressed, so no chord was taken. */
+export type KeyRecordResult =
+  | Readonly<{ kind: 'recorded'; chord: string }>
+  | Readonly<{ kind: 'cancelled' }>
+  | Readonly<{ kind: 'unsupported-key' }>
+  | Readonly<{ kind: 'unavailable' }>
+
+/** The key listener's standing: macOS Input Monitoring granted or denied; `not-needed` while nothing needs it or where no grant exists (Windows); `unsupported` where the listener cannot run. */
+export type KeyListenerPermission = 'granted' | 'denied' | 'not-needed' | 'unsupported'
 
 export type DictationCommand = Readonly<{
   /** `cancel` stops work in progress; `dismiss` clears an error and a kept recording; `retry` sends it again. */
@@ -333,6 +355,12 @@ export interface SottoBridge {
   readonly usage?: import('./usageDashboard').UsageBridge
   /** Delegation between threads (ADR-0081), present only while the Owl list turns it on. */
   readonly delegations?: import('./delegation').DelegationsBridge
+  /** Continuing a thread on another provider (ADR-0089), present only while the Owl list turns it on. */
+  readonly continueThread?: import('./continueThread').ContinueBridge
+  /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
+  readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
+  /** Main's watch on itself and Record a minute (ADR-0098), present only while the `main-freeze` Owl feature is on. */
+  readonly mainActivity?: import('./mainActivity').MainActivityBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
   readonly watcher?: import('./watcherRoom').WatcherBridge
@@ -361,13 +389,33 @@ export interface SottoBridge {
   onSettingsChanged(listener: (settings: AppSettings) => void): Unsubscribe
 
   listHistory(): Promise<HistoryEntry[]>
-  addHistory(entry: HistoryEntry): Promise<HistoryEntry[]>
+  /** Reports a finished dictation. Main keeps its record, and its transcript while Keep local history is on. */
+  addHistory(entry: FinishedDictation): Promise<HistoryEntry[]>
   searchHistory(query: string): Promise<HistoryEntry[]>
   deleteHistory(id: string): Promise<boolean>
   clearHistory(): Promise<void>
+  /** Every dictation record, newest first (ADR-0100): numbers and the delivered app, never text. */
+  listDictationRecords(): Promise<DictationRecord[]>
+  /** One dictation's record, or null when it has none; read after a dictation instead of every record again. */
+  getDictationRecord(id: string): Promise<DictationRecord | null>
 
   getHotkey(): Promise<string | null>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
+  /** Owl feature `dictation-hold-shortcuts`: replaces every dictation shortcut at once. */
+  replaceDictationShortcuts?(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
+  /** While Settings records a shortcut, every dictation shortcut stands down so the keys reach the recorder; main resumes them after 60 s regardless. */
+  suspendDictationShortcuts?(suspended: boolean): Promise<CommandResult>
+  /** Windows and macOS with the Owl feature on: records one chord through the key listener, Fn and the Win key included. */
+  recordDictationKeys?(): Promise<KeyRecordResult>
+  cancelDictationKeyRecord?(): Promise<CommandResult>
+  /** The keys held during a recording, as chord tokens. */
+  onDictationKeysHeld?(listener: (tokens: readonly string[]) => void): Unsubscribe
+  /** Linux: one of Sotto's own Hyprland bindings fired during a recording, so the keys never reached the page. */
+  onDictationKeysTaken?(listener: (role: 'press' | 'hold') => void): Unsubscribe
+  getKeyListenerPermission?(): Promise<KeyListenerPermission>
+  /** Asks macOS for Input Monitoring and opens its pane in System Settings. */
+  requestKeyListenerPermission?(): Promise<KeyListenerPermission>
+  onKeyListenerPermission?(listener: (permission: KeyListenerPermission) => void): Unsubscribe
 
   requestDictation(command: DictationCommand): Promise<CommandResult>
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe
@@ -383,8 +431,12 @@ export interface SottoBridge {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancelTranscription(requestId: string): Promise<CommandResult>
   getSpeechModelStatus(): Promise<SpeechModelStatus>
-  /** Starts the speech model download, or retries one that failed; progress arrives through onSpeechModelStatus. */
+  /** Retries the chosen model (resumes its download or starts it again); progress arrives through onSpeechModelStatus. */
   downloadSpeechModel(): Promise<CommandResult>
+  /** Every model the user can choose on this computer. */
+  listSpeechModels(): Promise<SpeechModelOption[]>
+  /** Makes a model the one dictation uses; refused for an id that is not on the list. */
+  chooseSpeechModel(id: string): Promise<CommandResult>
   onSpeechModelStatus(listener: (status: SpeechModelStatus) => void): Unsubscribe
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** Asks the operating system for the microphone before Chromium captures. */

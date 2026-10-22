@@ -14,11 +14,19 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import { devinFixture } from '../fixtures/devinFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { opencodeFixture } from '../fixtures/fakeOpenCodeFixture'
 import { callVisualize } from '../fixtures/visualToolCall'
+import { headerList } from '../fixtures/mcpHeaders'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
-const factories: [ProviderId, () => Promise<AdapterFixture>][] = [['codex', codexFixture], ['claude', claudeFixture], ['grok', grokFixture], ['devin', devinFixture]]
+const factories: [ProviderId, () => Promise<AdapterFixture>][] = [['codex', codexFixture], ['claude', claudeFixture], ['grok', grokFixture], ['devin', devinFixture], ['opencode', () => opencodeFixture()]]
+/** What OpenCode's thread server was given for one of Sotto's servers: it is added beside the thread's start, so it is waited for. */
+async function opencodeGiven(fixture: AdapterFixture, name: string, after = 0): Promise<{ url: string; headers: Record<string, string>; codemode?: boolean }> {
+  let found: { config: { url: string; headers: Record<string, string>; codemode?: boolean } } | undefined
+  await expect.poll(async () => { found = (await fixture.driver.requests()).slice(after).find(record => record.method === 'experimental.mcp.add' && record.params?.server === name)?.params as typeof found; return found !== undefined }).toBe(true)
+  return found!.config
+}
 describe.each(factories)('%s shared browser transport', (provider, factory) => {
   it('injects browser tools into the native thread and binds admission to the Sotto ID', async () => {
     const fixture = await factory(); cleanup.push(fixture.cleanup)
@@ -32,18 +40,9 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: fixture.projectId, title: 'Project', path: fixture.root })
     const threadId = randomUUID()
     expect(await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: fixture.projectId, title: 'Browser check', modelId: fixture.modelId })).toMatchObject({ accepted: true })
-    if (provider === 'devin') {
-      // The pinned native client ignores ACP-supplied MCP servers. Never mint credentials
-      // or relax its native integration policy based only on a passing fixture.
-      expect(mcpServer).not.toHaveBeenCalled()
-      const sessions = (await fixture.driver.requests()).filter(record => record.method === 'session/new')
-      expect(sessions.length).toBeGreaterThan(0)
-      expect(sessions.every(record => JSON.stringify(record.params?.mcpServers) === '[]')).toBe(true)
-      await registry.flush()
-      return
-    }
     expect(mcpServer).toHaveBeenCalledWith(threadId)
     const endpoint = await server.mcpServer(threadId)
+    if (provider === 'opencode') await opencodeGiven(fixture, 'sotto_browser')
     const records = await fixture.driver.requests()
     let claudeConfig: string | undefined
     if (provider === 'codex') {
@@ -59,6 +58,12 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
       // The browser's own tools carry no native prompt; page actions are Tools' to decide (ADR-0029).
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
       expect(allowed).toEqual(browserToolDefinitions.map(tool => `mcp__sotto_browser__${tool.name}`))
+    } else if (provider === 'opencode') {
+      // A remote MCP server on the thread's own OpenCode server, each tool under its own name and allowed by the
+      // thread's rule set by that name: page actions are Tools' to decide (ADR-0029).
+      expect(await opencodeGiven(fixture, 'sotto_browser')).toEqual({ type: 'remote', url: endpoint.url, headers: { Authorization: endpoint.headers[0]!.value }, oauth: false, codemode: false, timeout: { execution: 360_000 } })
+      const rules = records.find(record => record.method === 'session.create')?.params?.permissions as { action: string; effect: string }[]
+      expect(rules.filter(rule => rule.action.startsWith('sotto_browser_')).map(rule => [rule.action, rule.effect])).toEqual(browserToolDefinitions.map(tool => [`sotto_browser_${tool.name}`, 'allow']))
     } else {
       const servers = records.filter(record => record.method === 'session/new').map(record => record.params?.mcpServers).find(value => Array.isArray(value) && value.length) as unknown[]
       expect(servers).toHaveLength(1)
@@ -85,7 +90,8 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
       expect(await readFile(path, 'utf8')).toContain(renewed.headers[0]!.value)
       host.disconnect(); await (fixture as Awaited<ReturnType<typeof claudeFixture>>).adapter.closed()
       await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
-    } else expect(JSON.stringify(nextRecords.slice(records.length))).toContain(renewed.headers[0]!.value)
+    } else if (provider === 'opencode') expect((await opencodeGiven(fixture, 'sotto_browser', records.length)).headers).toEqual({ Authorization: renewed.headers[0]!.value })
+    else expect(JSON.stringify(nextRecords.slice(records.length))).toContain(renewed.headers[0]!.value)
   })
 })
 
@@ -123,8 +129,8 @@ describe('grok browser admission', () => {
 })
 
 // The visual tool (ADR-0056) rides the same list as the host setup tools: each provider that takes Sotto's tools is given
-// `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin's client
-// ignores supplied servers, and a switch turned off gives new launches nothing.
+// `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin is given it the
+// same way; its asking profiles ask before a call, which the user answers. A switch turned off gives new launches nothing.
 const DIAGRAM = { title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.', highlight: ['A->B'] }] }
 
 describe.each(factories)('%s visual tool', (provider, factory) => {
@@ -146,12 +152,8 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
       return threadId
     }
     const threadId = await create('Visual check')
+    if (provider === 'opencode') await opencodeGiven(fixture, VISUAL_MCP_SERVER)
     const records = await fixture.driver.requests()
-    if (provider === 'devin') {
-      expect(JSON.stringify(records)).not.toContain(VISUAL_MCP_SERVER)
-      await registry.flush()
-      return
-    }
     let given: Pick<ThreadMcpServer, 'url' | 'headers'>
     if (provider === 'codex') {
       const start = records.find(record => record.method === 'thread/start')?.params as { config: { mcp_servers: Record<string, { url: string; default_tools_approval_mode: string; tool_timeout_sec?: number; http_headers: Record<string, string> }> } }
@@ -159,7 +161,7 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
       expect(entry.default_tools_approval_mode).toBe('approve')
       expect(entry.tool_timeout_sec).toBeUndefined()
       expect(Object.keys(start.config.mcp_servers).sort()).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
-      given = { url: entry.url, headers: Object.entries(entry.http_headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.http_headers) }
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch!.params!.frame as { args: string[] }).args
@@ -167,7 +169,15 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
       const entry = config.mcpServers[VISUAL_MCP_SERVER]!
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
       expect(allowed).toEqual([...browserToolDefinitions.map(tool => `mcp__sotto_browser__${tool.name}`), `mcp__${VISUAL_MCP_SERVER}__visualize`])
-      given = { url: entry.url, headers: Object.entries(entry.headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.headers) }
+    } else if (provider === 'opencode') {
+      const names = records.filter(record => record.method === 'experimental.mcp.add').map(record => record.params?.server)
+      expect(names.sort()).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
+      const rules = records.find(record => record.method === 'session.create')?.params?.permissions as { action: string; effect: string }[]
+      expect(rules).toContainEqual({ action: `${VISUAL_MCP_SERVER}_visualize`, resource: '*', effect: 'allow' })
+      const entry = await opencodeGiven(fixture, VISUAL_MCP_SERVER)
+      expect(entry.codemode).toBe(false)
+      given = { url: entry.url, headers: headerList(entry.headers) }
     } else {
       const servers = records.filter(record => record.method === 'session/new').map(record => record.params?.mcpServers as { name: string; type: string; url: string; headers: { name: string; value: string }[] }[]).find(value => value?.length)!
       expect(servers.map(server => server.name)).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
@@ -187,7 +197,12 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
     expect(add).toHaveBeenCalledTimes(1)
     const before = (await fixture.driver.requests()).length
     await create('Visuals off')
-    expect(JSON.stringify((await fixture.driver.requests()).slice(before))).not.toContain(VISUAL_MCP_SERVER)
+    if (provider === 'opencode') {
+      // OpenCode is given its servers beside the start: once the browser's is in, the visual tool would have been too. Its
+      // rule set allows only the browser's tools, so a `visualize` of a project's own server is still asked about.
+      await opencodeGiven(fixture, 'sotto_browser', before)
+      expect((await fixture.driver.requests()).slice(before).filter(record => record.method === 'experimental.mcp.add').map(record => record.params?.server)).toEqual(['sotto_browser'])
+    } else expect(JSON.stringify((await fixture.driver.requests()).slice(before))).not.toContain(VISUAL_MCP_SERVER)
     await registry.flush()
   })
 })

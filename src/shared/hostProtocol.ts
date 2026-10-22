@@ -1,21 +1,24 @@
 import { z } from 'zod'
-import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
+import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
-import { gitPullRequestRequestSchema } from './gitPullRequests'
+import { gitPullRequestRequestSchema, type GitPullRequestReadFailure } from './gitPullRequests'
 import { hostFoldersRequestSchema } from './hostFolders'
 import { fileListRequestSchema, fileRequestSchema } from './files'
 import { gitReviewRequestSchema } from './gitChanges'
 import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { PASTED_CODE_MAX } from './hostProviders'
-import type { AgentActivity } from './agentActivity'
+import { opencodeHostCallSchema } from './opencodeSignIn'
+import type { HeldProviders } from './heldProviders'
+import { agentActivitySchema, type AgentActivity } from './agentActivity'
 import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
-import { providerIdSchema, type ProviderClientUpdate } from './agents'
+import { providerIdSchema, type ProviderClientUpdate, type ProviderId } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
+import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
 
 /**
  * Protocol version 1 is frozen (ADR-0025; every message is listed in docs/host-protocol.md). A later host
@@ -169,14 +172,71 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * reference and, once answered, that turn's reply (ADR-0073). A desktop asks for them; one whose host does not list it reads unknown.
  * `host-facts`: the host answers `host-facts` with its machine's host facts and how many of its threads are running a turn
  * (#1031). Numbers and the system's own name only. Only a desktop is offered it; one whose host does not list it reads unknown.
+ * `watcher-muse`: the host takes Watcher requests from a desktop whose Watcher runs on Muse, whose identity names `muse` as
+ * its provider (ADR-0079, #1039). It adds no request, field or push. A desktop whose Watcher is on Muse reads and directs
+ * no thread on a host that does not list it, and says to update that host.
+ * `thread-starts`: the host takes `continue-agent`, which continues one of a thread's agents as a thread of its own, and
+ * `fork-thread`, which forks a thread at one of its replies (Fork from here), and
+ * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
+ * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
+ * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
+ * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
+ * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
+ * lets it answer, and only by a host Sotto started from a release's own layout.
+ * `provider-opencode`: the host sends OpenCode's provider row, models, projects and threads to a client whose hello accepts
+ * it, and leaves every one of them out of what it sends any other client, whose provider list may not know `opencode` and
+ * would refuse a whole shell that names it (#1107, ADR-0087). A client that does not accept it reads, observes and
+ * commands no OpenCode thread there.
+ * `opencode-sign-in`: the host signs its own Sotto OpenCode in to model sources, and out of them, for the desktop that asks
+ * (`opencode-sign-in`, #1107, ADR-0037). Only a headless host whose OpenCode runs offers it, and only to a desktop.
+ * `activity-bodies`: a desktop that accepts it is sent every activity record in a detail, a detail delta and a `detail`
+ * answer with each body over 2,048 UTF-8 bytes cut, its whole size named in the record's `cut`, and answers
+ * `activity-body` with one whole record (ADR-0025, October 18 amendment). A client that accepts `activity-summaries` too
+ * is sent summaries. Only a desktop is offered it, and the desktop's own phone listener never offers it.
+ * `failure-seen`: every thread in error carries the host's name for its failure (`failureId`) and its recorded reason
+ * (`failureReason`), one that some client has shown or Dismiss all named carries `failureSeen`, and the host takes
+ * `dismiss-failures`, which names each thread with the failure its row showed (ADR-0092). A desktop sends Dismiss all
+ * only to a host that lists it, and says to update any other whose threads it named.
+ * `usage-muse-opencode`: Usage reads and refreshes may name Muse and OpenCode, and their rows come back (October 21, 2026,
+ * ADR-0083). A desktop names neither to a host that does not list it, and a host reads and sends a desktop whose hello does
+ * not accept it only the providers Usage counted before, since that desktop's strict schemas refuse a read naming another.
+ * `watcher-phone-steer`: offered with `watcher-phone` on the Owl desktop's phone listener. A phone that accepts it may send
+ * `watcher-phone-send` with `delivery: 'steer'`, which steers into Watcher's running turn, or queues the message to go next
+ * when Watcher's provider takes no steer or the turn ended first; its page carries `current.steers` and `followups`, the
+ * user's follow-ups waiting for Watcher; and `watcher-phone-remove-followup` takes one out of the queue (#1229).
+ * `client-update-outcomes`: offered with `client-updates`. The host's `check-client-updates` keeps what an update already
+ * run said about a client while it still describes the client (the same version installed, the same release), so a
+ * desktop may ask it to check afresh whatever its readings hold (ADR-0077, October 21 amendment). A host that does not
+ * list it may set those findings aside when it checks.
+ * `agents-view`: the host offers the iPhone's Agents view (ADR-0103) and answers `thread-delegations` with what delegation's
+ * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
+ * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
+ * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies']
+/**
+ * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
+ * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
+ * the host leaves the provider's rows, models, projects and threads out of what it sends that client.
+ */
+export const PROVIDER_HOST_FEATURES = { opencode: 'provider-opencode' } as const satisfies Partial<Record<ProviderId, HostFeature>>
+/** The providers a client's hello does not accept the feature of, which the host leaves out of everything it sends it. */
+export function providersUnknownTo(accepts: readonly string[] | undefined): HeldProviders {
+  return new Set((Object.entries(PROVIDER_HOST_FEATURES) as [ProviderId, HostFeature][]).filter(([, feature]) => !accepts?.includes(feature)).map(([provider]) => provider))
+}
+/**
+ * What a desktop may ask of a host that updates itself (ADR-0088): download and check a release's archive, install it
+ * beside the running version, restart into it, cancel its own download, or read how the last restart went. The client
+ * names a version, and for `install` the archive's name and checksum `fetch` answered; never a URL, a path or any code.
+ */
+export const HOST_UPDATE_REQUEST_ACTIONS = ['fetch', 'install', 'restart', 'cancel', 'outcome'] as const
+export type HostUpdateRequestAction = typeof HOST_UPDATE_REQUEST_ACTIONS[number]
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
@@ -295,6 +355,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('watcher-phone-watch'), request: watcherPhoneWatchSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-unwatch'), request: watcherPhoneWatchSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-send'), request: watcherPhoneSendSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-remove-followup'), request: watcherPhoneRemoveFollowupSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-answer'), request: watcherPhoneAnswerSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-prepare-stop-all') }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-stop-all'), confirmationId: z.uuid() }).strict(),
@@ -304,7 +365,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('shell') }).strict(),
   z.object({ ...base, op: z.literal('detail'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('events'), afterSeq: z.number().int().nonnegative(), threadId: id.optional() }).strict(),
-  z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shown: false`: a desktop whose window is behind another app, minimised or in the tray. Its threads stay observed, so
+   * they keep streaming, but none counts as shown, which reads a finish or sees a failure (ADR-0046, ADR-0092). Sent only
+   * to a host that lists `failure-seen`; absent, the threads are shown, as from every older client and every phone. */
+  z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
   z.object({ ...base, op: z.literal('terminal-approval'), terminalId: z.uuid() }).strict(),
   z.object({ ...base, op: z.literal('observe-terminals'), terminalIds: z.array(z.uuid()).max(64) }).strict(),
   z.object({ ...base, op: z.literal('answer-terminal'), answer: phoneTerminalAnswerSchema }).strict(),
@@ -337,8 +401,15 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
+  /** One activity record whole, for a desktop that was sent it with a cut body; read when its row opens (`activity-bodies`). */
+  z.object({ ...base, op: z.literal('activity-body'), threadId: id, activityId: id }).strict(),
+  /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
+  z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
+  /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
+  z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
+    file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
-  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
+  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(usageProviderIdSchema.options.length).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it
@@ -348,11 +419,19 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('sign-in-read'), signInId: z.uuid() }).strict(),
   z.object({ ...base, op: z.literal('sign-in-code'), signInId: z.uuid(), code: z.string().min(1).max(PASTED_CODE_MAX) }).strict(),
   z.object({ ...base, op: z.literal('sign-in-cancel'), signInId: z.uuid() }).strict(),
+  /** The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107). */
+  z.object({ ...base, op: z.literal('opencode-sign-in'), call: opencodeHostCallSchema }).strict(),
+  /** A thread's delegated threads as delegation's record knows them, for the iPhone's Agents view (`agents-view`, ADR-0103). */
+  z.object({ ...base, op: z.literal('thread-delegations'), threadId: id }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never
 export type HostErrorCode = 'unauthenticated' | 'invalid_request' | 'stale_request' | 'forbidden' | 'unavailable' | 'busy' | 'too_large'
-export interface HostProtocolError { code: HostErrorCode; message: string }
+/**
+ * `reason` says why a `git-pull-request` read was refused `unavailable`, in words of the protocol's own (#1290), for a
+ * client to say what to do next; any other refusal, and a host before it, leaves it out. Older readers ignore it.
+ */
+export interface HostProtocolError { code: HostErrorCode; message: string; reason?: GitPullRequestReadFailure | undefined }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
 export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: PhoneTerminal[] | undefined }
@@ -369,6 +448,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
+  /** Which step a host update this client asked for is on (ADR-0088); only to a client that accepts `host-update`. */
+  | { v: 1; event: 'host-update-step'; step: HostUpdateStep }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
  * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
@@ -424,6 +505,10 @@ const aboutShape = {
 export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
 export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+/** One activity record whole as a host answers `activity-body`, or null when the thread no longer has it. */
+export const hostActivityBodySchema = agentActivitySchema.nullable()
+/** A started thread's handover as a host answers `start-handover`: its words, or null when it has none (#1028). */
+export const hostStartHandoverSchema = z.object({ handover: z.object({ text: z.string() }).strict().nullable() }).strict()
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
 /**
  * The host ID, Sotto version and features a host's health advertises, or null when the host does not speak the
@@ -445,6 +530,7 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),
   z.object({ v: z.literal(1), event: z.literal('answer-receipt'), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }) }),
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
+  z.object({ v: z.literal(1), event: z.literal('host-update-step'), step: z.enum(HOST_UPDATE_STEPS) }),
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
   answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),

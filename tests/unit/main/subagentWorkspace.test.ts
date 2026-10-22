@@ -9,6 +9,8 @@ import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import type { AgentActivity, ObservedAgent } from '../../../src/shared/agentActivity'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import type { SubagentChange } from '../../../src/shared/subagents'
+import { watcherBackgroundWorkCount } from '../../../src/main/agents/watcherWakeUp'
+import { watcherTurnOutcome } from '../../../src/main/agents/watcherOutcomes'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanups.splice(0).reverse()) await close() })
@@ -233,4 +235,34 @@ it.each(['working', 'initializing'])('treats stale %s observations as uncertain 
   f.observe([child({ status, observedAt: '2000-01-01T00:00:00.000Z' })])
   expect((await f.host.subagentPage({ threadId: f.thread.id })).rows[0]?.status).toBe('unknown')
   expect(f.host.workspaceSnapshot().threads[0]?.subagentSummary?.working).toBe(0)
+})
+it('answers a finished Codex turn whose sub-agents all completed, and the turn after it, though the parent wrote to one after it finished (#1261)', async () => {
+  const f = await fixture()
+  const projection = new CodexActivityProjection()
+  const v2 = (id: string, kind: string, name: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: `native-${name}`, agentPath: `/root/${name}` })
+  const at = (seconds: number) => new Date(Date.UTC(2026, 9, 21, 7, 5, seconds)).toISOString()
+  const turn = (id: string, brief: string, reply: string, items: [string, string, string][]) => {
+    f.thread.messages.push({ id: brief, role: 'user', text: 'Synthetic brief', createdAt: at(f.thread.messages.length) })
+    projection.anchor(f.thread, id, brief)
+    projection.turn(f.thread, { id, status: 'inProgress' }, true)
+    f.thread.status = 'running'; f.thread.lastTurn = { id, status: 'running' }
+    f.native.emit()
+    for (const [itemId, kind, name] of items) projection.item(f.thread, v2(itemId, kind, name), { turnId: id, phase: 'completed' })
+    projection.turn(f.thread, { id, status: 'completed' }, true)
+    f.thread.messages.push({ id: reply, role: 'assistant', text: 'Synthetic review', createdAt: at(f.thread.messages.length) })
+    f.thread.status = 'idle'; f.thread.lastTurn = { id, status: 'completed' }
+    f.native.emit()
+    return f.host.workspaceSnapshot().threads.find(thread => thread.id === f.thread.id)!
+  }
+  // Two reviewers: both finish, and the parent sends the second a message after it finished, as Codex's send_message does.
+  const first = turn('root-turn', 'brief', 'review', [
+    ['call-a', 'started', 'safety'], ['call-b', 'started', 'spec'], ['call-c', 'interacted', 'spec'], ['call-d', 'interacted', 'safety'],
+    ['subagent-completed-a', 'completed', 'safety'], ['subagent-completed-b', 'completed', 'spec'], ['call-e', 'interacted', 'spec'],
+  ])
+  expect(first.subagentSummary).toMatchObject({ working: 0, unknown: 0, completed: 2 })
+  expect(watcherBackgroundWorkCount(first)).toBe(0)
+  const briefs = new Set(['brief', 'second-brief'])
+  expect(watcherTurnOutcome({ messageId: 'brief', delivery: 'now' }, first, id => briefs.has(id))).toMatchObject({ outcome: 'answered', replyMessageId: 'review' })
+  const second = turn('second-turn', 'second-brief', 'second-review', [])
+  expect(watcherTurnOutcome({ messageId: 'second-brief', delivery: 'now', outcome: 'working' }, second, id => briefs.has(id))).toMatchObject({ outcome: 'answered', replyMessageId: 'second-review' })
 })

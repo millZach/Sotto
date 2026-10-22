@@ -3,8 +3,8 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
-  isUsageProviderId,
-  type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
+  isUsageProviderId, USAGE_LIMIT_PROVIDERS,
+  type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
   type UsagePromptIdentity, type UsageProviderId,
 } from '../../shared/usageDashboard'
@@ -14,7 +14,8 @@ import { unavailableProviderQuota } from './providerQuota'
 import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
 
-const PROVIDERS: readonly UsageProviderId[] = ['codex', 'claude', 'grok', 'devin']
+/** OpenCode reports no account limits, so it is never asked for any (ADR-0087). */
+const LIMIT_PROVIDERS: readonly UsageLimitProviderId[] = USAGE_LIMIT_PROVIDERS
 const BUFFER_MAX = 4_096
 const FLUSH_MS = 1_000
 const RETRY_MS = 5_000
@@ -39,12 +40,12 @@ export class UsageService implements UsagePromptRecorder {
   private readonly store: Store
   private readonly tokens = new Map<string, UsageTokenObservation>()
   private readonly prompts = new Map<string, PromptWrite>()
-  private readonly quotas = new Map<UsageProviderId, UsageQuotaRead>()
+  private readonly quotas = new Map<UsageLimitProviderId, UsageQuotaRead>()
   private readonly visited = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
-  private readonly refreshing = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
-  private readonly reading = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
+  private readonly refreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
+  private readonly reading = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
   private history: UsageHistoryImporter | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
   private reconcileTimer: ReturnType<typeof setTimeout> | undefined
@@ -278,7 +279,7 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
-    const selected = PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
+    const selected = LIMIT_PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
     return Promise.all(selected.map(async providerId => {
       if (!this.connected.has(providerId)) return unavailableProviderQuota(providerId, 'not-connected')
       if (!this.options.host.readProviderQuota) return unavailableProviderQuota(providerId, 'unsupported')
@@ -303,7 +304,7 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   /** A read answers with the last limits it has once a provider is slow; the reading still lands in the cache. */
-  private async waitForQuota(providerId: UsageProviderId, pending: Promise<UsageQuotaRead>): Promise<UsageQuotaRead> {
+  private async waitForQuota(providerId: UsageLimitProviderId, pending: Promise<UsageQuotaRead>): Promise<UsageQuotaRead> {
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), QUOTA_READ_WAIT_MS); timer.unref?.() })
     try { return await Promise.race([pending, late]) ?? this.quotas.get(providerId) ?? unavailableProviderQuota(providerId, 'not-read') }

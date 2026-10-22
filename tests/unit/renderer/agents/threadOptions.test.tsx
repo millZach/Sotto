@@ -164,6 +164,34 @@ describe('a pending setting', () => {
     expect(chip).toHaveFocus()
   })
 
+  it('leaves the chips open while only a model or an effort has no result, and fixes them for a permission (#1192)', () => {
+    const state = fixture()
+    state.unconfirmedSettings = [{ threadId: 'thread', reasoningEffort: 'low' }]
+    mount(state)
+    // Another choice replaces the one with no result, so neither chip waits on it.
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeEnabled()
+    cleanup()
+    const held = fixture()
+    held.unconfirmedSettings = [{ threadId: 'thread', runtimeMode: 'full-access' }]
+    mount(held)
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeDisabled()
+  })
+
+  it('marks an effort the provider never answered, keeps it pickable, and says what may still run (#1192)', async () => {
+    render(<LiveThread start={fixture()}
+      answer={async (_request, current) => ({ ...current, error: PROVIDER_RESULT_UNCONFIRMED, unconfirmedSettings: [{ threadId: 'thread', reasoningEffort: 'max' }] })} />)
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    fireEvent.click(chip)
+    await act(async () => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: '5' }) })
+    await waitFor(() => expect(chip).toHaveAttribute('data-pending', 'true'))
+    // The chip shows the choice, marked as a pending permission is, and its description says a turn can still run on
+    // the effort before it.
+    expect(chip).toHaveAccessibleDescription(/until it does, a turn can still run on high/i)
+    expect(chip).toBeEnabled()
+  })
+
   it('keeps a choice the provider never answered on the chip, says what comes next, and offers nothing to press', async () => {
     const lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "npm test" stopped with it. The session starts again with the new settings the next time you use the thread.'
     let commit!: (next: AgentState) => void
@@ -214,6 +242,18 @@ describe('a pending setting', () => {
     // The coordinator's busy mark for this thread's own save fixes nothing.
     const busy = { ...start, busyThreadIds: ['thread'] }
     rerender(<ThreadOptions thread={busy.host.threads[0]!} state={busy} command={command} />)
+    for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeEnabled()
+  })
+
+  it('frees the chips once an unconfirmed prompt is set aside, since Sotto never sends it again', () => {
+    const start = fixture(), at = new Date().toISOString()
+    const unconfirmed = { threadId: 'thread', draftId: '00000000-0000-4000-8000-000000000002', status: 'uncertain' as const, createdAt: at, updatedAt: at }
+    const command = vi.fn(() => deferred<AgentState>().promise)
+    const held = { ...start, deliveries: [unconfirmed] }
+    const { rerender } = render(<ThreadOptions thread={held.host.threads[0]!} state={held} command={command} />)
+    for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeDisabled()
+    const setAside = { ...start, deliveries: [{ ...unconfirmed, setAside: true }] }
+    rerender(<ThreadOptions thread={setAside.host.threads[0]!} state={setAside} command={command} />)
     for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeEnabled()
   })
 

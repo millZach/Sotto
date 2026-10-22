@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { watcherDisplayPromptSchema, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
+import { watcherDisplayPromptSchema, watcherResultForHostV1, watcherResultFromHostV1, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
   WATCHER_PROMPT_BYTES_MAX, WATCHER_READ_BYTES_MAX } from '../../../src/shared/watcher'
 import { agentThreadKindSchema } from '../../../src/shared/agents'
 import { watcherPhoneSendSchema } from '../../../src/shared/watcherPhone'
@@ -18,6 +18,19 @@ function withUnknownFields(value: unknown): unknown[] {
 }
 
 describe('closed watcher contracts', () => {
+  it('keeps optional local takeover markers unique, text-free and compatible with older records', () => {
+    const record = watcherRecordFixture(), marker = { target: record.requests[0]!.participants[0]!.target, at: record.requests[0]!.createdAt, lastRequestId: record.requests[0]!.id }
+    expect(watcherRecordSchema.parse(record).localTakeovers).toBeUndefined()
+    expect(watcherRecordSchema.parse({ ...record, localTakeovers: [marker] }).localTakeovers).toEqual([marker])
+    expect(watcherRecordSchema.parse({ ...record, localTakeovers: [{ ...marker, lastRequestId: null }] }).localTakeovers?.[0]?.lastRequestId).toBeNull()
+    const draft = { draftId: record.requests[0]!.id, digest: 'a'.repeat(64), messageId: 'native-user-message' }
+    expect(watcherRecordSchema.parse({ ...record, localTakeovers: [{ ...marker, userDrafts: [draft] }] }).localTakeovers?.[0]?.userDrafts).toEqual([draft])
+    for (const localTakeovers of [[marker, marker], [{ ...marker, at: 'unknown' }], [{ ...marker, lastRequestId: 'unknown' }], [{ ...marker, text: 'private words' }]]) {
+      expect(watcherRecordSchema.safeParse({ ...record, localTakeovers }).success).toBe(false)
+    }
+    expect(watcherRecordSchema.safeParse({ ...record, localTakeovers: [{ ...marker, userDrafts: [draft, draft] }] }).success).toBe(false)
+    expect(watcherRecordSchema.safeParse({ ...record, localTakeovers: [{ ...marker, userDrafts: [{ ...draft, text: 'private words' }] }] }).success).toBe(false)
+  })
   it('retains optional text-free display proofs without changing older request records', () => {
     const record = watcherRecordFixture(), proof = { originalLength: 12, wireDigest: 'a'.repeat(64) }
     expect(watcherRecordSchema.safeParse(record).success).toBe(true)
@@ -41,9 +54,9 @@ describe('closed watcher contracts', () => {
       expect(watcherPhoneSendSchema.safeParse({ ...input, origin: invalid }).success).toBe(false)
     }
   })
-  it('offers exactly the twelve bounded tools', () => {
+  it('offers exactly the fourteen bounded tools', () => {
     expect(Object.keys(watcherToolSchemas)).toEqual(['watch_thread', 'unwatch_thread', 'list_threads', 'read_thread', 'start_thread', 'send_to_thread', 'stop_thread', 'settle_thread',
-      'list_projects', 'list_machines', 'list_working_copies', 'read_operation'])
+      'list_projects', 'keep_state', 'read_state', 'list_machines', 'list_working_copies', 'read_operation'])
   })
   for (const [name, schemas] of Object.entries(watcherToolSchemas)) {
     const fixture = watcherToolFixtures[name as keyof typeof watcherToolFixtures]
@@ -128,5 +141,23 @@ describe('closed watcher contracts', () => {
     expect(watcherRecordSchema.safeParse({ ...record, current: { ...record.current, provider: 'devin' } }).success).toBe(false)
     expect(watcherRecordSchema.safeParse({ ...record, requests: [{ ...record.requests[0], participants: [{ ...record.requests[0]!.participants[0], promptCount: 5 }] }] }).success).toBe(false)
     expect(agentThreadKindSchema.options).toEqual(['project', 'watcher', 'watcher-history'])
+  })
+})
+
+describe('host protocol version 1 and the removed Threads in flight limit (#1183)', () => {
+  const ok = watcherToolFixtures.send_to_thread.output as { limits: Record<string, unknown> }
+  it('reads an older host’s reply, which still carries the limit’s numbers, without them', () => {
+    const older = { ...ok, limits: { ...ok.limits, inFlight: 3, inFlightLimit: 4 } }
+    expect(() => watcherToolSchemas.send_to_thread.output.parse(older)).toThrow()
+    expect(watcherToolSchemas.send_to_thread.output.parse(watcherResultFromHostV1(older))).toEqual(ok)
+  })
+  it('answers a desktop with harmless values for them, and no working threads warning', () => {
+    const answered = watcherResultForHostV1({ ...ok, warning: '11 threads are working. This computer may slow down or use its battery faster.' }) as typeof ok
+    expect(answered).not.toHaveProperty('warning')
+    expect(answered.limits).toEqual({ ...ok.limits, inFlight: 0, inFlightLimit: 8 })
+    expect(watcherToolSchemas.send_to_thread.output.parse(watcherResultFromHostV1(answered))).toEqual(ok)
+    // A refusal has no limits, and passes as it is.
+    const refused = { status: 'refused', code: 'THREAD_BUSY', message: 'Busy.', retryable: true }
+    expect(watcherResultForHostV1(refused)).toEqual(refused)
   })
 })

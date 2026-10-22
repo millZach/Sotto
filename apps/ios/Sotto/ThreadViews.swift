@@ -19,6 +19,9 @@ struct ThreadView: View {
     @State private var stuck = false
     /// The big title has scrolled off, so the bar shows it.
     @State private var titled = false
+    /// The Agents sheet is up, or a delegated thread it opened is on top (ADR-0103): no request sheet is offered then.
+    @State private var agentsOpen = false
+    @State private var agentsCovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var thread: ThreadSummary? { model.thread(ref) }
 
@@ -34,6 +37,7 @@ struct ThreadView: View {
             ToolbarItem(placement: .principal) { barTitle }
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: Space.s1) {
+                    if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
                     if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
                     if model.compactionOffered(ref) { ThreadMenu(ref: ref) }
@@ -52,6 +56,7 @@ struct ThreadView: View {
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
             RequestSheet(ref: ref, request: request).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
+        .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
     }
 
     private var barTitle: some View {
@@ -73,7 +78,7 @@ struct ThreadView: View {
 
     /// Opens the thread's waiting request once; after "Not now" it waits in the reply box.
     private func offer() {
-        guard open == nil, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
+        guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
     }
@@ -339,11 +344,18 @@ private struct Conversation: View {
         } message: { Text("It may already have reached \(model.name(ref.hostID)). Nothing is sent again.") }
     }
 
+    /// The pull request chip's sheet and dot, where the thread's computer offers the sheet (ADR-0102); nil keeps the chip
+    /// as it was.
+    private func pullRequestChip(_ thread: ThreadSummary?) -> PullRequestChip? {
+        guard model.offersPullRequestSheet(ref.hostID), let url = GitChips(thread?.worktree).pullRequestURL else { return nil }
+        let last = model.lastPullRequest(ref, url: url)
+        return PullRequestChip(url: url, dot: last.flatMap(PullRequests.dot), rollup: last.map { PullRequests.rollup($0.checks) })
+    }
     private func page(detail: ThreadDetail?, rows: [ConversationRow], pending: [PendingOperation], scroll: ScrollViewProxy) -> some View {
         let thread = model.thread(ref)
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
-            ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref),
+            ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref), pullRequest: pullRequestChip(thread),
                        topMoved: { top in follow.heroTop = top; refreshBar() },
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
@@ -532,11 +544,16 @@ private struct ThreadHero: View, Equatable {
     let ref: ThreadRef
     let thread: ThreadSummary?
     let watched: Bool
+    /// The pull request chip's sheet and dot, where the computer offers the sheet.
+    let pullRequest: PullRequestChip?
     let topMoved: (CGFloat) -> Void
     let titleMoved: (CGFloat) -> Void
+    @State private var showingPullRequest = false
     /// Drawn again only when its thread changes, not for each new revision of the conversation under it; its readers
     /// report to the same page every time.
-    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.thread == b.thread && a.watched == b.watched }
+    static func == (a: Self, b: Self) -> Bool {
+        a.ref == b.ref && a.thread == b.thread && a.watched == b.watched && a.pullRequest == b.pullRequest
+    }
     var body: some View {
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
@@ -558,13 +575,18 @@ private struct ThreadHero: View, Equatable {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(place + WatchedWords.spoken(watched))
             if !chips.isEmpty {
-                GitChipRow(chips: chips).padding(.top, Space.s3)
+                GitChipRow(chips: chips, sheet: pullRequest) { showingPullRequest = true }.padding(.top, Space.s3)
             }
         }
         .padding(.top, Space.s1)
         .padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(edgeReader(\.minY, topMoved))
+        .sheet(isPresented: $showingPullRequest) {
+            if let pullRequest, let number = chips.pullRequest?.number {
+                PullRequestSheet(ref: ref, url: pullRequest.url, number: number)
+            }
+        }
     }
 
     /// Where it runs: the agent, the computer and the project.
@@ -584,28 +606,79 @@ private struct ThreadHero: View, Equatable {
     }
 }
 
-/// Branch, changed lines and pull request, from the worktree's Git status. The row reads as one sentence.
+/// The pull request chip where the computer offers the pull request sheet (ADR-0102): the pull request it opens, and the
+/// checks' dot and roll-up from this iPhone's last read of it, nil before its sheet has opened.
+struct PullRequestChip: Equatable {
+    let url: String
+    let dot: PullRequests.Tone?
+    let rollup: String?
+}
+
+/// Branch, changed lines and pull request, from the worktree's Git status. The row reads as one sentence; where the
+/// computer offers the pull request sheet, the pull request chip is a button of its own that opens it.
 private struct GitChipRow: View {
     let chips: GitChips
+    var sheet: PullRequestChip? = nil
+    var open: () -> Void = {}
     var body: some View {
-        HStack(spacing: Space.s2) {
-            if let branch = chips.branch {
-                GitChip {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
-                    Text(branch)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Palette.ink)
-                        .truncationMode(.middle)
+        if let sheet, let pullRequest = chips.pullRequest {
+            HStack(spacing: Space.s2) {
+                if chips.branch != nil || chips.changes != nil {
+                    HStack(spacing: Space.s2) { branchAndChanges }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(chips.spoken(includingPullRequest: false))
                 }
-            }
-            if let changes = chips.changes {
-                GitChip {
-                    Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
-                    Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
-                    Text(changes.files == 1 ? "1 file" : "\(changes.files) files")
+                Button(action: open) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
+                        Text("#\(pullRequest.number) \(pullRequest.state)")
+                        if let dot = sheet.dot { ChecksDot(tone: dot) }
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                    }
+                    .font(.sotto(.caption, .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                    .padding(.horizontal, Space.s3)
+                    .frame(minHeight: 44)
+                    .background(Palette.surface.opacity(0.7), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.35), lineWidth: 1))
+                    .contentShape(Capsule())
                 }
+                .buttonStyle(PressStyle())
                 .fixedSize()
+                .accessibilityLabel("Show pull request \(pullRequest.number), \(pullRequest.state)" + (sheet.rollup.map { ". Checks: \($0)" } ?? ""))
+                .accessibilityIdentifier("pull-request-chip")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            plain
+        }
+    }
+
+    @ViewBuilder private var branchAndChanges: some View {
+        if let branch = chips.branch {
+            GitChip {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
+                Text(branch)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Palette.ink)
+                    .truncationMode(.middle)
+            }
+        }
+        if let changes = chips.changes {
+            GitChip {
+                Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
+                Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
+                Text(changes.files == 1 ? "1 file" : "\(changes.files) files")
+            }
+            .fixedSize()
+        }
+    }
+
+    /// The row as it is without the sheet: every chip one sentence.
+    private var plain: some View {
+        HStack(spacing: Space.s2) {
+            branchAndChanges
             if let pullRequest = chips.pullRequest {
                 GitChip {
                     Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
@@ -1434,6 +1507,8 @@ private struct UnconfirmedRow: View {
         case "steer": return ("Steering…", "Steer isn’t confirmed. Check the thread before you steer again.")
         case "remove": return ("Removing…", "Removing isn’t confirmed. Check the thread’s queue before you remove it again.")
         case "compact": return ("Compacting…", "Compacting isn’t confirmed. Check the thread before you compact it again.")
+        case "babysit": return ("Starting babysitting…", "Babysitting isn’t confirmed. Check the pull request before you press it again.")
+        case "stop-babysitting": return ("Stopping babysitting…", "Stopping babysitting isn’t confirmed. Check the pull request before you press it again.")
         default: return ("Sending…", "Not confirmed. Check the thread before you send it again.")
         }
     }
@@ -1498,7 +1573,7 @@ private struct ReplyDock: View, Equatable {
         .padding(.bottom, Space.s2)
     }
 
-    /// What watching means here: Watcher keeps the thread going, and waits while the user's own turn runs; or, on a
+    /// What watching means here: Watcher keeps the thread going, and only steers while the user's own turn runs; or, on a
     /// computer that keeps no standing watches, that a direct instruction here takes the thread over from Watcher.
     /// Opening the thread or answering its card changes neither.
     private func watchedLine(_ words: String) -> some View {

@@ -11,7 +11,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 
 import { LocalHostService, desktopWindowClient } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import type { AgentState } from '../../../src/shared/agents'
+import type { AgentHostSnapshot, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
@@ -27,10 +27,9 @@ afterEach(async () => {
   }
 })
 
-async function start(root?: string) {
+async function start(root?: string, host = new E2EAgentHost()) {
   const directory = root ?? await mkdtemp(join(tmpdir(), 'sotto-finished-unread-'))
   if (root === undefined) roots.push(directory)
-  const host = new E2EAgentHost()
   const credentials = await testCredentials(directory, { mode: 'unavailable' })
 
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, reasoner: e2eAgentReasoner })
@@ -50,7 +49,27 @@ function runTurn(host: E2EAgentHost, threadId: string): void {
   host.event({ type: 'ready', threadId, text: 'Synthetic reply' })
 }
 
+/** The fixture host with Sotto's workspace settlement: it stamps the thread and lists it again, as the workspace does. */
+class SettlingHost extends E2EAgentHost {
+  async setWorkspaceSettled(_kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot> {
+    const thread = (this as unknown as { state: AgentHostSnapshot }).state.threads.find(item => item.id === id)!
+    thread.workspaceSettledAt = settled ? new Date().toISOString() : null
+    return this.snapshot()
+  }
+}
+
 describe('the coordinator\'s finished-unread mark', () => {
+  it('clears the mark when the thread is settled, and restoring it does not bring it back (#1279)', async () => {
+    const { host, control } = await start(undefined, new SettlingHost())
+    runTurn(host, 'workshop')
+    expect(marked(control.shell(), 'workshop')).toBe(true)
+    await control.command({ type: 'settle-thread', threadId: 'workshop' })
+    expect(marked(control.shell(), 'workshop')).toBeUndefined()
+    expect(marked(control.get(), 'workshop')).toBeUndefined()
+    await control.command({ type: 'restore-thread', threadId: 'workshop' })
+    expect(marked(control.shell(), 'workshop')).toBeUndefined()
+  })
+
   it('marks a thread that finishes while no client shows it, on the shell and the whole state', async () => {
     const { host, control } = await start()
     host.event({ type: 'manual', threadId: 'workshop', text: 'Synthetic prompt' })
@@ -109,6 +128,17 @@ describe('the coordinator\'s finished-unread mark', () => {
     service.setWindowFocused(true)
     expect(marked(control.shell(), 'workshop')).toBeUndefined()
     expect(marked(published.at(-1)!, 'workshop')).toBeUndefined()
+  })
+
+  it('counts only the threads a client says it shows, of those it observes: a paired desktop behind another app (ADR-0092)', async () => {
+    const { host, control, service } = await start()
+    await service.command({ type: 'observe-threads', threadIds: ['workshop', 'docs'], shownThreadIds: ['docs'] }, phones)
+    runTurn(host, 'workshop'); runTurn(host, 'docs')
+    expect(marked(control.shell(), 'workshop')).toBe(true)
+    expect(marked(control.shell(), 'docs')).toBeUndefined()
+    // Saying every observed thread is shown again reads the finish.
+    await service.command({ type: 'observe-threads', threadIds: ['workshop', 'docs'] }, phones)
+    expect(marked(control.shell(), 'workshop')).toBeUndefined()
   })
 
   it('reads a finish when the window gains the focus only for the threads in its panes', async () => {

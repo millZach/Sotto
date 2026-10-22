@@ -1,11 +1,13 @@
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
-import { DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationView } from '../../shared/delegation'
+import { DELEGATION_BRIEF_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationBriefRequestSchema, delegationBriefSchema, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationView } from '../../shared/delegation'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** What the window's read asks of delegation in main: its own record, never a snapshot (#1029). */
 export interface DelegationViews {
   views(threadId: string): { readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[] }
+  /** The newest brief the delegated thread was sent that Sotto still holds, its words alone. */
+  brief(threadId: string): string | undefined
   onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void
 }
 
@@ -29,6 +31,14 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
     const named = <View extends DelegationView>(view: View): View => view.thread === undefined || !key ? view : { ...view, thread: windowId(view.thread) }
     return delegationsReadSchema.parse({ threadId: request.threadId, delegations: made.map(named), received: received.map(named) })
   })
+  ipc.handle(DELEGATION_BRIEF_READ, (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open delegations in the main Sotto window.')
+    const [request] = z.tuple([delegationBriefRequestSchema]).parse(args)
+    const key = parseHostEntityKey(request.threadId)
+    if (key && key.hostId !== localHostId()) return null
+    const text = delegation.brief(key?.id ?? request.threadId)
+    return delegationBriefSchema.parse(text === undefined ? null : { threadId: request.threadId, text })
+  })
   const stop = delegation.onViewsChanged(threadIds => { send(DELEGATIONS_CHANGED, delegationsChangedSchema.parse({ threadIds: threadIds.map(windowId) })) })
-  return () => { stop(); ipc.removeHandler(DELEGATIONS_READ) }
+  return () => { stop(); ipc.removeHandler(DELEGATIONS_READ); ipc.removeHandler(DELEGATION_BRIEF_READ) }
 }

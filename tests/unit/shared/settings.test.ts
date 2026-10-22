@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { defaultHotkey } from '../../../src/shared/platform'
+import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platform'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
 import {
@@ -36,13 +36,18 @@ const customSettings = {
   visualsInThreads: false,
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
-  watcherInFlightLimit: 6,
+  workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
+  watcherSettlesFinishedThreads: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
+  pressShortcuts: ['Alt+Shift+D'],
+  holdShortcuts: ['Fn', 'Control+Alt'],
   maxRecordingSeconds: 300,
   soundCues: false,
+  typingSpeedWpm: 55,
+  speechModel: null,
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -79,6 +84,7 @@ const customSettings = {
   pullRequestText: false,
   commitMessages: false,
   autoUpdateCheck: false,
+  mainFreezeNotice: false,
   localHostEnabled: false,
   phoneAccess: true,
   phoneAccessName: 'Studio',
@@ -89,6 +95,13 @@ const customSettings = {
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('counts time saved against 40 words a minute for older profiles, keeps a chosen typing speed, and refuses one out of bounds', () => {
+    expect(parseSettings({}).typingSpeedWpm).toBe(40)
+    expect(parseSettings({ typingSpeedWpm: 72 }).typingSpeedWpm).toBe(72)
+    for (const unusable of [9, 151, 40.5, '60']) expect(parseSettings({ typingSpeedWpm: unusable }).typingSpeedWpm).toBe(40)
+    expect(settingsSchema.shape.typingSpeedWpm.safeParse(150).success).toBe(true)
+    expect(settingsSchema.shape.typingSpeedWpm.safeParse(10).success).toBe(true)
+  })
   it('defaults older profiles to the shared checkout and retains explicit global and project choices', () => {
     expect(parseSettings({})).toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
     expect(parseSettings({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }))
@@ -121,16 +134,11 @@ describe('settings', () => {
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
   })
-  it('defaults watcher capacity to four and accepts only integers from one to eight', () => {
-    expect(parseSettings({}).watcherInFlightLimit).toBe(4)
-    for (const watcherInFlightLimit of [1, 4, 8]) {
-      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(watcherInFlightLimit)
-      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(true)
-    }
-    for (const watcherInFlightLimit of [0, 9, 2.5, '4', null]) {
-      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(4)
-      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(false)
-    }
+  it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
+    expect(parsed).toEqual(DEFAULT_SETTINGS)
+    expect('watcherInFlightLimit' in parsed).toBe(false)
+    expect('watcherInFlightLimit' in settingsSchema.shape).toBe(false)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -290,7 +298,8 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
-      watcherInFlightLimit: 4,
+      workerRoles: {},
+      watcherSettlesFinishedThreads: true,
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
@@ -311,8 +320,12 @@ describe('settings', () => {
       reducedMotion: 'system',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
+      pressShortcuts: [],
+      holdShortcuts: [],
       maxRecordingSeconds: 60,
       soundCues: true,
+      typingSpeedWpm: 40,
+      speechModel: null,
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -349,6 +362,7 @@ describe('settings', () => {
       pullRequestText: true,
       commitMessages: true,
       autoUpdateCheck: true,
+      mainFreezeNotice: true,
       localHostEnabled: true,
       phoneAccess: false,
       phoneAccessName: '',
@@ -392,12 +406,48 @@ describe('settings', () => {
 
 
 
-  it('builds per-platform defaults that differ only in the hotkey', () => {
+  it('builds per-platform defaults that differ only in the shortcuts', () => {
     expect(defaultSettings(defaultHotkey('win32'))).toEqual(DEFAULT_SETTINGS)
-    expect(defaultSettings(defaultHotkey('darwin'))).toEqual({
+    expect(defaultSettings(defaultHotkey('darwin'), defaultHoldShortcuts('darwin'))).toEqual({
       ...DEFAULT_SETTINGS,
       hotkey: 'Control+Shift+Space',
+      holdShortcuts: ['Fn'],
     })
+    expect(defaultSettings(defaultHotkey('win32'), defaultHoldShortcuts('win32')).holdShortcuts).toEqual(['CommandOrControl+Super'])
+    expect(defaultHoldShortcuts('linux')).toEqual(['F9'])
+  })
+
+  it('keeps saved hold and extra press shortcuts whole and drops damaged entries', () => {
+    const macDefaults = defaultSettings('Control+Shift+Space', ['Fn'])
+    const saved = parseSettings({ pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn', 'Control+Alt'] }, macDefaults)
+    expect(saved.pressShortcuts).toEqual(['Alt+Shift+D'])
+    expect(saved.holdShortcuts).toEqual(['Fn', 'Control+Alt'])
+    const damaged = parseSettings({ pressShortcuts: 'Alt+D', holdShortcuts: ['', 'Fn', 'Fn', 7] }, macDefaults)
+    expect(damaged.pressShortcuts).toEqual([])
+    expect(damaged.holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings({ holdShortcuts: 'Fn' }, macDefaults).holdShortcuts).toEqual([])
+  })
+
+  it('gives the hold default to new installs only', () => {
+    const macDefaults = defaultSettings('Control+Shift+Space', ['Fn'])
+    expect(parseSettings({}, macDefaults).holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings(undefined, macDefaults).holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings({ hotkey: 'Alt+D', theme: 'dark' }, macDefaults).holdShortcuts).toEqual([])
+  })
+
+  it('reads a Linux profile from before the recorder as the keys its Hyprland bindings always had', () => {
+    const linuxDefaults = defaultSettings(defaultHotkey('linux'), defaultHoldShortcuts('linux'))
+    // Wayland never registered `hotkey`, so whatever it said, F9 and Super+Ctrl+X were the keys.
+    const before = parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: ['Alt+D'], theme: 'dark' }, linuxDefaults, true)
+    expect(before).toMatchObject({ hotkey: 'Super+CommandOrControl+X', pressShortcuts: [], holdShortcuts: ['F9'], theme: 'dark' })
+    expect(parseSettings({}, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // An unreleased recorder build saved the old unused default with nothing held; Linux's rows can't make that pair.
+    expect(parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: [], holdShortcuts: [] }, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // Once saved by this version, the Linux shortcuts are the user's, an empty hold row included.
+    const chosen = parseSettings({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] }, linuxDefaults, true)
+    expect(chosen).toMatchObject({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] })
+    // Windows and macOS read the same profile as before.
+    expect(parseSettings({ hotkey: 'Alt+Shift+D', theme: 'dark' }, DEFAULT_SETTINGS)).toMatchObject({ hotkey: 'Alt+Shift+D', holdShortcuts: [] })
   })
 
   it('drops the retired widget style key from persisted settings', () => {

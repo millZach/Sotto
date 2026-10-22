@@ -60,9 +60,12 @@ describe('Muse release checks', () => {
     expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://api.meta.ai/muse-code/channels/muse-canary')
     await clients.publishedVersion('muse')
     expect(fetchImpl).toHaveBeenCalledTimes(2)
-    now += 60 * 60 * 1_000 + 1
+    now += 4 * 60 * 1_000 + 1
     await clients.publishedVersion('muse', 'muse-canary')
     expect(fetchImpl).toHaveBeenCalledTimes(3)
+    // A check that must not read a kept answer asks the channel feed afresh.
+    await clients.check('muse', oldVersion, install.executable, {}, { afresh: true })
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
   })
 
   it.each([

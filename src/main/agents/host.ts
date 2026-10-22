@@ -4,12 +4,14 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
-import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { WatcherAsk } from '../../shared/watcherAsks'
+import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
+import type { SubagentRole } from '../../shared/workerRoles'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
 
@@ -24,14 +26,26 @@ export interface WatcherLaunchProfile {
   readonly kind: 'watcher'
   readonly server: Readonly<Omit<ThreadMcpServer, 'headers'>> & { readonly headers: readonly Readonly<{ name: string; value: string }>[] }
   readonly toolNames: readonly string[]
+  /** Watcher's system prompt when its tools ask for more than the base one, as with worker roles on (#1041). */
+  readonly instructions?: string
   /** Revokes this session's server admission; recovery requires a fresh admission. */
   revoke(reason: string): void
 }
 export interface ThreadLaunchProfiles {
   profileFor(threadId: string): Promise<WatcherLaunchProfile | undefined>
 }
+/** What each kind of work runs on now, for a thread's own sub-agents (#1042). Read at a launch and when Settings change. */
+export interface WorkerRoleSource {
+  table(): readonly SubagentRole[]
+  /** Called after the user's Settings change; returns what stops it. */
+  onChange(listener: () => void): () => void
+}
 /** Ticket 3 supplies the server; ticket 2 consumes only this thread-bound capability. */
-export interface WatcherProfileTools extends ScopedThreadTools { revoke(threadId: string): void }
+export interface WatcherProfileTools extends ScopedThreadTools {
+  /** The system prompt Watcher runs on with these tools; undefined keeps the base one. */
+  readonly instructions?: string | undefined
+  revoke(threadId: string): void
+}
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
@@ -43,11 +57,28 @@ export type AgentHostCommand =
     /** A wake-up babysitting sends (ADR-0061 decision 8): the workspace records the message as Sotto's before the provider hears it. */
     readonly wakeUp?: true
     /**
+     * Set beside `wakeUp` on a wake-up that carries only delegation news (ADR-0081, October 19, 2026): the workspace
+     * records the message as one no window or phone shows. No adapter hears it; the provider gets the text as any send's.
+     */
+    readonly hiddenWakeUp?: true
+    /**
      * Main's request note for a user Send to the current Watcher (ADR-0073), set only by its Watcher service. A Watcher
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
      */
-    readonly watcherRequestNote?: string }
+    readonly watcherRequestNote?: string
+    /**
+     * A wake-up's news for the current Watcher (ADR-0073), set only by the coordinator on that wake-up's send. It
+     * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
+     * one is shown. Every other thread ignores it.
+     */
+    readonly watcherNews?: string
+    /**
+     * The requests that wake-up's news said waited on the user, text-free (ADR-0073, answering in Watcher's
+     * conversation), set only by the coordinator beside `watcherNews`. The workspace records them with the wake-up, and
+     * no adapter hears them.
+     */
+    readonly watcherAsks?: readonly WatcherAsk[] }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
@@ -72,6 +103,44 @@ export interface AgentHostResult {
    */
   readonly error?: string
 }
+/**
+ * A new thread that is the provider's own copy of another thread's conversation (#1028): one of the source thread's agents
+ * (`agentId`, its observational identity in the roster) or the source thread up to one of its replies (`messageId`). The
+ * adapter that owns the source resolves its own identifiers and binds the new thread to the copy when it is made, the way
+ * creation does (ADR-0002); nothing is sent to the model.
+ */
+export interface ThreadForkRequest {
+  readonly commandId: string
+  readonly threadId: string
+  readonly title: string
+  readonly modelId: string
+  readonly reasoningEffort?: string | undefined
+  readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
+  readonly workingDirectory?: string | undefined
+  readonly source: { readonly threadId: string; readonly agentId?: string | undefined; readonly messageId?: string | undefined }
+}
+/**
+ * One of a thread's agents continued as a thread of its own (#1028), by Sotto thread IDs: `threadId` is the thread to
+ * make and `sourceThreadId` the agent's. `handover` starts it from a thin handover even where the provider could copy.
+ */
+export interface AgentContinuation {
+  readonly threadId: string
+  readonly sourceThreadId: string
+  readonly agentId: string
+  readonly handover?: boolean | undefined
+  readonly modelId: string
+  readonly reasoningEffort?: string | undefined
+  readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
+  readonly workingCopy?: 'independent' | 'shared' | undefined
+  readonly baseBranch?: string | undefined
+  readonly startFromOrigin?: boolean | undefined
+}
+/** Fork from here (#1028, E5b): a new thread `threadId` with `sourceThreadId`'s conversation up to its reply `messageId`. */
+export interface ReplyFork extends Omit<AgentContinuation, 'agentId' | 'handover'> { readonly messageId: string }
+/** Which of a first message's characters were the handover it went with (#1028): a length and its digest, never the words. */
+export interface StartHandoverSent { readonly messageId: string; readonly prefixLength: number; readonly prefixDigest: string }
 /**
  * A settings change's result as a host layer passes it up: the result without its snapshot, and the snapshot only
  * when the provider confirmed the change. One on any other result is dropped rather than trusted.
@@ -130,7 +199,7 @@ export interface RestoredThreadHistory {
 /** One change to what a thread said, addressed by Sotto thread ID (ADR-0016). */
 export interface ThreadHostEvent { readonly threadId: string; readonly event: ThreadEvent }
 /** One message the event store already holds, as an adapter needs to recognise it: its ID and its role. */
-export interface StoredMessageIdentity { readonly id: string; readonly role: 'user' | 'assistant' }
+export interface StoredMessageIdentity { readonly id: string; readonly role: 'user' | 'assistant'; readonly turnMessageId?: string }
 /**
  * What the host's event store already holds for a thread, asked for one thread at a time. An adapter
  * re-reading a provider's own history uses it to append the unseen tail instead of adding the history
@@ -208,6 +277,11 @@ export interface AgentHost {
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
   /**
+   * The worker roles for each thread's own sub-agents (#1042), given only while that Owl feature is on: an adapter reads
+   * the table when a thread launches, and one that keeps files from it writes them again when Settings change.
+   */
+  useWorkerRoles?(roles: WorkerRoleSource): void
+  /**
    * Inject Sotto's scoped tool servers before connecting: the host setup tools, which only a host setup thread is
    * given (ADR-0035), and the visual tool (ADR-0056). Each launch offers every one that answers for its thread.
    */
@@ -216,6 +290,22 @@ export interface AgentHost {
   /** Explicit checkpoint rewind; compare exact authored history before any native mutation.
    * Throws only for definitive rejection; possible unconfirmed native writes return uncertain. */
   rollbackThread?(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult>
+  /**
+   * Make a new thread that is the provider's own copy of an agent's conversation or of a thread up to a reply (#1028). Throws
+   * a refusal in plain words when the provider cannot; uncertain when it may have made a copy it did not confirm.
+   */
+  forkThread?(request: ThreadForkRequest): Promise<AgentHostResult>
+  /** Continue one of a thread's agents as a thread of its own (#1028). The workspace makes the thread; refusals make nothing. */
+  continueAgent?(request: AgentContinuation): Promise<AgentHostResult>
+  /** Fork a thread at one of its replies (#1028, E5b). The workspace makes the thread; refusals make nothing. */
+  forkAtReply?(request: ReplyFork): Promise<AgentHostResult>
+  /**
+   * The handover a thread that began from another goes with on its first message (#1028), built afresh from Sotto's own
+   * record. Undefined once it has gone, or when Sotto no longer holds what it carries.
+   */
+  startHandover?(threadId: string): { readonly text: string; readonly counts: HandoverCounts } | undefined
+  /** The first message went with the handover (`sent`), did not go after all (`null`), or goes without it (`'drop'`). */
+  markStartHandover?(threadId: string, sent: StartHandoverSent | null | 'drop'): Promise<void>
   /** Scope is constructed only by WorkspaceHost for an unstarted local thread. */
   listThreadSkills?(threadId: string, forceReload?: boolean, scope?: AgentSkillScope): Promise<AgentSkillCatalog>
   readonly concurrentProviders?: boolean
@@ -232,6 +322,8 @@ export interface AgentHost {
   watcherThreadIds?(): readonly string[]
   /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
   dormantThreadIds?(): readonly string[]
+  /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
+  dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */

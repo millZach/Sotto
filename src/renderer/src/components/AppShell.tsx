@@ -12,6 +12,7 @@ import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
 import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
+import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -28,7 +29,7 @@ export interface AppShellProps {
    * hands the whole window to a page that owns its own chrome (Threads,
    * Settings): its navigation, its window controls and the update
    * control live inside it. `sidebar` seats the Threads sidebar beside the
-   * page (Dictate, History, Help), with the window controls on the room's top
+   * page (Dictate, Usage in Owl, Help), with the window controls on the room's top
    * edge and the page's sentence at its foot.
    */
   readonly layout?: AppLayout
@@ -132,7 +133,6 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
 
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
-  { id: 'history', label: 'History' },
   { id: 'usage', label: 'Usage' },
   { id: 'memory', label: 'Memory' },
   { id: 'settings', label: 'Settings' },
@@ -149,13 +149,13 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 
 /**
  * Which layout a page takes. Threads, Watcher's room and Settings own the window, their left column wearing the
- * sidebar's frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain
+ * sidebar's frame; Dictate, Usage in Owl and Help stand beside the Threads sidebar itself; the strip and footer remain
  * for the Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates
  * included; Watcher's room is the Threads page while its gate is off.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
   if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
-  if (navigation === 'home' || navigation === 'history' || navigation === 'usage' || navigation === 'help') return 'sidebar'
+  if (navigation === 'home' || navigation === 'usage' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
 
@@ -244,11 +244,11 @@ export function AppShell({
               ))}
             </div>
           ) : <span />}
-          {platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : <span />}
+          <div className="app-strip__end"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div>
         </header>
       )}
       {beside ? sidebar : null}
-      {beside ? <div className="app-room__top">{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
+      {beside ? <div className="app-room__top"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
       <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content">{children}</main>
       {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
       {!page && !beside && management ? (

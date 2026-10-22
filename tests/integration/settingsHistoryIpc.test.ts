@@ -14,6 +14,8 @@ import {
   APP_QUIT,
   APP_RELOAD,
   APP_SHOW,
+  DICTATION_RECORD_GET,
+  DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
   HISTORY_DELETE,
@@ -21,6 +23,12 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  DICTATION_SHORTCUTS_REPLACE,
+  DICTATION_SHORTCUTS_SUSPEND,
+  DICTATION_KEYS_RECORD,
+  DICTATION_KEYS_RECORD_CANCEL,
+  KEY_LISTENER_PERMISSION_GET,
+  KEY_LISTENER_PERMISSION_REQUEST,
   RECOVERY_NOTICE_LIST,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -189,13 +197,31 @@ describe('IPC validation and lifecycle', () => {
       expect(list).toHaveBeenCalledOnce()
     })
 
-  it('does not ask storage to read history when the authoritative setting disables it', async () => {
+  it('lists transcripts kept from before history was turned off, as after a restart with it off', async () => {
       const harness = createIpcHarness()
       harness.settings.get.mockResolvedValue({ ...DEFAULT_SETTINGS, historyEnabled: false })
+      const kept = { id: 'kept', text: 'older words', createdAt: 1, durationMs: 2, language: 'en', modelPreset: 'parakeet' as const }
+      harness.history.list.mockResolvedValue([kept] as never)
 
-      await expect(harness.ipc.invokeArgs(HISTORY_LIST, [])).resolves.toEqual([])
+      await expect(harness.ipc.invokeArgs(HISTORY_LIST, [])).resolves.toEqual([kept])
 
+      // With history off the file is only read, so a corrupt one is not recovered.
       expect(harness.history.list).toHaveBeenCalledWith({ enabled: false })
+    })
+
+  it('answers the dictation records from storage', async () => {
+      const harness = createIpcHarness()
+      const record = { id: 'one', createdAt: 1, durationMs: 2, words: 3, app: 'Outlook' }
+      harness.history.listRecords.mockResolvedValue([record] as never)
+
+      await expect(harness.ipc.invokeArgs(DICTATION_RECORDS_LIST, [])).resolves.toEqual([record])
+      await expect(harness.ipc.invokeArgs(DICTATION_RECORDS_LIST, ['extra'])).rejects.toThrow('Invalid IPC payload')
+      expect(harness.history.listRecords).toHaveBeenCalledOnce()
+
+      harness.history.getRecord.mockResolvedValue(record as never)
+      await expect(harness.ipc.invoke(DICTATION_RECORD_GET, 'one')).resolves.toEqual(record)
+      await expect(harness.ipc.invoke(DICTATION_RECORD_GET, '')).rejects.toThrow('Invalid IPC payload')
+      expect(harness.history.getRecord).toHaveBeenCalledWith('one')
     })
 
   it('allows deleting retained history when recording history is disabled', async () => {
@@ -223,9 +249,14 @@ describe('IPC validation and lifecycle', () => {
     // Settings control would snap back on save.
     const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete fullPatch['hotkey']
+    // Dictation shortcuts change only through their own transactional channel.
+    delete fullPatch['pressShortcuts']
+    delete fullPatch['holdShortcuts']
     delete fullPatch['launchAtStartup']
     // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
     delete fullPatch['tailnetConnections']
+    // Chosen through its own channel, which loads the model too (ADR-0094).
+    delete fullPatch['speechModel']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
     await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true, microphoneId: 'rejected-microphone' })).rejects.toThrow('Invalid IPC payload')
@@ -291,22 +322,47 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
     })
 
-  it('saves watcher capacity through the allow-list and reads back the saved value', async () => {
+  it('persists turning Watcher’s Settle finished threads off through settings IPC', async () => {
+      const { ipc, settings } = createIpcHarness()
+      await expect(ipc.invoke(SETTINGS_UPDATE, { watcherSettlesFinishedThreads: false })).resolves.toMatchObject({ watcherSettlesFinishedThreads: false })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
+    })
+
+  it('persists the typing speed the Dictate room counts time saved against, and refuses one out of bounds (#1293)', async () => {
     const { ipc, settings } = createIpcHarness()
-    const root = await mkdtemp(join(tmpdir(), 'sotto-watcher-setting-'))
+    await expect(ipc.invoke(SETTINGS_UPDATE, { typingSpeedWpm: 65 })).resolves.toMatchObject({ typingSpeedWpm: 65 })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ typingSpeedWpm: 65 })
+    for (const typingSpeedWpm of [9, 151, 40.5]) {
+      await expect(ipc.invoke(SETTINGS_UPDATE, { typingSpeedWpm })).rejects.toThrow('Invalid IPC payload')
+    }
+    expect(settings.update).toHaveBeenCalledOnce()
+  })
+
+  it('refuses the removed Threads in flight limit, which is no longer on the allow-list (#1183)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).not.toHaveBeenCalled()
+  })
+
+  it('saves worker roles through the allow-list, reads them back, and refuses a row it cannot read (#1041)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-worker-roles-setting-'))
     try {
       const path = join(root, 'settings.json')
       const repository = new SettingsRepository(path)
       settings.update.mockImplementation(patch => repository.update(patch))
       settings.get.mockImplementation(() => repository.get())
-      await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).resolves.toMatchObject({ watcherInFlightLimit: 7 })
-      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherInFlightLimit: 7 })
-      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ watcherInFlightLimit: 7 })
-      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ watcherInFlightLimit: 7 })
-      for (const watcherInFlightLimit of [0, 9, 2.5, '4']) {
-        await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit })).rejects.toThrow('Invalid IPC payload')
+      const workerRoles = { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' as const },
+        orchestrating: { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: null } }
+      await expect(ipc.invoke(SETTINGS_UPDATE, { workerRoles })).resolves.toMatchObject({ workerRoles })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ workerRoles })
+      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ workerRoles })
+      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ workerRoles })
+      for (const bad of [{ painting: { modelId: 'x', reasoningEffort: null } }, { ui: { modelId: '', reasoningEffort: null } }, { ui: { modelId: 'x', reasoningEffort: null, runtimeMode: 'yolo' } }, 'all']) {
+        await expect(ipc.invoke(SETTINGS_UPDATE, { workerRoles: bad })).rejects.toThrow('Invalid IPC payload')
       }
-      expect(settings.update).toHaveBeenCalledTimes(1)
+      await expect(ipc.invoke(SETTINGS_UPDATE, { workerRoles: {} })).resolves.toMatchObject({ workerRoles: {} })
+      expect(settings.update).toHaveBeenCalledTimes(2)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -486,4 +542,85 @@ describe('IPC validation and lifecycle', () => {
 
       expect(history.add).toHaveBeenCalledWith(entry, { enabled: false, retention: 25 })
     })
+
+  it('refuses a finished dictation that names its own delivered app', async () => {
+      const { history, ipc } = createIpcHarness()
+      const entry = { id: 'entry-1', text: 'local words', createdAt: 1, durationMs: 2, language: 'en', modelPreset: 'parakeet' as const, app: 'Outlook' }
+
+      await expect(ipc.invoke(HISTORY_ADD, entry)).rejects.toThrow('Invalid IPC payload')
+
+      expect(history.add).not.toHaveBeenCalled()
+    })
+})
+
+describe('dictation shortcut IPC', () => {
+  function shortcutsHarness(withService: boolean) {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const service = {
+      replace: vi.fn(async () => ({ ok: true as const })),
+      suspend: vi.fn(),
+      record: vi.fn(async () => ({ kind: 'recorded' as const, chord: 'Fn' })),
+      cancelRecord: vi.fn(),
+      permission: vi.fn(() => 'granted' as const),
+      requestPermission: vi.fn(async () => 'denied' as const),
+    }
+    registerIpc(harness.ipc, {
+      settings: harness.settings, history: harness.history, startup: harness.startup, hotkeys: harness.hotkeys, app: harness.app,
+      ...(withService ? { dictationShortcuts: service } : {}),
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+    })
+    return { ipc: harness.ipc, service }
+  }
+
+  it('forwards valid payloads to the service', async () => {
+    const { ipc, service } = shortcutsHarness(true)
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_REPLACE, { press: ['Alt+Space', 'Fn'], hold: ['Fn+Shift'] })).resolves.toEqual({ ok: true })
+    expect(service.replace).toHaveBeenCalledWith({ press: ['Alt+Space', 'Fn'], hold: ['Fn+Shift'] })
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND, true)).resolves.toEqual({ ok: true })
+    expect(service.suspend).toHaveBeenCalledWith(true)
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD)).resolves.toEqual({ kind: 'recorded', chord: 'Fn' })
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD_CANCEL)).resolves.toEqual({ ok: true })
+    expect(service.cancelRecord).toHaveBeenCalledOnce()
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_GET)).resolves.toBe('granted')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_REQUEST)).resolves.toBe('denied')
+  })
+
+  it('rejects malformed payloads before calling the service', async () => {
+    const { ipc, service } = shortcutsHarness(true)
+    for (const payload of [
+      { press: [], hold: [] },
+      { press: ['Alt+Space'], hold: ['Fn', 'Fn', 'Fn', 'Fn', 'Fn'] },
+      { press: ['Alt+Space', 'B', 'C', 'D', 'E'], hold: [] },
+      { press: [''], hold: [] },
+      { press: ['x'.repeat(65)], hold: [] },
+      { press: ['Alt+Space'] },
+      { press: ['Alt+Space'], hold: [], extra: true },
+      'Alt+Space',
+    ]) {
+      await expect(ipc.invoke(DICTATION_SHORTCUTS_REPLACE, payload)).rejects.toThrow('Invalid IPC payload')
+    }
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND, 'yes')).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND)).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD, true)).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD_CANCEL, 1)).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_GET, 'x')).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_REQUEST, 'x')).rejects.toThrow('Invalid IPC payload')
+    expect(service.replace).not.toHaveBeenCalled()
+    expect(service.suspend).not.toHaveBeenCalled()
+    expect(service.record).not.toHaveBeenCalled()
+    expect(service.cancelRecord).not.toHaveBeenCalled()
+    expect(service.permission).not.toHaveBeenCalled()
+    expect(service.requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('answers unavailable without a service', async () => {
+    const { ipc } = shortcutsHarness(false)
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_REPLACE, { press: ['Alt+Space'], hold: [] })).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    await expect(ipc.invoke(DICTATION_SHORTCUTS_SUSPEND, false)).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD)).resolves.toEqual({ kind: 'unavailable' })
+    await expect(ipc.invoke(DICTATION_KEYS_RECORD_CANCEL)).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_GET)).resolves.toBe('unsupported')
+    await expect(ipc.invoke(KEY_LISTENER_PERMISSION_REQUEST)).resolves.toBe('unsupported')
+  })
 })

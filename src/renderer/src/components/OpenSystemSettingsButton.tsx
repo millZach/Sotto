@@ -8,6 +8,7 @@ const PANE_NAMES: Readonly<Record<SystemSettingsPane, string>> = Object.freeze({
   microphone: 'Microphone',
   accessibility: 'Accessibility',
   automation: 'Automation',
+  'input-monitoring': 'Input Monitoring',
 })
 
 export interface OpenSystemSettingsButtonProps {

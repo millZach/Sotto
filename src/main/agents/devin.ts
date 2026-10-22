@@ -17,15 +17,18 @@ import { existingWorkingDirectory } from './threadWorktrees'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
+import { DEVIN_OPEN_FAILED } from '../../shared/threadFailures'
 import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
-import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
+import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpToolName, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
+import type { BrowserAgentTools } from './browserAgentServer'
+import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 
 const MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024
 const MAX_TOOL_BYTES = 8 * 1024 * 1024
@@ -111,7 +114,7 @@ const modeOf = (id: string | undefined): DevinMode => DEVIN_MODES.find(mode => m
 const RUNTIME_OF_ALLOWANCE: Record<DevinAllowance, AgentRuntimeMode> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
 /** Devin's own reason when it gave one, since the provider notice is the only place a thread's open failure is read. */
 const openFailure = (error: unknown): string => error instanceof Error && !(error instanceof DevinUncertain) && error.message
-  ? error.message : 'A Devin session could not be opened. Your thread is kept. Check the native client and reconnect.'
+  ? error.message : DEVIN_OPEN_FAILED
 
 interface Connection {
   rpc: DevinRpc
@@ -127,6 +130,10 @@ interface Connection {
   intentionalClose: boolean
   /** The number of the last profile and integrations check this process passed (see `checksStarted`). */
   passedCheck: number
+  /** Whether this process said at `initialize` that it takes HTTP MCP servers, which is how Sotto's tool servers are reached. */
+  httpToolServers: boolean
+  /** The Sotto tools this process's session was opened with, by the names Devin's permission rules use. */
+  sottoTools: ReadonlySet<string>
 }
 interface ActiveTurn {
   origin: Origin
@@ -288,6 +295,8 @@ export class DevinAcpHost implements AgentHost {
     if (!thread) {
       thread = { id, projectId: alias.projectId, title: alias.title, workingDirectory: alias.cwd,
         modelId: alias.modelId, providerMode: modeOf(alias.providerMode).id, runtimeMode: RUNTIME_OF_ALLOWANCE[modeOf(alias.providerMode).allows],
+        // This adapter gives Devin Sotto's servers; a host that predates it says nothing, which reads as none.
+        sottoToolsGiven: true,
         status: alias.devinSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] }
       this.threads.set(id, thread)
     }
@@ -319,6 +328,31 @@ export class DevinAcpHost implements AgentHost {
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
+  private browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  /**
+   * Sotto's own tool servers for the session a thread's own process makes or loads: the browser's and each scoped
+   * server that answers for the thread (ADR-0056), as Claude Code, Codex, Grok Build and Muse get them. Devin attaches
+   * servers passed on `session/new` and `session/load` from 3000.11.1 (ADR-0035), so every open passes them again, as
+   * Grok Build's does. The catalog session and a history read never prompt, so they get none. A process that did not
+   * say it takes HTTP servers gets none either, and its thread says so. The owned profiles let these through by name
+   * (`DEVIN_SOTTO_SERVERS`); a prompt for one that arrives anyway is shown to the user, never answered here. A connection
+   * that changed while the servers were read is not the one they were for, so that refuses as uncertain.
+   */
+  private async toolServers(id: string, connection: Connection, generation: number): Promise<ThreadMcpServer[]> {
+    const thread = this.thread(id)
+    if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
+    if (!connection.httpToolServers) { thread.sottoToolsWithheld = true; delete thread.sottoToolsGiven; return [] }
+    delete thread.sottoToolsWithheld; thread.sottoToolsGiven = true
+    const servers: { server: ThreadMcpServer; tools: readonly string[] }[] = []
+    if (this.browserTools) servers.push({ server: await this.browserTools.mcpServer(id), tools: this.browserTools.definitions.map(tool => tool.name) })
+    for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, tools: tools.definitions.map(tool => tool.name) })
+    if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
+    connection.sottoTools = new Set(servers.flatMap(({ server, tools }) => tools.map(tool => devinMcpToolName(server.name, tool))))
+    return servers.map(({ server }) => server)
+  }
 
   private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
@@ -332,6 +366,7 @@ export class DevinAcpHost implements AgentHost {
     const connection: Connection = {
       rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, fresh: false, tools: new Map(), toolBytes: 0,
       transcript: { messages: [], bytes: 0 }, replaying: observer, mode: undefined, intentionalClose: false, passedCheck: 0,
+      httpToolServers: false, sottoTools: new Set(),
     }
     const rpc: DevinRpc = new DevinRpc(this.executable, [...(this.options.args ?? []), '--config', profile.path, 'acp'], cwd,
       devinEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
@@ -353,10 +388,11 @@ export class DevinAcpHost implements AgentHost {
       }, value => {
         const result = z.object({
           protocolVersion: z.literal(DEVIN_ACP_VERSION),
-          agentCapabilities: z.object({ loadSession: z.literal(true) }),
+          agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }),
           authMethods: z.array(z.object({ id: z.string() })),
         }).parse(value)
         if (!result.authMethods.some(method => method.id === 'devin-browser')) throw new Error('Native Devin sign-in is required.')
+        connection.httpToolServers = result.agentCapabilities.mcpCapabilities?.http === true
       })
       await rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile))
       if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
@@ -548,7 +584,8 @@ export class DevinAcpHost implements AgentHost {
       // skipping it again, so the next open asks Devin before making another.
       alias.emptyReleased = false; alias.settingsConfirmed = false; await this.persist()
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
-      await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers: [] }, async value => {
+      const mcpServers = await this.toolServers(id, connection, generation)
+      await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
         alias.devinSessionId = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
         alias.emptyReleased = false; connection.fresh = true; await this.persist()
@@ -563,7 +600,8 @@ export class DevinAcpHost implements AgentHost {
       else {
         let loadedModel: string | undefined
         try {
-          await connection.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers: [] }, value => {
+          const mcpServers = await this.toolServers(id, connection, generation)
+          await connection.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers }, value => {
             if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
             loadedModel = modelConfig(value).current
           })
@@ -786,7 +824,7 @@ export class DevinAcpHost implements AgentHost {
       if (observer || !params || params.sessionId !== alias.devinSessionId) { this.unsupported(connection.rpc, frame); return }
       try {
         const toolId = record(params.toolCall)?.toolCallId
-        const decision = devinPending(frame.id, frame.method, params, id, typeof toolId === 'string' ? connection.tools.get(toolId) : undefined)
+        const decision = devinPending(frame.id, frame.method, params, id, typeof toolId === 'string' ? connection.tools.get(toolId) : undefined, connection.sottoTools)
         if (!decision) { this.unsupported(connection.rpc, frame); return }
         decision.request.id = 'devin-request-' + digest(JSON.stringify([id, connection.nonce, frame.id]))
         const fingerprint = digest(JSON.stringify([frame.method, params, typeof toolId === 'string' ? connection.tools.get(toolId)?.rawInput : null]))
@@ -853,7 +891,8 @@ export class DevinAcpHost implements AgentHost {
         watcherGuard?.()
         if (generation !== this.generation) { connection.intentionalClose = true; connection.rpc.close(); throw new DevinUncertain('Devin connection changed.') }
         creation = connection; this.connections.set(command.threadId, connection)
-        await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers: [] }, async value => {
+        const mcpServers = await this.toolServers(command.threadId, connection, generation)
+        await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
           if (generation !== this.generation || this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
           alias.devinSessionId = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
           connection.fresh = true
@@ -922,7 +961,7 @@ export class DevinAcpHost implements AgentHost {
           if (!saved || saved.decision.threadId !== id || saved.connection !== connection) throw new Error('That Devin request is no longer pending.')
           const decision = saved.decision
           const checkScope = (): void => {
-            if (decision.permission && JSON.stringify(connection.tools.get(decision.toolCallId!)?.rawInput) !== decision.actionDetails) {
+            if (decision.permission && devinActionScope(connection.tools.get(decision.toolCallId!), connection.sottoTools) !== decision.scope) {
               this.removeRequest(command.requestId); connection.rpc.close()
               throw new Error('Devin changed this action after asking. Nothing was approved. Reconnect and review the new request.')
             }
@@ -1043,7 +1082,9 @@ export class DevinAcpHost implements AgentHost {
    */
   private async awaitAcceptance(id: string, commandId: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
     const deadline = Date.now() + (this.options.requestTimeoutMs ?? 15_000)
-    const cadence = devinReadInterval(true, this.options.pollIntervalMs)
+    // At the busy pace at most, whatever the poll is set to: a slower configured poll slows the poll, never the wait for
+    // the one prompt that is out. A read that came before Devin saved the prompt is then read again before the deadline.
+    const cadence = Math.min(devinReadInterval(true, this.options.pollIntervalMs), AWAITING_READ_MS)
     let nextRead = Date.now() + (this.options.acceptanceGraceMs ?? ACCEPTANCE_GRACE_MS)
     let readAfterEnd = false
     while (true) {

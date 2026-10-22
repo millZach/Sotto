@@ -291,10 +291,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     refocus.current = { target: () => (itemId ? tool(itemId, 'edit') : null) ?? toggle(), shown }
   }
 
-  // Collapsed, the queue still lists what needs the user: an unconfirmed or refused item, or an admission that did not go through.
+  // Collapsed, the queue still lists what needs the user: an unconfirmed or refused item, or an admission that did not go
+  // through or was never answered. The queue is the only place a queued message shows until it is sent.
   const needsUser = (item: AgentFollowup): boolean => item.status === 'uncertain' || item.status === 'failed' || busy?.itemId === item.id && busy.error !== null
   const listed = expanded ? visible : visible.filter(needsUser)
-  const listedAdmissions = expanded ? admissions : admissions.filter(item => submissionStatus(item, state).status === 'failed')
+  const listedAdmissions = expanded ? admissions : admissions.filter(item => ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
   const next = visible[0] ? itemWords(visible[0]) : admissions[0]?.text
   const added = arrival !== null && visible.some(item => item.id === arrival.id) ? arrival : null
   return <section ref={section} className="thread-followups" aria-label="Queued messages" data-expanded={expanded || undefined}>

@@ -1,7 +1,9 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import { ArrowUp, Laptop, ListPlus, MessageSquare, Server, Square, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
-import { isThreadClosed } from '../../../shared/threadActivity'
+import { capabilitiesForThread, hostForThread, isThreadBusy, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
+import { continueProviderRefusal, continueThreadRefusal, type ContinueStart } from '../../../shared/continueThread'
+import { resolveModel } from '../../../shared/modelCatalog'
+import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, isCompositionKey, readComposerKey, runComposerMenuKey } from './composerKeys'
@@ -10,6 +12,8 @@ import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './
 import { insertSkill, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
+import { answeredChoices, OWN_WORDS } from './requests/answeredChoices'
+import { useWatcherEnabled } from '../state/watcherFeature'
 import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
 import { ScreenshotInput } from './ScreenshotInput'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
@@ -18,7 +22,9 @@ import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
+import { useThreadStarts } from './ThreadStart'
 import { useWatcherSendGate } from '../watcher/WatcherHandover'
+import { WatcherNewButton } from '../watcher/WatcherNew'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -27,6 +33,8 @@ import { promptDocText } from './promptDocument'
 import { toolbarApplies } from './branchToolbar.logic'
 import { useDelegationsEnabled } from './delegations'
 import { stopLabel, workingDelegatedThreads } from './delegationWords'
+import { ContinueOptions, ContinueStrip } from './ContinueThread'
+import { continueChoiceFor, continueModels, continueStore, unavailableProviders, useContinueChoice, useContinueEnabled, type ContinueChoice } from './continuations'
 import './composer.css'
 import './reviewComments.css'
 
@@ -39,7 +47,7 @@ export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
  * With `besideQueue`, a follow-up the queue owns does not count, so a later revision can line up behind it.
  */
 function threadSendInFlight(state: AgentState, threadId: string, localUnresolved: boolean, besideQueue = false): boolean {
-  return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && deliveryPending(item.status)
+  return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && !item.setAside && deliveryPending(item.status)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === item.draftId)
     // Beside the queue, only an unconfirmed prompt holds: one main has admitted and is still delivering can have the queue behind it.
     && !(besideQueue && (queuedRevision(state, threadId, item.draftId) || deliveryOnItsWay(item.status)))) === true
@@ -143,6 +151,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly watcher?: boolean
 }): ReactNode {
   const threadId = row.thread.id
+  // An answer written here is kept for Watcher's line about its request, never its words, and only where Watcher is on.
+  const watcherOn = useWatcherEnabled()
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
   const submissions = useSubmissions(store)
@@ -158,10 +168,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
   const capabilities = capabilitiesForThread(state.host, row.thread)
-  const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue').map(item => submissionStatus(item, state).status)
+  const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue'
+    && !deliveryFor(state, threadId, item.draftId)?.setAside).map(item => submissionStatus(item, state).status)
   const localUnresolved = direct.some(deliveryPending)
   // Before main has published its admission, and once a delivery is uncertain, even the queue waits.
-  const localUnconfirmed = submissions.some(item => item.threadId === threadId && item.mode !== 'queue' && deliveryPending(submissionStatus(item, state).status)
+  const localUnconfirmed = submissions.some(item => item.threadId === threadId && item.mode !== 'queue'
+    && !deliveryFor(state, threadId, item.draftId)?.setAside && deliveryPending(submissionStatus(item, state).status)
     && !deliveryOnItsWay(deliveryFor(state, threadId, item.draftId)?.status ?? 'uncertain'))
   const localAdmissions = submissions.some(item => item.threadId === threadId && queueAdmissionOpen(item, state) && !(item.resolved && item.error !== null))
   const sendInFlight = threadSendInFlight(state, threadId, localUnresolved)
@@ -169,15 +181,30 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // one behind a direct send main is still delivering. A direct send or steer still unconfirmed holds
   // everything: retyped, it could reach the provider twice.
   const queueBlocked = threadSendInFlight(state, threadId, localUnconfirmed, true)
+  // A continuation begun here (ADR-0089): the composer writes the new thread's first message, which goes after the handover.
+  const continueEnabled = useContinueEnabled()
+  const begun = useContinueChoice(threadId)
+  const continuing = begun !== undefined && !watcher && !answering ? begun : undefined
+  const continueHost = hostForThread(state.host, row.thread)
+  const continueModel = continuing === undefined ? undefined : resolveModel(continueHost.models, continuing.modelId)
+  const continueTarget = continueModel?.providerId ? PROVIDER_LABELS[continueModel.providerId] : continueModel?.provider ?? 'the other provider'
   // Enter behind a prompt on its way queues instead of being refused, so the order typed is the order sent.
-  const queueing = !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
+  const queueing = continuing === undefined && !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
   // While Watcher's handover is offered, a send is the choice to continue with it (ADR-0073).
   const gate = useWatcherSendGate()
   const handover = watcher && gate !== null && !answering && !queueing ? gate : null
-  const reason = blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
+  // Continuing asks nothing of this thread's own provider: only that the thread is at rest and the other provider can start one.
+  const continueReason = continuing === undefined ? null : continueThreadRefusal(row.thread)
+    ?? (continuing.sending ? `Starting the ${continueTarget} thread…` : null)
+    ?? (draft.skills.length > 0 ? `Skills are ${row.provider}’s own. Remove them to continue on ${continueTarget}.` : null)
+    ?? (continueModel?.providerId ? continueProviderRefusal(continueHost, continueModel.providerId) : 'Choose a model to continue on.')
+  const reason = continuing !== undefined ? continueReason
+    : blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
-  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${watcher ? 'Watcher' : row.provider} is working. Write a follow-up to queue it.`) : watcher ? 'Ask about your threads, or say what to start or send' : 'What would you like to do next?'
+  // A thread that began from another asks what its agent should do next, before anything of the user's is in it (#1028).
+  const started = useThreadStarts() && row.thread.startedFrom !== undefined && !row.thread.lastUserMessageId && (row.thread.summary?.lastUser === undefined)
+  const placeholder = continuing !== undefined ? `What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${watcher ? 'Watcher' : row.provider} is working. Write a follow-up to queue it.`) : watcher ? 'Ask about your threads, or say what to start or send' : started ? `What should ${row.provider} do next?` : 'What would you like to do next?'
   // Review comments ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
   const content = hasContent || carried.length > 0
@@ -202,8 +229,39 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     store.edit(threadId, question ? { ...patch, requestId: question.requestId! } : patch)
   }
 
+  /**
+   * Sends the continuation: main makes the new thread and sends it the handover with this draft's words as one message.
+   * Refused, the draft stays here with why in the strip; sent, the draft empties and the new thread opens.
+   */
+  const continueSend = async (choice: ContinueChoice): Promise<void> => {
+    const bridge = window.sotto?.continueThread
+    if (bridge === undefined) return
+    if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
+    const written = store.draft(threadId)
+    if (written.text.trim() === '') { continueStore.update(threadId, { error: `Write what ${continueTarget} should do next. It goes with the handover.` }); return }
+    continueStore.update(threadId, { sending: true, error: null })
+    let result: ContinueStart
+    try {
+      result = await bridge.start({ threadId, newThreadId: choice.newThreadId, modelId: choice.modelId,
+        ...(choice.reasoningEffort ? { reasoningEffort: choice.reasoningEffort } : {}), ...(choice.runtimeMode ? { runtimeMode: choice.runtimeMode } : {}),
+        ...(choice.providerMode ? { providerMode: choice.providerMode } : {}), workingCopy: choice.workingCopy, draftId: crypto.randomUUID(), text: written.text,
+        ...(written.attachments.length ? { attachments: [...written.attachments] } : {}), ...(written.files?.length ? { files: [...written.files] } : {}) })
+    } catch {
+      // Main's answer was lost, so whether the new thread started is unknown. A retry names the same new thread, which main
+      // refuses once it has started, so nothing is sent twice.
+      result = { status: 'refused', message: `Sotto could not confirm whether the ${continueTarget} thread started. Your message is kept here. If it started, it is in the sidebar; continuing again sends nothing twice.` }
+    }
+    if (result.status === 'refused') { continueStore.update(threadId, { sending: false, error: result.message }); return }
+    continueStore.set(threadId, undefined)
+    // Only the words that went are cleared: anything written while main started the thread stays.
+    const now = store.draft(threadId)
+    if (now.text === written.text && now.attachments === written.attachments && now.files === written.files) store.edit(threadId, { text: '', attachments: [], skills: [], files: [] })
+    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+    void command({ type: 'select-thread', threadId: result.threadId })
+  }
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
     if (mode === 'steer' ? !canSteer : !canSend) return
+    if (continuing !== undefined) { if (mode === 'send') void continueSend(continuing); return }
     // Sent from a button, which the emptied draft is about to disable: the next prompt starts where the last was written.
     const input = field.current
     if (input !== null && document.activeElement !== input && input.closest('form')?.contains(document.activeElement)) input.focus()
@@ -220,7 +278,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         store.setAnswerState(threadId, { sending: false, error: `${error}${restored ? ' It is back in the composer.' : ' Your newer draft is in the composer.'}` })
       }
       void command({ type: 'answer', threadId, requestId: question.requestId, answer: answer.text })
-        .then(result => { if (result === null) failed('Sotto could not confirm this answer.'); else if (result.error !== null) failed(result.error); else store.setAnswerState(threadId, { sending: false, error: null }) },
+        .then(result => {
+          if (result === null) failed('Sotto could not confirm this answer.')
+          else if (result.error !== null) failed(result.error)
+          else {
+            store.setAnswerState(threadId, { sending: false, error: null })
+            if (watcherOn) answeredChoices.note(threadId, question.requestId, OWN_WORDS, true)
+          }
+        },
           () => failed('Sotto could not confirm this answer.'))
       return
     }
@@ -247,12 +312,19 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // queueing and a working agent get no caption, and how a sent prompt went is told where it is shown.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
+  // "Continue in a new thread on" in the model chip, for a started thread on this computer (ADR-0089; Owl only).
+  const continueOffer = continueEnabled && !watcher && continuing === undefined && row.thread.nativeSessionStarted !== false && row.thread.remoteHost !== true
+    && !isThreadArchived(row.thread) && row.thread.kind !== 'watcher' && row.thread.kind !== 'watcher-history' ? {
+      models: continueModels(state, row.thread), unavailable: unavailableProviders(state, row.thread), refusal: continueThreadRefusal(row.thread),
+      onContinue: (modelId: string) => { continueStore.set(threadId, continueChoiceFor(state, row.thread, modelId, continueStore.get(threadId))); field.current?.focus() },
+    } : undefined
   // The branch toolbar says Run on for a thread in a Git repository, so the chip speaks only where the toolbar does not.
   const threadHost = toolbarApplies(row.thread) ? undefined : listedHosts(state).find(item => item.hostId === row.thread.hostId)
 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
       onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} />
+    {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
     <form className="thread-prompt" data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current() } }}>
@@ -279,11 +351,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
-          {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen. */}
-          {threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
+          {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
+              Watcher always runs on this computer, so its composer has New Watcher in that place instead. */}
+          {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
+            : threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
-          {row.thread.nativeSessionStarted === false || capabilities.configureThread
-            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher}
+          {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
+            : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
+            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
@@ -297,7 +372,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} title={stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
-          {handover !== null && !working
+          {continuing !== undefined
+            // A narrow pane shows Continue alone; the name keeps the provider, and the strip above says it too.
+            ? <Button className="thread-prompt__send" data-wide aria-label={`Continue on ${continueTarget}`} title={reason ?? `Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
+              Continue<span className="thread-prompt__send-target"> on {continueTarget}</span><ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
+            : handover !== null && !working
             ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} title={reason ?? handover.label} disabled={!canSend} type="submit">
               Continue<ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
             : !working || content ? <Button iconOnly className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">

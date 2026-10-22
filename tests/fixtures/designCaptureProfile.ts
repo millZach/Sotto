@@ -7,41 +7,20 @@ import { _electron as electron, expect } from '@playwright/test'
 import type { DesignCaptureMotion as CaptureMotion, DesignCaptureRequirement } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { type E2EScenario } from '../../src/shared/e2e'
+import type { DictationRecord } from '../../src/shared/dictationRecord'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS, type Appearance } from '../../src/shared/settings'
 import { closeSotto, firstSottoWindow, launchSotto, type LaunchDependencies, type LaunchedSotto } from '../e2e/support/sottoLaunch'
+import { journalHistory, journalRecords } from './journalProfile'
 
 type CaptureScale = DesignCaptureRequirement['scalePercent']
 /** Pinned for every launch in this suite; scripts/capture-design.mjs sets the same zone for the Node side. */
 const CAPTURE_TIMEZONE = 'America/Los_Angeles'
 const CAPTURE_LOCALE = 'en-US'
 
-export const populatedHistory: readonly HistoryEntry[] = [
-  {
-    id: 'review-1',
-    text: 'Draft the launch summary and send it to the product team before lunch.',
-    createdAt: Date.UTC(2026, 6, 11, 16, 30),
-    durationMs: 8_400,
-    language: 'en',
-    modelPreset: 'instant',
-  },
-  {
-    id: 'review-2',
-    text: 'Remember to confirm the accessibility review and installer smoke test.',
-    createdAt: Date.UTC(2026, 6, 10, 22, 15),
-    durationMs: 6_200,
-    language: 'en',
-    modelPreset: 'instant',
-  },
-  {
-    id: 'review-3',
-    text: 'The microphone notes stay local and the final transcript is copied automatically.',
-    createdAt: Date.UTC(2026, 6, 9, 18, 5),
-    durationMs: 10_700,
-    language: 'en',
-    modelPreset: 'instant',
-  },
-]
+/** The captures' Journal: a week of transcripts with their apps over ninety days of dictation records (ADR-0100). */
+export const populatedHistory: readonly HistoryEntry[] = journalHistory
+export const populatedRecords: readonly DictationRecord[] = journalRecords
 
 type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
 
@@ -63,6 +42,8 @@ async function createProfile(
   options: {
     readonly onboardingComplete: boolean
     readonly history?: readonly HistoryEntry[]
+    /** Dictation records; without them main fills records from the transcripts on its first start. */
+    readonly records?: readonly DictationRecord[]
     readonly motion?: CaptureMotion
     readonly agents?: DesignAgentsProfile
     readonly appearance?: Appearance
@@ -85,6 +66,9 @@ async function createProfile(
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
+  // The populated Journal brings its records, apps included, whoever asks for it.
+  const records = options.records ?? (options.history === populatedHistory ? populatedRecords : undefined)
+  if (records !== undefined) await writeFile(join(profile, 'dictation-records.jsonl'), records.map((record) => `${JSON.stringify(record)}\n`).join(''), 'utf8')
   if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(), null, 2)}\n`, 'utf8')
   return profile
 }
@@ -93,6 +77,7 @@ export async function withSotto(
   options: {
     readonly onboardingComplete: boolean
     readonly history?: readonly HistoryEntry[]
+    readonly records?: readonly DictationRecord[]
     readonly motion?: CaptureMotion
     readonly scenario?: E2EScenario
     readonly scalePercent?: CaptureScale

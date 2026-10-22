@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import SottoCore
 
@@ -53,6 +54,10 @@ extension WatcherPhoneState {
     func delivery(of draftID: String) -> String? {
         draftDeliveries?.first { $0.draftId.lowercased() == draftID.lowercased() }?.status
     }
+    /// The follow-up a draft this iPhone sent became, while it waits in Watcher's queue to go next (#1229).
+    func followup(of draftID: String) -> Followup? {
+        followups?.first { $0.draftId.lowercased() == draftID.lowercased() }
+    }
     /// Older than `other`, by when the computer read it. A page read before another one already shown is left unshown.
     func isOlder(than other: WatcherPhoneState) -> Bool {
         guard let mine = Stamp.date(observedAt), let theirs = Stamp.date(other.observedAt) else { return false }
@@ -107,7 +112,8 @@ struct WatcherDrafts: Equatable, Sendable {
             unresolved[index].ended = true
         }
     }
-    /// Lets go of the drafts a page says Watcher took, and returns them, oldest first. With `proof`, the drafts whose send
+    /// Lets go of the drafts a page says Watcher took, or that wait in its queue to go next, and returns them, oldest
+    /// first. With `proof`, the drafts whose send
     /// had ended when the page was asked for (`endedSends`), it also lets go of those it no longer shows on their way,
     /// unless they have been sent again since. Watcher's computer lists
     /// a draft from the moment it reads its send until Watcher took it or it failed, and won't take again one whose result
@@ -116,7 +122,7 @@ struct WatcherDrafts: Equatable, Sendable {
     /// may have made it before it read the send, and a page that says nothing of drafts is no proof either.
     mutating func retire(after page: WatcherPage, proof: [String: Int]) -> [Sent] {
         guard page.draftDeliveries != nil else { return [] }
-        let taken = unresolved.filter { page.delivery(of: $0.draftID) == "accepted" }
+        let taken = unresolved.filter { page.delivery(of: $0.draftID) == "accepted" || page.followup(of: $0.draftID) != nil }
         let gone = unresolved.filter { sent in
             guard sent.ended, proof[sent.draftID.lowercased()] == sent.sends else { return false }
             switch page.delivery(of: sent.draftID) {
@@ -147,7 +153,7 @@ struct WatcherSummary: Equatable, Sendable {
     let working: Bool
     let waiting: [ThreadRef]
     let watched: Set<String>
-    /// Watched threads where the user's own turn runs, so Watcher waits until it ends.
+    /// Watched threads where the user's own turn runs, which Watcher can only steer until it ends.
     let paused: Set<String>
     /// Watched threads under a standing watch, which lasts until the user stops it. The rest are watched for a Watcher
     /// request, which the user's own send there takes over.
@@ -254,9 +260,66 @@ enum WatcherConversation {
     }
 }
 
+/// Where the reader of Watcher's conversation stands, worked out from frames in one coordinate space where they let go of
+/// the page or the box moves. Cards waiting on the user sit after the conversation, so following Watcher's new words
+/// would push a card under the box; a reader on a card is held on it instead, and nothing but the reader moves it away
+/// (#1277).
+struct WatcherReaderPlace: Equatable {
+    /// How near the box, or the header, the newest words or the page's end must be to count as in view, and how much of
+    /// a card must show above the box for the reader to be on it.
+    static let slack: CGFloat = 56
+    /// The key of the card the reader is on: the lowest one they see whole, or with none whole, the one they see most of,
+    /// as long as they see enough of it to read. A whole card wins over a lower one cut off by the box: keeping the
+    /// cut-off one whole above the box would push the whole one under the header. Keeping the lowest whole one where it
+    /// is keeps any above it where they are too.
+    let heldCard: String?
+    /// The reader sees the newest words, or the page's end, and is on no card, so the page follows Watcher's new words.
+    let following: Bool
+
+    /// - Parameters:
+    ///   - newest: the bottom of the newest words; `end`, the bottom of the page.
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    ///   - cards: each waiting card's frame, by its key.
+    init(newest: CGFloat, end: CGFloat, top: CGFloat, dockTop: CGFloat, cards: [String: CGRect]) {
+        let slack = Self.slack
+        let seen = cards.filter { $0.value.minY < dockTop - slack && $0.value.maxY > top }
+        let whole = seen.filter { $0.value.minY >= top - 1 && $0.value.maxY <= dockTop + 1 }
+        func shown(_ card: CGRect) -> CGFloat { min(card.maxY, dockTop) - max(card.minY, top) }
+        if whole.isEmpty {
+            heldCard = seen.max(by: { shown($0.value) < shown($1.value) })?.key
+        } else {
+            heldCard = whole.max(by: { $0.value.minY < $1.value.minY })?.key
+        }
+        let seesNewest = newest >= top - slack && newest <= dockTop + slack
+        following = heldCard == nil && (seesNewest || end <= dockTop + slack)
+    }
+
+    /// Where the card the reader is on goes when the page changes around it: `offset` below the header, where the reader
+    /// left it, but no lower than keeps it whole above the box and never under the header. A card taller than the room
+    /// between them stays where the reader left it as long as it fills that room. Cards removed or added below it, the
+    /// user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page keeps its end
+    /// where it was, which would carry the card off with it (#1277).
+    ///
+    /// Returns the point, as a fraction of the card's height and of the visible page's, that `ScrollViewProxy.scrollTo`
+    /// lines up to put the card's top there, or nil when it is already within a point of there.
+    /// - Parameters:
+    ///   - card: the card's frame now; `offset`, its top's distance below the header where the reader left it.
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat? {
+        let spare = dockTop - top - card.height
+        let wanted = min(max(top + offset, min(top, top + spare)), max(top, top + spare))
+        guard abs(card.minY - wanted) > 1 else { return nil }
+        // A card as tall as the room between the header and the box has its top at the header.
+        guard abs(spare) > 1 else { return 0 }
+        return min(max((wanted - top) / spare, 0), 1)
+    }
+}
+
 // MARK: - Words
 
 enum WatcherWords {
+    /// The bar's owl, which goes to the top of Watcher's page.
+    static let toTop = "Go to the top, where Watcher’s state and permissions are"
     /// What Watcher did, in a word or two.
     static func action(_ action: String) -> String {
         switch action {
@@ -337,7 +400,7 @@ enum WatcherWords {
     /// What Watcher last did with a watched thread, from its computer's own records and never from anyone's words: waiting
     /// while the user's own turn runs, its latest action and how that went, or how long it has watched with nothing sent.
     static func doing(_ thread: WatcherPage.WatchedThread, in page: WatcherPage) -> String? {
-        if thread.paused == true { return "You sent here yourself. Watcher waits until that turn ends." }
+        if thread.paused == true { return "You sent here yourself. Until that turn ends, Watcher can only steer it." }
         let rows = page.receiptGroups.flatMap(\.rows).filter { $0.target == thread.target }
         if let last = rows.max(by: { (Stamp.date($0.updatedAt) ?? .distantPast) < (Stamp.date($1.updatedAt) ?? .distantPast) }) {
             let at = clock(last.updatedAt).map { " at " + $0 } ?? ""
@@ -372,6 +435,38 @@ enum WatcherWords {
     }
     static func permissionUnconfirmed(_ computer: String) -> String {
         "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again."
+    }
+
+    // Steering Watcher while it works (#1229, Zach's pick B): Send steers into Watcher's turn, or the words go next.
+
+    /// A computer on an older Sotto refuses a message while Watcher works. The words stay in the box.
+    static func updateToSteer(_ computer: String) -> String {
+        "Update Sotto on \(computer) to send to Watcher while it works. Your message is still here."
+    }
+    static func removeUnconfirmed(_ computer: String) -> String {
+        "\(computer) didn’t confirm that your message was removed. Check Watcher’s conversation before you send it again."
+    }
+    /// What a follow-up waiting for Watcher says over its words.
+    static func followup(_ status: String) -> String {
+        switch status {
+        case "dispatching": return "Going to Watcher now"
+        case "uncertain": return "Watcher didn’t confirm this message"
+        case "failed": return "Didn’t reach Watcher"
+        case "paused": return "Held after a stop"
+        default: return "Goes next, after this turn"
+        }
+    }
+    /// The line under its words, when there's more to say: why it didn't steer, or what to do next.
+    static func followupNote(_ status: String, page: WatcherPage, computer: String) -> String? {
+        switch status {
+        case "queued":
+            guard let current = page.current, current.steers == false else { return nil }
+            return "\(AgentNames.name(current.provider)) can’t take a steer."
+        case "uncertain": return "Check the conversation before you send it again."
+        case "failed": return "Remove it, then send it again."
+        case "paused": return "Resume Watcher’s queue in Sotto on \(computer), or remove it."
+        default: return nil
+        }
     }
 
     // Watcher's own changes (mark B): Sotto's count of what the provider changed, and Watcher's reason in its own words.
@@ -476,7 +571,7 @@ enum WatchedWords {
     /// What it says where Watcher keeps the thread watched until the user stops it, word for word as on the desktop, and
     /// while the user's own turn there runs.
     static let standing = "Watched by Watcher. It keeps this thread going and brings you its questions and permissions."
-    static let paused = "Watched by Watcher. It waits while your own turn here runs, then keeps this thread going."
+    static let paused = "Watched by Watcher. While your own turn here runs, it can only steer that turn."
     /// The words a row or card adds for VoiceOver after where the thread runs.
     static func spoken(_ watched: Bool) -> String { watched ? ", watched by Watcher" : "" }
 }

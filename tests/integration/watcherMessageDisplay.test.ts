@@ -34,7 +34,7 @@ async function fixture() {
     control: { watcherEnabled: true, historyEnabled: () => true } })
   const services: WatcherService[] = [], tools: WatcherToolServer[] = []
   const make = (control = f.control) => {
-    const service = new WatcherService({ directory: f.root, host: workspace.host, control, limit: () => 4, historyEnabled: () => true })
+    const service = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true })
     const server = new WatcherToolServer(service); workspace.host.useWatcherTools(server)
     services.push(service); tools.push(server)
     return service

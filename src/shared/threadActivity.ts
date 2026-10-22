@@ -30,3 +30,14 @@ export function isThreadClosed(thread: ThreadLifecycle): boolean {
 export function isThreadTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn'>): boolean {
   return thread.status === 'running' || thread.lastTurn?.status === 'running'
 }
+
+/**
+ * Watcher answering one of Sotto's own wake-ups, its news among them: a turn under way on Watcher's thread whose message
+ * is one the host recorded as a wake-up. The user's message never joins such a turn; it waits and goes as its own (#1188).
+ */
+export function isWatcherWakeUpTurn(thread: Pick<AgentThread, 'kind' | 'status' | 'lastTurn' | 'messages' | 'lastUserMessageId' | 'summary' | 'wakeUpMessageIds'>): boolean {
+  if (thread.kind !== 'watcher' || !isThreadTurnRunning(thread) || !thread.wakeUpMessageIds?.length) return false
+  const head = thread.lastTurn?.status === 'running' && thread.lastTurn.messageId
+    || (thread.lastUserMessageId ?? thread.messages.findLast(message => message.role === 'user')?.id ?? thread.summary?.lastUser?.id)
+  return head !== undefined && thread.wakeUpMessageIds.includes(head)
+}

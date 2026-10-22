@@ -21,7 +21,8 @@ export class DictationSocket {
   readonly path: string
   private readonly listeningPath: string
 
-  constructor(private readonly runtimeDirectory: string | undefined, private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>) {
+  constructor(private readonly runtimeDirectory: string | undefined, /** `at` is the key event's own time, when the binding sent one. */
+    private readonly dispatch: (command: CompositorDictationCommand, at?: bigint) => Promise<boolean>) {
     this.path = dictationSocketPath(runtimeDirectory)
     this.listeningPath = join(dirname(this.path), `dictation-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
   }
@@ -174,7 +175,7 @@ export class DictationSocket {
         if (this.disposed) return false
         if (request.command === 'start' && request.at !== undefined &&
           this.latestEndStamp !== null && request.at <= this.latestEndStamp) return true
-        return this.dispatch(request.command)
+        return this.dispatch(request.command, request.at)
       })
       this.delivery = delivery.catch(() => {})
       void delivery.then(

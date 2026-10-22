@@ -93,7 +93,7 @@ export interface PhoneAccessOptions {
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    */
-  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion'>
+  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 

@@ -1,6 +1,7 @@
 import type { PasteProcessAdapter } from './outputService'
 import type { PasteInvocation } from './pasteCommand'
 import { buildPasteHelperInvocation } from './pasteCommand.win32'
+import { deliveredAppName } from '../../shared/dictationRecord'
 
 export interface HelperProcessLike {
   readonly stdin: { write(chunk: string): boolean } | null
@@ -23,21 +24,40 @@ export interface WarmPasteAdapterOptions {
 export interface WarmPasteAdapter extends PasteProcessAdapter {
   start(): void
   dispose(): void
+  /**
+   * The display name of the app that owns the foreground window, asked of the helper ahead of any paste queued after it
+   * (ADR-0100). Null when the helper cannot answer; never a window title.
+   */
+  readForegroundApp(): Promise<string | null>
 }
 
 const HELPER_RESPONSE_TIMEOUT_MS = 5_000
+/** How long a delivery waits for the foreground app before going on without it. The paste is never held longer. */
+export const HELPER_APP_TIMEOUT_MS = 1_000
 
-interface PendingPaste {
-  resolve(result: boolean | 'unavailable'): void
+/** A command the helper has been, or will be, sent, answered in the order it was sent. */
+interface PendingCommand {
+  readonly command: 'paste' | 'app'
+  /** The helper's line for this command. */
+  answer(line: string): void
+  /** The helper went away before answering. */
+  lost(): void
   timer: unknown
 }
 
 interface HelperSession {
   readonly process: HelperProcessLike
-  readonly pending: PendingPaste[]
+  readonly pending: PendingCommand[]
   buffer: string
   dead: boolean
   ready: boolean
+}
+
+/** Reads the helper's answer to `app`: `app` alone when no name could be read, else `app` and the name as base64 UTF-8. */
+export function parseForegroundAppReply(line: string): string | null {
+  const match = /^app(?: ([A-Za-z0-9+/=]*))?$/u.exec(line)
+  if (match === null || match[1] === undefined || match[1].length === 0) return null
+  return deliveredAppName(Buffer.from(match[1], 'base64').toString('utf8'))
 }
 
 export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPasteAdapter {
@@ -54,7 +74,7 @@ export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPa
     const pending = session.pending.splice(0)
     for (const request of pending) {
       clearTimer(request.timer)
-      request.resolve(session.ready || disposed ? false : 'unavailable')
+      request.lost()
     }
   }
 
@@ -96,9 +116,9 @@ export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPa
           if (line === 'ready') {
             if (!created.ready) {
               created.ready = true
-              for (let index = 0, count = created.pending.length; index < count; index += 1) {
+              for (const request of [...created.pending]) {
                 if (created.dead) break
-                dispatchPaste(created)
+                dispatch(created, request.command)
               }
             }
             newlineIndex = created.buffer.indexOf('\n')
@@ -107,7 +127,7 @@ export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPa
           const request = created.ready ? created.pending.shift() : undefined
           if (request !== undefined) {
             clearTimer(request.timer)
-            request.resolve(line === 'ok')
+            request.answer(line)
           }
           newlineIndex = created.buffer.indexOf('\n')
         }
@@ -123,10 +143,10 @@ export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPa
     return created
   }
 
-  const dispatchPaste = (target: HelperSession): void => {
+  const dispatch = (target: HelperSession, command: PendingCommand['command']): void => {
     try {
       // A false return means backpressure, not that the command was rejected.
-      target.process.stdin!.write('paste\n')
+      target.process.stdin!.write(`${command}\n`)
     } catch {
       destroySession(target)
     }
@@ -134,15 +154,31 @@ export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPa
 
   const pasteViaHelper = (target: HelperSession): Promise<boolean | 'unavailable'> => {
     return new Promise((resolve) => {
-      const request: PendingPaste = {
-        resolve,
+      const request: PendingCommand = {
+        command: 'paste',
+        answer: line => resolve(line === 'ok'),
+        lost: () => resolve(target.ready || disposed ? false : 'unavailable'),
         timer: setTimer(() => {
           // Before ready no command is sent; after ready a paste may have happened.
           destroySession(target)
         }, responseTimeoutMs),
       }
       target.pending.push(request)
-      if (target.ready) dispatchPaste(target)
+      if (target.ready) dispatch(target, 'paste')
+    })
+  }
+
+  const appViaHelper = (target: HelperSession): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const request: PendingCommand = {
+        command: 'app',
+        answer: line => resolve(parseForegroundAppReply(line)),
+        lost: () => resolve(null),
+        // A late answer is still taken off the queue, so every later answer stays with its own command.
+        timer: setTimer(() => resolve(null), Math.min(HELPER_APP_TIMEOUT_MS, responseTimeoutMs)),
+      }
+      target.pending.push(request)
+      if (target.ready) dispatch(target, 'app')
     })
   }
 
@@ -157,6 +193,11 @@ export function createWarmPasteAdapter(options: WarmPasteAdapterOptions): WarmPa
 
       const result = await pasteViaHelper(target)
       return result === 'unavailable' ? options.fallback.run(invocation) : result
+    },
+
+    readForegroundApp(): Promise<string | null> {
+      const target = ensureSession()
+      return target === null ? Promise.resolve(null) : appViaHelper(target)
     },
 
     dispose(): void {

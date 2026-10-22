@@ -26,7 +26,7 @@ export type ShowBrowserPageResult = 'opened' | 'unfocused' | 'pinned-elsewhere'
 export interface ToolsPanelChrome {
   readonly open: boolean
   readonly surface: ToolSurfaceId
-  /** Sotto thread ID held for working-copy surfaces; Agents always follows the focused thread. */
+  /** Sotto thread ID held for working-copy surfaces; Agents follows the focused thread unless delegation is on. */
   readonly pinnedThreadId: string | null
   readonly width: number
   readonly resized: boolean
@@ -161,7 +161,11 @@ export function useToolsPanelChrome(store: ToolsPanelStore = toolsPanelStore): T
   return useSyncExternalStore(store.subscribe, store.getSnapshot)
 }
 
-/** Agents belongs to the focused thread; the other surfaces share a pinned working copy. */
-export function toolsTarget(chrome: ToolsPanelChrome, focusedThreadId: string | null): string | null {
-  return chrome.surface === 'agents' ? focusedThreadId : chrome.pinnedThreadId ?? focusedThreadId
+/**
+ * Agents belongs to the focused thread; the other surfaces share a pinned working copy. While delegation is on
+ * (`agentsFollowPin`, ADR-0081), Agents follows the pin too, so a delegated thread opened from its roster leaves Tools on
+ * the thread that delegated it.
+ */
+export function toolsTarget(chrome: ToolsPanelChrome, focusedThreadId: string | null, agentsFollowPin = false): string | null {
+  return chrome.surface === 'agents' && !agentsFollowPin ? focusedThreadId : chrome.pinnedThreadId ?? focusedThreadId
 }

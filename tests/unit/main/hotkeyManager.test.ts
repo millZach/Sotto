@@ -6,6 +6,7 @@ import {
   syncEscapeForWidgetSnapshot,
   type GlobalShortcutAdapter,
 } from '../../../src/main/hotkeys/hotkeyManager'
+import { chordTokenSet } from '../../../src/main/hotkeys/dictationShortcutRouter'
 
 function createAdapter(registerResult: (accelerator: string) => boolean = () => true) {
   const active = new Map<string, () => void>()
@@ -184,5 +185,162 @@ describe('HotkeyManager cancellable-session Escape', () => {
     expect(manager.beginListening()).toBe(false)
     expect(manager.isListening()).toBe(false)
     expect(active.has('Primary')).toBe(true)
+  })
+})
+
+describe('HotkeyManager suspend', () => {
+  it('stands the primary down and back up without changing current()', () => {
+    const { active, adapter } = createAdapter()
+    const toggle = vi.fn()
+    const manager = new HotkeyManager(adapter, toggle, vi.fn(), 'darwin')
+    manager.replace('Control+Shift+Space')
+    manager.suspend(true)
+    expect(active.has('Control+Shift+Space')).toBe(false)
+    expect(manager.current()).toBe('Control+Shift+Space')
+    manager.suspend(false)
+    active.get('Control+Shift+Space')?.()
+    expect(toggle).toHaveBeenCalledOnce()
+    expect(manager.current()).toBe('Control+Shift+Space')
+  })
+
+  it('ends a suspension on replace and never touches Linux shortcuts', () => {
+    const { active, adapter } = createAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'win32')
+    manager.replace('Control+Shift+Space')
+    manager.suspend(true)
+    expect(manager.replace('Alt+Shift+D')).toEqual({ ok: true })
+    expect([...active.keys()]).toEqual(['Alt+Shift+D'])
+    manager.suspend(false)
+    expect([...active.keys()]).toEqual(['Alt+Shift+D'])
+
+    const linux = createAdapter()
+    const onLinux = new HotkeyManager(linux.adapter, vi.fn(), vi.fn(), 'linux')
+    onLinux.replace('Control+Shift+Space')
+    onLinux.suspend(true)
+    onLinux.suspend(false)
+    expect(linux.adapter.register).not.toHaveBeenCalled()
+    expect(linux.adapter.unregister).not.toHaveBeenCalled()
+  })
+})
+
+describe('HotkeyManager fix round', () => {
+  // Electron refuses an accelerator already registered, in any spelling.
+  function refusingAdapter(platform: 'darwin' | 'win32' = 'darwin') {
+    const active = new Map<string, () => void>()
+    const calls: string[] = []
+    let refuseAll = false
+    const key = (accelerator: string) => chordTokenSet(accelerator, platform)
+    const adapter: GlobalShortcutAdapter = {
+      register: vi.fn((accelerator: string, callback: () => void) => {
+        calls.push(`register:${accelerator}`)
+        if (refuseAll || active.has(key(accelerator))) return false
+        active.set(key(accelerator), callback)
+        return true
+      }),
+      unregister: vi.fn((accelerator: string) => {
+        calls.push(`unregister:${accelerator}`)
+        active.delete(key(accelerator))
+      }),
+      isRegistered: (accelerator) => active.has(key(accelerator)),
+    }
+    return { active, adapter, calls, refuse: (on: boolean) => { refuseAll = on } }
+  }
+
+  it('re-registers the same chord under a new spelling', () => {
+    const { active, adapter, calls } = refusingAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin')
+    manager.replace('Shift+Control+Space')
+    calls.splice(0)
+    expect(manager.replace('Control+Shift+Space')).toEqual({ ok: true })
+    expect(calls).toEqual(['unregister:Shift+Control+Space', 'register:Control+Shift+Space'])
+    expect(manager.current()).toBe('Control+Shift+Space')
+    expect(active.size).toBe(1)
+  })
+
+  it('restores the old spelling when the new one is refused', () => {
+    const { adapter } = refusingAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin')
+    manager.replace('Shift+Control+Space')
+    vi.mocked(adapter.register).mockImplementationOnce(() => false)
+    expect(manager.replace('Control+Shift+Space')).toEqual({ ok: false, reason: 'conflict' })
+    expect(manager.current()).toBe('Shift+Control+Space')
+    expect(adapter.isRegistered?.('Shift+Control+Space')).toBe(true)
+  })
+
+  it('registers a candidate after a release and restores the prior one on refusal', () => {
+    const { adapter, refuse } = refusingAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin')
+    manager.replace('Control+Shift+Space')
+    manager.suspend(true)
+    refuse(true)
+    expect(manager.replace('Alt+Shift+D')).toEqual({ ok: false, reason: 'conflict' })
+    refuse(false)
+    manager.suspend(true)
+    expect(manager.replace('Control+Shift+Space')).toEqual({ ok: true })
+    expect(adapter.isRegistered?.('Control+Shift+Space')).toBe(true)
+  })
+
+  it('logs a failed restore, reports no shortcut, and retries every 5 s up to 12 times', () => {
+    vi.useFakeTimers()
+    try {
+      const { adapter, refuse } = refusingAdapter()
+      const log = vi.fn()
+      const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin', log)
+      manager.replace('Control+Shift+Space')
+      manager.suspend(true)
+      refuse(true)
+      manager.suspend(false)
+      expect(log).toHaveBeenCalledExactlyOnceWith('native-hotkey-registration-failed')
+      expect(manager.current()).toBeNull()
+      vi.advanceTimersByTime(5_000 * 2)
+      expect(manager.current()).toBeNull()
+      refuse(false)
+      vi.advanceTimersByTime(5_000)
+      expect(manager.current()).toBe('Control+Shift+Space')
+      expect(adapter.isRegistered?.('Control+Shift+Space')).toBe(true)
+
+      manager.suspend(true)
+      refuse(true)
+      vi.mocked(adapter.register).mockClear()
+      manager.suspend(false)
+      vi.advanceTimersByTime(5_000 * 30)
+      expect(adapter.register).toHaveBeenCalledTimes(13)
+      expect(manager.current()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('HotkeyManager never forgets the primary', () => {
+  it('keeps a refused prior, reports no shortcut, logs, and retries it', () => {
+    vi.useFakeTimers()
+    try {
+      const taken = new Set<string>()
+      const active = new Map<string, () => void>()
+      const adapter: GlobalShortcutAdapter = {
+        register: vi.fn((accelerator: string, callback: () => void) => {
+          if (taken.has(accelerator) || active.has(accelerator)) return false
+          active.set(accelerator, callback)
+          return true
+        }),
+        unregister: vi.fn((accelerator: string) => { active.delete(accelerator) }),
+        isRegistered: (accelerator) => active.has(accelerator),
+      }
+      const log = vi.fn()
+      const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin', log)
+      manager.replace('Control+Shift+Space')
+      manager.suspend(true)
+      taken.add('Control+Shift+Space').add('Alt+Shift+D')
+      expect(manager.replace('Alt+Shift+D')).toEqual({ ok: false, reason: 'conflict' })
+      expect(manager.current()).toBeNull()
+      expect(log).toHaveBeenCalledExactlyOnceWith('native-hotkey-registration-failed')
+      taken.clear()
+      vi.advanceTimersByTime(5_000)
+      expect(manager.current()).toBe('Control+Shift+Space')
+      expect(active.has('Control+Shift+Space')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

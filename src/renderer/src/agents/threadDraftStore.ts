@@ -172,7 +172,7 @@ export function deliveryFor(state: AgentState, threadId: string, draftId: string
  * a settled command promise without delivery evidence leaves the outcome uncertain.
  */
 export function submissionStatus(submission: Submission, state: AgentState): { readonly status: SubmissionStatus; readonly visible: boolean } {
-  // A queued revision is echoed in the transcript from the press, until the durable queue owns it and echoes it itself.
+  // A queued revision is listed with the queue from the press, until the durable queue owns it and lists it itself.
   if (submission.mode === 'queue' || queuedRevision(state, submission.threadId, submission.draftId)) {
     // A queue admission main never answered proves nothing either way, so it is unconfirmed rather than
     // refused: refused is what puts the prompt back in the composer, and main may already own this one.

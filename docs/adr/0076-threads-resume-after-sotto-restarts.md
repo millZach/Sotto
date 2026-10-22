@@ -91,6 +91,17 @@ October 13, 2026 amendment: Usage's matching Owl host archives extend the origin
 The host's own-version rule applies to those archives too; remote collection, restart records and update permission
 remain on the computer that owns them.
 
+October 19, 2026 amendment (#1187): a note the provider refuses leaves the queue. After a restart that day, every
+thread on Muse refused its note, because Muse had not yet confirmed the thread's model (pull request #1174 removes that refusal). Each note
+was left "Not sent" at the head of its thread's queue, and everything the user then sent those threads, by hand or
+through Watcher, queued behind it instead of going. Zach decided that Sotto's own note never holds the user's
+messages back: a note that is sent and refused now leaves the queue, and the thread is left as it was, not resumed.
+Its record goes with it, as for a note taken out of the queue. News folded with the note stays, "Not sent" as any
+wake-up that could not go, and moves behind the thread's other queued messages so it holds none of them back. Only a
+note the provider was offered goes this way: one that failed before that, as when the thread could not be read, is
+left "Not sent" for Resume queue, as above. A note that may have gone stays unconfirmed, as before, and a note an
+earlier build left "Not sent" still waits for Resume queue.
+
 ## Consequences
 
 - A resumed thread has one more user-role message than the user wrote, marked as Sotto's.

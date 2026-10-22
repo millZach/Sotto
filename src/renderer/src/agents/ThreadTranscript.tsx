@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, u
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
-import { isThreadBusy, isVisualMessage, type AgentFollowup, type AgentMessage, type AgentState } from '../../../shared/agents'
+import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
@@ -14,23 +14,32 @@ import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChangedFiles } from './ThreadActivity'
+import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
+import { threadHostName } from './HostBadge'
 import { isDrawableVisual, VisualCard } from './VisualCard'
 import { MOST_LIFTED, questionsIn } from './liftedQuestions'
-import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
+import { isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
-import { HandoverMessage } from '../watcher/WatcherHandover'
+import { useRepliesKeptInView, WatcherAfterMessage } from '../watcher/WatcherReceipts'
+import { HandoverFromContext, HandoverMessage } from '../watcher/WatcherHandover'
+import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
+import { ContinueLinksContext, continuedInByTurn, useContinueEnabled, type ContinueLinks } from './continuations'
+import { StartHandoverCard, ThreadStartContext, ThreadStartNote, threadStartView, useThreadStartView, useThreadStarts } from './ThreadStart'
+import { ForkCard, ForkContext, ForkPress, useForkOptions, type ForkOptions } from './ForkFromHere'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
-import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
+import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
+/** No message is left behind while no fork card is open. */
+const NOTHING_AFTER: ReadonlySet<string> = new Set()
 
 export const TRANSCRIPT_PAGE = 80
 /** Within this many pixels of the end, the reader is following the conversation. */
@@ -220,35 +229,74 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy }: {
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
   /** Watcher's conversation names its replies Watcher, with the owl, whatever provider it runs on. */
   readonly speaker?: 'watcher' | undefined
   /** A brief the delegating thread sent: that thread's name, shown in the user's place (ADR-0081). */
   readonly delegatedBy?: string | undefined
+  /** A finished turn's newest written reply, which offers Fork from here where the transcript does (#1028, E5b). */
+  readonly forkable?: boolean | undefined
+  /**
+   * The work of the turn this reply opens, folded into its header: Watcher's reply to news. Its groups come shared from
+   * the placement, and the rest is plain values, so the memo still holds while other turns change.
+   */
+  readonly work?: string | undefined
+  readonly workGroups?: readonly ActivityGroup[] | undefined
+  readonly activity?: ActivityContext | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
+  const workButton = useRef<HTMLButtonElement>(null)
+  const [workOpen, setWorkOpen] = useState(false)
+  const workId = useId()
+  const foldWork = (event: React.KeyboardEvent): void => {
+    if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
+    event.preventDefault()
+    workButton.current.focus()
+    activity?.onDisclosure(workButton.current)
+    setWorkOpen(false)
+  }
+  const lifecycle = workGroups?.find(group => group.turn)?.turn
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
   const wakeUp = isWakeUpMessage(message)
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
   // A brief the delegating thread sent here is that thread's, never the user's (ADR-0081).
   const brief = delegatedBy !== undefined && message.role === 'user' && !wakeUp
-  // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073).
-  return <>{message.handover && message.role === 'user' ? <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
-  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}>
+  // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073), and so does the one
+  // a thread that began from another started with (#1028).
+  const started = useThreadStartView()
+  // Fork from here (#1028, E5b): offered on a finished turn's reply; what follows the open one is not carried.
+  const fork = useForkOptions()
+  const forkHere = forkable === true && fork !== null && !writing
+  const forkedAt = started !== null && started !== 'off' && started.start.from === 'turn' && started.start.route === 'fork' && started.start.messageId === message.id
+  return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
+    : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
+  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}
+    data-not-carried={fork?.after.has(message.id) || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
-      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
+      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
+      {work ? <button type="button" ref={workButton} className="thread-message__work tt-focusable" aria-expanded={workOpen} aria-controls={workOpen ? workId : undefined}
+        onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(open => !open) }}>
+        {work}<ChevronRight className="thread-activity__chevron" size={13} aria-hidden="true" />
+      </button> : null}</header>
+    {work && lifecycle?.error ? <p className="thread-activity__error thread-activity__error--turn">{lifecycle.error}</p> : null}
+    {work && workOpen && activity ? <div id={workId} className="thread-message__work-body">
+      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
     {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
       : <MessageContent text={markdown} streaming={writing} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
-  </article></>
+    {forkHere ? <ForkPress messageId={message.id} at={message.createdAt} /> : null}
+  </article>
+  {speaker === 'watcher' ? <WatcherAfterMessage message={message} /> : null}
+  {forkHere ? <ForkCard messageId={message.id} at={message.createdAt} /> : null}
+  {forkedAt ? <ThreadStartNote view={started} /> : null}</>
 })
 
 /**
@@ -256,7 +304,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, briefs }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, briefs, continuedIn }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly running: boolean; readonly last: boolean
   readonly writing: string | undefined
   readonly speaker?: 'watcher' | undefined
@@ -265,11 +313,17 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   /** The delegations this turn's message rooted (ADR-0081), as cards under its reply, never folded with the work. */
   readonly delegations?: readonly DelegationView[] | undefined
   readonly briefs?: DelegatedBriefs | undefined
+  /** The threads that continue this one, made while this turn was the newest (ADR-0089), as notes under it. */
+  readonly continuedIn?: readonly ThreadContinuedIn[] | undefined
 }): ReactNode {
+  // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
+  const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
-  const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} threadId={threadId} />
+  const article = (message: AgentMessage, work?: { readonly label: string; readonly groups: readonly ActivityGroup[] }): ReactNode => isDrawableVisual(message)
+    ? <VisualCard visual={message.visual} threadId={threadId} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} />
+      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId}
+      {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
@@ -283,15 +337,49 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     if (isVisualMessage(message)) visuals.push({ message, at })
     else written.push(message)
   }
+  // An unshown turn's work, which happened before the reply that opens the turn. In Watcher's pane a news turn's work
+  // shows only folded into its reply, so a finished one with no written reply to carry it shows none (variant b).
+  const shownOpening = turn.unshown ? placement.unshown.get(turn.replies[0]!.id) : undefined
+  const opening = speaker === 'watcher' && !(running && last) ? withoutFinishedNews(shownOpening, context.liveTurn) : shownOpening
   // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
   // a finished turn folds under its last written reply.
-  const final = !turn.user || running && last ? undefined : written.findLast(message => message.role === 'assistant' && drawn(message))
-  const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+  const final = !turn.user && !turn.unshown || running && last ? undefined : written.findLast(message => message.role === 'assistant' && drawn(message))
+  // In Watcher's own pane, a reply that carries receipt cards stays in view where it was written, as a visual does: its
+  // cards say what Watcher did in that turn, and a closed fold would hide them.
+  const kept = useRepliesKeptInView()
+  if (final !== undefined && kept !== null) for (const [at, message] of turn.replies.entries()) {
+    if (message !== final && kept.has(message.id) && !isVisualMessage(message)) visuals.push({ message, at })
+  }
+  visuals.sort((a, b) => a.at - b.at)
+  const replyGroups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+  // Shared across updates, so the reply that carries a news turn's work keeps its memo while other turns change.
+  const groups = useShared(!replyGroups.length && shownOpening ? shownOpening : [...shownOpening ?? [], ...replyGroups])
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
-  const work = final ? written.filter(message => message !== final && drawn(message)) : []
+  const continued = continuedIn?.length ? <ContinuedInNotes links={continuedIn} /> : null
+  // Watcher's reply to news (Zach's pick on October 19, 2026, variant b of docs/prototypes/watcher-news-turns-prototype.html):
+  // Watcher's conversation leaves out only Sotto's news wake-ups (watcherWakeUpsAsShown), so its unshown turns are news
+  // turns. Each has no line of its own: its work folds into the header of the first reply it wrote, and every reply stays.
+  if (speaker === 'watcher' && turn.unshown && final) {
+    const lifecycle = groups.find(group => group.turn)?.turn
+    const records = groups.flatMap(group => group.records)
+    const head = written.find(message => message.role === 'assistant' && drawn(message))
+    const replyWork = head && records.some(record => record.kind !== 'compaction') ? {
+      label: newsWorkLabel(lifecycle, context.running, lifecycle?.startedAt ?? records.map(record => record.startedAt).filter(Boolean).sort()[0],
+        [...turn.replies.map(message => message.createdAt), ...records.map(record => record.completedAt ?? record.startedAt)]),
+      groups,
+    } : undefined
+    return <>
+      <ActivityGroups groups={replyWork ? boundaries : groups} context={context} />
+      {turn.replies.map(message => <React.Fragment key={message.id}>{article(message, message === head ? replyWork : undefined)}</React.Fragment>)}
+      <DelegationCards views={delegations} />
+      {continued}
+    </>
+  }
+  const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
-  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}<DelegationCards views={delegations} /></>
+  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<DelegationCards views={delegations} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -304,6 +392,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {turn.user ? article(turn.user) : null}
     <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
+      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}
         <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
@@ -315,13 +404,30 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {article(final)}
     <DelegationCards views={delegations} />
     {shown(finalAt, Number.POSITIVE_INFINITY)}
+    {continued}
   </>
 })
+
+/**
+ * Watcher's news turns' work without the turns that finished, the same array when none did: what is left says a turn
+ * failed, stopped or is still going. A turn with no lifecycle record has finished once nothing in it runs and it is not
+ * the live turn. Compactions stay, as boundaries do everywhere.
+ */
+function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveTurn: string | null): readonly ActivityGroup[] | undefined {
+  if (!groups?.length) return groups
+  const going = new Set<string>()
+  for (const group of groups) {
+    const status = group.turn?.status
+    if (group.turnId === liveTurn || status !== undefined && status !== 'completed' || group.records.some(record => record.status === 'running')) going.add(group.turnId)
+  }
+  const shown = groups.filter(group => going.has(group.turnId) || compactionOf(group))
+  return shown.length === groups.length ? groups : shown
+}
 
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
 export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId, speaker, delegations, briefs }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId, speaker, delegations, briefs, continuedIn }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
   /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
@@ -332,45 +438,69 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   readonly delegations?: ReadonlyMap<string, readonly DelegationView[]> | undefined
   /** In a delegated thread, the briefs that are the delegating thread's words rather than the user's. */
   readonly briefs?: DelegatedBriefs | undefined
+  /** Links to the threads that continue this one, by the user message that began the turn each follows (ADR-0089). */
+  readonly continuedIn?: ReadonlyMap<string, readonly ThreadContinuedIn[]> | undefined
 }): ReactNode {
   const last = messages.findLast(drawn)
   // A visual after the reply means the reply is no longer being written.
   const writing = running && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
-  const turns = useShared(useMemo(() => splitTurns(messages), [messages]))
-  return <><ActivityGroups groups={placement.leading} context={context} />
-  {turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
-    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-    delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} />)}
-  <ActivityGroups groups={placement.trailing} context={context} />
+  const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
+  // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
+  const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
+  return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
+  {turns.map((turn, index) => <React.Fragment key={turn.key}>
+    <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
+    <TurnView turn={turn} provider={provider} running={running}
+      last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
+  </React.Fragment>)}
+  <ActivityGroups groups={unshown(placement.trailing)} context={context} />
   <DelegationCards views={delegations?.get('')} />
   </>
 })
 
 /**
  * A message the user sent from this window, drawn where it will sit in the conversation from the press
- * onwards. A direct send says how the delivery went and offers the prompt back when it was refused;
- * a queued one is an echo alone, because the queue below the composer holds its controls.
+ * onwards. It says how the delivery went and offers the prompt back when it was refused. A prompt bound for
+ * the queue is not drawn here: the queue above the composer holds it, with its controls, until it is sent.
  */
 function PendingMessage({ draftId, submission, status, row, state, command, store }: {
   readonly draftId: string; readonly submission?: Submission; readonly status: SubmissionStatus; readonly row: ThreadRow
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
 }): ReactNode {
   const { draft } = useThreadComposer(store, row.thread.id)
-  const queued = submission?.mode === 'queue'
+  const [settingAside, setSettingAside] = useState(false)
+  const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const restored = submission?.restoredAs !== undefined && draft.draftId === submission.restoredAs
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
   // The provider's history can show the exact message before Sotto has its confirmation.
   // Repeating the text would read as a second send, so only the delivery state stays here.
-  const messageId = deliveryFor(state, row.thread.id, draftId)?.messageId
+  const receipt = deliveryFor(state, row.thread.id, draftId)
+  const setAside = receipt?.setAside === true && status !== 'accepted'
+  const local = !row.thread.remoteHost
+  const messageId = receipt?.messageId
   const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
   if (submission !== undefined && inHistory && (status === 'queued' || status === 'submitting')) return null
-  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{queued && status === 'queued' ? 'Queued' : STATUS_LABELS[status]}</span>
-  const unresolved = status === 'uncertain' || submission === undefined && deliveryPending(status)
-  // A queued prompt is told by the queue, which is also where it is edited, moved or removed.
+  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{setAside ? 'Set aside · Unconfirmed' : STATUS_LABELS[status]}</span>
+  const unresolved = !setAside && (status === 'uncertain' || submission === undefined && deliveryPending(status))
+  const continueWithNewMessage = async (button: HTMLButtonElement): Promise<void> => {
+    if (settingAside) return
+    const composer = button.closest('.thread-workspace')?.querySelector<HTMLElement>('[role="textbox"]')
+    setSettingAside(true); setRecoveryError(null)
+    try {
+      const result = await command({ type: 'set-aside-send', threadId: row.thread.id, draftId })
+      const delivery = result && deliveryFor(result, row.thread.id, draftId)
+      if (!delivery?.setAside && delivery?.status !== 'accepted') {
+        setRecoveryError(result?.error ?? 'Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.')
+      } else composer?.focus()
+    } catch {
+      setRecoveryError('Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.')
+    } finally { setSettingAside(false) }
+  }
   // Only the header's Reconnect acts on a disconnected provider; Check again needs a connection.
-  const detail = queued ? null
+  const detail = setAside ? 'Its delivery is still unknown. Sotto has not sent it again.'
     : status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${submission === undefined ? '' : restored ? ' It is back in the composer.' : hasDraftContent(draft) ? ' Restoring it replaces the draft in the composer.' : ''}`
       : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
         : null
@@ -383,42 +513,23 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
         onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)}>Retry</Button> : null}
       {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>Restore prompt</Button> : null}
       {/* Checking again refreshes the provider, which is global-lane work. */}
-      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy || settingAside} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {status === 'uncertain' && !setAside && local && row.connected ? <Button variant="secondary" disabled={settingAside || isThreadBusy(state, row.thread.id)}
+        aria-busy={settingAside || undefined} onClick={event => void continueWithNewMessage(event.currentTarget)}>Continue with a new message</Button> : null}
       {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
     </div>
+    {status === 'uncertain' && !setAside && local ? <span>The provider may have received it. Continuing sets it aside without resending it.</span> : null}
+    {recoveryError && !setAside && status !== 'accepted' ? <span role="alert">{recoveryError}</span> : null}
   </div>
   // With no prompt text to show (already in the history, or recovered after a restart),
   // the state is a compact line under the conversation rather than an empty second bubble.
   if (inHistory || submission === undefined) {
     return <div className="thread-delivery" role="group" aria-label="Pending message" data-status={status} data-in-history={inHistory || undefined}>{label}{delivery}</div>
   }
-  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label={queued ? 'Queued message' : 'Pending message'}>
+  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label="Pending message">
     <header><span className="thread-message__who">You</span>{label}</header>
     <MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} />
     {delivery}
-  </article>
-}
-
-/** Follow-up statuses in the transcript's own words, each with the state it is already coloured by there. */
-const QUEUED_ECHO: Record<AgentFollowup['status'], { readonly label: string; readonly status: SubmissionStatus }> = {
-  queued: { label: 'Queued', status: 'queued' }, dispatching: { label: 'Sending', status: 'submitting' },
-  uncertain: { label: 'Unconfirmed', status: 'uncertain' }, failed: { label: 'Not sent', status: 'failed' },
-  paused: { label: 'Paused', status: 'uncertain' },
-}
-
-/**
- * A message the thread's queue holds, in the place it will take in the conversation. It repeats what the
- * user wrote and nothing else: the queue under the composer is where it is edited, moved or removed.
- */
-export function QueuedMessage({ item }: { readonly item: AgentFollowup }): ReactNode {
-  const echo = QUEUED_ECHO[item.status]
-  // Sotto's wake-up waiting in the queue is Sotto's here too, with every word the provider will receive (ADR-0061).
-  const wakeUp = isWakeUpFollowup(item)
-  return <article className="thread-message thread-message--pending" data-role="user" data-from={wakeUp ? 'sotto' : undefined} data-status={echo.status}
-    aria-label={wakeUp ? 'Queued wake-up from Sotto' : 'Queued message'}>
-    <header>{wakeUp ? <WakeUpWho text={item.text} /> : <span className="thread-message__who">You</span>}
-      <span className="thread-message__status" data-status={echo.status}><i aria-hidden="true" />{echo.label}</span></header>
-    <MessageContent text={wakeUp ? wakeUpMarkdown(item.text) : item.text} /><AttachmentPreviews attachments={item.attachments} />
   </article>
 }
 
@@ -438,12 +549,14 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
  */
-export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot }: {
+export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot, emptyNote }: {
   readonly row: ThreadRow
   /** Where a new thread's greeting goes, directly above the composer. Without one, the thread keeps the plain empty line. */
   readonly greetingSlot?: HTMLElement | null
   /** Watcher's own conversation: its replies are Watcher's. */
   readonly watcher?: boolean
+  /** What an empty conversation at rest says in place of the plain empty line, as a new Watcher's does (New Watcher). */
+  readonly emptyNote?: ReactNode
   readonly state: AgentState
   readonly command: Command
   readonly store: ThreadDraftStore
@@ -475,13 +588,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     && !queuedRevision(state, thread.id, item.draftId) && !submissions.some(local => local.threadId === thread.id && local.draftId === item.draftId && local.mode === 'queue')
     && !pending.some(local => local.item.draftId === item.draftId)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === thread.id && receipt.draftId === item.draftId))
-  // What the queue holds is echoed here in dispatch order, until the provider's own history carries it.
-  const queuedEchoes = followupsFor(state, thread.id).filter(item => item.messageId === undefined || !thread.messages.some(message => message.id === item.messageId))
+  // What the queue holds, and a send on its way into it, is told by the queue above the composer alone. It joins the
+  // conversation when the provider's own history carries it, so a queued message is never drawn twice.
+  const queueHolds = followupsFor(state, thread.id).length > 0 || pending.some(item => item.item.mode === 'queue')
   // Sending starts the working line on the press; the provider's own running turn takes it over when it arrives.
   const sendingSince = pending.find(item => item.item.mode !== 'queue' && (item.status === 'queued' || item.status === 'submitting'))?.item.startedAt
-  // A direct send belongs to the turn starting now; one bound for the queue lines up after it.
+  // A direct send belongs to the turn starting now.
   const sending = pending.filter(item => item.item.mode !== 'queue')
-  const admissions = pending.filter(item => item.item.mode === 'queue')
   const sameThread = firstRendered.current?.threadId === thread.id
   const retainedStart = sameThread ? thread.messages.findIndex(message => message.id === firstRendered.current?.messageId) : -1
   // While reading earlier history, retain the first rendered message. A sliding
@@ -507,7 +620,46 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
   }, [delegations.received, delegatingTitle])
-  const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...queuedEchoes.map(item => `${item.id}:${item.status}`),
+  // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
+  // Its view changes only when where it began does, so the messages that read it are not redrawn on every update.
+  const startsOn = useThreadStarts()
+  const startKey = startsOn && !watcher && thread.startedFrom ? JSON.stringify(thread.startedFrom) : undefined
+  const startSource = startKey === undefined ? undefined : state.host.threads.find(item => item.id === thread.startedFrom!.threadId)
+  const sourceTitle = startSource?.title, sourceProvider = startSource?.providerId
+  const startView = useMemo(() => startKey === undefined ? null : threadStartView({ id: thread.id, startedFrom: JSON.parse(startKey) as NonNullable<typeof thread.startedFrom>, providerId: thread.providerId },
+    sourceTitle === undefined ? undefined : { title: sourceTitle, providerId: sourceProvider }, command, window.sotto?.agents?.startHandover),
+  [startKey, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
+  const startHandoverWaiting = startView?.start.route === 'handover' && startView.start.handover !== undefined && startView.start.handover.sent === undefined
+  // A fork's note goes under the last reply it copied, where its own conversation begins, or at the head while that
+  // reply is not among the messages shown.
+  const startNoteAtHead = startView !== null && (startView.start.from === 'agent' || !messages.some(message => message.id === startView.start.messageId))
+  // Fork from here (#1028, E5b; Owl only): one reply's card open at a time, and what follows it marked as not carried.
+  // While none is open the options keep their identity, so a streaming update redraws no reply for them.
+  const [forkAt, setForkAt] = useState<string | null>(null)
+  useEffect(() => { setForkAt(null) }, [thread.id])
+  const forkMessages = forkAt === null ? null : messages
+  const forkAfter = useMemo<ReadonlySet<string>>(() => {
+    const index = forkAt === null || forkMessages === null ? -1 : forkMessages.findIndex(message => message.id === forkAt)
+    return index < 0 ? NOTHING_AFTER : new Set(forkMessages!.slice(index + 1).map(message => message.id))
+  }, [forkAt, forkMessages])
+  const forkModels = startsOn && !watcher ? hostForThread(state.host, thread).models : undefined
+  const forkRepository = thread.worktree?.git?.isRepository === true, forkBranch = thread.worktree?.git?.branch ?? null
+  const forkBusy = thread.status === 'running'
+  const forkOptions = useMemo<ForkOptions | null>(() => forkModels === undefined || thread.providerId === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : {
+    threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
+    where: thread.remoteHost ? thread.hostLabel ?? 'The host' : 'This computer', models: forkModels, modelId: thread.modelId, command,
+    ...(forkRepository ? { sourceBranch: { currentBranch: forkBranch } } : {}),
+    workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions,
+    openAt: forkAt, open: setForkAt, after: forkAfter, busy: forkBusy },
+  [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy])
+  // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
+  const continueOn = useContinueEnabled() && !watcher
+  const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))
+  const threads = state.host.threads
+  const continueLinks = useMemo<ContinueLinks>(() => ({ threads, open: threadId => { void command({ type: 'select-thread', threadId }) } }), [threads, command])
+  const handoverSource = continueOn && thread.continuedFrom ? threads.find(item => item.id === thread.continuedFrom!.threadId)?.title ?? 'a thread that is no longer listed' : undefined
+  const handoverFrom = useMemo(() => handoverSource === undefined ? null : { title: handoverSource }, [handoverSource])
+  const pendingKey = [...sending.map(item => `${item.item.draftId}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
   useLayoutEffect(() => {
@@ -589,6 +741,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }, [])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
+  // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
+  // 18 amendment). This computer's threads have no such body, and their rows are given nothing.
+  const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : undefined
+  const bodyHostConnected = thread.remoteHost === true && (state.connections?.find(item => item.hostId === thread.hostId)?.connected ?? thread.clientConnected !== false)
+  const bodyHost = useMemo<ActivityBodyHost | null>(() => bodyHostName === undefined ? null : { threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected },
+    [thread.id, bodyHostName, bodyHostConnected])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
   const lastGroup = placement.trailing.at(-1) ?? (lastMessageId === undefined ? undefined : placement.after.get(lastMessageId)?.at(-1))
 
@@ -611,11 +769,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     void command({ type: 'load-earlier-messages', threadId: thread.id })
   }
 
-  const empty = !thread.messages.length && !pending.length && !queuedEchoes.length && !recovery.length && !showsActivity
+  const empty = !thread.messages.length && !sending.length && !recovery.length && !showsActivity
   // A thread nothing has been sent to greets above its composer instead. Watcher's own conversation, a working,
   // failed, compacting, settled or archived thread, one with a request or older history to show, and one whose summary
   // counts messages not drawn yet keep the line in the transcript.
-  const greets = empty && greetingSlot !== undefined && !watcher && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
+  const greets = empty && !queueHolds && greetingSlot !== undefined && !watcher && startView === null && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
   return <div className="thread-transcript">
@@ -630,16 +788,21 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.earlierAvailable
             ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>Show earlier messages</Button></div>
             : null}
-        {thread.messages.length || showsActivity ? <DelegationCardProvider world={cardWorld}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
-          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} /></DelegationCardProvider>
+        {/* Where this thread continues from, above its first message (ADR-0089; Owl only). */}
+        {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
+        {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
+        {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
+        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+          <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} />
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
-            : thread.historyStatus === 'error' || !empty || greets ? null
+            : thread.historyStatus === 'error' || !empty || greets || startView ? null
+              : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
         {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} sendingSince={sendingSince} />
-        {queuedEchoes.map(item => <QueuedMessage key={item.id} item={item} />)}
-        {admissions.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
       </div>

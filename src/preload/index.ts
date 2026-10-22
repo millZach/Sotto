@@ -1,27 +1,35 @@
 import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../shared/hostDevices'
-import { HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostClientUpdateRequestSchema, hostProviderActionSchema, hostSignInRequestSchema, type HostProviderActionResult, type ProviderSignInView } from '../shared/hostProviders'
+import { HOST_OPENCODE_ANSWERS, HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostSignInRequestSchema, type HostProviderActionResult, type ProviderSignInView } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
-  WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomStateSchema, watcherRoomResultSchema,
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
+  WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
-  watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
+  watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge, type WatcherRoomState } from '../shared/watcherRoom'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
-import { DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import { DELEGATION_BRIEF_READ, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import {
+  OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
+  OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, modelSourcesSchema, signInAttemptRequestSchema, signInDoneSchema,
+  signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
+  type OpenCodeSignInBridge,
+} from '../shared/opencodeSignIn'
+import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
 import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
 import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
-import { speechModelStatusSchema } from '../shared/speechModel'
+import { speechModelListSchema, speechModelStatusSchema } from '../shared/speechModel'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
@@ -33,7 +41,8 @@ import { externalLinkSchema } from '../shared/externalLinks'
 import { questionPageOpenResultSchema, questionPageOpenSchema } from '../shared/questionPageOpen'
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
+import { agentActivitySchema } from '../shared/agentActivity'
+import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -49,6 +58,8 @@ import {
   SYSTEM_SETTINGS_OPEN,
   DICTATION_COMMAND,
   DICTATION_REQUEST,
+  DICTATION_RECORD_GET,
+  DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
   HISTORY_DELETE,
@@ -56,14 +67,25 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  DICTATION_SHORTCUTS_REPLACE,
+  DICTATION_SHORTCUTS_SUSPEND,
+  DICTATION_KEYS_RECORD,
+  DICTATION_KEYS_RECORD_CANCEL,
+  DICTATION_KEYS_HELD,
+  DICTATION_KEYS_TAKEN,
+  KEY_LISTENER_PERMISSION_GET,
+  KEY_LISTENER_PERMISSION_REQUEST,
+  KEY_LISTENER_PERMISSION_CHANGED,
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
+  SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_LIST,
   SPEECH_MODEL_STATUS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
@@ -102,6 +124,7 @@ import {
   type WidgetPresentationPayload,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
+import { dictationRecordSchema, dictationRecordsSchema } from '../shared/dictationRecord'
 import {
   PLATFORM_ARGUMENT_PREFIX,
   resolvePlatform,
@@ -138,10 +161,24 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
     .object({
       ok: z.literal(false),
       reason: z.enum(['conflict', 'invalid', 'unavailable']),
+      message: z.string().max(8000).optional(),
     })
     .strict(),
 ])
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
+const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4) }).strict()
+const dictationShortcutsResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true) }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['conflict', 'invalid', 'unavailable']), chord: z.string().max(64).optional(), message: z.string().max(8000).optional() }).strict(),
+])
+const keyRecordResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('recorded'), chord: z.string().min(1).max(64) }).strict(),
+  z.object({ kind: z.literal('cancelled') }).strict(),
+  z.object({ kind: z.literal('unsupported-key') }).strict(),
+  z.object({ kind: z.literal('unavailable') }).strict(),
+])
+const keyListenerPermissionSchema = z.enum(['granted', 'denied', 'not-needed', 'unsupported'])
+const heldKeysSchema = z.array(z.string().min(1).max(16)).max(8)
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
 const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'clipboard-unavailable', 'empty']), unavailableSchema])
@@ -179,6 +216,21 @@ function trustedState<Output>(key: string): PayloadCheck<Output> {
       ? { success: true, data: value as Output }
       : { success: false },
   }
+}
+
+/**
+ * Watcher's room update is state of the same kind (#1336): main's Watcher builds it on every publish from its own records,
+ * which it validated when it read or wrote them, and the room schema transforms nothing (every object is strict, and the
+ * one trim is of kept notes already trimmed when they were kept), so the full parse could only hand back what came in.
+ * It ran over every request, receipt, watch and news item several times a second while threads streamed. What the page
+ * reads before anything else is checked: the time it orders updates by and the watched threads. Every invoke result that
+ * carries the room, and everything the page sends, keeps its schema.
+ */
+const trustedWatcherRoom: PayloadCheck<WatcherRoomState> = {
+  safeParse: value => typeof value === 'object' && value !== null && !Array.isArray(value)
+    && typeof (value as { observedAt?: unknown }).observedAt === 'string' && Array.isArray((value as { watchedThreads?: unknown }).watchedThreads)
+    ? { success: true, data: value as WatcherRoomState }
+    : { success: false },
 }
 
 function subscribe<Output>(
@@ -272,6 +324,9 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
     hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, agentStartHandoverSchema.nullable(), agentThreadDetailRequestSchema.parse(threadId)),
+    // One record of a remote thread whole, for a row whose body its host sent cut (ADR-0025, October 18 amendment).
+    activityBody: (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, agentActivitySchema.nullable(), agentActivityBodyRequestSchema.parse(request)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
@@ -295,6 +350,12 @@ export function createSottoBridge(
   watcherEnabled = false,
   usageEnabled = false,
   delegationEnabled = false,
+  continueEnabled = false,
+  opencodeEnabled = false,
+  /** A host's OpenCode signed in from Settings > Hosts (#1107): on whenever OpenCode is not held, local host or not. */
+  opencodeHostsEnabled = false,
+  /** Main's watch on itself and Record a minute (ADR-0098): only while the `main-freeze` Owl feature is on. */
+  mainActivityEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -335,28 +396,57 @@ export function createSottoBridge(
     // Delegation between threads (ADR-0081): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({
       read: request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
+      brief: request => invokeParsed(renderer, DELEGATION_BRIEF_READ, delegationBriefSchema, delegationBriefRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
+    }) } : {}),
+    // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
+    // once and nothing returned carries one.
+    ...(opencodeEnabled ? { opencode: Object.freeze<OpenCodeSignInBridge>({
+      sources: () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
+      signInWithKey: request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
+      startBrowserSignIn: request => invokeParsed(renderer, OPENCODE_SIGN_IN_BROWSER, signInStartSchema, signInMethodRequestSchema.parse(request)),
+      useExternalSignIn: request => invokeParsed(renderer, OPENCODE_SIGN_IN_EXTERNAL, signInResultSchema, signInMethodRequestSchema.parse(request)),
+      wait: request => invokeParsed(renderer, OPENCODE_SIGN_IN_WAIT, signInWaitSchema, signInAttemptRequestSchema.parse(request)),
+      finish: request => invokeParsed(renderer, OPENCODE_SIGN_IN_FINISH, signInWaitSchema, signInFinishRequestSchema.parse(request)),
+      reopen: request => invokeParsed(renderer, OPENCODE_SIGN_IN_REOPEN, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
+      cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
+      signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
+    }) } : {}),
+    ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
+      read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
+      command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+    }) } : {}),
+    // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
+    ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
+      read: request => invokeParsed(renderer, CONTINUE_READ, continueReadSchema, continueReadRequestSchema.parse(request)),
+      start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
     }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
       get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
       open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
       prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
       stopAll: request => invokeParsed(renderer, WATCHER_STOP_ALL, watcherStopAllResultSchema, watcherStopAllRequestSchema.parse(request)),
-      setLimit: request => invokeParsed(renderer, WATCHER_SET_LIMIT, watcherRoomResultSchema, watcherSetLimitRequestSchema.parse(request)),
       setPermission: request => invokeParsed(renderer, WATCHER_SET_PERMISSION, watcherRoomResultSchema, watcherSetPermissionRequestSchema.parse(request)),
       watchThread: request => invokeParsed(renderer, WATCHER_WATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
       unwatchThread: request => invokeParsed(renderer, WATCHER_UNWATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
       readHandover: () => invokeParsed(renderer, WATCHER_READ_HANDOVER, watcherHandoverReadSchema),
       continueWithHandover: request => invokeParsed(renderer, WATCHER_CONTINUE_HANDOVER, watcherRoomResultSchema, watcherContinueHandoverRequestSchema.parse(request)),
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
-      onChanged: listener => subscribe(renderer, WATCHER_CHANGED, watcherRoomStateSchema, listener),
+      startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
+      onChanged: listener => subscribe(renderer, WATCHER_CHANGED, trustedWatcherRoom, listener),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
       devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
       connectTailscale: () => renderer.invoke(HOSTS_TAILSCALE_CONNECT) as Promise<TailscaleConnectOutcome>, openTailscaleDownload: () => renderer.invoke(HOSTS_TAILSCALE_DOWNLOAD) as Promise<void>,
       providerAction: action => renderer.invoke(HOSTS_PROVIDER_ACTION, hostProviderActionSchema.parse(action)) as Promise<HostProviderActionResult>,
       updateClients: request => renderer.invoke(HOSTS_UPDATE_CLIENTS, hostClientUpdateRequestSchema.parse(request)) as Promise<HostProviderActionResult>,
-      signIn: request => renderer.invoke(HOSTS_SIGN_IN, hostSignInRequestSchema.parse(request)) as Promise<ProviderSignInView | null> }),
+      signIn: request => renderer.invoke(HOSTS_SIGN_IN, hostSignInRequestSchema.parse(request)) as Promise<ProviderSignInView | null>,
+      // A host's OpenCode signed in to model sources from this computer (#1107): only while OpenCode's Owl feature is on.
+      ...(opencodeHostsEnabled ? { opencodeSignIn: request => {
+        const parsed = hostOpenCodeSignInRequestSchema.parse(request)
+        return invokeParsed(renderer, HOSTS_OPENCODE_SIGN_IN, HOST_OPENCODE_ANSWERS[parsed.call.action] as z.ZodType<unknown>, parsed) as never
+      } } : {}) }),
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),
@@ -414,10 +504,23 @@ export function createSottoBridge(
     searchHistory: (query) => invokeParsed(renderer, HISTORY_SEARCH, historyEntriesSchema, query),
     deleteHistory: (id) => invokeParsed(renderer, HISTORY_DELETE, z.boolean(), id),
     clearHistory: () => invokeParsed(renderer, HISTORY_CLEAR, voidSchema),
+    listDictationRecords: () => invokeParsed(renderer, DICTATION_RECORDS_LIST, dictationRecordsSchema),
+    getDictationRecord: (id) => invokeParsed(renderer, DICTATION_RECORD_GET, dictationRecordSchema.nullable(), id),
 
     getHotkey: () => invokeParsed(renderer, HOTKEY_GET, z.string().nullable()),
     replaceHotkey: (accelerator) =>
       invokeParsed(renderer, HOTKEY_REPLACE, hotkeyResultSchema, accelerator),
+    replaceDictationShortcuts: (change) =>
+      invokeParsed(renderer, DICTATION_SHORTCUTS_REPLACE, dictationShortcutsResultSchema, dictationShortcutsChangeSchema.parse(change)),
+    suspendDictationShortcuts: (suspended) => invokeParsed(renderer, DICTATION_SHORTCUTS_SUSPEND, commandResultSchema, z.boolean().parse(suspended)),
+    recordDictationKeys: () => invokeParsed(renderer, DICTATION_KEYS_RECORD, keyRecordResultSchema),
+    cancelDictationKeyRecord: () => invokeParsed(renderer, DICTATION_KEYS_RECORD_CANCEL, commandResultSchema),
+    onDictationKeysHeld: listener => subscribe(renderer, DICTATION_KEYS_HELD, heldKeysSchema, listener),
+    // Linux only: Sotto's Hyprland bindings stand down while Settings records keys.
+    ...(platform === 'linux' ? { onDictationKeysTaken: (listener: (role: 'press' | 'hold') => void) => subscribe(renderer, DICTATION_KEYS_TAKEN, z.enum(['press', 'hold']), listener) } : {}),
+    getKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_GET, keyListenerPermissionSchema),
+    requestKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_REQUEST, keyListenerPermissionSchema),
+    onKeyListenerPermission: listener => subscribe(renderer, KEY_LISTENER_PERMISSION_CHANGED, keyListenerPermissionSchema, listener),
 
     requestDictation: (command) =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, command),
@@ -439,6 +542,8 @@ export function createSottoBridge(
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
     getSpeechModelStatus: () => invokeParsed(renderer, SPEECH_MODEL_GET_STATUS, speechModelStatusSchema),
     downloadSpeechModel: () => invokeParsed(renderer, SPEECH_MODEL_DOWNLOAD, commandResultSchema),
+    listSpeechModels: () => invokeParsed(renderer, SPEECH_MODEL_LIST, speechModelListSchema),
+    chooseSpeechModel: (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
     onSpeechModelStatus,
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
     ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
@@ -547,7 +652,8 @@ export function exposeRendererBridge(
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
-      arguments_.includes(DELEGATION_RENDERER_ARGUMENT)))
+      arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {
