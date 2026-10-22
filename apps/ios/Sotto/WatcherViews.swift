@@ -245,6 +245,9 @@ private final class WatcherFollow {
     /// The bottom of the header, and the top of the box.
     var top: CGFloat = 0
     var dockTop: CGFloat = .greatestFiniteMagnitude
+    /// How much taller the box is with Watcher's permission chip over it, measured while the chip shows, so the room with
+    /// the chip in place is known while it is put away.
+    var chipExtent: CGFloat = 0
     /// Where each card waiting on the user sits, by the card's key.
     var cards: [String: CGRect] = [:]
     /// The key of the card the reader is on. Nothing but the reader moves it away: Watcher's new words, the box changing
@@ -306,9 +309,13 @@ private struct WatcherConversationPane: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var follow = WatcherFollow()
-    /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor and the box need it. Changed only where that is
-    /// decided, never as the page scrolls, and so only on iOS 18 and later.
+    /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
+    /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
+    /// The card the reader is on is too tall to sit whole above the box with Watcher's permission chip over it, so the box
+    /// puts the chip away (`WatcherReaderPlace.putsChipAway`). Changed only where the hold is decided or the box moves,
+    /// never as the page scrolls, and so only on iOS 18 and later.
+    @State private var chipAway = false
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
     /// A waiting card's place on the page, to scroll it whole above the box.
@@ -369,7 +376,7 @@ private struct WatcherConversationPane: View {
                     // says where the reader is, on iOS 17, which can't say when they let go.
                     let resized = abs(frame.height - follow.height) > 0.5
                     follow.height = frame.height
-                    if resized { keepHeldCard(proxy, animated: false) } else if !WatcherFollow.seesLetGo { settle() }
+                    if resized { placeChip(); keepHeldCard(proxy, animated: false) } else if !WatcherFollow.seesLetGo { settle() }
                 })
             }
             .watcherScrollAnchor(holdingCard: holdingCard)
@@ -389,7 +396,7 @@ private struct WatcherConversationPane: View {
             }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                WatcherDock(hostID: hostID, holdingCard: holdingCard, willSend: {
+                WatcherDock(hostID: hostID, chipAway: chipAway, chipExtent: { follow.chipExtent = $0 }, willSend: {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
@@ -418,15 +425,31 @@ private struct WatcherConversationPane: View {
     private func settle() {
         follow.settle()
         setHoldingCard(follow.held != nil)
+        placeChip()
     }
     /// The page follows the newest words again, and no card is held.
     private func resumeFollowing() {
         follow.held = nil
         follow.following = true
         setHoldingCard(false)
+        placeChip()
     }
     private func setHoldingCard(_ holding: Bool) {
         if WatcherFollow.seesLetGo, holdingCard != holding { holdingCard = holding }
+    }
+    /// Puts Watcher's permission chip away while the card the reader is on can't sit whole above the box with the chip
+    /// over it, and brings it back once it can or no card is held. The room is worked out with the chip in place: while it
+    /// is away, the box's top less the chip's height. Until a change of the chip reaches the layout, the box's top errs
+    /// toward what was just decided, so the decision never flips back on itself. Only iOS 18 and later decide where the
+    /// reader lets go, so iOS 17 keeps the chip and its box never jumps mid-scroll.
+    private func placeChip() {
+        let box = follow
+        var away = false
+        if WatcherFollow.seesLetGo, let key = box.held, let card = box.cards[key] {
+            let dockTopWithChip = chipAway ? box.dockTop - box.chipExtent : box.dockTop
+            away = WatcherReaderPlace.putsChipAway(card: card, top: box.top, dockTopWithChip: dockTopWithChip)
+        }
+        if chipAway != away { chipAway = away }
     }
 
     /// Reads a frame, in global coordinates, as it moves. Nothing redraws for it, and nothing is decided by it.
@@ -457,7 +480,7 @@ private struct WatcherConversationPane: View {
                     let wasFollowing = follow.following
                     follow.dockTop = value
                     if wasFollowing { toNewest(scroll, to: newest) }
-                    else if follow.held != nil { keepHeldCard(scroll, animated: true) }
+                    else if follow.held != nil { placeChip(); keepHeldCard(scroll, animated: true) }
                     else { settle() }
                 }
         }
@@ -1071,9 +1094,11 @@ private struct WatcherDock: View {
     /// The box's words, watched here alone, so a keystroke redraws the box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
-    /// The reader is on a card waiting on them (`WatcherFollow.held`), as the conversation decided it. Set on iOS 18 and
-    /// later only, where it changes where the user lets go of the page, never as it scrolls.
-    let holdingCard: Bool
+    /// The card the reader is on can't sit whole above the box with the permission chip over it, as the conversation
+    /// decided it (`WatcherReaderPlace.putsChipAway`). Set on iOS 18 and later only, never as the page scrolls.
+    let chipAway: Bool
+    /// Told how much taller the box is with the chip over it, whenever the chip shows or changes height.
+    let chipExtent: (CGFloat) -> Void
     let willSend: () -> Void
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
@@ -1090,10 +1115,16 @@ private struct WatcherDock: View {
                     .accessibilityIdentifier("watcher-send-held")
             }
             // Put away while the box is being written in, so a small phone keeps room for the conversation over the keyboard,
-            // and while the reader is on a card, so a card as tall as a question with its answers fits whole above the box
-            // on a small phone. The page puts the card back where the reader has it as the box moves.
-            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused, !holdingCard {
-                WatcherPermissionChip(hostID: hostID)
+            // and while the reader is on a card too tall to sit whole above the box with the chip over it, as a question
+            // with its answers is on a small phone. A card that fits keeps the chip. The page puts the card back where the
+            // reader has it as the box moves.
+            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused, !chipAway {
+                WatcherPermissionChip(hostID: hostID).background(GeometryReader { proxy in
+                    // The chip's height and the spacing above the box it takes with it.
+                    Color.clear
+                        .onAppear { chipExtent(proxy.size.height + Space.s2) }
+                        .onChange(of: proxy.size.height) { _, height in chipExtent(height + Space.s2) }
+                })
             }
             field
         }
