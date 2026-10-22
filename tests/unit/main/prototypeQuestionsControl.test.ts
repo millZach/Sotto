@@ -46,10 +46,12 @@ async function start() {
   controls.add(control)
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })
+  /** The fixture host's own execute, for a test that stands in for some commands and passes the rest on. */
+  const execution = host.execute.bind(host)
   const execute = vi.spyOn(host, 'execute')
   const fire = (ms: number) => { for (const timer of timers.filter(item => item.ms === ms && !item.cancelled)) { timer.cancelled = true; timer.run() } }
   const endMinute = () => fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
-  return { host, control, execute, endMinute, fire }
+  return { host, control, execute, execution, endMinute, fire }
 }
 const requests = (state: AgentState): readonly AgentRequest[] => state.host.threads.find(thread => thread.id === 'workshop')!.requests
 type Executed = { readonly mock: { readonly calls: readonly (readonly [AgentHostCommand])[] } }
@@ -99,8 +101,7 @@ describe('the coordinator’s checked prototype questions', () => {
   })
 
   it('shows the question, marked link missing, when the provider cannot say in time whether it took the note', async () => {
-    const { host, control, execute, fire } = await start()
-    const execution = host.execute.bind(host)
+    const { host, control, execute, execution, fire } = await start()
     let confirm: (taken: boolean) => void = () => undefined
     execute.mockImplementation(async command => command.type === 'answer'
       ? { accepted: false, uncertain: true, answerCompletion: new Promise<boolean>(resolve => { confirm = resolve }) }
@@ -128,12 +129,14 @@ describe('the coordinator’s checked prototype questions', () => {
 
   it('keeps a queued follow-up back while a question is held', async () => {
     const { host, control, execute } = await start()
-    // Named no page at all, the question is looked for a few times before it is sent back.
+    // Named no page at all, the question is looked for a few times before it is sent back. It arrives with the thread at
+    // rest, which would send a follow-up at once if nothing held it.
     host.event({ type: 'question', threadId: 'workshop', requestId: 'q1', text: 'Which prototype variant do you like?' })
     expect(requests(control.shell())).toEqual([])
     expect((await control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Also add a footer' })).error).toBeNull()
     expect(control.shell().followups).toHaveLength(1)
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // The queue has decided: a thread waiting on the user keeps the follow-up for the user's review rather than sending it.
+    await vi.waitFor(() => expect(control.shell().followups?.[0]?.status).toBe('paused'))
     expect(execute.mock.calls.some(([command]) => command.type === 'send')).toBe(false)
   })
 })

@@ -48,7 +48,12 @@ function setup(options: { taken?: boolean | 'throw' | 'later' } = {}) {
     fire: (ms: number) => { for (const timer of timers.filter(item => item.ms === ms && !item.cancelled)) { timer.cancelled = true; timer.run() } },
   }
 }
-const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+/**
+ * Waits until every note sent so far has its outcome taken in: the last thing that does is say the threads changed. Until
+ * the test fires a timer, nothing else says so.
+ */
+const noteSettled = (test: { readonly sent: readonly unknown[]; readonly changes: number }) =>
+  vi.waitFor(() => { expect(test.sent.length).toBeGreaterThan(0); expect(test.changes).toBe(test.sent.length) })
 
 describe('aboutPrototype', () => {
   it('reads prototype or mock-up as a word in the question or the reply before it', () => {
@@ -108,11 +113,10 @@ describe('PrototypeQuestions', () => {
     test.found('q', [], [page('dead')])
     const asked = thread([question('q')])
     expect(test.shown(asked).requests).toEqual([])
-    await settle()
+    await noteSettled(test)
     expect(test.sent).toEqual([{ threadId: 'thread', request: question('q'), answer: { answer: PROTOTYPE_SEND_BACK_NOTE } }])
     // Taken again, it is not sent again, and stays hidden while the provider still has it.
     expect(test.shown(asked).requests).toEqual([])
-    await settle()
     expect(test.sent).toHaveLength(1)
     expect(test.held.holds('thread')).toBe(true)
     // The provider puts it away and asks again within the minute: shown, and marked link missing when it still has no page.
@@ -121,7 +125,6 @@ describe('PrototypeQuestions', () => {
     expect(test.shown(thread([question('again')])).requests).toEqual([])
     test.found('again', [])
     expect(test.shown(thread([question('again')])).requests).toEqual([{ ...question('again'), linkMissing: true }])
-    await settle()
     expect(test.sent).toHaveLength(1)
     // The minute ended with the question: no copy comes.
     expect(test.timers.filter(timer => timer.ms === PROTOTYPE_SEND_BACK_WINDOW_MS && !timer.cancelled)).toEqual([])
@@ -131,7 +134,7 @@ describe('PrototypeQuestions', () => {
     const test = setup()
     test.found('q', [])
     test.shown(thread([question('q')]))
-    await settle()
+    await noteSettled(test)
     test.shown(thread([]))
     test.found('again', [page('a')])
     const again = thread([question('again', 'The prototype is at greeting.html. Which variant?')])
@@ -143,7 +146,7 @@ describe('PrototypeQuestions', () => {
     const original = question('q', 'Which prototype?', { options: [{ id: 'a', label: 'A' }], questions: [{ id: '0', question: 'Which prototype?', options: [{ id: 'a', label: 'A' }], multiSelect: false, allowFreeText: true }] })
     test.found('q', [])
     test.shown(thread([original]))
-    await settle()
+    await noteSettled(test)
     test.shown(thread([]))
     const before = test.changes
     test.fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
@@ -163,7 +166,7 @@ describe('PrototypeQuestions', () => {
     const test = setup()
     test.found('q', [])
     test.shown(thread([question('q')]))
-    await settle()
+    await noteSettled(test)
     test.fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
     expect(test.shown(thread([question('q')])).requests).toEqual([{ ...question('q'), linkMissing: true }])
     expect(test.held.holds('thread')).toBe(false)
@@ -173,7 +176,7 @@ describe('PrototypeQuestions', () => {
     const test = setup()
     test.found('q', [])
     test.shown(thread([question('q')]))
-    await settle()
+    await noteSettled(test)
     test.shown(thread([]))
     test.fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
     expect(test.shown(thread([])).requests).toHaveLength(1)
@@ -186,7 +189,6 @@ describe('PrototypeQuestions', () => {
     test.found('q', [])
     const choices = question('q', 'Which prototype?', { questions: [{ id: 'pick', question: 'Which prototype?', options: [{ id: 'a', label: 'A' }], multiSelect: false, allowFreeText: false }] })
     expect(test.shown(thread([choices])).requests).toEqual([{ ...choices, linkMissing: true }])
-    await settle()
     expect(test.sent).toEqual([])
   })
 
@@ -195,8 +197,7 @@ describe('PrototypeQuestions', () => {
       const test = setup({ taken: outcome })
       test.found('q', [])
       expect(test.shown(thread([question('q')])).requests).toEqual([])
-      await settle()
-      expect(test.changes).toBeGreaterThan(0)
+      await noteSettled(test)
       expect(test.shown(thread([question('q')])).requests).toEqual([{ ...question('q'), linkMissing: true }])
       expect(test.held.holds('thread')).toBe(false)
       // The next question is the thread's own, not an answer to a note that never went.
@@ -314,7 +315,7 @@ describe('PrototypeQuestions', () => {
     ] })
     test.found('q', [])
     test.shown(thread([original]))
-    await settle()
+    await noteSettled(test)
     test.shown(thread([]))
     test.fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
     const id = 'sotto:prototype-question:q'
@@ -334,7 +335,7 @@ describe('PrototypeQuestions', () => {
     const test = setup()
     test.found('q', [])
     test.shown(thread([question('q', 'Which prototype?', { options: [{ id: 'tabs', label: 'The one with tabs' }] })]))
-    await settle()
+    await noteSettled(test)
     test.shown(thread([]))
     test.fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
     expect(test.held.copyAnswer('thread', 'sotto:prototype-question:q', 'tabs')).toBe('Answer to your earlier question "Which prototype?": The one with tabs')

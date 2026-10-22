@@ -73,9 +73,12 @@ describe('the coordinator’s prototype-ready mark', () => {
     const again = await start(root)
     again.host.event({ type: 'manual', threadId: 'docs', text: 'Note', status: 'idle' })
     await vi.waitFor(async () => expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).prototypesSince).toBe(began))
-    // The restarted fixture host has the same reply again, under the same message ID it had: nothing marks it.
-    again.host.event({ type: 'history', threadId: 'workshop', text: '', messages: control.get().host.threads.find(thread => thread.id === 'workshop')!.messages })
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // The restarted fixture host has the same reply again, under the same message ID it had: nothing marks it. The mark is
+    // decided as the coordinator takes the snapshot that carries the reply, so once its state holds the reply, it has.
+    const messages = control.get().host.threads.find(thread => thread.id === 'workshop')!.messages
+    again.host.event({ type: 'history', threadId: 'workshop', text: '', messages })
+    await vi.waitFor(() => expect(again.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.map(message => message.id)).toEqual(messages.map(message => message.id)))
+    expect(mark(again.control.get())).toBeUndefined()
     expect(mark(again.control.shell())).toBeUndefined()
   })
 

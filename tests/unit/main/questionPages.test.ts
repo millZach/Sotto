@@ -243,14 +243,20 @@ describe('QuestionPages working pages and reply pages (ADR-0108)', () => {
   })
 
   it('says a question’s search is not finished while it may look again, and finished after its last look', async () => {
-    let now = 0
-    const pages = new QuestionPages({ changed: vi.fn(), now: () => now, live: async () => true })
-    for (let step = 0; step < 3; step++) {
-      pages.decorate(snapshot([question('n', 'Nothing here')]))
-      await new Promise(resolve => setTimeout(resolve, 20))
-      expect(pages.searched('thread', 'request:n')?.finished, `search ${step + 1}`).toBe(step === 2)
-      now += 2_000
-    }
+    // Each search that finds nothing says so: by the timer that brings the next look, on Vitest's clock here, or at once
+    // after the last. That word is the sign the search has ended.
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      let now = 0
+      const changed = vi.fn()
+      const pages = new QuestionPages({ changed, now: () => now, live: async () => true })
+      for (let step = 0; step < 3; step++) {
+        pages.decorate(snapshot([question('n', 'Nothing here')]))
+        await vi.waitFor(async () => { await vi.advanceTimersByTimeAsync(2_000); expect(changed).toHaveBeenCalledTimes(step + 1) })
+        expect(pages.searched('thread', 'request:n')?.finished, `search ${step + 1}`).toBe(step === 2)
+        now += 2_000
+      }
+    } finally { vi.useRealTimers() }
   })
 
   it('looks once for the pages a reply names when asked to, and serves them by their tokens', async () => {
