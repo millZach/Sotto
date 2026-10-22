@@ -358,9 +358,9 @@ private struct WatcherConversationPane: View {
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
-    /// The card the reader is on is too tall to sit whole above the box with Watcher's permission chip over it, so the box
-    /// puts the chip away (`WatcherReaderPlace.putsChipAway`). Changed only where the hold is decided or the box moves,
-    /// never as the page scrolls, and so only on iOS 18 and later.
+    /// The thread's card the reader is on is too tall to sit whole above the box with Watcher's permission chip over it, so
+    /// the box puts the chip away (`WatcherReaderPlace.putsChipAway`). Never for Watcher's own card. Changed only where the
+    /// hold is decided or the box moves, never as the page scrolls, and so only on iOS 18 and later.
     @State private var chipAway = false
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
@@ -504,17 +504,20 @@ private struct WatcherConversationPane: View {
     private func setHoldingCard(_ holding: Bool) {
         if WatcherFollow.seesLetGo, holdingCard != holding { holdingCard = holding }
     }
-    /// Puts Watcher's permission chip away while the card the reader is on can't sit whole above the box with the chip
-    /// over it, and brings it back once it can or no card is held. The room is worked out with the chip in place: while it
-    /// is away, the box's top less the chip's height. Until a change of the chip reaches the layout, the box's top errs
-    /// toward what was just decided, so the decision never flips back on itself. Only iOS 18 and later decide where the
-    /// reader lets go, so iOS 17 keeps the chip and its box never jumps mid-scroll.
+    /// Puts Watcher's permission chip away while the reader is on a thread's card that can't sit whole above the box with
+    /// the chip over it, and brings it back once it can, the reader moves to Watcher's own card, or no card is held. Watcher's
+    /// own card always keeps the chip: its request is about Watcher's permissions. The room is worked out from the frames
+    /// as they are, with the chip in place: while it is away, the box's top less the chip's measured height and spacing.
+    /// Until a change of the chip reaches the layout, the box's top errs toward what was just decided, so the decision never
+    /// flips back on itself. Only iOS 18 and later decide where the reader lets go, so iOS 17 keeps the chip and its box
+    /// never jumps mid-scroll.
     private func placeChip() {
         let box = follow
         var away = false
         if WatcherFollow.seesLetGo, let key = box.held, let card = box.cards[key] {
+            let own = model.watcherPage(hostID).map { page in page.needsYou.contains { $0.key == key && page.isOwn($0) } } ?? false
             let dockTopWithChip = chipAway ? box.dockTop - box.chipExtent : box.dockTop
-            away = WatcherReaderPlace.putsChipAway(card: card, top: box.top, dockTopWithChip: dockTopWithChip)
+            away = WatcherReaderPlace.putsChipAway(card: card, own: own, top: box.top, dockTopWithChip: dockTopWithChip)
         }
         if chipAway != away { chipAway = away }
     }
@@ -1167,8 +1170,9 @@ private struct WatcherDock: View {
     /// The box's words, watched here alone, so a keystroke redraws the box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
-    /// The card the reader is on can't sit whole above the box with the permission chip over it, as the conversation
-    /// decided it (`WatcherReaderPlace.putsChipAway`). Set on iOS 18 and later only, never as the page scrolls.
+    /// The thread's card the reader is on can't sit whole above the box with the permission chip over it, as the
+    /// conversation decided it (`WatcherReaderPlace.putsChipAway`). Never for Watcher's own card. Set on iOS 18 and later
+    /// only, never as the page scrolls.
     let chipAway: Bool
     /// Told how much taller the box is with the chip over it, whenever the chip shows or changes height.
     let chipExtent: (CGFloat) -> Void
@@ -1188,9 +1192,9 @@ private struct WatcherDock: View {
                     .accessibilityIdentifier("watcher-send-held")
             }
             // Put away while the box is being written in, so a small phone keeps room for the conversation over the keyboard,
-            // and while the reader is on a card too tall to sit whole above the box with the chip over it, as a question
-            // with its answers is on a small phone. A card that fits keeps the chip. The page puts the card back where the
-            // reader has it as the box moves.
+            // and while the reader is on a thread's card too tall to sit whole above the box with the chip over it, as a
+            // question with its answers is on a small phone. A card that fits, and Watcher's own card, keep the chip. The
+            // page puts the card back where the reader has it as the box moves.
             if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused, !chipAway {
                 WatcherPermissionChip(hostID: hostID).background(GeometryReader { proxy in
                     // The chip's height and the spacing above the box it takes with it.
