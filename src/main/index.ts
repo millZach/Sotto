@@ -1044,7 +1044,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
   })
-  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion },
+  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,

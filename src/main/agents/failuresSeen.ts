@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { failedTurnReason, failedWithoutRequest, lastTurnRecord } from '../../shared/threadFailures'
+import { settledIn } from './finishedUnread'
 
 /**
  * How many marks are kept for threads that are gone from the host's list, newest last. A thread still listed keeps its
@@ -36,7 +37,8 @@ const failedTurnOf = (thread: Pick<AgentThread, 'lastTurn'>): string | undefined
  *
  * What a client shows is what it observes, as for the finished mark. A thread shown when it fails is seen at once. A
  * failure ends once the thread works or rests again with its provider connected, so its next failure is news; a
- * provider that disconnects says nothing new about the thread, so its failure stands.
+ * provider that disconnects says nothing new about the thread, so its failure stands. A thread settled in Sotto's
+ * workspace, by itself, its project or the thread that delegated to it, has its failure seen too (#1279): settled is quiet.
  */
 export class FailuresSeen {
   private shown: ReadonlySet<string> = new Set()
@@ -60,12 +62,13 @@ export class FailuresSeen {
   track(snapshot: AgentHostSnapshot): boolean {
     let changed = false
     this.present = new Set(snapshot.threads.map(thread => thread.id))
+    const settled = settledIn(snapshot)
     for (const thread of snapshot.threads) {
       if (this.dormant?.(thread.id)) continue
       if (thread.status === 'error') {
         changed = this.identify(thread) || changed
         this.recordReason(thread)
-        if (this.shown.has(thread.id)) changed = this.see(thread) || changed
+        if (this.shown.has(thread.id) || settled(thread)) changed = this.see(thread) || changed
         continue
       }
       const failure = this.failures.get(thread.id)

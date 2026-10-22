@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, Clock, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
+import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -26,10 +26,12 @@ const MODES: ReadonlyArray<{ readonly id: SidebarMode; readonly label: string; r
   { id: 'terminals', label: 'Terminal', Icon: SquareTerminal },
 ]
 
-/** The page links in the foot, in the order the app footer listed them. Threads is the room switch's own tab; Memory joins only while memory is switched on. */
-type FootPage = Extract<AppNavigation, 'history' | 'usage' | 'memory' | 'settings' | 'help'>
+/**
+ * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own
+ * tabs, and transcripts live in the Dictate room's Journal; Memory joins only while memory is switched on.
+ */
+type FootPage = Extract<AppNavigation, 'usage' | 'memory' | 'settings' | 'help'>
 const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: string; readonly Icon: LucideIcon }> = [
-  { id: 'history', label: 'History', Icon: Clock },
   { id: 'usage', label: 'Usage', Icon: BarChart3 },
   { id: 'memory', label: 'Memory', Icon: Brain },
   { id: 'settings', label: 'Settings', Icon: Settings },
@@ -96,7 +98,7 @@ export function RoomSwitch({ className }: { readonly className: string }): React
   </div>
 }
 
-/** The pages the switch does not reach, as icon links: History, Settings and Help, and Memory while memory is switched on. */
+/** The pages the switch does not reach, as icon links: Usage in Owl, Settings and Help, and Memory while memory is switched on. */
 export function PageLinks({ className, linkClassName }: { readonly className: string; readonly linkClassName: string }): ReactNode {
   const app = useOptionalApp()
   const memory = useMemoryEnabled()

@@ -227,18 +227,18 @@ test('themes: halves, system, contrast, editor, inspector, import, Open VSX, rem
     await settled(page)
     await page.screenshot({ path: resolve(artifacts, 'inspector-hover-1600-dark.png'), caret: 'hide', animations: 'disabled' })
     const started = Date.now()
-    await page.getByRole('navigation', { name: 'Pages' }).getByRole('link', { name: 'History', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Pages' }).getByRole('link', { name: 'Help', exact: true }).click()
     await expect(edit.getByRole('button', { name: 'Inspect app colors' })).toHaveAttribute('aria-pressed', 'false')
     notes.push(`A pick took ${Date.now() - started} ms end to end.`)
     // The pick did not navigate.
     await expect(heading).toBeVisible()
-    expect(await page.evaluate(() => location.hash)).not.toBe('#history')
+    expect(await page.evaluate(() => location.hash)).not.toBe('#help')
     const status = await edit.locator('.theme-editor__header p').innerText()
     expect(status).toMatch(/^[A-Z][a-z ]+ · \d+ uses?$/u)
     await expect(edit.locator('[data-theme-color-role][data-selected]')).toHaveCount(1)
     await expect.poll(() => page.locator('#theme-inspector-spotlight .theme-inspector-spotlight__glow').count()).toBeGreaterThan(0)
     await expect(page.locator('#theme-inspector-hover')).toHaveCount(0)
-    notes.push(`Picking the History footer link selects "${status}".`)
+    notes.push(`Picking the Help footer link selects "${status}".`)
     await shot(page, 'inspector-spotlight-1600-dark')
 
     // A label spotlights its colour; Escape clears it, then closes.

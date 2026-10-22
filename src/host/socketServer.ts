@@ -34,6 +34,7 @@ import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
+import { stateWithoutDelegation } from '../shared/delegation'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 
@@ -177,6 +178,12 @@ export interface SocketServerOptions {
    * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
    */
   hostUpdate?: Pick<HostSelfUpdate, 'run' | 'delivered'>
+  /**
+   * The Owl feature `thread-delegation` is on where this listener runs (ADR-0072, ADR-0081). Off or absent, no client is
+   * sent a thread's `delegatedBy`: a thread delegated while the feature was on keeps the link in its record, and a stable
+   * phone would otherwise hide it under the thread that delegated to it.
+   */
+  delegation?: boolean
 }
 /**
  * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
@@ -375,9 +382,20 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!made) byKey.set(key, made = stateWithoutProviders(state, unknown))
     return made
   }
+  /**
+   * A shell without delegation links while `thread-delegation` is off: made once per read however many peers are sent it,
+   * and the read itself when the feature is on or no thread names one.
+   */
+  const undelegated = new WeakMap<AgentState, AgentState>()
+  const withoutDelegation = (state: AgentState): AgentState => {
+    if (options.delegation === true) return state
+    let made = undelegated.get(state)
+    if (!made) undelegated.set(state, made = stateWithoutDelegation(state))
+    return made
+  }
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
   const shell = (peer: Peer, read: AgentState = service.shell()) => {
-    const original = withoutUnknown(read, peer.unknownProviders)
+    const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
     const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),

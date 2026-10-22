@@ -1,5 +1,6 @@
 import XCTest
 import Combine
+import CoreGraphics
 import SottoCore
 
 /// Holds the model between two receipt reads while a test says so. Otherwise it lets other work run, as the real wait
@@ -1383,6 +1384,121 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(WatcherConversation.items(orphan).contains { if case .ownChange = $0 { return true } else { return false } })
         XCTAssertTrue(WatcherConversation.items(try decoded()).allSatisfy { if case .ownChange = $0 { return false } else { return true } },
                       "A reply in which Watcher changed nothing has no line")
+    }
+
+    // MARK: Where the reader stands (#1277)
+
+    /// A reader who lets go with a waiting card in view is held on it, even with the page's end in view, so Watcher's new
+    /// words never push it under the box. A reader who sees no card follows the new words where they see the newest words
+    /// or the end, and a reader of earlier messages follows nothing.
+    func testAReaderOnAWaitingCardIsHeldThereRatherThanFollowingNewWords() {
+        // The header ends at 140 and the box starts at 600.
+        func place(newest: CGFloat, end: CGFloat, cards: [String: CGRect] = [:]) -> WatcherReaderPlace {
+            WatcherReaderPlace(newest: newest, end: end, top: 140, dockTop: 600, cards: cards)
+        }
+        let whole = CGRect(x: 16, y: 340, width: 340, height: 230)
+        let onCard = place(newest: 320, end: 590, cards: ["login": whole])
+        XCTAssertEqual(onCard.heldCard, "login", "The card is whole above the box")
+        XCTAssertFalse(onCard.following, "The end is in view, but the card holds the page")
+
+        let barelyShowing = place(newest: 560, end: 860, cards: ["login": CGRect(x: 16, y: 580, width: 340, height: 260)])
+        XCTAssertNil(barelyShowing.heldCard, "Less than a reading's worth of the card shows above the box")
+        XCTAssertTrue(barelyShowing.following, "The newest words are in view, so the page follows them")
+
+        let scrolledPast = place(newest: 100, end: 400, cards: ["login": CGRect(x: 16, y: -140, width: 340, height: 230)])
+        XCTAssertNil(scrolledPast.heldCard, "A card above the header isn't the one the reader is on")
+        XCTAssertTrue(scrolledPast.following, "The page's end is in view")
+
+        let two = place(newest: 160, end: 595, cards: ["login": CGRect(x: 16, y: 180, width: 340, height: 180),
+                                                       "notes": CGRect(x: 16, y: 380, width: 340, height: 200)])
+        XCTAssertEqual(two.heldCard, "notes", "With two in view, the lower one is kept whole above the box")
+
+        let reading = place(newest: 1600, end: 1900, cards: ["login": CGRect(x: 16, y: 1640, width: 340, height: 230)])
+        XCTAssertNil(reading.heldCard)
+        XCTAssertFalse(reading.following, "A reader of earlier messages is left where they are")
+    }
+
+    /// A card the reader sees whole is the one they are on, even with a lower card cut off by the box: holding the lower
+    /// one whole above the box would push the whole one under the header.
+    func testAWholeCardIsHeldOverALowerOneTheBoxCutsOff() {
+        let question = CGRect(x: 16, y: 200, width: 340, height: 260)
+        let permission = CGRect(x: 16, y: 480, width: 340, height: 450)
+        let place = WatcherReaderPlace(newest: 180, end: 990, top: 140, dockTop: 600,
+                                       cards: ["login": question, "notes": permission])
+        XCTAssertEqual(place.heldCard, "login", "The question is whole above the box; the permission under it is cut off")
+        XCTAssertFalse(place.following)
+
+        // With none whole, the one the reader sees most of: 220 points of the question, 120 of the permission.
+        let neitherWhole = WatcherReaderPlace(newest: 60, end: 990, top: 140, dockTop: 600,
+                                              cards: ["login": CGRect(x: 16, y: 100, width: 340, height: 260),
+                                                      "notes": permission])
+        XCTAssertEqual(neitherWhole.heldCard, "login", "With none whole, the one the reader sees most of is kept")
+        let lowerShowsMore = WatcherReaderPlace(newest: 60, end: 990, top: 140, dockTop: 600,
+                                                cards: ["login": CGRect(x: 16, y: -60, width: 340, height: 260),
+                                                        "notes": CGRect(x: 16, y: 300, width: 340, height: 450)])
+        XCTAssertEqual(lowerShowsMore.heldCard, "notes")
+    }
+
+    /// The card the reader is on goes back where they left it when the page changes around it, no lower than keeps it
+    /// whole above the box and never under the header.
+    func testTheHeldCardGoesBackWhereTheReaderLeftIt() throws {
+        // The header ends at 140 and the box starts at 600: 460 points of room. The reader left the card 60 points below
+        // the header.
+        func anchor(_ card: CGRect, offset: CGFloat = 60, dockTop: CGFloat = 600) -> CGFloat? {
+            WatcherReaderPlace.anchor(card: card, offset: offset, top: 140, dockTop: dockTop)
+        }
+        XCTAssertNil(anchor(CGRect(x: 16, y: 200.5, width: 340, height: 260)), "Where the reader left it, nothing moves")
+        // A card under it was removed and the page's bottom carried this one down by 90 points: back to 60 below the
+        // header, which `scrollTo` does by lining up the point 60 / (460 - 260) down the card and the page.
+        let carried = try XCTUnwrap(anchor(CGRect(x: 16, y: 290, width: 340, height: 260)))
+        XCTAssertEqual(carried, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(140 + carried * 460 - carried * 260, 200, accuracy: 0.0001, "The card's top lands where it was")
+        // The keyboard raised the box to 380: the card goes up as far as keeps it whole above the box, and no farther than
+        // the header.
+        XCTAssertEqual(anchor(CGRect(x: 16, y: 200, width: 340, height: 200), dockTop: 380), 1, "Its bottom meets the box")
+        XCTAssertEqual(anchor(CGRect(x: 16, y: 200, width: 340, height: 300), dockTop: 380), 0,
+                       "A card taller than the room comes no lower than the header")
+        // A card taller than the room, its top left 100 points above the header and carried 90 points down: back to 40.
+        let tall = try XCTUnwrap(anchor(CGRect(x: 16, y: 130, width: 340, height: 600), offset: -100))
+        XCTAssertEqual(140 + tall * 460 - tall * 600, 40, accuracy: 0.0001, "The tall card's top lands where it was")
+        // Carried so far up that its bottom left the box: back down only as far as keeps it filling the room.
+        let lifted = try XCTUnwrap(anchor(CGRect(x: 16, y: -300, width: 340, height: 600), offset: -300))
+        XCTAssertEqual(140 + lifted * 460 - lifted * 600, 0, accuracy: 0.0001, "Its bottom meets the box")
+        // Pushed up behind the header, it comes back down.
+        let hidden = try XCTUnwrap(anchor(CGRect(x: 16, y: 40, width: 340, height: 260), offset: 0))
+        XCTAssertEqual(hidden, 0, accuracy: 0.0001)
+    }
+
+    /// The box puts Watcher's permission chip away only for a thread's held card that can't sit whole above it with the
+    /// chip there. A card that fits keeps the chip, and the room is the one with the chip in place, so putting it away never
+    /// brings it back.
+    func testThePermissionChipIsPutAwayOnlyForAThreadsCardTooTallToFitOverIt() {
+        // An iPhone SE: the header ends at 146, and the box with the chip over it starts at 460, 314 points of room. The
+        // chip and its spacing take 52 points of the box.
+        let question = CGRect(x: 16, y: 146, width: 343, height: 348)
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, own: false, top: 146, dockTopWithChip: 460),
+                      "A question with its answers is taller than the room with the chip, so the chip goes")
+        // With the chip away the box starts at 512, but the room is still worked out with the chip in place.
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, own: false, top: 146, dockTopWithChip: 512 - 52),
+                      "Putting the chip away leaves the decision where it was")
+        let worker = CGRect(x: 16, y: 200, width: 343, height: 240)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: worker, own: false, top: 146, dockTopWithChip: 460),
+                       "A thread's card that fits whole above the box keeps the chip")
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: CGRect(x: 16, y: 146, width: 343, height: 314.5), own: false,
+                                                       top: 146, dockTopWithChip: 460), "A card as tall as the room fits")
+    }
+
+    /// Watcher's own card always keeps the chip, however tall it is: its request is about Watcher's permissions. On the SE,
+    /// with Watcher's held line in the box, the own card of a phone without Can answer is about 265 points against about
+    /// 273 of room, close enough that a rule by fit alone put the chip away on CI.
+    func testWatchersOwnCardAlwaysKeepsThePermissionChip() {
+        let own = CGRect(x: 16, y: 270, width: 343, height: 267)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: own, own: true, top: 146, dockTopWithChip: 419))
+        let tall = CGRect(x: 16, y: 146, width: 343, height: 400)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: tall, own: true, top: 146, dockTopWithChip: 419),
+                       "Even an own card taller than the room keeps the chip")
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: tall, own: false, top: 146, dockTopWithChip: 419),
+                      "A thread's card as tall goes without it")
     }
 
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {

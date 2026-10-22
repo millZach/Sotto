@@ -74,9 +74,9 @@ test('Add project opens a new thread in the project, or New terminal from the Te
     await page.keyboard.press('Escape')
     await expect(terminal).toHaveCount(0)
 
-    // Beside History, with Terminal still the remembered mode, the sidebar there lists threads: the new thread
+    // Beside Help, with Terminal still the remembered mode, the sidebar there lists threads: the new thread
     // opens on Threads in Threads mode, rather than behind the Terminal workspace.
-    await page.getByRole('link', { name: 'History' }).click()
+    await page.getByRole('link', { name: 'Help' }).click()
     await addProject.click()
     await dialog.getByRole('button', { name: 'code' }).click()
     await dialog.locator('.folder-browser__list').getByRole('button', { name: /forge-ml/ }).click()
@@ -85,7 +85,7 @@ test('Add project opens a new thread in the project, or New terminal from the Te
     await expect(page.getByRole('radiogroup', { name: 'Sidebar mode' }).getByRole('radio', { name: 'Threads' })).toHaveAttribute('aria-checked', 'true')
     await expect(newThread).toBeVisible()
     await expect.poll(() => threadsIn('forge-ml')).toBe(1)
-    await page.screenshot({ animations: 'disabled', path: `${SHOTS}/from-history-thread-1280x800-dark.png` })
+    await page.screenshot({ animations: 'disabled', path: `${SHOTS}/from-help-thread-1280x800-dark.png` })
   } finally {
     await closeSotto(launched)
     process.env.USERPROFILE = saved.USERPROFILE; process.env.HOME = saved.HOME

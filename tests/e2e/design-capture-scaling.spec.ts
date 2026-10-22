@@ -38,8 +38,9 @@ test.describe('authoritative design-review captures', () => {
         const liveWidget = await widgetPage(launched, 'dark')
         await liveWidget.getByRole('button', { name: 'Cancel dictation' }).click()
 
-        await page.getByRole('link', { name: 'History' }).click()
-        await captureFullSurface(page, page.locator('.history-view'), `scale-${scalePercent}-history.png`, /Draft the launch summary/i)
+        // The Journal, from the bar to the last day it shows, once the cancelled dictation has gone back to rest.
+        await expect(page.locator('.dictate')).toHaveAttribute('data-status', 'idle', { timeout: 15_000 })
+        await captureFullSurface(page, page.locator('.dictate'), `scale-${scalePercent}-journal.png`, /Draft the launch summary/i)
 
         await page.getByRole('link', { name: 'Settings' }).click()
         await captureFullSurface(page, page.locator('.settings-view'), `scale-${scalePercent}-settings.png`, /^Application$/i)

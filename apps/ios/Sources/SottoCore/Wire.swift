@@ -214,6 +214,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public var kind: String? = nil
     public var watchedByWatcher: Bool? = nil
+    /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
+    /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
+    public var delegatedBy: String? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.

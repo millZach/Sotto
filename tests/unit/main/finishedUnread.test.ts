@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { FINISHED_UNREAD_MAX, FinishedUnread } from '../../../src/main/agents/finishedUnread'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 
-type Shape = Partial<Pick<AgentThread, 'status' | 'backgroundWork' | 'clientConnected' | 'providerId'>>
+type Shape = Partial<Pick<AgentThread, 'status' | 'backgroundWork' | 'clientConnected' | 'providerId' | 'workspaceSettledAt' | 'settledAt' | 'projectId'>>
 
 function thread(id: string, shape: Shape = {}): AgentThread {
   return { id, title: id, projectId: 'project', modelId: 'model', status: 'idle', messages: [], requests: [], ...shape }
@@ -92,6 +92,40 @@ describe('a thread that finishes out of sight', () => {
     const marks = new FinishedUnread()
     marks.track(snapshot([running('a')]))
     marks.track(snapshot([thread('a', { status: 'error' })]))
+    expect(marks.has('a')).toBe(false)
+  })
+})
+
+describe('a settled thread (#1279)', () => {
+  const at = '2026-10-21T12:00:00.000Z'
+  it('loses its mark when it is settled, by itself, by its project or by its provider', () => {
+    const marks = new FinishedUnread()
+    marks.track(snapshot([running('a'), running('b'), running('c'), running('d', { projectId: 'other' })]))
+    marks.track(snapshot([thread('a'), thread('b'), thread('c'), thread('d', { projectId: 'other' })]))
+    expect(marks.saved()).toEqual(['a', 'b', 'c', 'd'])
+    const projects = [{ id: 'other', title: 'Other', path: '/other', workspaceSettledAt: at }]
+    expect(marks.track(snapshot([thread('a', { workspaceSettledAt: at }), thread('b', { settledAt: at }), thread('c'), thread('d', { projectId: 'other' })], { projects }))).toBe(true)
+    expect(marks.saved()).toEqual(['c'])
+  })
+
+  it('stays read when it is restored, and earns nothing for work it finishes while settled', () => {
+    const marks = new FinishedUnread()
+    marks.track(snapshot([running('a')]))
+    marks.track(snapshot([thread('a')]))
+    marks.track(snapshot([thread('a', { workspaceSettledAt: at })]))
+    marks.track(snapshot([thread('a')]))
+    expect(marks.has('a')).toBe(false)
+    marks.track(snapshot([running('a', { workspaceSettledAt: at })]))
+    marks.track(snapshot([thread('a', { workspaceSettledAt: at })]))
+    expect(marks.has('a')).toBe(false)
+    expect(marks.publish(thread('a', { workspaceSettledAt: at }))).not.toHaveProperty('finishedUnread')
+  })
+
+  it('loses its mark even while its provider is disconnected', () => {
+    const marks = new FinishedUnread()
+    marks.track(snapshot([running('a')]))
+    marks.track(snapshot([thread('a')]))
+    marks.track(snapshot([thread('a', { clientConnected: false, workspaceSettledAt: at })]))
     expect(marks.has('a')).toBe(false)
   })
 })

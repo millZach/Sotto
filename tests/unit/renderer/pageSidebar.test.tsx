@@ -46,16 +46,17 @@ describe('the Threads sidebar beside another page', () => {
     expect(nav.getByText('Sotto')).toBeInTheDocument()
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(nav.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'false')
-    expect(nav.getByRole('link', { name: 'History' })).not.toHaveAttribute('aria-current')
+    expect(nav.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current')
+    expect(nav.queryByRole('link', { name: 'History' })).toBeNull()
     expect(nav.getByRole('button', { name: 'Check for updates' })).toBeInTheDocument()
     // No thread is current and no pane is open, so nothing can be opened beside anything.
     expect(nav.queryByRole('button', { name: /beside$/ })).toBeNull()
   })
 
   it('lights the page link of the open page and no room on a page outside both rooms', () => {
-    mount(threadsStateFixture(), 'history')
+    mount(threadsStateFixture(), 'help')
     const nav = within(sidebar())
-    expect(nav.getByRole('link', { name: 'History' })).toHaveAttribute('aria-current', 'page')
+    expect(nav.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page')
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'false')
     expect(nav.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'false')
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('tabindex', '0')
