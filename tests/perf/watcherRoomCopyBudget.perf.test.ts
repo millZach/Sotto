@@ -141,5 +141,16 @@ it('hands every reader the room from the record\'s own records, which none of th
     void _before; void _after
     expect(phoneNow).toEqual(phoneExpected)
     expect(JSON.stringify(phoneNow)).not.toContain('phoneOrigin')
+
+    // A change to the record after a reader kept a room replaces the record, so the kept rooms read as they did.
+    const kept = structuredClone({ room, captured: sent.captured, legacy: sent.legacy }), rootAfter = randomUUID()
+    f.control.mutateWatcher(next => {
+      next.requests[1]!.rootUserMessageId = rootAfter
+      next.history = []
+      if (next.current) next.current.target.threadId = randomUUID()
+    })
+    expect(f.state().requests[1]!.rootUserMessageId).toBe(rootAfter)
+    expect(f.state().history).toEqual([])
+    expect({ room, captured: sent.captured, legacy: sent.legacy }).toEqual(kept)
   } finally { captured.dispose(); legacy.dispose(); await f.close() }
 })
