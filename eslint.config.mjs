@@ -49,6 +49,7 @@ export default tseslint.config(
       'artifacts/linux-settings-copy/**',
       'artifacts/model-menu-wheel/**',
       'artifacts/new-thread-defaults-every-host/**',
+      'artifacts/remove-terminal-mode/**',
       'artifacts/usage-dashboard/**',
       'artifacts/usage-chart-split/**',
       'apps/omarchy/src/**',

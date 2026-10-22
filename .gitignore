@@ -746,3 +746,7 @@ artifacts/main-freeze-notice/*
 !artifacts/main-freeze-notice/settings-1600x1000-light.png
 !artifacts/main-freeze-notice/popover-1280x800-dark-reduced-motion.png
 !artifacts/main-freeze-notice/attached-1280x800-dark.png
+
+# Terminal mode removed (ADR-0106); retain only the capture its verification note cites.
+artifacts/remove-terminal-mode/*
+!artifacts/remove-terminal-mode/threads-populated-after.png
