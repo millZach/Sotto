@@ -908,16 +908,24 @@ import XCTest
     /// Waits for Watcher's bar to be in its place, `away` or not: away, Conversation | Watched has slid up past the top of
     /// the screen, where VoiceOver no longer finds it; back, it sits whole below the status bar where it can be pressed.
     private func waitForWatcherBar(away: Bool, _ message: String) {
-        let conversation = app.buttons["watcher-section-conversation"]
-        let top = app.windows.firstMatch.frame.minY
+        let window = app.windows.firstMatch.frame
         var seen = "no look found the bar"
-        let placed = NSPredicate { _, _ in
-            guard conversation.exists else { seen = "Conversation is missing"; return away }
+        // One snapshot per look, so the frame and whether the bar is there come from the same instant: on CI's slower
+        // phone, separate queries took long enough that a bar already back read as not yet in its place.
+        let placed = NSPredicate { [app] _, _ in
+            guard let snapshot = try? app.snapshot() else { seen = "no snapshot of the page"; return false }
+            var stack: [any XCUIElementSnapshot] = [snapshot]
+            var conversation: (any XCUIElementSnapshot)?
+            while let next = stack.popLast(), conversation == nil {
+                if next.identifier == "watcher-section-conversation" { conversation = next } else { stack.append(contentsOf: next.children) }
+            }
+            guard let conversation else { seen = "Conversation is missing"; return away }
             let frame = conversation.frame
             seen = "Conversation \(frame)"
-            return away ? frame.maxY <= top + 1 : frame.minY >= top + 20 && conversation.isHittable
+            return away ? frame.maxY <= window.minY + 1
+                : frame.minY >= window.minY + 20 && frame.maxY <= window.maxY && conversation.isEnabled
         }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 10)
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 30)
         if result != .completed { explain(away ? "watcher-bar-not-away" : "watcher-bar-not-back", seen) }
         XCTAssertEqual(result, .completed, message + " (" + seen + ")")
     }
