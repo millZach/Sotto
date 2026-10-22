@@ -122,7 +122,7 @@ const missing = (error: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes((err
 
 /** A reserved folder reached through a link or junction, its own or a parent's, is not the folder Sotto made. */
 async function refuseRedirected(path: string): Promise<void> {
-  if (pathKey(await realpath(path)) !== pathKey(path)) throw new Error('The reserved working folder was redirected to another folder. Nothing was removed.')
+  if (pathKey(await realpath(path)) !== pathKey(path)) throw new RemovalKept('The worktree’s folder now leads to another folder through a link, so nothing was removed. Put the original folder back where Sotto made it, then choose Refresh.')
 }
 
 /**
@@ -304,6 +304,8 @@ const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
  * finishes. Plain words, because `git worktree list` shows them.
  */
 export const REMOVING_LOCK_REASON = 'Sotto is removing this folder'
+/** The lock reason while Sotto puts back a folder a removal left half done without Sotto's lock; a repair cut off resumes. */
+export const REPAIRING_LOCK_REASON = 'Sotto is repairing this folder'
 const HALF_REMOVED = 'Sotto started removing this worktree’s folder and did not finish, so Git cannot use it. The branch keeps its commits. Choose Refresh to finish removing it; sending to the thread then puts it back on its branch.'
 const PARTLY_REMOVED = 'This worktree’s folder was only partly removed, so Git cannot use it. The branch keeps its commits. Choose Refresh to put its missing files back from Git, then reinstall its dependencies if it had any.'
 /**
@@ -312,9 +314,12 @@ const PARTLY_REMOVED = 'This worktree’s folder was only partly removed, so Git
  */
 const REMOVAL_RECORD = 'sotto-removal.json'
 type NestedWorktree = { path: string; commonDirectory: string }
+/** A reason a removal or repair stopped that is already in plain words for the person reading it. */
+class RemovalKept extends Error {}
+const REPAIR_FAILED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits. Check that Sotto can write to the folder, then choose Refresh to try again.'
 /** A removal that stopped again, in plain words: what kept it, when Sotto knows, and what to press. */
 function unfinishedRemoval(cause: unknown): Error {
-  const kept = cause instanceof FolderRemovalStalled ? `${cause.message} ` : ''
+  const kept = cause instanceof FolderRemovalStalled || cause instanceof RemovalKept ? `${cause.message} ` : ''
   return new Error(`Sotto could not finish removing this worktree’s folder, so Git cannot use it. The branch keeps its commits. ${kept}Choose Refresh to try again.`, { cause })
 }
 /** Deletes everything inside a worktree except its `.git` file; the seam lets a test cut a removal off partway. */
@@ -949,18 +954,20 @@ export class ThreadWorktrees {
         return nestedWorktrees
       })
       // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
-      try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!) }
+      try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!, nestedWorktrees) }
       catch (error) { throw unfinishedRemoval(error) }
-      for (const nested of nestedWorktrees) {
-        try { await this.clearNestedWorktree(nested) }
-        catch (error) { throw new Error('The folder was removed, but Git could not clear a nested worktree registration. Run git worktree prune in that repository before using its branch again.', { cause: error }) }
-      }
       return { ...metadata, branch: facts.branch, status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
     })
   }
 
+  /** Clears a nested worktree's registration in its own repository; one already gone, or a repository that is, needs nothing. */
   private async clearNestedWorktree(nested: NestedWorktree): Promise<void> {
-    await this.registry(nested.commonDirectory, ['worktree', 'remove', '--force', '--', nested.path])
+    try { await this.registry(nested.commonDirectory, ['worktree', 'remove', '--force', '--', nested.path]) }
+    catch (error) {
+      const kept = await this.git(nested.commonDirectory, ['worktree', 'list', '--porcelain', '-z'])
+        .then(listing => registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(nested.path)), () => false)
+      if (kept) throw new RemovalKept('Git would not clear the registration of a worktree that was inside it, in that worktree’s own repository.', { cause: error })
+    }
   }
 
   /**
@@ -986,43 +993,62 @@ export class ThreadWorktrees {
       const marker = folder ? await lstat(join(path, '.git')).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error }) : undefined
       if (!folder || marker) {
         if (marker && !marker.isFile()) return metadata
-        // A missing folder is found through the repository's registrations; one Git did not lock for Sotto's removal is restore's.
+        // A missing folder is found through the repository's registrations. Only Sotto's own locks are settled here;
+        // anything else at a missing folder is restore's.
         const registration = marker ? (await gitDirectories(path).catch(() => undefined))?.gitDir
           : await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
-        const reason = registration && await readFile(join(registration, 'locked'), 'utf8').catch(() => undefined)
-        if (reason?.trim() !== REMOVING_LOCK_REASON) return metadata
+        const reason = (registration && await readFile(join(registration, 'locked'), 'utf8').catch(() => undefined))?.trim()
+        if (reason !== REMOVING_LOCK_REASON && reason !== REPAIRING_LOCK_REASON) return metadata
       }
       let identity: RegistryIdentity
       try { identity = await this.registryIdentity(repositoryRoot) } catch { return metadata }
-      const settle = await coordinateRegistry(identity, async (): Promise<{ finish: false } | { finish: true; branch: string | undefined; nested: NestedWorktree[] } | undefined> => {
+      type Settle = { kind: 'finish'; branch: string | undefined; nested: NestedWorktree[] } | { kind: 'repair' }
+      const settle = await coordinateRegistry(identity, async (): Promise<Settle | undefined> => {
         const entry = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'])).find(item => pathKey(item.path) === pathKey(path))
         if (!entry) return undefined
-        const ours = entry.locked && entry.lockReason === REMOVING_LOCK_REASON
+        const removing = entry.locked && entry.lockReason === REMOVING_LOCK_REASON
+        const repairing = entry.locked && entry.lockReason === REPAIRING_LOCK_REASON
+        if (repairing && !folder) {
+          // A folder that went while it was being repaired is a missing folder, which restore puts back.
+          await this.git(repositoryRoot, ['worktree', 'unlock', '--', path])
+          return undefined
+        }
         // A missing folder Git still registers, and not for Sotto's removal, is one restore already puts back.
-        if (!ours && (!folder || marker || entry.locked || !entry.prunable)) return undefined
+        if (!removing && !repairing && (!folder || marker || entry.locked || !entry.prunable)) return undefined
         if (folder) await refuseRedirected(path)
         const registration = await this.registrationOf(identity.common, path)
-        // Git removes a worktree, and reads one, only through its `.git` file. Write it back, pointing at the registration Git kept.
+        if (!removing) {
+          // Nothing records that this removal was decided, so nothing more is deleted. Git's lock records the repair
+          // until it is done, so a repair cut off is taken up again rather than mistaken for a whole checkout.
+          try {
+            if (!repairing) await this.git(repositoryRoot, ['worktree', 'lock', '--reason', REPAIRING_LOCK_REASON, '--', path])
+            if (!marker) {
+              if (!registration) throw new Error('Git kept no registration for this folder.')
+              await writeFile(join(path, '.git'), `gitdir: ${registration.split(sep).join('/')}\n`, { flag: 'wx' })
+            }
+          } catch (error) { throw new Error(REPAIR_FAILED, { cause: error }) }
+          return { kind: 'repair' }
+        }
+        // Git removes a worktree only through its `.git` file. Write it back, pointing at the registration Git kept.
         if (folder && !marker) {
-          if (!registration) throw new Error(ours ? HALF_REMOVED : PARTLY_REMOVED)
+          if (!registration) throw new Error(HALF_REMOVED)
           await writeFile(join(path, '.git'), `gitdir: ${registration.split(sep).join('/')}\n`, { flag: 'wx' })
         }
-        if (!ours) return { finish: false }
         const record = registration ? await readFile(join(registration, REMOVAL_RECORD), 'utf8').then(text => JSON.parse(text) as unknown, () => undefined) : undefined
         const listed = record && typeof record === 'object' && Array.isArray((record as { nestedWorktrees?: unknown }).nestedWorktrees) ? (record as { nestedWorktrees: unknown[] }).nestedWorktrees : []
         const nested = listed.filter((item): item is NestedWorktree => Boolean(item) && typeof (item as NestedWorktree).path === 'string' && typeof (item as NestedWorktree).commonDirectory === 'string')
-        return { finish: true, branch: entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : undefined, nested }
+        return { kind: 'finish', branch: entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : undefined, nested }
       })
       if (!settle) return metadata
-      if (!settle.finish) {
-        try { await this.putBackMissingFiles(path) }
-        catch (error) { throw new Error(PARTLY_REMOVED, { cause: error }) }
+      if (settle.kind === 'repair') {
+        try {
+          await this.putBackMissingFiles(path)
+          await this.registry(repositoryRoot, ['worktree', 'unlock', '--', path], identity)
+        } catch (error) { throw new Error(REPAIR_FAILED, { cause: error }) }
         return metadata
       }
-      try { await this.removeLocked(repositoryRoot, path, identity) }
+      try { await this.removeLocked(repositoryRoot, path, identity, settle.nested) }
       catch (error) { throw unfinishedRemoval(error) }
-      // The folder is gone either way; a nested registration Git keeps is reported by that repository as prunable.
-      for (const nested of settle.nested) await this.clearNestedWorktree(nested).catch(() => undefined)
       return { ...withCheckedOutBranch(metadata, settle.branch ?? metadata.branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
     })
   }
@@ -1048,13 +1074,16 @@ export class ThreadWorktrees {
    * The removal itself, for a worktree Git holds locked for Sotto's removal: Sotto deletes everything but the `.git`
    * file, which takes as long as it takes, then Git removes that file, the folder and its registration, which is
    * quick. Git deletes `.git` first and its registration last, so Git cut off in a large folder was what left one it
-   * could not use (#1297). Stopping anywhere here leaves the lock, and `resumeRemoval` finishes.
+   * could not use (#1297). The nested worktrees that went with the folder have their registrations cleared before the
+   * folder's own goes, since the record of them is kept in it. Stopping anywhere here leaves the lock and the record,
+   * and `resumeRemoval` finishes.
    */
-  private async removeLocked(repositoryRoot: string, path: string, identity: RegistryIdentity): Promise<void> {
+  private async removeLocked(repositoryRoot: string, path: string, identity: RegistryIdentity, nested: readonly NestedWorktree[]): Promise<void> {
     if (await lstat(path).then(() => true, error => { if (missing(error)) return false; throw error })) {
       await refuseRedirected(path)
       await this.removeContents(path)
     }
+    for (const worktree of nested) await this.clearNestedWorktree(worktree)
     await coordinateRegistry(identity, async () => {
       try { await this.git(repositoryRoot, ['worktree', 'remove', '--force', '--force', '--', path]) }
       catch (error) {
@@ -1209,9 +1238,9 @@ export class ThreadWorktrees {
     if (listing.status === 'rejected') throw listing.reason
     const entries = registeredWorktrees(listing.value)
     const registered = entries.find(entry => pathKey(entry.path) === pathKey(path))
-    if (registered && (registered.lockReason === REMOVING_LOCK_REASON || (registered.prunable && !registered.locked))) {
+    if (registered && (registered.lockReason === REMOVING_LOCK_REASON || registered.lockReason === REPAIRING_LOCK_REASON || (registered.prunable && !registered.locked))) {
       throw new Error(metadata.reused ? 'This worktree’s folder was only partly removed, so Git cannot use it. Nothing on its branch was lost. Choose another working copy for this thread.'
-        : registered.locked ? HALF_REMOVED : PARTLY_REMOVED)
+        : registered.lockReason === REMOVING_LOCK_REASON ? HALF_REMOVED : PARTLY_REMOVED)
     }
     if (registered?.locked || registered?.prunable) throw new Error('Git has locked this worktree or reports an incomplete checkout. Restore the checkout before continuing.')
     if (pathKey(path) !== pathKey(metadata.path) || !registered) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')

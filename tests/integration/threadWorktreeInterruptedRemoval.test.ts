@@ -3,7 +3,7 @@
 import { lstat, mkdir, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REMOVING_LOCK_REASON, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
+import { REMOVING_LOCK_REASON, REPAIRING_LOCK_REASON, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
 import { removeFolderContents } from '../../src/main/agents/folderRemoval'
 import { fixture } from '../fixtures/threadWorktreeFixture'
 
@@ -96,17 +96,57 @@ describe('a worktree removal cut off partway (#1297)', () => {
     let entered!: () => void, release!: () => void
     const inside = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const slow = new ThreadWorktrees(f.root, git, undefined, async root => { entered(); await gate; await removeFolderContents(root, { keep: new Set(['.git']) }) })
+    const order: string[] = []
+    let askedGit!: () => void
+    const overlapping = new Promise<void>(resolve => { askedGit = resolve })
+    const sending = new ThreadWorktrees(f.root, async (cwd, args, options) => { order.push('send asked Git'); askedGit(); return git(cwd, args, options) })
     const finishing = slow.resumeRemoval(f.a)
     await inside
-    const restoring = f.service.restore(f.a)
-    // Without turns the send would finish the removal itself and put the folder back here, for the held finisher to
-    // delete; with them it waits, and this bound only gives a broken lane time to show itself.
-    await Promise.race([restoring, new Promise(resolve => setTimeout(resolve, 1_000))])
+    const restoring = sending.restore(f.a)
+    // The assertion is the order: the send asks Git nothing about the folder until the finisher is let go. Without turns
+    // it asks at once and the finisher is let go then; with them, the bound only lets a broken lane show itself.
+    await Promise.race([overlapping, new Promise(resolve => setTimeout(resolve, 1_000))])
+    order.push('finisher let go')
     release()
     expect((await finishing).reclaimedAt).toBeTruthy()
     expect(await restoring).toMatchObject({ status: 'ready', reclaimedAt: undefined })
+    expect(order[0]).toBe('finisher let go')
     expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
     expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
+  })
+
+  it('takes up again a repair that was cut off, and sends nothing into the folder until it is done', async () => {
+    const f = await installedWorktree()
+    await rm(join(f.a.path!, '.git'))
+    for (const name of ['a.txt', 'b.txt']) await rm(join(f.a.path!, name))
+    const failing = new ThreadWorktrees(f.root, async (cwd, args, options) => {
+      if (args[0] === 'checkout-index') throw new Error('Permission denied')
+      return git(cwd, args, options)
+    })
+    await expect(failing.resumeRemoval(f.a)).rejects.toThrow('could not put back this worktree’s missing files')
+    expect((await registrations(f.project))[1]).toContain(`locked ${REPAIRING_LOCK_REASON}`)
+    await expect(f.service.inspect(f.a)).rejects.toThrow('only partly removed')
+    expect(await f.service.resumeRemoval(f.a)).toBe(f.a)
+    expect(await readFile(join(f.a.path!, 'b.txt'), 'utf8')).toBe('b.txt committed')
+    expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
+    expect(await f.service.inspect(f.a)).toMatchObject({ status: 'ready', dirty: false })
+  })
+
+  it('keeps a removal unfinished, with its record, until a nested worktree’s registration is cleared', async () => {
+    const f = await installedWorktree()
+    const nested = join(f.a.path!, '.worktrees', 'n')
+    await git(f.project, ['worktree', 'add', '-b', 'nested', '--', nested, 'HEAD'])
+    const facts = await f.service.reclaimFacts(f.a)
+    const refusing = new ThreadWorktrees(f.root, async (cwd, args, options) => {
+      if (args[0] === 'worktree' && args[1] === 'remove' && args.includes(nested)) throw new Error('Refused')
+      return git(cwd, args, options)
+    })
+    await expect(refusing.reclaim(f.a, { confirmedItems: facts.items, confirmedIgnored: facts.ignored, confirmedRepositories: facts.repositories }))
+      .rejects.toThrow('Git would not clear the registration of a worktree that was inside it')
+    expect((await registrations(f.project))[1]).toContain(`locked ${REMOVING_LOCK_REASON}`)
+    expect(await registrations(f.project)).toHaveLength(3)
+    expect((await f.service.resumeRemoval(f.a)).reclaimedAt).toBeTruthy()
+    expect(await registrations(f.project)).toHaveLength(1)
   })
 
   it('clears a nested worktree’s registration when it finishes a removal later', async () => {
@@ -142,7 +182,7 @@ describe('a worktree removal cut off partway (#1297)', () => {
     const elsewhere = join(f.root, 'elsewhere')
     await rename(join(f.root, 'thread-worktrees'), elsewhere)
     await symlink(elsewhere, join(f.root, 'thread-worktrees'), 'junction')
-    await expect(f.service.resumeRemoval(f.a)).rejects.toThrow('redirected to another folder')
+    await expect(f.service.resumeRemoval(f.a)).rejects.toThrow('leads to another folder through a link')
     expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
     await rm(join(f.root, 'thread-worktrees'))
     await rename(elsewhere, join(f.root, 'thread-worktrees'))
