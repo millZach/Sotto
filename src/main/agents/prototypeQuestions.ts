@@ -13,6 +13,11 @@ export const PROTOTYPE_SEND_BACK_WINDOW_MS = 60_000
  * question as ADR-0085 always did, so no question waits unseen for a search that never ends.
  */
 export const PROTOTYPE_HOLD_MAX_MS = 30_000
+/**
+ * How long Sotto waits for the provider to say it took the note. Past it the provider cannot say, and the question shows,
+ * marked link missing (ADR-0108); a confirmation that comes later is still heard, but never hides the question again.
+ */
+export const PROTOTYPE_SEND_BACK_CONFIRM_MS = 10_000
 /** Sotto's own copy of a question it sent back: a Sotto request (ADR-0035) named after the original. */
 export const PROTOTYPE_QUESTION_COPY_PREFIX = `${SOTTO_REQUEST_PREFIX}prototype-question:`
 
@@ -54,8 +59,11 @@ interface Minute { readonly original: AgentRequest; cancel?: () => void }
 
 interface ThreadRecord {
   readonly questions: Map<string, { state: QuestionState; readonly since: number }>
-  /** Questions sent back, newest last: never shown again, even read from a snapshot that lost track of them. */
-  readonly sentBack: string[]
+  /**
+   * Questions sent back, newest last, with what each is when a snapshot that lost track of it reads it again: hidden while
+   * the provider took the note, or link missing once it showed because the provider could not say. Never sent again.
+   */
+  readonly sentBack: Map<string, 'sent-back' | 'link-missing'>
   minute?: Minute
   copy?: AgentRequest
 }
@@ -189,7 +197,7 @@ export class PrototypeQuestions {
     let record = this.records.get(thread.id)
     if (!record) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !thread.requests.some(asked)) return thread
-      record = { questions: new Map(), sentBack: [] }
+      record = { questions: new Map(), sentBack: new Map() }
       this.records.set(thread.id, record)
     }
     // An archived or settled thread is quiet: it holds nothing new, and Sotto's copy goes.
@@ -214,14 +222,15 @@ export class PrototypeQuestions {
     }
     for (const id of record.questions.keys()) if (!present.has(id)) record.questions.delete(id)
     if (record.copy) { requests.push(record.copy); changed = true }
-    if (!record.questions.size && !record.minute && !record.copy && !record.sentBack.length) this.records.delete(thread.id)
+    if (!record.questions.size && !record.minute && !record.copy && !record.sentBack.size) this.records.delete(thread.id)
     return changed ? { ...thread, requests } : thread
   }
 
   private stateOf(threadId: string, record: ThreadRecord, request: AgentRequest, closed: boolean, replyBefore: () => string | undefined): QuestionState {
     let entry = record.questions.get(request.id)
     if (!entry) {
-      if (record.sentBack.includes(request.id)) entry = { state: 'sent-back', since: this.now() }
+      const sent = record.sentBack.get(request.id)
+      if (sent) entry = { state: sent, since: this.now() }
       else {
         // A new question answers the note, or puts Sotto's copy away: the thread asked again.
         const answersNote = record.minute !== undefined
@@ -233,6 +242,7 @@ export class PrototypeQuestions {
       }
       record.questions.set(request.id, entry)
     }
+    if (entry.state === 'sending' && (closed || this.now() - entry.since >= PROTOTYPE_HOLD_MAX_MS)) this.unconfirmed(record, request.id)
     if (entry.state !== 'held' && entry.state !== 'next') return entry.state
     const search = this.options.searched(threadId, `request:${request.id}`)
     if (search?.finished) {
@@ -249,18 +259,24 @@ export class PrototypeQuestions {
 
   /** Sends the question back once. The thread's next question answers the note from now on, though the minute starts once the provider took it. */
   private send(threadId: string, record: ThreadRecord, request: AgentRequest, answer: PrototypeSendBack): void {
-    record.sentBack.push(request.id)
-    if (record.sentBack.length > SENT_BACK_KEPT) record.sentBack.shift()
+    record.sentBack.set(request.id, 'sent-back')
+    if (record.sentBack.size > SENT_BACK_KEPT) record.sentBack.delete(record.sentBack.keys().next().value!)
     const minute: Minute = { original: request }
     record.minute = minute
+    // A provider that has not said in time cannot say: the question shows, and what it says later is still heard.
+    const cancelDeadline = this.timer(() => {
+      if (this.records.get(threadId) !== record || record.questions.get(request.id)?.state !== 'sending') return
+      this.unconfirmed(record, request.id)
+      this.options.changed()
+    }, PROTOTYPE_SEND_BACK_CONFIRM_MS)
     // Never from inside a snapshot: the coordinator is still taking it.
     void Promise.resolve().then(() => this.options.sendBack(threadId, request, answer)).catch(() => false).then(taken => {
+      cancelDeadline()
       if (this.records.get(threadId) !== record) return
       const entry = record.questions.get(request.id)
       if (!taken) {
         // The note did not go: the user answers the question as it is, marked link missing.
-        const index = record.sentBack.indexOf(request.id)
-        if (index >= 0) record.sentBack.splice(index, 1)
+        record.sentBack.delete(request.id)
         if (entry?.state === 'sending') entry.state = 'link-missing'
         if (record.minute === minute) delete record.minute
       } else {
@@ -283,6 +299,16 @@ export class PrototypeQuestions {
     if (waiting) waiting.state = 'link-missing'
     else record.copy = copyOf(minute.original)
     this.options.changed()
+  }
+
+  /**
+   * The provider has not said whether it took the note: the question shows, marked link missing, and stays shown whatever
+   * it says later. The minute stays open, so a question the thread asks after a note that did go is not sent back again.
+   */
+  private unconfirmed(record: ThreadRecord, requestId: string): void {
+    const entry = record.questions.get(requestId)
+    if (entry?.state === 'sending') entry.state = 'link-missing'
+    if (record.sentBack.has(requestId)) record.sentBack.set(requestId, 'link-missing')
   }
 
   private endMinute(record: ThreadRecord): void {

@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
-import { aboutPrototype, PROTOTYPE_HOLD_MAX_MS, PROTOTYPE_SEND_BACK_NOTE, PROTOTYPE_SEND_BACK_WINDOW_MS, PrototypeQuestions, sendBackAnswer, type PrototypeSendBack } from '../../../src/main/agents/prototypeQuestions'
+import { describe, expect, it, vi } from 'vitest'
+import { aboutPrototype, PROTOTYPE_HOLD_MAX_MS, PROTOTYPE_SEND_BACK_CONFIRM_MS, PROTOTYPE_SEND_BACK_NOTE, PROTOTYPE_SEND_BACK_WINDOW_MS, PrototypeQuestions, sendBackAnswer, type PrototypeSendBack } from '../../../src/main/agents/prototypeQuestions'
 import type { PageSearch } from '../../../src/main/agents/questionPages'
 import type { AgentHostSnapshot, AgentMessage, AgentRequest, AgentThread, QuestionPage } from '../../../src/shared/agents'
 
@@ -17,16 +17,19 @@ function thread(requests: AgentRequest[], overrides: Partial<AgentThread> = {}):
 const snapshot = (...threads: AgentThread[]): AgentHostSnapshot => ({ connected: true, projects: [], models: [], threads } as unknown as AgentHostSnapshot)
 
 /** A host's coordinator in miniature: what each search found, the send-backs it was asked for, and a clock it owns. */
-function setup(options: { taken?: boolean | 'throw' } = {}) {
+function setup(options: { taken?: boolean | 'throw' | 'later' } = {}) {
   const searches = new Map<string, PageSearch>()
   const sent: { threadId: string; request: AgentRequest; answer: PrototypeSendBack }[] = []
   const timers: { run: () => void; ms: number; cancelled: boolean }[] = []
   let now = 1_000, changes = 0
+  /** With `later`, the provider says whether it took the note only when the test confirms it. */
+  let confirm: (taken: boolean) => void = () => undefined
   const held = new PrototypeQuestions({
     searched: (threadId, source) => searches.get(`${threadId}\n${source}`),
     sendBack: async (threadId, request, answer) => {
       sent.push({ threadId, request, answer })
       if (options.taken === 'throw') throw new Error('provider gone')
+      if (options.taken === 'later') return new Promise<boolean>(resolve => { confirm = resolve })
       return options.taken ?? true
     },
     changed: () => { changes++ },
@@ -37,6 +40,7 @@ function setup(options: { taken?: boolean | 'throw' } = {}) {
     held, sent, timers,
     get changes() { return changes },
     advance: (ms: number) => { now += ms },
+    confirm: (taken: boolean) => confirm(taken),
     found: (requestId: string, working: QuestionPage[], pages: QuestionPage[] = working) => searches.set(`thread\nrequest:${requestId}`, { finished: true, pages, working }),
     searching: (requestId: string) => searches.set(`thread\nrequest:${requestId}`, { finished: false, pages: [], working: [] }),
     shown: (shownThread: AgentThread) => held.decorate(snapshot(shownThread)).threads[0]!,
@@ -199,6 +203,39 @@ describe('PrototypeQuestions', () => {
       expect(test.shown(thread([question('q'), question('later', 'Merge it?')])).requests.map(request => request.id)).toEqual(['q', 'later'])
     })
   }
+
+  it('shows the question, marked link missing, when the provider has not confirmed the note in time, and never hides it again', async () => {
+    const test = setup({ taken: 'later' })
+    test.found('q', [])
+    expect(test.shown(thread([question('q')])).requests).toEqual([])
+    await vi.waitFor(() => expect(test.sent).toHaveLength(1))
+    expect(test.held.holds('thread')).toBe(true)
+    const before = test.changes
+    test.fire(PROTOTYPE_SEND_BACK_CONFIRM_MS)
+    expect(test.changes).toBe(before + 1)
+    expect(test.shown(thread([question('q')])).requests).toEqual([{ ...question('q'), linkMissing: true }])
+    expect(test.held.holds('thread')).toBe(false)
+    // The provider says later that it took the note: the question stays where the user sees it.
+    test.confirm(true)
+    await vi.waitFor(() => expect(test.changes).toBe(before + 2))
+    expect(test.shown(thread([question('q')])).requests).toEqual([{ ...question('q'), linkMissing: true }])
+    expect(test.held.holds('thread')).toBe(false)
+    // Read again by a snapshot that lost track of it, it is still shown and never sent again.
+    test.shown(thread([]))
+    expect(test.shown(thread([question('q')])).requests).toEqual([{ ...question('q'), linkMissing: true }])
+    expect(test.sent).toHaveLength(1)
+  })
+
+  it('shows a question whose note is still unconfirmed once it has been held long enough', async () => {
+    const test = setup({ taken: 'later' })
+    test.found('q', [])
+    test.shown(thread([question('q')]))
+    await vi.waitFor(() => expect(test.sent).toHaveLength(1))
+    expect(test.shown(thread([question('q')])).requests).toEqual([])
+    test.advance(PROTOTYPE_HOLD_MAX_MS)
+    expect(test.shown(thread([question('q')])).requests).toEqual([{ ...question('q'), linkMissing: true }])
+    expect(test.held.holds('thread')).toBe(false)
+  })
 
   it('shows a question whose search never ends once it has been held long enough', () => {
     const test = setup()

@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHostCommand } from '../../../src/main/agents/host'
-import { PROTOTYPE_SEND_BACK_NOTE, PROTOTYPE_SEND_BACK_WINDOW_MS } from '../../../src/main/agents/prototypeQuestions'
+import { PROTOTYPE_SEND_BACK_CONFIRM_MS, PROTOTYPE_SEND_BACK_NOTE, PROTOTYPE_SEND_BACK_WINDOW_MS } from '../../../src/main/agents/prototypeQuestions'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentRequest, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -47,8 +47,9 @@ async function start() {
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })
   const execute = vi.spyOn(host, 'execute')
-  const endMinute = () => { for (const timer of timers.filter(item => item.ms === PROTOTYPE_SEND_BACK_WINDOW_MS && !item.cancelled)) { timer.cancelled = true; timer.run() } }
-  return { host, control, execute, endMinute }
+  const fire = (ms: number) => { for (const timer of timers.filter(item => item.ms === ms && !item.cancelled)) { timer.cancelled = true; timer.run() } }
+  const endMinute = () => fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
+  return { host, control, execute, endMinute, fire }
 }
 const requests = (state: AgentState): readonly AgentRequest[] => state.host.threads.find(thread => thread.id === 'workshop')!.requests
 type Executed = { readonly mock: { readonly calls: readonly (readonly [AgentHostCommand])[] } }
@@ -95,6 +96,26 @@ describe('the coordinator’s checked prototype questions', () => {
     host.event({ type: 'question', threadId: 'workshop', requestId: 'q2', text: `The prototype is at ${DEAD_PAGE}. Which variant?`, status: 'running' })
     await vi.waitFor(() => expect(requests(control.shell())).toEqual([expect.objectContaining({ id: 'q2', linkMissing: true })]))
     expect(answers(execute)).toHaveLength(1)
+  })
+
+  it('shows the question, marked link missing, when the provider cannot say in time whether it took the note', async () => {
+    const { host, control, execute, fire } = await start()
+    const execution = host.execute.bind(host)
+    let confirm: (taken: boolean) => void = () => undefined
+    execute.mockImplementation(async command => command.type === 'answer'
+      ? { accepted: false, uncertain: true, answerCompletion: new Promise<boolean>(resolve => { confirm = resolve }) }
+      : execution(command))
+    const recorded = vi.fn()
+    Object.assign(host, { recordAnswer: recorded })
+    host.event({ type: 'question', threadId: 'workshop', requestId: 'q1', text: `Which prototype variant? ${DEAD_PAGE}`, status: 'running' })
+    await vi.waitFor(() => expect(answers(execute)).toHaveLength(1))
+    expect(requests(control.shell())).toEqual([])
+    fire(PROTOTYPE_SEND_BACK_CONFIRM_MS)
+    expect(requests(control.shell())).toEqual([expect.objectContaining({ id: 'q1', linkMissing: true })])
+    // The provider confirms after: Sotto is recorded as the one who answered, and the question is not hidden again.
+    confirm(true)
+    await vi.waitFor(() => expect(recorded).toHaveBeenCalledWith('workshop', expect.objectContaining({ requestId: 'q1' })))
+    expect(requests(control.shell())).toEqual([expect.objectContaining({ id: 'q1', linkMissing: true })])
   })
 
   it('shows a question that takes only listed choices at once, marked link missing, and sends nothing', async () => {
