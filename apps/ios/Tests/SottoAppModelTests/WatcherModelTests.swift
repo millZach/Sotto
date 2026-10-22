@@ -1509,6 +1509,25 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(slide.moved(to: 560, counts: true, holding: true), false, "Stopping on a card brings it back")
     }
 
+    /// A card keeps the bar only once the reader has let go of the page, and only where iOS says when that is (#1288).
+    /// iOS 17 can't, and nothing there moves a card out from under a bar that comes back over it, so there a card keeps
+    /// nothing: the bar slides as it does with no card held, and a card in the strip it uncovered stays in view.
+    func testOnIOS17ACardDoesntKeepTheBar() {
+        XCTAssertTrue(WatcherBarSlide.holding(card: true, userScrolling: false, seesLetGo: true), "Let go of on a card")
+        XCTAssertFalse(WatcherBarSlide.holding(card: true, userScrolling: true, seesLetGo: true),
+                       "Still moving the page: the card is decided again where they let go")
+        XCTAssertFalse(WatcherBarSlide.holding(card: false, userScrolling: false, seesLetGo: true), "No card")
+        XCTAssertFalse(WatcherBarSlide.holding(card: true, userScrolling: false, seesLetGo: false),
+                       "iOS 17 can't say the reader let go, so the card doesn't keep the bar")
+
+        // On iOS 17, reading down onto a card slides the bar away as it would with no card, and stopping there leaves it.
+        var slide = WatcherBarSlide()
+        let holding = WatcherBarSlide.holding(card: true, userScrolling: false, seesLetGo: false)
+        XCTAssertNil(slide.moved(to: 400, counts: true, holding: holding))
+        XCTAssertEqual(slide.moved(to: 420, counts: true, holding: holding), true, "Twenty points down slides it away")
+        XCTAssertNil(slide.moved(to: 420, counts: true, holding: holding), "Stopped on the card, the bar stays away")
+    }
+
     /// With the bar away, the reader sees the strip it uncovered, between the status bar and the bar's place (#1278). A card
     /// there is seen whole, so a reader who stops there is held on it over a lower one the box cuts off. The bar comes back
     /// once they are on it (#1288), over the card, which comes down only as far as the bar's bottom: `scrollTo` lines it up

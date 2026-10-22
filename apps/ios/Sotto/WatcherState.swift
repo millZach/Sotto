@@ -343,8 +343,9 @@ struct WatcherReaderPlace: Equatable {
 /// Which way the user moves one of Watcher's pages, so its bar slides away as they read down and comes back as they go
 /// up, as Safari's does (#1278, pick A). Near the page's top the bar always shows, and so it does while the reader is on
 /// a card waiting on them (#1288): with no strip uncovered over a held card, nothing has to keep the card in a place the
-/// scroll view can't line it up with. Moves the user didn't make (the page following Watcher's words, keeping a card,
-/// going to the top, or changing height) don't count, and start the count again.
+/// scroll view can't line it up with. iOS 17 can't say when the reader lets go, so there a card doesn't keep the bar
+/// (`holding(card:userScrolling:seesLetGo:)`). Moves the user didn't make (the page following Watcher's words, keeping a
+/// card, going to the top, or changing height) don't count, and start the count again.
 struct WatcherBarSlide: Equatable {
     /// How near the page's top the bar always shows.
     static let near: CGFloat = 12
@@ -352,6 +353,18 @@ struct WatcherBarSlide: Equatable {
     static let travel: CGFloat = 14
     private var last: CGFloat?
     private var moved: CGFloat = 0
+
+    /// Whether the card the reader is on keeps the bar shown, which brings it back over the card when they stop there
+    /// with it away, and moves the card down below it. Only once they let go: while they move the page, the card they
+    /// are on is decided again where they let go, and the page never moves under them. iOS 17 can't say when they let
+    /// go, so there no card keeps the bar: it slides as it does with none held, and a card the reader stops on in the
+    /// strip it uncovered stays in view there, rather than under a bar come back over it that nothing moves it out from.
+    /// - Parameters:
+    ///   - card: whether the reader is on a card; `userScrolling`, whether they are moving the page.
+    ///   - seesLetGo: whether this iOS says when the reader lets go of the page, as iOS 18 and later do.
+    static func holding(card: Bool, userScrolling: Bool, seesLetGo: Bool) -> Bool {
+        seesLetGo && card && !userScrolling
+    }
 
     /// - Parameters:
     ///   - offset: how far the page has scrolled from its top.

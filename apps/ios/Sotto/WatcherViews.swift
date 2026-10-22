@@ -366,8 +366,9 @@ private final class WatcherFollow {
     /// Whether the move the page just made was the user's.
     var userMoved: Bool { WatcherFollow.seesLetGo ? userScrolling : Date() >= quietUntil }
     /// The page keeps the reader on a card, which keeps the bar shown (#1288). Not while the user moves the page, which
-    /// the page never does under them: the card they are on is decided again where they let go.
-    var holdsCard: Bool { held != nil && !userScrolling }
+    /// the page never does under them: the card they are on is decided again where they let go. Not on iOS 17, which
+    /// can't say when they let go (`WatcherBarSlide.holding`).
+    var holdsCard: Bool { WatcherBarSlide.holding(card: held != nil, userScrolling: userScrolling, seesLetGo: Self.seesLetGo) }
     func settle() {
         let place = WatcherReaderPlace(newest: newest, end: end, top: visibleTop, dockTop: dockTop, cards: cards)
         held = place.heldCard
@@ -521,7 +522,8 @@ private struct WatcherConversationPane: View {
             .background(barReader)
             // The reader stopping on a card in the strip the bar uncovered brings the bar back over it (#1288), and so does
             // VoiceOver turning on: the page moves the card down below the bar. A bar the user brought back by moving the
-            // page is left to where they let go.
+            // page is left to where they let go. iOS 17 can't say when that is, so there nothing moves the card, and
+            // stopping on one doesn't bring the bar back (`WatcherFollow.holdsCard`).
             .onChange(of: uncovered, initial: true) { _, value in
                 if follow.uncover(value), WatcherFollow.seesLetGo, !follow.userScrolling { keepHeldCard(proxy, animated: true) }
             }
@@ -571,9 +573,10 @@ private struct WatcherConversationPane: View {
     }
 
     /// Decides where the page stands (`WatcherFollow.settle`), and tells the scroll anchor whether the reader is on a card.
-    /// A reader on a card has the bar back, if it had slid away (#1288). The page can't hold a card in the strip the bar
-    /// uncovered: on CI's SE, putting one back there missed by 57 points one way and, through a mark lower down the card,
-    /// by 42 the other.
+    /// A reader on a card has the bar back, if it had slid away (#1288), except on iOS 17, where this runs as the page
+    /// scrolls, with the reader's finger maybe still on it, and nothing would move the card from under the bar. The page
+    /// can't hold a card in the strip the bar uncovered: on CI's SE, putting one back there missed by 57 points one way
+    /// and, through a mark lower down the card, by 42 the other.
     private func settle() {
         follow.settle()
         setHoldingCard(follow.held != nil)
