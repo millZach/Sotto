@@ -118,7 +118,12 @@ public struct Health: Decodable, Equatable, Sendable {
         guard status == "ready" else { throw ClientError.rejected("Sotto on that computer is still starting. Try again in a moment.") }
     }
 }
-public struct WireFailure: Decodable, Sendable { public let code: String; public let message: String }
+public struct WireFailure: Decodable, Sendable {
+    public let code: String; public let message: String
+    /// Why a pull request read was refused (`gh-missing`, `gh-signed-out`, `offline`, `unreadable`), from a host since
+    /// #1290; nil on every other refusal and from an older host.
+    public let reason: String?
+}
 public struct Receipt: Decodable, Sendable {
     public let status: String; public let error: WireFailure?; public let answerDelivered: Bool?
     public let watcherStop: WatcherStopReceipt?
@@ -226,6 +231,10 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
+    /// The pull requests the thread babysits, and why babysitting each last ended on its own (ADR-0061), for the pull
+    /// request sheet (ADR-0102). Read item by item, so a later host's record never fails the thread. Older hosts send none.
+    public var babysitting: ThreadList<ThreadBabysitting>? = nil
+    public var babysitEnded: ThreadList<ThreadBabysitEnded>? = nil
 }
 /// What the thread page reads from a thread's worktree record (`agentWorktreeSchema` in src/shared/agents.ts): its
 /// mode, its branch and the Git status the host last read there (`gitStatusSchema` in src/shared/gitStatus.ts).

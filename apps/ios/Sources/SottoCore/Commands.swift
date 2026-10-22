@@ -20,6 +20,9 @@ public enum RemoteCommands {
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
         "create-project": ["provider", "title", "path", "useExisting"],
         "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "managed"],
+        // The user's own Babysit pull request and Stop babysitting (ADR-0061, ADR-0102). Neither grants anything.
+        "babysit-pull-request": ["threadId", "url"],
+        "stop-babysitting": ["threadId", "url"],
     ]
     /// Commands the host accepts only from a client holding its remote-answer policy (`mayAnswer`).
     public static let needAnswerPolicy: Set<String> = ["answer"]
@@ -51,6 +54,12 @@ public enum Commands {
     /// Asks the thread's provider to compact its context.
     public static func compact(threadID: String) throws -> JSONValue {
         try RemoteCommands.checked(.object(["type": .string("compact-thread"), "threadId": .string(threadID)]))
+    }
+    /// Starts or stops babysitting one of the thread's pull requests, by its GitHub URL (ADR-0061).
+    public static func babysit(threadID: String, url: String, on: Bool) throws -> JSONValue {
+        guard PullRequests.address(url) != nil, url.utf16.count <= 2048 else { throw ClientError.invalidRequest }
+        return try RemoteCommands.checked(.object(["type": .string(on ? "babysit-pull-request" : "stop-babysitting"),
+                                                   "threadId": .string(threadID), "url": .string(url)]))
     }
     private static func followupItem(_ type: String, threadID: String, itemID: String) throws -> JSONValue {
         guard UUID(uuidString: itemID) != nil else { throw ClientError.invalidRequest }
