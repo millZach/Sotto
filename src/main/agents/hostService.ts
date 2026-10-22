@@ -105,6 +105,8 @@ export interface HostService {
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
    * threads say Needs attention until their next turn. */
   readonly supportsFailureSeen?: boolean
+  /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
+  readonly supportsPullRequestView?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
@@ -269,6 +271,8 @@ export class LocalHostService implements HostService {
   constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
+    /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
+    pullRequestView?: boolean
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -285,6 +289,7 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   /** Reads the threads as the host last published them, without copying them. */
   async threadDelegations(threadId: string): Promise<HostThreadDelegations> {
