@@ -188,6 +188,12 @@ export class E2EAgentHost implements AgentHost {
     if (event.type === 'fork-refuse') { this.forkRefusal = event.text; return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
     if (!thread) throw new Error('E2E_THREAD_UNAVAILABLE')
+    if (event.type === 'pull-requests') {
+      // Links only: the thread's turn and status stay as they are.
+      thread.pullRequests = structuredClone(event.pullRequests ?? [])
+      this.emit()
+      return
+    }
     if (event.type === 'monitoring') {
       if (!event.monitoring) throw new Error('E2E_MONITORING_REQUIRED')
       thread.monitoring = structuredClone(event.monitoring)
