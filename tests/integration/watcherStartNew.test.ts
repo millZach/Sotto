@@ -128,36 +128,40 @@ describe('New Watcher', () => {
     expect(await fresh.service.startNew()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
   })
 
-  it('refuses while Watcher or its deliveries are busy, changing nothing', async () => {
+  it('waits only for Watcher’s own work and says what holds it, while a worker still working and an unconfirmed delivery carry on (#1325)', async () => {
     const f = await fixture()
     await f.send('Check the release.')
     const started = { target: await f.startWorker('Release check') }
     await f.reply('Started Release check.')
-    const unchanged = async (message = 'Wait for Watcher and its pending deliveries before starting a new one.') => {
+    const unchanged = async (message: string) => {
       const creates = f.creates()
       expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message })
       expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null })
       expect(f.creates()).toBe(creates)
       expect(f.revoke).not.toHaveBeenCalled()
     }
-    // A start still working: a replacement waits for it, as a provider change does.
-    expect(f.service.startsInFlight()).toBe(1)
-    await unchanged()
-    await f.finish(started.target.threadId)
-    expect(f.service.startsInFlight()).toBe(0)
-    // A delivery whose result is not known yet, in the record main reads: Watcher's observe pass would reconcile one set in
-    // the store before the press could see it.
+    // Watcher's own turn.
+    f.native(f.first.threadId).status = 'running'; await f.refresh()
+    await unchanged('Watcher is working. Wait for this turn to finish, or stop it, then start a new Watcher. Nothing was changed.')
+    await f.finish(f.first.threadId)
+    // A send queued behind a working thread, in the record main reads: a new Watcher could not send it.
     const read = f.control.watcherRecord.bind(f.control)
+    const queued = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
+      const record = read(); record.operations.at(-1)!.deliveryState = 'queued'; return record
+    })
+    await unchanged('Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then start a new Watcher. Nothing was changed.')
+    queued.mockRestore()
+    // A start still working, whose delivery is not confirmed yet either, holds nothing: it carries on after the replacement.
+    expect(f.service.startsInFlight()).toBe(1)
     const uncertain = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
       const record = read(); record.operations.at(-1)!.deliveryState = 'uncertain'; return record
     })
-    await unchanged()
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
     uncertain.mockRestore()
-    // Watcher's own turn.
-    f.native(f.first.threadId).status = 'running'; await f.refresh()
-    await unchanged()
-    await f.finish(f.first.threadId)
-    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
+    expect(f.service.state().current!.target).not.toEqual(f.first)
+    expect(f.service.startsInFlight()).toBe(1)
+    await f.finish(started.target.threadId)
+    expect(f.service.startsInFlight()).toBe(0)
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {
@@ -197,7 +201,7 @@ describe('New Watcher', () => {
     expect(f.service.state().handover).toMatchObject({ source: f.first, provider: 'codex', counts: { carried: 2 } })
   })
 
-  it('tells the room what New Watcher would answer, a worker start still working after Watcher’s turn included', async () => {
+  it('tells the room what New Watcher would answer, with a worker start still working after Watcher’s turn', async () => {
     const f = await fixture()
     // Nothing said yet: nothing to hand over.
     expect(f.service.state().newWatcher).toBe('empty')
@@ -205,11 +209,10 @@ describe('New Watcher', () => {
     expect(f.service.state().newWatcher).toBe('busy')
     const worker = await f.startWorker('Release check')
     await f.reply('Started Release check.')
-    // Watcher's own turn is over and its thread is idle, but the start it made is still working.
     expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.first.threadId)?.status).toBe('idle')
+    // Watcher's own turn is over: the start it made, still working, holds nothing back (#1325).
     expect(f.service.startsInFlight()).toBe(1)
-    expect(f.service.state().newWatcher).toBe('busy')
-    expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+    expect(f.service.state().newWatcher).toBe('available')
     await f.finish(worker.threadId)
     expect(f.service.state().newWatcher).toBe('available')
   })

@@ -150,7 +150,7 @@ describe('New Watcher in Watcher’s composer', () => {
 
   it('a press asks main for a new Watcher, and its refusal is said in main’s words under the composer', async () => {
     const user = userEvent.setup()
-    const refusal = 'Wait for Watcher and its pending deliveries before starting a new one.'
+    const refusal = 'Watcher is sending to a thread right now. Try again in a moment. Nothing was changed.'
     const { bridge } = renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said })),
       async () => ({ status: 'refused', code: 'THREAD_BUSY', message: refusal, retryable: true }))
     await user.click(await newButton())
