@@ -204,6 +204,16 @@ describe('PrototypeReady', () => {
     expect(marks.saved()).toEqual([{ threadId: 'thread', source: 'reply:reply' }])
   })
 
+  it('clears the reply that keeps the mark when a page of a question asked after it is opened: the user has reviewed the prototype', () => {
+    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')], 'thread\nrequest:q': [page('q')] }))
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(thread({ requests: [question('q')] })))?.source).toBe('request:q')
+    expect(marks.opened(page('q').token)).toBe(true)
+    expect(markOf(marks, snapshot(thread({ requests: [question('q')] })))).toBeUndefined()
+    expect(markOf(marks, snapshot(thread()))).toBeUndefined()
+    expect(marks.saved()).toEqual(expect.arrayContaining([{ threadId: 'thread', source: 'request:q' }, { threadId: 'thread', source: 'reply:reply' }]))
+  })
+
   it('keeps the mark when a question leaves without the user answering it: sent back by Sotto, or withdrawn by the provider', () => {
     const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
     expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')

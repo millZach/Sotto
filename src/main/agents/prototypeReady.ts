@@ -123,7 +123,13 @@ export class PrototypeReady {
    */
   opened(token: string): boolean {
     const found = this.pages.source(token)
-    return found ? this.add(found.threadId, found.source) : false
+    if (!found) return false
+    let changed = this.add(found.threadId, found.source)
+    // A question's pages are mostly the reply's before it, under tokens of their own: opening one reviews the prototype
+    // the reply keeping the mark offered too, so the mark does not fall back to it.
+    const kept = this.kept.get(found.threadId)
+    if (kept) { changed = this.add(found.threadId, replySource(kept.messageId)) || changed; this.kept.delete(found.threadId) }
+    return changed
   }
 
   /**
