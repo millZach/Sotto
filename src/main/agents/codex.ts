@@ -443,6 +443,8 @@ export class CodexAppServerHost implements AgentHost {
     const runtime = this.runtimes.get(id)
     // An idle app-server is let go gently: its input closes and it has the request deadline to finish writing.
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
+    const thread = this.threads.get(id)
+    if (thread) this.activity.runtimeEnded(thread)
   }
   /**
    * Codex's own rollouts on this computer, for Usage (ADR-0083). A thread this adapter owns reports under its own ID,
@@ -646,6 +648,8 @@ export class CodexAppServerHost implements AgentHost {
   private runtimeLost(id: string, runtime: Runtime): void {
     if (this.runtimes.get(id) !== runtime) return
     this.runtimes.delete(id); this.live.delete(id); this.outdated.delete(id); this.reaper.forget(id); this.log.release(id)
+    const lost = this.threads.get(id)
+    if (lost) this.activity.runtimeEnded(lost)
     // What it asked can no longer be answered.
     for (const [key, pending] of [...this.requests]) if (pending.server === runtime.server) this.removeRequest(key)
     this.settingsConfirmations.get(id)?.settle(false)

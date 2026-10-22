@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import type { UsageTokens } from '../../shared/threadUsage'
+import type { UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
@@ -19,6 +21,8 @@ import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeF
 import { chooseOpenCode, endServersLeftBehind, rememberOpenCodeChoice, type OpenCodeChoice, ensureOpenCodeFolders, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { acceptOpenCode } from './opencodeLookup'
 import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
+import { tokenCount } from './nativeUsage'
+import { ObservedUsage, type ObservedUsageFacts } from './observedUsage'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -183,6 +187,25 @@ const stepStartedSchema = ofSession.extend({ assistantMessageID: z.string().min(
 const executionEndSchema = ofSession.extend({ error: z.looseObject({ type: z.string().optional() }).optional() })
 const tokensSchema = z.looseObject({ input: z.number().default(0), output: z.number().default(0), cache: z.looseObject({ read: z.number().default(0) }).optional() })
 const usageSchema = ofSession.extend({ tokens: tokensSchema })
+const stepTokensSchema = z.looseObject({ input: z.number().optional(), output: z.number().optional(), reasoning: z.number().optional(),
+  cache: z.looseObject({ read: z.number().optional(), write: z.number().optional() }).optional() })
+const sum = (...values: (number | undefined)[]): number | undefined => {
+  if (values[0] === undefined) return undefined
+  const total = values.reduce<number>((all, value) => all + (value ?? 0), 0)
+  return Number.isSafeInteger(total) ? total : undefined
+}
+/**
+ * One step's tokens in Usage's terms (ADR-0083, October 21, 2026). OpenCode counts cache reads and writes apart from input
+ * and reasoning apart from output, and prices reasoning as output, so input here is all three of its input figures and
+ * output includes reasoning: the way Codex and Claude Code report them.
+ */
+function opencodeUsageTokens(value: unknown): UsageTokens | undefined {
+  const parsed = stepTokensSchema.safeParse(value)
+  if (!parsed.success) return undefined
+  const { input, output, reasoning, cache } = parsed.data
+  const read = tokenCount(cache?.read), write = tokenCount(cache?.write)
+  return { input: sum(tokenCount(input), read, write), output: sum(tokenCount(output), tokenCount(reasoning)), cached: read, cacheWrite: write }
+}
 /** A finished step: what it cost, and the files it changed, relative to the provider session's folder (2.0.31). */
 const stepEndedSchema = ofSession.extend({ assistantMessageID: z.string().min(1), tokens: tokensSchema.optional(), files: z.array(z.string()).default([]) })
 const repliedSchema = ofSession.extend({ requestID: z.string().min(1) })
@@ -221,8 +244,10 @@ interface Fold {
   readonly tools: Map<string, OpenCodeTool>
   /** When each assistant message began, which history reports as its creation, so live and resumed replies match. */
   readonly started: Map<string, number>
+  /** The model each running step said it uses, for Usage, until the step ends. */
+  readonly models: Map<string, string>
 }
-const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: new Map(), started: new Map() })
+const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: new Map(), started: new Map(), models: new Map() })
 /** Where a record from OpenCode goes in a thread: its Sotto turn, and the message it follows. */
 interface Placement { readonly turnId: string; readonly afterMessageId: string | undefined }
 const iso = (at: number | undefined): string => at !== undefined && Number.isFinite(at) ? new Date(at).toISOString() : new Date().toISOString()
@@ -260,6 +285,8 @@ export interface OpenCodeHostOptions {
   signInIdleMs?: number
   /** The providers held to Owl on this run, read once at start (ADR-0072). Absent holds every one. */
   heldProviders?: HeldProviders
+  /** Usage's startup answer (ADR-0083): count this computer's OpenCode threads. OpenCode reports no account limits. */
+  usageEnabled?: boolean
 }
 
 /**
@@ -322,7 +349,15 @@ export class OpenCodeHost implements AgentHost {
     connected: false, name: 'OpenCode', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: true, skills: false, steer: true, compact: false },
   }
+  /** Present only where Usage is on: each step's tokens, under the thread's own ID. */
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  private readonly observedUsage: ObservedUsage | undefined
   constructor(private readonly userDataDirectory: string, private readonly options: OpenCodeHostOptions = {}) {
+    if (options.usageEnabled === true) {
+      const observed = new ObservedUsage('opencode')
+      this.observedUsage = observed
+      this.subscribeUsage = listener => observed.subscribe(listener)
+    }
     this.folders = opencodeFolders(join(userDataDirectory, 'opencode'))
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'opencode-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'opencode-projects.json'), z.array(agentProjectSchema).parse, () => [])
@@ -1194,6 +1229,13 @@ export class OpenCodeHost implements AgentHost {
           }
         }
         this.recordStepFiles(id, entry.id, entry.snapshot?.files ?? [], entry.time?.completed ?? at, placement())
+        const alias = this.observedUsage ? this.aliases[id] : undefined
+        if (alias) {
+          const model = modelRefSchema.safeParse((entry as { model?: unknown }).model)
+          this.observeStep(id, alias, entry.id, (entry as { tokens?: unknown }).tokens, model.success ? `${model.data.providerID}/${model.data.id}` : undefined,
+            { phase: 'replay', ...(entry.time?.completed !== undefined || at !== undefined ? { at: iso(entry.time?.completed ?? at) } : {}),
+              ...(at !== undefined ? { groupStartedAt: iso(at) } : {}) })
+        }
       } else if (entry.type === 'idle') { unfinished = undefined; open = false }
     }
     return unfinished
@@ -1232,6 +1274,10 @@ export class OpenCodeHost implements AgentHost {
         case 'session.step.started': {
           const parsed = stepStartedSchema.safeParse(data)
           if (parsed.success && parsed.data.started !== undefined) this.fold(id).started.set(parsed.data.assistantMessageID, parsed.data.started)
+          if (parsed.success && this.observedUsage) {
+            const model = modelRefSchema.safeParse(data.model)
+            if (model.success) this.fold(id).models.set(parsed.data.assistantMessageID, `${model.data.providerID}/${model.data.id}`)
+          }
           return
         }
         case 'session.execution.started': {
@@ -1280,6 +1326,12 @@ export class OpenCodeHost implements AgentHost {
           const parsed = stepEndedSchema.safeParse(data)
           if (parsed.success) {
             if (parsed.data.tokens) this.usage(thread, parsed.data.tokens, 'latest')
+            if (this.observedUsage) {
+              const fold = this.fold(id), step = parsed.data.assistantMessageID, started = fold.started.get(step)
+              this.observeStep(id, alias, step, data.tokens, fold.models.get(step), { phase: 'live', at: iso(event.created),
+                ...(started !== undefined ? { groupStartedAt: iso(started) } : {}) })
+              fold.models.delete(step)
+            }
             this.recordStepFiles(id, parsed.data.assistantMessageID, parsed.data.files, event.created)
           }
           this.emit(true); return
@@ -1340,6 +1392,16 @@ export class OpenCodeHost implements AgentHost {
       // one and reads the session back whole.
       this.processLost(id, entry)
     }
+  }
+  /**
+   * One finished step's tokens for Usage, under the step's own message ID in its provider session, so a step seen live and
+   * again when the session is read back is one row. The session's running total is never added on top.
+   */
+  private observeStep(id: string, alias: Alias, step: string, raw: unknown, model: string | undefined, facts: Omit<ObservedUsageFacts, 'group'>): void {
+    const tokens = this.observedUsage && alias.sessionId ? opencodeUsageTokens(raw) : undefined
+    if (!tokens) return
+    this.observedUsage!.publish(id, JSON.stringify(['step', alias.sessionId, step]), model ?? this.threads.get(id)?.modelId ?? alias.modelId, tokens,
+      { ...facts, group: step })
   }
   private usage(thread: AgentThread, tokens: z.infer<typeof tokensSchema>, which: 'latest' | 'total'): void {
     const before = thread.usage

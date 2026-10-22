@@ -4,6 +4,7 @@
  * and view box, the iPhone has it as a vector in its asset catalog, and Android has it as Compose shapes in
  * `core/ProviderMarks.kt`, the frame and the inner square at 35%. Android is built by no CI job yet, so this reads its source
  * here and fails when the mark drifts from the desktop's or stops being drawn where the iPhone draws it.
+ * The iPhone draws Muse's squiggle from the desktop's too (#1280), and fails here when its asset drifts.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -36,4 +37,22 @@ it('shows the mark on Android where the iPhone shows it: the thread header and e
   expect(read('apps/ios/Sotto/ThreadViews.swift')).toContain('ProviderMarks(providerID: thread?.providerId')
   expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"opencode": "ProviderOpenCode"')
   expect(read('apps/ios/Sotto/Resources/Assets.xcassets/ProviderOpenCode.imageset/ProviderOpenCode.svg')).toContain('viewBox="0 0 32 40"')
+})
+
+it('draws Muse’s mark on the iPhone from the desktop’s path and view box (#1280)', () => {
+  const match = /muse: \{\s*viewBox: '([^']+)',\s*path: '([^']+)'/u.exec(read('src/renderer/src/agents/ProviderMark.tsx'))
+  if (!match) throw new Error('The desktop has no Muse mark.')
+  const [, viewBox, path] = match
+  const asset = read('apps/ios/Sotto/Resources/Assets.xcassets/ProviderMuse.imageset/ProviderMuse.svg')
+  expect(asset).toContain(`viewBox="${viewBox!}"`)
+  // The asset spaces the desktop's path out and rounds it to four decimals, so its commands and numbers are the same.
+  const commands = (d: string): string => d.replace(/[^A-Za-z]/gu, '')
+  const numbers = (d: string): number[] => (d.match(/-?\d*\.?\d+/gu) ?? []).map(Number)
+  const drawn = /\bd="([^"]+)"/u.exec(asset)![1]!
+  expect(commands(drawn)).toBe(commands(path!))
+  const desktop = numbers(path!)
+  const phone = numbers(drawn)
+  expect(phone).toHaveLength(desktop.length)
+  phone.forEach((value, index) => expect(value).toBeCloseTo(desktop[index]!, 4))
+  expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"muse": "ProviderMuse"')
 })

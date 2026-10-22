@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 
 import { DEFAULT_SETTINGS, type AppSettings } from '../../shared/settings'
-import { HistoryRepository } from './historyRepository'
+import { HistoryRepository, type HistoryLogEvent } from './historyRepository'
 import { RecoveryNoticeCenter } from './recoveryNoticeCenter'
 import { SettingsRepository, type SettingsRepositoryOptions } from './settingsRepository'
 
@@ -10,7 +10,7 @@ export function createStorageRepositories(
   recoveryNotices: RecoveryNoticeCenter,
   now: () => number = Date.now,
   defaults: AppSettings = DEFAULT_SETTINGS,
-  log?: (event: 'history-temp-cleanup-failed') => void,
+  log?: (event: HistoryLogEvent) => void,
   options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled' | 'dictationHoldShortcutsEnabled'> = {},
 ): Readonly<{
   settings: SettingsRepository

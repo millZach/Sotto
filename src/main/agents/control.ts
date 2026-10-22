@@ -41,8 +41,9 @@ import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
-import { clientVersionOf } from './clientVersions'
-import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
+import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
+import { compareMuseVersions } from './museClientInstall'
+import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
 import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -273,6 +274,23 @@ function outcomeOf(before: ProviderClientUpdate): Partial<ProviderClientUpdate> 
  */
 const outcomeHolds = (before: ProviderClientUpdate, reading: ProviderClientUpdate): boolean =>
   before.installed === reading.installed && (reading.published === undefined || reading.published === before.published)
+/**
+ * Whether `release` is newer than the one the user put away with Not now, so the card comes back. A client that was not
+ * behind then has no release put away, and any release it is behind now is new.
+ */
+function newerThanDismissed(provider: ProviderId, release: string, dismissed: string | undefined): boolean {
+  if (dismissed === undefined) return true
+  if (provider === 'muse') return (compareMuseVersions(dismissed, release) ?? (release === dismissed ? 0 : -1)) < 0
+  return isComparableVersion(release) && isComparableVersion(dismissed) ? compareClientVersions(release, dismissed) > 0 : release !== dismissed
+}
+/** Whether two lists of client readings say the same thing, whenever each was checked. */
+function sameClientReadings(left: readonly ProviderClientUpdate[] | undefined, right: readonly ProviderClientUpdate[] | undefined): boolean {
+  if (left === right) return true
+  if (!left || !right || left.length !== right.length) return false
+  const said = (reading: ProviderClientUpdate): string =>
+    JSON.stringify(Object.entries(reading).filter(([key]) => key !== 'checkedAt').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+  return left.every((reading, index) => said(reading) === said(right[index]!))
+}
 /** A new reading with a client's last update on it. A registry not read this time leaves the release that update was measured against. */
 const withOutcome = (reading: ProviderClientUpdate, before: ProviderClientUpdate): ProviderClientUpdate => ({
   ...reading, ...reading.published === undefined && before.published !== undefined ? { published: before.published } : {}, ...outcomeOf(before),
@@ -566,6 +584,16 @@ export class AgentControl {
   private clientLineRunning = false
   /** Where each waiting client stood before it joined the line, so Cancel update puts it back. */
   private readonly clientLineBefore = new Map<ProviderId, ProviderClientUpdate>()
+  /** How many checks of the installed clients are waiting on the registry and the disk right now. */
+  private clientChecks = 0
+  /** How many times the update line has changed each client's record, so a check that ran meanwhile knows its reading is older. */
+  private readonly clientLineMoves = new Map<ProviderId, number>()
+  /** The release each behind client was at when the user pressed Not now: only a newer one brings the card back. */
+  /** A check afresh asked for while the update line ran, which runs once the line is empty. */
+  private clientCheckOwed = false
+  private dismissedReleases = new Map<ProviderId, string>()
+  /** The check every machine runs every five minutes while Sotto is open (ADR-0042). */
+  private clientCheckTimer: ReturnType<typeof setInterval> | null = null
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -835,6 +863,10 @@ export class AgentControl {
         this.publish()
       })
     }, 30_000)
+    // A client published while Sotto stays open is noticed within five minutes, on this computer and on every host,
+    // each running its own (ADR-0042). It never holds Sotto open.
+    this.clientCheckTimer = setInterval(() => { void this.backgroundClientCheck() }, CLIENT_CHECK_INTERVAL_MS)
+    this.clientCheckTimer.unref?.()
     this.updateCredentials()
     if (isSubscriptionReasoning(this.state.configuration.reasoning)) {
       // Native login/model discovery must not hold up dictation or the desktop window.
@@ -1779,30 +1811,49 @@ export class AgentControl {
    * connected has no known installed version, so nothing is claimed about it. Findings from an
    * update already run are kept, so "is now 2.1.278" survives the next check, until a newer
    * release is published: then the client is behind again and the old finding would hide it.
+   *
+   * `fresh` is the user's own Check, and a host's `check-client-updates`: it shows the card again and asks the registry
+   * afresh. `afresh` alone asks afresh and leaves the card as it was. Neither sets aside a finding that still describes
+   * the client, which an Update all press may be reading (ADR-0077); only a newer release or another installed version
+   * does.
    */
-  private async checkClientUpdates(fresh = false): Promise<void> {
+  private async checkClientUpdates(fresh = false, afresh = fresh): Promise<void> {
     if (!this.state.configuration.checkClientUpdates) { delete this.state.clientUpdates; return }
+    this.clientChecks += 1
+    try { await this.readClientUpdates(fresh, afresh) } finally { this.clientChecks -= 1 }
+  }
+  private async readClientUpdates(fresh: boolean, afresh: boolean): Promise<void> {
     const previous = this.state.clientUpdates ?? []
+    const moves = new Map(this.clientLineMoves)
     const readings: ProviderClientUpdate[] = []
     for (const provider of this.state.host.providers ?? []) {
       if (provider.connection !== 'connected') continue
       const installed = clientVersionOf(provider.version)
       if (!installed) continue
       const executable = await this.clientPath(provider.id)
-      const reading = await this.clients.check(provider.id, installed, executable)
+      const before = previous.find(item => item.id === provider.id)
+      let reading = await this.clients.check(provider.id, installed, executable, process.env, { afresh })
+      // A registry that did not answer says nothing new: the release last read for the same install still stands, so a
+      // check that failed and one that came back with the same release do not read as a new release.
+      if (reading.published === undefined && before?.published !== undefined && before.installed === reading.installed) {
+        reading = { ...reading, published: before.published, behind: before.behind, canInstall: before.canInstall }
+      }
       // A client in the update line keeps where it stands there, even through a fresh check.
       const lined = this.inClientLine(provider.id)
-      const before = fresh && !lined ? undefined : previous.find(item => item.id === provider.id)
       readings.push(before && (lined || (before.state !== 'idle' && outcomeHolds(before, reading))) ? withOutcome(reading, before) : reading)
     }
     if (this.disposed) return
     // The update line runs while this check waits on the registry and the disk: whatever it said about a client
     // meanwhile (its step, how it ended) is newer than what the check started from, and wins. How it ended gives way to
-    // a newer release the check found, while waiting or running never does.
+    // a newer release the check found, while waiting or running never does. A client the line installed meanwhile was
+    // read again after the install, so its record stands whole: this check's reading of it predates the install.
     const latest = this.state.clientUpdates ?? []
     for (const [index, reading] of readings.entries()) {
       const now = latest.find(item => item.id === reading.id)
-      if (now && now !== previous.find(item => item.id === reading.id)
+      if (!now) continue
+      const moved = (this.clientLineMoves.get(reading.id) ?? 0) !== (moves.get(reading.id) ?? 0)
+      if (moved && now.installed !== reading.installed) { readings[index] = now; continue }
+      if (now !== previous.find(item => item.id === reading.id)
         && (now.state === 'queued' || now.state === 'updating' || reading.published === undefined || reading.published === now.published)) readings[index] = withOutcome(reading, now)
     }
     // A client that updated, failed or did not change still has something to say after its provider
@@ -1812,15 +1863,45 @@ export class AgentControl {
     }
     if (readings.length) this.state.clientUpdates = readings
     else delete this.state.clientUpdates
-    if (fresh) delete this.state.clientUpdatesDismissedAt
-    else if (this.state.clientUpdatesDismissedAt && readings.some(item => item.behind
-      && !previous.some(before => before.id === item.id && before.published === item.published))) delete this.state.clientUpdatesDismissedAt
+    if (fresh || this.state.clientUpdatesDismissedAt && readings.some(item => item.behind && item.published !== undefined
+      && newerThanDismissed(item.id, item.published, this.dismissedReleases.get(item.id)))) {
+      delete this.state.clientUpdatesDismissedAt
+      this.dismissedReleases.clear()
+    }
+  }
+  /**
+   * The check every machine runs every five minutes (ADR-0042). It installs nothing, and the user's setting turning
+   * checks off stops it. A tick is let go while an update runs, which reads the new version itself, and while the last
+   * check is still waiting on the registry: the next tick asks again.
+   */
+  private async backgroundClientCheck(): Promise<void> {
+    if (this.clientChecks > 0) return
+    await this.readClientsAfresh()
+  }
+  /**
+   * Asks the registry afresh what every connected client publishes, keeping what an update already run said, and
+   * publishes only when a reading moved. A newer release brings the card back by itself, as it always has. Main calls
+   * this when Sotto finds a new version of itself, so the clients' updates are listed beside it (ADR-0077). Asked while
+   * the update line runs, it is remembered and runs once, when the line is empty.
+   */
+  async checkClientsAfresh(): Promise<void> {
+    if (this.updatingClient || this.clientLineRunning) { if (!this.disposed) this.clientCheckOwed = true; return }
+    await this.readClientsAfresh()
+  }
+  private async readClientsAfresh(): Promise<void> {
+    if (this.disposed || !this.state.configuration.checkClientUpdates || this.updatingClient || this.clientLineRunning) return
+    const before = this.state.clientUpdates, dismissed = this.state.clientUpdatesDismissedAt
+    try { await this.checkClientUpdates(false, true) } catch { return }
+    // When it was checked is all that moved most times; the next publish carries that.
+    if (!this.disposed && (dismissed !== this.state.clientUpdatesDismissedAt || !sameClientReadings(before, this.state.clientUpdates))) this.publish()
   }
   private clientPath(provider: ProviderId): Promise<string | undefined> {
     return (this.dependencies.locateClient ?? locateClientOnDisk)(provider)
   }
   /** Changes one client's reading. What the last run said (its step, failure and output) goes unless `patch` says it again. */
   private setClientUpdate(provider: ProviderId, patch: Partial<ProviderClientUpdate>, keepOutcome = true): void {
+    // Only the update line changes a record in place.
+    this.clientLineMoves.set(provider, (this.clientLineMoves.get(provider) ?? 0) + 1)
     this.state.clientUpdates = (this.state.clientUpdates ?? []).map(item => {
       if (item.id !== provider) return item
       const next = { ...item, ...patch }
@@ -1914,6 +1995,8 @@ export class AgentControl {
     this.clientLineRunning = false
     delete this.state.clientUpdateRun
     if (!this.disposed) this.publish()
+    // A check afresh asked for while the line ran asks now, once.
+    if (this.clientCheckOwed && !this.disposed) { this.clientCheckOwed = false; void this.readClientsAfresh().catch(() => undefined) }
   }
   /** Update one client and wait for it, in the same line as every other update on this machine. */
   private async updateClient(provider: ProviderId): Promise<void> {
@@ -3719,7 +3802,10 @@ export class AgentControl {
       case 'update-client': await this.updateClient(command.provider); return
       case 'queue-client-updates': this.queueClientUpdates(command.providers); return
       case 'cancel-client-updates': this.cancelClientUpdates(command.providers); return
-      case 'dismiss-client-updates': this.state.clientUpdatesDismissedAt = new Date().toISOString(); return
+      case 'dismiss-client-updates':
+        this.state.clientUpdatesDismissedAt = new Date().toISOString()
+        this.dismissedReleases = new Map((this.state.clientUpdates ?? []).flatMap(item => item.behind && item.published !== undefined ? [[item.id, item.published] as const] : []))
+        return
       case 'compose': {
         const requestId = this.state.composing ? this.state.draftRequestId : this.draftRequestId(this.state.activeThreadId)
         if (requestId) this.guardClientGrant(client)
@@ -4815,6 +4901,8 @@ export class AgentControl {
     this.broadcastOpen = false
     this.broadcastPending = false
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
+    if (this.clientCheckTimer) clearInterval(this.clientCheckTimer)
+    this.clientCheckTimer = null
     this.unsubscribe?.()
     this.unsubscribeSottoRequests?.()
     // Updates still waiting in the line never start; whoever waits for one is told rather than left waiting.

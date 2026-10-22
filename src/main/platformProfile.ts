@@ -1,6 +1,12 @@
 import { defaultHoldShortcuts, defaultHotkey, type SottoPlatform } from '../shared/platform'
 import type { ReleaseTrack } from '../shared/releaseTrack'
 
+/**
+ * Sotto's menu bar item on macOS, for every build of the app. Never change it: a new value is a new
+ * item to AppKit, which forgets the item's saved position and visibility.
+ */
+export const MAC_TRAY_GUID = 'b51ae4d7-15a7-440a-89e1-f227a7cad4c0'
+
 export type MainWindowChrome = 'frameless' | 'hidden-inset'
 
 export type ApplicationMenuTemplate = 'none' | 'macos'
@@ -32,6 +38,13 @@ export interface PlatformProfile {
    */
   readonly widgetIsPanel: boolean
   readonly trayIcon: TrayIconSource
+  /**
+   * The tray's fixed identity, or null to let the system pick. On macOS Electron makes it the status
+   * item's autosave name, the key AppKit saves the item's position and visibility under; without it
+   * the item has only AppKit's positional default ("Item-0").
+   * Windows binds a tray GUID to the executable's path or signature, so it stays unset there.
+   */
+  readonly trayGuid: string | null
   /**
    * The release tracks whose installed app updates itself here (ADR-0093). macOS's updater takes only an update
    * signed by the same developer as the running app, and only Owl is signed with Sotto's Developer ID; stable on a
@@ -73,6 +86,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
+      trayGuid: null,
       inAppUpdateTracks: ['stable', 'owl'],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
@@ -90,6 +104,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: true,
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
+      trayGuid: MAC_TRAY_GUID,
       inAppUpdateTracks: ['owl'],
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
@@ -107,6 +122,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'image', relativePath: 'icon.png' },
+      trayGuid: null,
       inAppUpdateTracks: [],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,

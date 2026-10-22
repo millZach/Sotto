@@ -190,6 +190,15 @@ describe('the version sentence', () => {
     expect(client.hostIsNewer()).toBe(true)
     expect(internals.mismatch()).toContain('Update Sotto on this computer')
   })
+  it('reads a host as keeping what its client updates said through a check only when it lists the feature, whatever its version (ADR-0077)', () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: '', clientVersion: '0.1.38', owned: true })
+    expect(client.keepsClientOutcomes()).toBe(false)
+    // A host on a release this desktop has since passed still keeps them; one that does not list the feature does not.
+    Object.assign(client, { hostVersion: '0.1.37', features: ['client-updates', 'client-update-outcomes'] })
+    expect(client.keepsClientOutcomes()).toBe(true)
+    Object.assign(client, { hostVersion: '0.1.38', features: ['client-updates'] })
+    expect(client.keepsClientOutcomes()).toBe(false)
+  })
   it('says which side to bring up to date, and offers Stop host only for a host Sotto started', () => {
     expect(hostIsNewer('0.1.16', '0.1.15')).toBe(true)
     expect(hostIsNewer('0.2.0', '0.10.0')).toBe(false)

@@ -78,8 +78,10 @@ describe('AppShell', () => {
     expect(screen.getByText('Sotto')).toBeInTheDocument()
     const links = screen.getByRole('navigation', { name: 'Pages' })
     // Memory is hidden for the beta, so its link is not among them.
-    expect(links.querySelectorAll('a')).toHaveLength(4)
-    for (const name of ['Threads', 'History', 'Settings', 'Help']) {
+    expect(links.querySelectorAll('a')).toHaveLength(3)
+    // Transcripts live in the Dictate room's Journal, so there is no History page to link to (#1293).
+    expect(screen.queryByRole('link', { name: 'History' })).not.toBeInTheDocument()
+    for (const name of ['Threads', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name })).not.toHaveAttribute('aria-current')
     }
     expect(screen.queryByRole('link', { name: /home|dictionary|agents|dictate/i })).not.toBeInTheDocument()
@@ -97,7 +99,7 @@ describe('AppShell', () => {
     memory.enabled = true
     render(<AppShell {...chrome} navigation="home"><p /></AppShell>)
     const links = screen.getByRole('navigation', { name: 'Pages' })
-    expect(links.querySelectorAll('a')).toHaveLength(5)
+    expect(links.querySelectorAll('a')).toHaveLength(4)
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
   })
 
@@ -217,7 +219,7 @@ describe('AppShell', () => {
     expect(roomFor('home')).toBe('dictate')
     expect(roomFor('threads')).toBe('threads')
     expect(roomFor('memory')).toBe('threads')
-    expect(roomFor('history')).toBeNull()
+    expect(roomFor('help')).toBeNull()
     expect(roomFor(null)).toBeNull()
   })
 
@@ -248,7 +250,9 @@ describe('AppShell', () => {
       'src/renderer/src/components/AppShell.tsx',
       'src/renderer/src/components/ConfirmationDialog.tsx',
       'src/renderer/src/features/dictate/DictateRoom.tsx',
-      'src/renderer/src/features/history/HistoryView.tsx',
+      'src/renderer/src/features/dictate/Journal.tsx',
+      'src/renderer/src/features/dictate/JournalStats.tsx',
+      'src/renderer/src/features/dictate/journalFacts.ts',
       'src/renderer/src/features/settings/SettingsView.tsx',
       'src/renderer/src/features/help/HelpView.tsx',
     ].map((path) => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')

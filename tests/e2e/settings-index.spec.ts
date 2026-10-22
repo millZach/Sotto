@@ -224,7 +224,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
       }))
     })
     await page.getByRole('textbox', { name: 'Personal dictionary' }).fill('Unsaved dictionary change')
-    await page.getByRole('link', { name: 'History', exact: true }).click()
+    await page.getByRole('link', { name: 'Help', exact: true }).click()
     await expect.poll(() => launched.app.evaluate(({ ipcMain }) => ipcMain.listenerCount('sotto:e2e:dictionary-fail'))).toBe(1)
     await launched.app.evaluate(({ ipcMain }) => ipcMain.emit('sotto:e2e:dictionary-fail'))
     await expect(page.getByRole('alert').filter({ hasText: 'Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again.' })).toBeVisible()

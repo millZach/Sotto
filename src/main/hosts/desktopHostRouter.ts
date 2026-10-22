@@ -27,7 +27,7 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
-import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
+import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
 export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
@@ -47,6 +47,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** Whether this host lists `client-updates`: only then do its client updates reach the window (#480). */
   offersClientUpdates?(): boolean
+  /** Whether this host's `check-client-updates` keeps what an update already run said (ADR-0077, October 21 amendment). */
+  keepsClientOutcomes?(): boolean
   /** Whether this host babysits pull requests: only then does the window offer Babysit pull request on its threads (ADR-0061). */
   offersBabysitting?(): boolean
   /** `shown`: false while the desktop's window is behind another app, so the host does not count these threads as shown
@@ -210,6 +212,8 @@ export class DesktopHostRouter {
   private watcherChanged(hostId?: string, force = true): void { for (const listener of this.watcherListeners) listener(hostId, force) }
   /** `run` numbers each connection a host was added with, so a rename, which replaces the connection object, keeps it. */
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[]; run: number }>()
+  /** Hosts owed a check of their clients that a new version of Sotto asked for, waiting for their update line to empty. */
+  private readonly owedClientChecks = new Set<string>()
   private runs = 0
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
@@ -291,13 +295,24 @@ export class DesktopHostRouter {
       return { hostId, ...answer }
     } catch { return { hostId, status: connection.available?.() === false ? 'offline' : 'error', quotas: [] } }
   }
+  /**
+   * The providers a Usage read may name on this run. A provider held to Owl has no usage here (ADR-0072), on this computer
+   * or any other, so its rows are not read from a host that counts it.
+   */
+  private usageProviders(providerIds: readonly UsageProviderId[] | undefined): UsageProviderId[] | undefined {
+    if (!usageProviderIdSchema.options.some(id => this.held.has(id))) return providerIds === undefined ? undefined : [...providerIds]
+    return (providerIds ?? usageProviderIdSchema.options).filter(id => !this.held.has(id))
+  }
   async usageRead(input: UsageQuery): Promise<UsageDashboardRead> {
-    const { hostIds, ...query } = usageQuerySchema.parse(input)
+    const { hostIds, providerIds, ...rest } = usageQuerySchema.parse(input)
+    const allowed = this.usageProviders(providerIds)
+    const query = { ...rest, ...(allowed ? { providerIds: allowed } : {}) }
     const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRead!(query)))
     return usageDashboardReadSchema.parse({ hosts })
   }
   async usageRefresh(input: UsageRefreshQuery): Promise<UsageDashboardRead> {
-    const { hostIds, providerIds } = usageRefreshQuerySchema.parse(input)
+    const { hostIds, providerIds: named } = usageRefreshQuerySchema.parse(input)
+    const providerIds = this.usageProviders(named)
     const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRefresh!(providerIds)))
     return usageDashboardReadSchema.parse({ hosts })
   }
@@ -410,6 +425,8 @@ export class DesktopHostRouter {
       this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined)
       const next = signature(state)
       if (connection.kind === 'remote' && next !== last) { last = next; this.watcherChanged(connection.hostId) }
+      // Decided from the state the host just pushed, never a read of its own: this runs on every push while a check is owed.
+      if (this.owedClientChecks.size && this.owedClientChecks.has(connection.hostId)) void this.checkHostClients(connection, state)
     })]
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
@@ -453,6 +470,7 @@ export class DesktopHostRouter {
     this.hosts.delete(hostId)
     this.dormantProviderIds.delete(hostId)
     this.observedOn.delete(hostId)
+    this.owedClientChecks.delete(hostId)
     this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
@@ -516,6 +534,39 @@ export class DesktopHostRouter {
     const entry = this.lastPublished().host.clientHosts?.find(item => item.hostId === hostId)
     if (!entry?.connected) return false
     return entry?.clientUpdateRun !== undefined || entry?.clientUpdates?.some(update => update.state === 'queued' || update.state === 'updating') === true
+  }
+  /**
+   * Asks each connected host that offers client updates to check its clients afresh, when Sotto finds a new version of
+   * itself, so Update all lists their updates beside it rather than after the restart (ADR-0077). This computer's own
+   * check is the coordinator's, not this. Nothing waits for the answers: what each host finds arrives with its next
+   * shell, and a client found behind then joins a press already under way.
+   */
+  async checkHostClientsAfresh(): Promise<void> {
+    await Promise.all([...this.hosts.values()].map(({ connection }) => {
+      if (connection.kind !== 'remote') return undefined
+      this.owedClientChecks.add(connection.hostId)
+      // A host that has yet to send a shell has nothing to read; it is not asked.
+      let view: AgentState | undefined
+      try { view = connection.available?.() === false ? undefined : readView(connection.service) } catch { view = undefined }
+      return this.checkHostClients(connection, view)
+    }))
+  }
+  /**
+   * Sends one host the check it is owed, or keeps owing it. A host whose update line is running is asked once the line
+   * is empty, when its shell says so. A host that keeps what an update already run said is asked whatever its readings
+   * hold; an older one, whose check would set those aside while a press may still be reading them, is left to its own
+   * checks while it holds any. A host that is out of reach, cannot update its clients, would check a provider this build
+   * holds, refuses, or does not answer is not asked again.
+   */
+  private async checkHostClients(connection: DesktopHostConnection, view?: AgentState): Promise<void> {
+    const command = { type: 'check-client-updates' } as const
+    const hostId = connection.hostId
+    if (!view || connection.available?.() === false || connection.offersClientUpdates?.() !== true || view.legacyManagement === true) { this.owedClientChecks.delete(hostId); return }
+    if (view.clientUpdateRun !== undefined || view.clientUpdates?.some(update => update.state === 'queued' || update.state === 'updating')) return
+    this.owedClientChecks.delete(hostId)
+    if (connection.keepsClientOutcomes?.() !== true && view.clientUpdates?.some(update => update.state !== 'idle')) return
+    if (this.held.size && heldProviderRefusedBy(command, this.held, view.host)) return
+    await connection.service.command(command, desktopWindowClient()).catch(() => undefined)
   }
   /** What the router last published, read in place; afresh before anything is published. */
   private lastPublished(): AgentState { return this.published ?? this.shell() }

@@ -161,14 +161,14 @@ export async function verifyPackagedMemoryStore(target) {
   }
 }
 
-// The Mac app runs FluidAudio's Core ML speech models through this helper; it must answer protocol 1.
+// The Mac app runs FluidAudio's Core ML speech models through this helper; it must answer protocol 2.
 export function verifyCoreMlHelper(resources) {
   const helper = join(resources, 'coreml-asr', 'sotto-coreml-asr')
   if (!existsSync(helper)) fail('missing coreml-asr/sotto-coreml-asr')
   try { accessSync(helper, fsConstants.X_OK) } catch { fail('coreml-asr/sotto-coreml-asr is not executable') }
   const result = spawnSync(helper, ['--version'], { encoding: 'utf8', timeout: 30_000 })
-  if (result.status !== 0 || result.stdout.trim() !== '{"protocol":1}') {
-    fail(`coreml-asr/sotto-coreml-asr --version did not print {"protocol":1} (exit ${result.status ?? result.signal ?? result.error?.message})`)
+  if (result.status !== 0 || result.stdout.trim() !== '{"protocol":2}') {
+    fail(`coreml-asr/sotto-coreml-asr --version did not print {"protocol":2} (exit ${result.status ?? result.signal ?? result.error?.message})`)
   }
 }
 

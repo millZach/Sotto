@@ -19,7 +19,7 @@ describe('design capture matrix', () => {
     const keys = new Set(DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey))
     expect(DESIGN_CAPTURE_THEME).toBe('dark')
     for (const scalePercent of [100, 125, 150, 200]) {
-      for (const state of ['onboarding-model', 'dictate-ready', 'history-populated', 'settings-full', 'help-full']) {
+      for (const state of ['onboarding-model', 'dictate-ready', 'journal-full', 'settings-full', 'help-full']) {
         expect(keys).toContain(`scale|${state}|${DESIGN_CAPTURE_THEME}|${scalePercent}|normal|none`)
       }
       for (const state of ['dictate-ready', 'settings-full']) {
@@ -44,7 +44,7 @@ describe('design capture matrix', () => {
     const keys = new Set(DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey))
     for (const [category, state] of [
       ['onboarding', 'speech-model'], ['dictate', 'ready'], ['dictate', 'listening'], ['dictate', 'error'],
-      ['history', 'populated-feedback'], ['settings', 'providers'], ['settings', 'capture'], ['settings', 'validation-error'],
+      ['dictate', 'journal-open-feedback'], ['settings', 'providers'], ['settings', 'capture'], ['settings', 'validation-error'],
       ['settings', 'appearance'], ['help', 'overview'],
       ['threads', 'populated'], ['threads', 'open-running'], ['threads', 'stopped-open'], ['threads', 'search'], ['threads', 'empty'],
     ]) expect(keys, `${category} ${state}`).toContain(`${category}|${state}|light|100|normal|none`)
@@ -78,13 +78,19 @@ describe('design capture matrix', () => {
     }
   })
 
+  it('captures the Journal in the Dictate room and no History page, which is gone (#1293)', () => {
+    const ids = DESIGN_CAPTURE_REQUIREMENTS.map(requirement => requirement.id)
+    expect(ids.filter(id => id.includes('history'))).toEqual([])
+    for (const id of ['dictate-journal-open', 'dictate-journal-more', 'dictate-journal-search', 'dictate-journal-empty', 'dictate-journal-off', 'dictate-journal-open-light']) expect(ids).toContain(id)
+  })
+
   it('contains unique explicit tuples with no optional presentation metadata', () => {
     const keys = DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey)
     expect(new Set(keys).size).toBe(keys.length)
     for (const requirement of DESIGN_CAPTURE_REQUIREMENTS) {
       expect(requirement).toMatchObject({
         id: expect.any(String),
-        category: expect.stringMatching(/^(onboarding|dictate|history|settings|help|threads|scale|widget|appearance|width)$/u),
+        category: expect.stringMatching(/^(onboarding|dictate|settings|help|threads|scale|widget|appearance|width)$/u),
         state: expect.any(String),
         theme: expect.stringMatching(/^(light|dark)$/u),
         scalePercent: expect.any(Number),
