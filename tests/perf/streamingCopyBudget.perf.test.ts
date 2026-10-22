@@ -132,8 +132,14 @@ async function measure(threads: number, owl: boolean) {
  * while a thread streams copies Watcher's record no times at all, and Owl makes 10.4 to 10.7 copies per update, from
  * 12.4. The Owl budget is 11 copies and no copy of the record.
  */
+/*
+ * October 22, 2026 (#1327): each Watcher room publish copied the room's records twice, once in the room state and again
+ * in the desktop room's capture for its publish window. The room state now hands out the record's own records, which
+ * every change replaces rather than edits, so only the capture copies them: Owl makes 9.4 to 9.8 copies per update, from
+ * 10.4 to 10.7. The Owl budget is 10 copies.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 11, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 10, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
   stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 1.5, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 21, parsesPerUpdate: 5 },
 } as const
 
