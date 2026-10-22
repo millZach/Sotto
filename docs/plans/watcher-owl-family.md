@@ -1,6 +1,8 @@
 # Watcher's owl family
 
-Zach approved this on October 22, 2026, to be built once the Visualize tab has merged. Prototype:
+Zach approved this on October 22, 2026, to be built once the Visualize tab (PR #1349) has merged. After trying the
+updated prototype, with the composer branch and the moon's ripple, he approved it as the spec the same day: "The
+updated prototype looks good. and approved". Prototype:
 `docs/prototypes/watcher-owl-family-prototype.html`, tagged `prototype/watcher-owl-family`. It carries Zach's picks
 from the October 21 owl scene (glyphs, Watcher's owl in the left tree, the flight across the moon, darker ink in light
 mode, no cabins) and the four he made on October 22:
