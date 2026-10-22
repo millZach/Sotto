@@ -2067,6 +2067,50 @@ import XCTest
         capture("focus-dark-larger-text")
     }
 
+    /// The Agents view (ADR-0103): Agents in a thread's top bar counts its delegated threads and agents and says one needs
+    /// you. Its sheet lists them newest first; an agent opens in place to its task and latest update, a delegated thread
+    /// opens, and Back comes back to the sheet.
+    func testAgentsOpensADelegatedThreadAndBackReturnsToTheSheet() {
+        launch(Self.fixture + ["--ui-agents"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        let agents = app.buttons["thread-agents"]
+        XCTAssertTrue(agents.waitForExistence(timeout: 5), "A thread with delegated threads and agents has Agents in its top bar")
+        XCTAssertEqual(agents.value as? String, "4 agents, 1 needs you")
+        agents.tap()
+        let docs = app.buttons["agents-row-thread:drawer-docs"]
+        XCTAssertTrue(docs.waitForExistence(timeout: 5), "Agents opens the sheet of the thread's delegated threads and agents")
+        XCTAssertTrue(text("2 delegated threads · 2 agents").exists, "The sheet counts both")
+        XCTAssertTrue(app.buttons["agents-answer-thread:review-fix"].exists, "A delegated thread that waits on you opens to answer")
+        // The outcome and the order come with the computer's reads, a moment after the sheet opens.
+        let answered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Check the drawer docs, delegated thread on Codex, Answered"), object: docs)
+        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: 5), .completed, "A delegated thread's row says its outcome")
+        XCTAssertTrue(app.buttons["agents-row-agent:waits"].waitForExistence(timeout: 5))
+        // Newest start first: the running agent, the review, the docs, then the finished agent.
+        let order = ["agents-row-agent:suite", "agents-row-thread:review-fix", "agents-row-thread:drawer-docs", "agents-row-agent:waits"]
+            .map { app.buttons[$0].frame.minY }
+        XCTAssertEqual(order, order.sorted(), "Rows run newest start first")
+        capture("agents-sheet-dark")
+
+        let suite = app.buttons["agents-row-agent:suite"]
+        suite.tap()
+        XCTAssertTrue(text("Run 11 of 20").waitForExistence(timeout: 5), "An agent opens in place to its latest update")
+        XCTAssertTrue(text("Run the drawer tests twenty times and count the failures.").exists, "and to its task")
+        XCTAssertEqual(suite.value as? String, "Open")
+        capture("agents-sheet-agent-open")
+
+        docs.tap()
+        // The thread behind the sheet has a title too, so wait for the delegated thread's own.
+        let title = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label == %@", "thread-title", "Check the drawer docs")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "A delegated thread's row opens it")
+        capture("agents-delegated-thread")
+        back()
+        XCTAssertTrue(docs.waitForExistence(timeout: 10), "Back from the delegated thread comes back to the sheet")
+        app.buttons["agents-done"].tap()
+        XCTAssertTrue(waitUntilGone(docs), "Done closes the sheet")
+    }
+
     func testComputerScopePreservesSearchAndLandscape() {
         launch(Self.fixture)
         let filter = app.buttons["computer-filter"]

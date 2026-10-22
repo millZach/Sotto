@@ -217,6 +217,14 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
     /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
     public var delegatedBy: String? = nil
+    /// How many sub-agents the thread's provider reports, and how many work (ADR-0103). Read tolerantly.
+    public var subagentSummary: SubagentSummary? = nil
+    /// The computer's word that the thread's last turn failed and a client has shown it since, or Dismiss all named it
+    /// (ADR-0092). Only a computer that lists `failure-seen` sends it; the Agents view reads it (ADR-0103).
+    public var failureSeen: Bool? = nil
+    /// How many monitors the thread's provider runs. Never work on its own (`ThreadState`), but its end can move a
+    /// delegated thread's outcome from Background work to Answered, so the Agents sheet reads again (ADR-0103).
+    public var monitoring: MonitorCount? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
