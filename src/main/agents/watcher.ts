@@ -918,7 +918,7 @@ export class WatcherService implements WatcherControlHooks {
       const work = owned ? watcherBackgroundWorkCount(owned) : thread.backgroundWorkCount
       // The cards of the threads it delegated to, as list_threads gives them; a paired host's are left out, as above.
       const delegatedWaitsOn = owned ? local.threads.filter(child => child.delegatedBy === owned.id).flatMap(child => child.requests) : []
-      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn }) }
+      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn, prototypeReady: owned?.prototypeReady !== undefined }) }
     })
   }
   /**
@@ -3291,8 +3291,9 @@ ${operation.draftId}`)
   /** What Watcher is given of a read's full result (#1191): slim unless it asked for all of it. */
   private slim(name: WatcherToolName, input: unknown, result: unknown): unknown {
     const watched = this.wakes.watchedKeys()
-    return watcherSlimRead(name, input, result, target => watched.has(key(target)),
-      target => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)?.lastTurn?.status === 'failed')
+    const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
+    return watcherSlimRead(name, input, result, target => watched.has(key(target)), target => thread(target)?.lastTurn?.status === 'failed',
+      target => thread(target)?.prototypeReady !== undefined)
   }
   private prunePages(): void {
     for (const [id, page] of this.pages) if (page.expires < Date.now()) this.pages.delete(id)

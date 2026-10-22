@@ -9,7 +9,7 @@ import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, 
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
-import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision } from './watcherNews'
+import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
 
@@ -116,7 +116,7 @@ const workSettledScope = (target: WatcherThreadTarget, turnId: string | undefine
  * The kinds told once per thread whatever request tells them (#1190): their IDs leave the request out, so a thread that takes
  * part in a newer request is not told its last finish again, and the saved IDs say so after a restart too.
  */
-const TOLD_ONCE: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled', 'needs-user', 'quiet'])
+const TOLD_ONCE: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled', 'needs-user', 'quiet', 'prototype-ready'])
 /**
  * Each thread delegated from a watched thread, directly or through a thread it delegated to (ADR-0081), by its key: the
  * key of the topmost watched thread above it, which answers for it (#1190). A delegated thread's cards are that thread's
@@ -819,7 +819,7 @@ export class WatcherWakeUp {
       const hostId = thread.hostId ?? snapshot.hostId ?? ''
       // A thread a watched thread delegated to tells its cards as that thread's news, so its cards are edges too.
       if (thread.kind !== 'watcher' && !byHost.get(hostId)?.has(thread.id) && !(owners.size && owners.has(targetKey({ hostId, threadId: thread.id })))) continue
-      edges += `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => `${card.id}@${requestRevision(card)}`).join(',')}`
+      edges += `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => `${card.id}@${requestRevision(card)}`).join(',')}:${thread.prototypeReady?.source ?? ''}`
     }
     return edges
   }
@@ -908,6 +908,9 @@ export class WatcherWakeUp {
           }
           for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
             { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
+          // A prototype waiting for the user's review is told once for its source while the mark stands (ADR-0108).
+          const prototype = thread.prototypeReady && watcherPrototypeFields(thread.prototypeReady.source)
+          if (prototype) this.event('prototype-ready', target, [thread.prototypeReady!.source], prototype)
           // After the turn's own news, so a turn's end carries what its working copy became. A turn that finished with work
           // still running ends again when that work settles, which carries what the work changed since. A new turn end also
           // carries the thread's own facts when they differ from what Watcher was told, though nothing changed in this pass.
@@ -1152,6 +1155,7 @@ export class WatcherWakeUp {
     }
     if (!this.connected(snapshot, thread)) return false
     if (event.kind === 'needs-user') return thread.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
+    if (event.kind === 'prototype-ready') return thread.prototypeReady !== undefined && thread.prototypeReady.source === watcherPrototypeSource(event)
     if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.active(thread) && !thread.requests.length
     // Work that started again withdraws it; stillDue keeps the turn owed it.
     if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId && this.workSettled(thread, event.target.hostId)

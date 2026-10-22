@@ -3,7 +3,7 @@ import { openAtRequestLabel, threadPress, waitKind, type OpenThread, type Overvi
 
 /** How many names the line holds before the rest are counted: more than this and it would stop being one quiet line. */
 const NAMES = 5
-const WHY: Record<WaitKind, string> = { question: 'question', permission: 'permission', failed: 'last turn failed' }
+const WHY: Record<WaitKind, string> = { question: 'question', permission: 'permission', failed: 'last turn failed', prototype: 'prototype to review' }
 
 /** What a press on a name does when the thread's request has its card in Watcher's conversation. */
 export const goToAskLabel = (title: string, kind: 'question' | 'permission'): string => `Go to the ${kind} from ${title} in this conversation`
@@ -37,10 +37,10 @@ export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump }: {
         const thread = entry.overview.thread
         const kind = waitKind(entry)
         const press = threadPress(onOpen, thread.id, true)
-        const here = kind !== 'failed' && onJump !== undefined && inline?.has(thread.id) === true
+        const here = (kind === 'question' || kind === 'permission') && onJump !== undefined && inline?.has(thread.id) === true
         const requestId = entry.facts.request?.requestId ?? thread.requests[0]?.id
         return <li key={thread.id}>
-          <span className="watcher-row__ring" data-tone={kind === 'failed' ? 'failed' : 'needs'} aria-hidden="true" />
+          <span className="watcher-row__ring" data-tone={kind === 'failed' ? 'failed' : kind === 'prototype' ? 'prototype' : 'needs'} aria-hidden="true" />
           <button type="button" className="watcher-glance__name tt-focusable" aria-label={here ? goToAskLabel(thread.title, kind) : openAtRequestLabel(thread.title, kind)} title={thread.title}
             onClick={event => { if (here && !event.shiftKey && onJump?.(thread.id, requestId) === true) return; press.onClick(event) }} onKeyDown={press.onKeyDown}><span>{thread.title}</span></button>
           <span className="watcher-glance__why" aria-hidden="true">{WHY[kind]}</span>

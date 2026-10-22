@@ -113,7 +113,9 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
   userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean(),
   // The desktop's alone (#1191): whether Watcher watches the thread, as a slim row says. A paired host never sends it.
-  watched: z.boolean().optional() }).strict()
+  watched: z.boolean().optional(),
+  // The desktop's alone too (ADR-0108): a prototype the thread made waits for the user's review, from the thread itself.
+  prototypeReady: z.literal(true).optional() }).strict()
 /**
  * A pull request as a slim read gives it (#1191): its number, or its address when that has none, and what it says now,
  * instead of every evidence fact. A fact GitHub has not been read for is left out rather than guessed, and approval,
@@ -129,6 +131,8 @@ const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().
   // Why it needs the user or is not watched, said only when true: its newest turn failed, its user took it over, or its
   // automation was stopped.
   turnFailed: z.literal(true).optional(), takenOver: z.literal(true).optional(), automationStopped: z.literal(true).optional(),
+  // A prototype the thread made waits for the user's review (ADR-0108): only the user can open it.
+  prototypeReady: z.literal(true).optional(),
   protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
 /** How much list_threads and read_thread say of each thread's evidence (#1191). */
 export const watcherDetailSchema = z.enum(['slim', 'full'])
@@ -240,6 +244,8 @@ export const watcherToolSchemas = {
       evidence: watcherDetailSchema.optional() }).strict(),
     output: boundedRead(result({ target: watcherThreadTargetSchema, messages: z.array(z.object({ id, position: counter, role: z.enum(['user', 'assistant']),
       text: utf8(WATCHER_READ_BYTES_MAX), createdAt: time }).strict()).max(WATCHER_MESSAGES_MAX), waitsOn: z.array(pending).max(100),
+      // The desktop's alone, from the thread itself (ADR-0108): a prototype it made waits for the user's review.
+      prototypeReady: z.literal(true).optional(),
       activities: z.array(z.object({ id, kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status', 'compaction']),
         status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']), title: shortText, startedAt: time.optional(), completedAt: time.optional() }).strict()).max(100),
       evidence: z.array(watcherEvidenceSchema).max(100), pullRequests: z.array(watcherPullRequestSummarySchema).max(50).optional(),

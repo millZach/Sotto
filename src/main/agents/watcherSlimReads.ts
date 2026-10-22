@@ -79,14 +79,14 @@ type FullRow = Extract<Rows[number], { evidence: unknown }>
  * A roster row as list_threads' slim detail gives it: who it is, where it stands, what it waits on, whether Watcher watches
  * it, and its open pull requests' summaries in place of every evidence fact.
  */
-export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false) {
+export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false, prototypeReady = false) {
   const open = watcherOpenPullRequests(row.pullRequests, row.evidence).map(item => item.summary)
   // Why it needs the user or is not watched: its last turn's failure, and its newest participation's takeover or stop.
   const latest = row.participation.at(-1)
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
-    ...latest?.automationStopped ? { automationStopped: true as const } : {},
+    ...latest?.automationStopped ? { automationStopped: true as const } : {}, ...prototypeReady ? { prototypeReady: true as const } : {},
     ...row.protected ? { protected: true as const } : {}, pullRequests: open }
 }
 
@@ -97,25 +97,28 @@ const isOk = (result: unknown): result is { status: 'ok' } & Record<string, unkn
  * What Watcher is given of a read's full result, from what its call asked (#1191). Refusals and other tools pass as they
  * are. `watched` says which threads Watcher watches. A paired host's page is filtered here, since the host is not asked to.
  * `turnFailed` says whether a thread's last turn failed, from the thread itself: its turn facts cannot, as a paired host's
- * sits beside the desktop's own and either can be the older.
+ * sits beside the desktop's own and either can be the older. `prototypeReady` says whether a prototype the thread made
+ * waits for the user's review (ADR-0108), from the thread too, so a paired host never sends a field an older desktop refuses.
  */
 export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean,
-  turnFailed: (target: WatcherThreadTarget) => boolean = () => false): unknown {
+  turnFailed: (target: WatcherThreadTarget) => boolean = () => false, prototypeReady: (target: WatcherThreadTarget) => boolean = () => false): unknown {
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))
     // A paired host's page is filtered here, so its counts are counted again from what is left.
     const counts = asked.watchedOnly ? Object.fromEntries(Object.keys(result.counts as Record<string, number>).map(group => [group, rows.filter(row => row.group === group).length])) : result.counts
-    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target) })) : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target))) }
+    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target), ...prototypeReady(row.target) ? { prototypeReady: true as const } : {} }))
+      : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target), prototypeReady(row.target))) }
   }
   if (name === 'read_thread') {
     const asked = input as WatcherToolInput<'read_thread'>, evidence = result.evidence as WatcherEvidence[]
+    const read = prototypeReady(result.target as WatcherThreadTarget) ? { ...result, prototypeReady: true as const } : result
     // Only the pull request facts are summed up; the thread's own facts, a failed turn, a takeover or a receipt, are few and stay.
-    if (asked.evidence === 'full') return result
+    if (asked.evidence === 'full') return read
     const pullRequests = watcherPullRequestSummaries(evidence)
-    const slim = { ...result, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {} }
+    const slim = { ...read, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {} }
     // The full read was cut to the read bound. A slim one is almost always smaller; one that is not is given in full.
-    return Buffer.byteLength(JSON.stringify(slim)) > WATCHER_READ_BYTES_MAX ? result : slim
+    return Buffer.byteLength(JSON.stringify(slim)) > WATCHER_READ_BYTES_MAX ? read : slim
   }
   if (name === 'list_projects') {
     const asked = input as WatcherToolInput<'list_projects'>, query = asked.query?.toLowerCase()

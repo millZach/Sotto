@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { createServer, type RequestListener, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { foundPages, pageMentions, QUESTION_PAGE_LINGER_MS, QuestionPages } from '../../../src/main/agents/questionPages'
+import { foundPages, pageAnswers, pageMentions, QUESTION_PAGE_LINGER_MS, QuestionPages } from '../../../src/main/agents/questionPages'
 import type { AgentHostSnapshot, AgentMessage, AgentRequest, AgentThread } from '../../../src/shared/agents'
 
 // A question's pages (ADR-0085): Sotto finds them in the question and the agent's message before it, whatever the
@@ -179,5 +181,118 @@ describe('QuestionPages', () => {
     expect(pages.target(token)).toBeDefined()
     now = QUESTION_PAGE_LINGER_MS
     expect(pages.target(token)).toBeUndefined()
+  })
+})
+
+// A working page (ADR-0108): one that opens. A file found in the folder works; a loopback address works when it answers
+// one GET with a status below 400 within a moment. A dead loopback page is still offered on a question.
+describe('pageAnswers', () => {
+  const servers: Server[] = []
+  afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()) }))) })
+  async function serve(handler: RequestListener): Promise<string> {
+    const server = createServer(handler)
+    servers.push(server)
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()))
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  }
+
+  it('says a page works when it answers below 400, a redirect included, and not when it fails, refuses or hangs', async () => {
+    const seen: string[] = []
+    const origin = await serve((request, response) => {
+      seen.push(`${request.method} ${request.url}`)
+      if (request.url === '/missing') { response.writeHead(404); response.end(); return }
+      if (request.url === '/moved') { response.writeHead(302, { Location: '/elsewhere' }); response.end(); return }
+      if (request.url === '/slow') return
+      response.writeHead(200, { 'Content-Type': 'text/html' }); response.end('<h1>ok</h1>')
+    })
+    expect(await pageAnswers(`${origin}/page.html?variant=A#b`)).toBe(true)
+    expect(await pageAnswers(`${origin}/moved`)).toBe(true)
+    expect(await pageAnswers(`${origin}/missing`)).toBe(false)
+    expect(await pageAnswers(`${origin}/slow`, 100)).toBe(false)
+    // The redirect is not followed: one GET for each page.
+    expect(seen).toEqual(['GET /page.html?variant=A', 'GET /moved', 'GET /missing', 'GET /slow'])
+    const spare = await serve(() => undefined)
+    const closing = servers.pop()!
+    await new Promise<void>(resolve => closing.close(() => resolve()))
+    expect(await pageAnswers(spare)).toBe(false)
+  })
+})
+
+describe('QuestionPages working pages and reply pages (ADR-0108)', () => {
+  const tokens = (): (() => string) => { let next = 0; return () => `${'w'.repeat(30)}${String(next++).padStart(2, '0')}` }
+  const words = 'The prototype is at docs/prototypes/greeting-prototype.html, served at http://localhost:8075/ too.'
+
+  it('keeps offering a dead loopback page on a question, and says which of its pages work', async () => {
+    const changed = vi.fn(), live = vi.fn(async (url: string) => url !== 'http://localhost:8075/')
+    const pages = new QuestionPages({ changed, token: tokens(), live })
+    const first = snapshot([question('q', 'Which greeting?')], [reply(words)])
+    pages.decorate(first)
+    expect(pages.searched('thread', 'request:q')).toEqual({ finished: false, pages: [], working: [] })
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled())
+    expect(pages.decorate(first).threads[0]!.requests[0]!.pages?.map(page => page.kind)).toEqual(['file', 'server'])
+    const search = pages.searched('thread', 'request:q')!
+    expect(search.finished).toBe(true)
+    expect(search.working.map(page => page.kind)).toEqual(['file'])
+    expect(search.working[0]!.token).toBe(search.pages[0]!.token)
+    expect(live).toHaveBeenCalledWith('http://localhost:8075/')
+    expect(pages.source(search.pages[1]!.token)).toEqual({ threadId: 'thread', source: 'request:q' })
+  })
+
+  it('says a question’s search is not finished while it may look again, and finished after its last look', async () => {
+    let now = 0
+    const pages = new QuestionPages({ changed: vi.fn(), now: () => now, live: async () => true })
+    for (let step = 0; step < 3; step++) {
+      pages.decorate(snapshot([question('n', 'Nothing here')]))
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(pages.searched('thread', 'request:n')?.finished, `search ${step + 1}`).toBe(step === 2)
+      now += 2_000
+    }
+  })
+
+  it('looks once for the pages a reply names when asked to, and serves them by their tokens', async () => {
+    const changed = vi.fn()
+    const pages = new QuestionPages({ changed, token: tokens(), live: async () => false })
+    const shown = snapshot([], [reply(words)])
+    const replyOf = vi.fn(() => ({ id: 'm-1', text: words }))
+    expect(pages.decorate(shown, replyOf)).toBe(shown)
+    expect(replyOf).toHaveBeenCalledWith(shown.threads[0])
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled())
+    const search = pages.searched('thread', 'reply:m-1')!
+    expect(search).toMatchObject({ finished: true })
+    expect(search.pages.map(page => page.kind)).toEqual(['file', 'server'])
+    expect(search.working.map(page => page.name)).toEqual(['greeting-prototype.html'])
+    expect(pages.target(search.working[0]!.token)).toMatchObject({ kind: 'file' })
+    expect(pages.source(search.working[0]!.token)).toEqual({ threadId: 'thread', source: 'reply:m-1' })
+    // The reply is searched once, however often the snapshot comes, and a reply puts nothing on the thread's requests.
+    expect(pages.decorate(shown, replyOf)).toBe(shown)
+    pages.decorate(shown, replyOf)
+    expect(changed).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads a reply the snapshot carries only a summary of from the summary, or from the store when the summary is cut', async () => {
+    const stored = vi.fn(() => [{ ...reply(words), id: 'long' }])
+    const pages = new QuestionPages({ changed: vi.fn(), live: async () => true, messages: stored })
+    pages.decorate(snapshot([]), () => ({ id: 'short', summary: words }))
+    await vi.waitFor(() => expect(pages.searched('thread', 'reply:short')?.finished).toBe(true))
+    expect(pages.searched('thread', 'reply:short')!.working).toHaveLength(2)
+    expect(stored).not.toHaveBeenCalled()
+    pages.decorate(snapshot([]), () => ({ id: 'long', summary: 'x'.repeat(2_000) }))
+    await vi.waitFor(() => expect(pages.searched('thread', 'reply:long')?.finished).toBe(true))
+    expect(stored).toHaveBeenCalledWith('thread')
+    expect(pages.searched('thread', 'reply:long')!.working).toHaveLength(2)
+  })
+
+  it('lets a reply’s pages linger an hour once it is no longer looked for', async () => {
+    let now = 0
+    const pages = new QuestionPages({ changed: vi.fn(), now: () => now, live: async () => true })
+    pages.decorate(snapshot([]), () => ({ id: 'm', text: words }))
+    await vi.waitFor(() => expect(pages.searched('thread', 'reply:m')?.finished).toBe(true))
+    const page = pages.searched('thread', 'reply:m')!.working[0]!
+    pages.decorate(snapshot([]))
+    now = QUESTION_PAGE_LINGER_MS - 1
+    expect(pages.target(page.token)).toBeDefined()
+    now = QUESTION_PAGE_LINGER_MS
+    expect(pages.target(page.token)).toBeUndefined()
+    expect(pages.searched('thread', 'reply:m')).toBeUndefined()
   })
 })
