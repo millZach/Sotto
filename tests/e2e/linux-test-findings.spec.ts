@@ -46,8 +46,10 @@ async function nativeZoomKey(launched: LaunchedSotto, key: string, shift = false
 async function clientNotice(launched: LaunchedSotto, ready = false) {
   const state = await launched.page.evaluate(() => window.sotto!.agents!.get())
   delete state.clientUpdatesDismissedAt
+  // A complete thread list (ADR-0028's October 22 amendment). The read above told main to send its next broadcast
+  // complete too, so revision 0, which main never uses, is never taken as the base of one of main's.
   const broadcast = { ...state,
-    host: { ...state.host, models: { revision: 0, models: state.host.models },
+    host: { ...state.host, models: { revision: 0, models: state.host.models }, threads: { revision: 0, base: null, changed: state.host.threads },
       clientHosts: state.host.clientHosts?.map(host => ({ ...host, models: { revision: 0, models: host.models } })) },
     clientUpdates: [{ id: 'grok', installed: '1.0.50', published: '1.0.52', behind: true, channel: 'npm',
       command: 'npm install -g @xai-official/grok@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }],

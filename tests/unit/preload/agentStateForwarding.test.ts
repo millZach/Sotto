@@ -12,14 +12,16 @@ const state: AgentState = threadsStateFixture({ cloneOverrides: false,
     topLevel: { hostId: 'aaaaaaaa-0000-4000-8000-000000000000', activeThreadId: null, activeProjectId: null, draftAttachments: [], credentials: { reasoning: false, secure: false } } })
 
 describe('agent state broadcast forwarding', () => {
-  it('forwards a broadcast raw, without reassembling an omitted catalog itself', () => {
+  it('forwards a broadcast raw, without reassembling an omitted catalog or its threads itself', () => {
     const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').agents!
     const listener = vi.fn()
     bridge.onState(listener)
     const handler = ipc.on.mock.calls.find(([channel]) => channel === AGENT_STATE)![1] as (event: unknown, ...args: unknown[]) => void
-    // A repeat the broadcaster omitted: `host.models` is a revision marker, not an array of models.
-    const broadcast = { ...state, host: { ...state.host, models: { revision: 3, omitted: true } } }
+    // A repeat the broadcaster omitted: `host.models` is a revision marker, not an array of models, and
+    // `host.threads` the records that changed since the last broadcast (#1330), not every thread. Main
+    // broadcasts only the desktop router's shell, which is always client-scoped.
+    const broadcast = { ...state, clientScoped: true, host: { ...state.host, models: { revision: 3, omitted: true }, threads: { revision: 2, base: 1, changed: [] } } }
     handler({}, broadcast)
     // The preload no longer puts the catalog back together: contextBridge would have to copy the
     // reassembled array a second time crossing back to the page, undoing most of what omitting it saved.

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
-import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast } from '../../shared/agents'
+import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -8,8 +8,10 @@ type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
 }
 
 interface CatalogSnapshot {
-  revision: number
+  readonly revision: number
   models: readonly AgentModel[]
+  /** `models.length` when it was stored, so an array that gained or lost a model in place is not taken as unchanged. */
+  length: number
 }
 
 /**
@@ -27,9 +29,16 @@ export class ModelCatalogRevisions {
   /** The revision `models` has under `key`: the one it last had when its content is unchanged, otherwise the next. */
   revisionFor(key: string, models: readonly AgentModel[]): number {
     const existing = this.catalogs.get(key)
-    if (existing && this.sameContent(existing.models, models)) return existing.revision
+    const same = existing !== undefined && (existing.models === models ? existing.length === models.length : this.sameContent(existing.models, models))
+    if (same) {
+      // The array just compared stands for this content from now on. A shell that keeps handing over one array, as a
+      // certified catalog does, then meets its own identity on the next publish instead of being compared again with
+      // whichever equal array came first (#1330).
+      existing.models = models
+      return existing.revision
+    }
     const revision = (existing?.revision ?? 0) + 1
-    this.catalogs.set(key, { revision, models })
+    this.catalogs.set(key, { revision, models, length: models.length })
     return revision
   }
 
@@ -49,6 +58,103 @@ export class ModelCatalogRevisions {
     this.lastComparison = { stored, incoming, lengths: [stored.length, incoming.length], equal }
     return equal
   }
+}
+
+/** How deep `samePlainData` walks before it hands a value to `isDeepStrictEqual`, which also handles cycles. */
+const PLAIN_DEPTH = 64
+
+/**
+ * Whether two values hold the same data, for the plain objects, arrays and primitives a shell is made of. Identity
+ * answers first at every level, so a part handed over unchanged costs one comparison; only parts whose identity changed
+ * are walked. An object that is neither plain nor an array (a `Map`, a `Date`), and anything deeper than `PLAIN_DEPTH`,
+ * goes to `isDeepStrictEqual`. Object keys are compared as sets, so a key present with `undefined` differs from a key
+ * that is absent, as structured clone keeps them apart too. An array's hole reads as `undefined`; a shell has none.
+ *
+ * Written for speed over the 300 records a broadcast compares, most of them with a few rebuilt parts: `for...in` rather
+ * than `Object.keys`, which allocates an array per object. At the owner's scale it walks a broadcast's threads in under
+ * half the time serializing them takes, and in under half the time `isDeepStrictEqual` takes.
+ */
+export function samePlainData(previous: unknown, next: unknown, depth = 0): boolean {
+  if (Object.is(previous, next)) return true
+  if (typeof previous !== 'object' || typeof next !== 'object' || previous === null || next === null) return false
+  if (depth > PLAIN_DEPTH) return isDeepStrictEqual(previous, next)
+  if (Array.isArray(previous)) {
+    if (!Array.isArray(next) || previous.length !== next.length) return false
+    for (let index = 0; index < previous.length; index++) {
+      const left: unknown = previous[index], right: unknown = next[index]
+      if (left !== right && !samePlainData(left, right, depth + 1)) return false
+    }
+    return true
+  }
+  if (Array.isArray(next)) return false
+  const prototype = Object.getPrototypeOf(previous) as unknown
+  if (prototype !== Object.getPrototypeOf(next)) return false
+  if (prototype !== Object.prototype && prototype !== null) return isDeepStrictEqual(previous, next)
+  const left = previous as Record<string, unknown>, right = next as Record<string, unknown>
+  let keys = 0
+  for (const key in right) {
+    keys++
+    const before = left[key], after = right[key]
+    if (before === after ? before === undefined && !Object.hasOwn(left, key) : !samePlainData(before, after, depth + 1)) return false
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- only counted
+  for (const key in left) keys--
+  return keys === 0
+}
+
+interface ThreadBase {
+  readonly revision: number
+  readonly records: ReadonlyMap<string, AgentThread>
+  readonly order: readonly string[]
+}
+
+/**
+ * The thread records of the main window's broadcasts (issue #1330, ADR-0028's October 22 amendment): each broadcast
+ * carries the records that changed since the last one the window was sent, the IDs of those that went and, when it
+ * moved, the order. A whole thread array on every broadcast, up to one each 16 ms while a thread streams, was most of
+ * what main spent serializing for the window, and the window then spent longer than that working out which records
+ * had not changed.
+ *
+ * A record is unchanged when it is the record last sent or holds the same data (`samePlainData`). The router builds a
+ * new record for every thread on every publish, but what each holds is the coordinator's or a remote host's, handed
+ * over by identity until it changes, so the comparison is mostly identities. The records held are the ones last sent,
+ * read and never written into, as everything a publish carries is. Only a broadcast `deliver()` reports as sent
+ * becomes the base the next is measured from, so after a failed send the next is measured from the one before.
+ *
+ * `reset()` drops the base, and the next broadcast lists every record: main calls it when the window reads the whole
+ * state, which it does whenever it loads or reloads and whenever it cannot apply a broadcast. A read while a send is
+ * being delivered voids that send as a base too: the window may have read past it. Two records with one
+ * Sotto thread ID cannot be told apart by ID, so a list that holds them goes complete and leaves no base, as the whole
+ * array always did.
+ */
+export class ThreadRecordsBroadcast {
+  private revision = 0
+  private base: ThreadBase | null = null
+  /** Advanced by every `reset()`, so a send the window read the whole state during cannot become a base after it. */
+  private resets = 0
+
+  /** `threads` encoded against what the window was last sent, and the commit that makes it the base once delivered. */
+  encode(threads: readonly AgentThread[]): { payload: AgentThreadsBroadcast; commit: () => void } {
+    const revision = ++this.revision
+    const records = new Map<string, AgentThread>()
+    for (const thread of threads) records.set(thread.id, thread)
+    const order = threads.map(thread => thread.id)
+    const unique = records.size === threads.length
+    const resets = this.resets
+    const commit = (): void => { if (resets === this.resets) this.base = unique ? { revision, records, order } : null }
+    const base = this.base
+    if (base === null || !unique) return { payload: { revision, base: null, changed: [...threads] }, commit }
+    const changed = threads.filter(thread => {
+      const sent = base.records.get(thread.id)
+      return sent === undefined || !samePlainData(sent, thread)
+    })
+    const removed = base.order.filter(id => !records.has(id))
+    const moved = order.length !== base.order.length || order.some((id, index) => base.order[index] !== id)
+    return { payload: { revision, base: base.revision, changed, ...(removed.length ? { removed } : {}), ...(moved ? { order } : {}) }, commit }
+  }
+
+  /** The next broadcast lists every record: the window holds none it can measure from. */
+  reset(): void { this.base = null; this.resets++ }
 }
 
 /**
@@ -74,22 +180,38 @@ export class ModelCatalogRevisions {
 export class AgentStateBroadcaster {
   private readonly revisions = new ModelCatalogRevisions()
   private readonly sent = new Map<string, number>()
+  private readonly threads = new ThreadRecordsBroadcast()
 
   /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
-   * catalog in full again next time rather than being assumed caught up. */
+   * catalog in full again next time rather than being assumed caught up, and its threads are measured again
+   * from the last broadcast it was sent. */
   send(state: AgentState, deliver: (payload: AgentStateBroadcast) => boolean): boolean {
     const confirmed: Array<[string, number]> = []
-    const payload: AgentStateBroadcast = this.encode(state, (key, models): AgentModelCatalogBroadcast => {
+    const encoded = this.encode(state, (key, models): AgentModelCatalogBroadcast => {
       const revision = this.revisionFor(key, models)
       if (this.sent.get(key) === revision) return { revision, omitted: true }
       confirmed.push([key, revision])
       return { revision, models: models as AgentModel[] }
     })
+    const threads = this.threads.encode(state.host.threads)
+    const payload: AgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
     const delivered = deliver(payload)
-    if (delivered) for (const [key, revision] of confirmed) this.sent.set(key, revision)
+    if (delivered) {
+      for (const [key, revision] of confirmed) this.sent.set(key, revision)
+      threads.commit()
+    }
     return delivered
   }
+
+  /**
+   * The window read the whole state (`AGENT_GET`), as it does on every load and reload and whenever it cannot apply a
+   * broadcast's threads. Whatever it held before, the next broadcast lists every thread record. Catalogs need no
+   * reset: a window names a catalog it lacks by its revision and reads it back the same way (ADR-0028).
+   *
+   * An arrow property, so `registerAgentIpc` can be handed it on its own.
+   */
+  readonly windowRead = (): void => { this.threads.reset() }
 
   /**
    * A command's reply to a window (issue #323): `state` whole except that every catalog is named by its
