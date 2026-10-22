@@ -6,7 +6,7 @@ import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
   WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW,
-  type WatcherHandoverRead, type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
+  type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
 import { deferred } from '../../fixtures/deferred'
 
@@ -40,6 +40,7 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     continueWithHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     startNew: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
+    readMergeTurns: vi.fn((): WatcherMergeTurnsRead => ({ status: 'ok', queue: [], turns: [] })),
   }
   const send = vi.fn((state: WatcherRoomState) => { order.push(`send:${state.recoveryNotice}`); return available })
   const desktop = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost, watcher: service, send, schedule: clock.schedule })

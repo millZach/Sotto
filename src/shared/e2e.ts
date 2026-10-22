@@ -4,6 +4,7 @@ import type { AgentModel, AgentProject, AgentThread } from './agents'
 import { agentMessageSchema, agentRequestSchema } from './agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestLinkSchema } from './gitPullRequests'
 
 export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 /**
@@ -69,13 +70,15 @@ export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
 export const e2eAgentEventSchema = z.object({
-  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring', 'background-work', 'settings', 'settings-unconfirmed', 'fork-refuse']),
+  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring', 'background-work', 'settings', 'settings-unconfirmed', 'fork-refuse', 'pull-requests']),
   threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional(),
   request: agentRequestSchema.optional(), activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   // Bounded synthetic histories and same-message deltas for the renderer performance lane.
   messages: z.array(agentMessageSchema).max(4_000).optional(), messageId: z.string().optional(),
   monitoring: agentMonitoringSchema.optional(),
   backgroundWork: agentBackgroundWorkSchema.optional(),
+  /** A thread's linked pull requests, for the runs that check what shows them, such as Watcher's picture (#1339). */
+  pullRequests: z.array(gitPullRequestLinkSchema).max(GIT_PULL_REQUEST_LINKS_MAX).optional(),
 }).strict()
 
 export interface SottoE2EBridge {

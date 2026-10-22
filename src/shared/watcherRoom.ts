@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
-  watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
+import { watcherIdentitySchema, watcherMergeQueueItemSchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
+  watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema, WATCHER_STATE_COMPUTED_MAX } from './watcher'
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
@@ -20,6 +20,8 @@ export const WATCHER_CONTINUE_HANDOVER = 'sotto:watcher:continue-handover'
 export const WATCHER_DISMISS_HANDOVER = 'sotto:watcher:dismiss-handover'
 /** New Watcher: a new conversation on the current Watcher's own provider, model, effort and permissions (ADR-0073). */
 export const WATCHER_START_NEW = 'sotto:watcher:start-new'
+/** The merge turns for Watcher's picture (#1339), read only while the picture shows, never pushed with the room's state. */
+export const WATCHER_READ_MERGE_TURNS = 'sotto:watcher:read-merge-turns'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
 export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
@@ -112,6 +114,25 @@ export const watcherHandoverReadSchema = z.union([
   z.object({ status: z.literal('ok'), text: z.string(), counts: handoverCountsSchema }).strict(), watcherRefusalSchema,
 ])
 export type WatcherHandoverRead = z.infer<typeof watcherHandoverReadSchema>
+/** How many merge turns Watcher remembers giving, newest kept. In memory only: a restart forgets them (#1340). */
+export const WATCHER_MERGE_TURNS_KEPT = 50
+/**
+ * A send of Watcher's that gave a thread its merge turn for a pull request (GO MERGE), as Watcher marked it (#1339): the
+ * operation, so the window can tell whether it was delivered, its thread and the pull request's number. Never its words.
+ */
+export const watcherMergeTurnSchema = z.object({ operationId: z.uuid(), target: watcherThreadTargetSchema,
+  pullRequest: z.number().int().positive(), at: timestamp }).strict()
+export type WatcherMergeTurn = z.infer<typeof watcherMergeTurnSchema>
+/**
+ * What Watcher's picture shows of the merge turns (#1339): the merge queue as read_state computes it from live data
+ * (#1274), open pull requests of watched threads that are not drafts and whose checks passed, oldest pass first, and the
+ * merge turns Watcher gave, oldest first.
+ */
+export const watcherMergeTurnsReadSchema = z.union([
+  z.object({ status: z.literal('ok'), queue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX),
+    turns: z.array(watcherMergeTurnSchema).max(WATCHER_MERGE_TURNS_KEPT) }).strict(), watcherRefusalSchema,
+])
+export type WatcherMergeTurnsRead = z.infer<typeof watcherMergeTurnsReadSchema>
 export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
@@ -209,5 +230,7 @@ export interface WatcherBridge {
    * the current Watcher itself, and offers the last one's handover. Older stand-ins omit it; the real Owl preload supplies it.
    */
   startNew?(): Promise<WatcherRoomResult>
+  /** The merge turns for Watcher's picture (#1339). Older stand-ins omit it, and the picture then shows none. */
+  readMergeTurns?(): Promise<WatcherMergeTurnsRead>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }
