@@ -397,6 +397,11 @@ private struct AgentsAgentRow: View {
         do {
             let page = try await model.readAssignments(ref, agentID: agentID)
             assignment = page.assignments.first
-        } catch { failed = true }
+        } catch {
+            // The words already shown may be an earlier run's, under a row that now names a newer one, so a failed read
+            // says so rather than keeping them.
+            assignment = nil
+            failed = true
+        }
     }
 }
