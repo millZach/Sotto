@@ -164,9 +164,13 @@ describe('QuestionPages', () => {
     expect(pages.decorate(snapshot([question('q', 'Which greeting?')])).threads[0]!.requests[0]!.pages?.map(page => page.name)).toEqual(['greeting-prototype.html'])
     // A question that never names one is searched three times in all.
     const searches = vi.fn(() => [] as AgentMessage[])
-    const none = new QuestionPages({ changed: vi.fn(), now: () => now, messages: searches })
+    const noneChanged = vi.fn()
+    const none = new QuestionPages({ changed: noneChanged, now: () => now, messages: searches })
     for (let step = 0; step < 6; step++) { none.decorate(snapshot([question('n', 'Nothing here')])); await new Promise(resolve => setTimeout(resolve, 20)); now += 2_000 }
     expect(searches).toHaveBeenCalledTimes(3)
+    // The last search that finds none is news too: a prototype question held for it (ADR-0108) waits on nothing else.
+    expect(none.searched('thread', 'request:n')?.finished).toBe(true)
+    expect(noneChanged).toHaveBeenCalledTimes(1)
   })
 
   it('serves a page for an hour after its question leaves, and not after', async () => {

@@ -382,6 +382,9 @@ export class QuestionPages {
     entry.working = working.length ? working : NO_PAGES
     if (pages.length) this.options.changed()
     else if (entry.searches < entry.tries) setTimeout(() => { if (this.entries.get(key) === entry) this.options.changed() }, QUESTION_PAGE_SEARCH_GAP_MS).unref?.()
+    // A question's last search that finds none is news as well: a prototype question held for it waits on nothing else
+    // (ADR-0108). A reply is searched once, and one that names no page needs no snapshot.
+    else if (entry.tries > 1) this.options.changed()
   }
 
   private prune(): void {
