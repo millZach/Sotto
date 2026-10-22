@@ -2,8 +2,8 @@
 
 import { lstat, mkdir, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { REMOVING_LOCK_REASON, REPAIRING_LOCK_REASON, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
+import { describe, expect, it, vi } from 'vitest'
+import { queuedRemovals, REMOVING_LOCK_REASON, REPAIRING_LOCK_REASON, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
 import { removeFolderContents } from '../../src/main/agents/folderRemoval'
 import { fixture } from '../fixtures/threadWorktreeFixture'
 
@@ -97,15 +97,13 @@ describe('a worktree removal cut off partway (#1297)', () => {
     const inside = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const slow = new ThreadWorktrees(f.root, git, undefined, async root => { entered(); await gate; await removeFolderContents(root, { keep: new Set(['.git']) }) })
     const order: string[] = []
-    let askedGit!: () => void
-    const overlapping = new Promise<void>(resolve => { askedGit = resolve })
-    const sending = new ThreadWorktrees(f.root, async (cwd, args, options) => { order.push('send asked Git'); askedGit(); return git(cwd, args, options) })
+    const sending = new ThreadWorktrees(f.root, async (cwd, args, options) => { order.push('send asked Git'); return git(cwd, args, options) })
     const finishing = slow.resumeRemoval(f.a)
     await inside
     const restoring = sending.restore(f.a)
-    // The assertion is the order: the send asks Git nothing about the folder until the finisher is let go. Without turns
-    // it asks at once and the finisher is let go then; with them, the bound only lets a broken lane show itself.
-    await Promise.race([overlapping, new Promise(resolve => setTimeout(resolve, 1_000))])
+    // The send is seen waiting its turn behind the held finisher before the finisher is let go, and it asks Git nothing
+    // about the folder until then.
+    await vi.waitFor(() => expect(queuedRemovals(f.a.path!)).toBe(2))
     order.push('finisher let go')
     release()
     expect((await finishing).reclaimedAt).toBeTruthy()
@@ -147,6 +145,37 @@ describe('a worktree removal cut off partway (#1297)', () => {
     expect(await registrations(f.project)).toHaveLength(3)
     expect((await f.service.resumeRemoval(f.a)).reclaimedAt).toBeTruthy()
     expect(await registrations(f.project)).toHaveLength(1)
+  })
+
+  it('keeps the removal’s record when the nested worktree’s repository cannot be read', async () => {
+    const f = await installedWorktree()
+    const nested = join(f.a.path!, '.worktrees', 'n')
+    await git(f.project, ['worktree', 'add', '-b', 'nested', '--', nested, 'HEAD'])
+    const common = (await git(f.project, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()
+    const facts = await f.service.reclaimFacts(f.a)
+    // From the lock on, the nested worktree's repository answers nothing: neither its removal nor its listing.
+    let locked = false
+    const unreadable = new ThreadWorktrees(f.root, async (cwd, args, options) => {
+      if (args[0] === 'worktree' && args[1] === 'lock') locked = true
+      if (locked && cwd === common) throw new Error('Unreadable')
+      return git(cwd, args, options)
+    })
+    await expect(unreadable.reclaim(f.a, { confirmedItems: facts.items, confirmedIgnored: facts.ignored, confirmedRepositories: facts.repositories })).rejects.toThrow('could not finish removing')
+    expect(await registrations(f.project)).toHaveLength(3)
+    expect((await registrations(f.project))[1]).toContain(`locked ${REMOVING_LOCK_REASON}`)
+    expect((await f.service.resumeRemoval(f.a)).reclaimedAt).toBeTruthy()
+    expect(await registrations(f.project)).toHaveLength(1)
+  })
+
+  it('repairs a `.git` file a cut-off write left empty, under Sotto’s lock', async () => {
+    const f = await installedWorktree()
+    await rm(join(f.a.path!, 'a.txt'))
+    await git(f.project, ['worktree', 'lock', '--reason', REPAIRING_LOCK_REASON, '--', f.a.path!])
+    await rm(join(f.a.path!, '.git')); await writeFile(join(f.a.path!, '.git'), '')
+    expect(await f.service.resumeRemoval(f.a)).toBe(f.a)
+    expect(await readFile(join(f.a.path!, '.git'), 'utf8')).toMatch(/^gitdir: /u)
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
   })
 
   it('clears a nested worktree’s registration when it finishes a removal later', async () => {

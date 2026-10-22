@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
@@ -196,6 +196,15 @@ const registryOperations = new Map<string, Promise<void>>()
 const removalOperations = new Map<string, Promise<void>>()
 interface RegistryIdentity { readonly common: string; readonly key: string }
 interface InspectionReads { readonly root: string; readonly common?: string; readonly listing?: string }
+const removalsQueued = new Map<string, number>()
+/** How many removals of this folder are running or waiting their turn; a test reads it to see one wait. */
+export function queuedRemovals(path: string): number { return removalsQueued.get(pathKey(path)) ?? 0 }
+async function removalTurn<T>(path: string, run: () => Promise<T>): Promise<T> {
+  const key = pathKey(path)
+  removalsQueued.set(key, queuedRemovals(path) + 1)
+  try { return await takeTurns(removalOperations, key, run) }
+  finally { const left = queuedRemovals(path) - 1; if (left) removalsQueued.set(key, left); else removalsQueued.delete(key) }
+}
 async function takeTurns<T>(operations: Map<string, Promise<void>>, key: string, run: () => Promise<T>): Promise<T> {
   const previous = operations.get(key) ?? Promise.resolve()
   const operation = previous.then(run)
@@ -927,7 +936,7 @@ export class ThreadWorktrees {
     // A linked worktree's .git is a file; a directory there is a repository of its own and is never removed.
     if (!(await lstat(join(facts.path, '.git'))).isFile()) throw new Error('This folder is a repository of its own, not a worktree. Nothing was changed.')
     // Take the last observation inside the registry lane, immediately before the destructive command.
-    return takeTurns(removalOperations, pathKey(facts.path), async () => {
+    return removalTurn(facts.path, async () => {
       const nestedWorktrees = await coordinateRegistry(identity!, async () => {
         const { facts: latest, nestedWorktrees } = await this.reclaimFactsWithin(metadata, identity)
         const counts = (items: readonly { path: string; fileCount: number }[]) => JSON.stringify(items.map(({ path, fileCount }) => ({ path, fileCount })).sort((a, b) => a.path.localeCompare(b.path)))
@@ -964,9 +973,12 @@ export class ThreadWorktrees {
   private async clearNestedWorktree(nested: NestedWorktree): Promise<void> {
     try { await this.registry(nested.commonDirectory, ['worktree', 'remove', '--force', '--', nested.path]) }
     catch (error) {
-      const kept = await this.git(nested.commonDirectory, ['worktree', 'list', '--porcelain', '-z'])
-        .then(listing => registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(nested.path)), () => false)
-      if (kept) throw new RemovalKept('Git would not clear the registration of a worktree that was inside it, in that worktree’s own repository.', { cause: error })
+      // Gone only when Git lists the repository without it, or the repository itself is gone; a listing that fails
+      // proves nothing, and the record is kept for another try.
+      const gone = await this.git(nested.commonDirectory, ['worktree', 'list', '--porcelain', '-z'])
+        .then(listing => !registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(nested.path)),
+          () => lstat(nested.commonDirectory).then(() => false, failure => missing(failure)))
+      if (!gone) throw new RemovalKept('Git would not clear the registration of a worktree that was inside it, in that worktree’s own repository.', { cause: error })
     }
   }
 
@@ -986,7 +998,7 @@ export class ThreadWorktrees {
     if (metadata.mode !== 'independent' || metadata.reused || !path || !repositoryRoot) return metadata
     const allocationRoot = join(await realpath(this.directory).catch(() => resolve(this.directory)), this.home.folder)
     if (pathKey(dirname(path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(path))) return metadata
-    return takeTurns(removalOperations, pathKey(path), async () => {
+    return removalTurn(path, async () => {
       // Read from disk first, so an ordinary folder starts no Git process here.
       const folder = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error })
       if (folder && (!folder.isDirectory() || folder.isSymbolicLink())) return metadata
@@ -995,8 +1007,9 @@ export class ThreadWorktrees {
         if (marker && !marker.isFile()) return metadata
         // A missing folder is found through the repository's registrations. Only Sotto's own locks are settled here;
         // anything else at a missing folder is restore's.
-        const registration = marker ? (await gitDirectories(path).catch(() => undefined))?.gitDir
-          : await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
+        // A `.git` file a failed write left empty is passed over the same way.
+        const registration = (marker ? (await gitDirectories(path).catch(() => undefined))?.gitDir : undefined)
+          ?? await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
         const reason = (registration && await readFile(join(registration, 'locked'), 'utf8').catch(() => undefined))?.trim()
         if (reason !== REMOVING_LOCK_REASON && reason !== REPAIRING_LOCK_REASON) return metadata
       }
@@ -1010,29 +1023,40 @@ export class ThreadWorktrees {
         const repairing = entry.locked && entry.lockReason === REPAIRING_LOCK_REASON
         if (repairing && !folder) {
           // A folder that went while it was being repaired is a missing folder, which restore puts back.
-          await this.git(repositoryRoot, ['worktree', 'unlock', '--', path])
+          try { await this.git(repositoryRoot, ['worktree', 'unlock', '--', path]) }
+          catch (error) { throw new Error(REPAIR_FAILED, { cause: error }) }
           return undefined
         }
         // A missing folder Git still registers, and not for Sotto's removal, is one restore already puts back.
         if (!removing && !repairing && (!folder || marker || entry.locked || !entry.prunable)) return undefined
         if (folder) await refuseRedirected(path)
         const registration = await this.registrationOf(identity.common, path)
+        // Git removes and reads a worktree only through its `.git` file. Write it back, pointing at the registration Git
+        // kept, when it is gone or, under Sotto's own lock, when a write cut off left it pointing nowhere. One that points
+        // at another registration is not Sotto's to change.
+        const writePointer = async (): Promise<void> => {
+          if (!registration) throw new Error('Git kept no registration for this folder.')
+          const pointer = marker ? await gitDirectories(path).catch(() => undefined) : undefined
+          if (pointer) {
+            if (pathKey(await realpath(pointer.gitDir).catch(() => pointer.gitDir)) !== pathKey(await realpath(registration))) throw new Error('The folder’s .git file points at another registration.')
+            return
+          }
+          // Git marks `.git` hidden on Windows, and Windows will not overwrite a hidden file, so one pointing nowhere goes first.
+          if (marker) await rm(join(path, '.git'), { force: true })
+          await writeFile(join(path, '.git'), `gitdir: ${registration.split(sep).join('/')}\n`, { flag: 'wx' })
+        }
         if (!removing) {
           // Nothing records that this removal was decided, so nothing more is deleted. Git's lock records the repair
           // until it is done, so a repair cut off is taken up again rather than mistaken for a whole checkout.
           try {
             if (!repairing) await this.git(repositoryRoot, ['worktree', 'lock', '--reason', REPAIRING_LOCK_REASON, '--', path])
-            if (!marker) {
-              if (!registration) throw new Error('Git kept no registration for this folder.')
-              await writeFile(join(path, '.git'), `gitdir: ${registration.split(sep).join('/')}\n`, { flag: 'wx' })
-            }
+            await writePointer()
           } catch (error) { throw new Error(REPAIR_FAILED, { cause: error }) }
           return { kind: 'repair' }
         }
-        // Git removes a worktree only through its `.git` file. Write it back, pointing at the registration Git kept.
-        if (folder && !marker) {
-          if (!registration) throw new Error(HALF_REMOVED)
-          await writeFile(join(path, '.git'), `gitdir: ${registration.split(sep).join('/')}\n`, { flag: 'wx' })
+        if (folder) {
+          try { await writePointer() }
+          catch (error) { throw unfinishedRemoval(error) }
         }
         const record = registration ? await readFile(join(registration, REMOVAL_RECORD), 'utf8').then(text => JSON.parse(text) as unknown, () => undefined) : undefined
         const listed = record && typeof record === 'object' && Array.isArray((record as { nestedWorktrees?: unknown }).nestedWorktrees) ? (record as { nestedWorktrees: unknown[] }).nestedWorktrees : []
