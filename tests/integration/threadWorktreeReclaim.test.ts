@@ -282,14 +282,15 @@ describe("independent working-copy allocation", () => {
     expect(await readFile(join(a.path!, 'notes.txt'), 'utf8')).toBe('not Sotto’s')
     await expect(f.service.inspect(recorded)).rejects.toThrow('no longer this thread’s Git worktree')
   })
-  it('leaves an empty folder Git still registers as it is', async () => {
+  it('finishes and fills an empty folder Git still registers, which a removal cut off at its end leaves', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     const recorded = await f.service.inspect(a)
-    // Emptied with its registration intact: a checkout Git knows about, not a half-finished removal.
+    // Emptied with its registration intact, `.git` included, so Git reports it prunable (#1297). It holds nothing to lose.
     for (const name of await readdir(a.path!)) await rm(join(a.path!, name), { recursive: true, force: true })
-    expect(await f.service.restore(recorded)).toEqual(recorded)
-    expect(await readdir(a.path!)).toEqual([])
+    expect(await f.service.restore(recorded)).toMatchObject({ status: 'ready', branch: recorded.branch, reclaimedAt: undefined })
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
     expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
+    expect(await git(f.project, ['worktree', 'list', '--porcelain'])).not.toMatch(/prunable|locked/u)
   })
   it('leaves an empty folder reached through a link as it is', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))

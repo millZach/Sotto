@@ -58,8 +58,10 @@ describe("independent working-copy allocation", () => {
     expect(await readFile(join(restored.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
     calls.length = 0
     expect((await service.reclaim(restored)).reclaimedAt).toBeDefined()
-    // Reclaim adds bounded listings and repeats the ownership/content check before removal.
-    expect(calls).toHaveLength(17)
+    // Reclaim adds bounded listings and repeats the ownership/content check before removal, and locks the worktree in
+    // Git for its removal before deleting anything (#1297).
+    expect(calls).toHaveLength(18)
+    expect(calls.filter(args => args[0] === 'worktree' && args[1] === 'lock')).toHaveLength(1)
   })
 
   it('checks the original repository independently before reading a discovered checkout status', async () => {

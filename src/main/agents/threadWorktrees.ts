@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat } from 'node:fs/promises'
+import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
 import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
@@ -10,6 +11,7 @@ import { nativeEnvironment } from './subscriptionCodex'
 export type RunGit = (cwd: string, args: string[], options?: { readonly quiet?: boolean }) => Promise<string>
 const QUOTE_PATHS: readonly string[] = ['-c', 'core.quotePath=false']
 const isWorktreeAdd = (args: readonly string[]): boolean => args[0] === 'worktree' && args[1] === 'add'
+const isWorktreeRemove = (args: readonly string[]): boolean => args[0] === 'worktree' && args[1] === 'remove'
 export const runWorktreeGit: RunGit = async (cwd, args, options) =>
   runWorktreeGitProcess(cwd, args, { prefix: await worktreeGitPrefix(cwd, args), ...(options?.quiet ? { env: QUIET_GIT_ENV } : {}) })
 
@@ -75,7 +77,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
     child.stdout.on('data', chunk => collect(output, typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
     child.stderr.on('data', chunk => collect(errors, typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
     child.on('error', error => { processError = error })
-    const timer = setTimeout(() => { timedOut = true; stop() }, options.timeout ?? (isWorktreeAdd(args) ? 300_000 : 30_000))
+    // A removal Git is killed in the middle of leaves a checkout it can no longer use (#1297), so it is given ten minutes.
+    const timer = setTimeout(() => { timedOut = true; stop() }, options.timeout ?? (isWorktreeAdd(args) ? 300_000 : isWorktreeRemove(args) ? 600_000 : 30_000))
     // close follows exit and closed pipes; the tree termination command must finish before cleanup can start.
     child.on('close', code => {
       clearTimeout(timer)
@@ -283,6 +286,21 @@ export interface WorktreeReclaimOptions {
   readonly automatic?: boolean
 }
 const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
+/**
+ * The lock reason Sotto gives Git while it removes a worktree (#1297). Git refuses to prune or remove a locked worktree,
+ * Sotto's inspection refuses to send into one, and a lock with this reason found later is a removal Sotto started and
+ * finishes. Plain words, because `git worktree list` shows them.
+ */
+export const REMOVING_LOCK_REASON = 'Sotto is removing this folder'
+const HALF_REMOVED = 'Sotto started removing this worktree’s folder and did not finish, so Git cannot use it. The branch keeps its commits. Choose Refresh to finish removing it; sending to the thread then puts it back on its branch.'
+/** A removal that stopped again, in plain words: what kept it, when Sotto knows, and what to press. */
+function unfinishedRemoval(cause: unknown): Error {
+  const kept = cause instanceof FolderRemovalStalled ? `${cause.message} ` : ''
+  return new Error(`Sotto could not finish removing this worktree’s folder, so Git cannot use it. The branch keeps its commits. ${kept}Choose Refresh to try again.`, { cause })
+}
+/** Deletes everything inside a worktree except its `.git` file; the seam lets a test cut a removal off partway. */
+export type RemoveWorktreeContents = (root: string) => Promise<void>
+const removeWorktreeContents: RemoveWorktreeContents = root => removeFolderContents(root, { keep: new Set(['.git']) })
 
 /**
  * A long walk (dependency folders included) otherwise awaits one fs promise after another with
@@ -306,7 +324,8 @@ export class ThreadWorktrees {
   private readonly originFetches = new Map<string, OriginFetch>()
   private fetchHeadFlag = true
 
-  constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME) {}
+  constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME,
+    private readonly removeContents: RemoveWorktreeContents = removeWorktreeContents) {}
 
   /** Identity belongs to this operation, never to a cached cwd or persisted worktree record. */
   private async registryIdentity(cwd: string, verifyRef?: string): Promise<RegistryIdentity> {
@@ -662,6 +681,8 @@ export class ThreadWorktrees {
   async restore(metadata: AgentWorktree): Promise<AgentWorktree> {
     const { path, repositoryRoot, branch } = metadata
     if (metadata.mode !== 'independent' || !path || !repositoryRoot || !branch) return metadata
+    // A removal that stopped partway is finished first; the folder is then put back like any reclaimed one.
+    await this.resumeRemoval(metadata)
     const folder = await reservedFolder(path)
     // A removal Windows could only half finish leaves the reserved folder there, empty and unregistered.
     // Anything else at the path, a link or junction included, is not Sotto's to fill. An add that times out
@@ -703,7 +724,7 @@ export class ThreadWorktrees {
     return (await this.reclaimFactsWithin(metadata)).facts
   }
 
-  private async reclaimFactsWithin(metadata: AgentWorktree, identityInLane?: RegistryIdentity): Promise<{ facts: WorktreeReclaimFacts; identity?: RegistryIdentity; submodules: string[]; nestedWorktrees: { path: string; commonDirectory: string }[] }> {
+  private async reclaimFactsWithin(metadata: AgentWorktree, identityInLane?: RegistryIdentity): Promise<{ facts: WorktreeReclaimFacts; identity?: RegistryIdentity; nestedWorktrees: { path: string; commonDirectory: string }[] }> {
     const observed = identityInLane ? { root: (await this.git(metadata.path!, ['rev-parse', '--show-toplevel'])).trim(), listing: await this.git(metadata.repositoryRoot!, ['worktree', 'list', '--porcelain', '-z']) } : undefined
     const { worktree: inspected, identity } = await this.inspectWithin(metadata, identityInLane, observed, true)
     const path = inspected.path!
@@ -724,7 +745,6 @@ export class ThreadWorktrees {
 
     const items: Array<{ path: string; bytes: number; fileCount: number }> = []
     const repositories: Array<{ path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }> = []
-    const submodules: string[] = []
     const inspectedSubmoduleDirectories = new Set<string>()
     const nestedWorktrees: { path: string; commonDirectory: string }[] = []
     const canonicalRoot = await realpath(path)
@@ -763,7 +783,6 @@ export class ThreadWorktrees {
             const kind = !submodule && gitMarker?.isFile() ? 'worktree' : 'repository'
             const history = kind === 'repository' ? { unpushedCommitCount: Number((await this.git(full, ['rev-list', '--count', '--all', '--not', '--remotes'])).trim()) } : {}
             if (submodule) {
-              submodules.push(local)
               const directory = gitMarker!.isFile() ? resolve(full, (await readFile(join(full, '.git'), 'utf8')).trim().replace(/^gitdir: /u, '')) : join(full, '.git')
               inspectedSubmoduleDirectories.add(pathKey(await realpath(directory)))
             }
@@ -815,9 +834,6 @@ export class ThreadWorktrees {
             // Recursive deinit keeps core.worktree pointing at a deleted checkout. History reads
             // need no checkout, so override that path with the existing metadata directory.
             const unpushedCommitCount = Number((await this.git(directory, ['--git-dir', directory, '--work-tree', directory, 'rev-list', '--count', '--all', '--not', '--remotes'])).trim())
-            // Git also refuses ordinary removal for retained recursive metadata. The final
-            // scan must cover its history before force removal, even when every ref is published.
-            submodules.push(`.git/modules/${relative(modulesDirectory, directory).split(sep).join('/')}/`)
             if (unpushedCommitCount) {
               // Read the checkout path from the parent's .gitmodules when it is still recorded;
               // orphaned or recursive metadata retains its own visible path.
@@ -855,7 +871,7 @@ export class ThreadWorktrees {
     }
     ignored.sort()
     repositories.sort((a, b) => a.path.localeCompare(b.path))
-    return { ...(identity ? { identity } : {}), submodules, nestedWorktrees, facts: { path, branch: inspected.branch, dirty: inspected.dirty === true, ignored, items, repositories, untracked: untrackedListing.split('\0').filter(Boolean).sort(), outsideLink } }
+    return { ...(identity ? { identity } : {}), nestedWorktrees, facts: { path, branch: inspected.branch, dirty: inspected.dirty === true, ignored, items, repositories, untracked: untrackedListing.split('\0').filter(Boolean).sort(), outsideLink } }
   }
 
   /**
@@ -869,6 +885,9 @@ export class ThreadWorktrees {
     if (metadata.mode !== 'independent' || metadata.reused) throw new Error('Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.')
     const allocationRoot = join(await realpath(this.directory), this.home.folder)
     if (!metadata.path || pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('This folder is outside Sotto’s reserved worktree folder. Nothing was changed.')
+    // A removal that stopped partway, this one's or Git's own before #1297, was already decided: it is finished.
+    const resumed = await this.resumeRemoval(metadata)
+    if (resumed.reclaimedAt) return resumed
     const { facts, identity } = await this.reclaimFactsWithin(metadata)
     if (!facts.branch) throw new Error('This folder has no branch checked out, so Sotto could not put it back. Switch it to a branch first. Nothing was changed.')
     if (facts.outsideLink) throw new Error(`This folder contains a link to another folder (${facts.outsideLink}). Remove the link first so nothing outside the folder is touched. Nothing was changed.`)
@@ -882,7 +901,7 @@ export class ThreadWorktrees {
     if (!(await lstat(join(facts.path, '.git'))).isFile()) throw new Error('This folder is a repository of its own, not a worktree. Nothing was changed.')
     // Take the last observation inside the registry lane, immediately before the destructive command.
     const nestedWorktrees = await coordinateRegistry(identity!, async () => {
-      const { facts: latest, submodules, nestedWorktrees } = await this.reclaimFactsWithin(metadata, identity)
+      const { facts: latest, nestedWorktrees } = await this.reclaimFactsWithin(metadata, identity)
       const counts = (items: readonly { path: string; fileCount: number }[]) => JSON.stringify(items.map(({ path, fileCount }) => ({ path, fileCount })).sort((a, b) => a.path.localeCompare(b.path)))
       if (!options.automatic && counts(options.confirmedItems ?? []) !== counts(latest.items)) throw new Error('The folder changed. Nothing was removed. Choose Remove worktree again to see the new list.')
       if (latest.outsideLink || latest.branch !== facts.branch || latest.dirty !== facts.dirty ||
@@ -898,21 +917,97 @@ export class ThreadWorktrees {
       if (JSON.stringify(ignoredRows) !== JSON.stringify(facts.ignored) ||
         JSON.stringify(untrackedNow.split('\0').filter(Boolean).sort()) !== JSON.stringify(facts.untracked) ||
         Boolean(statusNow.length) !== facts.dirty) throw new Error('The files changed. Nothing was removed. Choose Remove worktree again to review them.')
-      // Git's ordinary clean check refuses initialized submodules. Our final check covered their contents.
-      try { await this.git(metadata.repositoryRoot!, ['worktree', 'remove', ...(facts.dirty || facts.repositories.length || submodules.length ? ['--force'] : []), '--', facts.path]) }
-      catch (error) {
-        // On Windows a process working in the folder, such as the thread's idle client, stops Git deleting the
-        // folder itself after it has deleted the files and its registration, and Git does not undo either.
-        // An empty or missing folder Git no longer registers is removed; anything else is the real failure.
-        if (!(await this.emptiedAndUnregistered(metadata.repositoryRoot!, facts.path))) throw error
-      }
+      // Nothing is deleted until Git holds the folder locked for Sotto's removal: from here on, a removal cut off by a
+      // deadline, a crash or a quit is one Sotto recognises and finishes (#1297). The checks above covered submodules,
+      // nested work and uncommitted changes, which is what Git's own clean check would have asked about.
+      await this.git(metadata.repositoryRoot!, ['worktree', 'lock', '--reason', REMOVING_LOCK_REASON, '--', facts.path])
       return nestedWorktrees
     })
+    // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
+    try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!) }
+    catch (error) { throw unfinishedRemoval(error) }
     for (const nested of nestedWorktrees) {
       try { await this.registry(nested.commonDirectory, ['worktree', 'remove', '--force', '--', nested.path]) }
       catch (error) { throw new Error('The folder was removed, but Git could not clear a nested worktree registration. Run git worktree prune in that repository before using its branch again.', { cause: error }) }
     }
     return { ...metadata, branch: facts.branch, status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
+  }
+
+  /**
+   * Finishes a removal that stopped partway (#1297) and answers the record as reclaimed, or answers it unchanged when
+   * nothing was half removed. Half removed is this thread's own worktree, in Sotto's reserved folder, that Git still
+   * registers and either holds locked for Sotto's removal or reports prunable because its `.git` file is gone from a
+   * folder that is still there: what a `git worktree remove` cut off partway left before #1297. Either was a removal
+   * already decided, by the user or a rule under every check, so it is completed rather than undone; the branch keeps
+   * its commits and the next send puts the folder back. A folder that cannot be finished is reported in plain words.
+   */
+  async resumeRemoval(metadata: AgentWorktree): Promise<AgentWorktree> {
+    const { path, repositoryRoot } = metadata
+    if (metadata.mode !== 'independent' || metadata.reused || !path || !repositoryRoot) return metadata
+    const allocationRoot = join(await realpath(this.directory).catch(() => resolve(this.directory)), this.home.folder)
+    if (pathKey(dirname(path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(path))) return metadata
+    // Read from disk first, so an ordinary folder starts no Git process here.
+    const folder = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error })
+    if (folder && (!folder.isDirectory() || folder.isSymbolicLink())) return metadata
+    const marker = folder ? await lstat(join(path, '.git')).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error }) : undefined
+    if (!folder || marker) {
+      if (marker && !marker.isFile()) return metadata
+      // A missing folder is found through the repository's registrations; one Git did not lock for Sotto's removal is restore's.
+      const registration = marker ? (await gitDirectories(path).catch(() => undefined))?.gitDir
+        : await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
+      const reason = registration && await readFile(join(registration, 'locked'), 'utf8').catch(() => undefined)
+      if (reason?.trim() !== REMOVING_LOCK_REASON) return metadata
+    }
+    let identity: RegistryIdentity
+    try { identity = await this.registryIdentity(repositoryRoot) } catch { return metadata }
+    const started = await coordinateRegistry(identity, async () => {
+      const entry = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'])).find(item => pathKey(item.path) === pathKey(path))
+      if (!entry) return false
+      const ours = entry.locked && entry.lockReason === REMOVING_LOCK_REASON
+      // A missing folder Git still registers, and not for Sotto's removal, is one restore already puts back.
+      if (!ours && (!folder || marker || entry.locked || !entry.prunable)) return false
+      if (!ours) await this.git(repositoryRoot, ['worktree', 'lock', '--reason', REMOVING_LOCK_REASON, '--', path])
+      if (folder && !marker) {
+        // Git removes a worktree only through its `.git` file. Write it back, pointing at the registration Git kept.
+        const gitDir = await this.registrationOf(identity.common, path)
+        if (!gitDir) throw new Error(HALF_REMOVED)
+        await writeFile(join(path, '.git'), `gitdir: ${gitDir.split(sep).join('/')}\n`, { flag: 'wx' })
+      }
+      return true
+    })
+    if (!started) return metadata
+    try { await this.removeLocked(repositoryRoot, path, identity) }
+    catch (error) { throw unfinishedRemoval(error) }
+    return { ...metadata, status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
+  }
+
+  /** The folder Git keeps for the linked worktree at `path`: the one under `worktrees/` whose `gitdir` names its `.git`. */
+  private async registrationOf(common: string, path: string): Promise<string | undefined> {
+    const registrations = join(common, 'worktrees')
+    for (const name of await readdir(registrations).catch(() => [])) {
+      const gitdir = await readFile(join(registrations, name, 'gitdir'), 'utf8').catch(() => undefined)
+      if (gitdir && pathKey(resolve(registrations, name, gitdir.trim())) === pathKey(join(path, '.git'))) return join(registrations, name)
+    }
+    return undefined
+  }
+
+  /**
+   * The removal itself, for a worktree Git holds locked for Sotto's removal: Sotto deletes everything but the `.git`
+   * file, which takes as long as it takes, then Git removes that file, the folder and its registration, which is
+   * quick. Git deletes `.git` first and its registration last, so Git cut off in a large folder was what left one it
+   * could not use (#1297). Stopping anywhere here leaves the lock, and `resumeRemoval` finishes.
+   */
+  private async removeLocked(repositoryRoot: string, path: string, identity: RegistryIdentity): Promise<void> {
+    if (await lstat(path).then(() => true, error => { if (missing(error)) return false; throw error })) await this.removeContents(path)
+    await coordinateRegistry(identity, async () => {
+      try { await this.git(repositoryRoot, ['worktree', 'remove', '--force', '--force', '--', path]) }
+      catch (error) {
+        // On Windows a process working in the folder, such as the thread's idle client, stops Git deleting the
+        // folder itself after it has deleted the files and its registration, and Git does not undo either.
+        // An empty or missing folder Git no longer registers is removed; anything else is the real failure.
+        if (!(await this.emptiedAndUnregistered(repositoryRoot, path))) throw error
+      }
+    })
   }
 
   /** The first link under `root` whose target is outside it, if any. Walks without following links. */
@@ -1058,6 +1153,9 @@ export class ThreadWorktrees {
     if (listing.status === 'rejected') throw listing.reason
     const entries = registeredWorktrees(listing.value)
     const registered = entries.find(entry => pathKey(entry.path) === pathKey(path))
+    if (registered && (registered.lockReason === REMOVING_LOCK_REASON || (registered.prunable && !registered.locked))) {
+      throw new Error(metadata.reused ? 'This worktree’s folder was only partly removed, so Git cannot use it. Nothing on its branch was lost. Choose another working copy for this thread.' : HALF_REMOVED)
+    }
     if (registered?.locked || registered?.prunable) throw new Error('Git has locked this worktree or reports an incomplete checkout. Restore the checkout before continuing.')
     if (pathKey(path) !== pathKey(metadata.path) || !registered) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')
     // The thread follows whatever its worktree has checked out (ADR-0014): Sotto records the branch it
