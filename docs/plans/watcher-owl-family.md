@@ -18,31 +18,54 @@ mode, no cabins) and the four he made on October 22:
 Watcher is an Owl feature (`watcher` in `src/shared/owlFeatures.ts`). The scene is part of it and asks the same gate:
 stable builds draw none of it and start none of its timers.
 
-## Where it sits
+## Visualize: the scene steps away (Zach, October 22, at the build)
 
-The Watcher room is full width, and its content is the new thread's 760 px column: `max(24px, (100% - 760px) / 2)` on
-each side. The scene lives only in those two margins, below the room's strip and above nothing else. It is drawn the
-same way on Conversation, Watched and Visualize, because all three share that column. Nothing is drawn under or over
-the column, the strip, the dock or any open menu. Visualize has to keep its drawing inside the column for this to hold;
-check that once it merges, and fold its layout into the plan if it doesn't.
+The plan assumed all three views share the 760 px column. Visualize, as #1349 merged it, does not: its constellation
+spreads across the pane's whole width, so on that tab the margins already hold threads. Zach saw the three ways out in
+the prototype's Visualize switch (the picture narrowed to the column, no owls on Visualize, or the owls behind its outer
+clusters) and picked **no owls on Visualize**. The scene shows on Conversation and Watched, fades while Visualize shows,
+and comes back with the owls sitting where they were. This replaces "on all three Watcher screens" from his first ask.
 
-- One component, `WatcherOwlScene`, mounted once in the room behind the column (`z-index` under content). It owns two
-  canvases: a static one (hills, trees, moon, ground), drawn again only on a layout change or a theme change, and a
-  moving one (stars, owls, whirlpool, ripples). Both are `aria-hidden`.
-- Above them sits a layer of invisible buttons, one over each perched owl. Hover shows the thread's title and state in
-  a tooltip, and a press opens the thread beside Watcher, the same as a Watched card's title (`onOpen`). A glowing owl
-  opens the thread at its question or permission, the same as `watcher-answer`. These buttons stay out of the tab
-  order: the Watched tab is the keyboard path to the same threads, and twenty-five owls would swamp it.
-- The layout comes from a `ResizeObserver` on the room and the composer's rectangle; the ground line sits at the
-  composer's middle, as in the prototype. The composer's two branches are part of the static layer, rooted at the
-  column's edge just under the composer's top. Ripples (from a click in the open margin, and from the moon each time its
-  whirlpool opens) are drawn only in the margins.
-- Colours come from theme roles: ink from `--tt-text`, eyes, glow and whirlpool from `--tt-accent`, and the halo fill
-  from `--tt-canvas`, read once per theme change. The stylesheet goes on `themeTokens.test.ts`'s `owned` list.
-- Spots fill in a fixed order: the right tree's limb (from the column side), then Watcher's tree, then the ground (the
-  right margin, then the left). When the threads outnumber the spots, the last spot shows "+N", and a press switches to
-  Watched. From the prototype: 27 spots at 1600×1000, 10 at 1280×800 and 4 at 1100×720. The rail holds about 19 a
-  margin at 820×560.
+## How it is built
+
+The night scene of October 21 (`docs/plans/watcher-night-scene.md`) is the base: the same landscape, glyph ramp, ink,
+ripples and pacing, moved out of the empty room and into the margins.
+
+- **Where it shows.** Always, on Conversation and Watched, whatever the conversation holds: the empty-room rule and the
+  fade on the first send are gone. It steps away while Visualize shows, and while the room or Watcher's conversation
+  cannot be read yet. The column is the composer's sides, so a thread open beside Watcher narrows the margins with it.
+- **`src/renderer/src/watcher/nightScene.ts`** (pure): the layout in the margins (two trees with their limbs, the
+  moon on the right, the composer's two branches, every spot in fill order, the rail below 160 px and nothing below
+  16 px), Watcher's owl's places and flights (`planFlight`, `nextPlace`, `stayAt`, `owlAt`), ripples that may start
+  later than now, the pace, the ink and the stars' half-second twinkle steps.
+- **`src/renderer/src/watcher/owlFamily.ts`** (pure): a row's mood (`moodOf`), spot assignment with the "+N" pile
+  (`assignSpots`), and `OwlFamily`, which diffs the room's watched rows by target into arrivals out of the moon,
+  departures into it, hops from the pile and, with motion reduced or on the rail, fades.
+- **`src/renderer/src/watcher/nightScenePainter.ts`** draws it on two canvases. The landscape's canvas sits under
+  everything in the pane; the owls' canvas over the composer and under every menu. The landscape's glyphs are kept per
+  size and theme; a frame clears the cells under the owls instead of filling them, so no surface colour is ever
+  written. A frame whose picture would not change is not painted.
+- **`src/renderer/src/watcher/WatcherNightScene.tsx`** runs it: the room's watched rows in, Watcher's owl's random
+  flights, the moon's ripples, and a layer of buttons, one over each sitting owl with a thread in this window, and one
+  over "+N". The layer is `aria-hidden` and its buttons are out of the tab order: hover shows the thread's name and what
+  it is doing, a press opens it beside Watcher (Shift, in Threads), and "+N" shows Watched, which is the keyboard's way
+  to the same threads.
+- **`WatcherView`** passes the rows, `openThread` and a switch to Watched, and decides when the scene shows.
+- Colours come from theme roles through the probe's computed `--tt-text` and `--tt-accent`, and the stylesheet is on
+  `themeTokens.test.ts`'s `owned` list, as before.
+
+## Where the build departs from the prototype
+
+- **No first flight.** The October 21 scene flew a route over the composer once when the room opened. That route
+  crossed the column in front of it, so it is gone: Watcher's owl starts in its tree and its random flights are the
+  only ones.
+- **The right-hand branch is used too.** From the other tree the owl now and then drops onto the composer's right
+  branch rather than going home, so both branches are perches, not one perch and one ornament.
+- **The rail's eyes are two glyphs.** The prototype's eyes were `o,o`, for 30 px margins at 820x560. The room's
+  composer leaves 16 px there, so the eyes are `oo`, `--` asleep and `OO` waiting, and owls keep 2 px from the column
+  where the landscape keeps 8. Below 16 px nothing is drawn.
+- **Spot counts** follow the room's own measurements, so they differ a little from the prototype's 27, 10 and 4; the
+  unit tests check the order, not the number.
 
 ## What the room already gives each owl
 
@@ -66,28 +89,30 @@ doesn't keep.
 
 ## Performance budget
 
-- **Zero cost when hidden.** No timers, no canvas work and no layout reads while the room is not the visible page or
-  the window is hidden (`document.visibilityState`). The Owl gate off means the component never mounts.
-- **Static layer:** drawn once per layout, theme or size change, under 8 ms at 1600×1000 on the development laptop.
-- **Moving layer:** 30 frames a second only while something flies, the whirlpool is open or a ripple runs. Otherwise a
-  check 8 times a second that paints only when the frame's summary changed (a blink, a star's half-second step, a glow's
-  step): about 2 to 4 paints a second at rest. With reduced motion there are no flights, owls fade in and out, and once
-  the fades end the loop stops until the room changes.
-- **Per paint:** the moving layer only, under 2 ms with 25 owls, measured as the prototype's readout does (frames
-  ticked, frames painted).
+- **Zero cost when hidden.** No timers, no canvas work and no layout reads while the room is not the visible page, the
+  scene has stepped away for Visualize, or the window is hidden (`document.visibilityState`). The Owl gate off means the
+  component never mounts.
+- **Static layer:** drawn once per layout, theme or size change.
+- **Moving layer:** about 30 frames a second only while something flies, fades, the whirlpool turns or a ripple
+  spreads. Otherwise a check 8 times a second that paints only when the frame's summary changed: a blink, a star's
+  half-second step, a glowing owl's step. With motion reduced, or a capture's fixed clock, the loop stops once the fades
+  end, until the room changes.
 - **No main-process cost.** The scene reads the projection the room already receives and sends nothing to main.
-- **A perf test** (`tests/perf/watcherOwlScene.perf.test.ts`, opt-in through `SOTTO_PERF_ASSERT=1`): it builds the scene
-  at 1600×1000 with 25 rows, then asserts that idle paints stay under 5 in 2 seconds and that reduced motion schedules
-  no frame once its fades end.
+- **Checked in the built app**, not in a perf test: canvas drawing needs a real renderer. `tests/e2e/watcher-night-scene.spec.ts`
+  counts the frames painted on Watcher's pane and holds the resting rate under 8.5 a second, the flight between 22 and
+  33, and reduced motion at none once still. The measured rates are in the verification note.
 
 ## Tests and evidence
 
-- Unit (`tests/unit/renderer/watcher/`): spot order and the "+N" pile, the row to owl state mapping above, diffing
-  rows into arrive and leave, the reduced-motion fades, and the margin threshold choosing trees, rail or none.
-- E2E: the Watcher room's spec gains a margin check at 1600×1000, 1280×800 and 820×560. Owls appear only outside the
-  column, a press on an owl opens its thread, and the Watched tab still reaches every thread from the keyboard.
-- Design captures for the room at the three sizes, light and dark, with a fixed seed and motion reduced so captures
-  are stable. Regenerating baselines is on purpose and goes in the PR.
-- A verification note in `docs/verification/` with screenshots in `artifacts/watcher-owl-family/`.
-- Docs: `docs/guide.md` gets a paragraph on the owls under Watcher, and `CONTEXT.md` gets **Owl family** (the scene)
-  if the build keeps that name.
+- Unit: `tests/unit/renderer/watcherNightScene.test.ts` (the margins, the spot order, trees or rail or nothing,
+  Watcher's owl's places and flights, pace, ripples that start later, stars, ink) and
+  `tests/unit/renderer/watcherOwlFamily.test.ts` (moods, the "+N" pile, arrivals, departures, hops, fades, relayout).
+  `tests/unit/renderer/watcherView.test.tsx` checks when the room shows the scene.
+- E2E: `tests/e2e/watcher-night-scene.spec.ts`, at 1600x1000, 1280x800 and 820x560 in dark and light: not one painted
+  pixel in the column on either canvas, an owl for each watched thread, Watched keeping the scene and Visualize putting it
+  away, reduced motion, a newcomer's flight, hover and press.
+- No design-capture baseline shows Watcher's room, so none changes.
+- A verification note, `docs/verification/2026-10-22-watcher-owl-family.md`, with its captures in
+  `artifacts/watcher-owl-family/`.
+- Docs: `docs/guide.md` describes the owls under Watcher's room, and `CONTEXT.md`'s **Night scene** entry now names the
+  **thread owl**. "Owl family" stays this plan's name only, since Owl is the release track.

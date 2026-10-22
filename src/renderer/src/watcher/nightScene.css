@@ -1,15 +1,26 @@
-/* Watcher's night scene (Zach's pick on October 21, 2026): an ASCII night behind Watcher's room while it is empty, drawn
-   on two canvases in Watcher's pane. The landscape sits under everything the pane holds; the owl sits over the composer
-   and under every menu, panel and toast that opens there. Neither is ever pressed. The canvases take their inks from
-   the probe's computed colours (WatcherNightScene.tsx), so a theme change repaints them and no colour is written here. */
+/* Watcher's night scene (Zach's picks on October 21 and 22, 2026): an ASCII night in the side margins of Watcher's room,
+   with Watcher's owl and a thread owl for each watched thread, drawn on two canvases in Watcher's pane. The landscape
+   sits under everything the pane holds; the owls sit over the composer and under every menu, panel and toast that opens
+   there. Neither is ever pressed. The canvases take their inks from the probe's computed colours (WatcherNightScene.tsx),
+   so a theme change repaints them and no colour is written here. */
 
 /* The pane is its own stacking context, so the landscape's negative layer stays inside it, over the room's surface. */
 .watcher-pane { isolation: isolate; }
 .watcher-scene { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 1; transition: opacity 700ms ease; }
 .watcher-scene--land { z-index: -1; }
 .watcher-scene--owl { z-index: 3; }
-/* Once the room has a conversation the scene fades out, and then it is gone. */
+/* The thread owls' buttons, over their glyphs: the pointer's way to a thread's name and to the thread. */
+.watcher-scene--owls { z-index: 4; }
+/* When the scene steps away, as for Visualize, it fades out, and then it is gone. */
 .watcher-scene[data-leaving] { opacity: 0; }
+.watcher-scene[data-leaving] .watcher-scene__owl { pointer-events: none; }
+.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; pointer-events: auto; }
+.watcher-scene__owl:hover { background: color-mix(in srgb, var(--tt-text) 7%, transparent); }
+/* A thread owl's name and what its thread is doing, above it, while the pointer rests on it. */
+.watcher-scene__tip { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-width: 240px; padding: 6px 10px 7px;
+  border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: 0 10px 30px -12px var(--tt-shadow-color);
+  color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.35; pointer-events: none; transform: translate(-50%, calc(-100% - 6px)); }
+.watcher-scene__tip b { overflow: hidden; color: var(--tt-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 /* The scene's inks, read and never seen: the text colour for its ink, the accent for its accent, and the glyph face. */
 .watcher-scene__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
   color: var(--tt-text); background-color: var(--tt-accent); font-family: var(--tt-font-mono); }

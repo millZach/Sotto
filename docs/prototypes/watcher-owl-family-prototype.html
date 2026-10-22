@@ -27,6 +27,11 @@
   branch growing out of the composer's side into the margin, so it never covers text; and the moon sends out a ripple
   each time its whirlpool opens, so a spawn or a return is easy to notice.
 
+  Settled at the build (October 22): Visualize's constellation, as merged in #1349, spreads across the whole pane, so on
+  that tab the margins already hold threads. The Visualize switch in the controls shows the three ways out: the
+  constellation narrowed to the column, no owls while Visualize shows, or the owls behind its outer clusters. Zach
+  picked no owls on Visualize: the picture keeps its width, and the scene steps away while it shows.
+
   How many fit before "+N": 27 spots at 1600×1000 (limb 4, Watcher's tree 9, ground 14), 10 at 1280×800, 4 at
   1100×720; the rail holds about 19 a margin at 820×560.
 
@@ -112,12 +117,28 @@ body[data-panel='off'] .stage { right: 0; }
 .wcard .st { grid-column: 2; color: var(--tt-text-muted); font-size: 12.5px; }
 .wcard[data-state='needs'] .st { color: var(--tt-text-2); }
 .wcard button { grid-row: 1 / span 2; grid-column: 3; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); cursor: pointer; }
-.viz { position: relative; min-height: 320px; border: 1px dashed var(--tt-field-border); border-radius: 12px; padding: 18px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; }
-.viz .cap { width: 100%; color: var(--tt-text-muted); font-size: 12.5px; }
-.viz .node { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--tt-hairline); background: var(--tt-field); font-size: 12.5px; color: var(--tt-text-2); }
-.viz .node i { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-text-muted); }
-.viz .node[data-state='needs'] i { background: var(--tt-accent); }
-.viz .node[data-state='idle'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--tt-text-muted); }
+.panelview[data-view='visualize'] { height: 100%; }
+/* Full width, as #1349 merged it: the picture breaks out of the column to the pane's edges. */
+.room[data-viz='full'] .panelview[data-view='visualize'] { margin-inline: calc(-1 * var(--gut-px)); }
+/* Behind its edges: the owls and their buttons go under the picture, which covers them where its clusters reach. */
+.room[data-viz='full'][data-tab='visualize'] :is(.ascii--fg, .hits) { z-index: 1; }
+.viz { position: relative; height: 100%; min-height: 360px; }
+.viz svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.viz .hull { fill: color-mix(in srgb, var(--tt-surface-elevated) 35%, transparent); stroke: var(--tt-hairline); }
+.viz .edge { fill: none; stroke: color-mix(in srgb, var(--tt-text-muted) 45%, transparent); stroke-width: 1.1; }
+.viz .edge[data-lit] { stroke: var(--tt-accent); stroke-width: 1.6; }
+.viz .vowl { position: absolute; z-index: 3; display: grid; place-items: center; width: 50px; height: 50px; border: 1px solid var(--tt-hairline); border-radius: 50%;
+  background: var(--tt-surface-elevated); color: var(--tt-accent); transform: translate(-50%, -50%); }
+.viz .cname { position: absolute; z-index: 1; margin: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.viz .cname b { color: var(--tt-text); font-weight: 600; }
+.viz .vnode { position: absolute; z-index: 2; display: flex; align-items: center; gap: 7px; height: 22px; max-width: var(--w); padding: 0 6px 0 4px; overflow: hidden; border-radius: 7px;
+  background: color-mix(in srgb, var(--tt-surface-elevated) 45%, var(--tt-canvas)); color: var(--tt-text); font-size: 12.5px; white-space: nowrap; transform: translate(-9px, -11px); }
+.viz .vnode[data-mirror] { flex-direction: row-reverse; padding: 0 4px 0 6px; transform: translate(calc(-100% + 9px), -11px); }
+.viz .vnode span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.viz .vnode i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tt-text-muted); }
+.viz .vnode[data-state='needs'] i { background: var(--tt-accent); }
+.viz .vnode[data-state='idle'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--tt-text-muted); }
+.viz .cap { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0; color: var(--tt-text-muted); font-size: 12px; text-align: center; }
 .empty-note { color: var(--tt-text-muted); text-align: center; margin: auto; }
 
 .compose { position: relative; z-index: 2; padding: 10px var(--gut) 8px; }
@@ -199,7 +220,7 @@ body[data-panel='off'] .panel-show { display: block; }
       </section>
       <section class="panelview" data-view="watched" hidden><div id="watchedList" class="panelview"></div></section>
       <section class="panelview" data-view="visualize" hidden>
-        <div class="viz" id="viz"><span class="cap">Visualize’s own drawing goes here. This placeholder only shows that it stays inside the column.</span></div>
+        <div class="viz" id="viz"></div>
       </section>
     </div>
 
@@ -244,6 +265,8 @@ body[data-panel='off'] .panel-show { display: block; }
   <div class="row"><button type="button" id="fly">Fly now (F)</button><span class="hint" id="flyNote"></span></div>
 
   <h3>Open decisions</h3>
+  <div class="row"><label>Visualize (the constellation from #1349)</label></div>
+  <div class="row" data-group="viz"><button type="button" data-v="column">Narrowed to the column</button><button type="button" data-v="hide">No owls on Visualize</button><button type="button" data-v="over">Owls behind its edges</button></div>
   <div class="row"><label>Crossing the column</label></div>
   <div class="row" data-group="cross"><button type="button" data-v="behind">Behind it</button><button type="button" data-v="front">In front of it</button></div>
   <div class="row"><label>Moon</label></div>
@@ -273,6 +296,7 @@ const ui = {
   narrow: params.get('narrow') === 'hide' ? 'hide' : 'rail',
   min: clampInt(Number(params.get('min')) || 160, 100, 300),
   tab: ['watched', 'visualize'].includes(params.get('tab')) ? params.get('tab') : 'conversation',
+  viz: ['hide', 'over'].includes(params.get('viz')) ? params.get('viz') : 'column',
 }
 function clampInt(v, a, b) { return Math.max(a, Math.min(b, Math.round(v))) }
 const $ = id => document.getElementById(id)
@@ -288,6 +312,7 @@ function syncUrl() {
   if (ui.narrow !== 'rail') p.set('narrow', ui.narrow)
   if (ui.min !== 160) p.set('min', ui.min)
   if (ui.tab !== 'conversation') p.set('tab', ui.tab)
+  if (ui.viz !== 'column') p.set('viz', ui.viz)
   history.replaceState(null, '', `?${p}`)
 }
 function syncBar() {
@@ -299,6 +324,8 @@ function syncBar() {
   for (const group of document.querySelectorAll('[data-group]')) for (const b of group.querySelectorAll('button')) b.setAttribute('aria-pressed', String(ui[group.dataset.group] === b.dataset.v))
   $('flyNote').textContent = ui.reduced ? 'No flights with reduced motion.' : ''
   document.documentElement.dataset.theme = ui.theme
+  room.dataset.viz = ui.viz === 'column' ? 'column' : 'full'
+  room.dataset.tab = ui.tab
   for (const b of document.querySelectorAll('[role=tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab))
   for (const v of document.querySelectorAll('[data-view]')) v.hidden = v.dataset.view !== ui.tab
   syncUrl()
@@ -322,7 +349,7 @@ $('count').addEventListener('input', () => {
   while (live.length < n) { addThread(); live = liveThreads() }
   while (live.length > n) { leave(live[live.length - 1]); live = liveThreads() }
 })
-for (const b of document.querySelectorAll('[role=tab]')) b.onclick = () => { ui.tab = b.dataset.tab; syncBar() }
+for (const b of document.querySelectorAll('[role=tab]')) b.onclick = () => { ui.tab = b.dataset.tab; syncBar(); relayout() }
 addEventListener('keydown', event => {
   const typing = event.target.closest?.('input[type=text], textarea, [contenteditable]')
   if (typing || event.ctrlKey || event.metaKey || event.altKey) return
@@ -491,10 +518,50 @@ function changed() {
     card.querySelector('button').onclick = () => openThread(th)
     return card
   }) : [Object.assign(document.createElement('p'), { className: 'empty-note', textContent: 'Watcher isn’t watching any threads.' })]))
-  const viz = $('viz')
-  viz.querySelectorAll('.node').forEach(n => n.remove())
-  for (const th of live) { const n = document.createElement('span'); n.className = 'node'; n.dataset.state = th.state; n.innerHTML = '<i></i>'; n.append(th.title); viz.append(n) }
+  renderViz()
 }
+// A stand-in for Watcher's picture as #1349 merged it: Watcher in the middle, the watched threads in clusters by
+// project on both sides, a line from Watcher to each. Only its width matters here.
+let vizKey = ''
+function renderViz() {
+  const viz = $('viz')
+  if (ui.tab !== 'visualize' || !viz.clientWidth) return
+  const live = liveThreads()
+  const W = viz.clientWidth, key = `${W}|${ui.viz}|${live.map(th => th.id + th.state).join()}`
+  if (key === vizKey) return
+  vizKey = key
+  const projects = [['Sotto', 'this computer'], ['Sotto-releases', 'this computer'], ['forge scripts', 'forge']]
+  const clusters = projects.map(([name, host], k) => ({ name, host, nodes: live.filter((_, i) => i % 3 === k) })).filter(c => c.nodes.length)
+  const centre = W / 2, owl = { x: centre, y: 44 }
+  const gap = Math.min(96, Math.max(64, W * 0.07)), side = Math.max(150, centre - gap - 14)
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), parts = []
+  const add = (tag, attrs) => { const el = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); svg.append(el); return el }
+  let yL = 104, yR = 104
+  clusters.forEach((c, k) => {
+    const mirror = k % 2 === 0, x = mirror ? 14 : centre + gap, y = mirror ? yL : yR, h = 30 + c.nodes.length * 26 + 6
+    add('rect', { class: 'hull', x: x - 4, y, width: side + 8, height: h, rx: 12 })
+    const name = document.createElement('p'); name.className = 'cname'
+    Object.assign(name.style, { left: `${x + 8}px`, top: `${y + 7}px`, maxWidth: `${side - 16}px`, textAlign: mirror ? 'right' : 'left', width: `${side - 16}px` })
+    name.innerHTML = '<b></b> · '; name.firstChild.textContent = c.name; name.append(c.host); parts.push(name)
+    c.nodes.forEach((th, i) => {
+      const dx = mirror ? x + side - 12 : x + 12, dy = y + 30 + i * 26 + 13
+      add('path', { class: 'edge', d: `M${owl.x} ${owl.y} Q ${(owl.x + dx) / 2} ${dy} ${dx} ${dy}`, ...(th.state === 'needs' ? { 'data-lit': '' } : {}) })
+      const n = document.createElement('span'); n.className = 'vnode'; n.dataset.state = th.state
+      if (mirror) n.dataset.mirror = ''
+      Object.assign(n.style, { left: `${dx}px`, top: `${dy}px`, '--w': `${side - 22}px` })
+      n.style.setProperty('--w', `${side - 22}px`)
+      n.innerHTML = '<i></i><span></span>'; n.lastChild.textContent = th.title; parts.push(n)
+    })
+    if (mirror) yL += h + 18; else yR += h + 18
+  })
+  const o = document.createElement('span'); o.className = 'vowl'; Object.assign(o.style, { left: `${owl.x}px`, top: `${owl.y}px` }); o.textContent = '◉'
+  const cap = document.createElement('p'); cap.className = 'cap'
+  cap.textContent = ui.viz === 'column' ? 'The constellation drawn inside the 760 px column; the owls keep the margins.'
+    : ui.viz === 'hide' ? 'The constellation at full width, as merged; the owl scene steps away while Visualize shows.'
+    : 'The constellation at full width, as merged; the owls draw in the margins behind its outer clusters.'
+  viz.replaceChildren(svg, ...parts, o, cap)
+}
+
 let toastTimer = null
 function toast(text) {
   const el = $('toast'); el.textContent = text; el.hidden = false
@@ -562,13 +629,15 @@ function layoutScene() {
   const headH = 48, dockH = 54
   const gut = Math.max(24, (W - 760) / 2)
   const colL = gut, colR = W - gut
-  const mode = gut >= ui.min ? 'scene' : ui.narrow === 'rail' ? 'rail' : 'none'
+  const away = ui.viz === 'hide' && ui.tab === 'visualize'
+  const mode = away ? 'none' : gut >= ui.min ? 'scene' : ui.narrow === 'rail' ? 'rail' : 'none'
   const groundY = comp.y + comp.h * 0.55
   const sky = groundY - headH
   const L = { x0: 6, x1: colL - 14 }, R = { x0: colR + 14, x1: W - 6 }
   const Mw = L.x1 - L.x0
   const s = clamp(Math.min(gut / 225, sky / 330), 0.8, 1.9)
-  const g = { comp, headH, dockH, colL, colR, gut, mode, groundY, sky, L, R, Mw, s, slots: [], marker: null, horizon: groundY - sky * 0.3, groups: {} }
+  room.style.setProperty('--gut-px', `${gut}px`)
+  const g = { comp, headH, dockH, colL, colR, gut, mode, away, groundY, sky, L, R, Mw, s, slots: [], marker: null, horizon: groundY - sky * 0.3, groups: {} }
   if (mode === 'rail') {
     // Each margin keeps a column of owl eyes, the right one first.
     for (const x of [colR + gut / 2, gut / 2]) for (let y = headH + 26; y < H - 14; y += 26) g.slots.push({ x, y, group: 'rail' })
@@ -964,7 +1033,7 @@ function finishAnims(t) {
 const ripples = []
 function moonRipple(t) { ripples.push({ x: geo.moon.x, y: geo.moon.y, t }); if (ripples.length > 24) ripples.shift() }
 room.addEventListener('pointerdown', event => {
-  if (event.target.closest('form, button, .dock, .head, a, input, textarea, .wcard, .viz .node')) return
+  if (event.target.closest('form, button, .dock, .head, a, input, textarea, .wcard, .vnode, .vowl')) return
   const base = room.getBoundingClientRect()
   const x = (event.clientX - base.left) / scale, y = (event.clientY - base.top) / scale
   if (geo.mode !== 'scene' || y < geo.headH || (x > geo.colL - 8 && x < geo.colR + 8)) return
@@ -1059,7 +1128,7 @@ function render(t, dt) {
     }
   }
 
-  let phase = g.mode === 'scene' ? '' : 'hidden (margin too narrow)'
+  let phase = g.mode === 'scene' ? '' : g.away ? 'away while Visualize shows' : 'hidden (margin too narrow)'
   if (g.mode === 'scene') {
     const w = watcherPose(t, dt)
     phase = w.phase
@@ -1248,6 +1317,8 @@ function relayout() {
   reconcile(false)
   buildBackground()
   changed()
+  vizKey = ''
+  renderViz()
   lastSig = ''
   wake()
 }

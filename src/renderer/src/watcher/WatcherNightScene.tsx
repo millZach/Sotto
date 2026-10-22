@@ -1,11 +1,16 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useReducedMotion } from '../state/reducedMotion'
-import { addRipple, frameDelay, frameDue, frameSleep, liveRipples, sceneInk, type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneMeasure } from './nightScene'
+import {
+  addRipple, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState,
+} from './nightScene'
 import { NightScenePainter } from './nightScenePainter'
+import { OwlFamily, type FamilyMotion, type OwlMood, type WatchedOwl } from './owlFamily'
 import { watchResolution } from './watchResolution'
+import type { OpenThread } from './WatcherOverview'
 import './nightScene.css'
 
-/** How long the scene takes to fade once the room has a conversation (nightScene.css). */
+/** How long the scene takes to fade when it steps away, as for Visualize (nightScene.css). */
 export const SCENE_FADE_MS = 700
 
 /** Where a press is a control's, or the composer's or the header's, and sends out no ripple. */
@@ -19,7 +24,7 @@ function relative(box: DOMRect, base: DOMRect, scrollTop: number): Box {
   return { x: box.left - base.left, y: box.top - base.top + scrollTop, w: box.width, h: box.height }
 }
 
-/** What the scene needs to know of Watcher's pane, or null while it has no composer to fly to. */
+/** What the scene needs to know of Watcher's pane, or null while it has no composer to set the column by. */
 export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const form = pane.querySelector<HTMLElement>('.thread-workspace__compose .thread-prompt')
   const compose = form?.closest<HTMLElement>('.thread-workspace__compose')
@@ -31,24 +36,19 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const words: Box[] = []
   const shown = (box: Box): boolean => box.w > 1 && box.h > 1
   const word = (element: Element): void => { const box = at(element); if (shown(box) && element.textContent?.trim()) words.push(box) }
-  // What stands on the composer, such as the handover offer or an error line, is where the owl lands instead.
-  let perchTop = composer.y
-  for (const child of compose.children) {
-    if (child.contains(form)) break
-    const box = at(child)
-    if (shown(box)) { perchTop = Math.min(perchTop, box.y); words.push(box) }
-  }
-  // The header and the needs-you line, the intro's words, and the line under the composer.
+  // The header and the needs-you line, what stands on the composer, and the line under it.
   let header = 0
   for (const band of pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance, .thread-workspace__error)')) {
     const box = at(band)
     header = Math.max(header, box.y + box.h)
     word(band)
   }
-  const intro = pane.querySelector('.watcher-first__intro, .thread-workspace__empty')
-  for (const element of intro?.children ?? []) word(element)
+  for (const child of compose.children) {
+    if (child.contains(form)) break
+    word(child)
+  }
   for (const line of compose.querySelectorAll(':scope > .thread-pane__meta')) word(line)
-  return { width: pane.clientWidth, height: pane.clientHeight, header, composer, perchTop, intro: intro === null ? null : at(intro), words }
+  return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words }
 }
 
 /** A colour as the canvas paints it, whatever form the style gave it in. */
@@ -70,31 +70,58 @@ function surfaceOf(pane: HTMLElement, pixel: CanvasRenderingContext2D): Rgb | nu
   return null
 }
 
+/** Half the tip's widest (nightScene.css), and a little air. */
+const TIP_HALF = 126
+
+/** What a thread owl's tooltip says of its thread. */
+const MOOD_WORDS: Record<OwlMood, string> = { awake: 'Working', waiting: 'Waiting on you. Press to answer.', asleep: 'Not working now' }
+
+/** A perched thread owl's button, or the "+N" pile's. */
+interface Target {
+  readonly key: string
+  readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+  readonly title: string
+  readonly words: string
+  readonly open: { readonly threadId: string; readonly atRequest: boolean } | null
+}
+
 /**
- * Watcher's night scene (Zach's pick on October 21, 2026, variant A of `prototype/watcher-owl-scene`): an ASCII night
- * drawn behind Watcher's room while it is empty, the first time and in an empty conversation. The owl flies its route
- * once when the room opens and perches on the composer's top-right corner; a press in the open background sends out a
- * ripple, and the perched owl looks toward it. Once the room has a conversation the scene fades and stops drawing.
+ * Watcher's night scene, in the room's side margins (Zach's picks on October 21 and 22, 2026, `prototype/watcher-owl-scene`
+ * and `prototype/watcher-owl-family`): an ASCII night beside the column with Watcher's owl in its tree and a thread owl
+ * for each thread Watcher watches. Nothing is drawn in the column, so nothing is drawn behind or over the room's words.
+ * Watcher's owl flies now and then, at random, to the other tree or onto a branch off the composer, and back. A new
+ * watched thread's owl comes out of a whirlpool in the moon, which sends out a ripple; a settled or unwatched thread's
+ * owl flies back into it. A press in the open margin sends out a ripple too, and Watcher's owl looks toward it. Below a
+ * margin of 160 pixels the trees give way to a rail of owl eyes, and without even that room nothing is drawn.
  *
- * It is decoration: two canvases hidden from assistive technology, never focusable and never the target of a press.
- * It draws at about 30 frames a second while something moves, 10 while the owl sits, and not at all when nothing moves,
- * the window is hidden or the scene has gone. With motion reduced, or `held` for a capture, the owl starts on the
- * composer and the scene holds still.
+ * The canvases are decoration, hidden from assistive technology and never pressed. The thread owls' buttons answer the
+ * pointer only: they show the thread's name and open it, as the Watched view does from the keyboard. The scene draws
+ * about 30 frames a second while something flies or fades, checks 8 times a second while it only blinks and twinkles and
+ * paints only when that changed the picture, and draws nothing when nothing moves, the window is hidden or the scene
+ * has gone. With motion reduced, or `held` for a capture, nothing flies: owls appear and fade, and the scene holds still.
  */
-export function WatcherNightScene({ shown, held }: {
-  /** Whether the room is empty, so the scene shows; when it turns false the scene fades and stops. */
+export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: {
+  /** Whether the scene shows: the room is open on Conversation or Watched. When it turns false the scene fades and stops. */
   readonly shown: boolean
   /** A capture's fixed clock: the scene draws its settled picture and holds it. */
   readonly held: boolean
+  /** The threads Watcher watches, one owl each. */
+  readonly owls: readonly WatchedOwl[]
+  readonly onOpen: OpenThread
+  /** The "+N" pile's press: the Watched view, where every watched thread is. */
+  readonly onShowWatched: () => void
 }): ReactNode {
   const reduced = useReducedMotion()
   const still = reduced || held
   const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>(shown ? 'shown' : 'gone')
-  // The flight plays once a room visit: the scene coming back later in the visit finds the owl where its clock has it.
+  const [targets, setTargets] = useState<readonly Target[]>([])
+  const [tip, setTip] = useState<Target | null>(null)
   const origin = useRef<number | null>(null)
   const stillRef = useRef(still)
+  const owlsRef = useRef(owls)
   const leaving = useRef(phase === 'leaving')
   const wakeRef = useRef<() => void>(() => undefined)
+  const takeOwlsRef = useRef<() => void>(() => undefined)
   const back = useRef<HTMLCanvasElement>(null)
   const front = useRef<HTMLCanvasElement>(null)
   const probe = useRef<HTMLElement>(null)
@@ -107,6 +134,7 @@ export function WatcherNightScene({ shown, held }: {
   }, [shown])
   useEffect(() => { leaving.current = phase === 'leaving' }, [phase])
   useEffect(() => { stillRef.current = still; wakeRef.current() }, [still])
+  useEffect(() => { owlsRef.current = owls; takeOwlsRef.current() }, [owls])
 
   const mounted = phase !== 'gone'
   useEffect(() => {
@@ -125,41 +153,86 @@ export function WatcherNightScene({ shown, held }: {
     let layoutRequest: number | null = null
     let measured = ''
     let inked = ''
+    let layout: SceneLayout | null = null
+    let family: OwlFamily | null = null
+    let watcher: WatcherOwlState = { at: 'home', side: 'left', flight: null, next: 0 }
     let ripples: Ripple[] = []
     let look: Look | null = null
     let stage: OwlStage | null = null
+    let targetKey = ''
     /** When the last frame started, and how long after it the next is due; null while nothing moves. */
     let last = Number.NEGATIVE_INFINITY
     let delay: number | null = 0
-    // An end-to-end run counts the frames drawn on the pane, so a test can tell drawing from holding still.
+    // An end-to-end run counts the frames painted on the pane, so a test can tell drawing from holding still.
     let frames = 0
     const counted = window.sottoE2E !== undefined
-    const clock = (): number => origin.current === null ? 0 : (performance.now() - origin.current) / 1000
+    origin.current ??= performance.now()
+    const clock = (): number => (performance.now() - origin.current!) / 1000
+    const motion = (): FamilyMotion => stillRef.current && held ? 'still' : stillRef.current || layout?.mode !== 'trees' ? 'fade' : 'fly'
 
     /** Stops every frame and layout already asked for. */
     const halt = (): void => {
       if (timer !== null) { window.clearTimeout(timer); timer = null }
       if (request !== null) { cancelAnimationFrame(request); request = null }
     }
-    /** The next frame, paced from when the last one started: about 30 a second while something moves, 10 while the owl sits. */
+    /** The next frame, paced from when the last one started. */
     const schedule = (): void => {
       if (delay === null || disposed) return
       const sleep = frameSleep(performance.now(), last, delay)
       if (sleep > 0) timer = window.setTimeout(() => { timer = null; request = requestAnimationFrame(frame) }, sleep)
       else request = requestAnimationFrame(frame)
     }
+    /** Watcher's owl between frames: a finished flight lands, and a due one sets off. */
+    const stepWatcher = (t: number): void => {
+      if (layout?.mode !== 'trees' || stillRef.current) return
+      const flight = watcher.flight
+      if (flight !== null && t >= flight.t0 + flight.dur) watcher = { at: flight.to, side: flight.side, flight: null, next: t + stayAt(flight.to, Math.random()) }
+      if (watcher.flight === null && t >= watcher.next) {
+        const next = planFlight(layout, watcher, nextPlace(watcher.at, Math.random()), t)
+        watcher = { ...watcher, flight: next }
+      }
+    }
+    /** The perched thread owls' buttons, and the pile's, changed only when they move or their words do. */
+    const syncTargets = (t: number): void => {
+      if (family === null) return
+      const poses = family.poses(t)
+      const byKey = new Map(family.owls.map(item => [item.key, item] as const))
+      const next: Target[] = []
+      for (const box of painter.targets(poses, t, stillRef.current)) {
+        const item = byKey.get(box.key)
+        if (item === undefined || item.threadId === null) continue
+        next.push({ key: item.key, box, title: item.title, words: MOOD_WORDS[item.mood], open: { threadId: item.threadId, atRequest: item.mood === 'waiting' } })
+      }
+      const marker = family.marker, count = family.pileCount
+      if (marker !== null && count > 0) {
+        const w = (String(count).length + 1) * 7 + 10
+        const x = Math.max(0, Math.min((layout?.width ?? w) - w, marker.x - w / 2))
+        next.push({ key: 'pile', box: { x, y: marker.y - 16, w, h: 18 }, title: `${count} more`, words: 'Press to see every watched thread on Watched.', open: null })
+      }
+      const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
+      if (key !== targetKey) { targetKey = key; setTargets(next) }
+    }
     const frame = (now: number): void => {
       request = null
-      if (disposed || document.visibilityState === 'hidden' || !painter.ready) return
+      if (disposed || document.visibilityState === 'hidden' || !painter.ready || layout === null || family === null) return
       // Display frames come at the display's own rate; the scene draws only on the ones that are due.
       if (delay === null || !frameDue(now, last, delay)) { if (delay !== null) request = requestAnimationFrame(frame); return }
       last = now
-      const t = clock()
-      ripples = liveRipples(ripples, t, stillRef.current)
-      const drawn = painter.draw(t, ripples, look, stillRef.current)
-      if (counted) pane.dataset.nightSceneFrames = String(++frames)
-      if (drawn.stage !== stage) { stage = drawn.stage; owl.dataset.owl = stage }
-      delay = frameDelay(drawn.stage, ripples.length, stillRef.current)
+      const t = clock(), isStill = stillRef.current
+      family.step(t)
+      stepWatcher(t)
+      ripples = liveRipples(ripples, t, isStill)
+      const trees = layout.mode === 'trees'
+      const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill, look, watch: family.newcomer(t) }) : null
+      const marker = family.marker, count = family.pileCount
+      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: family.poses(t), whirl: family.whirl(t),
+        pile: marker !== null && count > 0 ? { spot: marker, count } : null })
+      if (painted && counted) pane.dataset.nightSceneFrames = String(++frames)
+      const nextStage = owlNow?.stage ?? 'perched'
+      if (nextStage !== stage) { stage = nextStage; owl.dataset.owl = stage }
+      syncTargets(t)
+      const looking = look !== null && t - look.t < 1.8
+      delay = frameDelay(family.moving(t) || owlNow?.stage === 'flying' || looking, ripples.length, isStill)
       schedule()
     }
     /** Draws the next frame now, rather than when the current pace would. */
@@ -171,6 +244,14 @@ export function WatcherNightScene({ shown, held }: {
       if (request === null) request = requestAnimationFrame(frame)
     }
     wakeRef.current = wake
+    /** The room's watched threads as they are now: newcomers come out of the moon, and the moon ripples as they do. */
+    const takeOwls = (): void => {
+      if (disposed || family === null || layout === null) return
+      const t = clock()
+      for (const at of family.update(owlsRef.current, t, motion())) ripples = addRipple(ripples, { x: layout.moon.x, y: layout.moon.y, t: at })
+      wake()
+    }
+    takeOwlsRef.current = takeOwls
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
@@ -191,17 +272,28 @@ export function WatcherNightScene({ shown, held }: {
       if (key === measured) return
       measured = key
       observeParts()
-      if (measure === null || !painter.resize(measure, dpr)) {
-        // Nothing to fly to, such as a first entry whose composer went with the last model: nothing is drawn, and no
-        // frame is asked for, until the room can be measured again.
+      const next = measure === null ? null : painter.resize(measure, dpr)
+      if (next === null) {
+        // No composer to set the column by, such as a first entry whose composer went with the last model: nothing is
+        // drawn, and no frame is asked for, until the room can be measured again.
         painter.invalidate()
         halt()
+        layout = null
         delete owl.dataset.owl
         stage = null
+        targetKey = ''
+        setTargets([])
         return
       }
-      // The clock starts when the scene first has a composer to fly to.
-      origin.current ??= performance.now()
+      const t = clock()
+      layout = next
+      // A new layout ends every flight where it was going.
+      if (watcher.flight !== null) watcher = { at: watcher.flight.to, side: watcher.flight.side, flight: null, next: watcher.next }
+      if (next.mode !== 'trees') watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
+      if (watcher.next === 0) watcher = { ...watcher, next: t + stayAt('home', Math.random()) }
+      ripples = []
+      if (family === null) { family = new OwlFamily(next); family.update(owlsRef.current, t, motion()) }
+      else family.relayout(next, t)
       readInk()
       wake()
     }
@@ -211,9 +303,9 @@ export function WatcherNightScene({ shown, held }: {
     const observeParts = (): void => {
       sizes.disconnect()
       sizes.observe(pane)
-      for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, .watcher-first__intro, .thread-workspace__empty, :scope > .watcher-glance')) sizes.observe(part)
+      for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, :scope > .watcher-glance, :scope > .watcher-head')) sizes.observe(part)
     }
-    // The intro, the composer and what stands on it come and go; typing in the composer is left to the size watch.
+    // The composer and what stands on it come and go; typing in the composer is left to the size watch.
     const parts = new MutationObserver(records => {
       if (records.some(record => !(record.target instanceof Element && record.target.closest('.thread-prompt')))) scheduleLayout()
     })
@@ -227,12 +319,13 @@ export function WatcherNightScene({ shown, held }: {
     // Moving to a display with other scaling changes the pixel ratio but not always the window's size.
     const unwatchResolution = watchResolution(scheduleLayout)
 
-    // A press in the open background sends out a ripple, and the owl looks toward it.
+    // A press in the open margin sends out a ripple, and Watcher's owl looks toward it.
     const press = (event: PointerEvent): void => {
-      if (leaving.current || event.button !== 0 || !painter.ready) return
+      if (leaving.current || event.button !== 0 || !painter.ready || layout === null || layout.mode !== 'trees') return
       if (!(event.target instanceof Element) || event.target.closest(NOT_BACKGROUND) !== null) return
       const base = pane.getBoundingClientRect()
       const x = event.clientX - base.left, y = event.clientY - base.top + pane.scrollTop, t = clock()
+      if (!inMargin(layout, x) || y < layout.header) return
       ripples = addRipple(liveRipples(ripples, t, stillRef.current), { x, y, t })
       look = { x, y, t }
       wake()
@@ -247,6 +340,7 @@ export function WatcherNightScene({ shown, held }: {
     return () => {
       disposed = true
       wakeRef.current = () => undefined
+      takeOwlsRef.current = () => undefined
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
       unwatchResolution()
@@ -254,14 +348,33 @@ export function WatcherNightScene({ shown, held }: {
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', scheduleLayout)
       pane.removeEventListener('pointerdown', press)
+      setTargets([])
+      setTip(null)
     }
-  }, [mounted])
+    // `held` is a capture's, fixed for the room's life.
+  }, [mounted, held])
 
   if (!mounted) return null
   const fading = phase === 'leaving' || undefined
+  // The tip is centred over its owl, held clear of the pane's edges by half its widest.
+  const paneWidth = back.current?.parentElement?.clientWidth ?? Number.POSITIVE_INFINITY
+  const tipStyle = tip === null ? undefined
+    : { left: `${Math.max(TIP_HALF, Math.min(paneWidth - TIP_HALF, tip.box.x + tip.box.w / 2))}px`, top: `${tip.box.y}px` } as CSSProperties
   return <>
     <canvas ref={back} className="watcher-scene watcher-scene--land" data-leaving={fading} aria-hidden="true" />
     <canvas ref={front} className="watcher-scene watcher-scene--owl" data-leaving={fading} aria-hidden="true" />
+    {/* The owls' buttons answer the pointer only; Watched is the keyboard's way to the same threads. */}
+    <div className="watcher-scene watcher-scene--owls" data-leaving={fading} aria-hidden="true">
+      {targets.map(target => <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
+        style={{ left: target.box.x, top: target.box.y, width: target.box.w, height: target.box.h }}
+        onPointerEnter={() => setTip(target)} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
+        onClick={event => {
+          setTip(null)
+          if (target.open === null) { onShowWatched(); return }
+          onOpen(target.open.threadId, { atRequest: target.open.atRequest, inThreads: event.shiftKey, from: event.currentTarget })
+        }} />)}
+    </div>
+    {tip !== null ? <div className="watcher-scene__tip" style={tipStyle} aria-hidden="true"><b>{tip.title}</b><span>{tip.words}</span></div> : null}
     <i ref={probe} className="watcher-scene__ink" aria-hidden="true" />
   </>
 }

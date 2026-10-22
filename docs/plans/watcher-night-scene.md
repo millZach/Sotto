@@ -1,5 +1,7 @@
 # Watcher's night scene
 
+> **Moved into the margins.** On October 22, 2026 the scene left the empty room for the side margins of every Watcher view but Visualize, gained a thread owl for each watched thread, and lost the one-time flight: see `docs/plans/watcher-owl-family.md`. What follows is the October 21 build, kept for its reasons; where the two disagree, the newer plan wins.
+
 An ASCII night behind Watcher's room while the room is empty, with an owl that flies once and perches on the composer. The prototype is kept at the tag `prototype/watcher-owl-scene` (`docs/prototypes/watcher-owl-scene-prototype.html` there); its variant A is the spec. The glossary calls it the **night scene**, since Owl already names the release track.
 
 ## Zach's picks, October 21, 2026
