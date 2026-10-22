@@ -31,7 +31,7 @@
 /* ---------- Watching a thread ---------- */
 /* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. Narrow panes keep the owl.
    The lit fill is the accent mixed into the surface under it, so it is solid and its text is measured against what shows. */
-.watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px;
+.watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
@@ -43,7 +43,7 @@
 .watcher-row:has(> .watcher-row__watch) { grid-template-columns: 10px minmax(0, 1fr) auto 30px; }
 .watcher-row:has(> .watcher-row__watch) > :is(.watcher-row__meta, .watcher-row__asks) { grid-column: 2 / 4; }
 .watcher-row__watch { position: relative; z-index: 1; grid-column: 4; grid-row: 1 / span 2; display: grid; place-items: center; width: 30px; height: 30px; padding: 0;
-  border: 1px solid var(--tt-field-border); border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+  border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .watcher-row__watch:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-row__watch[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-surface-elevated)); color: var(--tt-accent-text); }
 
@@ -58,7 +58,7 @@
 .watch-toast strong { color: var(--tt-text); font-weight: 600; }
 .watch-toast[data-tone='refused'] { border-color: var(--tt-warning); }
 .watch-toast[data-tone='refused'] > .watcher-owl { color: var(--tt-warning-text); }
-.watch-toast__undo { flex: none; height: 26px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.watch-toast__undo { flex: none; height: 26px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; }
 .watch-toast__undo:hover { background: var(--tt-hover); }
 .watch-toast__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .watch-toast__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
@@ -215,7 +215,7 @@
 .watcher-context__figure b { font-size: 22px; font-weight: 600; letter-spacing: -.4px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .watcher-context__figure b[data-near] { color: var(--watcher-needs-ink); }
 .watcher-context__figure span { color: var(--tt-text-muted); font-size: 12.5px; }
-.watcher-context__meter { position: relative; height: 4px; margin: 0 0 10px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--tt-text) 14%, transparent); }
+.watcher-context__meter { position: relative; height: 4px; margin: 0 0 10px; overflow: hidden; border-radius: 2px; background: color-mix(in srgb, var(--tt-text) 14%, transparent); }
 .watcher-context__said { margin: 10px 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
 .watcher-context__actions { display: flex; margin: 0 0 12px; }
 .watcher-context__actions .tt-button { gap: 6px; }
@@ -251,10 +251,10 @@
 /* ---------- The floating switch ---------- */
 /* History, Settings and Help, the switch, and the update control, in a pill centred in the band under the room. */
 .watcher-dock { grid-row: 2; display: flex; justify-content: center; align-items: flex-start; min-width: 0; padding: 2px 8px 0; }
-.watcher-dock__pill { display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); -webkit-app-region: no-drag; }
-.watcher-dock__pill .thread-nav__page { border-radius: 50%; }
-.watcher-dock__switch { width: 236px; border-radius: 999px; }
-.watcher-dock__switch.thread-nav__seg button { height: 30px; padding: 0 8px; border-radius: 999px; }
+.watcher-dock__pill { display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); -webkit-app-region: no-drag; }
+.watcher-dock__pill .thread-nav__page { border-radius: 6px; }
+.watcher-dock__switch { width: 236px; }
+.watcher-dock__switch.thread-nav__seg button { height: 30px; padding: 0 8px; }
 .watcher-dock__sep { flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
 
 /* ---------- The Overview over the room ---------- */
@@ -303,7 +303,7 @@
 .watcher-row__asks { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .watcher-row__asks > span { min-width: 0; }
 /* Open to answer sits over the row's own press, so it is the one that answers there. */
-.watcher-answer { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 55%, transparent); border-radius: 999px; background: transparent; color: var(--watcher-needs-ink); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.watcher-answer { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 55%, transparent); border-radius: 6px; background: transparent; color: var(--watcher-needs-ink); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .watcher-answer:hover { border-color: var(--watcher-needs-ink); background: var(--tt-warning-surface); }
 
 /* Rings, after the sidebar's: the Overview adds failed, ready, landing and quiet. */
@@ -340,7 +340,7 @@
 .watcher-watched { display: flex; flex-direction: column; }
 .watcher-watched__lead { display: flex; align-items: center; gap: 8px 18px; margin: 0 0 8px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
 .watcher-watched__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
-.watcher-watched__add { display: inline-flex; flex: none; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-watched__add { display: inline-flex; flex: none; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; cursor: pointer; }
 .watcher-watched__add:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); }
 .watcher-watched__label { display: flex; align-items: center; gap: 8px; margin: 12px 0 7px; color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
 .watcher-watched__label > .watcher-group__count { margin-left: 0; }
@@ -357,7 +357,7 @@
 .watched-card__open:focus-visible { outline: 0; box-shadow: none; }
 .watched-card__open:focus-visible::after { outline: 3px solid var(--tt-focus-ring); outline-offset: -1px; }
 .watched-card__actions { position: relative; z-index: 1; grid-column: 3; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.watched-card__stop { display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.watched-card__stop { display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .watched-card__stop:hover { border-color: var(--tt-border); background: var(--tt-hover); }
 .watched-card__meta { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
 .watched-card__meta .watcher-row__marks .thread-nav__mark { width: 13px; height: 13px; }
@@ -421,7 +421,7 @@
   color: var(--tt-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .watcher-handover .watcher-handover__text { margin-left: 23px; }
 /* The send button says what a press does while the handover is offered. */
-.thread-prompt__actions > .thread-prompt__send[data-wide] { gap: 5px; width: auto; padding: 0 9px 0 12px; border-radius: var(--tt-radius-pill); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.thread-prompt__actions > .thread-prompt__send[data-wide] { gap: 5px; width: auto; padding: 0 9px 0 12px; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 /* In the conversation: Sotto's, on the user's side and edged in the accent, as a wake-up is; then the user's own words. */
 .watcher-handover-message { margin-bottom: 10px; }
 .watcher-handover-message__lead { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.55; }
@@ -492,7 +492,7 @@
 .watcher-ask__provider .thread-nav__mark { width: 12px; height: 12px; }
 .watcher-ask__machine[data-kind='remote'] > svg { color: var(--tt-accent-text); }
 .watcher-ask__kind { color: var(--watcher-needs-ink); }
-.watcher-ask__open { display: inline-flex; flex: none; align-items: center; min-height: 24px; margin-left: auto; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.watcher-ask__open { display: inline-flex; flex: none; align-items: center; min-height: 24px; margin-left: auto; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .watcher-ask__open:hover { border-color: var(--tt-border); color: var(--tt-text); }
 .watcher-ask__said { padding-left: 16px; }
 .watcher-ask__toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
@@ -510,7 +510,7 @@
 /* At the end of Watcher's header, only while threads Watcher started are running: a quiet pill like
    Watch, whose stop square takes the error ink only on hover, since a press asks first. Narrow panes keep the square. */
 .watcher-stop-all { position: relative; display: flex; }
-.watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px;
+.watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .watcher-stop-all__button:hover, .watcher-stop-all__button[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-stop-all__button:hover > svg, .watcher-stop-all__button[aria-expanded='true'] > svg { color: var(--tt-error-text); }

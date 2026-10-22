@@ -141,10 +141,13 @@ describe('Sotto design-system primitives', () => {
     for (const token of [
       'canvas', 'surface', 'surface-elevated', 'text', 'text-2', 'text-muted', 'border', 'hairline', 'pill', 'pill-ink',
       'primary', 'primary-hover', 'activity', 'success', 'warning', 'error',
-      'error-contrast', 'focus-ring', 'shadow-sm', 'shadow-lg', 'radius-sm', 'radius-md', 'radius-lg', 'radius-pill',
+      'error-contrast', 'focus-ring', 'shadow-sm', 'shadow-lg', 'radius-sm', 'radius-md', 'radius-lg',
+      'card', 'card-inset', 'card-selected', 'segment-on',
     ]) {
       expect(tokensCss).toContain(`--tt-${token}:`)
     }
+    // No control is a pill (ADR-0107), so there is no pill radius to reach for.
+    expect(tokensCss).not.toContain('--tt-radius-pill')
     // Every room colour comes from the active theme's roles (ADR-0011).
     expect(tokensCss).toContain('--tt-canvas: var(--theme-canvas);')
     expect(tokensCss).toContain('color-scheme: dark;')

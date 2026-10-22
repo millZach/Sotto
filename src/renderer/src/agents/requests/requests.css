@@ -3,7 +3,7 @@
 .agent-request[data-uncertain] { border-left-color: var(--tt-warning); }
 .agent-request__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
 .agent-request__head strong { font-size: 15px; font-weight: 600; letter-spacing: -.1px; overflow-wrap: anywhere; }
-.agent-request__tag { display: inline-block; padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 12px; line-height: 18px; font-weight: 500; }
+.agent-request__tag { display: inline-block; padding: 1px 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 12px; line-height: 18px; font-weight: 500; }
 .agent-request__text { margin: 0; font-size: 16px; line-height: 1.55; color: var(--tt-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-request__command, .agent-request__details { margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); color: var(--tt-code-text); font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-request__details { color: var(--tt-text-2); }

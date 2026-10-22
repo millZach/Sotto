@@ -41,7 +41,7 @@
 }
 
 .dictate__bar .voice-wave { flex: none; }
-.dictate__bar .voice-wave__bar { border-radius: var(--tt-radius-pill); }
+.dictate__bar .voice-wave__bar { border-radius: 2px; }
 .dictate__bar .voice-wave--listening { width: 52px; }
 
 .dictate__words { flex: 1 1 200px; min-width: 0; }
@@ -96,7 +96,7 @@
 .dictate__actions .tt-button--primary {
   min-height: 38px;
   padding: 0 18px;
-  border-radius: var(--tt-radius-pill);
+  border-radius: 6px;
   font-weight: 600;
 }
 
@@ -169,7 +169,7 @@
   height: 34px;
   padding: 0 34px;
   border: 1px solid var(--tt-field-border);
-  border-radius: 9px;
+  border-radius: 6px;
   background: var(--tt-field);
   color: var(--tt-text);
   font: inherit;
@@ -208,7 +208,7 @@
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-pill);
+  border-radius: 5px;
   background: transparent;
   color: var(--tt-text-muted);
   font: inherit;

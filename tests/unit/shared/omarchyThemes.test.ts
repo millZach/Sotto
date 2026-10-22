@@ -168,10 +168,12 @@ describe('Omarchy M3 and readability check', () => {
     // must never change Windows/macOS palettes. They last changed on purpose for
     // #936, which needed new design baselines on Windows. The token file last changed when glass turned solid and
     // the frost tokens went (ADR-0084), then when OpenCode's mark got its own token (ADR-0087), and then when Usage's
-    // split chart got its series colours (ADR-0083); none of them changes a palette.
+    // split chart got its series colours (ADR-0083), and then when containers became cards, the segmented controls got
+    // their raised segment, the pill radius went and three chart series moved a step (ADR-0107); none of them changes a
+    // palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('a1414caace8dedc6e411dba5316c05d85aa8580f93896bc85b56fe8d7f1468f5')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('e880d16cf4ab0292299576e6df06925d1318e2b0659ec753eb3e2197a146b1ac')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

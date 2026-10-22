@@ -74,7 +74,7 @@
 
 /* A host's client updates (#480): the chip beside Show providers, and what a tile says about its client's update. */
 .host-providers__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; justify-self: start; min-width: 0; }
-.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: var(--tt-radius-pill); background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; cursor: pointer; }
+.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: 5px; background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; cursor: pointer; }
 .host-client-updates__chip:hover, .host-client-updates__chip[aria-expanded='true'] { border-color: var(--tt-update); }
 .host-client-updates__chip[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
 .host-client-updates__chip[data-tone='error']:hover, .host-client-updates__chip[data-tone='error'][aria-expanded='true'] { border-color: var(--tt-error); }

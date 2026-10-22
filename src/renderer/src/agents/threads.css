@@ -34,8 +34,8 @@
 .thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 12px; }
-.thread-workspace__tag[data-tone='warning'] { border-color: color-mix(in srgb, var(--threads-warning-text) 45%, transparent); color: var(--threads-warning-text); }
+.thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 12px; }
+.thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
 .thread-workspace__head h2:has(input) { flex: 1 1 220px; }
 .thread-workspace__head h2 > input { width: 100%; }
@@ -69,7 +69,7 @@
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 13px; }
-.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 999px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); }
+.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
 /*
  * A long thread is mostly out of view. Its messages, folded work and activity skip layout and paint until the
@@ -117,7 +117,7 @@
 .thread-message[data-from='sotto'] { border-color: var(--tt-accent-border); }
 .thread-message[data-from='sotto'] .thread-message__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); }
 .thread-message__mark { flex: none; width: 16px; height: 16px; }
-.thread-message__tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 11.5px; line-height: 18px; }
+.thread-message__tag { padding: 0 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 11.5px; line-height: 18px; }
 .thread-message--pending[data-status='failed'], .thread-message--pending[data-status='uncertain'] { border-color: color-mix(in srgb, var(--threads-warning-text) 40%, var(--tt-hairline)); }
 .thread-message__status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
 .thread-message__status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -184,7 +184,7 @@
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
 /* One 28px disc at the end of the row: an arrow sends, a list-plus queues, a square stops. The full name lives in the
    label and the title, so Queue prompt is never called Send. */
-.thread-prompt__actions > .thread-prompt__send, .thread-prompt__actions > .thread-prompt__stop { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: var(--tt-activity); color: var(--threads-on-accent); }
+.thread-prompt__actions > .thread-prompt__send, .thread-prompt__actions > .thread-prompt__stop { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: var(--tt-activity); color: var(--threads-on-accent); }
 .thread-prompt__actions > .thread-prompt__send:hover:not(:disabled), .thread-prompt__actions > .thread-prompt__stop:hover:not(:disabled) { border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); filter: brightness(1.08); }
 .thread-prompt__actions > .thread-prompt__send:active:not(:disabled), .thread-prompt__actions > .thread-prompt__stop:active:not(:disabled) { background: var(--tt-activity); filter: brightness(.94); }
 .thread-prompt__actions > .thread-prompt__send:disabled, .thread-prompt__actions > .thread-prompt__stop:disabled { opacity: .45; }

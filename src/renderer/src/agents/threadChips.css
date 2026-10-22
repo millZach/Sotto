@@ -1,10 +1,13 @@
 /* The composer's option chips: the model with its provider's mark, the reasoning effort and the permissions. Each is one
-   bordered pill that opens its own list above the composer, so the typed text and the send disc stay where they were. */
+   filled chip with 5px corners (ADR-0107) that opens its own list above the composer, so the typed text and the send
+   button stay where they were. On the composer's card a chip sits on the card's inset. */
 .thread-options--chips { gap: 6px; }
-.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: light-dark(var(--tt-surface-overlay), var(--tt-surface-sunken)); color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.thread-prompt .thread-chip { background: var(--tt-card-inset); }
 .thread-chip > span { overflow: hidden; text-overflow: ellipsis; }
 .thread-chip > svg { flex: none; }
-.thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+/* The hover tint lies over the chip's own fill, whichever surface that is. */
+.thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); color: var(--tt-text); }
 .thread-chip:disabled { opacity: .55; cursor: default; }
 /* At the model's highest level the effort chip's word wears the colourway; the composer reads the same mark for its outline (ADR-0019). */
 .thread-chip[data-effort-top='true'] > span { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
@@ -29,7 +32,7 @@
 .thread-prompt > .thread-options-notices, .thread-workspace__compose .agent-composer > .thread-options-notices { grid-column: 2; }
 .thread-options__notice { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--threads-warning-text, var(--tt-error-text)); font-size: 12.5px; line-height: 1.4; }
 .thread-options__notice > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.thread-options__notice > button { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.thread-options__notice > button { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .thread-options__notice > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .thread-options__notice > button:disabled { opacity: .55; cursor: default; }
 

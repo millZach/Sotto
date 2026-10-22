@@ -71,7 +71,7 @@
 .composer-picker__name { max-width: 30ch; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .composer-picker__name > svg { width: 14px; height: 14px; margin-right: 7px; color: var(--tt-accent-text); vertical-align: -2px; }
 .composer-picker__description { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.composer-picker__scope { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
+.composer-picker__scope { padding: 1px 7px; border: 1px solid transparent; border-radius: 5px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
 .composer-picker__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-top: 2px; padding: 2px 0 0 8px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
 .composer-picker__notes { display: flex; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
 .composer-picker__notes [data-tone='warning'] { color: var(--threads-warning-text); }

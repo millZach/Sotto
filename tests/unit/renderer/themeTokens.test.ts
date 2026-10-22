@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { EFFORT_COLORS } from '../../../src/shared/settings'
@@ -327,6 +327,16 @@ describe('main-window theme tokens', () => {
       const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
       expect(css.match(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/giu) ?? [], path).toEqual([])
       expect(css, `${path} must read tokens instead of branching on the theme`).not.toMatch(/data-theme|data-accent|prefers-color-scheme/u)
+    }
+  })
+
+  it('draws no pill: every renderer stylesheet rounds its corners by a few pixels, and only dots are circles (ADR-0107)', () => {
+    const root = join(process.cwd(), 'src/renderer/src')
+    const sheets = (readdirSync(root, { recursive: true }) as string[]).filter(name => name.endsWith('.css')).map(name => join(root, name))
+    expect(sheets.length).toBeGreaterThan(60)
+    for (const path of sheets) {
+      const css = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+      expect(css.match(/\b9{3,}px|--tt-radius-pill/gu) ?? [], relative(process.cwd(), path)).toEqual([])
     }
   })
 })

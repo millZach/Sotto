@@ -111,7 +111,7 @@ h1[tabindex='-1']:focus {
 
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
-  border-radius: 999px;
+  border-radius: 3px;
   background: color-mix(in srgb, var(--tt-border) 55%, transparent);
   background-clip: content-box;
 }
@@ -154,18 +154,19 @@ h1[tabindex='-1']:focus {
 
 /* ---- controls ---- */
 
-/* Pills. The primary action is white ink on the room; everything else is a
-   quiet pill: a hairline that firms up on hover, no fill. */
+/* Buttons are soft squares with 6px corners, never pills (ADR-0107). The primary action
+   is the text colour's plate on the room; every other button is the surface inside an
+   edge in the field-border role that firms up on hover. */
 .tt-button {
   display: inline-flex;
   min-height: 34px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-pill);
+  border: 1px solid var(--tt-field-border);
+  border-radius: 6px;
   padding: 0 14px;
-  background: transparent;
+  background: var(--tt-surface);
   color: var(--tt-text-2);
   cursor: pointer;
   font-size: 13.5px;
@@ -222,6 +223,7 @@ h1[tabindex='-1']:focus {
    inside the confirmation dialog, does get the solid plate. */
 .tt-button--danger {
   border-color: transparent;
+  background: transparent;
   color: var(--tt-error);
 }
 
@@ -284,7 +286,7 @@ h1[tabindex='-1']:focus {
   width: 100%;
   min-height: 30px;
   border: 1px solid var(--tt-border-faint);
-  border-radius: var(--tt-radius-md);
+  border-radius: 6px;
   background: var(--tt-surface-sunken);
   padding: 4px 12px;
   color: var(--tt-text);
@@ -382,7 +384,7 @@ textarea.tt-input {
   flex: 0 0 auto;
   margin-top: 1px;
   border: 1px solid var(--tt-border);
-  border-radius: var(--tt-radius-pill);
+  border-radius: 5px;
   background: var(--tt-surface-sunken);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -393,7 +395,7 @@ textarea.tt-input {
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 3px;
   background: var(--tt-text-muted);
   transition: transform 120ms ease, background-color 120ms ease;
 }
@@ -627,7 +629,7 @@ textarea.tt-input {
 .onboarding-progress__bars i {
   flex: 1 1 0;
   height: 2px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--tt-border) 45%, transparent);
   transition: background-color 200ms ease;
 }
@@ -823,7 +825,7 @@ textarea.tt-input {
   height: 32px;
   flex: none;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--tt-success) 18%, transparent);
   color: var(--tt-success);
 }
@@ -1189,14 +1191,14 @@ textarea.tt-input {
   height: 24px;
 }
 
-/* The switch: two tabs in one pill-shaped track, the selected one filled. */
+/* The switch: two tabs in one sunken track, the selected one raised out of it. */
 .app-switch {
   -webkit-app-region: no-drag;
   display: inline-flex;
-  border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-pill);
-  background: var(--tt-track);
-  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--tt-surface-sunken);
+  padding: 3px;
 }
 
 .app-switch__tab {
@@ -1206,7 +1208,7 @@ textarea.tt-input {
   align-items: center;
   gap: 9px;
   border: 0;
-  border-radius: var(--tt-radius-pill);
+  border-radius: 4px;
   padding: 0 16px 0 12px;
   background: transparent;
   color: var(--tt-text-2);
@@ -1221,17 +1223,18 @@ textarea.tt-input {
 }
 
 .app-switch__tab[aria-selected='true'] {
-  background: var(--tt-pill);
-  color: var(--tt-pill-ink);
+  background: var(--tt-segment-on);
+  color: var(--tt-text);
+  box-shadow: var(--tt-shadow-sm);
 }
 
-/* The ring sits inside the tab so it never crosses the neighbouring pill. */
+/* The ring sits inside the tab so it never crosses the neighbouring tab. */
 .app-switch__tab:focus-visible {
   outline-offset: -3px;
 }
 
 .app-switch .voice-wave__bar {
-  border-radius: var(--tt-radius-pill);
+  border-radius: 2px;
   background: currentColor;
 }
 
@@ -1360,7 +1363,7 @@ textarea.tt-input {
   height: 30px;
   place-items: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 6px;
   background: transparent;
   color: var(--tt-text-faint);
   cursor: pointer;
@@ -1423,7 +1426,7 @@ textarea.tt-input {
   width: 10px;
   height: 10px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 4px;
   background: currentColor;
   box-shadow: 0 0 0 2px var(--tt-surface);
 }

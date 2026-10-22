@@ -109,7 +109,7 @@
   height: 30px;
   padding: 0 12px 0 10px;
   border: 1px solid var(--tt-border);
-  border-radius: var(--tt-radius-pill);
+  border-radius: 6px;
   background: var(--tt-surface-elevated);
   box-shadow: var(--tt-shadow-lg);
   color: var(--tt-text);
