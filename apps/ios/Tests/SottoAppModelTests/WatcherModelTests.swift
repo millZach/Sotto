@@ -1469,6 +1469,25 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(hidden, 0, accuracy: 0.0001)
     }
 
+    /// The box puts Watcher's permission chip away only for a held card that can't sit whole above it with the chip there.
+    /// A card that fits keeps the chip, and the room is the one with the chip in place, so putting it away never brings it
+    /// back.
+    func testThePermissionChipIsPutAwayOnlyForACardTooTallToFitOverIt() {
+        // An iPhone SE: the header ends at 146, and the box with the chip over it starts at 460, 314 points of room. The
+        // chip and its spacing take 52 points of the box.
+        let question = CGRect(x: 16, y: 146, width: 343, height: 348)
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, top: 146, dockTopWithChip: 460),
+                      "A question with its answers is taller than the room with the chip, so the chip goes")
+        // With the chip away the box starts at 512, but the room is still worked out with the chip in place.
+        XCTAssertTrue(WatcherReaderPlace.putsChipAway(card: question, top: 146, dockTopWithChip: 512 - 52),
+                      "Putting the chip away leaves the decision where it was")
+        let own = CGRect(x: 16, y: 200, width: 343, height: 220)
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: own, top: 146, dockTopWithChip: 460),
+                       "Watcher's own card fits whole above the box, so the chip stays")
+        XCTAssertFalse(WatcherReaderPlace.putsChipAway(card: CGRect(x: 16, y: 146, width: 343, height: 314.5), top: 146,
+                                                       dockTopWithChip: 460), "A card as tall as the room fits")
+    }
+
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {
         XCTAssertEqual(WatcherPermissions.modes.map(WatcherPermissions.name), ["Ask before actions", "Allow edits", "Allow actions", "Full access"])
         XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", computer: "Laptop"), "Codex decides what to ask you about.")
