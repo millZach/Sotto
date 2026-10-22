@@ -431,7 +431,8 @@ export class NightScenePainter {
   /** What the frame would show, summed up: the same summary means the same picture, so it is not painted again. */
   private summary(frame: SceneFrame, owlLines: readonly (readonly string[])[]): string {
     const { t, still } = frame, { cw, ch } = this.grid
-    const parts: Array<string | number> = [twinkleStep(t, still)]
+    // Only the trees have stars, so only they change with the twinkle's step.
+    const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0]
     if (frame.whirl > 0.01 || runningRipples(frame.ripples, t) > 0) parts.push('m', Math.round(t * 30))
     const w = frame.watcher?.pose
     if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10))

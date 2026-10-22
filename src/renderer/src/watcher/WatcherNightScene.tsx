@@ -72,6 +72,8 @@ function surfaceOf(pane: HTMLElement, pixel: CanvasRenderingContext2D): Rgb | nu
 
 /** Half the tip's widest (nightScene.css), and a little air. */
 const TIP_HALF = 126
+/** The tip's height with its two lines (nightScene.css). */
+const TIP_HEIGHT = 44
 
 /** What a thread owl's tooltip says of its thread. */
 const MOOD_WORDS: Record<OwlMood, string> = { awake: 'Working', waiting: 'Waiting on you. Press to answer.', asleep: 'Not working now' }
@@ -83,6 +85,8 @@ interface Target {
   readonly title: string
   readonly words: string
   readonly open: { readonly threadId: string; readonly atRequest: boolean } | null
+  /** Too near the header for the tip to fit above it, so the tip opens below. */
+  readonly below: boolean
 }
 
 /**
@@ -125,6 +129,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   const leaving = useRef(phase === 'leaving')
   const wakeRef = useRef<() => void>(() => undefined)
   const takeOwlsRef = useRef<() => void>(() => undefined)
+  const settleRef = useRef<() => void>(() => undefined)
   const back = useRef<HTMLCanvasElement>(null)
   const front = useRef<HTMLCanvasElement>(null)
   const probe = useRef<HTMLElement>(null)
@@ -136,8 +141,10 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     return () => window.clearTimeout(timer)
   }, [shown])
   useEffect(() => { leaving.current = phase === 'leaving' }, [phase])
-  useEffect(() => { stillRef.current = still; wakeRef.current() }, [still])
+  useEffect(() => { stillRef.current = still; settleRef.current(); wakeRef.current() }, [still])
   useEffect(() => { owlsRef.current = owls; takeOwlsRef.current() }, [owls])
+  // A tip goes with its owl when the owl leaves, and takes the owl's new words and place while it stays.
+  useEffect(() => { setTip(current => current === null ? null : targets.find(target => target.key === current.key) ?? null) }, [targets])
   // A tip that is showing answers Escape, as everything that opens does.
   useEffect(() => {
     if (tip === null) return
@@ -202,6 +209,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
         watcher = { ...watcher, flight: next }
       }
     }
+    const tipBelow = (top: number): boolean => top - TIP_HEIGHT - 6 < (layout?.header ?? 0)
     /** The perched thread owls' buttons, and the pile's, changed only when they move or their words do. */
     const syncTargets = (t: number, poses: readonly ThreadOwlPose[], pile: SceneFrame['pile']): void => {
       if (family === null) return
@@ -210,12 +218,12 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       for (const box of painter.targets(poses, t, stillRef.current)) {
         const item = byKey.get(box.key)
         if (item === undefined || item.threadId === null) continue
-        next.push({ key: item.key, box, title: item.title, words: MOOD_WORDS[item.mood], open: { threadId: item.threadId, atRequest: item.mood === 'waiting' } })
+        next.push({ key: item.key, box, title: item.title, words: MOOD_WORDS[item.mood], open: { threadId: item.threadId, atRequest: item.mood === 'waiting' }, below: tipBelow(box.y) })
       }
       if (pile !== null) {
         const w = pileLabel(pile.count, layout?.mode === 'rail').length * 7 + 10
         const x = Math.max(0, Math.min((layout?.width ?? w) - w, pile.spot.x - w / 2))
-        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: `${pile.count} more`, words: 'Press to see every watched thread on Watched.', open: null })
+        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: `${pile.count} more`, words: 'Press to see every watched thread on Watched.', open: null, below: tipBelow(pile.spot.y - 16) })
       }
       const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
       if (key !== targetKey) { targetKey = key; setTargets(next) }
@@ -240,7 +248,9 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       if (nextStage !== stage) { stage = nextStage; owl.dataset.owl = stage }
       syncTargets(t, poses, pile)
       const looking = look !== null && t - look.t < 1.8
-      delay = frameDelay(family.moving(t) || owlNow?.stage === 'flying' || looking, ripples.length, isStill)
+      // At rest only the trees' stars and owls, or the rail's waking and glowing eyes, change; with neither, nothing waits.
+      const restless = layout.mode === 'trees' || (layout.mode === 'rail' && family.owls.some(item => item.mood !== 'asleep'))
+      delay = frameDelay(family.moving(t) || owlNow?.stage === 'flying' || looking, ripples.length, isStill || !restless)
       schedule()
     }
     /** Draws the next frame now, rather than when the current pace would. */
@@ -260,6 +270,16 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       wake()
     }
     takeOwlsRef.current = takeOwls
+    /** Motion reduced or restored: every flight ends where it was going, and owls come and go the new way from now. */
+    const settle = (): void => {
+      if (disposed || family === null || layout === null) return
+      const t = clock()
+      family.relayout(layout, t)
+      if (watcher.flight !== null) watcher = { at: watcher.flight.to, side: watcher.flight.side, flight: null, next: t + stayAt(watcher.flight.to, Math.random()) }
+      ripples = []
+      takeOwls()
+    }
+    settleRef.current = settle
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
@@ -355,6 +375,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       kept.current = { family, watcher }
       wakeRef.current = () => undefined
       takeOwlsRef.current = () => undefined
+      settleRef.current = () => undefined
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
       unwatchResolution()
@@ -373,7 +394,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   // The tip is centred over its owl, held clear of the pane's edges by half its widest.
   const paneWidth = back.current?.parentElement?.clientWidth ?? Number.POSITIVE_INFINITY
   const tipStyle = tip === null ? undefined
-    : { left: `${Math.max(TIP_HALF, Math.min(paneWidth - TIP_HALF, tip.box.x + tip.box.w / 2))}px`, top: `${tip.box.y}px` } as CSSProperties
+    : { left: `${Math.max(TIP_HALF, Math.min(paneWidth - TIP_HALF, tip.box.x + tip.box.w / 2))}px`, top: `${tip.below ? tip.box.y + tip.box.h : tip.box.y}px` } as CSSProperties
   return <>
     <canvas ref={back} className="watcher-scene watcher-scene--land" data-leaving={fading} aria-hidden="true" />
     <canvas ref={front} className="watcher-scene watcher-scene--owl" data-leaving={fading} aria-hidden="true" />
@@ -389,7 +410,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
           onOpen(target.open.threadId, { atRequest: target.open.atRequest, inThreads: event.shiftKey, from: event.currentTarget })
         }} />)}
     </div>
-    {tip !== null ? <div className="watcher-scene__tip" style={tipStyle} aria-hidden="true"><b>{tip.title}</b><span>{tip.words}</span></div> : null}
+    {tip !== null ? <div className="watcher-scene__tip" data-below={tip.below || undefined} style={tipStyle} aria-hidden="true"><b>{tip.title}</b><span>{tip.words}</span></div> : null}
     <i ref={probe} className="watcher-scene__ink" aria-hidden="true" />
   </>
 }
