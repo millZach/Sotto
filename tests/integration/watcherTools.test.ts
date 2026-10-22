@@ -1862,6 +1862,8 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   if (read.status !== 'ok') throw new Error('read refused')
   // The draft passed first but is not queued; the rest go in the order their checks passed.
   expect(read.mergeQueue.map(item => [item.target.threadId, item.pullRequest.number])).toEqual([[second.target.threadId, 7], [first.target.threadId, 5]])
+  // Watcher's picture reads the same queue, worked out without building the room (#1339).
+  expect(f.service.readMergeTurns()).toEqual({ status: 'ok', queue: read.mergeQueue, turns: [] })
   expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
     expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' })])
   expect(read.staleNotes).toEqual([

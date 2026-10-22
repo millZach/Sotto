@@ -41,8 +41,10 @@ export interface PictureNode {
   readonly provider: string | undefined
   readonly project: string
   readonly computer: string
-  /** Its open pull request, or else the one it merged last; null when it has none. */
+  /** Its open pull request with the lowest number, or else the one it merged last: its line's chip. Null when it has none. */
   readonly pullRequest: PicturePullRequest | null
+  /** Every pull request it has, open ones first by number, then the rest newest first: its card and the merge turns. */
+  readonly pullRequests: readonly PicturePullRequest[]
 }
 export interface PictureCluster {
   readonly key: string
@@ -140,24 +142,37 @@ export function buildPicture(input: {
     const group = entry?.overview.group ?? 'Idle'
     const tone = TONES[group] as PictureTone
     const failed = thread !== undefined && (thread.status === 'error' || thread.lastTurn?.status === 'failed')
-    // The checks GitHub last reported for each of its pull requests, and when Sotto saw one merge.
-    const checks = new Map<number, PictureChecks>()
+    // What GitHub last reported of each of its pull requests: its checks, its state, and when Sotto first saw one merged.
+    const checks = new Map<number, PictureChecks>(), said = new Map<number, { state: 'open' | 'closed' | 'merged'; at: number }>()
     for (const fact of row.evidence ?? []) {
       const number = fact.source === 'github' ? pullNumber(fact.url) : undefined
       if (number === undefined) continue
+      const at = Date.parse(fact.observedAt)
       if (fact.checksState !== undefined) checks.set(number, fact.checksState)
-      if (fact.pullRequestState === 'merged' || fact.fact === 'merge-observed') mergedAt.set(`${key}#${number}`, Date.parse(fact.observedAt))
+      const stateSaid = fact.fact === 'merge-observed' ? 'merged' : fact.pullRequestState
+      if (stateSaid !== undefined && at >= (said.get(number)?.at ?? -Infinity)) said.set(number, { state: stateSaid, at })
+      if (stateSaid === 'merged' && at < (mergedAt.get(`${key}#${number}`) ?? Infinity)) mergedAt.set(`${key}#${number}`, at)
     }
-    const prs = pullRequestsOf(thread)
-    const open = prs.filter(pr => pr.state === 'open').sort((a, b) => a.number - b.number)[0]
-    const merged = prs.filter(pr => pr.state === 'merged').sort((a, b) => b.number - a.number)[0]
-    const shown = open ?? merged
-    const turnKey = shown === undefined ? '' : `${key}#${shown.number}`
-    const step: MergeStep | null = shown === undefined ? null : shown.state === 'merged' ? 'merged' : goes.has(turnKey) ? 'go' : queued.has(turnKey) ? 'ready' : null
-    if (shown?.state === 'merged' && !mergedAt.has(turnKey)) {
-      const turn = goes.get(turnKey)
-      if (turn !== undefined) mergedAt.set(turnKey, Date.parse(turn.at))
+    // Its own links and what GitHub said, by number: GitHub's merged or closed wins over a link that has not caught up,
+    // and a merged link stays merged. A pull request only GitHub has spoken of is kept too.
+    const states = new Map<number, 'open' | 'closed' | 'merged'>()
+    for (const pr of pullRequestsOf(thread)) states.set(pr.number, pr.state)
+    for (const [number, fact] of said) {
+      const linked = states.get(number)
+      states.set(number, linked === 'merged' || fact.state === 'merged' ? 'merged' : linked === 'closed' || fact.state === 'closed' ? 'closed' : 'open')
     }
+    const stepOf = (number: number, prState: 'open' | 'closed' | 'merged'): MergeStep | null => {
+      const turnKey = `${key}#${number}`
+      return prState === 'merged' ? 'merged' : prState === 'closed' ? null : goes.has(turnKey) ? 'go' : queued.has(turnKey) ? 'ready' : null
+    }
+    const pullRequests: PicturePullRequest[] = [...states].map(([number, prState]) => ({ number, state: prState, checks: checks.get(number), step: stepOf(number, prState) }))
+      .sort((a, b) => Number(a.state !== 'open') - Number(b.state !== 'open') || (a.state === 'open' ? a.number - b.number : b.number - a.number))
+    // A merge Sotto has no GitHub time for counts from the merge turn Watcher gave it.
+    for (const pr of pullRequests) {
+      const turn = goes.get(`${key}#${pr.number}`)
+      if (pr.state === 'merged' && turn !== undefined && !mergedAt.has(`${key}#${pr.number}`)) mergedAt.set(`${key}#${pr.number}`, Date.parse(turn.at))
+    }
+    const shown = pullRequests.find(pr => pr.state === 'open') ?? pullRequests.find(pr => pr.state === 'merged')
     const remote = thread?.remoteHost === true
     nodes.push({
       key, target: row.target, threadId: thread === undefined ? null : threadId, title: thread?.title ?? row.title, tone,
@@ -168,7 +183,7 @@ export function buildPicture(input: {
       provider: entry?.facts.provider,
       project: thread === undefined ? UNLISTED : entry?.facts.project?.title ?? OTHER_PROJECT,
       computer: thread === undefined ? '' : remote ? thread.hostLabel ?? 'Paired computer' : 'This computer',
-      pullRequest: shown === undefined ? null : { number: shown.number, state: shown.state, checks: checks.get(shown.number), step },
+      pullRequest: shown ?? null, pullRequests,
     })
   }
   const byKey = new Map(nodes.map(node => [node.key, node] as const))
@@ -182,16 +197,18 @@ export function buildPicture(input: {
   const ordered = [...clusters].map(([key, cluster]) => ({ key, ...cluster,
     nodes: cluster.nodes.sort((a, b) => Number(a.settled) - Number(b.settled) || TONE_ORDER[a.tone] - TONE_ORDER[b.tone] || a.title.localeCompare(b.title)) }))
     .sort((a, b) => b.nodes.length - a.nodes.length || a.project.localeCompare(b.project) || a.computer.localeCompare(b.computer))
-  // The merge turns: the two merged last, then the turn given, then the queue, oldest pass first.
-  const turnOf = (node: PictureNode, step: MergeStep): PictureTurn => ({ key: node.key, number: node.pullRequest!.number, step, title: node.title })
-  const mergedTurns = nodes.filter(node => node.pullRequest?.step === 'merged' && mergedAt.has(`${node.key}#${node.pullRequest.number}`))
-    .sort((a, b) => mergedAt.get(`${a.key}#${a.pullRequest!.number}`)! - mergedAt.get(`${b.key}#${b.pullRequest!.number}`)!).slice(-2).map(node => turnOf(node, 'merged'))
-  const goTurns = nodes.filter(node => node.pullRequest?.step === 'go')
-    .sort((a, b) => Date.parse(goes.get(`${a.key}#${a.pullRequest!.number}`)!.at) - Date.parse(goes.get(`${b.key}#${b.pullRequest!.number}`)!.at)).map(node => turnOf(node, 'go'))
-  const readyTurns = (merge?.queue ?? []).flatMap(item => {
-    const node = byKey.get(targetKey(item.target))
-    const number = item.pullRequest.number ?? pullNumber(item.pullRequest.url)
-    return node?.pullRequest != null && node.pullRequest.number === number && node.pullRequest.step === 'ready' ? [turnOf(node, 'ready')] : []
+  // The merge turns, from every pull request of every thread: the two merged last, then the turns given, then the queue,
+  // oldest pass first.
+  const all = nodes.flatMap(node => node.pullRequests.map(pr => ({ node, pr, at: `${node.key}#${pr.number}` })))
+  const turnOf = ({ node, pr }: { readonly node: PictureNode; readonly pr: PicturePullRequest }, step: MergeStep): PictureTurn => ({ key: node.key, number: pr.number, step, title: node.title })
+  const mergedTurns = all.filter(item => item.pr.step === 'merged' && mergedAt.has(item.at))
+    .sort((a, b) => mergedAt.get(a.at)! - mergedAt.get(b.at)!).slice(-2).map(item => turnOf(item, 'merged'))
+  const goTurns = all.filter(item => item.pr.step === 'go')
+    .sort((a, b) => Date.parse(goes.get(a.at)!.at) - Date.parse(goes.get(b.at)!.at)).map(item => turnOf(item, 'go'))
+  const readyTurns = (merge?.queue ?? []).flatMap(queuedItem => {
+    const at = `${targetKey(queuedItem.target)}#${queuedItem.pullRequest.number ?? pullNumber(queuedItem.pullRequest.url) ?? 0}`
+    const item = all.find(candidate => candidate.at === at)
+    return item !== undefined && item.pr.step === 'ready' ? [turnOf(item, 'ready')] : []
   })
   const live = nodes.filter(node => !node.settled)
   return {
@@ -354,7 +371,7 @@ export interface PictureSeen {
 const RECEIPTS_COMPARED = 300
 /** At most this many blobs set off at once, the newest, so a burst never floods the picture. */
 export const BLOBS_AT_ONCE = 8
-const NEWS_KINDS: ReadonlySet<string> = new Set(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'work-settled'])
+const NEWS_KINDS: ReadonlySet<string> = new Set(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'work-settled', 'evidence-changed'])
 
 /**
  * The messages that moved since the picture last looked: sends Sotto confirmed delivered, replies, news, a question or
@@ -381,21 +398,30 @@ export function pictureMessages(seen: PictureSeen | null, room: WatcherRoomState
       messages.push({ id: `${receipt.id}:answered`, key, direction: 'in', kind: 'reply' })
     }
   }
+  // Each pull request's step, by thread and number: one joining the queue or merging moves back to Watcher.
+  const steps = new Map<string, MergeStep | null>()
+  const stepped = new Set<string>()
+  for (const node of model.nodes.values()) for (const pr of node.pullRequests) {
+    const at = `${node.key}#${pr.number}`
+    steps.set(at, pr.step)
+    const before = seen?.steps.get(at)
+    if (seen === null || !seen.stepsKnown || !stepsKnown || before === undefined || before === pr.step) continue
+    if (pr.step === 'ready' || pr.step === 'merged') {
+      stepped.add(node.key)
+      messages.push({ id: `${at}:${pr.step}`, key: node.key, direction: 'in', kind: pr.step, pullRequest: pr.number })
+    }
+  }
   const news = new Set<string>()
   for (const event of room.news ?? []) {
     news.add(event.id)
     const key = targetKey(event.target)
     if (seen === null || seen.news.has(event.id) || !NEWS_KINDS.has(event.kind) || !model.nodes.has(key)) continue
     if (event.kind === 'needs-user') messages.push({ id: `news:${event.id}`, key, direction: 'you', kind: 'card' })
-    // A finished turn that answered a send already moved as its reply.
-    else if (!(event.kind === 'turn-finished' && replied.has(key))) messages.push({ id: `news:${event.id}`, key, direction: 'in', kind: 'news' })
-  }
-  const steps = new Map<string, MergeStep | null>()
-  for (const node of model.nodes.values()) {
-    const step = node.pullRequest?.step ?? null
-    steps.set(node.key, step)
-    if (seen === null || !seen.stepsKnown || !stepsKnown || !seen.steps.has(node.key) || seen.steps.get(node.key) === step) continue
-    if (step === 'ready' || step === 'merged') messages.push({ id: `${node.key}:${step}:${node.pullRequest!.number}`, key: node.key, direction: 'in', kind: step, pullRequest: node.pullRequest!.number })
+    // A finished turn that answered a send already moved as its reply, and a pull request's news that joined the queue
+    // or merged already moved as that.
+    else if (!(event.kind === 'turn-finished' && replied.has(key)) && !(event.kind === 'evidence-changed' && stepped.has(key))) {
+      messages.push({ id: `news:${event.id}`, key, direction: 'in', kind: 'news' })
+    }
   }
   return { messages: messages.slice(-BLOBS_AT_ONCE), seen: { receipts, news, steps, stepsKnown } }
 }

@@ -58,6 +58,10 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
 const ready: WatcherMergeTurnsRead = { status: 'ok', turns: [],
   queue: [{ target: target('footer-links'), title: 'Footer links', pullRequest: { number: 12, state: 'open', checks: 'passed' }, checksPassedAt: at }] }
 
+function renderRoomWith(bridge: { get: unknown }) {
+  render(<WatcherRoomProvider bridge={bridge as unknown as WatcherBridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+}
+
 function renderRoom(merge: WatcherMergeTurnsRead = ready) {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS, update: { watcherEnabled: true },
     actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
@@ -130,6 +134,21 @@ describe("Watcher's picture in its room", () => {
     expect(bridge.readMergeTurns).toHaveBeenCalled()
     await userEvent.setup().click(turn)
     expect(screen.getByRole('dialog', { name: 'Footer links, details' })).toBeInTheDocument()
+  })
+
+  it('opens a settled thread’s card from its merge turn, showing the settled threads first', async () => {
+    roomView.set({ tab: 'visualize' })
+    const settled = { ...roomState().watchedThreads[0]!, settled: true, evidence: [{ id: 'merged-12', source: 'github' as const, observedAt: at, target: target('footer-links'),
+      freshness: 'fresh' as const, availability: 'available' as const, fact: 'merge-observed' as const, url: 'https://github.com/millZach/sotto-site/pull/12', pullRequestState: 'merged' as const }] }
+    const { bridge } = renderRoom({ status: 'ok', queue: [], turns: [] })
+    bridge.get.mockResolvedValue({ status: 'ok', state: roomState({ watchedThreads: [settled] }) })
+    cleanup()
+    renderRoomWith(bridge)
+    const turn = await screen.findByRole('button', { name: '#12 MERGED, Footer links. Show details' })
+    expect(screen.queryByRole('button', { name: /^Footer links: / })).not.toBeInTheDocument()
+    await userEvent.setup().click(turn)
+    expect(await screen.findByRole('dialog', { name: 'Footer links, details' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hide settled' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('moves a delivered send as a still mark beside the thread when motion is reduced, never over its title', async () => {

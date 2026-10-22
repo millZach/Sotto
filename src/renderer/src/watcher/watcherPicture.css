@@ -8,7 +8,9 @@
 .watcher-picture__bar { display: flex; flex: none; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
 .watcher-picture__bar-label { flex: none; color: var(--tt-text-2); }
 .watcher-picture__bar-none { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.watcher-picture__turns { display: flex; flex: 1; align-items: center; gap: 4px; min-width: 0; margin: 0; padding: 0; overflow: hidden; list-style: none; }
+.watcher-picture__turns { display: flex; flex: 1; align-items: center; gap: 4px; min-width: 0; margin: 0; padding: 3px; overflow-x: auto; overflow-y: hidden; list-style: none;
+  scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+/* A long queue scrolls along the bar; a turn brought to by the keyboard scrolls into view. */
 .watcher-picture__turns > li { display: flex; flex: none; align-items: center; gap: 4px; }
 .watcher-picture__then { color: var(--tt-text-muted); }
 .watcher-picture__turn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent;
@@ -92,7 +94,8 @@
 .watcher-picture__close:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-picture__card-where { margin: 2px 0 8px; color: var(--tt-text-2); font-size: 12.5px; }
 .watcher-picture__card-where .watcher-row__status { margin: 0; }
-.watcher-picture__card-pr { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--tt-text-2); font-size: 12.5px; }
+.watcher-picture__card-prs { margin: 0 0 8px; padding: 0; list-style: none; }
+.watcher-picture__card-prs > li { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; color: var(--tt-text-2); font-size: 12.5px; }
 .watcher-picture__card-asks { margin: 0 0 8px; color: var(--watcher-needs-ink); font-size: 12.5px; }
 .watcher-picture__card-none { margin: 0 0 10px; color: var(--tt-text-2); font-size: 12.5px; }
 .watcher-picture__card-did { margin: 0 0 10px; padding: 0; border-top: 1px solid var(--tt-hairline); list-style: none; }

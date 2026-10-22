@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
@@ -9,7 +9,7 @@ import type { OpenThread, OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { watchedLead } from './WatcherWatched'
 import { blobTag, buildPicture, edgePath, edgePoints, layoutPicture, nodeActivity, pictureMessages, PICTURE_CHIP_MIN, type BlobKind, type MergeStep,
-  type PictureLayout, type PictureMergeTurns, type PictureMessage, type PictureModel, type PictureNode, type PictureSeen } from './constellation'
+  type PictureLayout, type PictureMergeTurns, type PictureMessage, type PictureModel, type PictureNode, type PicturePullRequest, type PictureSeen } from './constellation'
 import './watcherPicture.css'
 
 /** The picture takes the window's state at most this often, so a thread streaming never redraws it per update. */
@@ -17,8 +17,11 @@ const SAMPLE_MS = 250
 /** Main's merge turns are read when what they depend on changes, but no oftener than this, and this often regardless. */
 const MERGE_READ_GAP_MS = 3_000
 const MERGE_READ_EVERY_MS = 30_000
-/** How long a send waits for main to say whether it gave a merge turn before it moves as a check-in. */
-const SEND_HOLD_MS = 800
+/**
+ * The longest a send waits to be told whether it gave a merge turn before it moves as a check-in: the next read main may
+ * be asked for, and a second for its answer. It goes sooner once a read asked after it was seen has answered.
+ */
+const SEND_HOLD_MS = MERGE_READ_GAP_MS + 1_000
 const BLOB_MS = 1_100
 const LIT_MS = 1_800
 const MARK_MS = 4_000
@@ -45,34 +48,40 @@ function mergeSignature(room: WatcherRoomState): string {
     room.watchedThreads.map(row => { const facts = row.evidence ?? []; return [facts.length, facts.at(-1)?.observedAt] })])
 }
 
+/** Main's merge turns, and when the read that brought them was asked for. */
+interface MergeRead { readonly turns: PictureMergeTurns; readonly askedAt: number }
+
 /**
  * Main's merge queue and merge turns, read only while the picture shows (#1339): at once, again when a send or a pull
- * request's facts change, at most every three seconds, and every thirty regardless. `now` reads at once, for a send that
- * waits to be told whether it was a merge turn.
+ * request's facts change, and every thirty seconds regardless, never oftener than every three seconds. `ask` asks for the
+ * next read within that limit, for a send that waits to be told whether it was a merge turn.
  */
-function useMergeTurns(read: WatcherRoom['readMergeTurns'], room: WatcherRoomState | null): { readonly merge: PictureMergeTurns | null; readonly now: () => void } {
-  const [merge, setMerge] = useState<PictureMergeTurns | null>(null)
-  const last = useRef(0)
+function useMergeTurns(read: WatcherRoom['readMergeTurns'], room: WatcherRoomState | null): { readonly merge: MergeRead | null; readonly ask: () => void } {
+  const [merge, setMerge] = useState<MergeRead | null>(null)
+  const last = useRef(-Infinity)
+  const pending = useRef<number | null>(null)
   const live = useRef(true)
-  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
-  const run = useCallback(() => {
-    if (read === null) return
-    last.current = Date.now()
-    void read().then(result => { if (live.current && result.status === 'ok') setMerge({ queue: result.queue, turns: result.turns }) }, () => undefined)
+  useEffect(() => {
+    live.current = true
+    return () => { live.current = false; if (pending.current !== null) window.clearTimeout(pending.current) }
+  }, [])
+  const ask = useCallback(() => {
+    if (read === null || pending.current !== null) return
+    pending.current = window.setTimeout(() => {
+      pending.current = null
+      const askedAt = last.current = Date.now()
+      void read().then(result => { if (live.current && result.status === 'ok') setMerge({ turns: { queue: result.queue, turns: result.turns }, askedAt }) }, () => undefined)
+    }, Math.max(0, last.current + MERGE_READ_GAP_MS - Date.now()))
   }, [read])
   // The signature stands for the room here: a change elsewhere in it does not read again.
-  const signature = room === null ? null : mergeSignature(room)
-  useEffect(() => {
-    if (read === null || signature === null) return
-    const timer = window.setTimeout(run, Math.max(0, last.current + MERGE_READ_GAP_MS - Date.now()))
-    return () => window.clearTimeout(timer)
-  }, [signature, run, read])
+  const signature = useMemo(() => room === null ? null : mergeSignature(room), [room])
+  useEffect(() => { if (signature !== null) ask() }, [signature, ask])
   useEffect(() => {
     if (read === null) return
-    const timer = window.setInterval(run, MERGE_READ_EVERY_MS)
+    const timer = window.setInterval(ask, MERGE_READ_EVERY_MS)
     return () => window.clearInterval(timer)
-  }, [run, read])
-  return { merge, now: run }
+  }, [ask, read])
+  return { merge, ask }
 }
 
 /** The picture's own size, for laying it out; it lays out again when the room or the pane beside it changes size. */
@@ -95,13 +104,18 @@ const STEP_WORDS: Readonly<Record<MergeStep, string>> = { ready: 'READY TO MERGE
 const STEP_SHORT: Readonly<Record<MergeStep, string>> = { ready: 'READY', go: 'GO', merged: 'merged' }
 const CHECKS_WORDS = { passed: 'checks passed', failed: 'checks failed', pending: 'checks running', unknown: 'checks unknown' } as const
 
-/** A thread's pull request as a chip: its number, its checks as a dot, and its merge turn. */
-function PullRequestChip({ node }: { readonly node: PictureNode }): ReactNode {
-  const pr = node.pullRequest
-  if (pr === null) return null
+/** A pull request as a chip: its number, its checks as a dot, and its merge turn. */
+function PullRequestChip({ pr }: { readonly pr: PicturePullRequest }): ReactNode {
   return <span className="watcher-picture__pr" data-checks={pr.checks} data-step={pr.step ?? undefined} data-state={pr.state} aria-hidden="true">
     <i />#{pr.number}{pr.step === null ? null : <b>{STEP_SHORT[pr.step]}</b>}
   </span>
+}
+
+/** A pull request in a card's words. */
+function pullRequestWords(pr: PicturePullRequest): string {
+  const state = pr.state === 'merged' ? ', merged' : pr.state === 'closed' ? ', closed' : pr.checks === undefined ? '' : `, ${CHECKS_WORDS[pr.checks]}`
+  const turn = pr.step === 'go' ? '. Its turn to merge.' : pr.step === 'ready' ? '. Ready to merge, waiting for its turn.' : ''
+  return `Pull request #${pr.number}${state}${turn}`
 }
 
 /** What a node's button says: the thread, where it stands, its pull request, then what a press does. */
@@ -119,12 +133,12 @@ function Node({ node, x, y, width, mirror, open, onPress }: { readonly node: Pic
     title={`${node.title} · ${node.word}`} onClick={event => onPress(node.key, event.currentTarget)}>
     <span className="watcher-row__ring" data-tone={node.ring} aria-hidden="true" />
     <span className="watcher-picture__title">{node.title}</span>
-    {width >= PICTURE_CHIP_MIN ? <PullRequestChip node={node} /> : null}
+    {width >= PICTURE_CHIP_MIN && node.pullRequest !== null ? <PullRequestChip pr={node.pullRequest} /> : null}
   </button>
 }
 
 /**
- * A thread's detail card, beside its dot: where it stands, its pull request and merge turn, what it waits on the user
+ * A thread's detail card, beside its dot: where it stands, its pull requests and merge turns, what it waits on the user
  * for, and what Watcher last did with it from Sotto's own receipts, with the words when the window holds them. Open
  * beside Watcher shows the thread itself; Open to answer goes to its waiting card.
  */
@@ -145,7 +159,6 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
   const left = layout.oneColumn ? Math.min(Math.max(8, at.x - 12), layout.width - CARD_WIDTH - 8)
     : at.mirror ? Math.min(at.x + 16, layout.width - CARD_WIDTH - 8) : Math.max(8, at.x - 16 - CARD_WIDTH)
   const top = layout.oneColumn ? at.y + 16 : Math.max(8, Math.min(at.y - 24, layout.height - 320))
-  const pr = node.pullRequest
   return <div ref={card} className="watcher-picture__card" role="dialog" aria-label={`${node.title}, details`} style={{ left, top, width: CARD_WIDTH }}
     onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}>
     <div className="watcher-picture__card-head">
@@ -155,11 +168,9 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
     </div>
     <p className="watcher-picture__card-where">{[node.provider, node.project, node.computer].filter(Boolean).join(' · ')}
       {' · '}<span className="watcher-row__status" data-tone={node.tone}>{node.word}</span></p>
-    {pr === null ? null : <p className="watcher-picture__card-pr">
-      <PullRequestChip node={node} />
-      <span>Pull request #{pr.number}{pr.state === 'open' && pr.checks !== undefined ? `, ${CHECKS_WORDS[pr.checks]}` : pr.state === 'merged' ? ', merged' : ''}
-        {pr.step === 'go' ? '. Its turn to merge.' : pr.step === 'ready' ? '. Ready to merge, waiting for its turn.' : ''}</span>
-    </p>}
+    {node.pullRequests.length ? <ul className="watcher-picture__card-prs" aria-label="Its pull requests">
+      {node.pullRequests.map(pr => <li key={pr.number}><PullRequestChip pr={pr} /><span>{pullRequestWords(pr)}</span></li>)}
+    </ul> : null}
     {asks ? <p className="watcher-picture__card-asks">{node.waits === 'permission' ? 'Asks permission: ' : 'Asks: '}{asks}</p> : null}
     {activity.length ? <ol className="watcher-picture__card-did" aria-label="What Watcher last did with it">
       {activity.map(item => {
@@ -182,47 +193,47 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
 
 const SHAPE: Readonly<Record<BlobKind, string>> = { start: 'start', steer: 'steer', go: 'go', reply: 'reply', news: 'news', ready: 'ready', merged: 'merged', card: 'card' }
 
+/** A send held back until main says whether it gave a merge turn: when it was seen, and when it goes regardless. */
+interface HeldSend { readonly message: PictureMessage; readonly seenAt: number; readonly until: number }
+
 /**
- * Watcher's picture (#1339, Zach's pick on October 22, 2026: A, the constellation), the Visualize tab: Watcher in the
- * middle, the threads it watches around it in clusters by project and computer, one line each with its dot facing
- * Watcher, and a line from Watcher to each. Messages move along the lines as they happen: what Watcher sends, what a
- * thread answers or has as news, a question or permission going to You, and a pull request joining the merge queue or
- * merging. Merge turns run along the top. With reduced motion nothing travels: the line lights and a still mark appears
- * beside the thread's dot. Live only; history and replay are #1340.
+ * The picture itself, drawn from inputs already sampled, so it draws only when they change and never with each update of
+ * the room or the window that the picture does not show.
  */
-export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }: {
-  readonly room: WatcherRoom
-  readonly state: AgentState
-  readonly entries: ReadonlyMap<string, OverviewEntry>
+const Picture = memo(function Picture({ roomState, agents, known, merge, ask, canRead, id, labelledBy, onOpen }: {
+  readonly roomState: WatcherRoomState
+  readonly agents: AgentState
+  readonly known: ReadonlyMap<string, OverviewEntry>
+  readonly merge: MergeRead | null
+  readonly ask: () => void
+  /** Whether main can be asked for the merge turns at all; without, a send moves at once. */
+  readonly canRead: boolean
   readonly id: string
-  /** The Visualize tab, which names this panel. */
   readonly labelledBy: string
   readonly onOpen: OpenThread
 }): ReactNode {
-  const roomState = useSampled(room.state, SAMPLE_MS)
-  const agents = useSampled(state, SAMPLE_MS)
-  const known = useSampled(entries, SAMPLE_MS)
   const [showSettled, setShowSettled] = useState(false)
-  const { merge, now: readNow } = useMergeTurns(room.readMergeTurns, roomState)
   const idOf = useMemo(() => threadAddressIndex(agents), [agents])
-  const model = useMemo<PictureModel | null>(() => roomState === null ? null
-    : buildPicture({ room: roomState, state: agents, entries: known, idOf, merge, showSettled }), [roomState, agents, known, idOf, merge, showSettled])
-  const goes = useMemo<ReadonlySet<string>>(() => new Set(merge?.turns.map(turn => turn.operationId) ?? []), [merge])
+  const model = useMemo<PictureModel>(() => buildPicture({ room: roomState, state: agents, entries: known, idOf, merge: merge?.turns ?? null, showSettled }),
+    [roomState, agents, known, idOf, merge, showSettled])
+  const goes = useMemo<ReadonlySet<string>>(() => new Set(merge?.turns.turns.map(turn => turn.operationId) ?? []), [merge])
   const scroller = useRef<HTMLDivElement>(null)
   const size = useSize(scroller)
-  const layout = useMemo(() => model === null || size.width === 0 ? null : layoutPicture(model.clusters, size.width, size.height), [model, size.width, size.height])
+  const layout = useMemo(() => size.width === 0 ? null : layoutPicture(model.clusters, size.width, size.height), [model, size.width, size.height])
   const [open, setOpen] = useState<{ readonly key: string; readonly from: HTMLElement | null } | null>(null)
-  const opened = open === null ? undefined : model?.nodes.get(open.key)
+  const opened = open === null ? undefined : model.nodes.get(open.key)
   const shownOpen = opened !== undefined && layout?.at.has(opened.key) ? opened : undefined
 
-  // The messages that moved since the picture last looked go off as blobs. A send waits a moment to be told whether it
-  // was a merge turn, since the receipt can reach the window before main's read of the merge turns does.
+  // The messages that moved since the picture last looked go off as blobs. A send waits to be told whether it was a merge
+  // turn, since its receipt can reach the window before main's read of the merge turns does.
   const blobs = useRef<HTMLDivElement>(null)
   const edges = useRef(new Map<string, SVGPathElement>())
-  const placed = useRef<{ layout: PictureLayout | null; model: PictureModel | null; goes: ReadonlySet<string> }>({ layout: null, model: null, goes })
-  placed.current = { layout, model, goes }
+  const placed = useRef<{ layout: PictureLayout | null; model: PictureModel; goes: ReadonlySet<string>; askedAt: number }>({ layout, model, goes, askedAt: merge?.askedAt ?? -Infinity })
+  placed.current = { layout, model, goes, askedAt: merge?.askedAt ?? -Infinity }
   const seen = useRef<PictureSeen | null>(null)
-  const held = useRef<{ message: PictureMessage; until: number }[]>([])
+  const held = useRef<HeldSend[]>([])
+  const holdTimer = useRef<number | null>(null)
+  useEffect(() => () => { if (holdTimer.current !== null) window.clearTimeout(holdTimer.current) }, [])
   const play = useCallback((message: PictureMessage) => {
     const { layout: where, model: picture } = placed.current
     const layer = blobs.current, at = where?.at.get(message.key)
@@ -251,7 +262,7 @@ export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }:
     const blob = document.createElement('span')
     blob.className = 'watcher-picture__blob'
     blob.append(shape)
-    const tag = blobTag(message, picture?.nodes.get(message.key)?.waits)
+    const tag = blobTag(message, picture.nodes.get(message.key)?.waits)
     if (tag !== null) {
       const label = document.createElement('span')
       label.className = 'watcher-picture__tag'
@@ -266,33 +277,35 @@ export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }:
     const travel = blob.animate(points.map(point => ({ transform: `translate(${point.x - 6}px, ${point.y - 6}px)` })), { duration: BLOB_MS, easing: 'cubic-bezier(.45,.05,.4,1)', fill: 'forwards' })
     travel.onfinish = () => { const fade = blob.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, delay: 250, fill: 'forwards' }); fade.onfinish = () => blob.remove() }
   }, [])
-  const release = useCallback((force: boolean) => {
-    const goesNow = placed.current.goes, ready: PictureMessage[] = []
+  // Lets go every held send that was a merge turn, that a read asked after it was seen has answered for, or whose hold has
+  // run out, then waits for the next hold to run out, if any is left.
+  const release = useCallback(() => {
+    const { goes: goesNow, askedAt, model: picture } = placed.current, now = Date.now(), ready: PictureMessage[] = []
     held.current = held.current.filter(item => {
       const go = item.message.operationId !== undefined && goesNow.has(item.message.operationId)
-      if (!go && !force && Date.now() < item.until) return true
-      ready.push(go ? { ...item.message, kind: 'go', pullRequest: placed.current.model?.nodes.get(item.message.key)?.pullRequest?.number } : item.message)
+      if (!go && askedAt < item.seenAt && now < item.until) return true
+      ready.push(go ? { ...item.message, kind: 'go', pullRequest: picture.nodes.get(item.message.key)?.pullRequest?.number } : item.message)
       return false
     })
     for (const message of ready) play(message)
+    if (holdTimer.current !== null) window.clearTimeout(holdTimer.current)
+    holdTimer.current = held.current.length === 0 ? null
+      : window.setTimeout(release, Math.max(0, Math.min(...held.current.map(item => item.until)) - now))
   }, [play])
   useEffect(() => {
-    if (roomState === null || model === null || layout === null) return
-    const result = pictureMessages(seen.current, roomState, model, goes, merge !== null || room.readMergeTurns === null)
+    if (layout === null) return
+    const result = pictureMessages(seen.current, roomState, model, goes, merge !== null || !canRead)
     seen.current = result.seen
+    const now = Date.now()
     let waiting = false
     for (const message of result.messages) {
-      if (message.kind === 'steer' && room.readMergeTurns !== null) { held.current.push({ message, until: Date.now() + SEND_HOLD_MS }); waiting = true }
+      if (message.kind === 'steer' && canRead) { held.current.push({ message, seenAt: now, until: now + SEND_HOLD_MS }); waiting = true }
       else play(message)
     }
-    if (waiting) readNow()
-    // Whatever still waits goes when its hold ends, however often the picture changes meanwhile.
-    if (held.current.length === 0) return
-    const timer = window.setTimeout(() => release(false), Math.max(0, Math.min(...held.current.map(item => item.until)) - Date.now()))
-    return () => window.clearTimeout(timer)
-  }, [roomState, model, layout, goes, merge, play, release, readNow, room.readMergeTurns])
-  // A merge read that answers while sends wait lets the merge turns among them go at once.
-  useEffect(() => { release(false) }, [goes, release])
+    if (waiting) { ask(); release() }
+  }, [roomState, model, layout, goes, merge, canRead, play, release, ask])
+  // A merge read that answers while sends wait lets go those it has spoken for.
+  useEffect(() => { if (held.current.length) release() }, [merge, release])
   // A new layout moves every thread: what is moving or standing still for the old one goes.
   useEffect(() => { blobs.current?.replaceChildren() }, [layout?.width, layout?.height, layout?.oneColumn])
 
@@ -302,15 +315,15 @@ export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }:
     if (refocus && back?.isConnected) back.focus()
   }, [open])
   const press = useCallback((key: string, from: HTMLElement) => setOpen(current => current?.key === key ? null : { key, from }), [])
-  // A merge turn's chip opens that thread's card, its node brought into view.
+  // A merge turn's chip opens that thread's card, its node brought into view; a settled thread's is shown first.
   const pressTurn = (key: string, chip: HTMLElement): void => {
+    if (!layout?.at.has(key)) setShowSettled(true)
     const node = [...scroller.current?.querySelectorAll<HTMLElement>('[data-node-key]') ?? []].find(slot => slot.dataset.nodeKey === key)
       ?.querySelector<HTMLElement>('button') ?? null
     node?.scrollIntoView?.({ block: 'nearest' })
     setOpen({ key, from: node ?? chip })
   }
 
-  if (roomState === null || model === null) return <div id={id} className="thread-workspace__transcript watcher-picture" role="tabpanel" aria-labelledby={labelledBy} tabIndex={0} />
   const total = model.nodes.size
   return <div id={id} className="thread-workspace__transcript watcher-picture" role="tabpanel" aria-labelledby={labelledBy}>
     <div className="watcher-picture__bar">
@@ -319,7 +332,8 @@ export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }:
         {model.turns.map((turn, index) => <li key={`${turn.key}#${turn.number}:${turn.step}`}>
           {index > 0 ? <span className="watcher-picture__then" aria-hidden="true">›</span> : null}
           <button type="button" className="watcher-picture__turn tt-focusable" data-step={turn.step} aria-label={`#${turn.number} ${STEP_WORDS[turn.step]}, ${turn.title}. Show details`}
-            title={turn.title} onClick={event => pressTurn(turn.key, event.currentTarget)}>
+            title={turn.title} onClick={event => pressTurn(turn.key, event.currentTarget)}
+            onFocus={event => event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}>
             #{turn.number} <b>{STEP_WORDS[turn.step]}</b>
           </button>
         </li>)}
@@ -361,4 +375,31 @@ export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }:
       </div>}
     </div>
   </div>
+})
+
+/**
+ * Watcher's picture (#1339, Zach's pick on October 22, 2026: A, the constellation), the Visualize tab: Watcher in the
+ * middle, the threads it watches around it in clusters by project and computer, one line each with its dot facing
+ * Watcher, and a line from Watcher to each. Messages move along the lines as they happen: what Watcher sends, what a
+ * thread answers or has as news, a question or permission going to You, and a pull request joining the merge queue or
+ * merging. Merge turns run along the top. With reduced motion nothing travels: the line lights and a still mark appears
+ * beside the thread's dot. Live only; history and replay are #1340. This part only samples what the window holds and
+ * reads the merge turns; the picture draws from the samples alone.
+ */
+export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }: {
+  readonly room: WatcherRoom
+  readonly state: AgentState
+  readonly entries: ReadonlyMap<string, OverviewEntry>
+  readonly id: string
+  /** The Visualize tab, which names this panel. */
+  readonly labelledBy: string
+  readonly onOpen: OpenThread
+}): ReactNode {
+  const roomState = useSampled(room.state, SAMPLE_MS)
+  const agents = useSampled(state, SAMPLE_MS)
+  const known = useSampled(entries, SAMPLE_MS)
+  const { merge, ask } = useMergeTurns(room.readMergeTurns, roomState)
+  if (roomState === null) return <div id={id} className="thread-workspace__transcript watcher-picture" role="tabpanel" aria-labelledby={labelledBy} tabIndex={0} />
+  return <Picture roomState={roomState} agents={agents} known={known} merge={merge} ask={ask} canRead={room.readMergeTurns !== null}
+    id={id} labelledBy={labelledBy} onOpen={onOpen} />
 }

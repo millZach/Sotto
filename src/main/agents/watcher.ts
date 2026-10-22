@@ -937,14 +937,16 @@ export class WatcherService implements WatcherControlHooks {
    * reads of each: whether it is a draft and since when its checks have passed. A thread its host no longer lists gives
    * what its evidence says.
    */
-  private stateThreads() {
+  private stateThreads() { return this.withOpenPullRequests(this.watching(this.state().watchedThreads)) }
+  /** Each row with its open pull requests and what the merge queue reads of each (`stateThreads`). */
+  private withOpenPullRequests<Row extends { readonly target: WatcherThreadTarget }>(rows: readonly Row[]): (Row & { open: WatcherOpenPullRequest[] })[] {
     const hosts = new Map<string, Map<string, AgentThread>>()
     const threadOf = (target: WatcherThreadTarget) => {
       let threads = hosts.get(target.hostId)
       if (!threads) hosts.set(target.hostId, threads = new Map((this.owningSnapshot(target.hostId)?.threads ?? []).map(thread => [thread.id, thread])))
       return threads.get(target.threadId)
     }
-    return this.watching(this.state().watchedThreads).map(row => {
+    return rows.map(row => {
       const thread = threadOf(row.target), evidence = this.wakes.evidence.read(row.target, Boolean(thread && this.connected(thread)))
       const since = (url: string | undefined) => url === undefined ? undefined : this.wakes.evidence.checksPassedSince(row.target, url)
       const open: WatcherOpenPullRequest[] = thread
@@ -1017,6 +1019,28 @@ export class WatcherService implements WatcherControlHooks {
     const offer = this.handoverOffer, current = this.view().current
     return offer && current && key(offer.to) === key(current.target) ? offer : null
   }
+  /**
+   * The threads Watcher watches, with their titles, read from the record in place: a standing watch, or taking part in a
+   * request Watcher acts for, as the room's `watched` mark says. For the picture's merge read, which must not build and
+   * copy the whole room as a publish does.
+   */
+  private watchedTargets(): { target: WatcherThreadTarget; title: string }[] {
+    const record = this.view(), current = record.current
+    const acting = new Set(record.requests.filter(request => request.state === 'active'
+      && (request.remoteOrigin || current && sameTarget(request.watcher, current.target))).map(request => request.id))
+    const targets = new Map<string, WatcherThreadTarget>()
+    for (const watch of record.watches ?? []) targets.set(key(watch.target), watch.target)
+    for (const request of record.requests) {
+      if (!acting.has(request.id)) continue
+      for (const part of request.participants) if (part.state === 'participating' && !part.automationStopped) targets.set(key(part.target), part.target)
+    }
+    // Each owning host's threads read once, for every title.
+    const titles = new Map<string, string>()
+    for (const hostId of new Set([...targets.values()].map(item => item.hostId))) {
+      for (const thread of this.owningSnapshot(hostId)?.threads ?? []) titles.set(key({ hostId, threadId: thread.id }), thread.title)
+    }
+    return [...targets.values()].map(target => ({ target, title: titles.get(key(target)) ?? 'Unavailable thread' }))
+  }
   private noteMergeTurn(operationId: string, pullRequest: number): void {
     if (this.mergeTurns.some(turn => turn.operationId === operationId)) return
     this.mergeTurns.push({ operationId, pullRequest, at: now() })
@@ -1035,7 +1059,7 @@ export class WatcherService implements WatcherControlHooks {
         const operation = operations.get(turn.operationId)
         return operation?.action === 'send' ? [{ operationId: turn.operationId, target: operation.target, pullRequest: turn.pullRequest, at: turn.at }] : []
       })
-      return { status: 'ok', queue: watcherMergeQueue(this.stateThreads()).slice(0, WATCHER_STATE_COMPUTED_MAX), turns }
+      return { status: 'ok', queue: watcherMergeQueue(this.withOpenPullRequests(this.watchedTargets())).slice(0, WATCHER_STATE_COMPUTED_MAX), turns }
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the merge turns just now. Nothing was changed.', true) }
   }
   /** The offered handover's words, as the new Watcher would receive them. Read only when the user asks to read it. */

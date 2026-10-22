@@ -19,13 +19,13 @@ The room state is pushed to the window on every coordinator change, and the perf
 
 **1. The picture reads, it is not pushed.** It draws from the room state and the thread facts the window already holds, sampled at most four times a second while the tab shows, and nothing at all while it does not. Nothing is added to the room state or its publish.
 
-**2. The merge turns are a read of their own.** `sotto:watcher:read-merge-turns` answers with read_state's merge queue, computed the same way at each read, and the merge turns Watcher gave. The picture asks when it opens, when a send or a pull request's facts change (no more than every three seconds), and every thirty seconds while it shows. So the picture's READY TO MERGE order is the one Watcher itself reads.
+**2. The merge turns are a read of their own.** `sotto:watcher:read-merge-turns` answers with read_state's merge queue and the merge turns Watcher gave. The queue is computed the same way read_state computes it, from the threads Watcher watches as the record names them (`watchedTargets`), without building or copying the room as a publish does. The picture asks when it opens, when a send or a pull request's facts change, and every thirty seconds while it shows, never more than once every three seconds through one limiter. So the picture's READY TO MERGE order is the one Watcher itself reads. A send waits to move until a read asked after it was seen has answered, at most four seconds, so a GO MERGE moves as one.
 
 **3. Watcher marks a merge turn on its send.** `send_to_thread` takes an optional `mergeTurn: { pullRequest }`. Main takes it off before the send is admitted, so the send's digest, its retry, what reaches the thread and what a paired host is sent are all as they would be without it. Once the send is admitted, main remembers the operation and the pull request's number, the newest 50, in memory only. A merge turn whose send failed is not shown as given.
 
 **4. Nothing new is saved.** The marker is not a field of the operation record, so `agents.json` keeps its shape and an older build still reads it. A restart forgets the merge turns given; the picture shows those pull requests as READY TO MERGE until Watcher gives their turn again or they merge. #1340's history will keep them, in a record of its own.
 
-**5. MERGED comes from GitHub.** A pull request is MERGED when the thread's own link or GitHub's evidence says so, never from a message.
+**5. MERGED comes from GitHub.** A pull request is MERGED when the thread's own link or GitHub's evidence says so, never from a message; GitHub's merged or closed wins over a link that has not caught up. Every pull request a thread has counts in the merge turns, not only the one on its line.
 
 ## Consequences
 
