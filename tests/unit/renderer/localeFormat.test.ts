@@ -94,9 +94,9 @@ describe('clock labels made with one formatter', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(START)
     process.env.TZ = 'Asia/Kolkata'
-    let reads = 0
+    let reads = 0, builds = 0
     class Counted extends NativeFormat {
-      constructor(...args: ConstructorParameters<typeof Intl.DateTimeFormat>) { super(...args); if (args.length === 0) reads += 1 }
+      constructor(...args: ConstructorParameters<typeof Intl.DateTimeFormat>) { super(...args); if (args.length === 0) reads += 1; else builds += 1 }
     }
     Intl.DateTimeFormat = Counted as typeof Intl.DateTimeFormat
     const { clockLabel } = await freshModules()
@@ -109,8 +109,10 @@ describe('clock labels made with one formatter', () => {
     clockLabel(INSTANTS[0]!)
     expect(reads).toBe(2)
     // A moment at the edge of what a Date holds is served by the kept formatter like any other.
-    for (let i = 0; i < 100; i++) clockLabel(8.64e15)
+    expect(builds).toBe(1)
+    for (let i = 0; i < 100; i++) expect(clockLabel(8.64e15)).toBe(native(8.64e15))
     expect(reads).toBe(2)
+    expect(builds).toBe(1)
   })
 
   it('follows a live switch between zones with the same January and July offsets', async () => {
