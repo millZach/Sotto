@@ -120,6 +120,12 @@ async function canonicalCheckoutPath(folder: string): Promise<string> {
 }
 const missing = (error: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')
 
+/** Where a linked worktree's `.git` file points, without reading anything there; none for a file that names nothing. */
+async function pointerTarget(root: string): Promise<string | undefined> {
+  const pointer = /^gitdir: (.+)$/u.exec((await readFile(join(root, '.git'), 'utf8')).trim())
+  return pointer ? resolve(root, pointer[1]!.trim()) : undefined
+}
+
 /** A reserved folder reached through a link or junction, its own or a parent's, is not the folder Sotto made. */
 async function refuseRedirected(path: string): Promise<void> {
   if (pathKey(await realpath(path)) !== pathKey(path)) throw new RemovalKept('The worktree’s folder now leads to another folder through a link, so nothing was removed. Put the original folder back where Sotto made it, then choose Refresh.')
@@ -1007,9 +1013,14 @@ export class ThreadWorktrees {
         if (marker && !marker.isFile()) return metadata
         // A missing folder is found through the repository's registrations. Only Sotto's own locks are settled here;
         // anything else at a missing folder is restore's.
-        // A `.git` file a failed write left empty is passed over the same way.
-        const registration = (marker ? (await gitDirectories(path).catch(() => undefined))?.gitDir : undefined)
-          ?? await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
+        // A `.git` file a cut-off write left pointing nowhere, empty or at a folder that is not there, is passed over the
+        // same way. One that cannot be read, or points at a folder that is there, is followed and nothing else.
+        let registration: string | undefined
+        try {
+          const target = marker ? await pointerTarget(path) : undefined
+          const there = target !== undefined && await lstat(target).then(() => true, error => { if (missing(error)) return false; throw error })
+          registration = there ? target : await gitDirectories(repositoryRoot).then(found => found && this.registrationOf(found.commonDir, path), () => undefined)
+        } catch { return metadata }
         const reason = (registration && await readFile(join(registration, 'locked'), 'utf8').catch(() => undefined))?.trim()
         if (reason !== REMOVING_LOCK_REASON && reason !== REPAIRING_LOCK_REASON) return metadata
       }
@@ -1036,9 +1047,10 @@ export class ThreadWorktrees {
         // at another registration is not Sotto's to change.
         const writePointer = async (): Promise<void> => {
           if (!registration) throw new Error('Git kept no registration for this folder.')
-          const pointer = marker ? await gitDirectories(path).catch(() => undefined) : undefined
-          if (pointer) {
-            if (pathKey(await realpath(pointer.gitDir).catch(() => pointer.gitDir)) !== pathKey(await realpath(registration))) throw new Error('The folder’s .git file points at another registration.')
+          // A `.git` file that cannot be read, or whose target cannot be, is refused rather than taken for one pointing nowhere.
+          const target = marker ? await pointerTarget(path) : undefined
+          if (target !== undefined && await lstat(target).then(() => true, error => { if (missing(error)) return false; throw error })) {
+            if (pathKey(await realpath(target)) !== pathKey(await realpath(registration))) throw new Error('The folder’s .git file points at another registration.')
             return
           }
           // Git marks `.git` hidden on Windows, and Windows will not overwrite a hidden file, so one pointing nowhere goes first.

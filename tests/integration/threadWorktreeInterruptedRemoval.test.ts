@@ -178,6 +178,28 @@ describe('a worktree removal cut off partway (#1297)', () => {
     expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
   })
 
+  it('repairs a `.git` file a cut-off write left pointing at a folder that is not there', async () => {
+    const f = await installedWorktree()
+    await rm(join(f.a.path!, 'a.txt'))
+    await git(f.project, ['worktree', 'lock', '--reason', REPAIRING_LOCK_REASON, '--', f.a.path!])
+    const whole = await readFile(join(f.a.path!, '.git'), 'utf8')
+    await rm(join(f.a.path!, '.git')); await writeFile(join(f.a.path!, '.git'), whole.trim().slice(0, -4))
+    expect(await f.service.resumeRemoval(f.a)).toBe(f.a)
+    expect(await f.service.inspect(f.a)).toMatchObject({ status: 'ready', dirty: false })
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
+  })
+
+  it('removes nothing from a folder whose `.git` file points at another worktree’s registration', async () => {
+    const f = await installedWorktree()
+    const other = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await git(f.project, ['worktree', 'lock', '--reason', REMOVING_LOCK_REASON, '--', f.a.path!])
+    await rm(join(f.a.path!, '.git')); await writeFile(join(f.a.path!, '.git'), await readFile(join(other.path!, '.git'), 'utf8'))
+    expect(await f.service.resumeRemoval(f.a)).toBe(f.a)
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect(await readdir(join(f.a.path!, 'node_modules'))).toEqual(['alpha', 'zod'])
+  })
+
   it('clears a nested worktree’s registration when it finishes a removal later', async () => {
     const f = await installedWorktree()
     const nested = join(f.a.path!, '.worktrees', 'n')
