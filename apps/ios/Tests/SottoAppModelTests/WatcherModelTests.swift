@@ -1440,39 +1440,33 @@ final class WatcherModelTests: XCTestCase {
     }
 
     /// The card the reader is on goes back where they left it when the page changes around it, no lower than keeps it
-    /// whole above the box and never under the header. The page scrolls to a mark with no height at the card's top, so
-    /// `scrollTo` lines that top up with the point the fraction gives down the visible page.
+    /// whole above the box and never under the header.
     func testTheHeldCardGoesBackWhereTheReaderLeftIt() throws {
         // The header ends at 140 and the box starts at 600: 460 points of room. The reader left the card 60 points below
         // the header.
         func anchor(_ card: CGRect, offset: CGFloat = 60, dockTop: CGFloat = 600) -> CGFloat? {
             WatcherReaderPlace.anchor(card: card, offset: offset, top: 140, dockTop: dockTop)
         }
-        func lands(_ y: CGFloat, dockTop: CGFloat = 600) -> CGFloat { 140 + y * (dockTop - 140) }
         XCTAssertNil(anchor(CGRect(x: 16, y: 200.5, width: 340, height: 260)), "Where the reader left it, nothing moves")
         // A card under it was removed and the page's bottom carried this one down by 90 points: back to 60 below the
-        // header, which `scrollTo` does by lining its top up with the point 60 / 460 down the page.
+        // header, which `scrollTo` does by lining up the point 60 / (460 - 260) down the card and the page.
         let carried = try XCTUnwrap(anchor(CGRect(x: 16, y: 290, width: 340, height: 260)))
-        XCTAssertEqual(carried, 60 / 460, accuracy: 0.0001)
-        XCTAssertEqual(lands(carried), 200, accuracy: 0.0001, "The card's top lands where it was")
+        XCTAssertEqual(carried, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(140 + carried * 460 - carried * 260, 200, accuracy: 0.0001, "The card's top lands where it was")
         // The keyboard raised the box to 380: the card goes up as far as keeps it whole above the box, and no farther than
         // the header.
-        let raised = try XCTUnwrap(anchor(CGRect(x: 16, y: 200, width: 340, height: 200), dockTop: 380))
-        XCTAssertEqual(lands(raised, dockTop: 380) + 200, 380, accuracy: 0.0001, "Its bottom meets the box")
+        XCTAssertEqual(anchor(CGRect(x: 16, y: 200, width: 340, height: 200), dockTop: 380), 1, "Its bottom meets the box")
         XCTAssertEqual(anchor(CGRect(x: 16, y: 200, width: 340, height: 300), dockTop: 380), 0,
                        "A card taller than the room comes no lower than the header")
         // A card taller than the room, its top left 100 points above the header and carried 90 points down: back to 40.
         let tall = try XCTUnwrap(anchor(CGRect(x: 16, y: 130, width: 340, height: 600), offset: -100))
-        XCTAssertEqual(lands(tall), 40, accuracy: 0.0001, "The tall card's top lands where it was")
+        XCTAssertEqual(140 + tall * 460 - tall * 600, 40, accuracy: 0.0001, "The tall card's top lands where it was")
         // Carried so far up that its bottom left the box: back down only as far as keeps it filling the room.
         let lifted = try XCTUnwrap(anchor(CGRect(x: 16, y: -300, width: 340, height: 600), offset: -300))
-        XCTAssertEqual(lands(lifted) + 600, 600, accuracy: 0.0001, "Its bottom meets the box")
+        XCTAssertEqual(140 + lifted * 460 - lifted * 600, 0, accuracy: 0.0001, "Its bottom meets the box")
         // Pushed up behind the header, it comes back down.
         let hidden = try XCTUnwrap(anchor(CGRect(x: 16, y: 40, width: 340, height: 260), offset: 0))
         XCTAssertEqual(hidden, 0, accuracy: 0.0001)
-        // A card exactly as tall as the room, carried 50 points down, goes back to the header.
-        let filling = try XCTUnwrap(anchor(CGRect(x: 16, y: 190, width: 340, height: 460), offset: 0))
-        XCTAssertEqual(lands(filling), 140, accuracy: 0.0001)
     }
 
     // MARK: The bar that slides away (#1278)
@@ -1497,139 +1491,17 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(slide.moved(to: -40, counts: true), false, "And past it, pulling to read the page again")
     }
 
-    /// While the reader is on a card waiting on them, the bar stays shown, however the page moves (#1288). Once no card is
-    /// held, reading down slides it away again, counted from there.
-    func testTheBarStaysWhileTheReaderIsOnACard() {
+    /// While a card waits on the user, the bar stays where it is however the page moves, and comes back if it was away
+    /// when the card arrived (#1288). Once no card waits, reading down slides it away again, counted from there.
+    func testTheBarStaysWhileACardWaits() {
         var slide = WatcherBarSlide()
-        XCTAssertNil(slide.moved(to: 400, counts: true, holding: true), "The first look only says where the page is")
-        XCTAssertEqual(slide.moved(to: 460, counts: true, holding: true), false, "Reading down with a card held keeps the bar")
-        XCTAssertEqual(slide.moved(to: 520, counts: false, holding: true), false, "So does the page moving for the card")
-        XCTAssertNil(slide.moved(to: 530, counts: true), "With no card held, the count starts from here")
+        XCTAssertNil(slide.moved(to: 400, counts: true, pinned: true), "The first look only says where the page is")
+        XCTAssertEqual(slide.moved(to: 460, counts: true, pinned: true), false, "Reading down with a card waiting keeps the bar")
+        XCTAssertEqual(slide.moved(to: 520, counts: false, pinned: true), false, "So does the page moving for the card")
+        XCTAssertNil(slide.moved(to: 530, counts: true), "With the card answered, the count starts again")
         XCTAssertEqual(slide.moved(to: 545, counts: true), true, "Twenty-five points down slides it away")
-        XCTAssertEqual(slide.moved(to: 560, counts: true, holding: true), false, "Stopping on a card brings it back")
-    }
-
-    /// A card keeps the bar only once the reader has let go of the page, and only where iOS says when that is (#1288).
-    /// iOS 17 can't, and nothing there moves a card out from under a bar that comes back over it, so there a card keeps
-    /// nothing: the bar slides as it does with no card held, and a card in the strip it uncovered stays in view.
-    func testOnIOS17ACardDoesntKeepTheBar() {
-        XCTAssertTrue(WatcherBarSlide.holding(card: true, userScrolling: false, seesLetGo: true), "Let go of on a card")
-        XCTAssertFalse(WatcherBarSlide.holding(card: true, userScrolling: true, seesLetGo: true),
-                       "Still moving the page: the card is decided again where they let go")
-        XCTAssertFalse(WatcherBarSlide.holding(card: false, userScrolling: false, seesLetGo: true), "No card")
-        XCTAssertFalse(WatcherBarSlide.holding(card: true, userScrolling: false, seesLetGo: false),
-                       "iOS 17 can't say the reader let go, so the card doesn't keep the bar")
-
-        // On iOS 17, reading down onto a card slides the bar away as it would with no card, and stopping there leaves it.
-        var slide = WatcherBarSlide()
-        let holding = WatcherBarSlide.holding(card: true, userScrolling: false, seesLetGo: false)
-        XCTAssertNil(slide.moved(to: 400, counts: true, holding: holding))
-        XCTAssertEqual(slide.moved(to: 420, counts: true, holding: holding), true, "Twenty points down slides it away")
-        XCTAssertNil(slide.moved(to: 420, counts: true, holding: holding), "Stopped on the card, the bar stays away")
-    }
-
-    /// With the bar away, the reader sees the strip it uncovered, between the status bar and the bar's place (#1278). A card
-    /// there is seen whole, so a reader who stops there is held on it over a lower one the box cuts off. The bar comes back
-    /// once they are on it (#1288), over the card, which comes down only as far as the bar's bottom: `scrollTo` lines it up
-    /// with the top of the scroll view's visible page, which starts there.
-    func testACardInTheStripTheBarUncoversIsHeldAndComesDownBelowTheBar() throws {
-        // The status bar ends at 59, the bar's place at 123, and the box starts at 700.
-        let question = CGRect(x: 16, y: 80, width: 340, height: 220)
-        let permission = CGRect(x: 16, y: 320, width: 340, height: 580)
-        let cards = ["login": question, "notes": permission]
-        let seen = WatcherReaderPlace(newest: 40, end: 990, top: 59, dockTop: 700, cards: cards)
-        XCTAssertEqual(seen.heldCard, "login", "The question is whole in what the reader sees")
-        let measuredFromThePlace = WatcherReaderPlace(newest: 40, end: 990, top: 123, dockTop: 700, cards: cards)
-        XCTAssertEqual(measuredFromThePlace.heldCard, "notes",
-                       "Measured from the bar's place, the question's top would count as covered and the permission would win")
-
-        // The reader left it 21 points below the status bar. The bar comes back over it: it comes down to the bar's bottom.
-        let back = WatcherReaderPlace.offset(21, from: 59, height: 220, top: 123, dockTop: 700)
-        XCTAssertEqual(back, 0, accuracy: 0.0001)
-        let down = try XCTUnwrap(WatcherReaderPlace.anchor(card: question, offset: back, top: 123, dockTop: 700, viewTop: 123))
-        XCTAssertEqual(down, 0, accuracy: 0.0001, "Its top lines up with the visible page's top, inside the page")
-        XCTAssertNil(WatcherReaderPlace.anchor(card: question.offsetBy(dx: 0, dy: 43), offset: back, top: 123, dockTop: 700,
-                                               viewTop: 123), "Below the bar, it stays")
-        // Then the page carries it 30 points down: back to the bar's bottom.
-        let carried = try XCTUnwrap(WatcherReaderPlace.anchor(card: question.offsetBy(dx: 0, dy: 73), offset: back, top: 123,
-                                                              dockTop: 700, viewTop: 123))
-        XCTAssertEqual(123 + carried * (700 - 123), 123, accuracy: 0.0001, "The question's top lands where it was")
-    }
-
-    /// `scrollTo` can leave a card short of the point it aimed it at. On CI's SE the card the bar came back over came to
-    /// rest at 79, 5 points above the bar's bottom at 84, under its glass, and lining it up at the bar's bottom again left
-    /// it there (#1288). The next look aims past the bar's bottom by as far as the scroll missed, and a look that finds the
-    /// scroll went where it aimed aims at the bar's bottom again, so a scroll cut off on its way lands too.
-    func testAHeldCardAScrollLeavesShortIsAimedAgainByWhatItMissed() throws {
-        // The status bar ends at 20, the bar's bottom at 84, and the box starts at 519.2: 435.2 points of visible page.
-        let page: CGFloat = 519.2 - 84
-        let question = CGRect(x: 16, y: 70, width: 343, height: 347)
-        let first = try XCTUnwrap(WatcherReaderPlace.anchor(card: question, offset: 0, top: 84, dockTop: 519.2, viewTop: 84))
-        XCTAssertEqual(first, 0, accuracy: 0.0001, "Its top lines up with the bar's bottom")
-        let aimed = WatcherReaderPlace.aimed(first, viewTop: 84, dockTop: 519.2)
-        XCTAssertEqual(aimed, 84, accuracy: 0.0001)
-
-        // It came to rest at 79. Aimed at the same point again, it would stay there; the next look aims 5 points lower.
-        let short = question.offsetBy(dx: 0, dy: 79 - 70)
-        let again = try XCTUnwrap(WatcherReaderPlace.anchor(card: short, offset: 0, top: 84, dockTop: 519.2, viewTop: 84,
-                                                            missed: short.minY - aimed))
-        XCTAssertEqual(WatcherReaderPlace.aimed(again, viewTop: 84, dockTop: 519.2), 89, accuracy: 0.0001)
-        XCTAssertEqual(again, 5 / page, accuracy: 0.0001, "The point is a fraction of the visible page")
-
-        // A scroll that always lands 5 points short puts it at the bar's bottom, and the look after finds it in place.
-        let landed = question.offsetBy(dx: 0, dy: 84 - 70)
-        XCTAssertNil(WatcherReaderPlace.anchor(card: landed, offset: 0, top: 84, dockTop: 519.2, viewTop: 84, missed: -5))
-
-        // A scroll cut off on its way went where the second aimed, 5 points under the bar: the third aims at the bar again.
-        let under = question.offsetBy(dx: 0, dy: 89 - 70)
-        let back = try XCTUnwrap(WatcherReaderPlace.anchor(card: under, offset: 0, top: 84, dockTop: 519.2, viewTop: 84,
-                                                           missed: under.minY - 89))
-        XCTAssertEqual(back, 0, accuracy: 0.0001)
-
-        // A card already where it goes moves nothing, whatever the last scroll missed by.
-        XCTAssertNil(WatcherReaderPlace.anchor(card: landed, offset: 0, top: 84, dockTop: 519.2, viewTop: 84, missed: 12))
-    }
-
-    /// A card exactly as tall as the room between the bar and the box, held in the strip the bar uncovered, comes down to
-    /// fill that room exactly when the bar comes back over it, and goes back there once the page carries it off: the page
-    /// scrolls to the mark at its top, whose point doesn't depend on the card's height.
-    func testACardAsTallAsTheVisiblePageFillsItOnceTheBarComesBack() throws {
-        // The status bar ends at 59, the bar's place at 123, and the box starts at 700: 577 points of visible page.
-        let card = CGRect(x: 16, y: 80, width: 340, height: 577)
-        let back = WatcherReaderPlace.offset(21, from: 59, height: 577, top: 123, dockTop: 700)
-        XCTAssertEqual(back, 0, accuracy: 0.0001, "It comes down to the bar's bottom, its foot on the box")
-        XCTAssertEqual(WatcherReaderPlace.anchor(card: card, offset: back, top: 123, dockTop: 700, viewTop: 123), 0)
-        // A card under it left, and the page's bottom carried it 60 points down.
-        let carried = try XCTUnwrap(WatcherReaderPlace.anchor(card: CGRect(x: 16, y: 183, width: 340, height: 577), offset: back,
-                                                              top: 123, dockTop: 700, viewTop: 123))
-        XCTAssertEqual(123 + carried * (700 - 123), 123, accuracy: 0.0001, "The card's top lands at the bar's bottom again")
-    }
-
-    /// When the bar comes back, or slides away, the top of what the reader sees moves by its height. The held card stays
-    /// where it is on the screen: its offset is measured again from the new top, so the page's next change doesn't move
-    /// it by the bar's height. Only a card the bar comes back over moves, as far as keeps it in view.
-    func testTheHeldCardStaysWhereItIsOnTheScreenWhenTheBarComesBack() throws {
-        // The status bar ends at 59, the bar's bottom at 123 while it shows, and the box starts at 700. The reader is on a
-        // card at 200, 141 points below the status bar while the bar is away.
-        let card = CGRect(x: 16, y: 200, width: 340, height: 260)
-        let back = WatcherReaderPlace.offset(141, from: 59, height: 260, top: 123, dockTop: 700)
-        XCTAssertEqual(back, 77, accuracy: 0.0001, "The card is 77 points below the bar that came back")
-        XCTAssertNil(WatcherReaderPlace.anchor(card: card, offset: back, top: 123, dockTop: 700), "The bar coming back moves nothing")
-        XCTAssertNotNil(WatcherReaderPlace.anchor(card: card, offset: 141, top: 123, dockTop: 700),
-                        "Measured from the old top, the page's next change would move the card 64 points down")
-        // The page carries it 50 points down: back to 200.
-        let carried = try XCTUnwrap(WatcherReaderPlace.anchor(card: card.offsetBy(dx: 0, dy: 50), offset: back, top: 123,
-                                                              dockTop: 700))
-        XCTAssertEqual(123 + carried * (700 - 123), 200, accuracy: 0.0001, "The card's top lands where it was")
-        // The bar slides away again: still at 200.
-        XCTAssertEqual(WatcherReaderPlace.offset(back, from: 123, height: 260, top: 59, dockTop: 700), 141, accuracy: 0.0001)
-
-        // A card the reader has in the strip, at 80, comes down only as far as the bar's bottom when the bar comes back
-        // over it.
-        XCTAssertEqual(WatcherReaderPlace.offset(21, from: 59, height: 260, top: 123, dockTop: 700), 0, accuracy: 0.0001)
-        // One taller than the room left under the bar comes down only as far as keeps it filling the room: its top at 100,
-        // its bottom on the box.
-        XCTAssertEqual(WatcherReaderPlace.offset(21, from: 59, height: 600, top: 123, dockTop: 700), -23, accuracy: 0.0001)
+        XCTAssertEqual(slide.moved(to: 545, counts: false, pinned: true), false, "A card arriving brings it back")
+        XCTAssertEqual(slide.moved(to: 400, counts: true, pinned: true), false, "Going up with a card waiting keeps it")
     }
 
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {

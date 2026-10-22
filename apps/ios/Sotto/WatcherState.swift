@@ -278,8 +278,7 @@ struct WatcherReaderPlace: Equatable {
 
     /// - Parameters:
     ///   - newest: the bottom of the newest words; `end`, the bottom of the page.
-    ///   - top: the top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away
-    ///     (#1278); `dockTop`, the top of the box.
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
     ///   - cards: each waiting card's frame, by its key.
     init(newest: CGFloat, end: CGFloat, top: CGFloat, dockTop: CGFloat, cards: [String: CGRect]) {
         let slack = Self.slack
@@ -295,68 +294,33 @@ struct WatcherReaderPlace: Equatable {
         following = heldCard == nil && (seesNewest || end <= dockTop + slack)
     }
 
-    /// Where the card the reader is on goes when the page changes around it: `offset` below the top of what the reader
-    /// sees, where they left it, but no lower than keeps it whole above the box and never above that top. A card taller
-    /// than the room between them stays where the reader left it as long as it fills that room. Cards removed or added
-    /// below it, the user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page
-    /// keeps its end where it was, which would carry the card off with it (#1277).
+    /// Where the card the reader is on goes when the page changes around it: `offset` below the header, where the reader
+    /// left it, but no lower than keeps it whole above the box and never under the header. A card taller than the room
+    /// between them stays where the reader left it as long as it fills that room. Cards removed or added below it, the
+    /// user's follow-ups coming and going and Watcher's words growing all move the page's end, and the page keeps its end
+    /// where it was, which would carry the card off with it (#1277).
     ///
-    /// Returns the point, as a fraction of the scroll view's visible page, that `ScrollViewProxy.scrollTo` lines the card's
-    /// top up with, or nil when it is already within a point of where it goes. The page scrolls to a mark with no height at
-    /// the card's top rather than to the card, so the point is the same for a card of any height, even one exactly as tall
-    /// as the visible page. That page starts at `viewTop`, the bottom of the bar's place, even while the bar is away
-    /// (#1278). The bar comes back once the reader is on a card (#1288), so the card goes back within that page, and
-    /// only a card taller than the room, its top above the bar, lines up at a point above it, a fraction below 0.
+    /// Returns the point, as a fraction of the card's height and of the visible page's, that `ScrollViewProxy.scrollTo`
+    /// lines up to put the card's top there, or nil when it is already within a point of there.
     /// - Parameters:
-    ///   - card: the card's frame now; `offset`, its top's distance below `top` where the reader left it.
-    ///   - top: the top of what the reader sees: the bottom of the bar, or of the status bar while the bar is away;
-    ///     `dockTop`, the top of the box.
-    ///   - viewTop: the top of the scroll view's visible page, which `scrollTo` lines up within; `top` when nil.
-    ///   - missed: how far below the point it was aimed at (`aimed`) the last scroll left the card's top, above when
-    ///     negative. The point is moved the other way by as much. `scrollTo` doesn't always line the mark up where its
-    ///     point says: on CI's SE it left a card the bar came back over 5 points above the bar's bottom, under the glass,
-    ///     and lining it up again at the same point never moved it (#1288).
-    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat, viewTop: CGFloat? = nil,
-                       missed: CGFloat = 0) -> CGFloat? {
-        let wanted = top + kept(offset, height: card.height, top: top, dockTop: dockTop)
+    ///   - card: the card's frame now; `offset`, its top's distance below the header where the reader left it.
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    static func anchor(card: CGRect, offset: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat? {
+        let spare = dockTop - top - card.height
+        let wanted = min(max(top + offset, min(top, top + spare)), max(top, top + spare))
         guard abs(card.minY - wanted) > 1 else { return nil }
-        let viewTop = viewTop ?? top
-        let page = dockTop - viewTop
-        guard page > 1 else { return nil }
-        return (wanted - missed - viewTop) / page
-    }
-
-    /// The point a scroll that lines the card's top mark up at `y`, a fraction of the visible page from `viewTop` down to
-    /// `dockTop`, aims it at, in the frames' space: where its top should come to rest.
-    static func aimed(_ y: CGFloat, viewTop: CGFloat, dockTop: CGFloat) -> CGFloat {
-        viewTop + y * (dockTop - viewTop)
-    }
-
-    /// The held card's offset once the top of what the reader sees moves from `before` to `top`, as it does when the bar
-    /// slides away or comes back (#1278), and when the reader stops on a card with the bar away, which brings it back
-    /// (#1288): the card stays where it is on the screen, measured from the new top, unless that puts it under the bar
-    /// that came back or under the box, where it comes only as far as keeps it in view.
-    /// - Parameters:
-    ///   - offset: the card's top's distance below `before` where the reader left it; `height`, the card's.
-    ///   - top: the new top of what the reader sees; `dockTop`, the top of the box.
-    static func offset(_ offset: CGFloat, from before: CGFloat, height: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat {
-        kept(before + offset - top, height: height, top: top, dockTop: dockTop)
-    }
-
-    /// `offset` below `top`, kept so a card `height` tall stays whole between `top` and the box or, taller than the room
-    /// between them, fills that room.
-    private static func kept(_ offset: CGFloat, height: CGFloat, top: CGFloat, dockTop: CGFloat) -> CGFloat {
-        let spare = dockTop - top - height
-        return min(max(offset, min(0, spare)), max(0, spare))
+        // A card as tall as the room between the header and the box has its top at the header.
+        guard abs(spare) > 1 else { return 0 }
+        return min(max((wanted - top) / spare, 0), 1)
     }
 }
 
 /// Which way the user moves one of Watcher's pages, so its bar slides away as they read down and comes back as they go
-/// up, as Safari's does (#1278, pick A). Near the page's top the bar always shows, and so it does while the reader is on
-/// a card waiting on them (#1288): with no strip uncovered over a held card, nothing has to keep the card in a place the
-/// scroll view can't line it up with. iOS 17 can't say when the reader lets go, so there a card doesn't keep the bar
-/// (`holding(card:userScrolling:seesLetGo:)`). Moves the user didn't make (the page following Watcher's words, keeping a
-/// card, going to the top, or changing height) don't count, and start the count again.
+/// up, as Safari's does (#1278, pick A). Near the page's top the bar always shows, and so it does while a card waits on
+/// the user in the conversation, Watcher's own or a thread's (#1288): the page keeps a card the reader is on where they
+/// left it, and with the bar fixed it never has to keep it clear of a bar that moves. Moves the user didn't make (the
+/// page following Watcher's words, keeping a card, going to the top, or changing height) don't count, and start the
+/// count again.
 struct WatcherBarSlide: Equatable {
     /// How near the page's top the bar always shows.
     static let near: CGFloat = 12
@@ -365,27 +329,15 @@ struct WatcherBarSlide: Equatable {
     private var last: CGFloat?
     private var moved: CGFloat = 0
 
-    /// Whether the card the reader is on keeps the bar shown, which brings it back over the card when they stop there
-    /// with it away, and moves the card down below it. Only once they let go: while they move the page, the card they
-    /// are on is decided again where they let go, and the page never moves under them. iOS 17 can't say when they let
-    /// go, so there no card keeps the bar: it slides as it does with none held, and a card the reader stops on in the
-    /// strip it uncovered stays in view there, rather than under a bar come back over it that nothing moves it out from.
-    /// - Parameters:
-    ///   - card: whether the reader is on a card; `userScrolling`, whether they are moving the page.
-    ///   - seesLetGo: whether this iOS says when the reader lets go of the page, as iOS 18 and later do.
-    static func holding(card: Bool, userScrolling: Bool, seesLetGo: Bool) -> Bool {
-        seesLetGo && card && !userScrolling
-    }
-
     /// - Parameters:
     ///   - offset: how far the page has scrolled from its top.
     ///   - counts: whether this move was the user's.
-    ///   - holding: whether the reader is on a card, which keeps the bar.
+    ///   - pinned: whether a card waits on the user, which keeps the bar where it is.
     /// - Returns: true to slide the bar away, false to bring it back, nil to leave it.
-    mutating func moved(to offset: CGFloat, counts: Bool, holding: Bool = false) -> Bool? {
+    mutating func moved(to offset: CGFloat, counts: Bool, pinned: Bool = false) -> Bool? {
         defer { last = offset }
         guard let last else { return nil }
-        if offset < Self.near || holding { moved = 0; return false }
+        if offset < Self.near || pinned { moved = 0; return false }
         guard counts else { moved = 0; return nil }
         let step = offset - last
         guard step != 0 else { return nil }

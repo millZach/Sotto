@@ -1435,8 +1435,11 @@ struct HeldDetail {
                 waiting = cards + [Self.fixtureNotesPermission(laptop: laptop, mayAnswer: watcherAnswers)]
             }
             if keepsWriting { page["needsYou"] = [[String: Any]]() }
-            // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue under the cards, so a
-            // card held near the top of the screen has page enough under it to stay there when a card under it leaves.
+            // With --ui-watcher-nothing-waits, no card waits on the user, so the bar slides as the user reads (#1288).
+            if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
+            // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue at the page's end, so
+            // the conversation has page enough to read down on the largest iPhone with no card waiting, or once one is
+            // answered, and the bar has a page to slide away from (#1278).
             if arguments.contains("--ui-watcher-queued-below") {
                 page["followups"] = (1...10).map { n -> [String: Any] in
                     ["itemId": "queued-\(n)", "draftId": "queued-draft-\(n)", "text": "Look at #845’s checks again, \(n) of 10",
@@ -1459,9 +1462,7 @@ struct HeldDetail {
             }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
-            if keepsWriting {
-                keepFixtureWatcherWriting(on: laptop, then: waiting, whenAsked: arguments.contains("--ui-watcher-writes-when-asked"))
-            }
+            if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }
             if arguments.contains("--ui-watcher-two-cards") { answerFixtureNotesWhenAsked(on: laptop) }
         }
         storageReady = true
@@ -1766,44 +1767,28 @@ struct HeldDetail {
                                      "text": "Nothing new needs you. Babysit #845 release notes is still waiting for its checks."], on: hostID)
     }
     /// Watcher writes one long reply a few words at a time, twice a second for two minutes, and `cards` arrive under it a
-    /// moment after it starts, as a worker's question reaches Watcher's page while Watcher writes. With `whenAsked`, the
-    /// cards arrive the same way but Watcher writes its next words only when the journey signals it
-    /// (`fixtureWatcherWritesSignal`), so a journey that takes minutes to place the reader still sees Watcher write, and
-    /// nothing moves the page while the journey places the reader.
-    private func keepFixtureWatcherWriting(on hostID: String, then cards: Any?, whenAsked: Bool) {
+    /// moment after it starts, as a worker's question reaches Watcher's page while Watcher writes.
+    private func keepFixtureWatcherWriting(on hostID: String, then cards: Any?) {
         let id = "writing-" + UUID().uuidString
         appendFixtureWatcherMessage(["id": id, "role": "assistant", "createdAt": ISO8601DateFormatter().string(from: Date()),
                                      "text": "Checking the threads I watch."], on: hostID)
-        let write: (inout [String: Any]) -> Void = { page in
-            guard var conversation = page["conversation"] as? [String: Any],
-                  var messages = conversation["messages"] as? [[String: Any]],
-                  let index = messages.firstIndex(where: { $0["id"] as? String == id }) else { return }
-            messages[index]["text"] = (messages[index]["text"] as? String ?? "") + " Still waiting on #845’s checks."
-            conversation["messages"] = messages
-            conversation["revision"] = (conversation["revision"] as? Int ?? 0) + 1
-            page["conversation"] = conversation
-        }
-        if whenAsked {
-            Self.fixtureWatcherWrites = { [weak self] in self?.changeFixtureWatcher(on: hostID, write) }
-            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, _, _, _ in
-                Task { @MainActor in AppModel.fixtureWatcherWrites?() }
-            }, Self.fixtureWatcherWritesSignal as CFString, nil, .deliverImmediately)
-        }
         Task { [weak self] in
-            for tick in 1...(whenAsked ? 3 : 240) {
+            for tick in 1...240 {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard let self else { return }
                 changeFixtureWatcher(on: hostID) { page in
                     if tick == 3, let cards { page["needsYou"] = cards }
-                    if !whenAsked { write(&page) }
+                    guard var conversation = page["conversation"] as? [String: Any],
+                          var messages = conversation["messages"] as? [[String: Any]],
+                          let index = messages.firstIndex(where: { $0["id"] as? String == id }) else { return }
+                    messages[index]["text"] = (messages[index]["text"] as? String ?? "") + " Still waiting on #845’s checks."
+                    conversation["messages"] = messages
+                    conversation["revision"] = (conversation["revision"] as? Int ?? 0) + 1
+                    page["conversation"] = conversation
                 }
             }
         }
     }
-    /// The Darwin notification a journey posts for Watcher to write its next words, with `--ui-watcher-writes-when-asked`.
-    private static let fixtureWatcherWritesSignal = "app.sotto.ui.watcher-writes"
-    /// What the signal does, as a C callback can't hold the model.
-    private static var fixtureWatcherWrites: (() -> Void)?
     /// The Darwin notification the two-card journey posts when the laptop should answer Babysit #845 release notes's
     /// permission. The journey decides when, so the card leaves only once the reader is held on the question above it.
     private static let fixtureNotesAnsweredSignal = "app.sotto.ui.watcher-notes-answered"
