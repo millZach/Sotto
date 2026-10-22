@@ -1619,9 +1619,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   const applyDictation = (on: boolean): void => {
     if (!on) {
-      // A recording under way ends unsaved, since no shortcut could stop it now. A dictation already being
-      // transcribed finishes, and a kept one stays kept for when dictation is back on.
-      if (widgetState.status === 'listening') void messageDelivery.sendToMain(DICTATION_COMMAND, { type: 'cancel' })
+      // A recording under way, or one still waiting for the microphone, ends unsaved, since no shortcut could stop
+      // it now. A dictation already being transcribed finishes, and a kept one stays kept for when dictation is back on.
+      if (widgetState.status === 'listening' || widgetState.status === 'requesting-permission') void messageDelivery.sendToMain(DICTATION_COMMAND, { type: 'cancel' })
       dictationShortcuts?.interrupt()
       hotkeys.cancelListening()
     }
