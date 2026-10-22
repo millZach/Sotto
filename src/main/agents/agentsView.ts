@@ -4,7 +4,7 @@ import type { DelegatedView } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
 
 /**
- * The iPhone's read of a thread's delegated threads (ADR-0101): each thread below `threadId` that its `delegatedBy` link
+ * The iPhone's read of a thread's delegated threads (ADR-0103): each thread below `threadId` that its `delegatedBy` link
  * names, both levels, as the desktop's Tools › Agents finds them (`delegatedRoster.ts`), with what delegation's own record
  * knows of it. Its start is only ever the brief that started it, read from the delegating thread's delegations or, where
  * that read no longer holds it, from the thread's own record of the briefs it was sent. Never a reply.

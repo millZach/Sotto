@@ -1360,7 +1360,7 @@ struct HeldDetail {
             fixtureDetails[laptop + "/notes845"] = decode(ThreadDetail.self, ["threadId": "notes845", "revision": 1, "messages": [
                 ["id": "brief", "role": "user", "text": "Write the release notes for #845 once its checks pass.", "createdAt": at(12 * 60)]]])
         }
-        // The Agents journey: the working thread's delegated threads and its provider's agents (ADR-0101).
+        // The Agents journey: the working thread's delegated threads and its provider's agents (ADR-0103).
         let agents = arguments.contains("--ui-agents")
         if agents { addFixtureAgents(to: &threads, laptop: laptop, at: at) }
         // The working thread's own conversation: a review reply in Markdown and a follow-up, with the agent's steps
@@ -3214,7 +3214,7 @@ struct HeldDetail {
     }
 }
 
-// The Agents view (ADR-0101, an Owl feature): a thread's top bar counts its delegated threads and its provider's own
+// The Agents view (ADR-0103, an Owl feature): a thread's top bar counts its delegated threads and its provider's own
 // sub-agents, and opens a sheet that lists them. Only a computer that lists `agents-view` offers it; a stable one
 // doesn't, and nothing of it shows. Every read is the sheet opening or the user's own press; nothing here answers or
 // changes anything on the computer.

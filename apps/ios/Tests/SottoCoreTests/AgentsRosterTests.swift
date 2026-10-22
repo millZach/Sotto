@@ -1,7 +1,7 @@
 import XCTest
 @testable import SottoCore
 
-/// The Agents view (ADR-0101): what a thread's top bar counts and how its sheet orders and words its delegated threads
+/// The Agents view (ADR-0103): what a thread's top bar counts and how its sheet orders and words its delegated threads
 /// and sub-agents, as the desktop's Tools › Agents does.
 final class AgentsRosterTests: XCTestCase {
     private func thread(_ id: String, _ extra: String = "", status: String = "idle", requests: String = "[]") throws -> ThreadSummary {

@@ -19,7 +19,7 @@ struct ThreadView: View {
     @State private var stuck = false
     /// The big title has scrolled off, so the bar shows it.
     @State private var titled = false
-    /// The Agents sheet is up, or a delegated thread it opened is on top (ADR-0101): no request sheet is offered then.
+    /// The Agents sheet is up, or a delegated thread it opened is on top (ADR-0103): no request sheet is offered then.
     @State private var agentsOpen = false
     @State private var agentsCovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

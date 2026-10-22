@@ -264,7 +264,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
-    // The iPhone's Agents view (ADR-0101) only where the host's Owl answer turns it on.
+    // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true))
   /**
    * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose

@@ -26,7 +26,7 @@ async function phoneOn(service: HostService) {
   return { server, phone }
 }
 
-describe('the iPhone’s Agents view over the socket (ADR-0101)', () => {
+describe('the iPhone’s Agents view over the socket (ADR-0103)', () => {
   it('is offered where the Owl answer turns it on, and answers a thread’s delegated threads without naming one the phone is not sent', async () => {
     const asked: string[] = []
     const service = agentsHost(true, threadId => {

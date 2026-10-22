@@ -23,7 +23,7 @@ export const OWL_FEATURES = [
   { id: 'opencode', name: 'OpenCode provider', owlSince: '2026-10-16', owner: 'docs/adr/0087-opencode-is-a-thread-provider.md', sentToStable: false },
   { id: 'dictation-hold-shortcuts', name: 'Hold shortcuts, Fn and extra dictation shortcuts', owlSince: '2026-10-19', owner: 'docs/adr/0097-dictation-shortcuts-listen-for-held-keys.md', sentToStable: false },
   { id: 'main-freeze', name: 'Notice when main freezes, and Record a minute', owlSince: '2026-10-20', owner: 'docs/adr/0098-main-records-a-minute-of-itself-on-this-computer.md', sentToStable: false },
-  { id: 'iphone-agents-view', name: 'Agents on the iPhone', owlSince: '2026-10-21', owner: 'docs/adr/0101-the-iphone-lists-a-threads-agents.md', sentToStable: false },
+  { id: 'iphone-agents-view', name: 'Agents on the iPhone', owlSince: '2026-10-21', owner: 'docs/adr/0103-the-iphone-lists-a-threads-agents.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

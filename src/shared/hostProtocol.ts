@@ -208,7 +208,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * run said about a client while it still describes the client (the same version installed, the same release), so a
  * desktop may ask it to check afresh whatever its readings hold (ADR-0077, October 21 amendment). A host that does not
  * list it may set those findings aside when it checks.
- * `agents-view`: the host offers the iPhone's Agents view (ADR-0101) and answers `thread-delegations` with what delegation's
+ * `agents-view`: the host offers the iPhone's Agents view (ADR-0103) and answers `thread-delegations` with what delegation's
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
@@ -421,7 +421,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('sign-in-cancel'), signInId: z.uuid() }).strict(),
   /** The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107). */
   z.object({ ...base, op: z.literal('opencode-sign-in'), call: opencodeHostCallSchema }).strict(),
-  /** A thread's delegated threads as delegation's record knows them, for the iPhone's Agents view (`agents-view`, ADR-0101). */
+  /** A thread's delegated threads as delegation's record knows them, for the iPhone's Agents view (`agents-view`, ADR-0103). */
   z.object({ ...base, op: z.literal('thread-delegations'), threadId: id }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>

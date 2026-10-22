@@ -1,6 +1,6 @@
 import Foundation
 
-// The Agents view (ADR-0101, an Owl feature): a thread's top bar counts its delegated threads (ADR-0081) and its
+// The Agents view (ADR-0103, an Owl feature): a thread's top bar counts its delegated threads (ADR-0081) and its
 // provider's own sub-agents, and opens a sheet listing them as the desktop's Tools › Agents does
 // (`src/renderer/src/tools/delegatedRoster.ts`). Only a computer that lists `agents-view` offers it. Pure, so the sheet,
 // the top bar and the tests read one answer.

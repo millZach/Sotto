@@ -9,7 +9,7 @@ import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { testCredentials } from '../../fixtures/testCredentials'
 
-/** The iPhone's Agents view is an Owl feature (ADR-0101, ADR-0072): stable offers none of it. */
+/** The iPhone's Agents view is an Owl feature (ADR-0103, ADR-0072): stable offers none of it. */
 const roots: string[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) {

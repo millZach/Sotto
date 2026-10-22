@@ -1764,7 +1764,7 @@ import XCTest
         capture("focus-dark-larger-text")
     }
 
-    /// The Agents view (ADR-0101): Agents in a thread's top bar counts its delegated threads and agents and says one needs
+    /// The Agents view (ADR-0103): Agents in a thread's top bar counts its delegated threads and agents and says one needs
     /// you. Its sheet lists them newest first; an agent opens in place to its task and latest update, a delegated thread
     /// opens, and Back comes back to the sheet.
     func testAgentsOpensADelegatedThreadAndBackReturnsToTheSheet() {

@@ -125,7 +125,7 @@ describe('remote command allow-list', () => {
       'host-update',
       // One activity record whole, a read for a desktop that accepted activity-bodies (ADR-0025, October 18 amendment).
       'activity-body',
-      // A thread's delegated threads for the iPhone's Agents view: a read on a listener that offers agents-view (ADR-0101).
+      // A thread's delegated threads for the iPhone's Agents view: a read on a listener that offers agents-view (ADR-0103).
       'thread-delegations']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())

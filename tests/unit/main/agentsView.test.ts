@@ -19,7 +19,7 @@ function record(made: Record<string, DelegationView[]>, received: Record<string,
   }
 }
 
-describe('the iPhone’s read of a thread’s delegated threads (ADR-0101)', () => {
+describe('the iPhone’s read of a thread’s delegated threads (ADR-0103)', () => {
   it('lists both levels from the snapshot’s links with the start, newest outcome and brief, and never a refused start or a reply', () => {
     const review = view('review', { createdAt: '2026-10-21T10:01:00.000Z', outcome: 'answered', outcomeAt: '2026-10-21T10:03:00.000Z', told: true })
     const again = view('review', { action: 'send', work: 'research', createdAt: '2026-10-21T10:05:00.000Z', outcome: 'working', outcomeAt: '2026-10-21T10:04:00.000Z', waiting: true })

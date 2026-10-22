@@ -1,7 +1,7 @@
 import SwiftUI
 import SottoCore
 
-// The Agents view (ADR-0101, an Owl feature; variant A of docs/prototypes/iphone-agents-view-prototype.html): Agents in a
+// The Agents view (ADR-0103, an Owl feature; variant A of docs/prototypes/iphone-agents-view-prototype.html): Agents in a
 // thread's top bar, with a count, opens a sheet of the thread's delegated threads and its provider's own sub-agents,
 // newest start first, as the desktop's Tools › Agents lists them. A delegated thread's row opens that thread, and Back
 // comes back to the sheet; a sub-agent's row opens in place to its task and result. Nothing here answers anything: a

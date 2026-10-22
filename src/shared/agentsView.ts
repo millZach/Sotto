@@ -3,7 +3,7 @@ import { delegationWorkSchema, DELEGATION_VIEWS_MAX } from './delegation'
 import { watcherOutcomeSchema } from './watcher'
 
 /**
- * The iPhone's Agents view (ADR-0101, an Owl feature): a thread's top bar names how many delegated threads and provider
+ * The iPhone's Agents view (ADR-0103, an Owl feature): a thread's top bar names how many delegated threads and provider
  * sub-agents it has, and opens a sheet listing them, as the desktop's Tools › Agents does. A host offers it as the
  * `agents-view` feature, and answers `thread-delegations` with what its delegation record knows of each delegated thread
  * below one thread. Sub-agents come from the reads `subagents` already offers.

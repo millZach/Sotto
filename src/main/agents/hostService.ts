@@ -165,9 +165,9 @@ export interface HostService {
   subagentPage?(request: SubagentPageRequest): Promise<SubagentPage>
   /** One agent's assignments, for Agents. */
   subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
-  /** The host offers the iPhone's Agents view (ADR-0101): its Owl answer turns it on. */
+  /** The host offers the iPhone's Agents view (ADR-0103): its Owl answer turns it on. */
   readonly supportsAgentsView?: boolean
-  /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0101). */
+  /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
 
@@ -270,7 +270,7 @@ export class LocalHostService implements HostService {
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /**
-     * The iPhone's Agents view (ADR-0101), present only when the host's Owl answer turns it on. `delegations` is there only
+     * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
      */
     agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations } }) {
