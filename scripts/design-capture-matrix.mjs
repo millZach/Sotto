@@ -49,10 +49,12 @@ for (const [id, category, state] of [
   ['dictate-pasted', 'dictate', 'success-pasted'],
   ['dictate-processing', 'dictate', 'processing'],
   ['dictate-error', 'dictate', 'error'],
-  ['history-populated', 'history', 'populated-feedback'],
-  ['history-empty', 'history', 'empty-feedback'],
-  ['history-search', 'history', 'search'],
-  ['history-off', 'history', 'off'],
+  // The Dictate room's Journal, where transcripts live now that there is no History page (#1293).
+  ['dictate-journal-open', 'dictate', 'journal-open-feedback'],
+  ['dictate-journal-more', 'dictate', 'journal-more-menu'],
+  ['dictate-journal-search', 'dictate', 'journal-search'],
+  ['dictate-journal-empty', 'dictate', 'journal-empty-feedback'],
+  ['dictate-journal-off', 'dictate', 'journal-off'],
   ['settings-key-verified', 'settings', 'key-verified'],
   ['settings-cleanup', 'settings', 'cleanup'],
   ['settings-feedback', 'settings', 'saved-feedback'],
@@ -78,9 +80,9 @@ add({ id: 'dictate-reduced-motion', category: 'dictate', state: 'listening-reduc
 for (const [id, category, state, focusTarget] of [
   ['focus-switch-tab', 'dictate', 'focus-switch-tab', 'tab'],
   ['focus-navigation', 'dictate', 'focus-navigation', 'navigation'],
-  ['focus-input', 'history', 'focus-input', 'input'],
+  ['focus-input', 'dictate', 'focus-input', 'input'],
   ['focus-switch', 'settings', 'focus-switch', 'switch'],
-  ['focus-destructive', 'history', 'focus-destructive', 'destructive'],
+  ['focus-destructive', 'dictate', 'focus-destructive', 'destructive'],
 ]) add({ id, category, state, focusTarget })
 
 // The light room repeats every surface family, its feedback and error states,
@@ -91,7 +93,7 @@ for (const [id, category, state] of [
   ['dictate-listening-light', 'dictate', 'listening'],
   ['dictate-pasted-light', 'dictate', 'success-pasted'],
   ['dictate-error-light', 'dictate', 'error'],
-  ['history-populated-light', 'history', 'populated-feedback'],
+  ['dictate-journal-open-light', 'dictate', 'journal-open-feedback'],
   ['settings-feedback-light', 'settings', 'saved-feedback'],
   ['settings-providers-light', 'settings', 'providers'],
   ['settings-capture-light', 'settings', 'capture'],
@@ -113,9 +115,9 @@ add({ id: 'dictate-reduced-motion-light', category: 'dictate', state: 'listening
 for (const [id, category, state, focusTarget] of [
   ['focus-switch-tab-light', 'dictate', 'focus-switch-tab', 'tab'],
   ['focus-navigation-light', 'dictate', 'focus-navigation', 'navigation'],
-  ['focus-input-light', 'history', 'focus-input', 'input'],
+  ['focus-input-light', 'dictate', 'focus-input', 'input'],
   ['focus-switch-light', 'settings', 'focus-switch', 'switch'],
-  ['focus-destructive-light', 'history', 'focus-destructive', 'destructive'],
+  ['focus-destructive-light', 'dictate', 'focus-destructive', 'destructive'],
 ]) add({ id, category, state, focusTarget, theme: 'light' })
 
 // Each built-in theme is applied live, in both rooms, on the surface that
@@ -140,7 +142,7 @@ for (const scalePercent of DESIGN_CAPTURE_SCALES) {
   for (const [surface, state] of [
     ['onboarding', 'onboarding-model'],
     ['dictate', 'dictate-ready'],
-    ['history', 'history-populated'],
+    ['journal', 'journal-full'],
     ['settings', 'settings-full'],
     ['help', 'help-full'],
   ]) add({ id: `scale-${scalePercent}-${surface}`, category: 'scale', state, scalePercent })

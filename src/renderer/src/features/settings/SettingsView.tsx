@@ -24,7 +24,7 @@ import type {
   SettingsPatch,
   WorktreeCleanupDays,
 } from '../../../../shared/settings'
-import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
+import { TYPING_SPEED_MAX_WPM, TYPING_SPEED_MIN_WPM, WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
@@ -206,9 +206,11 @@ export function SettingsView({
   const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
   const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
+  const [typingSpeedError, setTypingSpeedError] = useState<string | undefined>()
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
   const pasteDelayDraft = useRevisionDraft(settings.pasteDelayMs, String(settings.pasteDelayMs), () => setPasteDelayError(undefined))
   const successDurationDraft = useRevisionDraft(settings.successDisplayMs, String(settings.successDisplayMs), () => setSuccessDurationError(undefined))
+  const typingSpeedDraft = useRevisionDraft(settings.typingSpeedWpm, String(settings.typingSpeedWpm), () => setTypingSpeedError(undefined))
   const [dictionaryPasteCut, setDictionaryPasteCut] = useState(false)
   const llmDictionaryDraft = useRevisionDraft(settings.llmDictionary, settings.llmDictionary)
   const [updateBusy, setUpdateBusy] = useState(false)
@@ -341,31 +343,29 @@ export function SettingsView({
   saveDictionaryRef.current = saveDictionary
   useEffect(() => () => { void saveDictionaryRef.current(false) }, [])
 
-  const savePasteDelay = async (): Promise<void> => {
-    const value = parseBoundedInteger(pasteDelayDraft.read(), 50, 1_000)
+  /**
+   * The whole-number fields (Paste delay, Success message duration, Typing speed) save the same way: a draft outside
+   * its bounds says so and stays unsaved, and a save follows the draft's revision so an older answer never clobbers a
+   * newer edit.
+   */
+  const saveBoundedNumber = async <K extends 'pasteDelayMs' | 'successDisplayMs' | 'typingSpeedWpm'>(
+    draft: typeof pasteDelayDraft, key: K, minimum: number, maximum: number,
+    setError: (error: string | undefined) => void, notice: string,
+  ): Promise<void> => {
+    const value = parseBoundedInteger(draft.read(), minimum, maximum)
     if (value === null) {
-      setPasteDelayError('Enter a whole number between 50 and 1000.')
+      setError(`Enter a whole number between ${minimum} and ${maximum}.`)
       return
     }
-    setPasteDelayError(undefined)
-    const submission = pasteDelayDraft.begin(value, true)
+    setError(undefined)
+    const submission = draft.begin(value, true)
     if (submission === null) return
-    const saved = await save({ pasteDelayMs: value }, 'Paste delay saved.')
-    pasteDelayDraft.settle(submission, saved, true)
+    const saved = await save({ [key]: value } as Pick<AppSettings, K>, notice)
+    draft.settle(submission, saved, true)
   }
-
-  const saveSuccessDuration = async (): Promise<void> => {
-    const value = parseBoundedInteger(successDurationDraft.read(), 500, 5_000)
-    if (value === null) {
-      setSuccessDurationError('Enter a whole number between 500 and 5000.')
-      return
-    }
-    setSuccessDurationError(undefined)
-    const submission = successDurationDraft.begin(value, true)
-    if (submission === null) return
-    const saved = await save({ successDisplayMs: value }, 'Success duration saved.')
-    successDurationDraft.settle(submission, saved, true)
-  }
+  const savePasteDelay = (): Promise<void> => saveBoundedNumber(pasteDelayDraft, 'pasteDelayMs', 50, 1_000, setPasteDelayError, 'Paste delay saved.')
+  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, 'Success duration saved.')
+  const saveTypingSpeed = (): Promise<void> => saveBoundedNumber(typingSpeedDraft, 'typingSpeedWpm', TYPING_SPEED_MIN_WPM, TYPING_SPEED_MAX_WPM, setTypingSpeedError, 'Typing speed saved.')
 
   // One busy flag for all three: they are the same button row, and only one of
   // check, download, or restart can sensibly be in flight at a time.
@@ -503,6 +503,7 @@ export function SettingsView({
                     : <DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />}
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>
                   <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="A short sound when recording starts and stops." />
+                  <div className="settings-input-action"><Field label="Typing speed" description={`How fast you type, in words per minute (${TYPING_SPEED_MIN_WPM} to ${TYPING_SPEED_MAX_WPM}). The Dictate room counts the time dictation saves you against it.`} {...(typingSpeedError === undefined ? {} : { error: typingSpeedError })}><input className="tt-input" inputMode="numeric" value={typingSpeedDraft.value} onBlur={() => void saveTypingSpeed()} onChange={(event) => { typingSpeedDraft.edit(event.currentTarget.value) }} /></Field></div>
                 </div>
               </Card>
 
@@ -678,7 +679,7 @@ export function SettingsView({
       <PageWindowControls />
       {statusText ? <p className="page-status">{statusText}</p> : null}
 
-      {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
+      {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
       {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
     </div>
   )

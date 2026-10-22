@@ -50,6 +50,10 @@ describe('HelpView', () => {
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
     expect(screen.getByText(/previous working shortcut active/i)).toBeVisible()
     expect(screen.getByText(/resetting settings reopens first-run setup/i)).toBeVisible()
+    // Ctrl+K opens the Dictate room on the Journal's search now that there is no History page (#1293).
+    expect(screen.getByText('Search transcripts')).toBeVisible()
+    expect(screen.queryByText('Search history')).not.toBeInTheDocument()
+    expect(screen.queryByText(/History controls/)).not.toBeInTheDocument()
     expect(screen.getAllByLabelText('Ctrl+Shift+Space')[0]).toBeVisible()
     expect(screen.queryByRole('heading', { level: 2, name: 'Paste permissions' })).not.toBeInTheDocument()
   })

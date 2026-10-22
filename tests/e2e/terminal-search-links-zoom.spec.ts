@@ -428,8 +428,9 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         await namedLink.press('Escape'); await linkControl.press('Escape')
         await divider.press('Home'); await expect(divider).toHaveAttribute('aria-valuenow', '120')
         await input.press('Control+f'); await expect(divider).toHaveAttribute('aria-valuenow', '184')
+        // Ctrl+K belongs to the Journal's search in the Dictate room, from anywhere but a dialog.
         await find.press('Control+k')
-        await expect(page.getByRole('region', { name: 'Transcript history' }).getByRole('heading', { name: 'History', exact: true })).toBeVisible()
+        await expect(page.getByRole('region', { name: 'Dictation' })).toBeVisible()
       }
       if (surface === 'workspace') {
         await input.press('Control+b')
