@@ -101,6 +101,22 @@ describe('the coordinator’s prototype-ready mark', () => {
     await vi.waitFor(() => expect(mark(again.control.shell())?.source).toBe(source))
   })
 
+  it('clears the mark when the user answers a question asked after it, and saves that', async () => {
+    const { root, host, control } = await start()
+    finishWithPrototype(host)
+    await vi.waitFor(() => expect(mark(control.shell())).toBeDefined())
+    const source = mark(control.shell())!.source
+    host.event({ type: 'question', threadId: 'workshop', requestId: 'q1', text: 'Merge the branch?', status: 'running' })
+    await vi.waitFor(() => expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests.map(request => request.id)).toEqual(['q1']))
+    // The question carries the page of the reply before it (ADR-0085), so the mark is the question's while it waits.
+    await vi.waitFor(() => expect(mark(control.shell())?.source).toBe('request:q1'))
+    const state = await control.command({ type: 'answer', threadId: 'workshop', requestId: 'q1', answer: 'Yes' })
+    expect(state.error).toBeNull()
+    host.event({ type: 'ready', threadId: 'workshop', text: 'Merged.' })
+    await vi.waitFor(() => expect(mark(control.shell())).toBeUndefined())
+    await vi.waitFor(async () => expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).prototypesCleared).toContainEqual({ threadId: 'workshop', source }))
+  })
+
   it('clears the mark when the user replies, and showing the thread does not', async () => {
     const { host, control } = await start()
     finishWithPrototype(host)

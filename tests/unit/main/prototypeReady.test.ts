@@ -124,6 +124,7 @@ describe('PrototypeReady', () => {
     const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
     expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
     expect(markOf(marks, snapshot(thread({ requests: [question('q')] })))?.source).toBe('reply:reply')
+    marks.answered('thread')
     expect(markOf(marks, snapshot(thread({ status: 'running' })))).toBeUndefined()
     expect(marks.marked()).toEqual([])
     const settles = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
@@ -196,10 +197,23 @@ describe('PrototypeReady', () => {
   it('takes answering a question as replying to the reply before it', () => {
     const marks = new PrototypeReady(searches({ 'thread\nrequest:q': [page('q')], 'thread\nreply:reply': [page('a')] }))
     expect(markOf(marks, snapshot(thread({ requests: [question('q')] })))?.source).toBe('request:q')
-    // The question is answered: the turn goes on, and if it ends with no newer reply, the reply before the question is answered.
+    // The user answers it: the turn goes on, and if it ends with no newer reply, the reply before the question is answered.
+    marks.answered('thread')
     expect(markOf(marks, snapshot(thread({ status: 'running' })))).toBeUndefined()
     expect(markOf(marks, snapshot(thread()))).toBeUndefined()
     expect(marks.saved()).toEqual([{ threadId: 'thread', source: 'reply:reply' }])
+  })
+
+  it('keeps the mark when a question leaves without the user answering it: sent back by Sotto, or withdrawn by the provider', () => {
+    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(thread({ requests: [question('q')] })))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(thread({ status: 'running' })))?.source).toBe('reply:reply')
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
+    expect(marks.saved()).toEqual([])
+    // Answering a permission is not replying either.
+    marks.answered('elsewhere')
+    expect(markOf(marks, snapshot(thread()))?.source).toBe('reply:reply')
   })
 
   it('keeps the snapshot and its threads when nothing changes, and takes a mark off a thread that loses it', () => {

@@ -80,7 +80,7 @@ export class PrototypeReady {
   private readonly cleared = new Map<string, ClearedPrototype>()
   /** Per thread, the reply that keeps its mark, oldest first. Saved. */
   private readonly kept = new Map<string, Kept>()
-  /** Per thread, the newest reply while one of its questions waited, so answering the question clears that reply. Ephemeral. */
+  /** Per thread, the newest reply while one of its questions waited, so the user answering the question clears that reply. Ephemeral. */
   private readonly asked = new Map<string, string>()
 
   /**
@@ -143,6 +143,19 @@ export class PrototypeReady {
     }
   }
 
+  /**
+   * The user answered one of the thread's questions (ADR-0108): that is replying to the reply before it, and to the reply
+   * that keeps its mark. Only the coordinator's answer path says so, never a question's leaving, which Sotto's own
+   * send-back and a provider's withdrawal cause as well. True when a source was cleared.
+   */
+  answered(threadId: string): boolean {
+    const before = this.asked.get(threadId), kept = this.kept.get(threadId)
+    let changed = false
+    if (before !== undefined) changed = this.add(threadId, replySource(before)) || changed
+    if (kept) { changed = this.add(threadId, replySource(kept.messageId)) || changed; this.kept.delete(threadId) }
+    return changed
+  }
+
   /** The snapshot with each thread's mark on it. Threads with nothing to change keep their own object, and so does the snapshot. */
   decorate(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     const settled = settledIn(snapshot)
@@ -182,14 +195,9 @@ export class PrototypeReady {
       const reply = newestReplyOf(thread)
       if (reply) this.asked.set(thread.id, reply.id)
     } else {
-      // No question waits now: one that did was answered or withdrawn, and the replies before it are answered with it.
-      const before = this.asked.get(thread.id)
-      if (before !== undefined) {
-        this.asked.delete(thread.id)
-        this.add(thread.id, replySource(before))
-        const kept = this.kept.get(thread.id)
-        if (kept) { this.add(thread.id, replySource(kept.messageId)); this.kept.delete(thread.id) }
-      }
+      // No question waits now. One the user answered cleared its replies through answered(); one that left otherwise, sent
+      // back by Sotto or withdrawn by its provider, clears nothing: the user has not replied.
+      this.asked.delete(thread.id)
       // The newest reply that names a working page takes the mark, from any reply that held it before.
       const reply = this.wantedReply(thread)
       const working = reply && this.pages.searched(thread.id, replySource(reply.id))?.working

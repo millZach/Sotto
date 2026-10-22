@@ -4125,6 +4125,8 @@ export class AgentControl {
         }
         if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
           && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
+        // The user answering a question replies to the prototype waiting before it (ADR-0108); its leaving alone does not.
+        if (request.kind === 'question' && this.prototypeReady.answered(command.threadId)) void this.persist().catch(() => undefined)
         this.say(`Answered ${thread.title}.`)
         return
       }
