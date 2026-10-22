@@ -168,4 +168,27 @@ describe('AgentStateBroadcaster', () => {
     broadcaster.send(repeat, deliver)
     expect(sent[2]!.host.models).toEqual({ revision: 2, models: repeat.host.models })
   })
+
+  it('meets a catalog by identity once it has compared it, whichever host compared last (#1330)', () => {
+    const broadcaster = new AgentStateBroadcaster()
+    const hostA = 'aaaaaaaa-0000-4000-8000-000000000000'
+    const hostB = 'bbbbbbbb-0000-4000-8000-000000000000'
+    const deliver = (): boolean => true
+    const first = [model('gpt-5'), model('gpt-5-mini')], other = [model('grok-4')]
+    broadcaster.send(state(first, [clientHost(hostA, first), clientHost(hostB, other)]), deliver)
+    // Equal catalogs in new arrays, then handed over by identity from one publish to the next, as a certified catalog is.
+    // Two hosts compared in turn left the one remembered comparison for the second host, so the first host's catalog was
+    // compared in full again on every publish.
+    const kept = first.map(entry => ({ ...entry })), keptOther = other.map(entry => ({ ...entry }))
+    const shell = (): AgentState => state(kept, [clientHost(hostA, kept), clientHost(hostB, keptOther)])
+    const sent: AgentStateBroadcast[] = []
+    broadcaster.send(shell(), payload => { sent.push(payload); return true })
+    compare.spy.mockClear()
+    for (let publish = 0; publish < 3; publish++) broadcaster.send(shell(), payload => { sent.push(payload); return true })
+    expect(compare.spy).not.toHaveBeenCalled()
+    for (const payload of sent) {
+      expect(payload.host.models).toEqual({ revision: 1, omitted: true })
+      expect(payload.host.clientHosts!.map(client => client.models)).toEqual([{ revision: 1, omitted: true }, { revision: 1, omitted: true }])
+    }
+  })
 })

@@ -8,8 +8,10 @@ type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
 }
 
 interface CatalogSnapshot {
-  revision: number
+  readonly revision: number
   models: readonly AgentModel[]
+  /** `models.length` when it was stored, so an array that gained or lost a model in place is not taken as unchanged. */
+  length: number
 }
 
 /**
@@ -27,9 +29,16 @@ export class ModelCatalogRevisions {
   /** The revision `models` has under `key`: the one it last had when its content is unchanged, otherwise the next. */
   revisionFor(key: string, models: readonly AgentModel[]): number {
     const existing = this.catalogs.get(key)
-    if (existing && this.sameContent(existing.models, models)) return existing.revision
+    const same = existing !== undefined && (existing.models === models ? existing.length === models.length : this.sameContent(existing.models, models))
+    if (same) {
+      // The array just compared stands for this content from now on. A shell that keeps handing over one array, as a
+      // certified catalog does, then meets its own identity on the next publish instead of being compared again with
+      // whichever equal array came first (#1330).
+      existing.models = models
+      return existing.revision
+    }
     const revision = (existing?.revision ?? 0) + 1
-    this.catalogs.set(key, { revision, models })
+    this.catalogs.set(key, { revision, models, length: models.length })
     return revision
   }
 
