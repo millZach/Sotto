@@ -258,8 +258,12 @@ export const watcherToolSchemas = {
       warning: shortText.min(1).optional() }),
   },
   send_to_thread: {
+    // `mergeTurn` is the desktop's alone (#1339): it marks the send that gives a thread its merge turn, for Watcher's
+    // picture. Main takes it off before the send is admitted, so it changes nothing about the send, its digest or its
+    // retry, and a paired host is never sent it.
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode,
-      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional() }).strict(),
+      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(),
+      mergeTurn: z.object({ pullRequest: z.number().int().positive() }).strict().optional() }).strict(),
     output: result({ ...receiptResult, delivery: deliveryMode }),
   },
   stop_thread: {

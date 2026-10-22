@@ -1974,6 +1974,8 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   if (read.status !== 'ok') throw new Error('read refused')
   // The draft passed first but is not queued; the rest go in the order their checks passed.
   expect(read.mergeQueue.map(item => [item.target.threadId, item.pullRequest.number])).toEqual([[second.target.threadId, 7], [first.target.threadId, 5]])
+  // Watcher's picture reads the same queue, worked out without building the room (#1339).
+  expect(f.service.readMergeTurns()).toEqual({ status: 'ok', queue: read.mergeQueue, turns: [] })
   expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
     expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' })])
   expect(read.staleNotes).toEqual([
@@ -2133,4 +2135,27 @@ it('asks Watcher to read its state after any Compact context for its conversatio
   expect(f.service.stateNote()).toContain('call read_state')
   await f.call('read_state', {})
   expect(f.service.stateNote()).toBeUndefined()
+})
+
+it('remembers a send that gives a thread its merge turn for the picture alone, and sends it as any other (#1339)', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  expect(f.service.readMergeTurns()).toEqual({ status: 'ok', queue: [], turns: [] })
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now' as const, text: 'Synthetic GO MERGE #1291' }
+  const sent = await f.call('send_to_thread', { ...input, mergeTurn: { pullRequest: 1291 } })
+  if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('send refused')
+  // The send went as it would have unmarked: the same words, and the record keeps no new key, so an older build reads it.
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text.startsWith('Synthetic GO MERGE #1291'))).toBe(true))
+  const operation = f.service.state().receipts.find(item => item.id === sent.receipt.operationId)!
+  expect(Object.keys(operation)).not.toContain('mergeTurn')
+  expect(watcherRecordSchema.safeParse(f.control.watcherRecord()).success).toBe(true)
+  // A retry of the same call without the mark reads the same receipt: the mark is not part of what the send is.
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'ok', receipt: { operationId: sent.receipt.operationId } })
+  expect(f.service.readMergeTurns()).toMatchObject({ status: 'ok', turns: [{ operationId: sent.receipt.operationId, target: first.target, pullRequest: 1291 }] })
+  // A plain send is no merge turn.
+  const plain = await f.call('send_to_thread', { ...input, retryKey: randomUUID(), delivery: 'queue', text: 'Synthetic check-in' })
+  expect(plain).toMatchObject({ status: 'ok' })
+  expect(f.service.readMergeTurns()).toMatchObject({ turns: [{ pullRequest: 1291 }] })
+  expect((f.service.readMergeTurns() as { turns: unknown[] }).turns).toHaveLength(1)
 })

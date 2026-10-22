@@ -4,7 +4,7 @@ import { clonePlainData } from './cloneHostSnapshot'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
-  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew'>
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'>
 type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */
@@ -31,6 +31,7 @@ export function createWatcherRoomDesktop(options: {
     continueWithHandover: async request => watcher?.continueWithHandover(request) ?? unavailable(),
     dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
     startNew: () => watcher?.startNew() ?? Promise.resolve(unavailable()),
+    readMergeTurns: async () => watcher?.readMergeTurns() ?? unavailable(),
   }
   // Keep the legacy callback/replies, without captures or a publisher, when either owner is absent.
   if (!options.streamingPublishCost || !watcher) {
@@ -58,6 +59,8 @@ export function createWatcherRoomDesktop(options: {
       continueWithHandover: request => reply(() => bridge.continueWithHandover(request)),
       dismissHandover: () => reply(() => bridge.dismissHandover()),
       startNew: () => reply(() => bridge.startNew()),
+      // A read changes nothing, so it waits for no publish.
+      readMergeTurns: () => bridge.readMergeTurns(),
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

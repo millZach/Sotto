@@ -20,10 +20,10 @@ const POPUP_OWNS_ESCAPE = '[role="dialog"], [role="menu"], [role="listbox"], [ar
 /**
  * Watcher's room keeps its own view, apart from the Threads page's panes and selection (the plan, section 6): the one
  * thread open beside Watcher, how much of the width Watcher's conversation takes, and whether Watcher's pane shows its
- * conversation or the threads it watches. It lasts as long as the window, so a trip to another room comes back to the
- * room as it was left.
+ * conversation, the threads it watches, or its picture (#1339). It lasts as long as the window, so a trip to another room
+ * comes back to the room as it was left.
  */
-export type RoomTab = 'conversation' | 'watched'
+export type RoomTab = 'conversation' | 'watched' | 'visualize'
 export interface RoomView { readonly besideId: string | null; readonly share: number; readonly tab: RoomTab }
 let view: RoomView = { besideId: null, share: 0.5, tab: 'conversation' }
 const listeners = new Set<() => void>()
