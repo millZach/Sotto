@@ -198,10 +198,14 @@ extension AppModel {
 extension AppModel {
     static let watcherFeature = WatcherWire.feature
     static let watcherStopFeature = WatcherWire.stopFeature
+    static let watcherSteerFeature = WatcherWire.steerFeature
 
     /// Whether this computer runs Watcher and shows it to this iPhone: an Owl desktop, after this iPhone opted in.
     func offersWatcher(_ hostID: String) -> Bool { live[hostID]?.features.contains(Self.watcherFeature) == true }
     func offersWatcherStop(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherStopFeature) == true }
+    /// Whether this computer takes a message while Watcher works (#1229): Send steers into Watcher's turn, or the words go
+    /// next as their own turn, and a follow-up waiting for Watcher can be removed. An older one refuses it while Watcher works.
+    func offersWatcherSteer(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherSteerFeature) == true }
     /// The computer whose Watcher the Watcher tab shows: the one last chosen, by a Watcher alert or the menu in the tab's
     /// header, while it still runs Watcher, and otherwise the first paired computer that runs one. With none, there is no
     /// tab, and nothing else in the app changes.
@@ -346,7 +350,9 @@ extension AppModel {
         return online(hostID) && watcherSendHeld(hostID) == nil && watcherSending[hostID] == nil
             && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.utf16.count <= 20_000
     }
-    /// Sends the box's words to Watcher as the user's own instruction, from this iPhone. Refused or unconfirmed, the words
+    /// Sends the box's words to Watcher as the user's own instruction, from this iPhone. While Watcher works, a computer
+    /// that takes it steers them into Watcher's turn, or queues them to go next when it can't (#1229, Zach's pick B); an
+    /// older one refuses them, and the box says to update Sotto there. Refused or unconfirmed, the words
     /// go back in the box, or are kept under the conversation when newer words are there, and nothing is sent again on
     /// its own. The same words keep the same draft ID until Watcher's
     /// computer says it took them, through any other words sent in between, so sending them again after an unconfirmed
@@ -368,7 +374,11 @@ extension AppModel {
         if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
         #endif
         guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, on: hostID, unconfirmed: false); return }
-        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text)
+        let steer = offersWatcherSteer(hostID)
+        // Whether Watcher's turn ran when these words left: an older computer's refusal of them says only that, even if a
+        // page saying Watcher finished arrives before it.
+        let workingAtSend = current.status == "running"
+        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer)
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
             // A reply over a connection that has since changed doesn't say what happened to the words.
@@ -381,8 +391,16 @@ extension AppModel {
                 watcherDrafts[hostID]?.resolve(draftID)
                 applyWatcher(state, from: hostID)
             case .refused(let refusal):
+                // A page pushed while the words were on their way may already say Watcher took them or that they wait in
+                // its queue. Its word wins: put back in the box, they could be sent a second time.
+                if let page = watcherPage(hostID), page.delivery(of: draftID) == "accepted" || page.followup(of: draftID) != nil {
+                    watcherDrafts[hostID]?.resolve(draftID)
+                    return
+                }
                 restoreWatcherDraft(text, on: hostID, unconfirmed: false)
-                feedback = refusal.message
+                // An older computer refuses a message while Watcher works, in words that don't say why.
+                let busy = !steer && refusal.code == "PROVIDER_UNAVAILABLE" && workingAtSend
+                feedback = busy ? WatcherWords.updateToSteer(name(hostID)) : refusal.message
             }
         } catch let refusal as HostRefusal {
             restoreWatcherDraft(text, on: hostID, unconfirmed: false)
@@ -393,7 +411,8 @@ extension AppModel {
             // A page that already says Watcher took it settles it; otherwise the words go back in the box, or under the
             // conversation, and the page is read again.
             watcherDrafts[hostID]?.end(draftID)
-            if watcherPage(hostID)?.delivery(of: draftID) == "accepted" {
+            // Taken, or waiting in Watcher's queue to go next: either way the computer has the words.
+            if watcherPage(hostID)?.delivery(of: draftID) == "accepted" || watcherPage(hostID)?.followup(of: draftID) != nil {
                 watcherDrafts[hostID]?.resolve(draftID)
             } else {
                 feedback = restoreWatcherDraft(text, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
@@ -637,9 +656,11 @@ extension AppModel {
 // computer did under it; nothing is sent again on its own.
 extension AppModel {
     static let watcherManageFeature = WatcherWire.manageFeature
-    /// Where `watcherManaging` marks a change to Watcher's permissions on a computer, and to a thread's watch.
+    /// Where `watcherManaging` marks a change to Watcher's permissions on a computer, to a thread's watch, and the
+    /// removal of a follow-up waiting for Watcher.
     static func permissionKey(_ hostID: String) -> String { "permission/" + hostID }
     static func watchKey(_ ref: ThreadRef) -> String { "watch/" + ref.id }
+    static func followupKey(_ hostID: String, _ itemID: String) -> String { "followup/" + hostID + "/" + itemID }
 
     /// Whether this computer takes changes to Watcher's permissions and watches from this iPhone. An older one shows its
     /// page without them, and this iPhone offers neither.
@@ -754,6 +775,29 @@ extension AppModel {
         let outcome = await manageWatcher(operation, on: host, unconfirmed: WatcherWords.watchUnconfirmed(named, watched: watched, computer: name(host)))
         if outcome == .applied { showWatchNotice(notice) }
     }
+    // MARK: What goes next (#1229)
+
+    /// Whether Remove can be pressed for a follow-up waiting for Watcher: one that hasn't started on its way, on a
+    /// computer that takes the removal, while no other removal of it is on its way.
+    func canRemoveWatcherFollowup(_ item: WatcherPage.Followup, on hostID: String) -> Bool {
+        offersWatcherSteer(hostID) && online(hostID) && ["queued", "paused", "failed"].contains(item.status)
+            && !watcherManaging.contains(Self.followupKey(hostID, item.itemId))
+    }
+    /// Takes a follow-up out of Watcher's queue before it goes, through the computer that runs Watcher. Nothing is asked
+    /// first: the line leaves the page the computer sends back. A refusal is said in the computer's own words, and an
+    /// answer lost on the way is read from its receipt; nothing is sent again on its own.
+    func removeWatcherFollowup(_ item: WatcherPage.Followup, on hostID: String) async {
+        guard canRemoveWatcherFollowup(item, on: hostID), let target = watcherPage(hostID)?.current?.target else { return }
+        let key = Self.followupKey(hostID, item.itemId)
+        watcherManaging.insert(key)
+        defer { watcherManaging.remove(key) }
+        #if DEBUG && os(iOS)
+        if isUIFixture { return }
+        #endif
+        _ = await manageWatcher(WatcherWire.removeFollowup(target: target, itemID: item.itemId), on: hostID,
+                                unconfirmed: WatcherWords.removeUnconfirmed(name(hostID)))
+    }
+
     /// Undo: the press taken back, as a press of its own the other way, on the computer whose Watcher took it. If the
     /// Watcher tab has moved to another computer since, Undo still goes to that one, never to the newly chosen one.
     func undoWatch(_ notice: WatchNotice) async {

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  dropExpiredQuotaWindows, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota,
+  dropExpiredQuotaWindows, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota, parseMuseQuota,
   quotaDurationLabel, unavailableProviderQuota,
 } from '../../../src/main/agents/providerQuota'
 import { usageQuotaReadSchema } from '../../../src/shared/usageDashboard'
@@ -486,8 +486,9 @@ describe('native Grok billing metadata', () => {
 })
 
 describe('quota read states and boundaries', () => {
-  it('refuses an unsupported public provider before building a four-provider quota result', () => {
-    expect(() => unavailableProviderQuota('muse', 'unsupported')).toThrow('Usage is not available for this provider.')
+  it('refuses a provider that reports no limits before building a quota result', () => {
+    expect(() => unavailableProviderQuota('opencode', 'unsupported')).toThrow('Usage reads no limits for this provider.')
+    expect(unavailableProviderQuota('muse', 'not-reported')).toMatchObject({ providerId: 'muse', status: 'unavailable', reason: 'not-reported' })
   })
   it('keeps unsupported, disconnected, refresh-unavailable and read-failed distinct from fresh zero', () => {
     expect(unavailableProviderQuota('devin', 'unsupported')).toMatchObject({ status: 'unavailable', reason: 'unsupported', windows: [], refreshable: false })
@@ -499,5 +500,36 @@ describe('quota read states and boundaries', () => {
     expect(parseCodexQuota({ rateLimits: codexBucket() }, '2026-10-12T11:00:00-07:00').observedAt).toBe(observedAt)
     expect(parseCodexQuota({ rateLimits: codexBucket() }, 'secret-key')).not.toHaveProperty('observedAt')
     expect(parseGrokQuota({ config: { currentPeriod: { end: '2026-10-12T11:00:00-07:00' } } }, observedAt).windows[0]?.resetsAt).toBe(observedAt)
+  })
+})
+
+describe('Muse quota from MSP usage/read', () => {
+  // The shape Muse Code 1.4.9 answered after one turn on October 21, 2026, with invented numbers and tier.
+  const observedMs = Date.parse(observedAt)
+  const answer = (patch: Record<string, unknown> = {}) => ({ usage: { observedAtMs: observedMs, tier: '1234567890',
+    weekly: { resetsAtMs: observedMs + 3 * 86_400_000, usedPercent: 47 }, window: { resetsAtMs: observedMs + 3_600_000, usedPercent: 0, windowDurationMins: 300 }, ...patch } })
+  it('maps the 5-hour window to primary and the weekly block to weekly, keeping a fresh zero and dropping the tier', () => {
+    const result = parseMuseQuota(answer())!
+    expect(usageQuotaReadSchema.parse(result)).toEqual(result)
+    expect(result).toMatchObject({ providerId: 'muse', status: 'available', observedAt, refreshable: true, windows: [
+      { id: 'muse-window', kind: 'primary', label: '5 hours', usedPercent: 0, durationMinutes: 300, resetsAt: '2026-10-12T19:00:00.000Z', observedAt },
+      { id: 'muse-weekly', kind: 'weekly', label: 'Week', usedPercent: 47, durationMinutes: 10_080, resetsAt: '2026-10-15T18:00:00.000Z', observedAt },
+    ] })
+    expect(JSON.stringify(result)).not.toContain('1234567890')
+    // usage/changed carries the same object as its params.
+    expect(parseMuseQuota(answer().usage)).toEqual(result)
+  })
+  it('reads nothing observed, and anything it cannot read, as no reading', () => {
+    expect(parseMuseQuota({})).toBeUndefined()
+    expect(parseMuseQuota(null)).toBeUndefined()
+    expect(parseMuseQuota({ usage: 'full' })).toBeUndefined()
+    expect(parseMuseQuota({ usage: { observedAtMs: 'yesterday', window: { usedPercent: 3 } } })).toBeUndefined()
+    // A block it cannot read is left out; the other stands.
+    expect(parseMuseQuota(answer({ weekly: { usedPercent: -4, resetsAtMs: 'soon' } }))!.windows.map(window => window.id)).toEqual(['muse-window'])
+    expect(parseMuseQuota(answer({ weekly: null, window: null }))).toMatchObject({ providerId: 'muse', status: 'unavailable', reason: 'not-reported', windows: [] })
+  })
+  it('keeps use past the allowance and leaves out a window that had already reset when Muse saw it', () => {
+    const result = parseMuseQuota(answer({ window: { resetsAtMs: observedMs - 1, usedPercent: 100, windowDurationMins: 300 }, weekly: { resetsAtMs: observedMs + 1, usedPercent: 140 } }))!
+    expect(result.windows).toMatchObject([{ id: 'muse-weekly', usedPercent: 140 }])
   })
 })

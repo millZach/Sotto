@@ -118,6 +118,7 @@ import { createPasteCommands } from './output/pasteCommand'
 import { createHyprlandPasteAdapter, sanitizeLinuxPasteText } from './output/pasteCommand.linux'
 import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
+import { createHyprlandFocusedApp, createLsappinfoFocusedApp } from './output/focusedApp'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
@@ -130,11 +131,12 @@ import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioMode
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
-import { UpdateService, waitingVersion } from './updates/updateService'
+import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
 import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
+import type { HistoryLogEvent } from './storage/historyRepository'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
 import {
   WidgetPlacementRepository,
@@ -302,7 +304,8 @@ type NativeDiagnostic =
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
-  | 'history-temp-cleanup-failed'
+  | HistoryLogEvent
+  | 'delivered-app-unreadable'
   | 'checkpoint-unavailable'
   | 'worktree-cleanup-reclaimed'
   | 'worktree-cleanup-skipped'
@@ -1198,6 +1201,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     buildPasteInvocation: pasteCommands.oneShot,
     keepWidgetVisibleDuringPaste: platform === 'linux',
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
+    // The delivered app (ADR-0100). A test run delivers into Sotto's own window.
+    readFocusedApp: e2eConfiguration !== null
+      ? async () => 'Sotto'
+      : platform === 'win32'
+        ? async () => warmPaste?.readForegroundApp() ?? null
+        : platform === 'darwin' ? createLsappinfoFocusedApp() : createHyprlandFocusedApp(),
+    log: logOperational,
   })
   // Copy image waits for any dictation still being pasted, and only an image Electron can read reaches the clipboard.
   // A test run never touches the real clipboard. Linux goes through wl-copy like text does. Under Wayland a wl-copy
@@ -1307,6 +1317,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const updatesSupported = app.isPackaged && e2eConfiguration === null && inAppUpdates
   // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
   const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
+  // A new version of Sotto has every machine check its clients afresh, so the card lists their updates beside it rather
+  // than after the restart (ADR-0077). Nothing waits for the answers, and on stable the client update card and each
+  // host's tiles read the same readings sooner.
+  const newSottoVersion = newVersionListener(() => {
+    void agentControl.checkClientsAfresh().catch(() => undefined)
+    void hostRouter.checkHostClientsAfresh()
+  })
   const updates = new UpdateService({
     currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
@@ -1324,6 +1341,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || releasesHeldProvider(heldProviders))
         hostUpdates.pending(waitingHostVersion)
       }
+      newSottoVersion(status.phase)
     },
   })
 

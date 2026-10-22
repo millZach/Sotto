@@ -15,6 +15,7 @@ import { ModelPicker } from '../agents/ModelPicker'
 import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
+import { useSubmissions } from '../agents/threadDraftStore'
 import { useShared } from '../agents/stateSharing'
 import { describeThreads, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
@@ -37,6 +38,7 @@ import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from '.
 import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
+import { WatcherNightScene } from './WatcherNightScene'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
@@ -345,15 +347,36 @@ function focusInlineAsk(threadId: string, requestId: string | undefined): boolea
   return true
 }
 
+/** The first entry's conversation, before there is a Watcher. */
+const FIRST_ENTRY = 'first'
+
+/**
+ * Whether the night scene shows: while the room is empty, until its first message. `key` names the conversation, the
+ * first entry's or a Watcher's. Only `started`, something sent or already there, ends the scene for it, and a refusal
+ * or a reload of the same conversation does not bring it back. The first entry's end carries to the Watcher its message
+ * created, which is empty only until the message reaches it. A new Watcher after a provider change is a new
+ * conversation, and the scene shows again. `hidden` puts it away without ending it: while the room or the conversation
+ * loads or cannot be read, and while the Watched view stands in the conversation's place.
+ */
+function useSceneShown(key: string, started: boolean, hidden: boolean): boolean {
+  const [memory, setMemory] = useState({ key, ended: started })
+  let next = memory
+  if (next.key !== key) next = { key, ended: next.key === FIRST_ENTRY && next.ended }
+  if (started && !next.ended) next = { ...next, ended: true }
+  if (next !== memory) setMemory(next)
+  return !hidden && !next.ended
+}
+
 /**
  * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto Owl tile and its night sky
  * in the corner, Watcher's conversation centred under its header and the needs-you line, a thread opened beside it in
  * its own real pane, the Overview over the room on All threads, and the switch and page links floating at the bottom.
  * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
  * Threads or Shift with a press, which go there on purpose; Watcher itself is in neither the Overview nor Threads.
+ * While the room is empty, an ASCII night with an owl is drawn behind it (`WatcherNightScene`).
  */
 export function WatcherView({ now: fixedNow, updateControl }: {
-  /** A fixed clock for captures; the rows' times then hold still. */
+  /** A fixed clock for captures; the rows' times then hold still, and so does the night scene, settled on the composer. */
   readonly now?: number | undefined
   readonly updateControl?: ReactNode
 }): ReactNode {
@@ -535,6 +558,22 @@ export function WatcherView({ now: fixedNow, updateControl }: {
       onShowAll={from => toggleList(from, true)} /> : null}
     focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
 
+  // The night scene behind the room while it is empty: the first entry with its composer, or Watcher's conversation
+  // before anything is sent to it, the first entry's message included.
+  const first = useFirstMessage()
+  const submissions = useSubmissions(agents.threadDrafts)
+  const shownThread = watcherRow?.thread
+  // What ends it: a message sent or on its way, or a conversation already there. A thread whose messages are not read
+  // yet carries their count in its summary instead.
+  const started = first.phase !== 'writing' || (shownThread !== undefined && (shownThread.messages.length > 0 || (shownThread.summary?.messageCount ?? 0) > 0
+    || shownThread.earlierAvailable === true || shownThread.status === 'running' || shownThread.requests.length > 0
+    || submissions.some(item => item.threadId === shownThread.id)))
+  // What only puts it away: the room or the conversation still loading or unreadable, or the Watched view in its place.
+  const roomOpen = room !== null && room.status === 'ready' && state !== null && !(room.error !== null && room.state === null)
+  const conversationReady = shownThread !== undefined && shownThread.status === 'idle' && shownThread.historyStatus !== 'loading' && shownThread.historyStatus !== 'error'
+  const sceneKey = current === null ? FIRST_ENTRY : JSON.stringify([current.target.hostId, current.target.threadId])
+  const sceneShown = useSceneShown(sceneKey, started, !roomOpen || (current !== null && !conversationReady) || tab !== 'conversation')
+
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
   return <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined}>
@@ -545,6 +584,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
             <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
+              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} />
               <OwlRoomSky />
               {watcherContent}
             </section>

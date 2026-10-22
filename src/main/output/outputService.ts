@@ -1,5 +1,6 @@
 import type { OutputOutcome } from '../../shared/contracts'
 import type { PasteInvocation } from './pasteCommand'
+import { deliveredAppName } from '../../shared/dictationRecord'
 
 export interface ClipboardAdapter {
   writeText(text: string): void | Promise<void>
@@ -23,6 +24,18 @@ export interface OutputServiceDependencies {
   readonly buildPasteInvocation: () => PasteInvocation | null
   readonly keepWidgetVisibleDuringPaste?: boolean
   readonly preparePasteText?: (text: string) => string
+  /**
+   * Reads the delivered app: the display name of the app that has focus, never a window title or anything read from
+   * the app (ADR-0100). Null when it cannot be read. Unset where nothing can read it.
+   */
+  readonly readFocusedApp?: () => Promise<string | null>
+  readonly log?: (event: 'delivered-app-unreadable') => void
+}
+
+/** A dictation's delivery: what happened, and the app it went into when Sotto could read one. */
+export interface DictationDelivery {
+  readonly outcome: OutputOutcome
+  readonly app: string | null
 }
 
 interface DeliveryOptions {
@@ -114,15 +127,44 @@ export class OutputService {
     text: string,
     options: DeliveryOptions,
   ): Promise<OutputOutcome> {
-    if (options.autoPaste && this.dependencies.preparePasteText) {
-      text = this.dependencies.preparePasteText(text)
-    }
-    if (text.trim().length === 0) {
-      return 'empty'
-    }
+    const prepared = this.prepare(text, options)
+    if (prepared === null) return 'empty'
+    return this.afterDeliveries(() => this.deliverImmediately(prepared.text, prepared.options))
+  }
 
-    const snapshot = { ...options }
-    return this.afterDeliveries(() => this.deliverImmediately(text, snapshot))
+  /** The text as it will be delivered, with the options as they stand now; null when nothing is left to deliver. */
+  private prepare(text: string, options: DeliveryOptions): { readonly text: string; readonly options: DeliveryOptions } | null {
+    const prepared = options.autoPaste && this.dependencies.preparePasteText ? this.dependencies.preparePasteText(text) : text
+    return prepared.trim().length === 0 ? null : { text: prepared, options: { ...options } }
+  }
+
+  /**
+   * Delivers a dictation as `deliver` does and reads the delivered app as delivery starts, before the widget hides,
+   * on the copy-only path as well as the paste path. The app is kept only when the text was pasted or copied.
+   */
+  async deliverDictation(text: string, options: DeliveryOptions): Promise<DictationDelivery> {
+    const prepared = this.prepare(text, options)
+    if (prepared === null) return { outcome: 'empty', app: null }
+    return this.afterDeliveries(async () => {
+      // Read while the clipboard is written, and finished before the widget hides, so the answer is the app in front.
+      const app = this.readFocusedApp()
+      const outcome = await this.deliverImmediately(prepared.text, prepared.options, app).catch(async (error: unknown) => {
+        await app
+        throw error
+      })
+      return { outcome, app: outcome === 'pasted' || outcome === 'copied' ? await app : null }
+    })
+  }
+
+  private async readFocusedApp(): Promise<string | null> {
+    const read = this.dependencies.readFocusedApp
+    if (read === undefined) return null
+    try {
+      return deliveredAppName(await read())
+    } catch {
+      this.dependencies.log?.('delivered-app-unreadable')
+      return null
+    }
   }
 
   /** Runs `work` once every delivery before it has finished, so another clipboard write cannot replace text waiting to be pasted. */
@@ -132,9 +174,11 @@ export class OutputService {
     return run
   }
 
+  /** `beforeHide` is waited for before the widget hides for a paste. */
   private async deliverImmediately(
     text: string,
     options: DeliveryOptions,
+    beforeHide?: Promise<unknown>,
   ): Promise<OutputOutcome> {
     try {
       await this.dependencies.clipboard.writeText(text)
@@ -159,6 +203,7 @@ export class OutputService {
       const invocation = this.dependencies.buildPasteInvocation()
       if (invocation === null) return 'copied'
       if (!this.dependencies.keepWidgetVisibleDuringPaste) {
+        await beforeHide
         await this.dependencies.widget.hideWidget()
         hidForPaste = true
       }

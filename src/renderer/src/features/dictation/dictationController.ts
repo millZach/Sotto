@@ -13,7 +13,7 @@ import {
   type WidgetErrorCode,
   type WidgetSnapshot,
 } from '../../../../shared/dictation'
-import type { HistoryEntry } from '../../../../shared/history'
+import type { FinishedDictation, HistoryEntry } from '../../../../shared/history'
 import type {
   OutputDeliveryRequest,
   TranscriptPolishAsrContext,
@@ -75,7 +75,8 @@ export interface DictationControllerDependencies {
   readonly deliverOutput: (
     request: OutputDeliveryRequest,
   ) => DictationOutputResult | Promise<DictationOutputResult>
-  readonly addHistory: (entry: HistoryEntry) => unknown | Promise<unknown>
+  /** Reports every finished dictation; main keeps its record, and its transcript while Keep local history is on (ADR-0100). */
+  readonly addHistory: (entry: FinishedDictation) => unknown | Promise<unknown>
   /** Completed words that output could not deliver. Kept by the app in memory until dismissed. */
   readonly retainOutput?: (entry: HistoryEntry) => void
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => unknown | Promise<unknown>
@@ -721,7 +722,7 @@ export class DictationController {
     session.progress = 1
     this.publish(session)
 
-    const entry: HistoryEntry = {
+    const entry: FinishedDictation = {
       id: session.id,
       text,
       createdAt: Math.round(finiteTimestamp(this.now())),
@@ -736,6 +737,7 @@ export class DictationController {
         text,
         autoPaste: session.settings.autoPaste,
         pasteDelayMs: session.settings.pasteDelayMs,
+        dictationId: session.id,
       })
     } catch {
       outputFailure = 'OUTPUT_FAILED'
@@ -746,15 +748,17 @@ export class DictationController {
     else if (output === 'clipboard-unavailable') outputFailure = 'DESKTOP_CLIPBOARD_UNAVAILABLE'
     if (outputFailure) this.dependencies.retainOutput?.(entry)
 
-    if (session.settings.historyEnabled) {
-      try {
-        await this.dependencies.addHistory(entry)
-      } catch {
+    // Every finished dictation is reported: main keeps its numbers always and its text only while history is on.
+    // With history off there is no transcript to lose, so a record that could not be kept does not fail the dictation.
+    try {
+      await this.dependencies.addHistory(entry)
+    } catch {
+      if (session.settings.historyEnabled) {
         if (this.isCurrent(session)) this.fail(session, outputFailure ?? 'HISTORY_FAILED')
         return
       }
-      if (!this.isCurrent(session)) return
     }
+    if (!this.isCurrent(session)) return
 
     if (outputFailure) { this.fail(session, outputFailure); return }
     if (typeof output === 'object' || output === 'empty' || output === 'clipboard-unavailable') return

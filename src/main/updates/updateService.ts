@@ -127,6 +127,21 @@ export function waitingVersion(phase: UpdatePhase, before: string | undefined): 
   return phase.phase === 'checking' ? before : undefined
 }
 
+/**
+ * Hears every phase the update service moves through and calls `found` once for each version of Sotto it finds: when
+ * it is first offered, downloading or downloaded, never again for that version's download progress or a later phase.
+ * Main has every machine check its clients afresh then, so their updates are listed beside Sotto's own (ADR-0077).
+ */
+export function newVersionListener(found: (version: string) => void): (phase: UpdatePhase) => void {
+  let seen: string | undefined
+  return phase => {
+    if (phase.phase !== 'available' && phase.phase !== 'downloading' && phase.phase !== 'downloaded') return
+    if (phase.version === seen) return
+    seen = phase.version
+    found(phase.version)
+  }
+}
+
 function samePhase(left: UpdatePhase, right: UpdatePhase): boolean {
   if (left.phase !== right.phase) return false
   if (left.phase === 'available' && right.phase === 'available') {

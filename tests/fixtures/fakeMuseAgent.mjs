@@ -6,6 +6,10 @@ import { join } from 'node:path'
 // A scripted `muse serve` (MSP over stdio), in the shape Sotto's Muse adapter speaks. Files in the root
 // steer it, as with the other fakes: `script.json` (cliVersion, schemaVersion, models, delayTurnMs,
 // suppressNotifications), `control.json` (one driver action at a time), `oneshot.json` (side-writing text).
+// `reportUsage` makes each completed reply a model call that reports `session/tokenUsage` the way Muse 1.4.9 does (turn,
+// prompt tokens and the durable records it was folded from), after which this host's `usage/read` answers its subscription
+// window, as Muse's serve host keeps the last one it saw; `usageChanged` also says so with `usage/changed`. `noUsageRead`
+// answers `usage/read` as a client without the method does. `usage/read` on a host that has seen no model call answers `{}`.
 // A process started with --no-session-log is one of Sotto's memory-only hosts (connect probe or side call):
 // its frames are recorded apart, in oneshot.jsonl, and its sessions are never durable.
 // Session tool servers (`config.mcpServers`) need the `sessionMcp` capability, granted when asked for unless
@@ -134,13 +138,33 @@ function endTurn(session, terminal = 'completed') {
   session.activeTurnId = undefined; save()
   if (!read('script.json', {}).suppressTurnCompleted) notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session) })
 }
+/** This host's last-observed subscription window, which only a model call fills, as on Muse's serve host. */
+let hostUsage
+let usageCalls = 0
+function reportUsage(session) {
+  const script = read('script.json', {})
+  if (!script.reportUsage) return
+  usageCalls++
+  const record = `record-${session.sessionId}-${usageCalls}`
+  session.usageTotals = { prompt: (session.usageTotals?.prompt ?? 0) + 100, output: (session.usageTotals?.output ?? 0) + 7 }
+  notify('session/tokenUsage', { sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', modelId: session.modelId, promptTokens: 100, totalTokens: 107,
+    usage: { inputTokens: 100, outputTokens: 7, cachedTokens: 40, cacheReadTokens: 40, cacheWriteTokens: 5, reasoningTokens: 2 },
+    cumulative: { promptTokens: session.usageTotals.prompt, outputTokens: session.usageTotals.output, totalTokens: session.usageTotals.prompt + session.usageTotals.output },
+    sourceRange: { first: { id: record, sequence: usageCalls }, last: { id: record, sequence: usageCalls }, stream: { id: session.sessionId, kind: 'session' } },
+    viewCursor: cursor(session) })
+  hostUsage = script.reportUsage === true ? { observedAtMs: Date.now(), tier: 'fixture-tier',
+    window: { resetsAtMs: Date.now() + 3 * 3_600_000, usedPercent: 12, windowDurationMins: 300 },
+    weekly: { resetsAtMs: Date.now() + 4 * 86_400_000, usedPercent: 47 } } : script.reportUsage
+}
 function completeReply(session, text) {
   const itemId = `item-${randomUUID()}`
   const base = { itemId, kind: 'agentMessage', status: 'inProgress', revision: 1, turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: '' }
   addItem(session, base)
   notify('item/delta', { sessionId: session.sessionId, itemId, delta: text, field: 'text', viewCursor: cursor(session) })
   addItem(session, { ...base, status: 'completed', revision: 2, text })
+  reportUsage(session)
   endTurn(session)
+  if (hostUsage && read('script.json', {}).usageChanged) notify('usage/changed', hostUsage)
 }
 let seenAction, pendingListReply, parkedSetModel
 function check() {
@@ -430,5 +454,6 @@ createInterface({ input: process.stdin }).on('line', line => {
     notify('userInput/settled', { userInputId: p.userInputId, sessionId: session.sessionId, outcome })
     result({ outcome })
   } else if (frame.method === 'session/compact') result({ outcome: 'noop' })
+  else if (frame.method === 'usage/read' && !script.noUsageRead) result(hostUsage ? { usage: hostUsage } : {})
   else if (frame.id !== undefined) fail('methodNotFound', 'Not in this fixture')
 }).on('close', () => process.exit(0))
