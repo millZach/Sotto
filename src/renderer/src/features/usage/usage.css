@@ -115,7 +115,8 @@
 .usage-spark { display: block; }
 
 /* ---------- The index and its stage ---------- */
-.usage-focus { display: grid; grid-template-columns: 252px minmax(0, 1fr); align-items: start; gap: 52px; }
+/* The index, its figures and the chart grow and shrink with the room. */
+.usage-focus { display: grid; grid-template-columns: clamp(220px, 24cqi, 300px) minmax(0, 1fr); align-items: start; gap: clamp(28px, 4cqi, 52px); }
 /* The index and its stage are two cards (ADR-0107). */
 .usage-index { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .usage-index__item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 3px 14px; width: 100%; padding: 14px 16px; border: 0; border-radius: 12px; background: transparent; color: var(--tt-text); text-align: left; font: inherit; cursor: pointer; }
@@ -123,8 +124,8 @@
 .usage-index__item[aria-selected='true'] { background: var(--tt-card-selected); }
 .usage-index__item[aria-selected='true']::before { content: ''; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; border-radius: 3px; background: var(--tt-accent); }
 .usage-index__label { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: 12.5px; }
-.usage-index__value { min-width: 0; overflow: hidden; font-size: 27px; font-weight: 450; line-height: 1.15; letter-spacing: -.9px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
-.usage-index__value[data-words] { padding-top: 4px; font-size: 18px; font-weight: 500; letter-spacing: -.3px; }
+.usage-index__value { min-width: 0; overflow: hidden; font-size: clamp(23px, 1.2cqi + 15px, 31px); font-weight: 450; line-height: 1.15; letter-spacing: -.9px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.usage-index__value[data-words] { padding-top: 4px; font-size: clamp(17px, .6cqi + 12px, 20px); font-weight: 500; letter-spacing: -.3px; }
 .usage-index__value[data-low] { color: var(--usage-low); }
 .usage-index__unit { margin-left: 7px; color: var(--tt-text-2); font-size: 15px; font-weight: 450; letter-spacing: -.2px; }
 .usage-index__viz { align-self: center; color: var(--tt-accent-text); }
@@ -140,7 +141,7 @@
 .usage-stage__head > span { color: var(--tt-text-muted); font-size: 13px; }
 .usage-when { min-height: 20px; margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13.5px; }
 .usage-stage__sub { margin-top: 44px; }
-.usage-stage__sub .usage-chart { --usage-chart-h: 160px; }
+.usage-stage__sub .usage-chart { --usage-chart-h: clamp(150px, 18cqi, 230px); }
 .usage-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .usage-chart-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
 .usage-per:not(.usage-stage__sub) { margin-top: 30px; }
@@ -161,7 +162,7 @@
 .usage-about.usage-values-more ul { gap: 4px; margin-top: 8px; font-size: 12.5px; line-height: 1.5; }
 
 /* Daily bars and their two gridlines. */
-.usage-chart { --usage-chart-h: 230px; }
+.usage-chart { --usage-chart-h: clamp(190px, 26cqi, 330px); }
 .usage-chart__plot { position: relative; height: var(--usage-chart-h); margin-top: 22px; border-bottom: 1px solid var(--tt-border); border-radius: 2px; cursor: crosshair; outline-offset: 6px; }
 .usage-chart__columns { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: space-around; gap: var(--usage-gap); }
 .usage-chart__column { display: flex; flex: 1 1 0; flex-direction: column-reverse; min-width: 0; max-width: 52px; height: 100%; transform-origin: bottom; }
@@ -363,17 +364,16 @@
 
 /* ---------- The room narrows: about 900 wide at 1280, 540 at the 820 minimum ---------- */
 @container usage (max-width: 780px) {
-  .usage-focus { grid-template-columns: minmax(0, 1fr); gap: 30px; }
-  .usage-index { flex-direction: row; gap: 6px; margin: 0 -4px; padding: 0 4px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 4px; scrollbar-width: thin; }
-  .usage-index__item { flex: 0 0 auto; width: auto; min-width: 172px; scroll-snap-align: start; }
-  .usage-index__item :is(.usage-index__value, .usage-index__note) { overflow: visible; text-overflow: clip; }
+  /* A narrow room wraps the figures into a grid, all of them in view, rather than a row that scrolls sideways. */
+  .usage-focus { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .usage-index { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .usage-index__item { min-width: 0; padding: 12px 14px; }
   .usage-index__viz { display: none; }
-  .usage-index__item[aria-selected='true']::before { top: auto; right: 16px; bottom: 0; left: 16px; width: auto; height: 3px; }
+  .usage-index__item[aria-selected='true']::before { top: auto; right: 14px; bottom: 0; left: 14px; width: auto; height: 3px; }
   .usage-sub { grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 48px; }
   .usage-dates { justify-content: flex-start; }
 }
 @container usage (max-width: 640px) {
-  .usage-chart { --usage-chart-h: 180px; }
   .usage-cache { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .usage-table__columns, .usage-row__main, .usage-table__total { grid-template-columns: minmax(0, 1fr) 64px 66px; gap: 8px 14px; }
   .usage-table__columns span:nth-child(2), .usage-table__columns span:nth-child(5), .usage-row__cache { display: none; }

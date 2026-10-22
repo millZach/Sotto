@@ -53,10 +53,6 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     event.preventDefault(); choose(FOCUS[target]!)
     list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[target]?.focus()
   }
-  const reveal = (button: HTMLButtonElement): void => {
-    const strip = button.parentElement
-    if (strip !== null && strip.scrollWidth > strip.clientWidth) button.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
-  }
 
   // Index values.
   const readable = limits.filter(item => item.primary.tightest !== undefined)
@@ -266,7 +262,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           const item = items[value]
           return <button key={value} type="button" role="tab" id={`${id}-${value}`} className="usage-index__item tt-focusable" aria-selected={focus === value} tabIndex={focus === value ? 0 : -1}
             aria-controls={`${id}-stage`} aria-label={`${FOCUS_NAMES[value]} ${item.text} ${item.note}`}
-            onClick={() => choose(value)} onFocus={event => reveal(event.currentTarget)} onKeyDown={event => onIndexKey(event, index)}>
+            onClick={() => choose(value)} onKeyDown={event => onIndexKey(event, index)}>
             <span className="usage-index__label">{FOCUS_NAMES[value]}</span>
             <span className="usage-index__value" data-words={item.words || undefined} data-low={item.low || undefined} title={typeof item.value === 'string' ? item.value : undefined}>{item.value}</span>
             <span className="usage-index__viz">{item.viz}</span>
