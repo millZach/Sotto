@@ -201,8 +201,13 @@ private struct AgentsSheet: View {
         loading = true
         defer { loading = false }
         var failed = false
-        do { delegations = try await model.readDelegations(ref).threads } catch { failed = true }
-        do { page = try await model.readSubagents(ref) } catch { failed = true }
+        var read: [DelegatedThreadRecord]? = nil, agents: SubagentPage? = nil
+        do { read = try await model.readDelegations(ref).threads } catch { failed = true }
+        do { agents = try await model.readSubagents(ref) } catch { failed = true }
+        // A read a newer one replaced leaves the sheet to the newer read.
+        guard !Task.isCancelled else { return }
+        if let read { delegations = read }
+        if let agents { page = agents }
         problem = failed
     }
 }
@@ -396,8 +401,11 @@ private struct AgentsAgentRow: View {
         failed = false
         do {
             let page = try await model.readAssignments(ref, agentID: agentID)
+            // A read a newer one replaced (its run, revision or a refresh changed) leaves the row to the newer read.
+            guard !Task.isCancelled else { return }
             assignment = page.assignments.first
         } catch {
+            guard !Task.isCancelled else { return }
             // The words already shown may be an earlier run's, under a row that now names a newer one, so a failed read
             // says so rather than keeping them.
             assignment = nil
