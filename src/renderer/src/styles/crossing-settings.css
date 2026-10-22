@@ -165,12 +165,13 @@
 .settings-view .providers-list__row { display: grid; grid-template: 'card' auto / minmax(0, 1fr); align-items: start; gap: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
 .settings-view .providers-list__row:hover:not([data-selected='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
 .settings-view .providers-list__row[data-selected='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
-.settings-view .providers-list__select { grid-area: card; display: grid; grid-template-columns: auto minmax(0, 1fr) 38px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 10px; width: 100%; padding: 13px 15px; border-radius: 11px; }
+/* Four cards share a form at most 790 pixels wide, so the spacing is tight enough for Claude Code's name beside its toggle. */
+.settings-view .providers-list__select { grid-area: card; display: grid; grid-template-columns: auto minmax(0, 1fr) 36px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 8px; width: 100%; padding: 13px 12px; border-radius: 11px; }
 .settings-view .providers-list__select > span { display: contents; }
 .settings-view .providers-list__select > .provider-mark { display: block; grid-area: mark; margin: 0; }
 .settings-view .providers-list__select strong { grid-area: name; min-width: 0; overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
 .settings-view .providers-list__select small { grid-area: status; min-width: 0; }
-.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; margin: 13px 15px 0 0; padding: 0; }
+.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; margin: 13px 12px 0 0; padding: 0; }
 /* The selected provider's detail is a card of its own under them. */
 .settings-view .provider-detail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .settings-view .provider-detail__header { padding: 18px 0 14px; }
