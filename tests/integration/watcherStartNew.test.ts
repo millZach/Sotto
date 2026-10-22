@@ -7,6 +7,7 @@ import { watcherToolSchemas } from '../../src/shared/watcher'
 import type { ProviderId } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { deferred } from '../fixtures/deferred'
 
 /**
  * New Watcher (ADR-0073): a new Watcher on the current one's own provider, model, effort and permission mode, through the
@@ -144,11 +145,14 @@ describe('New Watcher', () => {
     await unchanged()
     await f.finish(started.target.threadId)
     expect(f.service.startsInFlight()).toBe(0)
-    // A delivery whose result is not known yet.
-    const operation = f.control.watcherRecord().operations.at(-1)!
-    await f.control.updateWatcher(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = 'uncertain' })
+    // A delivery whose result is not known yet, in the record main reads: Watcher's observe pass would reconcile one set in
+    // the store before the press could see it.
+    const read = f.control.watcherRecord.bind(f.control)
+    const uncertain = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
+      const record = read(); record.operations.at(-1)!.deliveryState = 'uncertain'; return record
+    })
     await unchanged()
-    await f.control.updateWatcher(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = operation.deliveryState })
+    uncertain.mockRestore()
     // Watcher's own turn.
     f.native(f.first.threadId).status = 'running'; await f.refresh()
     await unchanged()
@@ -191,6 +195,36 @@ describe('New Watcher', () => {
     spy.mockRestore()
     expect(f.control.watcherRecord().creation).toBeNull()
     expect(f.service.state().handover).toMatchObject({ source: f.first, provider: 'codex', counts: { carried: 2 } })
+  })
+
+  it('tells the room a creation stopped part-way only once nothing is finishing it', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the footer links thread.', 'Watching Footer links.')
+    expect(f.service.state().creationStopped).toBe(false)
+    const original = f.control.commandForWatcherRoom.bind(f.control)
+    const entered = deferred(), released = deferred()
+    let attempt = 0
+    const published: boolean[] = []
+    const unsubscribe = f.service.subscribe(state => { published.push(state.creationStopped === true) })
+    const spy = vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async (command, guard) => {
+      if (command.type === 'create-thread' && ++attempt === 1) return { ...f.control.get(), error: 'Codex did not start.' }
+      if (command.type === 'create-thread' && attempt === 2) { entered.resolve(); await released.promise }
+      return original(command, guard)
+    })
+    try {
+      expect(await f.service.startNew()).toMatchObject({ status: 'refused' })
+      // Stopped, and the room is told once the press has settled.
+      expect(f.service.state().creationStopped).toBe(true)
+      expect(published.at(-1)).toBe(true)
+      // While a retry is finishing it, it has not stopped.
+      const retry = f.service.startNew()
+      await entered.promise
+      expect(f.service.state().creationStopped).toBe(false)
+      released.resolve()
+      expect(await retry).toMatchObject({ status: 'ok', state: { creationStopped: false } })
+      expect(f.service.state().creationStopped).toBe(false)
+      expect(published.at(-1)).toBe(false)
+    } finally { released.resolve(); spy.mockRestore(); unsubscribe() }
   })
 
   it('a same-provider replacement finished through open offers the handover; a model change after it offers none', async () => {

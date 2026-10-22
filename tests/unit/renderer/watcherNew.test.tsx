@@ -170,6 +170,46 @@ describe('New Watcher in Watcher’s composer', () => {
   })
 })
 
+describe('a new Watcher whose start stopped part-way', () => {
+  it('says what happened and offers Try again, which says main’s refusal and then starts it into its composer', async () => {
+    const user = userEvent.setup()
+    const stopped = roomState('watcher-b', { history: [identity('watcher-a')], creationStopped: true })
+    const refusal = 'Watcher’s thread could not be created. Check its provider and reopen Watcher.'
+    let attempt = 0
+    const { bridge } = renderRoom(stopped, stateWith(watcherThread('watcher-a', { messages: said, kind: 'watcher-history' })), async () => {
+      if (++attempt === 1) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: refusal, retryable: true }
+      // Main has made the thread: the window's next state lists it.
+      const started = stateWith(watcherThread('watcher-a', { messages: said, kind: 'watcher-history' }), watcherThread('watcher-b'))
+      const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => started)
+      const connection = agentContextFixture(started, command, { threadDrafts: new ThreadDraftStore(command) })
+      vi.mocked(useAgents).mockReturnValue(connection); vi.mocked(useOptionalAgents).mockReturnValue(connection)
+      return { status: 'ok', state: { ...stopped, creationStopped: false, handover: { source: target('watcher-a'), provider: 'claude', counts } } }
+    })
+    const pane = await watcherPane()
+    expect(await within(pane).findByText(/^The new Watcher could not be started\. Nothing was sent, and the last conversation is in Watcher history on the Threads page\./u)).toBeInTheDocument()
+    expect(within(pane).queryByText('Opening Watcher…')).toBeNull()
+    expect(within(pane).queryByRole('textbox', { name: 'Watcher message' })).toBeNull()
+    const retry = within(pane).getByRole('button', { name: 'Try again' })
+    // Reached by Tab, as every control in the room is.
+    expect(retry).not.toHaveAttribute('tabindex', '-1')
+    await user.click(retry)
+    expect(await within(pane).findByRole('alert')).toHaveTextContent(refusal)
+    expect(bridge.startNew).toHaveBeenCalledTimes(1)
+    await user.click(within(pane).getByRole('button', { name: 'Try again' }))
+    expect(bridge.startNew).toHaveBeenCalledTimes(2)
+    const box = await within(await watcherPane()).findByRole('textbox', { name: 'Watcher message' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    expect(within(await watcherPane()).getByRole('region', { name: 'Handover of the last Watcher' })).toBeInTheDocument()
+  })
+
+  it('keeps saying Opening Watcher, with no Try again, while the creation is still under way', async () => {
+    renderRoom(roomState('watcher-b', { history: [identity('watcher-a')], creationStopped: false }), stateWith(), vi.fn())
+    const pane = await watcherPane()
+    expect(await within(pane).findByText('Opening Watcher…')).toBeInTheDocument()
+    expect(within(pane).queryByRole('button', { name: 'Try again' })).toBeNull()
+  })
+})
+
 describe('the new Watcher’s empty conversation', () => {
   it('says which model it is on, where the last conversation went and what carried on', async () => {
     const worker = target('footer-links'), watched = target('weekly-note')

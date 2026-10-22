@@ -35,7 +35,7 @@ import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
-import { NewWatcherNote, newWatcherNoteFacts } from './WatcherNew'
+import { NewWatcherNote, newWatcherNoteFacts, WatcherStartStopped } from './WatcherNew'
 import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
@@ -558,7 +558,8 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? 'Opening Watcher…')
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
-  else if (watcherRow === undefined) watcherContent = status('Opening Watcher…')
+  // A creation that stopped part-way leaves Watcher with no thread; the room says so and offers to finish it.
+  else if (watcherRow === undefined) watcherContent = room.state?.creationStopped === true ? <>{header}<WatcherStartStopped room={room} /></> : status('Opening Watcher…')
   else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} describe={describe} press={press} answering={answering} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
     watched={tab === 'watched' ? <WatcherWatchedView room={room} state={state} groups={groups} id={watchedPanel} labelledBy={watchedTab} onOpen={openThread}
       onShowAll={from => toggleList(from, true)} /> : null}

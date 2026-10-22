@@ -893,6 +893,8 @@ export class WatcherService implements WatcherControlHooks {
       }),
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
+      // A replacement whose creation stopped part-way, with nothing finishing it now: the room offers to try again.
+      creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
       receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
@@ -1395,7 +1397,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   open(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
     if (this.opening) return this.opening
-    this.opening = this.openOne(input).finally(() => { this.opening = undefined })
+    // Published once it settles, so the room learns whether a creation stopped part-way (`creationStopped`).
+    this.opening = this.openOne(input).finally(() => { this.opening = undefined; this.publish() })
     return this.opening
   }
   private async openOne(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
@@ -1444,7 +1447,7 @@ export class WatcherService implements WatcherControlHooks {
    */
   startNew(): Promise<WatcherRoomResult> {
     if (this.opening) return this.opening
-    this.opening = this.startNewOne().finally(() => { this.opening = undefined })
+    this.opening = this.startNewOne().finally(() => { this.opening = undefined; this.publish() })
     return this.opening
   }
   private async startNewOne(): Promise<WatcherRoomResult> {

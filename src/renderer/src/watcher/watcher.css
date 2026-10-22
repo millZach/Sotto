@@ -82,6 +82,9 @@
 }
 .watcher-room > .thread-workspace { grid-row: 1; }
 .watcher-room__status { margin: auto; padding: 30px; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+/* A creation that stopped part-way: what happened and Try again, centred where the conversation would be. */
+.watcher-room__stopped { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 460px; margin: auto; padding: 30px; text-align: center; }
+.watcher-room__stopped > p:not(.agent-error) { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 /* Watcher's replies are signed with the owl, in the name's own colour. */
 .thread-message__who:has(> .watcher-owl) { display: inline-flex; align-items: center; gap: 6px; }
 

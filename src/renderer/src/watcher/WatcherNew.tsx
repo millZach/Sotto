@@ -5,8 +5,9 @@ import type { AgentState, AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { stopAllRunning, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { promptOnItsWay } from '../agents/ThreadOptions'
+import { Button } from '../components/Button'
 import { WatcherOwl } from './WatcherOwl'
-import { watchedRows, useWatcherRoom } from './watcherRoom'
+import { watchedRows, useWatcherRoom, type WatcherRoom } from './watcherRoom'
 
 /**
  * New Watcher (Zach's pick on October 21, 2026, variant A of `prototype/new-watcher-button`): a quiet chip first in
@@ -89,5 +90,29 @@ export function NewWatcherNote({ model, carries }: { readonly model: string; rea
     <WatcherOwl size={26} />
     <h3>New Watcher on {model}.</h3>
     <p>The last conversation is in Watcher history on the Threads page.{carries === null ? '' : ` ${carries}`}</p>
+  </div>
+}
+
+/**
+ * In the room's place while the current Watcher's creation has stopped part-way, by New Watcher or a provider change:
+ * what happened, that nothing was sent, and Try again, which finishes the creation with the choice it was saved with.
+ * A refusal is said in main's words. Started, the new Watcher's pane takes the room and focus goes to its composer.
+ */
+export function WatcherStartStopped({ room }: { readonly room: WatcherRoom }): ReactNode {
+  const [trying, setTrying] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const startNew = room.startNew
+  const replaced = (room.state?.history.length ?? 0) > 0
+  const retry = async (): Promise<void> => {
+    if (startNew === null || trying) return
+    setTrying(true); setRefusal(null)
+    try { setRefusal(room.settle(await startNew())) } catch { setRefusal('Sotto could not reach Watcher, so nothing was started. Try again.') } finally { setTrying(false) }
+  }
+  return <div className="watcher-room__stopped">
+    <p role="status">{replaced
+      ? 'The new Watcher could not be started. Nothing was sent, and the last conversation is in Watcher history on the Threads page.'
+      : 'Watcher could not be started. Nothing was sent.'} {startNew === null ? 'Reopen Sotto to try again.' : 'Try again, or check its provider in Settings, under Providers.'}</p>
+    {startNew === null ? null : <Button variant="secondary" aria-disabled={trying || undefined} onClick={() => void retry()}>{trying ? 'Trying again…' : 'Try again'}</Button>}
+    {refusal === null ? null : <p className="agent-error" role="alert">{refusal}</p>}
   </div>
 }

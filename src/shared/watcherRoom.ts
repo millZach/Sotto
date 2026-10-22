@@ -51,6 +51,11 @@ export const watcherRoomStateSchema = z.object({
    */
   handover: z.object({ source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict().nullable().optional(),
   /**
+   * Whether the current Watcher's creation stopped part-way and nothing is finishing it now: its thread may not exist, so
+   * the room says so and offers to try again, which finishes it with the choice it was saved with. Absent from older hosts.
+   */
+  creationStopped: z.boolean().optional(),
+  /**
    * Where each of the current Watcher's receipts goes in its conversation (ADR-0073, receipt cards): the message it is
    * shown under, the last reply of the Watcher turn that took the action, or that turn's own message while no reply has
    * come. Found from the record's turn for the operation, never from anyone's words. A receipt with no entry is not shown
