@@ -549,12 +549,14 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
  */
-export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot }: {
+export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot, emptyNote }: {
   readonly row: ThreadRow
   /** Where a new thread's greeting goes, directly above the composer. Without one, the thread keeps the plain empty line. */
   readonly greetingSlot?: HTMLElement | null
   /** Watcher's own conversation: its replies are Watcher's. */
   readonly watcher?: boolean
+  /** What an empty conversation at rest says in place of the plain empty line, as a new Watcher's does (New Watcher). */
+  readonly emptyNote?: ReactNode
   readonly state: AgentState
   readonly command: Command
   readonly store: ThreadDraftStore
@@ -796,6 +798,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
+              : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
         {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}

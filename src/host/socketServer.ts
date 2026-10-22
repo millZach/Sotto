@@ -12,8 +12,8 @@ import { RefusedImage } from '../main/agents/attachmentStore'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import type { GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
-import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
+import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../shared/agents'
+import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
@@ -35,6 +35,7 @@ import { visibleWatcherState } from '../shared/watcherVisibility'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
 import { stateWithoutDelegation } from '../shared/delegation'
+import { MAX_AGENT_ACTIVITIES } from '../shared/agentActivity'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 
@@ -484,6 +485,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     peer.observed = new Set(threadIds.filter(id => !hiddenThread(peer, id)))
     for (const id of peer.held.keys()) if (!peer.observed.has(id)) peer.held.delete(id)
     for (const id of peer.opening) if (!peer.observed.has(id)) peer.opening.delete(id)
+    for (const id of backlogs.get(peer)?.keys() ?? []) if (!peer.observed.has(id)) backlogs.get(peer)!.delete(id)
   }
   /**
    * Each whole detail as a socket client reads it: no client is sent a visual, only its words (ADR-0056), a client
@@ -525,21 +527,22 @@ export async function startSocketServer(options: SocketServerOptions) {
   // link still reading one shell is owed the next instead, and sent the newest, built then, once it drains:
   // one shell can be a megabyte, and twenty a second would fill the socket until it closed. Its cursor has
   // not moved, so that shell's event page holds every event the skipped ones would have carried. Whole
-  // details that follow the shell wait with it, the newest standing for any skipped; detail-delta pushes
-  // and responses are never held, so no delta loses the revision it applies to.
+  // details that follow the shell wait with it, the newest standing for any skipped. A thread's own pushes
+  // wait on their own (`holdFor` below); responses are never held.
   const owedShell = new WeakSet<Peer>()
   const sendShell = (peer: Peer, read?: () => AgentState): void => {
     if (!authenticated(peer)) { peer.frames.close(); return }
-    const scope = watcherScopes.get(peer)
-    if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
-      const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
-      if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
-    }
     if (peer.frames.backlogged) {
       if (owedShell.has(peer)) return
       owedShell.add(peer)
       void track(peer.frames.drained().then(() => { owedShell.delete(peer); if (!closing && !peer.frames.isClosed) sendShell(peer) }))
       return
+    }
+    // Watcher's projection waits with the shell (#1089): the one sent once the socket drains is the newest, built then.
+    const scope = watcherScopes.get(peer)
+    if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
+      const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
+      if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
     }
     const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
@@ -579,23 +582,83 @@ export async function startSocketServer(options: SocketServerOptions) {
   // A delta no newer than what the client holds is already covered, and a whole it was sent ahead goes no second time.
   /** The latest whole detail the service published for each thread that has not gone out yet. */
   const waiting = new Map<string, AgentThreadDetail>()
-  const detailPublisher = coalesceAgentThreadDetailPublishes(update => {
-    const threadId = update.threadId
-    waiting.delete(threadId)
+  /** What one update becomes for each kind of peer, made once however many peers are sent it. */
+  interface UpdateFor { whole: () => AgentThreadDetail | null; delta: (peer: Peer) => AgentThreadDetailDelta }
+  const updateFor = (update: AgentThreadDetailUpdate): UpdateFor => {
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
     let strippedDelta: AgentThreadDetailDelta | undefined
     let summaries: AgentThreadDetailDelta | undefined
     let cut: AgentThreadDetailDelta | undefined
-    for (const peer of peers) {
+    return {
+      whole: () => whole === undefined ? (whole = service.threadDetail(update.threadId)) : whole,
+      delta: peer => {
+        strippedDelta ??= deltaWithoutVisuals(update as AgentThreadDetailDelta)
+        return peer.activityBodies ? (cut ??= cutBodies.delta(strippedDelta)) : peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta
+      },
+    }
+  }
+  const sendUpdate = (peer: Peer, update: AgentThreadDetailUpdate, made: UpdateFor): void => {
+    const threadId = update.threadId
+    if (!isAgentThreadDetailDelta(update)) { if (!peer.sentAhead.has(update)) sendWhole(peer, threadId, update); return }
+    const held = peer.held.get(threadId)
+    if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
+    if (!peer.deltas) { sendWhole(peer, threadId, made.whole()); return }
+    const delta = made.delta(peer)
+    if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.unknownProviders.size ? deltaWithoutProviders(delta, peer.unknownProviders) : delta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
+    else peer.held.delete(threadId)
+  }
+  // A thread's pushes wait for a client whose socket is still backed up, as its shell does (#1089). Each thread holds one
+  // update for it, every later one folded in, removals too, so a client that reads slowly is sent one delta for what
+  // changed while it was behind rather than every delta in turn. Updates that do not follow each other, or a fold that has
+  // grown to name more entries than a thread holds records, give way to the thread as it is when it goes (`CURRENT`), so
+  // what is held never outgrows one thread. Once the socket drains each goes, a thread at a time, waiting again whenever
+  // the socket backs up. A delta still follows the revision it applies to; answers never wait.
+  const CURRENT = null
+  const backlogs = new WeakMap<Peer, Map<string, AgentThreadDetailUpdate | typeof CURRENT>>()
+  const holdFor = (peer: Peer, update: AgentThreadDetailUpdate): boolean => {
+    let threads = backlogs.get(peer)
+    const threadId = update.threadId
+    if (!threads?.has(threadId)) {
+      if (!peer.frames.backlogged) return false
+      // An update this client would not be sent now is not held for later either. A thread still owed its first whole
+      // copy is sent it as it is then, so its deltas are dropped; once something is held for it, they fold into that.
+      if (!isAgentThreadDetailDelta(update) ? peer.sentAhead.has(update) : peer.opening.has(threadId)) return true
+      if (!threads) { backlogs.set(peer, threads = new Map()); void track(peer.frames.drained().then(() => release(peer))) }
+      threads.set(threadId, update)
+      return true
+    }
+    const queued = threads.get(threadId)!
+    if (queued === CURRENT) return true
+    const folded = foldAgentThreadDetailUpdates(queued, update)
+    threads.set(threadId, folded === null || isAgentThreadDetailDelta(folded) && folded.activityDeltas.length + folded.messageDeltas.length > MAX_AGENT_ACTIVITIES ? CURRENT : folded)
+    return true
+  }
+  const release = (peer: Peer): void => {
+    const threads = backlogs.get(peer)
+    if (!threads) return
+    if (closing || peer.frames.isClosed) { backlogs.delete(peer); return }
+    for (const [threadId, queued] of threads) {
+      if (peer.frames.backlogged) { void track(peer.frames.drained().then(() => release(peer))); return }
+      threads.delete(threadId)
       if (!peer.observed.has(threadId)) continue
-      if (!isAgentThreadDetailDelta(update)) { if (!peer.sentAhead.has(update)) sendWhole(peer, threadId, update); continue }
       const held = peer.held.get(threadId)
-      if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) continue
-      if (!peer.deltas) { sendWhole(peer, threadId, whole === undefined ? (whole = service.threadDetail(threadId)) : whole); continue }
-      strippedDelta ??= deltaWithoutVisuals(update)
-      const delta = peer.activityBodies ? (cut ??= cutBodies.delta(strippedDelta)) : peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta
-      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.unknownProviders.size ? deltaWithoutProviders(delta, peer.unknownProviders) : delta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
-      else peer.held.delete(threadId)
+      // A whole sent since, such as the one a new observe sends, already carries what this update would.
+      if (queued !== CURRENT && held !== undefined && queued.revision <= held) continue
+      // A whole read answered since, which no held push waits behind, can land partway through a held delta: the client
+      // then holds a revision the delta does not start from, so it is sent the thread as it is rather than a delta it
+      // would only answer by reading the thread again.
+      if (queued === CURRENT || isAgentThreadDetailDelta(queued) && held !== undefined && held !== queued.baseRevision) { detail(peer, threadId); continue }
+      sendUpdate(peer, queued, updateFor(queued))
+    }
+    backlogs.delete(peer)
+  }
+  const detailPublisher = coalesceAgentThreadDetailPublishes(update => {
+    const threadId = update.threadId
+    waiting.delete(threadId)
+    const made = updateFor(update)
+    for (const peer of peers) {
+      if (!peer.observed.has(threadId) || holdFor(peer, update)) continue
+      sendUpdate(peer, update, made)
     }
   })
   // Only exact attempts a peer already read without acceptance are watched. This is an in-memory

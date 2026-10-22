@@ -18,6 +18,8 @@ export const WATCHER_UNWATCH_THREAD = 'sotto:watcher:unwatch-thread'
 export const WATCHER_READ_HANDOVER = 'sotto:watcher:read-handover'
 export const WATCHER_CONTINUE_HANDOVER = 'sotto:watcher:continue-handover'
 export const WATCHER_DISMISS_HANDOVER = 'sotto:watcher:dismiss-handover'
+/** New Watcher: a new conversation on the current Watcher's own provider, model, effort and permissions (ADR-0073). */
+export const WATCHER_START_NEW = 'sotto:watcher:start-new'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
 export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
@@ -44,10 +46,22 @@ export const watcherRoomStateSchema = z.object({
   receipts: z.array(watcherOperationSchema), news: z.array(watcherEventSchema).max(400).optional(),
   recoveryNotice: z.string().nullable(), observedAt: timestamp,
   /**
-   * The handover of the last Watcher offered to the current one after a provider change, until its first message goes
+   * The handover of the last Watcher offered to the current one after a provider change or New Watcher, until its first message goes
    * or the user puts the offer away (ADR-0073): where it comes from and what it carries, in counts. Never its words.
    */
   handover: z.object({ source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict().nullable().optional(),
+  /**
+   * Whether the current Watcher's creation stopped part-way and nothing is finishing it now: its thread may not exist, so
+   * the room says so and offers to try again, which finishes it with the choice it was saved with. Absent from older hosts.
+   */
+  creationStopped: z.boolean().optional(),
+  /**
+   * What New Watcher would answer now, by main's own conditions: unavailable while Watcher or any of its work is busy,
+   * including starts still working and deliveries the window cannot see, or while its conversation has said nothing.
+   * Absent with no Watcher thread, and from older hosts; a press still asks main. A word rather than an object, so a
+   * publish makes nothing new for it (ownerScaleWorkBudget).
+   */
+  newWatcher: z.enum(['available', 'busy', 'empty']).optional(),
   /**
    * Where each of the current Watcher's receipts goes in its conversation (ADR-0073, receipt cards): the message it is
    * shown under, the last reply of the Watcher turn that took the action, or that turn's own message while no reply has
@@ -186,9 +200,14 @@ export interface WatcherBridge {
   setPermission?(request: WatcherSetPermissionRequest): Promise<WatcherRoomResult>
   watchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
   unwatchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
-  /** The handover after a provider change (ADR-0073). Older stand-ins omit them; the real Owl preload supplies all three. */
+  /** The handover after a provider change or New Watcher (ADR-0073). Older stand-ins omit them; the real Owl preload supplies all three. */
   readHandover?(): Promise<WatcherHandoverRead>
   continueWithHandover?(request: WatcherContinueHandoverRequest): Promise<WatcherRoomResult>
   dismissHandover?(): Promise<WatcherRoomResult>
+  /**
+   * New Watcher: starts a new Watcher on the current one's provider, model, effort and permissions, which main reads from
+   * the current Watcher itself, and offers the last one's handover. Older stand-ins omit it; the real Owl preload supplies it.
+   */
+  startNew?(): Promise<WatcherRoomResult>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }

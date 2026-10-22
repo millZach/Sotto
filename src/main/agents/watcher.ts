@@ -219,6 +219,8 @@ export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
   private opening: Promise<WatcherRoomResult> | undefined
+  /** What `opening` is doing: an open (a first Watcher or a change of its choices) or New Watcher. */
+  private openingKind: 'open' | 'new' | undefined
   private recoveryNotice: string | null = null
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
   private readonly active = new Map<string, Promise<unknown>>()
@@ -893,6 +895,8 @@ export class WatcherService implements WatcherControlHooks {
       }),
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
+      // A replacement whose creation stopped part-way, with nothing finishing it now: the room offers to try again.
+      creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
       receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
@@ -900,6 +904,7 @@ export class WatcherService implements WatcherControlHooks {
     room.context = current ? { tokens: this.contextTokens(current), compactAt: WATCHER_COMPACT_AT_TOKENS, canCompact: this.canCompact(snapshot, current),
       compacting: compactionPending(current.compaction) } : null
     room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read(), ...this.kept.readable() ? {} : { unread: true as const } }
+    if (current && !live.creation) room.newWatcher = this.newWatcherAnswer(live, current)
     return room
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
@@ -985,8 +990,8 @@ export class WatcherService implements WatcherControlHooks {
     return this.options.host.watcherHandover(source.target.threadId, message => watcherMessageAsShown(source.target.hostId, source.target.threadId, message, requests))
   }
   /**
-   * After a provider change, offers a handover of the conversation the new Watcher replaced, when that one has history.
-   * Any earlier offer goes with it. A history that cannot be read offers nothing.
+   * After a replacement (a provider change or New Watcher), offers a handover of the conversation the new Watcher
+   * replaced, when that one has history. Any earlier offer goes with it. A history that cannot be read offers nothing.
    */
   private offerHandover(previous: WatcherIdentity, to: WatcherThreadTarget): void {
     this.handoverOffer = null
@@ -1394,8 +1399,18 @@ export class WatcherService implements WatcherControlHooks {
     this.publish()
   }
   open(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
+    // An open joins an open under way. One during New Watcher would answer with New Watcher's result and drop its choice.
+    if (this.opening && this.openingKind === 'new') return Promise.resolve(watcherRefusal('THREAD_BUSY', 'Wait for the new Watcher to start before changing its model.', true))
+    return this.begin('open', () => this.openOne(input))
+  }
+  /**
+   * The one open or New Watcher under way, which a second of the same kind joins. Published once it settles, so the room
+   * learns whether a creation stopped part-way (`creationStopped`) and what New Watcher would answer.
+   */
+  private begin(kind: 'open' | 'new', run: () => Promise<WatcherRoomResult>): Promise<WatcherRoomResult> {
     if (this.opening) return this.opening
-    this.opening = this.openOne(input).finally(() => { this.opening = undefined })
+    this.openingKind = kind
+    this.opening = run().finally(() => { this.opening = undefined; this.openingKind = undefined; this.publish() })
     return this.opening
   }
   private async openOne(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
@@ -1412,20 +1427,14 @@ export class WatcherService implements WatcherControlHooks {
       if (record.creation) {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
           || record.creation.reasoningEffort !== input.reasoningEffort) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
-        await this.finishCreation(record.creation.identity, input)
-        // A replacement whose creation stopped part-way and is finished now offers the replaced conversation's handover too.
-        const replaced = record.history.at(-1)
-        if (replaced && previous && key(previous.target) === key(record.creation.identity.target) && replaced.provider !== previous.provider) this.offerHandover(replaced, previous.target)
-        this.recoveryNotice = null; this.publish(); return this.get()
+        return await this.finishPending(record, input)
       }
       if (!previous || previous.provider !== input.provider) this.creationPermission(model)
       if (previous) {
-        const thread = this.thread(previous.target)
-        if (thread.kind !== 'watcher' || thread.providerId !== previous.provider || thread.projectId !== previous.projectId) refuse('NOT_CURRENT_WATCHER', 'The saved Watcher identity does not match its thread. Nothing was changed.')
+        const thread = this.currentThread(previous)
         if (previous.provider === input.provider && thread.modelId === input.modelId
           && (!input.reasoningEffort || thread.reasoningEffort === input.reasoningEffort)) return this.get()
-        if (thread.status === 'running' || thread.requests.length || this.invocations || this.active.size || previous.provider !== input.provider && this.inFlight(record) > 0 || this.options.control.hasPendingThreadWork(thread.id, { setAsideIgnored: true })
-          || record.operations.some(operation => ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))) {
+        if (this.replacementBusy(record, thread, previous.provider !== input.provider)) {
           refuse('THREAD_BUSY', 'Wait for Watcher and its pending deliveries before changing its provider, model or effort.', true)
         }
         this.changing = true
@@ -1438,29 +1447,118 @@ export class WatcherService implements WatcherControlHooks {
           return this.get()
         }
       }
-      const folder = join(this.options.directory, 'watcher', 'workspace')
-      await mkdir(folder, { recursive: true })
-      let project = this.options.control.watcherSnapshot().projects.find(item => resolve(item.path) === resolve(folder) && item.providerId === input.provider)
-      if (!project) {
-        const created = await this.options.control.commandForWatcherRoom({ type: 'create-project', provider: input.provider, title: 'Watcher', path: folder, useExisting: true })
-        project = this.options.control.watcherSnapshot().projects.find(item => resolve(item.path) === resolve(folder) && (!item.providerId || item.providerId === input.provider))
-        if (!project || created.error) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s working folder could not be opened. Check its provider and try again.', true)
-      }
-      const identity: WatcherIdentity = { target: this.target(randomUUID()), projectId: project.id, provider: input.provider,
-        creationOperationId: randomUUID(), createdAt: new Date(Math.max(Date.now(), previous ? Date.parse(previous.createdAt) + 1 : 0)).toISOString() }
-      await this.options.control.updateWatcher(next => {
-        next.creation = { identity, modelId: input.modelId, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}), phase: 'intent', replaces: previous?.target ?? null }
-        // The old native conversation keeps its binding. New profile admission follows the durable reference.
-        if (previous) next.history.push(previous)
-        next.current = identity
-        next.creation.replaces = null
-      })
-      if (previous) { this.options.revoke?.(previous.target.threadId); await this.options.host.setWatcherKind(previous.target.threadId, 'watcher-history') }
-      await this.finishCreation(identity, input)
-      if (previous) this.offerHandover(previous, identity.target)
-      this.scheduleRemote(); this.publish(); return this.get()
+      return await this.replace(previous, input)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Watcher could not be opened. Nothing was sent. Check its provider and reopen Watcher.', true) }
     finally { this.changing = false }
+  }
+  /**
+   * New Watcher (ADR-0073): a new Watcher on the current one's own provider, model, effort and permission mode, all read
+   * from the current Watcher's thread, through the same replacement a provider change makes. The last conversation goes
+   * to Watcher history with its tools revoked, workers, receipts and standing watches carry on, and its handover is
+   * offered. Refused, nothing is sent and nothing changes. A creation left pending is finished, as open finishes it.
+   */
+  startNew(): Promise<WatcherRoomResult> {
+    // A second press joins the first. During an open it would answer with that open's result and start nothing.
+    if (this.opening && this.openingKind === 'open') return Promise.resolve(watcherRefusal('THREAD_BUSY', 'Wait for Watcher to finish changing before starting a new one.', true))
+    return this.begin('new', () => this.startNewOne())
+  }
+  private async startNewOne(): Promise<WatcherRoomResult> {
+    try {
+      if (this.options.workerHost) refuse('HOST_FEATURE_UNAVAILABLE', 'Open Watcher on the desktop that coordinates this host.')
+      if (this.closed) refuse('NOT_CURRENT_WATCHER', this.recoveryNotice ?? 'Watcher is stopping. Reopen Sotto.')
+      const record = this.record(), previous = record.current
+      if (record.creation) {
+        const { identity, modelId, reasoningEffort } = record.creation
+        if (modelId === undefined) refuse('PROVIDER_UNAVAILABLE', 'Watcher creation stopped before its model was saved. Reopen Watcher with the same choice.')
+        return await this.finishPending(record, { provider: identity.provider, modelId, ...(reasoningEffort ? { reasoningEffort } : {}) })
+      }
+      if (!previous) refuse('NOT_CURRENT_WATCHER', 'There is no Watcher yet. Send Watcher your first message to start it.')
+      const thread = this.currentThread(previous)
+      if (this.replacementBusy(record, thread, true)) refuse('THREAD_BUSY', 'Wait for Watcher and its pending deliveries before starting a new one.', true)
+      if (!this.hasHistory(previous)) refuse('INVALID_INPUT', 'This Watcher is new, so there is nothing to hand over yet. Nothing was changed.')
+      const model = resolveModel(this.options.control.watcherSnapshot().models, thread.modelId)
+      if (!model?.ready || model.providerId !== previous.provider) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s model is not ready. Connect its provider and try again.', true)
+      // The new Watcher starts with the permission mode the current one has in force: the saved choice, which a change
+      // saves before the live thread takes it. Where the thread reports another, nothing is started rather than either
+      // mode chosen for the user.
+      if (thread.runtimeMode !== undefined && this.creationPermission(model) !== thread.runtimeMode) {
+        refuse('PERMISSION_NOT_COMPARABLE', 'Watcher’s saved permission mode is not the one in force, so nothing was started. Choose its permission mode again, then start a new Watcher.')
+      }
+      const reasoningEffort = thread.reasoningEffort && model.reasoningEfforts?.includes(thread.reasoningEffort) ? thread.reasoningEffort : undefined
+      this.changing = true
+      return await this.replace(previous, { provider: previous.provider, modelId: model.id, ...(reasoningEffort ? { reasoningEffort } : {}) })
+    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start a new Watcher. Nothing was sent. Check its provider and try again.', true) }
+    finally { this.changing = false }
+  }
+  /** The current Watcher's thread, refused when it no longer matches the saved identity. */
+  private currentThread(current: WatcherIdentity): AgentThread {
+    const thread = this.thread(current.target)
+    if (thread.kind !== 'watcher' || thread.providerId !== current.provider || thread.projectId !== current.projectId) refuse('NOT_CURRENT_WATCHER', 'The saved Watcher identity does not match its thread. Nothing was changed.')
+    return thread
+  }
+  /**
+   * Whether Watcher is too busy to change its options or be replaced: running, waiting on a request card, with work or a
+   * delivery still pending, a tool call or a start under way. A replacement also waits for its starts still working.
+   */
+  private replacementBusy(record: Readonly<WatcherRecord>, thread: AgentThread, replacing: boolean): boolean {
+    return thread.status === 'running' || thread.requests.length > 0 || this.invocations > 0 || this.active.size > 0 || replacing && this.inFlight(record) > 0
+      || this.options.control.hasPendingThreadWork(thread.id, { setAsideIgnored: true })
+      || record.operations.some(operation => ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))
+  }
+  /**
+   * What New Watcher would answer now, for the room's chip: main's own busy conditions, and whether the conversation has
+   * said anything by the thread's own record of it. Cheap enough for every publish, so it builds no handover; a press
+   * still asks the handover itself (`hasHistory`).
+   */
+  private newWatcherAnswer(record: Readonly<WatcherRecord>, thread: AgentThread): NonNullable<WatcherRoomState['newWatcher']> {
+    if (this.opening !== undefined || this.replacementBusy(record, thread, true)) return 'busy'
+    const said = thread.messages.length > 0 || thread.lastUserMessageId !== undefined || (thread.summary?.messageCount ?? 0) > 0 || thread.earlierAvailable === true
+    return said ? 'available' : 'empty'
+  }
+  /** Whether a Watcher conversation has said anything: what its handover would carry. One that cannot be read counts as having history. */
+  private hasHistory(source: WatcherIdentity): boolean {
+    try { return (this.buildHandover(source)?.summary.total ?? 0) > 0 } catch { return true }
+  }
+  /**
+   * Finishes a creation that stopped part-way, with the choice it was saved with. A replacement's offers the replaced
+   * conversation's handover too. The pending creation is the current Watcher, and Watcher history grows only in the write
+   * that makes a replacement current (`replace`), so when that history has any conversation its last is the one replaced,
+   * whichever provider either is on; the first Watcher's creation has none.
+   */
+  private async finishPending(record: Readonly<WatcherRecord>, input: WatcherOpenRequest): Promise<WatcherRoomResult> {
+    const creation = record.creation!, current = record.current
+    await this.finishCreation(creation.identity, input)
+    const replaced = record.history.at(-1)
+    if (replaced && current && key(current.target) === key(creation.identity.target)) this.offerHandover(replaced, current.target)
+    this.recoveryNotice = null; this.publish(); return this.get()
+  }
+  /**
+   * Makes a new Watcher thread on `input` the current Watcher. The one it replaces goes to Watcher history, its tools
+   * revoked, and its handover is offered; workers, receipts and standing watches stay as they are, since they belong to
+   * the record and not to a conversation (ADR-0073). The first Watcher replaces nothing.
+   */
+  private async replace(previous: WatcherIdentity | null, input: WatcherOpenRequest): Promise<WatcherRoomResult> {
+    const folder = join(this.options.directory, 'watcher', 'workspace')
+    await mkdir(folder, { recursive: true })
+    let project = this.options.control.watcherSnapshot().projects.find(item => resolve(item.path) === resolve(folder) && item.providerId === input.provider)
+    if (!project) {
+      const created = await this.options.control.commandForWatcherRoom({ type: 'create-project', provider: input.provider, title: 'Watcher', path: folder, useExisting: true })
+      project = this.options.control.watcherSnapshot().projects.find(item => resolve(item.path) === resolve(folder) && (!item.providerId || item.providerId === input.provider))
+      if (!project || created.error) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s working folder could not be opened. Check its provider and try again.', true)
+    }
+    const identity: WatcherIdentity = { target: this.target(randomUUID()), projectId: project.id, provider: input.provider,
+      creationOperationId: randomUUID(), createdAt: new Date(Math.max(Date.now(), previous ? Date.parse(previous.createdAt) + 1 : 0)).toISOString() }
+    await this.options.control.updateWatcher(next => {
+      next.creation = { identity, modelId: input.modelId, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}), phase: 'intent', replaces: previous?.target ?? null }
+      // The old native conversation keeps its binding. New profile admission follows the durable reference.
+      if (previous) next.history.push(previous)
+      next.current = identity
+      next.creation.replaces = null
+    })
+    if (previous) { this.options.revoke?.(previous.target.threadId); await this.options.host.setWatcherKind(previous.target.threadId, 'watcher-history') }
+    await this.finishCreation(identity, input)
+    if (previous) this.offerHandover(previous, identity.target)
+    this.scheduleRemote(); this.publish(); return this.get()
   }
   private creationPermission(model: AgentModel) {
     const runtimeMode = this.record().lastRuntimeMode ?? 'approval-required'
@@ -2176,7 +2274,8 @@ export class WatcherService implements WatcherControlHooks {
       : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
   }
   private async invokeNow(threadId: string, name: WatcherToolName, args: unknown, progress: CallProgress): Promise<unknown> {
-    this.invocations++
+    // The room's New Watcher waits while a call runs, so it hears when the first starts and the last ends.
+    if (this.invocations++ === 0) this.publish()
     try {
       this.checkCaller(threadId)
       if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before using its tools.', true)
@@ -2264,7 +2363,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
-    finally { this.invocations-- }
+    finally { if (--this.invocations === 0) this.publish() }
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress): Promise<unknown> {
     const admitted = await this.transaction(async () => {

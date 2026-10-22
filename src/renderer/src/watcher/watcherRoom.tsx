@@ -33,8 +33,10 @@ export interface WatcherRoom {
   /** Watch and Stop watching; null where the bridge offers neither, and no thread offers the owl as a control. */
   readonly watchThread: NonNullable<WatcherBridge['watchThread']> | null
   readonly unwatchThread: NonNullable<WatcherBridge['unwatchThread']> | null
-  /** The handover after a provider change (ADR-0073): read it, continue with it, or put it away. Null where the bridge offers none. */
+  /** The handover after a provider change or New Watcher (ADR-0073): read it, continue with it, or put it away. Null where the bridge offers none. */
   readonly handover: WatcherHandoverCalls | null
+  /** New Watcher: a new Watcher on the current one's own choices, with the last one's handover offered. Null where the bridge offers none. */
+  readonly startNew: (() => Promise<WatcherRoomResult>) | null
   /** Takes a result's state when main sent one and hands back the refusal's words, or null. */
   readonly settle: (result: WatcherRoomResult) => string | null
   /** Stop all: main's preview of what it would stop, then the stop that preview confirms. Null without a bridge. */
@@ -181,8 +183,9 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {
-    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
+      startNew: startNew === undefined ? null : () => startNew.call(bridge),
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
       handover: readHandover === undefined || continueWithHandover === undefined || dismissHandover === undefined ? null : {
         read: () => readHandover.call(bridge),
@@ -227,6 +230,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     watchThread: manage.watch?.watchThread ?? null,
     unwatchThread: manage.watch?.unwatchThread ?? null,
     handover: manage.handover,
+    startNew: manage.startNew,
     stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
   }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage])
   return <WatcherRoomContext.Provider value={value}>
