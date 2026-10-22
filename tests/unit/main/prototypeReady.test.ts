@@ -131,6 +131,19 @@ describe('PrototypeReady', () => {
     expect(after.threads[1]).toBe(replied.threads[1])
   })
 
+  it('reads each thread a bounded number of times however many threads have a waiting question', () => {
+    const marks = new PrototypeReady(searches())
+    const reads = (count: number): number => {
+      const threads = Array.from({ length: count }, (_, index) => thread({ id: `thread-${index}`, requests: [question('q')] }))
+      let read = 0
+      const counted = new Proxy(threads, { get(target, key, receiver) { if (typeof key === 'string' && /^\d+$/u.test(key)) read++; return Reflect.get(target, key, receiver) } })
+      marks.decorate(snapshot(...threads))
+      marks.decorate({ ...snapshot(), threads: counted })
+      return read
+    }
+    expect(reads(400) / 400).toBeLessThanOrEqual(reads(40) / 40 + 1)
+  })
+
   it('keeps the newest opened sources once the list is full', () => {
     const saved = Array.from({ length: PROTOTYPES_CLEARED_MAX + 5 }, (_, index) => ({ threadId: 'thread', source: `reply:${index}` }))
     const marks = new PrototypeReady(searches(), saved)

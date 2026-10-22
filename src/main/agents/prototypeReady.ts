@@ -119,7 +119,12 @@ export class PrototypeReady {
       const next = this.publish(thread, this.markable(thread, settled) ? this.markOf(thread) : this.forget(thread.id))
       if (next !== thread) (threads ??= [...snapshot.threads])[index] = next
     }
-    if (this.asked.size) for (const id of this.asked.keys()) if (!snapshot.threads.some(thread => thread.id === id)) this.asked.delete(id)
+    if (this.asked.size) {
+      // One set of the threads present, so the cleanup grows with the threads rather than with threads times questions.
+      const present = new Set<string>()
+      for (const thread of snapshot.threads) present.add(thread.id)
+      for (const id of this.asked.keys()) if (!present.has(id)) this.asked.delete(id)
+    }
     return threads ? { ...snapshot, threads } : snapshot
   }
 
