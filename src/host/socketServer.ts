@@ -9,6 +9,8 @@ import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agent
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
+import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
+import type { GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
@@ -71,7 +73,8 @@ const TOO_LARGE: Record<Oversize, string> = {
 /** A thread's tool reads (ADR-0025, October 5 amendment), whose answer too large to send gets the tool sentence. A file preview and a comparison also take the one-at-a-time guard below. */
 const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
 /** A refusal the client reads: its code, and a sentence, which is the code's own unless the refusal says more. */
-class Refusal extends Error { constructor(readonly code: HostErrorCode, message = errors[code]) { super(message) } }
+/** `reason` rides along on a pull request read's refusal only (#1290), so the client can say what to do next. */
+class Refusal extends Error { constructor(readonly code: HostErrorCode, message = errors[code], readonly reason?: GitPullRequestReadFailure) { super(message) } }
 /**
  * `deltas` is set by the client's hello: only a client that accepts `detail-delta` is sent one. `clientUpdates` likewise:
  * only a client that accepts `client-updates` is sent the mise channel and the waiting state in its shell's client updates.
@@ -261,6 +264,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
+    // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
+    && (feature !== 'pull-request-view' || service.supportsPullRequestView === true)
     // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
@@ -1106,7 +1111,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { return await service.gitChangedFiles(request.request) } catch { throw new Refusal('unavailable') }
       case 'git-pull-request':
         if (!service.gitPullRequest) throw new Refusal('invalid_request')
-        try { return await service.gitPullRequest(request.request) } catch { throw new Refusal('unavailable') }
+        try { return await service.gitPullRequest(request.request) } catch (error) { throw new Refusal('unavailable', undefined, pullRequestReadFailureOf(error)) }
       case 'host-folders':
         if (!service.hostFolders) throw new Refusal('invalid_request')
         try { return await service.hostFolders(request.request) } catch { throw new Refusal('unavailable') }
@@ -1247,7 +1252,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         } else if (request.op === 'shell' || request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
         response = { v: 1, id: request.id, ok: true, result }
       }
-      catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code] } } }
+      catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code], ...error instanceof Refusal && error.reason ? { reason: error.reason } : {} } } }
       // An answer that carries a shell gives the client a picture of its own, so the next shell push goes whatever it repeats.
       if (carried) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.

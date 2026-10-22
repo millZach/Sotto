@@ -140,3 +140,7 @@ Babysitting PR #964 said "The required checks passed" five times before they had
 - **A waiting wake-up drops check news about a commit the branch has left.** As a waiting wake-up goes, what it says of the checks on a commit the reader has since seen the branch move past is taken out, and a part with nothing left goes. It is judged against the reader's last read, not the thread's record, since news goes out before its record is written. The pass line names the commit ("on commit 444b9cc"), as T3's does, so news an agent has pushed past reads as such.
 
 **Cost.** The rules ride in the checks read and cost no more points. The words query goes only for bot remarks no thread has been told of, once for each edit.
+
+## Amendment: the iPhone's control (October 21, 2026, #1281)
+
+Decision 11 gave phones no control. [ADR-0102](0102-the-iphone-reads-a-threads-pull-request-in-a-sheet.md) gives the iPhone's pull request sheet **Babysit pull request** and **Stop babysitting**, an Owl feature. The phone sends the same two commands to a host that lists `pull-request-babysit`, reads `babysitting` and `babysitEnded` for its line, and grants nothing. Everything else here stands.

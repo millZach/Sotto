@@ -708,6 +708,7 @@ export class WatcherService implements WatcherControlHooks {
     if (RUNTIME_MODE_ORDER.indexOf(mode) > RUNTIME_MODE_ORDER.indexOf(ceiling.runtimeMode)) tooWide()
     return { kind: 'runtime' as const, mode }
   }
+  /** A thread a start made, checked again before its first prompt goes. A send checks nothing here: it gives no permission. */
   private checkPermission(thread: AgentThread, request: Pick<WatcherRequest, 'remoteOrigin'> | undefined): void {
     const owner = thread.hostId ?? this.hostId()
     const model = resolveModel(this.owningSnapshot(owner)?.models ?? [], thread.modelId)
@@ -2068,8 +2069,9 @@ export class WatcherService implements WatcherControlHooks {
     if (operation.action === 'stop') this.checkStopTurn(thread, record, operation.requestId)
     if (operation.action === 'start' || operation.action === 'send') {
       this.checkHumanTurn(thread, record, operation.delivery)
-      this.pending(thread); this.checkPermission(thread, request)
-      this.checkRemoteCeiling(request.id, thread.runtimeMode)
+      this.pending(thread)
+      // Only a start gives a thread its permission; a send leaves the thread's own as the user set it (#1145).
+      if (operation.action === 'start') { this.checkPermission(thread, request); this.checkRemoteCeiling(request.id, thread.runtimeMode) }
       if (operation.expectedLastUserMessageId && operation.expectedLastUserMessageId !== nativeHead(thread)) refuse('TARGET_CHANGED', 'This thread received another instruction. Read it before sending.')
       if (operation.delivery === 'steer' && (thread.status !== 'running' || operation.expectedTurnId !== thread.lastTurn?.id)) refuse('TURN_CHANGED', 'The running turn changed. Nothing was steered.')
       if (operation.delivery !== 'queue' && operation.delivery !== 'steer' && thread.status === 'running') refuse('THREAD_BUSY', RUNNING_TURN_HOLD, true)
@@ -2390,8 +2392,7 @@ export class WatcherService implements WatcherControlHooks {
       if (thread && send) {
         this.checkHumanTurn(thread, record, (input as WatcherToolInput<'send_to_thread'>).delivery)
         if (request.standingWatchId && isWorkspaceThreadSettled(thread, this.owningSnapshot(owner)?.projects.find(project => project.id === thread.projectId))) refuse('REQUEST_NOT_ACTIVE', 'This watched thread is settled. Its next user instruction starts new work.')
-        this.checkPermission(thread, request)
-        this.checkRemoteCeiling(request.id, thread.runtimeMode)
+        // A send gives the thread no permission, so neither the new-thread default nor a host's hold-back limits it (#1145).
         const sent = input as WatcherToolInput<'send_to_thread'>
         if (sent.expectedLastUserMessageId && sent.expectedLastUserMessageId !== nativeHead(thread)) refuse('TARGET_CHANGED', 'This thread received another instruction. Read it before sending.')
         // Only the foreground turn and the thread's own queue hold a send, never background work, and a refusal says which (#1203).

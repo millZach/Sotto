@@ -1,0 +1,809 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Issues #1275 (the Watcher conversation is cramped), #1276 (move the permission chip out from
+  above the reply box) and #1278 (slide the header away on scroll down and back on scroll up). One screen, so one file.
+  Switch with ?variant=today|A|B|C, the bar at the bottom, or the Left and Right keys:
+    Today. As built on feat/watcher-iphone-steer: fixed header, permission chip over the box, tab bar always there.
+    A. Hero in the conversation: name, state, computer and permission scroll with the conversation; a slim bar with
+       Conversation and Watched slides away on scroll down and back on scroll up.
+    B. Large title that folds: the header folds into one bar on scroll down and unfolds on scroll up; permission and
+       the computer go into a More menu; the tab bar slides away like Safari's toolbar.
+    C. Whole header slides, permission in the box: the header slides away whole; permission is a small button inside
+       the reply box.
+  ?theme=light shows the light palette. Synthetic data only; no network, no persistence. Colours are the Sotto
+  palette from apps/ios/Sotto/ThemePalettes.swift; sizes and words follow WatcherViews.swift and WatcherState.swift.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Room for Watcher's conversation on the iPhone (prototype, #1275 #1276 #1278)</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype');font-weight:300 900}
+
+:root,[data-theme=dark]{
+  --canvas:#040507;--surface:#090a0e;--raised:#111316;--overlay:#18191d;
+  --ink:#f9fafd;--muted:#a0a5ae;--placeholder:#94979e;--border:#2a2f39;
+  --hair:rgb(249 250 253 / .1);--soft:rgb(249 250 253 / .07);--softer:rgb(249 250 253 / .045);
+  --accent:#47b8a9;--on-accent:#070f0e;--accent-text:#6bc3b6;
+  --warning:#fe9a00;--warning-surface:#3a301f;--warning-text:#ffc184;--bubble:#14171e;--bubble-ink:#f9fafd;
+  --glass:rgb(17 19 22 / .78);--shadow:rgb(0 0 0 / .45);--scrim:rgb(0 0 0 / .45);
+  --page:#111214;--page-card:#1b1c20;--page-line:#2c2e34;--page-text:#ececef;--page-muted:#a4a6ae;--bezel:#000;
+}
+[data-theme=light]{
+  --canvas:#f9f8f5;--surface:#fdfcf9;--raised:#f2f0ec;--overlay:#efece8;
+  --ink:#221d17;--muted:#68625b;--placeholder:#6f6961;--border:#d5d0c8;
+  --hair:rgb(34 29 23 / .1);--soft:rgb(34 29 23 / .07);--softer:rgb(34 29 23 / .045);
+  --accent:#007d74;--on-accent:#fdfcf9;--accent-text:#1e665e;
+  --warning:#fe9a00;--warning-surface:#f7efe3;--warning-text:#835622;--bubble:#ebe7df;--bubble-ink:#221d17;
+  --glass:rgb(253 252 249 / .8);--shadow:rgb(60 40 20 / .18);--scrim:rgb(34 29 23 / .28);
+  --page:#e9e9ec;--page-card:#f7f7f9;--page-line:#d2d2d8;--page-text:#1c1c1f;--page-muted:#55555d;--bezel:#141416;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:15px/1.5 Figtree,system-ui,sans-serif;padding:28px 32px 120px}
+button{font:inherit;color:inherit}
+.head{max-width:1100px;margin:0 0 22px}
+.head .kicker{font-size:13px;color:var(--page-muted);margin:0 0 4px}
+.head h1{font-size:26px;margin:0 0 8px;letter-spacing:-.02em;font-weight:650}
+.head p{margin:0 0 6px;max-width:880px;color:var(--page-muted)}
+.stage{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center;flex:none}
+.cap{max-width:calc(426px * var(--z,.86));font-size:14px;margin:0}
+.cap b{font-weight:650}
+.cap.trade{color:var(--page-muted);font-size:13px}
+.live{font:600 13px/1.3 system-ui,sans-serif;background:var(--page-card);border:1px solid var(--page-line);border-radius:999px;padding:8px 14px}
+.live span{color:var(--page-muted);font-weight:500}
+
+/* ---------- the phone ---------- */
+.frame{zoom:var(--z,.86);border-radius:62px;background:var(--bezel);padding:12px;box-shadow:0 30px 60px -30px #000a;flex:none}
+.phone{position:relative;width:402px;height:874px;border-radius:50px;overflow:hidden;background:var(--canvas);color:var(--ink);
+  font:15.5px/1.42 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.sb{position:absolute;top:0;left:0;right:0;height:54px;display:flex;align-items:center;justify-content:space-between;padding:6px 34px 0 46px;font-size:17px;font-weight:600;z-index:40;pointer-events:none}
+.sb .island{position:absolute;left:50%;top:11px;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.sbscrim{position:absolute;top:0;left:0;right:0;height:54px;z-index:19;background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);opacity:0;transition:opacity .25s;pointer-events:none}
+.sbscrim.on{opacity:1}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:136px;height:5px;border-radius:3px;background:var(--ink);opacity:.85;z-index:60;pointer-events:none}
+.ic{flex:none;display:block}
+.glassy{background:var(--glass);backdrop-filter:blur(22px) saturate(1.3);-webkit-backdrop-filter:blur(22px) saturate(1.3)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* the conversation fills the phone; the header and the dock float over it */
+.conv{position:absolute;inset:0;overflow-y:auto;scrollbar-width:none;overscroll-behavior:contain}
+.conv::-webkit-scrollbar{display:none}
+.convin{min-height:100%;display:flex;flex-direction:column;gap:20px;padding:var(--padTop,180px) 16px var(--padBot,220px)}
+.convin>.push{margin-top:auto}
+
+/* headers */
+.hdr{position:absolute;top:0;left:0;right:0;z-index:20;transition:transform .32s cubic-bezier(.3,.7,.2,1)}
+.hdr.away{transform:translateY(calc(-100% - 2px))}
+.full{padding:62px 20px 12px;border-radius:0 0 28px 28px;border-bottom:1px solid var(--hair);display:flex;flex-direction:column;gap:12px}
+.row{display:flex;align-items:center;gap:12px}
+.grow{flex:1;min-width:0}
+.owltile{flex:none;width:40px;height:40px;border-radius:14px;background:var(--raised);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.name{font-size:21px;font-weight:700;letter-spacing:-.4px;line-height:1.15}
+.sub{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.statepill{flex:none;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:0 10px 0 12px;min-height:28px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.statepill.on{color:var(--accent-text);background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.light{width:7px;height:7px;border-radius:50%;background:var(--muted);opacity:.7;flex:none}
+.light.on{background:var(--accent);opacity:1;box-shadow:0 0 8px color-mix(in srgb,var(--accent) 70%,transparent);animation:breathe 2.4s ease-in-out infinite}
+.light.warn{background:var(--warning);opacity:1}
+@keyframes breathe{50%{opacity:.45}}
+.seg{display:flex;gap:4px;padding:4px;border-radius:999px;background:var(--soft);border:1px solid var(--hair)}
+.seg button{all:unset;cursor:pointer;flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:999px;font-weight:600;color:var(--muted);box-sizing:border-box;white-space:nowrap;padding:0 10px}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);border:1px solid var(--hair)}
+.seg button small{font-weight:400;color:var(--muted);font-size:inherit}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* A: slim bar, and the hero inside the conversation */
+.slim{padding:56px 14px 8px;border-radius:0 0 24px 24px;border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:8px}
+.slim .seg{flex:1}
+.owlbtn{all:unset;cursor:pointer;position:relative;flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink);background:var(--soft);border:1px solid var(--hair)}
+.owlbtn .light{position:absolute;right:3px;top:4px;border:2px solid var(--raised);width:11px;height:11px}
+.hero{display:flex;flex-direction:column;gap:6px;padding:4px 4px 0}
+.hero .top{display:flex;align-items:center;gap:12px}
+.hero .owltile{width:48px;height:48px;border-radius:16px}
+.hero h2{margin:0;font-size:30px;font-weight:700;letter-spacing:-.6px;line-height:1.1;flex:1}
+.hero .place{font-size:13.5px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.hero .permrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px}
+.hero .rule{height:1px;background:var(--hair);margin-top:10px}
+
+/* the permission control, in its several places */
+.chip{all:unset;cursor:pointer;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--hair);font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap}
+.chip.soft{background:var(--soft)}
+.chip.pending{border:1px dashed color-mix(in srgb,var(--accent) 70%,transparent)}
+.chip.fixed{opacity:.55}
+.chip[disabled]{cursor:default}
+.permcap{font-size:12px;color:var(--muted);line-height:1.35}
+.chiprow{display:flex;align-items:center;gap:12px}
+
+/* B: large title that folds into one bar */
+.bh{padding:56px 16px 8px;border-radius:0 0 24px 24px;border-bottom:1px solid var(--hair)}
+.bh .big{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s cubic-bezier(.3,.7,.2,1),opacity .2s}
+.bh .big>div{overflow:hidden;min-height:0}
+.bh.folded .big{grid-template-rows:0fr;opacity:0}
+.bh .bigin{padding:2px 4px 10px}
+.bh .bigin .row{gap:10px}
+.bh h2{margin:0;font-size:32px;font-weight:700;letter-spacing:-.7px;line-height:1.1;flex:1}
+.bh .bar{display:flex;align-items:center;gap:8px}
+.bh .bar .seg{flex:1}
+.bh .mark{flex:none;display:flex;align-items:center;gap:4px;width:0;overflow:hidden;opacity:0;transition:width .32s,opacity .2s}
+.bh.folded .mark{width:40px;opacity:1}
+.round{all:unset;cursor:pointer;flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.round.soft{background:var(--soft);border:1px solid var(--hair);color:var(--ink)}
+.menu{position:absolute;z-index:45;right:14px;width:270px;border-radius:18px;background:var(--overlay);border:1px solid var(--hair);box-shadow:0 18px 40px -10px var(--shadow),0 2px 8px var(--shadow);padding:6px;display:flex;flex-direction:column}
+.menu[hidden]{display:none}
+.menu .lab{font-size:12px;color:var(--muted);padding:8px 12px 4px;font-weight:600}
+.menu button{all:unset;cursor:pointer;box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 12px;border-radius:12px}
+.menu button:hover,.menu button:focus-visible{background:var(--soft);outline:none}
+.menu button .w{flex:1;display:flex;flex-direction:column}
+.menu button small{font-size:12px;color:var(--muted)}
+.menu hr{border:0;height:1px;background:var(--hair);margin:4px 8px}
+
+/* the conversation's pieces */
+.mine-wrap{align-self:flex-end;display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%}
+.mine{max-width:calc(402px - 80px);background:var(--bubble);color:var(--bubble-ink);padding:12px 16px;border-radius:20px 20px 6px 20px;border:1px solid color-mix(in srgb,var(--accent) 12%,transparent);overflow-wrap:anywhere}
+.mine-note{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--accent-text)}
+.wm{display:flex;flex-direction:column;gap:8px}
+.wm .by{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--muted)}
+.wm .by i{width:18px;height:18px;border-radius:6px;background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent-text);display:flex;align-items:center;justify-content:center}
+.wm b{font-weight:600}
+.receipt{border-radius:20px;background:var(--surface);border:1px solid var(--hair);padding-bottom:4px}
+.receipt .rh{display:flex;justify-content:space-between;padding:12px 16px 4px;font-size:13.5px;font-weight:600;color:var(--muted)}
+.receipt .rh span:last-child{font-size:12px;font-weight:400}
+.rrow{display:flex;gap:12px;align-items:flex-start;padding:10px 16px}
+.rrow+.rrow{border-top:1px solid var(--hair)}
+.rrow .ri{flex:none;width:32px;height:32px;border-radius:10px;background:var(--soft);color:var(--accent-text);display:flex;align-items:center;justify-content:center}
+.rrow .rw{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+.rrow .rw b{font-size:15.5px;font-weight:600}
+.rrow .pl{color:var(--muted)}
+.rrow .st{font-weight:600;color:var(--accent-text);display:flex;align-items:center;gap:6px}
+.rrow .st.done{color:var(--muted)}
+.rrow .st.err{color:var(--warning-text)}
+.note{font-size:13.5px;color:var(--muted);text-align:center}
+.working{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--accent-text)}
+.next{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--muted);margin-top:-8px}
+.next .w{flex:1;min-width:0}
+.next .w b{font-weight:600}
+.next .w span{display:block;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15.5px}
+.linkbtn{all:unset;cursor:pointer;flex:none;font-size:13.5px;font-weight:600;color:var(--accent-text);min-height:44px;min-width:44px;display:flex;align-items:center;justify-content:center;margin-top:-10px;border-radius:10px}
+.qcard{border-radius:20px;background:color-mix(in srgb,var(--warning) 11%,var(--surface));border:1px solid color-mix(in srgb,var(--warning) 30%,transparent);padding:16px;display:flex;flex-direction:column;gap:6px;box-shadow:0 0 22px -8px color-mix(in srgb,var(--warning) 45%,transparent)}
+.qcard .tag{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--warning-text)}
+.qcard .t{font-size:17px;font-weight:600}
+.qcard .pl{font-size:13.5px;color:var(--muted)}
+.qcard .ask{margin-top:6px}
+.qcard .goes{font-size:12px;color:var(--muted)}
+.opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.opt{all:unset;cursor:pointer;box-sizing:border-box;min-height:40px;padding:0 14px;border-radius:999px;display:flex;align-items:center;background:var(--soft);border:1px solid var(--hair);font-size:14.5px;font-weight:500}
+.opt[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 18%,transparent);border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink);font-weight:600}
+.qacts{display:flex;align-items:center;gap:8px;margin-top:8px}
+.pillbtn{all:unset;cursor:pointer;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 16px;border-radius:999px;font-weight:600;font-size:15px}
+.pillbtn.primary{background:var(--accent);color:var(--on-accent)}
+.pillbtn.primary[disabled]{background:var(--soft);color:var(--muted);cursor:default}
+.pillbtn.ghost{color:var(--ink);border:1px solid var(--hair)}
+.answered{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;color:var(--muted)}
+.wcard{border-radius:20px;background:var(--surface);border:1px solid var(--hair);padding:14px 16px;display:flex;flex-direction:column;gap:3px}
+.wcard b{font-weight:600}
+.wcard .pl{font-size:13.5px;color:var(--muted)}
+.wcard .st{font-size:13.5px;font-weight:600;color:var(--accent-text);display:flex;gap:6px;align-items:center}
+.wcard .st.warn{color:var(--warning-text)}
+
+/* the dock and the tab bar */
+.bottom{position:absolute;left:0;right:0;bottom:0;z-index:25;transition:transform .32s cubic-bezier(.3,.7,.2,1)}
+.bottom.tabsaway{transform:translateY(66px)}
+.bottom.tabsaway .tabs{opacity:0}
+.dock{padding:8px 12px;display:flex;flex-direction:column;gap:8px}
+.dock[hidden]{display:none}
+.box{display:flex;align-items:flex-end;gap:6px;padding:6px;border-radius:26px;border:1px solid var(--hair);box-shadow:0 8px 16px -4px var(--shadow);transition:box-shadow .4s,border-color .4s}
+.box.focus{border-color:color-mix(in srgb,var(--accent) 55%,transparent);box-shadow:0 0 18px -2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.box textarea{all:unset;flex:1;min-width:0;min-height:22px;max-height:110px;padding:11px 0 11px 12px;color:var(--ink);font:15.5px/1.42 Figtree,system-ui,sans-serif;white-space:pre-wrap;overflow-y:auto;resize:none}
+.box textarea::placeholder{color:var(--placeholder)}
+.box.inperm textarea{padding-left:4px}
+.send{background:var(--accent);color:var(--on-accent)}
+.send[disabled]{background:var(--soft);color:var(--muted);cursor:default}
+.inperm-btn{all:unset;cursor:pointer;flex:none;box-sizing:border-box;min-width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 10px;font-size:12.5px;font-weight:600;color:var(--muted);background:var(--soft);border:1px solid transparent;white-space:nowrap}
+.inperm-btn.pending{border:1px dashed color-mix(in srgb,var(--accent) 70%,transparent)}
+.dockcap{font-size:12px;color:var(--muted);padding:0 12px}
+.tabs{margin:4px 20px 30px;height:62px;border-radius:999px;border:1px solid var(--hair);display:flex;align-items:center;padding:4px;box-shadow:0 8px 20px -8px var(--shadow);transition:opacity .25s}
+.tabs span{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px;font-weight:600;color:var(--ink);border-radius:999px}
+.tabs span.on{color:var(--accent-text);background:var(--soft)}
+
+.toast{position:absolute;left:16px;right:16px;bottom:200px;z-index:30;border-radius:16px;border:1px solid var(--hair);padding:12px 16px;font-size:13.5px;box-shadow:0 8px 20px -8px var(--shadow)}
+.toast[hidden]{display:none}
+
+/* the permission sheet */
+.sheetwrap{position:absolute;inset:0;z-index:50}
+.sheetwrap[hidden]{display:none}
+.sheetwrap .scrim{position:absolute;inset:0;background:var(--scrim);animation:fade .2s}
+.sheet{position:absolute;left:6px;right:6px;bottom:6px;max-height:80%;overflow-y:auto;border-radius:38px;background:var(--overlay);border:1px solid var(--hair);padding:10px 20px 30px;animation:rise .3s cubic-bezier(.3,.7,.2,1)}
+.grab{width:36px;height:5px;border-radius:3px;background:var(--muted);opacity:.5;margin:0 auto 16px}
+.sheet h3{margin:0;font-size:21px;font-weight:700;letter-spacing:-.4px;line-height:1.2}
+.sheet .who{font-size:13.5px;color:var(--muted);margin:4px 0 12px}
+.sheet .fixednote{font-size:13.5px;color:var(--warning-text);margin:0 0 10px}
+.choice{all:unset;cursor:pointer;box-sizing:border-box;width:100%;display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:16px;background:var(--soft);border:1px solid var(--hair);margin-bottom:8px}
+.choice[aria-checked=true]{border-color:color-mix(in srgb,var(--accent) 60%,transparent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.choice[disabled]{cursor:default;opacity:.55}
+.choice .w{flex:1;display:flex;flex-direction:column;gap:2px}
+.choice b{font-weight:600}
+.choice small{font-size:13.5px;color:var(--muted)}
+.choice .tick{color:var(--accent-text);padding-top:2px}
+.sheet .foot{font-size:13.5px;color:var(--muted);margin:6px 0 0}
+@keyframes rise{from{transform:translateY(100%)}}
+@keyframes fade{from{opacity:0}}
+
+/* ---------- the controls, outside the phone ---------- */
+.panel{flex:1;min-width:300px;max-width:440px;display:flex;flex-direction:column;gap:14px}
+.panel .tag{font-size:12px;color:var(--page-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0}
+.box2{background:var(--page-card);border:1px solid var(--page-line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.box2 label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.pbtn{cursor:pointer;padding:9px 14px;border-radius:10px;background:var(--page);color:var(--page-text);border:1px solid var(--page-line);font-weight:600}
+.pbtn:hover{border-color:var(--page-muted)}
+table{border-collapse:collapse;font-size:14px;width:100%}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--page-line)}
+th{color:var(--page-muted);font-weight:600;font-size:12.5px}
+td.n{font-variant-numeric:tabular-nums;text-align:right}
+tr.cur td{font-weight:650}
+.pnote{font-size:13px;color:var(--page-muted);margin:0}
+
+.switch{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:100;display:flex;align-items:center;gap:4px;background:#000;color:#fff;border-radius:999px;padding:6px;box-shadow:0 12px 34px #0009;font:600 14px/1 system-ui,sans-serif;border:1px solid #333}
+.switch button{all:unset;cursor:pointer;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px}
+.switch button:hover,.switch button:focus-visible{background:#ffffff26}
+.switch .label{padding:0 10px;min-width:260px;text-align:center;white-space:nowrap}
+
+.nomo *, .nomo{transition:none!important;animation:none!important}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:560px){
+  body{padding:0 0 110px}
+  .head{padding:16px 14px 0}
+  .frame{padding:0;border-radius:0;box-shadow:none}
+  .phone{border-radius:0}
+  .stage{gap:16px}.col{width:100%}.cap{padding:0 14px;max-width:none}.panel{padding:0 14px}
+  .switch .label{min-width:180px}
+}
+</style>
+</head>
+<body>
+<header class="head">
+  <p class="kicker">Prototype for #1275, #1276 and #1278 · the iPhone's Watcher tab · synthetic data, nothing reaches a computer</p>
+  <h1>Room for Watcher's conversation</h1>
+  <p>Scroll the conversation down and back up to see the header go and come back. Press the permission control to open its sheet. Turn on "Watcher working" to see "Fixed while Watcher works." Answer the question card. Today is the reference.</p>
+</header>
+
+<div class="stage">
+  <div class="col">
+    <div class="frame" id="frame"><div class="phone" id="phone">
+      <div class="conv" id="conv" tabindex="-1"><div class="convin" id="convin"></div></div>
+      <div class="sbscrim" id="sbscrim"></div>
+      <div class="hdr" id="hdr"></div>
+      <div class="bottom" id="bottom">
+        <div class="dock" id="dock"></div>
+        <nav class="tabs glassy" aria-label="Tabs, not part of the question">
+          <span><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H10l-4 4v-4H7a3 3 0 0 1-3-3z"/></svg>Threads</span>
+          <span class="on"><i data-owl="22"></i>Watcher</span>
+          <span><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/></svg>Computers</span>
+          <span><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</span>
+        </nav>
+      </div>
+      <div class="menu" id="menu" role="menu" aria-label="More for Watcher" hidden></div>
+      <div class="toast glassy" id="toast" role="status" hidden></div>
+      <div class="sheetwrap" id="sheetwrap" hidden><div class="scrim" id="scrim"></div><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div></div>
+      <div class="sb"><span>9:41</span><span class="island"></span><span style="font-size:15px">5G 81</span></div>
+      <div class="home"></div>
+    </div></div>
+    <p class="live" id="live" aria-live="polite"></p>
+    <p class="cap" id="cap"></p>
+    <p class="cap trade" id="trade"></p>
+  </div>
+
+  <aside class="panel" aria-label="Prototype controls, not part of the design">
+    <p class="tag">Prototype controls, not part of the design</p>
+    <div class="box2">
+      <label><input type="checkbox" id="working"> Watcher working</label>
+      <label><input type="checkbox" id="reduce"> Reduce motion <small style="color:var(--page-muted)">(no slide, just show or hide)</small></label>
+      <div class="btns">
+        <button type="button" class="pbtn" id="theme">Show light</button>
+        <button type="button" class="pbtn" id="toTop">Scroll to the top</button>
+        <button type="button" class="pbtn" id="toEnd">Scroll to the newest</button>
+        <button type="button" class="pbtn" id="reset">Start the scene again</button>
+      </div>
+    </div>
+    <div class="box2">
+      <p class="tag" style="margin-bottom:2px">Conversation height, in px (iPhone points)</p>
+      <table id="table"></table>
+      <p class="pnote">Visible conversation between whatever covers the top and whatever covers the bottom, on a 402x874 phone, keyboard down. "At rest" is the header showing; "Scrolled down" is after the header has gone.</p>
+    </div>
+  </aside>
+</div>
+
+<nav class="switch" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Show the previous variant">&#8249;</button>
+  <span class="label" id="label" aria-live="polite"></span>
+  <button type="button" id="next" aria-label="Show the next variant">&#8250;</button>
+</nav>
+
+<script>
+const OWL = s => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 4.5 8 7h8l3-2.5V14a7 7 0 0 1-14 0z"/><circle cx="9.3" cy="12" r="2.1"/><circle cx="14.7" cy="12" r="2.1"/><path d="M11 16.2l1 1.1 1-1.1"/></svg>`
+const svg = (s, w, d) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`
+const I = {
+  up: svg(18, 2.6, '<path d="M12 19V5M6 11l6-6 6 6"/>'),
+  steer: s => svg(s, 2.3, '<path d="M5 20v-5a5 5 0 0 1 5-5h9"/><path d="M15 6l4 4-4 4"/>'),
+  down: svg(11, 3, '<path d="M6 9l6 6 6-6"/>'),
+  updown: svg(10, 3, '<path d="M8 9l4-4 4 4M8 15l4 4 4-4"/>'),
+  right: svg(13, 3, '<path d="M9 6l6 6-6 6"/>'),
+  check: svg(16, 2.8, '<path d="M5 12l5 5 9-10"/>'),
+  shield: s => svg(s, 2.1, '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'),
+  lock: s => svg(s, 2.1, '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  more: svg(20, 2.6, '<circle cx="5" cy="12" r=".6"/><circle cx="12" cy="12" r=".6"/><circle cx="19" cy="12" r=".6"/>'),
+  plus: svg(14, 2.8, '<path d="M12 5v14M5 12h14"/>'),
+  sendTo: svg(14, 2.8, '<path d="M7 17 17 7M8 7h9v9"/>'),
+  stop: svg(14, 2.6, '<circle cx="12" cy="12" r="8"/><path d="M9 12h6"/>'),
+  clock: svg(15, 2.2, '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  done: svg(15, 2.4, '<path d="M5 12l5 5 9-10"/>'),
+}
+document.querySelectorAll('[data-owl]').forEach(el => { el.outerHTML = OWL(+el.dataset.owl) })
+
+const MODES = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+const NAME = { 'approval-required': 'Ask before actions', 'auto-accept-edits': 'Allow edits', auto: 'Allow actions', 'full-access': 'Full access' }
+const SHORT = { 'approval-required': 'Asks first', 'auto-accept-edits': 'Edits', auto: 'Actions', 'full-access': 'Full access' }
+const PROVIDER = 'Claude Code'
+const line = (m, computer) => ({
+  'auto-accept-edits': 'Edits files without asking. Asks before a command that changes something.',
+  auto: `${PROVIDER} decides what to ask you about.`,
+  'full-access': `Edits files and runs any command without asking, anywhere on ${computer}.`,
+})[m] || 'Asks you before it edits a file or runs a command that changes something.'
+const FIXED = 'Fixed while Watcher works.'
+const FIXED_HINT = 'It can change once Watcher finishes and nothing waits on you.'
+const inForce = m => `${PROVIDER} stays on ${NAME[m]} until it confirms.`
+
+const VARIANTS = {
+  today: { label: 'Today, as built', cap: '<b>Today, as built.</b> The header and the permission chip never move, and the tab bar always shows.',
+    trade: 'The reference. Scrolling changes nothing.' },
+  A: { label: 'A, Hero in the conversation', cap: '<b>A, Hero in the conversation.</b> Watcher’s name, state, computer and permission scroll with the conversation, as a thread’s title does. A slim bar with Conversation and Watched slides away on scroll down and back on scroll up.',
+    trade: 'Trade-offs: the most room while the tab bar stays. In a long conversation the permission chip is at the top, a scroll or a press on the owl away. Once the hero has scrolled off, Watcher’s state is only the light on the owl.' },
+  B: { label: 'B, Large title that folds', cap: '<b>B, Large title that folds.</b> The large title folds into one bar with the switch in it on scroll down, and unfolds on scroll up. Permission and the computer move into the More menu. The tab bar slides away like Safari’s toolbar.',
+    trade: 'Trade-offs: the most room of all while reading. Permission is two presses away and out of sight, so its state is easy to forget. Hiding the tab bar on a tab’s own page is unusual on iOS, though a thread page already hides it.' },
+  C: { label: 'C, Whole header slides, permission in the box', cap: '<b>C, Whole header slides, permission in the box.</b> The header keeps today’s look but slides away whole on scroll down and comes back on scroll up. Permission is a small button inside the reply box, showing its level while the box is empty.',
+    trade: 'Trade-offs: the smallest change from today, and permission stays one press away and in sight. At rest it gives less room than A or B. The box is a little busier, and the level’s word goes while you type.' },
+}
+const ORDER = ['today', 'A', 'B', 'C']
+
+const params = new URLSearchParams(location.search)
+const asked = (params.get('variant') || '').toLowerCase()
+let variant = asked === 'today' || asked === '0' ? 'today' : ORDER.find(v => v.toLowerCase() === asked) || 'today'
+let theme = params.get('theme') === 'light' ? 'light' : 'dark'
+
+const S = {}
+function seed() {
+  Object.assign(S, { working: false, perm: 'auto-accept-edits', pendingFrom: null, pane: 'conversation', hidden: false,
+    computer: 'Laptop', q: { picked: null, phase: 'open' }, extra: [], followups: [], menu: false, sheet: false, focused: false })
+  S.followups = [{ id: 1, text: 'Then check whether the docs thread needs anything else.' }]
+  document.getElementById('working').checked = false
+}
+
+const esc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const md = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+const model = () => `${PROVIDER} · Opus 5.5 on ${S.computer}`
+
+// ---------- the conversation ----------
+const HISTORY = [
+  { k: 'note', text: 'Earlier messages are in Sotto on Laptop.' },
+  { k: 'user', text: 'Morning. What happened overnight?' },
+  { k: 'watcher', time: '07:10', text: 'Three threads ran overnight. **Fix login test** finished and its checks pass. **Docs for the iPhone guide** is waiting on a question. **Speed up host sync** stopped on a failing build.' },
+  { k: 'receipts', time: '07:10', rows: [
+    { title: 'Fix login test', act: 'Finished its turn', place: 'Codex on Laptop', st: 'Done', cls: 'done', icon: 'done' },
+    { title: 'Speed up host sync', act: 'Stopped on an error', place: 'Grok Build on Studio Mac', st: 'Failed', cls: 'err', icon: 'stop' }] },
+  { k: 'user', text: 'Restart the host sync one, and fix the build first.' },
+  { k: 'watcher', time: '07:12', text: 'Sent **Speed up host sync** a message: fix the build, then run the sync benchmark again. I’ll tell you when it’s done.' },
+  { k: 'receipts', time: '07:12', rows: [{ title: 'Speed up host sync', act: 'Sent a message', place: 'Grok Build on Studio Mac', st: 'Working', icon: 'send' }] },
+  { k: 'user', text: 'And start one to tidy the Settings copy on the iPhone, with Claude Code.' },
+  { k: 'watcher', time: '07:14', text: 'Started **Tidy iPhone Settings copy** with Claude Code on Laptop. It’s reading the Settings views first.' },
+  { k: 'receipts', time: '07:14', rows: [{ title: 'Tidy iPhone Settings copy', act: 'Started', place: 'Claude Code on Laptop', st: 'Working', icon: 'plus' }] },
+  { k: 'user', text: 'Is the login fix safe to merge?' },
+  { k: 'watcher', time: '07:20', text: 'Its tests pass on its branch and it changed three files, all in the login flow. Nothing it touched is shared with the other threads. Review it before you merge; I can’t merge for you.' },
+  { k: 'user', text: 'What is the docs thread stuck on?' },
+  { k: 'watcher', time: '07:21', text: '**Docs for the iPhone guide** asked which pairing steps go first. Its card is below. Your answer goes to that thread, not to me.' },
+]
+
+function bubble(it) {
+  const note = it.steered ? `<span class="mine-note">${I.steer(13)}Steered into Watcher’s turn</span>` : ''
+  return `<div class="mine-wrap"><div class="mine">${esc(it.text)}</div>${note}</div>`
+}
+const watcherMsg = (text, time) => `<div class="wm"><div class="by"><i>${OWL(12)}</i>${time ? `Watcher · ${time}` : 'Watcher'}</div><div>${md(text)}</div></div>`
+function receipts(it) {
+  const icon = r => r.icon === 'plus' ? I.plus : r.icon === 'stop' ? I.stop : r.icon === 'done' ? I.done : I.sendTo
+  return `<div class="receipt"><div class="rh"><span>What Watcher did</span><span>${it.time}</span></div>${it.rows.map(r => `
+    <div class="rrow"><span class="ri">${icon(r)}</span><span class="rw"><b>${r.title}</b><span>${r.act}</span><span class="pl">${r.place}</span>
+    <span class="st ${r.cls || ''}">${r.cls ? '' : '<span class="light on"></span>'}${r.st}</span></span><span style="color:var(--muted);padding-top:8px">${I.right}</span></div>`).join('')}</div>`
+}
+const QOPTS = ['QR code first', 'Manual code first', 'Both, side by side']
+function questionCard() {
+  if (S.q.phase === 'done') return `<div class="answered">${I.done}<span>You answered <b style="color:var(--ink);font-weight:600">${S.q.picked}</b>. It went to Docs for the iPhone guide.</span></div>`
+  const sending = S.q.phase === 'sending'
+  return `<div class="qcard" role="group" aria-label="Question from Docs for the iPhone guide">
+    <span class="tag"><span class="light warn"></span>Question</span>
+    <span class="t">Docs for the iPhone guide</span><span class="pl">Claude Code on Laptop</span>
+    <span class="ask">Should the pairing section show the QR code steps first, or the manual code first?</span>
+    <span class="goes">The thread’s own card. Your answer goes to Docs for the iPhone guide, not to Watcher.</span>
+    <div class="opts">${QOPTS.map(o => `<button type="button" class="opt" data-opt="${o}" aria-pressed="${S.q.picked === o}" ${sending ? 'disabled' : ''}>${o}</button>`).join('')}</div>
+    <div class="qacts"><button type="button" class="pillbtn ghost" data-review>Write your own</button><span class="grow"></span>
+    ${sending ? '<span class="permcap" style="font-size:13.5px;font-weight:600">Sending your answer…</span>'
+      : `<button type="button" class="pillbtn primary" data-answer ${S.q.picked ? '' : 'disabled'}>Send answer</button>`}</div></div>`
+}
+
+function statePill() {
+  return S.working ? `<span class="statepill on" aria-label="Watcher, Working"><span class="light on"></span>Working</span>`
+    : `<span class="statepill" aria-label="Watcher, Idle"><span class="light"></span>Idle</span>`
+}
+function permChip(soft) {
+  const cls = ['chip', soft ? 'soft' : 'glassy', S.pendingFrom ? 'pending' : '', S.working && variant === 'today' ? 'fixed' : ''].join(' ')
+  const off = S.working && variant === 'today' ? 'disabled' : ''
+  return `<button type="button" class="${cls}" data-perm ${off} aria-label="Watcher’s permissions, ${NAME[S.perm]}">${variant === 'A' ? I.shield(14) : ''}${NAME[S.perm]} ${I.down}</button>`
+}
+function permCaption() {
+  if (S.pendingFrom) return `<span class="permcap">${inForce(S.pendingFrom)}</span>`
+  if (S.working) return `<span class="permcap">${FIXED}</span>`
+  return ''
+}
+function hero() {
+  return `<section class="hero" aria-label="Watcher">
+    <div class="top"><span class="owltile">${OWL(28)}</span><h2>Watcher</h2>${statePill()}</div>
+    <span class="place">${model()} ${I.updown}</span>
+    <div class="permrow">${permChip(true)}${permCaption()}</div>
+    <div class="rule"></div></section>`
+}
+
+function conversation() {
+  let h = variant === 'A' ? hero() : ''
+  h += '<div class="push"></div>'
+  if (S.pane === 'watched') return h + watched()
+  h += HISTORY.map(it => it.k === 'user' ? bubble(it) : it.k === 'watcher' ? watcherMsg(it.text, it.time) : it.k === 'note' ? `<div class="note">${it.text}</div>` : receipts(it)).join('')
+  h += questionCard()
+  h += S.extra.map(it => it.k === 'user' ? bubble(it) : watcherMsg(it.text, it.time)).join('')
+  if (S.working) {
+    h += `<div class="working"><span class="light on"></span>Watcher is working</div>`
+    h += S.followups.map(f => `<div class="next">${I.clock}<div class="w"><b>Goes next, after this turn</b><span>${esc(f.text)}</span></div>
+      <button type="button" class="linkbtn" data-remove="${f.id}" aria-label="Remove “${esc(f.text)}” from the queue">Remove</button></div>`).join('')
+  }
+  return h
+}
+function watched() {
+  const cards = [
+    ['Fix login test', 'Codex on Laptop', 'Waiting for your review', 'warn'],
+    ['Docs for the iPhone guide', 'Claude Code on Laptop', 'Needs you: a question', 'warn'],
+    ['Speed up host sync', 'Grok Build on Studio Mac', 'Working', ''],
+    ['Tidy iPhone Settings copy', 'Claude Code on Laptop', 'Working', ''],
+  ]
+  return `<p class="pnote" style="color:var(--muted);font-size:13.5px;margin:0">Watcher keeps these going and brings you their questions and permissions, until you stop it.</p>` +
+    cards.map(([t, p, s, w]) => `<div class="wcard"><b>${t}</b><span class="pl">${p}</span><span class="st ${w}">${w ? '<span class="light warn"></span>' : '<span class="light on"></span>'}${s}</span></div>`).join('')
+}
+
+// ---------- the header, per variant ----------
+function seg() {
+  return `<div class="seg" role="group" aria-label="Watcher’s sections">
+    <button type="button" data-pane="conversation" aria-pressed="${S.pane === 'conversation'}">Conversation</button>
+    <button type="button" data-pane="watched" aria-pressed="${S.pane === 'watched'}">Watched <small>4</small></button></div>`
+}
+function fullHeader() {
+  return `<div class="full glassy"><div class="row"><span class="owltile" aria-hidden="true">${OWL(24)}</span>
+    <div class="grow"><div class="name">Watcher</div><div class="sub">${model()} ${I.updown}</div></div>${statePill()}</div>${seg()}</div>`
+}
+function header() {
+  if (variant === 'A') return `<div class="slim glassy"><button type="button" class="owlbtn" data-top aria-label="Go to the top, where Watcher’s state and permissions are">${OWL(22)}<span class="light ${S.working ? 'on' : ''}"></span></button>${seg()}</div>`
+  if (variant === 'B') return `<div class="bh glassy ${S.hidden ? 'folded' : ''}" id="bh">
+    <div class="big"><div><div class="bigin"><div class="row"><h2>Watcher</h2>${statePill()}</div><div class="sub" style="margin-top:4px;font-size:13px">${model()}</div></div></div></div>
+    <div class="bar"><span class="mark" aria-hidden="true">${OWL(20)}<span class="light ${S.working ? 'on' : ''}"></span></span>${seg()}
+    <button type="button" class="round soft" id="moreBtn" data-more aria-haspopup="menu" aria-expanded="${S.menu}" aria-label="More for Watcher">${I.more}</button></div></div>`
+  return fullHeader()
+}
+
+// ---------- the dock, per variant ----------
+function dock() {
+  const d = document.getElementById('dock')
+  d.hidden = S.pane !== 'conversation'
+  const placeholder = S.working ? 'Ask Watcher while it works' : 'Ask Watcher'
+  let top = ''
+  if (variant === 'today' && !S.focused) top = `<div class="chiprow">${permChip(false)}${permCaption()}</div>`
+  if (variant === 'C' && S.pendingFrom) top = `<div class="dockcap">${inForce(S.pendingFrom)}</div>`
+  const inperm = variant === 'C' ? inPermButton() : ''
+  d.innerHTML = `${top}<div class="box glassy ${variant === 'C' ? 'inperm' : ''} ${S.focused ? 'focus' : ''}" id="box">${inperm}
+    <textarea id="field" rows="1" aria-label="Ask Watcher" placeholder="${placeholder}"></textarea>
+    <button type="button" class="round send" id="send" disabled aria-label="${S.working ? 'Steer into Watcher’s turn' : 'Send to Watcher'}">${S.working ? I.steer(18) : I.up}</button></div>`
+  wireField()
+}
+function inPermButton() {
+  const empty = !(S.draft || '').trim()
+  const word = S.working ? 'Fixed' : SHORT[S.perm]
+  return `<button type="button" class="inperm-btn ${S.pendingFrom ? 'pending' : ''}" data-perm aria-label="Watcher’s permissions, ${NAME[S.perm]}${S.working ? ', fixed while Watcher works' : ''}">${S.working ? I.lock(15) : I.shield(15)}${empty ? `<span>${word}</span>` : ''}</button>`
+}
+
+// ---------- the permission sheet and B's More menu ----------
+let opener = null
+function openSheet(from) {
+  opener = from || document.activeElement
+  toggleMenu(false)
+  S.sheet = true
+  const fixed = S.working
+  const sheet = document.getElementById('sheet')
+  sheet.innerHTML = `<div class="grab"></div><h3 id="sheetTitle">What Watcher may do without asking</h3>
+    <p class="who">Watcher on ${S.computer}, on ${PROVIDER}</p>
+    ${fixed ? `<p class="fixednote">${FIXED} ${FIXED_HINT}</p>` : ''}
+    <div role="radiogroup" aria-label="Watcher’s permissions">${MODES.map(m => `<button type="button" class="choice" role="radio" aria-checked="${S.perm === m}" data-mode="${m}" ${fixed ? 'disabled' : ''}>
+      <span class="w"><b>${NAME[m]}</b><small>${line(m, S.computer)}</small></span><span class="tick">${S.perm === m ? I.check : ''}</span></button>`).join('')}</div>
+    <p class="foot">When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.</p>`
+  document.getElementById('sheetwrap').hidden = false
+  const first = sheet.querySelector('.choice:not([disabled])') || sheet
+  if (first === sheet) sheet.tabIndex = -1
+  first.focus()
+}
+function closeSheet() {
+  if (!S.sheet) return
+  S.sheet = false
+  document.getElementById('sheetwrap').hidden = true
+  if (opener && opener.isConnected) opener.focus(); else focusPerm()
+}
+function choose(mode) {
+  if (mode === S.perm) return closeSheet()
+  S.pendingFrom = S.perm; S.perm = mode
+  closeSheet(); refresh(); focusPerm()
+  clearTimeout(S.confirmT)
+  S.confirmT = setTimeout(() => { S.pendingFrom = null; refresh() }, 2200)
+}
+function focusPerm() {
+  const p = variant === 'B' ? document.getElementById('moreBtn') : document.querySelector('#convin [data-perm], #hdr [data-perm], #dock [data-perm]')
+  if (p) p.focus({ preventScroll: true })
+}
+function toggleMenu(open) {
+  S.menu = open ?? !S.menu
+  const m = document.getElementById('menu')
+  const btn = document.getElementById('moreBtn')
+  if (!S.menu) { m.hidden = true; if (btn) btn.setAttribute('aria-expanded', 'false'); return }
+  const hdr = document.getElementById('hdr').getBoundingClientRect(), ph = document.getElementById('phone').getBoundingClientRect()
+  const k = ph.height / 874
+  m.style.top = ((hdr.bottom - ph.top) / k + 6) + 'px'
+  const permSub = S.pendingFrom ? inForce(S.pendingFrom) : S.working ? `${NAME[S.perm]}. ${FIXED}` : NAME[S.perm]
+  m.innerHTML = `<span class="lab">Watcher’s computer</span>
+    ${['Laptop', 'Studio Mac'].map(c => `<button type="button" role="menuitemradio" aria-checked="${S.computer === c}" data-computer="${c}"><span class="w">${c}</span>${S.computer === c ? `<span style="color:var(--accent-text)">${I.check}</span>` : ''}</button>`).join('')}
+    <hr><button type="button" role="menuitem" data-perm><span style="color:var(--muted)">${S.working ? I.lock(18) : I.shield(18)}</span><span class="w">What Watcher may do<small>${permSub}</small></span>${I.right}</button>`
+  m.hidden = false
+  if (btn) btn.setAttribute('aria-expanded', 'true')
+  m.querySelector('button').focus()
+}
+
+// ---------- scroll: hide on the way down, show on the way up ----------
+const conv = document.getElementById('conv')
+let lastY = 0, travel = 0, quietUntil = 0
+conv.addEventListener('scroll', () => {
+  const y = conv.scrollTop, d = y - lastY
+  lastY = y
+  scheduleMeasure()
+  if (performance.now() < quietUntil || variant === 'today') return
+  if (y < 12) { travel = 0; return setHidden(false) }
+  travel = Math.sign(d) === Math.sign(travel) ? travel + d : d
+  if (travel > 14) setHidden(true)
+  else if (travel < -14) setHidden(false)
+}, { passive: true })
+
+function setHidden(h) {
+  if (S.hidden === h && !S.force) return
+  S.hidden = h
+  const hdr = document.getElementById('hdr')
+  if (S.menu && h) toggleMenu(false)
+  hdr.classList.toggle('away', h && (variant === 'A' || variant === 'C'))
+  const bh = document.getElementById('bh'); if (bh) bh.classList.toggle('folded', h)
+  document.getElementById('sbscrim').classList.toggle('on', h && (variant === 'A' || variant === 'C'))
+  document.getElementById('bottom').classList.toggle('tabsaway', h && variant === 'B')
+  padBottom()
+  measureFor(450)
+}
+
+// ---------- room: what of the conversation shows ----------
+function room() {
+  const ph = document.getElementById('phone').getBoundingClientRect()
+  const k = ph.height / 874
+  let top = 54
+  const hdr = document.getElementById('hdr').getBoundingClientRect()
+  top = Math.max(top, (hdr.bottom - ph.top) / k)
+  const dock = document.getElementById('dock'), tabs = document.querySelector('.tabs')
+  let bottom = 874 - 34
+  const tr = tabs.getBoundingClientRect()
+  if (getComputedStyle(tabs).opacity > .5) bottom = Math.min(bottom, (tr.top - ph.top) / k)
+  if (!dock.hidden) bottom = Math.min(bottom, (dock.getBoundingClientRect().top - ph.top) / k + 8)
+  return Math.round(bottom - top)
+}
+let measureRaf = 0
+function scheduleMeasure() { if (!measureRaf) measureRaf = requestAnimationFrame(() => { measureRaf = 0; showLive() }) }
+function measureFor(ms) { const end = performance.now() + ms; const tick = () => { showLive(); if (performance.now() < end) requestAnimationFrame(tick) }; tick() }
+function showLive() {
+  const now = room(), base = TABLE.today && TABLE.today.rest
+  const diff = base ? now - base : 0
+  document.getElementById('live').innerHTML = `Conversation you can see now: ${now} px <span>· Today at rest: ${base || '–'} px${base && variant !== 'today' ? ` · ${diff >= 0 ? '+' : ''}${diff}` : ''}</span>`
+}
+function padBottom() {
+  const atEnd = conv.scrollHeight - conv.scrollTop - conv.clientHeight < 4
+  const dock = document.getElementById('dock')
+  const dockH = dock.hidden ? 0 : dock.offsetHeight
+  const tabsH = variant === 'B' && S.hidden ? 30 : 96
+  document.getElementById('convin').style.setProperty('--padBot', (dockH + tabsH + 12) + 'px')
+  if (atEnd) { quiet(); conv.scrollTop = conv.scrollHeight }
+}
+// The top inset is the header's full height, taken while it shows, so the conversation never jumps as it comes and goes.
+function padTop() {
+  if (S.hidden) return
+  document.getElementById('convin').style.setProperty('--padTop', (document.getElementById('hdr').offsetHeight + 16) + 'px')
+}
+const quiet = () => { quietUntil = performance.now() + 180 }
+
+// ---------- drawing ----------
+function refresh(keepScroll = true) {
+  const y = conv.scrollTop, atEnd = conv.scrollHeight - y - conv.clientHeight < 4
+  const field = document.getElementById('field')
+  S.draft = field ? field.value : S.draft
+  const hadFocus = field && document.activeElement === field
+  document.getElementById('hdr').innerHTML = header()
+  document.getElementById('convin').innerHTML = conversation()
+  dock()
+  if (hadFocus) { const f = document.getElementById('field'); f.focus(); f.setSelectionRange(f.value.length, f.value.length) }
+  padTop(); padBottom()
+  quiet()
+  conv.scrollTop = keepScroll && !atEnd ? y : conv.scrollHeight
+  if (S.menu) toggleMenu(true)
+  scheduleMeasure()
+}
+function build() {
+  const phone = document.getElementById('phone')
+  document.documentElement.dataset.theme = theme
+  S.hidden = false; S.menu = false
+  document.getElementById('menu').hidden = true
+  const hdr = document.getElementById('hdr')
+  hdr.className = 'hdr'
+  document.getElementById('sbscrim').classList.remove('on')
+  document.getElementById('bottom').classList.remove('tabsaway')
+  refresh(false)
+  quiet(); conv.scrollTop = conv.scrollHeight; lastY = conv.scrollTop
+  const v = VARIANTS[variant]
+  document.getElementById('label').textContent = v.label
+  document.getElementById('cap').innerHTML = v.cap
+  document.getElementById('trade').textContent = v.trade
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Show light' : 'Show dark'
+  const p = new URLSearchParams(location.search)
+  p.set('variant', variant)
+  theme === 'light' ? p.set('theme', 'light') : p.delete('theme')
+  history.replaceState(null, '', `?${p}`)
+  drawTable()
+  showLive()
+  phone.dataset.variant = variant
+}
+
+// Each variant's room at rest and after the header has gone, measured on the drawn phone without motion.
+const TABLE = {}
+function measureAll() {
+  const keep = variant, phone = document.getElementById('phone')
+  phone.classList.add('nomo')
+  for (const v of ORDER) {
+    variant = v; build()
+    const rest = room()
+    S.force = true; setHidden(true); S.force = false
+    const away = room()
+    TABLE[v] = { rest, away }
+  }
+  variant = keep; build()
+  void phone.offsetHeight
+  phone.classList.remove('nomo')
+  drawTable(); showLive()
+}
+function drawTable() {
+  const base = TABLE.today
+  if (!ORDER.every(v => TABLE[v])) return
+  document.getElementById('table').innerHTML = `<tr><th>Variant</th><th style="text-align:right">At rest</th><th style="text-align:right">Scrolled down</th></tr>` +
+    ORDER.map(v => { const t = TABLE[v]; const d = n => v === 'today' ? '' : ` <span style="color:var(--page-muted)">(+${n - base.rest})</span>`
+      return `<tr class="${v === variant ? 'cur' : ''}"><td>${VARIANTS[v].label}</td><td class="n">${t.rest}${d(t.rest)}</td><td class="n">${t.away}${d(t.away)}</td></tr>` }).join('') +
+    `<tr><td>A thread page, for comparison</td><td class="n">about 700</td><td class="n"></td></tr>`
+}
+
+// ---------- the box ----------
+// A press in the dock keeps the box's focused look, so nothing moves under the press, as on the phone.
+let pressingDock = false
+document.getElementById('dock').addEventListener('pointerdown', () => { pressingDock = true }, true)
+addEventListener('pointerup', () => setTimeout(() => { pressingDock = false }, 0), true)
+let toastT = 0
+function toast(words) {
+  const t = document.getElementById('toast')
+  t.textContent = words; t.hidden = false
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true }, 2600)
+}
+function wireField() {
+  const field = document.getElementById('field'), send = document.getElementById('send')
+  field.value = S.draft || ''
+  const grow = () => { field.style.height = 'auto'; field.style.height = Math.min(field.scrollHeight - 22, 110) + 'px' }
+  grow(); send.disabled = !field.value.trim()
+  field.addEventListener('input', () => {
+    const wasEmpty = !(S.draft || '').trim()
+    S.draft = field.value; grow(); send.disabled = !field.value.trim()
+    // C's level word goes while there are words in the box, and comes back when it empties.
+    if (variant === 'C' && wasEmpty !== !field.value.trim()) { const b = document.querySelector('.inperm-btn'); b.outerHTML = inPermButton() }
+    padBottom()
+  })
+  field.addEventListener('focus', () => { if (S.focused) return; S.focused = true; document.getElementById('box').classList.add('focus'); if (variant === 'today') { const r = document.querySelector('.chiprow'); if (r) r.remove(); padBottom(); scheduleMeasure() } })
+  field.addEventListener('blur', e => {
+    if (pressingDock || (e.relatedTarget && document.getElementById('dock').contains(e.relatedTarget))) return
+    S.focused = false; document.getElementById('box').classList.remove('focus')
+    // Today brings the chip back once the box is left. Only the dock is drawn again, so a press elsewhere still lands.
+    if (variant === 'today') { S.draft = field.value; dock(); padBottom(); scheduleMeasure() }
+  })
+  field.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendIt() } })
+}
+function sendIt() {
+  const text = (S.draft || '').trim()
+  if (!text) return
+  S.draft = ''
+  if (S.working) S.extra.push({ k: 'user', text, steered: true })
+  else {
+    S.extra.push({ k: 'user', text })
+    setTimeout(() => { S.extra.push({ k: 'watcher', time: '07:31', text: `On “${text.length > 40 ? text.slice(0, 39) + '…' : text}”: I’ve looked into it. Nothing needs you yet.` }); refresh(false) }, 700)
+  }
+  S.focused = false
+  document.getElementById('field').blur()
+  refresh(false)
+}
+
+// ---------- presses ----------
+document.getElementById('phone').addEventListener('click', e => {
+  if (e.target.id === 'scrim') return closeSheet()
+  const b = e.target.closest('button'); if (!b || b.disabled) { if (S.menu && !e.target.closest('#menu')) toggleMenu(false); return }
+  if (S.menu && !b.closest('#menu') && !b.dataset.more) toggleMenu(false)
+  if (b.dataset.perm !== undefined) openSheet(b.closest('#menu') ? document.getElementById('moreBtn') : b)
+  else if (b.dataset.mode) choose(b.dataset.mode)
+  else if (b.dataset.more !== undefined) toggleMenu()
+  else if (b.dataset.computer) { S.computer = b.dataset.computer; toggleMenu(false); refresh(); document.getElementById('moreBtn').focus() }
+  else if (b.dataset.pane) { if (S.pane !== b.dataset.pane) { S.pane = b.dataset.pane; refresh(false); document.querySelector(`[data-pane="${S.pane}"]`).focus() } }
+  else if (b.dataset.top !== undefined) { conv.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' }); setHidden(false); setTimeout(() => { const p = conv.querySelector('[data-perm]'); if (p) p.focus({ preventScroll: true }) }, reduced() ? 0 : 450) }
+  else if (b.dataset.opt) { S.q.picked = S.q.picked === b.dataset.opt ? null : b.dataset.opt; refresh(); conv.querySelector(`[data-opt="${b.dataset.opt}"]`).focus() }
+  else if (b.dataset.answer !== undefined) { S.q.phase = 'sending'; refresh(); setTimeout(() => { S.q.phase = 'done'; refresh() }, 1100) }
+  else if (b.dataset.review !== undefined) toast('In the app this opens the question in a sheet, where you can write your own answer.')
+  else if (b.dataset.remove) { S.followups = S.followups.filter(f => f.id !== +b.dataset.remove); refresh() }
+  else if (b.id === 'send') sendIt()
+})
+const reduced = () => document.getElementById('reduce').checked || matchMedia('(prefers-reduced-motion: reduce)').matches
+document.getElementById('working').addEventListener('change', e => {
+  S.working = e.target.checked
+  if (S.working && !S.followups.length) S.followups = [{ id: 2, text: 'Then check whether the docs thread needs anything else.' }]
+  refresh()
+})
+document.getElementById('reduce').addEventListener('change', e => document.getElementById('phone').classList.toggle('nomo', e.target.checked))
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; build() }
+document.getElementById('toTop').onclick = () => { conv.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' }) }
+document.getElementById('toEnd').onclick = () => { conv.scrollTo({ top: conv.scrollHeight, behavior: reduced() ? 'auto' : 'smooth' }) }
+document.getElementById('reset').onclick = () => { seed(); build() }
+
+function step(d) { variant = ORDER[(ORDER.indexOf(variant) + d + ORDER.length) % ORDER.length]; S.pane = 'conversation'; S.focused = false; build() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (S.sheet) return closeSheet(); if (S.menu) { toggleMenu(false); document.getElementById('moreBtn').focus() } return }
+  if (S.sheet || (e.target.closest && e.target.closest('input,textarea,select,[contenteditable]'))) return
+  if (e.key === 'ArrowLeft') step(-1)
+  if (e.key === 'ArrowRight') step(1)
+})
+// Keep keyboard focus inside the sheet while it is open.
+document.getElementById('sheet').addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return
+  const f = [...document.querySelectorAll('#sheet button:not([disabled])')]
+  if (!f.length) { e.preventDefault(); return }
+  if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus() }
+  else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus() }
+})
+
+// The phone fills the width on a narrow screen.
+function fit() {
+  const narrow = innerWidth <= 560
+  document.documentElement.style.setProperty('--z', narrow ? (innerWidth / 402).toFixed(4) : innerWidth < 900 ? '.8' : '.86')
+}
+addEventListener('resize', () => { fit(); scheduleMeasure() })
+fit()
+seed()
+measureAll()
+</script>
+</body>
+</html>
