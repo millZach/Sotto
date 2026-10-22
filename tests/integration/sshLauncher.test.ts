@@ -237,13 +237,13 @@ it('reports Node missing, not an SSH refusal, when the remote shell exits 127', 
   const { launcher } = await fixture('node-missing')
   const error = await failure(launcher.connect(configuration))
   expect(error.code).toBe('node-missing')
-  expect(error.message).toBe('Node was not found on the SSH host. Install Node 24 for that SSH account, then reconnect.')
+  expect(error.message).toBe('Node was not found on the SSH host. Install Node 24.22.1 or a later Node 24 for that SSH account, then reconnect.')
 })
 it('reports a Node too old for the host with the version the host has', async () => {
   const { launcher } = await fixture('node-old')
   const error = await failure(launcher.connect(configuration))
   expect(error.code).toBe('node-too-old')
-  expect(error.message).toBe('The SSH host runs Node 18.19.0, which is too old for the host. Install Node 24 for that SSH account, then reconnect.')
+  expect(error.message).toBe('The SSH host runs Node 18.19.0, which is too old for the host. Install Node 24.22.1 or a later Node 24 for that SSH account, then reconnect.')
 })
 it('times out without a result, then connects again with a fresh forward', async () => {
   const timed = await fixture('timeout', { authenticationTimeoutMs: 300 })
@@ -467,7 +467,7 @@ it('reports a Node too new on the installation step, after SSH signed in', async
   const steps: string[] = []
   const error = await failure(launcher.connect(configuration, { onStep: step => steps.push(step) }))
   expect(error.code).toBe('node-too-new')
-  expect(error.message).toBe('The SSH host runs Node 26.1.0, which is newer than this host release supports. Install Node 24 for that SSH account, then reconnect.')
+  expect(error.message).toBe('The SSH host runs Node 26.1.0, which is newer than this host release supports. Install Node 24.22.1 or a later Node 24 for that SSH account, then reconnect.')
   expect(steps).toEqual(['reach', 'install'])
 })
 

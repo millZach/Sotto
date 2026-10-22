@@ -170,7 +170,7 @@ Older phones and desktop connections allow two missed keep-alive rounds. Sending
 
 ## Build from source
 
-With Node.js 24:
+With Node.js 24.22.1 or a later Node 24:
 
 ```sh
 npm ci

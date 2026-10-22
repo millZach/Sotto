@@ -537,7 +537,7 @@ Phone access is the host's own setting. The host serves phones on a loopback por
 
 *Development feature.*
 
-The host can run under Node 24 on Windows or Linux without Electron or a display. It owns its providers, worktrees and saved history. Build from a checkout with `npm ci` and `npm run build:host`, then run:
+The host can run under Node 24.22.1 or a later Node 24 on Windows or Linux without Electron or a display. It owns its providers, worktrees and saved history. Build from a checkout with `npm ci` and `npm run build:host`, then run:
 
 ```sh
 # From a checkout, after npm run build:host
@@ -749,7 +749,7 @@ The Omarchy rows show each piece’s state before setup changes a file. **Set up
 
 If Sotto closes during setup or removal, the row says it stopped before finishing. **Try again** continues that operation; **Remove** can undo unfinished setup. The first key backup stays through updates. Later file edits stay yours.
 
-The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
+The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24.22.1 or a later Node 24:
 
 ```sh
 npm ci
@@ -822,13 +822,13 @@ The packaged `resources` directory contains the Claude SDK history helper, `READ
 
 ### Linux packages
 
-On forge with Node 24 and a clean checkout:
+On forge with Node 24.22.1 or a later Node 24 and a clean checkout:
 
 ```sh
-mise exec node@24.21.0 -- npm ci
-mise exec node@24.21.0 -- node node_modules/electron/install.js
-mise exec node@24.21.0 -- npm run assets:verify
-mise exec node@24.21.0 -- npm run package:linux
+mise exec node@24.22.1 -- npm ci
+mise exec node@24.22.1 -- node node_modules/electron/install.js
+mise exec node@24.22.1 -- npm run assets:verify
+mise exec node@24.22.1 -- npm run package:linux
 ```
 
 `package:linux` is an offline, unchecked source-version verification command. Stable release owners instead run `npm run package:linux:stable` and `node scripts/release-linux.mjs` on forge from a clean, CI-green main commit; the [release procedure](release/releasing.md#linux-desktop-package) also covers a rehearsal on any clean commit.
@@ -942,7 +942,7 @@ Watcher is available only in Owl builds. Stable builds carrying the Watcher gate
 
 Muse gives up on a tool call after 5 minutes. So when Watcher runs on Muse, a start or message it sends that is still on its way after nearly 5 minutes comes back to Watcher with its receipt and goes on; it is never sent twice, and Watcher reads how it went from the receipt.
 
-Watcher starts any number of workers. When a start leaves more than ten threads working on this computer, its result says the computer may slow down or use its battery faster, and Watcher tells you; nothing is held back. Each target gets at most four automatic prompts in one Watcher turn, and retries do not renew that budget. A repeated call returns its original receipt; an uncertain receipt is reconciled rather than resent. A direct instruction or control fences earlier automation. A standing watch stays, while automatic sends wait for your turn and pending user work to finish. Answer questions and permissions on the worker's own card, in its pane or in Watcher's conversation; Watcher cannot answer or widen them. A worker Watcher starts gets no more permission than your new-thread default in **Settings → Agents**. A thread you already gave more, such as one on Full access while the default is Ask for approval, still takes Watcher's sends, queued prompts and steers, and keeps its own permission. Stop all confirms only eligible threads Watcher started and can report individual unconfirmed stops. A message you queue to Watcher while it works carries on what you asked it last. If you stopped that request while the message waited, or it had finished, Watcher takes the message as a new request, which can start and send to threads like any other. You can steer Watcher whenever it works, even while it reads news of your threads, and it can act on what you steered in straight away: start threads, watch them and send to them.
+Watcher starts any number of workers. When a start leaves more than ten threads working on this computer, its result says the computer may slow down or use its battery faster, and Watcher tells you; nothing is held back. Each target gets at most four automatic prompts in one Watcher turn, and retries do not renew that budget. A repeated call returns its original receipt; an uncertain receipt is reconciled rather than resent. A direct instruction or control fences earlier automation. A standing watch stays, while automatic sends wait for your turn and pending user work to finish. Answer questions and permissions on the worker's own card, in its pane or in Watcher's conversation; Watcher cannot answer or widen them. A worker Watcher starts gets no more permission than your new-thread default in **Settings → Agents**. A thread you already gave more, such as one on Full access while the default is Ask for approval, still takes Watcher's sends, queued prompts and steers, and keeps its own permission. Stop all confirms only eligible threads Watcher started and can report individual unconfirmed stops. A thread Watcher stopped, and one it started when you stop Watcher, keeps its queue for you to review, Sotto's babysitting wake-ups included: once the thread rests, the queue says **Paused by Watcher** and why. **Resume queue** sends it. A message you queue to Watcher while it works carries on what you asked it last. If you stopped that request while the message waited, or it had finished, Watcher takes the message as a new request, which can start and send to threads like any other. You can steer Watcher whenever it works, even while it reads news of your threads, and it can act on what you steered in straight away: start threads, watch them and send to them.
 
 The same start capacity covers workers on supported paired hosts. A host must offer Watcher control and reads for request-bound operations and the additional standing-watch feature for durable watching. Older hosts refuse durable watching and keep their existing active-request behavior. The owning host checks pending cards and takeover again before sending, and a start's permission before starting. A native or phone instruction there counts as yours just as one on this computer does: a watched thread stays with Watcher, which can only steer it until your turn ends. Disconnect and restart preserve uncertain receipts and hold their slots until confirmed; they never retry a prompt automatically. A worker Watcher starts there gets no more than this computer's new-thread default, and no more than Ask for approval where that host does not let this computer answer. Watcher still sends to a thread there that already has more. These tools answer no request and change no permission policy. A Watcher on Muse reads and directs threads only on hosts updated to know it, and says to update any other.
 

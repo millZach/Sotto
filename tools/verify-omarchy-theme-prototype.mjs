@@ -1,4 +1,4 @@
-// Usage: mise exec node@24.21.0 -- node tools/verify-omarchy-theme-prototype.mjs [evidence-directory]
+// Usage: mise exec node@24.22.1 -- node tools/verify-omarchy-theme-prototype.mjs [evidence-directory]
 /* global Element, window, document, CHECKS, MAPS, THEMES, build, ratio, innerWidth */
 import assert from 'node:assert/strict'
 import console from 'node:console'

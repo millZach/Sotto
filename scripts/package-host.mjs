@@ -17,7 +17,8 @@ export async function packageHost({
   releaseDir = resolve(root, process.env.SOTTO_HOST_RELEASE_DIR || 'release'),
   version,
 } = {}) {
-  if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Build and verify the host archive with Node 24')
+  const [major, minor, patch] = process.versions.node.split('.').map(Number)
+  if (major !== 24 || minor < 22 || (minor === 22 && patch < 1)) throw new Error('Build and verify the host archive with Node 24.22.1 or a later Node 24')
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const packagedVersion = version ?? pkg.version
   if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","sherpa-onnx-node","zod"]') throw new Error('Production dependency policy changed')
@@ -33,8 +34,8 @@ export async function packageHost({
     await cp(join(root, 'node_modules/zod'), join(stage, 'node_modules/zod'), { recursive: true, dereference: false })
     for (const name of ['LICENSE.md', 'THIRD_PARTY_NOTICES.md']) await copyFile(join(root, name), join(stage, name))
     const writeJson = (file, value) => writeFile(join(stage, file), JSON.stringify(value, null, 2) + '\n')
-    await writeJson('package.json', { name: 'sotto-host', private: true, version: packagedVersion, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24 <25' }, dependencies })
-    await writeJson('runtime-manifest.json', { version: 1, kind: 'sotto-host', sottoVersion: packagedVersion, node: '>=24 <25', platform: process.platform, arch: process.arch, dependencies, bundledNode: false, nativeModules: [] })
+    await writeJson('package.json', { name: 'sotto-host', private: true, version: packagedVersion, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24.22.1 <25' }, dependencies })
+    await writeJson('runtime-manifest.json', { version: 1, kind: 'sotto-host', sottoVersion: packagedVersion, node: '>=24.22.1 <25', platform: process.platform, arch: process.arch, dependencies, bundledNode: false, nativeModules: [] })
     const inputs = []
     for (const dir of ['src', 'scripts']) for (const entry of await inventoryFiles(join(root, dir))) inputs.push({ ...entry, path: dir + '/' + entry.path })
     for (const file of ['package.json', 'package-lock.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE.md']) {

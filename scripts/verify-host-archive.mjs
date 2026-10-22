@@ -23,7 +23,7 @@ export async function verifyHostArchive(directory, { expectedVersion, expectedSo
   const root = resolve(directory)
   const json = async path => JSON.parse(await readFile(join(root, path), 'utf8'))
   const manifest = await json('runtime-manifest.json'), pkg = await json('package.json')
-  if (manifest.version !== 1 || manifest.kind !== 'sotto-host' || manifest.node !== '>=24 <25' ||
+  if (manifest.version !== 1 || manifest.kind !== 'sotto-host' || manifest.node !== '>=24.22.1 <25' ||
       pkg.engines?.node !== manifest.node || pkg.main !== 'host/index.js' || pkg.type !== 'commonjs' || pkg.version !== manifest.sottoVersion) {
     throw new Error('Invalid host runtime manifest')
   }
