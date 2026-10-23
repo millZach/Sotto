@@ -7,11 +7,11 @@ const DEFAULT = '{"collapsed":false}'
 /** The narrowest a sidebar can be dragged, and the most it can be. */
 const MINIMUM = 260
 const MOST = 480
-/** The width the sidebar takes until the user drags it: 30% of the window, from 260 up to 280 pixels (ADR-0107). */
+/** The width the sidebar takes until the user drags it: 30% of the window, from 260 up to 280 pixels (ADR-0110). */
 export function defaultSidebarWidth(viewport: number): number {
   return Math.round(Math.max(MINIMUM, Math.min(280, viewport * 0.3)))
 }
-/** The default before ADR-0107, which Collapse and Reset wrote down as if the user had chosen it. */
+/** The default before ADR-0110, which Collapse and Reset wrote down as if the user had chosen it. */
 const OLD_DEFAULT = 320
 /** The last value this window saved for each key, and the keys whose last write storage refused. */
 const fallback = new Map<string, string>()

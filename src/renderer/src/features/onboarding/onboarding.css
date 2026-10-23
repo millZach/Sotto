@@ -196,7 +196,7 @@
   white-space: nowrap;
 }
 
-/* A state is its mark and its words, never a capsule (ADR-0107): the words keep the text colour and the icon beside
+/* A state is its mark and its words, never a capsule (ADR-0110): the words keep the text colour and the icon beside
    them carries the state's colour. */
 .onboarding-agent[data-kind='ready'] .onboarding-agent__state {
   color: var(--tt-text);

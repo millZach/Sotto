@@ -42,7 +42,7 @@
   font: inherit;
 }
 .dictation-shortcuts__chip { cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
-/* On a Settings card the chips sit on the card's inset, without an outline until pointed at (ADR-0107). */
+/* On a Settings card the chips sit on the card's inset, without an outline until pointed at (ADR-0110). */
 .settings-rows :is(.dictation-shortcuts__chip, .dictation-shortcuts__recording) { border-color: transparent; background: var(--tt-card-inset); }
 .dictation-shortcuts__chip:hover { border-color: var(--tt-text-muted); }
 .dictation-shortcuts__recording { border-color: var(--tt-accent); padding-left: 10px; }

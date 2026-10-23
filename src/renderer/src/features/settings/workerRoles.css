@@ -18,7 +18,7 @@
 .worker-roles__empty > p { margin: 0; }
 .worker-roles__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
 
-/* Each role is a card (ADR-0107); the one the user chose keeps its accent edge. */
+/* Each role is a card (ADR-0110); the one the user chose keeps its accent edge. */
 .worker-role { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
 .worker-role[data-chosen='true'] { border-color: var(--tt-accent-border); }
 .worker-role--wide { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); column-gap: 22px; }

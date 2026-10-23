@@ -330,7 +330,7 @@ describe('main-window theme tokens', () => {
     }
   })
 
-  it('draws no pill: every renderer stylesheet rounds its corners by a few pixels, and only dots are circles (ADR-0107)', () => {
+  it('draws no pill: every renderer stylesheet rounds its corners by a few pixels, and only dots are circles (ADR-0110)', () => {
     const root = join(process.cwd(), 'src/renderer/src')
     const sheets = (readdirSync(root, { recursive: true }) as string[]).filter(name => name.endsWith('.css')).map(name => join(root, name))
     expect(sheets.length).toBeGreaterThan(60)

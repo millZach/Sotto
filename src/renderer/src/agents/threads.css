@@ -153,7 +153,7 @@
 .thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
-/* The composer is a card (ADR-0107): filled, with no outline at rest. Its edge comes back to say it is focused, running
+/* The composer is a card (ADR-0110): filled, with no outline at rest. Its edge comes back to say it is focused, running
    or at a model's highest effort. */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }

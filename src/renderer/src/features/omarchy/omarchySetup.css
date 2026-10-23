@@ -9,7 +9,7 @@
 .omarchy-setup__name { grid-column: 2; font-size: 15px; line-height: 1.4; font-weight: 500; }
 .omarchy-setup__what { grid-column: 2; margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 .omarchy-setup__side { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; justify-content: end; max-width: 210px; }
-/* A status is its mark and its words, never a capsule (ADR-0107). */
+/* A status is its mark and its words, never a capsule (ADR-0110). */
 .omarchy-setup__status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
 .omarchy-setup__piece[data-state=done] .omarchy-setup__status, .omarchy-setup__piece[data-state=manual] .omarchy-setup__status { color: var(--tt-text); }
 .omarchy-setup__piece[data-state=failed] .omarchy-setup__status { color: var(--tt-error); }

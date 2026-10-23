@@ -154,7 +154,7 @@ h1[tabindex='-1']:focus {
 
 /* ---- controls ---- */
 
-/* Buttons are soft squares with 6px corners, never pills (ADR-0107). The primary action
+/* Buttons are soft squares with 6px corners, never pills (ADR-0110). The primary action
    is the text colour's plate on the room; every other button is the surface inside an
    edge in the field-border role that firms up on hover. */
 .tt-button {

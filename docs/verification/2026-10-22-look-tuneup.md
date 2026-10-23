@@ -1,6 +1,6 @@
 # The look tune-up, in the built app
 
-October 22, 2026, on Windows 11, from branch `feat/filled-cards-and-rectangle-buttons` (ADR-0107, Zach's picks from `docs/prototypes/look-tuneup-prototype.html`: containers B, controls N1, providers P1, Usage scaling with the room, the sidebar tune). The branch already had `main` merged in, with Watcher's night scene (#1363), Visualize and the prototype-ready strip (#1360). Everything was checked in the built app (`npm run build`) with a throwaway Playwright spec, which was not kept. It reused the setup of the specs named below:
+October 22, 2026, on Windows 11, from branch `feat/filled-cards-and-rectangle-buttons` (ADR-0110, Zach's picks from `docs/prototypes/look-tuneup-prototype.html`: containers B, controls N1, providers P1, Usage scaling with the room, the sidebar tune). The branch already had `main` merged in, with Watcher's night scene (#1363), Visualize and the prototype-ready strip (#1360). Everything was checked in the built app (`npm run build`) with a throwaway Playwright spec, which was not kept. It reused the setup of the specs named below:
 
 - Threads, Settings and Watcher ran on the design-threads fixture, on the Sotto Owl track. Main's Watcher was stood in for by a seeded projection watching three threads, as `watcher-night-scene.spec.ts` does.
 - The prototype-ready strip and a question card ran in a real project folder holding a prototype page, as `prototype-ready.spec.ts` and `question-prototype-pages.spec.ts` do.
@@ -24,7 +24,7 @@ Each surface was captured in dark and light at 1600x1000, 1280x800 and the 820x5
 In each window, the spec listed every visible element whose computed border-radius was at least half its height while its width was more than 1.5 times its height.
 
 - None in 58 of the 62 windows, including Appearance at 820. No element in any window had one fully rounded end either.
-- Settings > Appearance at 1600 and 1280, both modes: three, the same each time. Two `span` elements 69x3 and `i.effort-sample__text` 136x3, each with a 2px corner. They are the 3-pixel lines that stand for text inside the live preview and the effort sample. The rule counts them because 2px is more than half of 3, but they are drawn lines rather than controls, and ADR-0107 gives bars 2px corners. At 820 they are below the fold.
+- Settings > Appearance at 1600 and 1280, both modes: three, the same each time. Two `span` elements 69x3 and `i.effort-sample__text` 136x3, each with a 2px corner. They are the 3-pixel lines that stand for text inside the live preview and the effort sample. The rule counts them because 2px is more than half of 3, but they are drawn lines rather than controls, and ADR-0110 gives bars 2px corners. At 820 they are below the fold.
 
 ## Fixed on the way
 
@@ -85,6 +85,6 @@ These are outside the change or need a decision, and are left for Zach:
 
 - macOS and Linux. Everything here was on Windows.
 - Themes other than the default Sotto light and dark.
-- The design capture baselines. `npm run design:capture` and `design:verify` were not run, and the baselines were not regenerated. They change wherever a card, a control or the sidebar shows, as ADR-0107 says, and are regenerated on the machines that hold them.
+- The design capture baselines. `npm run design:capture` and `design:verify` were not run, and the baselines were not regenerated. They change wherever a card, a control or the sidebar shows, as ADR-0110 says, and are regenerated on the machines that hold them.
 - The floating widget and Omarchy's shell pill, which keep their own look.
 - Normal motion. The captures were taken with reduced motion on.

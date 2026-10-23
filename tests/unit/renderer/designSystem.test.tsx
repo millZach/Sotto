@@ -146,7 +146,7 @@ describe('Sotto design-system primitives', () => {
     ]) {
       expect(tokensCss).toContain(`--tt-${token}:`)
     }
-    // No control is a pill (ADR-0107), so there is no pill radius to reach for.
+    // No control is a pill (ADR-0110), so there is no pill radius to reach for.
     expect(tokensCss).not.toContain('--tt-radius-pill')
     // Every room colour comes from the active theme's roles (ADR-0011).
     expect(tokensCss).toContain('--tt-canvas: var(--theme-canvas);')

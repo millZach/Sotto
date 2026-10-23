@@ -1,5 +1,5 @@
 /* The composer's option chips: the model with its provider's mark, the reasoning effort and the permissions. Each is one
-   filled chip with 5px corners (ADR-0107) that opens its own list above the composer, so the typed text and the send
+   filled chip with 5px corners (ADR-0110) that opens its own list above the composer, so the typed text and the send
    button stay where they were. On the composer's card a chip sits on the card's inset. */
 .thread-options--chips { gap: 6px; }
 .thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: light-dark(var(--tt-surface-overlay), var(--tt-surface-sunken)); color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
