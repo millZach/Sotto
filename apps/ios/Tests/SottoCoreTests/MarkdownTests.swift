@@ -282,4 +282,16 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(Markdown.cachedBlocks(longer), Markdown.blocks(longer))
         XCTAssertNotEqual(Markdown.cachedBlocks(longer), Markdown.cachedBlocks(review))
     }
+
+    /// A reply streaming in word by word, 10 MB of versions between them, leaves no more than the budget's worth of them.
+    func testAStreamingReplyKeepsOnlyItsRecentVersions() {
+        var text = ""
+        for _ in 0..<2_000 {
+            text += "word "
+            for block in Markdown.cachedBlocks(text) { if case .paragraph(let inline) = block { _ = inline.cachedAttributed() } }
+        }
+        let budget = 256 * 1024
+        XCTAssertLessThanOrEqual(Markdown.blocksKept.held.cost, 2 * (budget + text.utf8.count))
+        XCTAssertLessThanOrEqual(MarkdownInline.attributedKept.held.cost, 2 * (budget + text.utf8.count))
+    }
 }

@@ -22,4 +22,18 @@ final class RecentCacheTests: XCTestCase {
         ask(4); ask(5); ask(6); ask(2)
         XCTAssertEqual(made, [1, 2, 3, 4, 5, 6, 2])
     }
+
+    /// A message streaming in is a new key with every word. Its old versions go once they pass the budget, rather than
+    /// staying until the count limit is reached.
+    func testTheBudgetStopsAGrowingKeyPilingUp() {
+        let cache = RecentCache<String, Int>(limit: 1_000, budget: 1_000) { $0.utf8.count }
+        var text = ""
+        for _ in 0..<400 {
+            text += "word "
+            _ = cache.value(for: text) { $0.count }
+        }
+        // 400 versions, 2,000 bytes for the last: past half the budget each turns the cache, so two are left.
+        XCTAssertEqual(cache.held.count, 2)
+        XCTAssertLessThanOrEqual(cache.held.cost, 2 * text.utf8.count)
+    }
 }
