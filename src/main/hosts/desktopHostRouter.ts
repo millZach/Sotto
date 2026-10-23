@@ -1,5 +1,8 @@
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
+import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_UNSUPPORTED, bringBackNotConnected, incomingRefBranch } from '../../shared/bringChangesBack'
+import type { BranchMoveReceipt } from '../../shared/branchMoves'
+import type { DesktopBranchMoves } from '../agents/branchMoves'
 import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
@@ -34,7 +37,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsBringBack' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -1070,7 +1073,16 @@ export class DesktopHostRouter {
       if (left.length) this.notice = { message: dismissLeft(left) }
       return this.shell()
     }
-    const { connection, command, hostNamed } = this.route(input)
+    const routed = this.route(input)
+    const { hostNamed } = routed
+    let { connection, command } = routed
+    // Bringing changes back from a child on another machine (#1030): this desktop moves the child's branch to the machine
+    // of the thread it began from, and that host brings it to its branch. The window never names a move itself.
+    if (command.type === 'bring-changes-back') {
+      const across = command.away !== undefined ? { error: BRING_BACK_NO_TARGET } : await this.bringBackAcross(connection, command)
+      if (across && 'error' in across) return { ...this.shell(), error: across.error }
+      if (across) ({ connection, command } = across)
+    }
     if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
     }
@@ -1134,6 +1146,8 @@ export class DesktopHostRouter {
       }
       // A host from before continuing agents (#1028) would refuse the command as unknown; it is told why here instead.
       const result = startsThread(command) && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
+        // A host from before bringing changes back (#1030), or one whose Owl answer leaves it off, is told apart here too.
+        : command.type === 'bring-changes-back' && connection.kind === 'remote' && connection.service.supportsBringBack !== true ? { error: BRING_BACK_UNSUPPORTED }
         : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
           : connection.service.command(command as AgentCommand, client))
       if (result.error && startsThread(command)) { refused = true; inPlace = this.refusal(connection, result.error) }
@@ -1181,6 +1195,38 @@ export class DesktopHostRouter {
     if (held) throw new Error(heldProviderRefusal(held))
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
+  /** This desktop's branch moves (#1033), present only while Work across machines is on: main gives them once, at start. */
+  private branchMoves: Pick<DesktopBranchMoves, 'forStart'> | undefined
+  useBranchMoves(moves: Pick<DesktopBranchMoves, 'forStart'>): void { this.branchMoves = moves }
+  /**
+   * The first half of bringing changes back from a child whose worktree was made from the branch of a thread on another
+   * machine (#1030): the child's committed branch moves into that machine's project as a branch move (ADR-0105), and the
+   * command goes on to that machine's host for the thread it began from, naming the move. Undefined for any other child,
+   * which its own host brings back; a refusal says what happened, and that nothing changed.
+   */
+  private async bringBackAcross(connection: DesktopHostConnection, command: Extract<AgentCommand, { type: 'bring-changes-back' }>):
+    Promise<{ readonly connection: DesktopHostConnection; readonly command: AgentCommand } | { readonly error: string } | undefined> {
+    // Read as published, without copying: a press reads two threads' records and nothing else.
+    const child = readView(connection.service).host.threads.find(thread => thread.id === command.threadId)
+    const made = child?.worktree?.madeFrom
+    if (!child || made?.host === undefined || made.host === connection.hostId) return undefined
+    const moves = this.branchMoves
+    if (!moves) return { error: BRING_BACK_OFF }
+    const entry = this.hosts.get(made.host)?.connection
+    if (!entry || entry.available?.() === false || this.reconnecting.has(made.host)) return { error: bringBackNotConnected(entry?.name ?? 'The machine it began on') }
+    if (entry.kind === 'remote' && entry.service.supportsBringBack !== true) return { error: BRING_BACK_UNSUPPORTED }
+    const parent = readView(entry.service).host.threads.find(thread => thread.id === made.thread)
+    const target = child.worktree?.baseBranch ?? incomingRefBranch(child.worktree?.incomingRef)
+    if (!parent || !target) return { error: BRING_BACK_NO_TARGET }
+    // The child's branch is read as it stands, so the child must be at rest, as a Git action on its own machine asks.
+    if (child.status === 'running' || child.requests.length > 0) return { error: 'Wait for this thread to finish its turn, then bring its changes back. Nothing changed.' }
+    const here = [...this.hosts.values()].find(item => item.connection.kind === 'local')?.connection.hostId ?? ''
+    const moveId = randomUUID()
+    const moved = await moves.forStart({ from: { hostId: connection.hostId, threadId: child.id }, to: { hostId: made.host, projectId: parent.projectId }, here, moveId, snapshot: false })
+    if (moved.type === 'refused') return { error: bringBackMoveRefused(moved, target, child.worktree?.git?.branch ?? child.worktree?.branch ?? 'This branch') }
+    return { connection: entry, command: { type: 'bring-changes-back', threadId: parent.id, actionId: command.actionId,
+      ...command.mergeCommit ? { mergeCommit: command.mergeCommit } : {}, away: { moveId, from: hostEntityKey(connection.hostId, child.id), target } } }
+  }
   private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand; hostNamed?: true } {
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
@@ -1327,4 +1373,11 @@ function readView(service: Pick<HostService, 'shell' | 'view'>): AgentState { re
 /** Whether the window shows a thread's provider connected: the host's connection is up and the host says its provider is. */
 function windowConnected(connection: DesktopHostConnection, host: AgentState['host'], thread: AgentThread): boolean {
   return connection.available?.() !== false && isThreadProviderConnected(host, thread)
+}
+
+/** A branch move that refused while bringing changes back, in bring-back's words where it has its own (#1030). */
+function bringBackMoveRefused(moved: Extract<BranchMoveReceipt, { type: 'refused' }>, target: string, branch: string): string {
+  if (moved.reason === 'uncommitted') return `Nothing was brought to ${target}. ${branch} has uncommitted changes, and Sotto won’t bring back uncommitted work. Commit them first, then try again.`
+  if (moved.reason === 'not-on-branch') return `This worktree isn’t on a branch, so nothing was brought to ${target}. Switch it back to its branch, then try again.`
+  return moved.message.replace(/Nothing was moved\.$/u, 'Nothing was brought back.')
 }

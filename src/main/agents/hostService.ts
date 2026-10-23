@@ -118,6 +118,8 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
+  /** The host brings a thread's commits back to the branch of the thread it began from (#1030): it takes `bring-changes-back`. */
+  readonly supportsBringBack?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
@@ -293,7 +295,9 @@ export class LocalHostService implements HostService {
      */
     agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
     /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
-    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins> }) {
+    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
+    /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
+    bringBack?: boolean }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -320,6 +324,7 @@ export class LocalHostService implements HostService {
   }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
+  get supportsBringBack(): boolean { return this.options.bringBack === true }
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
     const built = this.options.threadStarts.startHandover(threadId)

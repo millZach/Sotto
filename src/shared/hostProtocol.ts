@@ -177,6 +177,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `fork-thread`, which forks a thread at one of its replies (Fork from here), and
  * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
  * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
+ * `bring-changes-back`: the host takes `bring-changes-back`, which brings a thread's commits back to the branch of the
+ * thread it began from, running Git on the host that holds both folders (#1030). Only a host whose Owl answer turns it on
+ * lists it; a desktop refuses the command for a host that does not, and says to update it.
  * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
@@ -218,8 +221,11 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * names, host, owner and name only, so a desktop placing a worker can find the same project on this machine (#1032). Only
  * a host whose Owl answer turns on Work across machines lists it, and only to a desktop; one that does not cannot be
  * matched by repository, and a start must name one of its projects instead.
+ * `bring-changes-back`: the host takes `bring-changes-back`, which brings a thread's commits back to the branch of the
+ * thread it began from, running Git on the host that holds both folders (#1030). Only a host whose Owl answer turns on
+ * `cross-machine-work` lists it; a desktop refuses the command for a host that does not, and says to update it.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'branch-moves', 'project-origins'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'branch-moves', 'project-origins', 'bring-changes-back'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop

@@ -64,6 +64,7 @@ import { watcherHandoversShown } from './watcherHandover'
 import { startHandoverSend, startHandoversShown } from './startHandover'
 import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
 import { FailuresSeen } from './failuresSeen'
+import { BRING_BACK_UNSUPPORTED } from '../../shared/bringChangesBack'
 import { FinishedUnread } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
@@ -360,7 +361,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
-const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
+const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'bring-changes-back', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
 type BabysitCommand = Extract<AgentCommand, { type: 'babysit-pull-request' | 'stop-babysitting' }>
@@ -2701,6 +2702,13 @@ export class AgentControl {
           this.state.error = null
           break
         }
+        case 'bring-changes-back': {
+          // The outcome, or the merge-commit question, is on the thread's record; only an admission refusal is the command's.
+          if (!host.bringChangesBack) throw new Error(BRING_BACK_UNSUPPORTED)
+          this.acceptSnapshot(await host.bringChangesBack(command))
+          this.state.error = null
+          break
+        }
         case 'git-switch-branch': {
           if (!host.switchThreadBranch) throw new Error('Switching branches is unavailable.')
           this.acceptSnapshot(await host.switchThreadBranch(command.threadId, command.ref, command.create === true))
@@ -4164,14 +4172,15 @@ export class AgentControl {
           throw new Error('This thread already exists. Select it instead of creating it again.')
         }
         // Only Watcher's and delegation's own starts begin from a moved branch (#1033): they moved it themselves, just now.
-        if (command.startFromMove !== undefined && (!origin || command.workingCopy === 'shared' || command.existingWorktreePath !== undefined || command.baseBranch !== undefined)) {
+        if (command.startFromMove !== undefined && (!origin || command.workingCopy === 'shared' || command.existingWorktreePath !== undefined || command.baseBranch !== undefined)
+          || command.madeFrom !== undefined && command.startFromMove === undefined) {
           throw new Error('A thread starts from a moved branch only in a new worktree that Watcher or a delegation makes. Nothing was made.')
         }
         const threadId = command.threadId ?? randomUUID()
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
           ...(command.titleSource ? { titleSource: command.titleSource } : {}),
-          ...(command.startFromMove ? { workingCopy: 'independent' as const, startFromMove: command.startFromMove } : {}),
+          ...(command.startFromMove ? { workingCopy: 'independent' as const, startFromMove: command.startFromMove, ...(command.madeFrom ? { madeFrom: command.madeFrom } : {}) } : {}),
           ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
           ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),

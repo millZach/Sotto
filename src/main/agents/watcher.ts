@@ -892,9 +892,9 @@ export class WatcherService implements WatcherControlHooks {
    * its project is, as before. A retry of a recorded start is placed nowhere again: it reads the first call's receipt.
    */
   private async placeStart(input: WatcherToolInput<'start_thread'>): Promise<PlacedStart | undefined> {
-    const { machine, os, fromThread, testRun, fromMove, ...start } = input
+    const { machine, os, fromThread, testRun, fromMove, madeFrom, ...start } = input
     // A move is Sotto's to name, from the thread a start names, never Watcher's.
-    if (fromMove !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
+    if (fromMove !== undefined || madeFrom !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
       refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
     }
     if (!this.options.workerMachine) return undefined
@@ -911,7 +911,9 @@ export class WatcherService implements WatcherControlHooks {
     // from starts as any start does until test runs queue (#1312).
     const moveId = fromThread ? randomUUID() : undefined
     if (moveId && fromThread) this.branchStartsPlaced.set(moveId, { from: fromThread, testRun: testRun === true, name: placed.receipt.name })
-    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...moveId ? { fromMove: moveId } : {} }, placement: placed.receipt }
+    // The worker's worktree keeps the thread its branch came from, so its commits can be brought back there (#1030).
+    const from = moveId && fromThread ? { fromMove: moveId, madeFrom: { thread: fromThread.threadId, ...fromThread.hostId !== placed.hostId ? { host: fromThread.hostId } : {} } } : {}
+    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...from }, placement: placed.receipt }
   }
   /**
    * A start from a thread's branch names a thread Sotto knows, other than Watcher's own, and asks for a new worktree with
@@ -2851,7 +2853,8 @@ export class WatcherService implements WatcherControlHooks {
         if (!modelId) throw new Error('model-missing')
         await this.moveForStart(operation, create)
         // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
-        const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove } : await this.resolveCopies(create)
+        const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove, ...create.madeFrom ? { madeFrom: create.madeFrom } : {} }
+          : await this.resolveCopies(create)
         const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
         const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
         const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {

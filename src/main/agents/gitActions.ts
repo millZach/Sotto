@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
+import { BRING_BACK_GIT_SAID_MAX, SNAPSHOT_AUTHOR, type BringBack } from '../../shared/bringChangesBack'
 import { gitActionPhases, gitActionStages, type GitActionPhase, type GitActionResult, type GitActionToast, type GitPullResult, type GitStackedAction } from '../../shared/gitActions'
 import type { GitStatus } from '../../shared/gitStatus'
 import { diffExcerpt } from '../llm/diffExcerpt'
@@ -47,6 +48,47 @@ export interface GitActionsDependencies {
 /** Said in T3's words, so a reader of both apps meets the same refusal. */
 export class GitActionRefusal extends Error {}
 
+/** Why a bring-back press brought nothing, with what it found: the files holding uncommitted work, or Git's own words. */
+export type BringBackRefusalReason = NonNullable<BringBack['refusal']>
+export class BringBackRefusal extends GitActionRefusal {
+  constructor(readonly reason: BringBackRefusalReason, message: string, readonly detail: { readonly files?: number; readonly gitSaid?: string; readonly checkout?: string | null } = {}) { super(message) }
+}
+
+export interface BringBackInput {
+  /**
+   * The folder Git runs in: this thread's worktree, whose branch's commits go; or, with `arrived`, the folder of the thread
+   * the commits go to, whose repository the child's branch was moved into.
+   */
+  readonly cwd: string
+  /** The branch they go to: the branch of the thread it began from. */
+  readonly target: string
+  /**
+   * A child's branch from another machine, already in this repository's incoming ref (#1033): its commits go instead of
+   * `cwd`'s branch, which is then the target's own folder. The move refused uncommitted work on the child's side.
+   */
+  readonly arrived?: { readonly ref: string; readonly branch: string } | undefined
+  /** The tips a merge-commit question named, once the user answered yes to it. Without it a needed merge commit is asked about. */
+  readonly mergeCommit?: { readonly targetHead: string; readonly branchHead: string } | undefined
+  /**
+   * Whether a folder Git lists as having the target checked out is the folder of the thread the commits go to. Any other
+   * folder, or none, refuses: Sotto moves the target only where that thread works, and never switches a branch.
+   */
+  readonly parentCheckout: (folder: string) => Promise<boolean>
+  /**
+   * Holds the folder where the target is checked out for the rest of the press, so no send, turn or other Git action
+   * changes it meanwhile, or refuses in plain words when something already holds it. Left out when the caller holds that
+   * folder already, as it does when Git runs there.
+   */
+  readonly holdCheckout?: ((folder: string) => Promise<() => void>) | undefined
+}
+
+/** What a bring-back press found or did. `checkout` is the folder the target is checked out in, null when none is. */
+export type BringBackOutcome =
+  | { readonly kind: 'nothing'; readonly branch: string; readonly checkout: string | null }
+  | { readonly kind: 'asks'; readonly branch: string; readonly commits: number; readonly targetCommits: number; readonly targetHead: string; readonly branchHead: string; readonly checkout: string | null }
+  | { readonly kind: 'fast-forward'; readonly branch: string; readonly commits: number; readonly head: string; readonly checkout: string | null }
+  | { readonly kind: 'merge-commit'; readonly branch: string; readonly commits: number; readonly targetCommits: number; readonly head: string; readonly subject: string; readonly checkout: string | null }
+
 const COMMIT_TIMEOUT_MS = 10 * 60_000
 const PUSH_TIMEOUT_MS = 10 * 60_000
 const PULL_TIMEOUT_MS = 30_000
@@ -74,8 +116,10 @@ export function featureBranchName(fragment: string): string {
 /**
  * The Git actions a thread runs on its working copy the way T3 Code runs them (ADR-0027): the stacked
  * commit, push and pull request; a fast-forward pull; a branch switch or creation; initializing a
- * repository; publishing one to GitHub. It never forces, rebases, merges or resolves a conflict, and it
- * never answers a prompt: every refusal is said in T3's words and leaves the folder as it was.
+ * repository; publishing one to GitHub; bringing a worktree's commits back to the branch it was made from.
+ * It never forces, rebases or resolves a conflict, makes a merge commit only on the user's yes to bringing
+ * changes back, and never answers a prompt: every refusal is said in T3's words, or Git's, and leaves the
+ * folder as it was.
  */
 export class GitActions {
   private readonly run: RunGitCommand
@@ -440,6 +484,148 @@ export class GitActions {
   }
 
   /**
+   * Brings this worktree's commits to the branch of the thread it began from (#1030, ADR-0027's October 17, 2026
+   * amendment). Git fast-forwards the target when it has nothing the branch lacks. Otherwise the first press only asks:
+   * on yes, the merge commit is made from `git merge-tree`'s tree, so no folder is touched until it exists. The target
+   * then moves the right way wherever it is: by `git merge --ff-only` in the folder that has it checked out, so that
+   * folder's files follow, or by a compare-and-swap of the ref when no folder has it. Uncommitted work here or where the
+   * target is checked out, and conflicts, are refused in Git's own words; nothing is resolved, rebased, stashed or
+   * forced, and a refusal leaves every branch and folder as it was.
+   */
+  bringBack(input: BringBackInput): Promise<BringBackOutcome> {
+    return this.exclusive(input.cwd, async () => {
+      const { cwd, target, arrived } = input
+      let branch: string, branchRef: string
+      if (arrived) {
+        branch = arrived.branch; branchRef = arrived.ref
+      } else {
+        // One read for the branch and anything uncommitted: `git status` with its branch header.
+        const here = await this.git(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal'])
+        branch = branchHeadOf(here)
+        if (!branch) throw new BringBackRefusal('detached', `This worktree isn’t on a branch, so nothing was brought to ${target}. Switch it back to its branch, then try again.`)
+        const changed = parseChangedRecords(here).length
+        if (changed > 0) throw new BringBackRefusal('uncommitted', `Nothing was brought to ${target}. ${branch} has uncommitted changes in ${files(changed)}, and Sotto won’t bring back uncommitted work. Commit them first, then try again.`, { files: changed })
+        branchRef = `refs/heads/${branch}`
+      }
+      // Both tips in one read, by their exact refs, so a tag or a remote branch of the same name is never taken for either.
+      const tips = new Map((await this.git(cwd, ['for-each-ref', '--format=%(refname)%00%(objectname)', branchRef, `refs/heads/${target}`]))
+        .split('\n').filter(Boolean).map(line => line.split('\0') as [string, string]))
+      const branchHead = tips.get(branchRef) ?? '', targetHead = tips.get(`refs/heads/${target}`) ?? ''
+      if (!targetHead) throw new BringBackRefusal('gone', `Git has no branch named ${target} any more, so nothing was brought back.`)
+      if (!branchHead) {
+        throw arrived ? new BringBackRefusal('git', `${branch} didn’t arrive, so nothing was brought to ${target}. Try again.`)
+          : new BringBackRefusal('detached', `Git has no branch named ${branch} any more, so nothing was brought to ${target}.`)
+      }
+      if (input.mergeCommit && (input.mergeCommit.targetHead !== targetHead || input.mergeCommit.branchHead !== branchHead)) {
+        throw new BringBackRefusal('moved', `${target} or ${branch} moved since Sotto asked, so it made no merge commit and nothing changed. Press Bring changes to ${target} again.`)
+      }
+      // Commits only the target has, then commits only this branch has.
+      const [targetCommits = 0, commits = 0] = (await this.git(cwd, ['rev-list', '--left-right', '--count', `${targetHead}...${branchHead}`])).trim().split(/\s+/u).map(value => Number.parseInt(value, 10) || 0)
+      // The target moves only where the thread it began from works, so that thread's files follow and no branch is switched.
+      const checkout = await this.checkoutOf(cwd, target)
+      if (!checkout || !await input.parentCheckout(checkout)) {
+        throw new BringBackRefusal('parent-moved', `Nothing was brought to ${target}. The thread this one began from isn’t on ${target} any more, and Sotto doesn’t switch branches. Switch it back to ${target}, then try again.`, { checkout })
+      }
+      if (commits === 0) return { kind: 'nothing', branch, checkout }
+      // A test run's snapshot is someone's uncommitted work made into a commit (#1033): it never goes back as a commit.
+      if (await this.snapshotIn(cwd, targetHead, branchHead)) {
+        throw new BringBackRefusal('snapshot', `Nothing was brought to ${target}. ${branch} starts from a test run’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from ${target}, then try again.`)
+      }
+      const release = input.holdCheckout ? await this.holdCheckout(checkout, target, input.holdCheckout) : undefined
+      try {
+        // The folder that has the target checked out is someone's work: tracked changes and new files both keep it untouched.
+        const dirty = parseChangedRecords(await this.git(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=normal'])).length
+        if (dirty > 0) throw new BringBackRefusal('target-uncommitted', `Nothing was brought to ${target}. ${target} is checked out in a folder with uncommitted changes in ${files(dirty)}, so Sotto didn’t touch it.`, { files: dirty, checkout })
+        if (await this.operationInProgress(checkout)) throw new BringBackRefusal('target-uncommitted', `Nothing was brought to ${target}. A merge or rebase is in progress where ${target} is checked out, so Sotto didn’t touch it.`, { checkout })
+        if (targetCommits === 0) {
+          await this.advance(target, branchHead, checkout)
+          return { kind: 'fast-forward', branch, commits, head: branchHead, checkout }
+        }
+        // Conflicts are found before anything is asked, so the question is only ever about a merge Git can make.
+        const tree = await this.mergeTree(cwd, target, targetHead, branchHead)
+        if (!input.mergeCommit) return { kind: 'asks', branch, commits, targetCommits, targetHead, branchHead, checkout }
+        const subject = `Merge branch '${branch}' into ${target}`
+        const head = (await this.git(cwd, ['commit-tree', tree, '-p', targetHead, '-p', branchHead, '-F', '-'], { stdin: `${subject}\n` }).catch((error: unknown) => {
+          throw new BringBackRefusal('git', 'Git couldn’t make the merge commit.', { gitSaid: gitWords(error) })
+        })).trim()
+        await this.advance(target, head, checkout)
+        return { kind: 'merge-commit', branch, commits, targetCommits, head, subject, checkout }
+      } finally { release?.() }
+    })
+  }
+  /** Whether any commit `targetHead` lacks on the way to `head` is a test run's snapshot, by its author or committer (#1033). */
+  private async snapshotIn(cwd: string, targetHead: string, head: string): Promise<boolean> {
+    const people = await this.git(cwd, ['log', '--format=%an%x00%ae%x00%cn%x00%ce', `${targetHead}..${head}`])
+    return people.split('\n').some(line => {
+      const [authorName, authorEmail, committerName, committerEmail] = line.split('\0')
+      return authorName === SNAPSHOT_AUTHOR.name && authorEmail === SNAPSHOT_AUTHOR.email
+        || committerName === SNAPSHOT_AUTHOR.name && committerEmail === SNAPSHOT_AUTHOR.email
+    })
+  }
+  /** Whether a merge, cherry-pick, revert or rebase is half done in a folder: the user's to finish, never Sotto's to move under. */
+  private async operationInProgress(folder: string): Promise<boolean> {
+    const markers = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD', 'rebase-merge', 'rebase-apply']
+    const paths = (await this.git(folder, ['rev-parse', ...markers.flatMap(marker => ['--git-path', marker])])).split('\n').map(line => line.trim()).filter(Boolean)
+    const found = await Promise.all(paths.map(path => stat(isAbsolute(path) ? path : join(folder, path)).then(() => true, () => false)))
+    return found.some(Boolean)
+  }
+  /** The folder that has `branch` checked out, from Git's own list of worktrees; null when no folder has it. */
+  private async checkoutOf(cwd: string, branch: string): Promise<string | null> {
+    const listed = await this.git(cwd, ['worktree', 'list', '--porcelain', '-z'])
+    const ref = `refs/heads/${branch}`
+    for (const record of listed.split('\0\0')) {
+      const fields = record.split('\0')
+      if (fields.includes(`branch ${ref}`) && !fields.includes('bare')) return fields.find(field => field.startsWith('worktree '))?.slice('worktree '.length) ?? null
+    }
+    return null
+  }
+  /** The target's folder is held for the rest of the press, here and by the caller, or the press is refused as busy. */
+  private async holdCheckout(checkout: string, target: string, hold: BringBackInput['holdCheckout']): Promise<() => void> {
+    if (this.busy.has(checkout)) throw new BringBackRefusal('busy', `A Git action is running where ${target} is checked out, so nothing was brought back. Try again when it finishes.`, { checkout })
+    let released: (() => void) | undefined
+    try { released = await hold?.(checkout) }
+    catch (error) {
+      if (error instanceof BringBackRefusal) throw error
+      throw new BringBackRefusal('busy', error instanceof Error ? error.message : `Something else is using the folder where ${target} is checked out, so nothing was brought back.`, { checkout })
+    }
+    this.busy.set(checkout, 'action')
+    return () => { this.busy.delete(checkout); released?.(); this.dependencies.status.invalidate(checkout) }
+  }
+  /**
+   * The tree a merge of the two tips would have, from `git merge-tree --write-tree` (Git 2.38 and later), which reads
+   * and writes objects only. A conflict refuses with Git's own CONFLICT lines.
+   */
+  private async mergeTree(cwd: string, target: string, targetHead: string, branchHead: string): Promise<string> {
+    try {
+      const out = await this.git(cwd, ['merge-tree', '--write-tree', '--name-only', targetHead, branchHead])
+      const tree = out.split('\n')[0]?.trim() ?? ''
+      if (!/^[0-9a-f]{40,64}$/u.test(tree)) throw new Error(out)
+      return tree
+    } catch (error) {
+      const code = (error as { code?: unknown }).code
+      const printed = (error as { stdout?: unknown }).stdout
+      if (code === 1 && typeof printed === 'string') {
+        const said = printed.split('\n').filter(line => /^CONFLICT\b/u.test(line)).join('\n')
+        throw new BringBackRefusal('conflict', `Nothing was brought to ${target}, and ${target} is unchanged. Git found a conflict, and Sotto doesn’t resolve conflicts. Ask this thread to merge ${target} into its branch and resolve it, then try again.`,
+          { gitSaid: cutGitWords(said || printed.split('\n\n').slice(1).join('\n\n')) })
+      }
+      throw new BringBackRefusal('git', 'Git couldn’t work out the merge. Bringing changes back needs Git 2.38 or later.', { gitSaid: gitWords(error) })
+    }
+  }
+  /**
+   * Moves the target to `next`, a descendant of its tip, in the folder that has it checked out: `merge --ff-only` moves the
+   * branch and that folder's files together, and refuses rather than overwrite anything.
+   */
+  private async advance(target: string, next: string, checkout: string): Promise<void> {
+    const on = (await this.git(checkout, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')).trim()
+    if (on !== target) throw new BringBackRefusal('parent-moved', `Nothing was brought to ${target}. The folder that had ${target} checked out moved to another branch, and Sotto doesn’t switch branches.`, { checkout })
+    try { await this.git(checkout, ['merge', '--ff-only', '--no-autostash', '--quiet', next], { timeoutMs: PULL_TIMEOUT_MS }) }
+    catch (error) {
+      throw new BringBackRefusal('git', `Git refused to move ${target} where it is checked out, and that folder is as it was.`, { gitSaid: gitWords(error), checkout })
+    }
+  }
+
+  /**
    * T3's `switchRef`: a local branch is checked out; a remote ref with no tracking branch gets one; an
    * existing tracking branch is used. No dirty check of Sotto's own: Git refuses when work would be lost,
    * and that refusal is what the user sees.
@@ -517,4 +703,17 @@ function hookNameOf(argv: readonly string[]): string {
   return script.split(/[\\/]/u).pop() ?? 'hook'
 }
 const cut = (text: string): string => text.length > 72 ? `${text.slice(0, 69)}...` : text
+/** The branch a `git status --porcelain=v2 --branch -z` read names; empty for a detached HEAD. */
+function branchHeadOf(output: string): string {
+  const head = output.split('\0').find(record => record.startsWith('# branch.head '))?.slice('# branch.head '.length) ?? ''
+  return head === '(detached)' ? '' : head
+}
+const files = (count: number): string => `${count} ${count === 1 ? 'file' : 'files'}`
+/** Git's last few lines, as Git said them, with any credentials in a remote's address left out. */
+function cutGitWords(text: string): string {
+  const lines = safeRemote(text).split('\n').map(line => line.trimEnd()).filter(Boolean)
+  const kept = lines.slice(-12).join('\n')
+  return kept.length > BRING_BACK_GIT_SAID_MAX ? kept.slice(kept.length - BRING_BACK_GIT_SAID_MAX) : kept
+}
+const gitWords = (error: unknown): string => cutGitWords(error instanceof Error ? error.message : String(error))
 const safeRemote = (text: string): string => text.replace(/((?:https?|ssh):\/\/)[^\s/@]+@/giu, '$1')

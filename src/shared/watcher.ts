@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
+import { worktreeMadeFromSchema } from './bringChangesBack'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
@@ -263,7 +264,10 @@ export const watcherToolSchemas = {
     // move it makes just before the start, which is all a paired host is sent. Watcher never names a move itself.
     input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt,
-      fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional() }).strict(),
+      fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional(),
+      // With `fromMove`, the thread whose branch it was, which the worker's worktree keeps so its commits can be brought back
+      // there (#1030): `host` only when that thread is on another machine than the worker. Sotto's, like the move.
+      madeFrom: worktreeMadeFromSchema.optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
       // In memory only, as `placement` is.

@@ -175,6 +175,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
   if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
+  if (options.crossMachineEnabled === true) agentHost.allowBringBack()
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
@@ -270,7 +271,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
       // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033).
-      ...placingWatcher && branchMoves ? { branchMoves } : {} })
+      ...placingWatcher && branchMoves ? { branchMoves } : {},
+      // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
+      ...crossMachine ? { bringBack: true } : {} })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
@@ -406,6 +409,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
+    ...(crossMachine && gitStatus ? { bringBack: true } : {}),
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.
@@ -416,5 +420,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, branchMoves, prepareForShutdown, close }
 }

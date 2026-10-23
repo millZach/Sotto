@@ -14,6 +14,7 @@ import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitor
 import { gitStatusSchema } from './gitStatus'
 import { agentBabysitEndedSchema, agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
+import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
 import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
@@ -419,6 +420,9 @@ export const agentWorktreeSchema = z.object({
   /** A worker started from a thread's branch (#1033): the move's incoming ref this worktree was made from, removed with
    * the worktree (ADR-0082 decision 3). */
   incomingRef: z.string().max(512).optional(),
+  /** A worker started from a thread's branch (#1033): that thread, so this worktree's commits can be brought back to its
+   * branch (#1030). Absent for any other worktree, and from older hosts. */
+  madeFrom: worktreeMadeFromSchema.optional().catch(undefined),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentWorkingCopySelectionSchema = z.object({
@@ -476,6 +480,16 @@ export const agentThreadSchema = z.object({
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
   gitAction: gitActionProgressSchema.optional(),
+  /**
+   * What the last Bring changes to <branch> press did here (#1030): the merge-commit question it holds, or its outcome.
+   * Sotto's record, never saved. A value this build cannot read drops the field rather than the thread; absent from older hosts.
+   */
+  bringBack: bringBackSchema.optional().catch(undefined),
+  /**
+   * What the last bring-back of a thread on another machine did to this thread's branch (#1030): the question it holds or
+   * its outcome, naming that thread in `from`. Kept here because this thread's host ran Git. Never saved, as `bringBack`.
+   */
+  broughtBack: bringBackSchema.optional().catch(undefined),
   /** The pull requests linked to this thread: the one its Git action created, ones linked by hand, one checked out
    * from the branch picker. Newest last; the Pull request surface lists them (ADR-0027). */
   pullRequests: z.array(gitPullRequestLinkSchema).max(GIT_PULL_REQUEST_LINKS_MAX).optional(),
@@ -1181,6 +1195,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     /** A worker started from a thread's branch (#1033): the move that landed it in this project's incoming ref, which the
      * thread's new worktree is made from. Watcher's and delegation's own starts only; a person's create-thread is refused. */
     startFromMove: z.uuid().optional(),
+    /** With `startFromMove`, the thread whose branch it was, kept on the new worktree so its commits can be brought back to
+     * that branch (#1030). Watcher's own starts only. */
+    madeFrom: worktreeMadeFromSchema.optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
   /**
    * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes
@@ -1218,6 +1235,17 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     filePaths: z.array(z.string().min(1).max(4_096)).max(2_000).optional(), allowDefaultBranch: z.boolean().optional() }).strict(),
   /** `git pull --ff-only` on the thread's folder; a diverged branch is refused. */
   z.object({ type: z.literal('git-pull'), threadId: id }).strict(),
+  /**
+   * Bring this thread's commits to the branch of the thread it began from (#1030): fast-forward that branch, or make a merge
+   * commit on it. Without `mergeCommit` a needed merge commit is asked about and nothing changes; `mergeCommit` names the
+   * question it answers yes to, by that press's `actionId`. A conflict or uncommitted work is refused.
+   */
+  z.object({ type: z.literal('bring-changes-back'), threadId: id, actionId: z.uuid(), mergeCommit: z.uuid().optional(),
+    /**
+     * Only from a desktop, to the host of the thread the commits go to, for a child on another machine: `threadId` then
+     * names that thread, and the child's branch is already in the incoming ref of `away.moveId` there.
+     */
+    away: bringBackAwaySchema.optional() }).strict(),
   /** Check out a branch in the thread's folder, creating it from HEAD when `create` is set; a remote ref gets a tracking branch. */
   z.object({ type: z.literal('git-switch-branch'), threadId: id, ref: z.string().min(1).max(512), create: z.boolean().optional() }).strict(),
   /** `git init` in a thread's folder that is not a repository yet. */

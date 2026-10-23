@@ -293,6 +293,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/branchToolbar.css',
       'src/renderer/src/agents/gitActionButton.css',
+      'src/renderer/src/agents/bringChangesBack.css',
       'src/renderer/src/agents/newThread.css',
       'src/renderer/src/agents/folderBrowser.css',
       'src/renderer/src/agents/providerRecovery.css',

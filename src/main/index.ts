@@ -915,6 +915,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // A child on another machine brings its changes back by moving its branch first (#1030), only while Work across machines is on.
+  if (localRuntime.branchMoves) hostRouter.useBranchMoves(localRuntime.branchMoves)
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
