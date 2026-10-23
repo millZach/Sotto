@@ -143,8 +143,12 @@ describe('the record of each server, while Sotto writes it and a sweep reads it'
       // A write a Sotto that has gone never finished, and one this Sotto is still making.
       await writeFile(join(ledger, `900103.json.${owner}.1.tmp`), '{"pid":900103')
       await writeFile(join(ledger, `900104.json.${process.pid}.1.tmp`), '{"pid":900104')
-      await endServersLeftBehind(ledger)
+      // Nothing runs at these PIDs. The real table is PowerShell's CIM query, which on a loaded Windows runner took the
+      // whole 15 s test limit to answer (#1356, #1376); what this tests is the records, so the table is scripted.
+      let tableReads = 0
+      await endServersLeftBehind(ledger, undefined, () => { tableReads++; return Promise.resolve([]) })
       expect((await readdir(ledger)).sort()).toEqual(['900101.json', `900104.json.${process.pid}.1.tmp`])
+      expect(tableReads).toBe(process.platform === 'win32' ? 1 : 0)
     } finally { await rm(ledger, { recursive: true, force: true }) }
   })
 })
