@@ -139,7 +139,7 @@ it.each(['codex', 'grok'] as const)('%s treats a failed pre-dispatch authority r
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
-    await f.script(provider === 'codex' ? { delay: { method: 'thread/read', ms: 3000 } } : { ignoreHistory: true })
+    if (provider === 'codex') await f.script({ delay: { method: 'thread/read', ms: 3000 } }); else await f.driver.delayNextAck('_x.ai/session/updates')
     await expect(f.host.execute({ type: 'send', commandId: 'unsent-command', threadId: id, messageId: 'unsent-message', text: 'Must remain a draft', expectedLastUserMessageId: null })).rejects.toThrow(/verif|read|history/i)
     expect((await f.driver.requests()).filter(request => request.method === (provider === 'codex' ? 'turn/start' : 'session/prompt'))).toHaveLength(0)
   } finally { await f.script({}); await f.cleanup() }
