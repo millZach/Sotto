@@ -159,7 +159,10 @@ it('pushes Can answer changes to each connected phone without reconnecting', asy
     for (const peer of peers) peer.messages.length = 0
     await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: true })
     await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: true } } })
-    await expect.poll(() => peers[1]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
+    // The other phone keeps its own answer. Its state did not change, so it may get no push at all (a host sends no
+    // shell identical to the last one it wrote); any push it does get still says it may not answer.
+    expect(peers[1]!.messages.filter(message => message.event === 'shell')
+      .every(message => (message as { state?: { clientCapabilities?: { mayAnswer?: boolean } } }).state?.clientCapabilities?.mayAnswer === false)).toBe(true)
     for (const peer of peers) peer.messages.length = 0
     await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: false })
     await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
