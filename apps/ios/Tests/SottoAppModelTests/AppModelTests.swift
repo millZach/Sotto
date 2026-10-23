@@ -460,6 +460,17 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.threadsBadge, 0)
         XCTAssertTrue(model.focusThreads().questions.isEmpty)
         XCTAssertTrue(model.focusThreads(query: "branch").isEmpty)
+        // A thread that finished unseen counts, unless it is the one open here; another computer's filter shows nothing.
+        var unseen = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(HostConnection.shell)) as? [String: Any])
+        var host = try XCTUnwrap(unseen["host"] as? [String: Any])
+        var threads = try XCTUnwrap(host["threads"] as? [[String: Any]])
+        threads[0]["finishedUnread"] = true; host["threads"] = threads; unseen["host"] = host
+        try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: unseen))))
+        XCTAssertEqual(model.threadsBadge, 1)
+        XCTAssertEqual(model.focusThreads().unreadFinishedCount, 1)
+        XCTAssertEqual(model.focusThreads(opened: ref).unreadFinishedCount, 0)
+        XCTAssertFalse(model.focusThreads(show: .only(ref.hostID)).isEmpty)
+        XCTAssertTrue(model.focusThreads(show: .only("another computer")).isEmpty)
         model.phase(.background)
     }
 

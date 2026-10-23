@@ -698,7 +698,7 @@ private struct WatcherMessage: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.message == b.message }
     var body: some View {
         if message.role == "user" {
-            MarkdownText(text: message.text)
+            MarkdownText(text: message.text).equatable()
                 .foregroundStyle(Palette.bubbleInk)
                 .padding(.horizontal, Space.s4)
                 .padding(.vertical, Space.dense(Space.s3, density))
@@ -716,7 +716,7 @@ private struct WatcherMessage: View, Equatable {
                         .accessibilityHidden(true)
                     Text(time.map { "Watcher · \($0)" } ?? "Watcher").font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 }
-                MarkdownText(text: message.text).foregroundStyle(Palette.ink)
+                MarkdownText(text: message.text).equatable().foregroundStyle(Palette.ink)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

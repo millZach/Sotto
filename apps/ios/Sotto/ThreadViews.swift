@@ -781,7 +781,7 @@ private struct MessageView: View, Equatable {
     private func content(ink: ThemeRole) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if !message.text.isEmpty {
-                MarkdownText(text: message.text).foregroundStyle(ink)
+                MarkdownText(text: message.text).equatable().foregroundStyle(ink)
             }
             // A user's photo its computer keeps is drawn above; any other image is named.
             ForEach((message.attachments ?? []).filter { message.role != "user" || !$0.hasPreview }) { attachment in

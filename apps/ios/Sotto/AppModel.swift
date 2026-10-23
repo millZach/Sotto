@@ -44,7 +44,7 @@ extension AppModel {
     }
     /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
     func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
-        let key = Listed.Groups(show: show, query: query, opened: opened)
+        let key = Listed.GroupKey(show: show, query: query, opened: opened)
         if let kept = listed.groups[key] { return kept }
         // Each search typed is its own key; a list that stays the same while the user types keeps only the latest few.
         if listed.groups.count >= 8 { listed.groups = [:] }
@@ -56,8 +56,11 @@ extension AppModel {
     /// them and have not been opened on either device (ADR-0046). A delegated thread counts only through the row that
     /// stands for it (ADR-0081).
     var threadsBadge: Int {
+        if let kept = listed.badge, kept.opened == selected { return kept.count }
         let groups = focusThreads(opened: selected)
-        return groups.requestCount + groups.unreadFinishedCount
+        let count = groups.requestCount + groups.unreadFinishedCount
+        listed.badge = (opened: selected, count: count)
+        return count
     }
     /// Whether Watcher works with this thread now: the owl after its provider's logo, and the line in its reply box.
     func watchedByWatcher(_ ref: ThreadRef) -> Bool {
@@ -913,9 +916,10 @@ struct HeldDetail {
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
     private struct Listed {
-        struct Groups: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef? }
-        var groups: [Groups: FocusThreads] = [:]
+        struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef? }
+        var groups: [GroupKey: FocusThreads] = [:]
         var refs: Set<String>?
+        var badge: (opened: ThreadRef?, count: Int)?
         var agents: [ThreadRef: AgentsCount?] = [:]
     }
     @Published private(set) var pending: [PendingOperation] = []
