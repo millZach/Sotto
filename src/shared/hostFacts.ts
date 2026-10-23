@@ -145,11 +145,12 @@ export type HostMachineReport = z.infer<typeof hostMachineReportSchema>
  * one Sotto thread ID on both sides (the desktop names the thread in its create-thread), so the rule is keyed by it: a
  * reserved thread the host echoes in `placedThreadIds` is the host's to count, and every other is added.
  *
- * `reserved` is read before the host is asked, so the two are one observation: a start still on its way then either
- * reaches the host before it answers, and is echoed or running there, or it does not, and is added here. Nothing is read
- * from the desktop's later copy of the host, which could show a start running that the answer's counts never saw. The
- * price is an extra count, never a lost one: a start whose turn began on the host before it answered is counted there as
- * running and here as placed, until the desktop's own record of the start catches up.
+ * `reserved` is read before the host is asked and again once it has answered, so it holds every start on its way at any
+ * moment of the read, a start admitted while the host was sampling included: each either reached the host before it
+ * counted, and is echoed or running there, or it did not, and is added here. Nothing is read from the desktop's later copy
+ * of the host, which could show a start running that the answer's counts never saw. The price is an extra count, never a
+ * lost one: a start whose turn began on the host before it answered is counted there as running and here as placed,
+ * until the desktop's own record of the start catches up. A start in both readings counts once.
  *
  * An answer without the IDs (a host built before them) cannot say which starts it holds, so every reservation is added
  * to its count: a start it already counts may count twice, and none is missed. A host's unknown count stays unknown.

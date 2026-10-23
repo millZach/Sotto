@@ -3526,8 +3526,9 @@ ${operation.draftId}`)
     const live = this.options.crossMachine === true
     const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
     // A paired machine's count gains the starts this desktop has admitted there that it has not counted. Those starts are
-    // read before the host is asked, so they and its answer are one observation (`placedNotStartedWith`). This
-    // computer's own report already holds this Watcher's starts here (`startsNotYetSent`).
+    // read before the host is asked and again once it has answered, so every start on its way at any moment of the read
+    // is in them: one the answer missed is added, never lost (`placedNotStartedWith`). This computer's own report already
+    // holds this Watcher's starts here (`startsNotYetSent`).
     const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
@@ -3537,9 +3538,11 @@ ${operation.draftId}`)
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
       try {
-        const reserved = live && remote !== undefined ? this.startsNotYetSentOn(remote) : undefined
+        const before = live && remote !== undefined ? this.startsNotYetSentOn(remote) : undefined
         const report = await facts()
         if (!report) return unknown(older)
+        // A start admitted while the host was sampling may have reached it after it counted, or not at all yet.
+        const reserved = before === undefined ? undefined : [...before, ...this.startsNotYetSentOn(remote!)]
         return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }

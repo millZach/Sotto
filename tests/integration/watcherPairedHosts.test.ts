@@ -252,6 +252,27 @@ it('reads a paired machine’s starts on their way before asking it, so a start 
   expect(machine).toMatchObject({ runningThreads: 0, placedNotStarted: 1 })
 })
 
+it('counts a start admitted for a paired machine while that machine was being asked for its count (#1311)', async () => {
+  const f = await master(undefined, false, true)
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
+  let held = 0
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  // While the host samples its load, Watcher admits a start there that is held before it is sent.
+  let starting: Promise<unknown> | undefined
+  const facts = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementationOnce(async () => {
+    starting = f.call('start_thread', f.start())
+    await vi.waitFor(() => expect(held).toBe(1))
+    return facts()
+  })
+  const [, machine] = await machines()
+  // The answer was taken before the host had it, and the desktop read none before asking: it still counts once.
+  expect(machine).toMatchObject({ runningThreads: 0, placedNotStarted: 1 })
+  gate.resolve()
+  expect(await starting).toMatchObject({ status: 'ok' })
+})
+
 it.each([
   ['timed out', true],
   ['lost its connection', false],
