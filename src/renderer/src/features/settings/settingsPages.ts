@@ -146,6 +146,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Themes', section: 'settings-appearance', words: 'color colour look' },
     { label: 'Color scheme', section: 'settings-appearance', words: 'dark light' },
     { label: 'Effort color', section: 'settings-appearance' },
+    { label: 'Creature', section: 'settings-appearance', words: 'claude bot sotto composer' },
     { label: 'Contrast', section: 'settings-appearance' },
     { label: 'Reduced motion', section: 'settings-appearance', words: 'animation' },
     { label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },

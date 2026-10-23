@@ -7,6 +7,7 @@ import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/th
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
+import { CreatureChoice } from './themes/CreatureChoice'
 import { EffortColorChoice } from './themes/EffortColor'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
@@ -98,6 +99,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
           <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
 
           <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, 'Effort color saved.')} />
+
+          <CreatureChoice value={settings.creature} onChoose={creature => void onSave({ creature }, 'Creature saved.').catch(() => false)} />
 
           <div className="settings-rows">
             <AppearanceSlider

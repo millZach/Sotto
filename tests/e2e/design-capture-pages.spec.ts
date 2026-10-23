@@ -185,7 +185,10 @@ test.describe('authoritative design-review captures', () => {
           await capturePage(page, 'settings-agents.png', { category: 'settings', state })
           continue
         }
+        // Appearance's Creature previews walk on a frame loop the capture's settling step cannot freeze: hold them still.
+        if (state === 'appearance') await page.emulateMedia({ reducedMotion: 'reduce' })
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
+        if (state === 'appearance') await page.emulateMedia({ reducedMotion: null })
       }
 
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Cleanup', exact: true }).click()

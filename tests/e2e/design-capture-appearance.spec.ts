@@ -92,7 +92,10 @@ test.describe('authoritative design-review captures', () => {
       ] as const) {
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
+        // Appearance's Creature previews walk on a frame loop the capture's settling step cannot freeze: hold them still.
+        if (state === 'appearance') await page.emulateMedia({ reducedMotion: 'reduce' })
         await captureSection(page, section, `settings-${state}-light.png`, { category: 'settings', state, theme: 'light' })
+        if (state === 'appearance') await page.emulateMedia({ reducedMotion: null })
       }
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByLabel('Paste delay').fill('10')
@@ -121,6 +124,8 @@ test.describe('authoritative design-review captures', () => {
       await setAppearance(page, { appearance: 'system', lightTheme: DESIGN_CAPTURE_DEFAULT_THEME, darkTheme: DESIGN_CAPTURE_DEFAULT_THEME }, 'light')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       const section = page.locator('#settings-appearance')
+      // The Creature previews walk on a frame loop the capture's settling step cannot freeze: hold them still.
+      await page.emulateMedia({ reducedMotion: 'reduce' })
       for (const theme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: theme })
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
