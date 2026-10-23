@@ -7,8 +7,8 @@ import { unlistedStatus } from './WatcherWatched'
 import { watchedRows } from './watcherRoom'
 
 /**
- * Watcher's picture (#1339, Zach's pick on October 22, 2026: A, the constellation): what it is built from, where each
- * part goes, and which messages move. Pure, so it is tested without a window. Everything comes from what the window
+ * Watcher's picture (#1339): what it is built from, the path a message takes, and which messages move. Where each part
+ * goes is `pictureGrove.ts`. Pure, so it is tested without a window. Everything comes from what the window
  * already holds, the room's state and the threads' own facts, and from the merge turns main reads only while the
  * picture shows; nothing a thread or the user said is read here.
  */
@@ -235,120 +235,14 @@ export function buildPicture(input: {
   }
 }
 
-// ---------- Layout ----------
-
-/** One line per thread (Watcher's pick for the build): this tall, and at least this wide a column. */
-export const PICTURE_ROW = 26
-const CLUSTER_HEAD = 26
-const CLUSTER_PAD = 8
-const CELL_MIN = 150
-/** A node narrower than this leaves its pull request to the merge turns and its card. */
-export const PICTURE_CHIP_MIN = 190
-const MARGIN = 14
-const CLUSTER_GAP = 14
-/** Room kept under the stacked clusters for You, when Watcher is at the top. */
-const YOU_BAND = 40
-/** Watcher's mark, its name and You stand together in the middle column, You this far under Watcher. */
-const YOU_UNDER_OWL = 74
-/** Below this the picture is one column, Watcher at the top: a thread is open beside Watcher, or the window is narrow. */
-export const PICTURE_TWO_SIDES_MIN = 640
-
-export interface PlacedNode { readonly key: string; readonly x: number; readonly y: number; readonly width: number; readonly mirror: boolean }
-export interface PlacedCluster { readonly key: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly mirror: boolean; readonly nodes: readonly PlacedNode[] }
-export interface PictureLayout {
-  readonly width: number
-  readonly height: number
-  readonly owl: { readonly x: number; readonly y: number }
-  readonly you: { readonly x: number; readonly y: number }
-  readonly oneColumn: boolean
-  readonly clusters: readonly PlacedCluster[]
-  /** Every placed node by key, for lines and blobs. */
-  readonly at: ReadonlyMap<string, PlacedNode>
-}
-
-const clusterHeight = (count: number, columns: number) => CLUSTER_HEAD + Math.ceil(count / columns) * PICTURE_ROW + CLUSTER_PAD
+// ---------- Paths ----------
 
 /**
- * Where everything goes. Watcher sits in the middle with the clusters to either side, those on the left drawn mirrored
- * so every thread's dot faces Watcher and its line never crosses its own title. A cluster takes as many columns of
- * threads as it needs to fit the height, so fifteen or twenty threads in one project still read at the smallest window;
- * past that the picture scrolls. Narrower than PICTURE_TWO_SIDES_MIN, Watcher goes to the top and the clusters stack under it.
+ * Points along a curve from `from` to `to`, for a message's path: leaving level and arriving level, or, `vertical`,
+ * leaving and arriving upright.
  */
-export function layoutPicture(clusters: readonly PictureCluster[], width: number, viewHeight: number): PictureLayout {
-  const at = new Map<string, PlacedNode>()
-  const placeNodes = (cluster: PictureCluster, x: number, y: number, boxWidth: number, columns: number, mirror: boolean): PlacedNode[] => {
-    const rows = Math.ceil(cluster.nodes.length / columns), cell = boxWidth / columns
-    return cluster.nodes.map((node, index) => {
-      // Column by column from the one nearest Watcher, so the threads that need the user sit closest to it.
-      const near = Math.floor(index / rows), row = index % rows
-      const dot = mirror ? x + boxWidth - 12 - near * cell : x + 12 + near * cell
-      const placed = { key: node.key, x: dot, y: y + CLUSTER_HEAD + row * PICTURE_ROW + PICTURE_ROW / 2, width: cell - 22, mirror }
-      at.set(node.key, placed)
-      return placed
-    })
-  }
-  if (width < PICTURE_TWO_SIDES_MIN) {
-    const owl = { x: width / 2, y: 40 }
-    const boxWidth = Math.max(120, width - MARGIN * 2), columns = Math.max(1, Math.floor(boxWidth / CELL_MIN))
-    let y = 92
-    const placed = clusters.map(cluster => {
-      const height = clusterHeight(cluster.nodes.length, columns)
-      const box = { key: cluster.key, x: MARGIN, y, width: boxWidth, height, mirror: false, nodes: placeNodes(cluster, MARGIN, y, boxWidth, columns, false) }
-      y += height + CLUSTER_GAP
-      return box
-    })
-    const height = Math.max(viewHeight, y + YOU_BAND)
-    return { width, height, owl, you: { x: width / 2, y: height - 20 }, oneColumn: true, clusters: placed, at }
-  }
-  const gap = Math.min(96, Math.max(64, width * 0.07))
-  const centre = width / 2
-  const sideWidth = Math.max(CELL_MIN, centre - gap - MARGIN)
-  const most = Math.max(1, Math.floor(sideWidth / CELL_MIN))
-  const room = viewHeight - MARGIN * 2
-  // The fewest columns that let both sides fit, the clusters shared out to keep the sides even.
-  const share = (columns: number) => {
-    const sides: { clusters: PictureCluster[]; height: number }[] = [{ clusters: [], height: 0 }, { clusters: [], height: 0 }]
-    for (const cluster of [...clusters].sort((a, b) => b.nodes.length - a.nodes.length)) {
-      const side = sides[0]!.height <= sides[1]!.height ? sides[0]! : sides[1]!
-      side.height += (side.clusters.length ? CLUSTER_GAP : 0) + clusterHeight(cluster.nodes.length, columns)
-      side.clusters.push(cluster)
-    }
-    // Each side keeps the clusters' own order, biggest first.
-    for (const side of sides) side.clusters.sort((a, b) => clusters.indexOf(a) - clusters.indexOf(b))
-    return sides
-  }
-  let columns = 1, sides = share(1)
-  while (columns < most && Math.max(sides[0]!.height, sides[1]!.height) > room) sides = share(++columns)
-  const tallest = Math.max(sides[0]!.height, sides[1]!.height)
-  const height = Math.max(viewHeight, tallest + MARGIN * 2)
-  // Watcher, its name and You as one group in the middle of the height; the clusters centre on Watcher.
-  const owl = { x: centre, y: Math.max(36, height / 2 - YOU_UNDER_OWL / 2) }
-  const placed: PlacedCluster[] = []
-  sides.forEach((side, index) => {
-    const mirror = index === 0
-    const x = mirror ? MARGIN : centre + gap
-    let y = Math.min(Math.max(MARGIN, height / 2 - side.height / 2), height - MARGIN - side.height)
-    for (const cluster of side.clusters) {
-      const clusterH = clusterHeight(cluster.nodes.length, columns)
-      placed.push({ key: cluster.key, x, y, width: sideWidth, height: clusterH, mirror, nodes: placeNodes(cluster, x, y, sideWidth, columns, mirror) })
-      y += clusterH + CLUSTER_GAP
-    }
-  })
-  return { width, height, owl, you: { x: centre, y: owl.y + YOU_UNDER_OWL }, oneColumn: false, clusters: placed, at }
-}
-
-/** The line from Watcher to a thread's dot, as an SVG path and as points a blob travels through. */
-export function edgePath(from: { readonly x: number; readonly y: number }, to: { readonly x: number; readonly y: number }, oneColumn: boolean): string {
-  if (oneColumn) {
-    const midY = (from.y + to.y) / 2
-    return `M${from.x},${from.y} C${from.x},${midY} ${to.x},${midY} ${to.x},${to.y}`
-  }
-  const c1 = from.x + (to.x - from.x) * 0.45, c2 = to.x - (to.x - from.x) * 0.25
-  return `M${from.x},${from.y} C${c1},${from.y} ${c2},${to.y} ${to.x},${to.y}`
-}
-/** Points along the same curve as `edgePath`, from `from` to `to`, for a blob's path. */
-export function edgePoints(from: { readonly x: number; readonly y: number }, to: { readonly x: number; readonly y: number }, oneColumn: boolean, steps = 16): { x: number; y: number }[] {
-  const [p1, p2] = oneColumn
+export function edgePoints(from: { readonly x: number; readonly y: number }, to: { readonly x: number; readonly y: number }, vertical: boolean, steps = 16): { x: number; y: number }[] {
+  const [p1, p2] = vertical
     ? [{ x: from.x, y: (from.y + to.y) / 2 }, { x: to.x, y: (from.y + to.y) / 2 }]
     : [{ x: from.x + (to.x - from.x) * 0.45, y: from.y }, { x: to.x - (to.x - from.x) * 0.25, y: to.y }]
   return Array.from({ length: steps + 1 }, (_, index) => {
