@@ -524,7 +524,7 @@ export class DesktopHostRouter {
   /**
    * Whether the window shows a thread now (ADR-0046): it has the focus and one of its panes, or the Tools panel's pinned
    * thread, is that thread. `threadId` is the window's ID for it, as published. Desktop notifications ask this so a
-   * thread the user is looking at never notifies (ADR-0112).
+   * thread the user is looking at never notifies (ADR-0114).
    */
   windowShows(threadId: string): boolean {
     if (!this.windowFocused) return false

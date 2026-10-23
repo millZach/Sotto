@@ -357,7 +357,7 @@ export function createSottoBridge(
   opencodeHostsEnabled = false,
   /** Main's watch on itself and Record a minute (ADR-0098): only while the `main-freeze` Owl feature is on. */
   mainActivityEnabled = false,
-  /** Notifications when a thread has finished or needs the user (ADR-0112): only while the Owl feature is on, on a Mac that can show them. */
+  /** Notifications when a thread has finished or needs the user (ADR-0114): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
@@ -420,7 +420,7 @@ export function createSottoBridge(
       command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
     }) } : {}),
-    // Notifications (ADR-0112): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
+    // Notifications (ADR-0114): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
       test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
       onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, z.null(), () => listener()),

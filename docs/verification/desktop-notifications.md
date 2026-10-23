@@ -1,6 +1,6 @@
 # Notifications on a Mac
 
-Checked on an Apple silicon Mac on October 22, 2026: in the built app over the E2E host (`tests/e2e/desktop-notifications.spec.ts`), and against macOS itself with a throwaway Electron app. Drake Morey asked for a notification when a thread has finished everything and when one needs an answer. ADR-0112 records the decision. It is an Owl feature (`desktop-notifications`) and shows on macOS only.
+Checked on an Apple silicon Mac on October 22, 2026: in the built app over the E2E host (`tests/e2e/desktop-notifications.spec.ts`), and against macOS itself with a throwaway Electron app. Drake Morey asked for a notification when a thread has finished everything and when one needs an answer. ADR-0114 records the decision. It is an Owl feature (`desktop-notifications`) and shows on macOS only.
 
 ## What was done in the built app
 

@@ -361,7 +361,7 @@ export interface SottoBridge {
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
   /** Main's watch on itself and Record a minute (ADR-0098), present only while the `main-freeze` Owl feature is on. */
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
-  /** Notifications when a thread has finished or needs the user (ADR-0112), present only while the Owl feature is on, on a Mac that can show them. */
+  /** Notifications when a thread has finished or needs the user (ADR-0114), present only while the Owl feature is on, on a Mac that can show them. */
   readonly notifications?: import('./desktopNotifications').NotificationsBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge

@@ -31,14 +31,14 @@ const defaultTimers = {
   clear: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
-/** The notification's title: the thread's title on one line, at most `ALERT_TITLE_MAX` characters (ADR-0112). */
+/** The notification's title: the thread's title on one line, at most `ALERT_TITLE_MAX` characters (ADR-0114). */
 export function alertTitle(title: string): string {
   const characters = [...title.replace(/\s+/g, ' ').trim()]
   if (characters.length === 0) return 'A thread'
   return characters.length <= ALERT_TITLE_MAX ? characters.join('') : `${characters.slice(0, ALERT_TITLE_MAX - 1).join('').trimEnd()}…`
 }
 
-/** One plain sentence, as the iPhone's alert says it; never a question's, a reply's or a path's words (ADR-0112). */
+/** One plain sentence, as the iPhone's alert says it; never a question's, a reply's or a path's words (ADR-0114). */
 export function alertBody(alert: ThreadAlert): string {
   const agent = alert.providerId ? PROVIDER_LABELS[alert.providerId] : 'The agent'
   const what = alert.kind === 'finished' ? 'finished'
@@ -47,7 +47,7 @@ export function alertBody(alert: ThreadAlert): string {
 }
 
 /**
- * Shows thread alerts as system notifications (ADR-0112). A notification only names the thread and opens it when
+ * Shows thread alerts as system notifications (ADR-0114). A notification only names the thread and opens it when
  * pressed; it never answers or approves anything (ADR-0004), so it has no actions and no reply, and the OS picks the sound.
  */
 export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopNotifier {
@@ -72,7 +72,7 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
 
   return {
     async notify(alert) {
-      // Never rejects: a notification that cannot be made is no one's error to handle (ADR-0112).
+      // Never rejects: a notification that cannot be made is no one's error to handle (ADR-0114).
       try {
         if (disposed || !options.isSupported()) return
         let switches: Awaited<ReturnType<DesktopNotifierOptions['switches']>>

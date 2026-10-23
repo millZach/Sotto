@@ -14,7 +14,7 @@ const TEST_ANSWERS: Record<NotificationTestResult, string> = {
   unsupported: 'This computer cannot show notifications.',
 }
 
-/** Settings → Application → Notifications (ADR-0112): shown only while the window shows notifications. */
+/** Settings → Application → Notifications (ADR-0114): shown only while the window shows notifications. */
 export function NotificationSettings({ settings, onSave }: {
   readonly settings: Pick<AppSettings, 'notifyNeedsYou' | 'notifyFinished'>
   readonly onSave: (patch: SettingsPatch) => unknown

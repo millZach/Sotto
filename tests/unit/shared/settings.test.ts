@@ -493,7 +493,7 @@ describe('settings', () => {
     expect(parseSettings({ dictationEnabled: 'no' }).dictationEnabled).toBe(true)
   })
 
-  it('reads the two notification switches on by default and keeps a saved off, recovering anything else (ADR-0112)', () => {
+  it('reads the two notification switches on by default and keeps a saved off, recovering anything else (ADR-0114)', () => {
     expect(parseSettings({}).notifyNeedsYou).toBe(true)
     expect(parseSettings({}).notifyFinished).toBe(true)
     expect(parseSettings({ notifyNeedsYou: false, notifyFinished: false })).toMatchObject({ notifyNeedsYou: false, notifyFinished: false })

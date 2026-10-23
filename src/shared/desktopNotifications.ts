@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { ProviderId } from './agents'
 
 /**
- * Passed to the main window's preload only while desktop notifications are on here (ADR-0112): Owl, macOS, and a system
+ * Passed to the main window's preload only while desktop notifications are on here (ADR-0114): Owl, macOS, and a system
  * that can show them. Without it there is no bridge and Settings has no Notifications group.
  */
 export const DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT = '--sotto-desktop-notifications-enabled'
@@ -48,7 +48,7 @@ export const ALERT_SETTLE_MS = 3_000
 /**
  * The same wait for a thread that delegated work. A delegated thread's answer goes back to it as a turn Sotto sends later,
  * and that send is not in the queue any client sees (it waits for the thread's history and any send ahead of it, and tries
- * again after ten seconds), so a thread that delegated waits long enough for one retry before it is told finished (ADR-0112).
+ * again after ten seconds), so a thread that delegated waits long enough for one retry before it is told finished (ADR-0114).
  */
 export const ALERT_DELEGATION_SETTLE_MS = 15_000
 /** The longest title a notification carries; macOS cuts a whole notification at 256 bytes. */

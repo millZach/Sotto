@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The seam of desktop notifications (ADR-0112): the real router publishes the joined state of this computer's host and a
+ * The seam of desktop notifications (ADR-0114): the real router publishes the joined state of this computer's host and a
  * paired host, the real tracker reads it and the real notifier makes the notification. Only Electron's `Notification` is
  * a fake, so every field the tracker reads must survive the router's join, in window-space keys.
  */
@@ -47,7 +47,7 @@ function host(hostId: string, kind: 'local' | 'remote', threads: AgentThread[]) 
 
 interface Made { readonly options: Record<string, unknown>; press(): void }
 
-describe('desktop notifications across the router, tracker and notifier (ADR-0112)', () => {
+describe('desktop notifications across the router, tracker and notifier (ADR-0114)', () => {
   let router: DesktopHostRouter, tracker: ThreadAlerts, notifier: DesktopNotifier
   let made: Made[], opened: string[], pending: Promise<void>[]
   let switches: { needsYou: boolean; finished: boolean }

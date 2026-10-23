@@ -578,7 +578,7 @@ describe('desktop host routing', () => {
       expect(remote.observe).not.toHaveBeenCalled()
     } finally { router.dispose() }
   })
-  it('says the window shows a thread only while it has the focus and one of its panes is that thread, on any host (ADR-0112)', async () => {
+  it('says the window shows a thread only while it has the focus and one of its panes is that thread, on any host (ADR-0114)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     for (const f of [local, remote]) router.add(f.connection)
     try {

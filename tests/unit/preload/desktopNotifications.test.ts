@@ -5,7 +5,7 @@ vi.mock('electron', async () => (await import('../../fixtures/preloadElectron'))
 import { createSottoBridge, createSottoWidgetBridge, exposeRendererBridge } from '../../../src/preload'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST } from '../../../src/shared/desktopNotifications'
 
-describe('Notifications preload (ADR-0112)', () => {
+describe('Notifications preload (ADR-0114)', () => {
   it('exists only where main turned notifications on, never on the widget, and asks main for a validated test', async () => {
     const ipc = preloadElectron().ipcRenderer
     expect(createSottoBridge(ipc, 'darwin').notifications).toBeUndefined()

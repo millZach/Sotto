@@ -653,7 +653,7 @@ export class WatcherService implements WatcherControlHooks {
    * Whether Watcher watches this thread, on this computer or a paired host: it is under a standing watch, or takes part in
    * an active Watcher request, as the glossary's **Watched thread** says. Desktop notifications ask it: Watcher keeps a
    * watched thread going and brings its questions and permissions, so that thread's finish is not the last word and it is
-   * never told as finished (ADR-0112).
+   * never told as finished (ADR-0114).
    */
   watches(target: WatcherThreadTarget): boolean {
     const wanted = key(target), record = this.view()

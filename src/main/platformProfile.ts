@@ -55,7 +55,7 @@ export interface PlatformProfile {
   readonly pasteUsesWarmHelper: boolean
   readonly requiresMediaAccessGate: boolean
   /**
-   * Whether the desktop shows a system notification when a thread needs the user or has finished everything (ADR-0112).
+   * Whether the desktop shows a system notification when a thread needs the user or has finished everything (ADR-0114).
    * macOS only, so far: Windows and Linux stay as they are until the feature is checked there.
    */
   readonly desktopNotifications: boolean

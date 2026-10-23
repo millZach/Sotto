@@ -4,7 +4,7 @@ import { registerNotificationIpc } from '../../../src/main/notifications/notific
 import { NOTIFICATION_TEST } from '../../../src/shared/desktopNotifications'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
-describe('the window\'s test notification (ADR-0112)', () => {
+describe('the window\'s test notification (ADR-0114)', () => {
   it('registers nothing where notifications are off, so no window can ask for one', () => {
     const { ipc, handlers, main } = ipcRegistry()
     registerNotificationIpc(ipc, null, () => [main])()

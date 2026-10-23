@@ -231,9 +231,9 @@ export interface AppSettings {
   showWidgetWhenIdle: boolean
   /** Off when the user dictates with another app: no hotkey, speech model, widget or Dictate room (Owl, ADR-0107). */
   dictationEnabled: boolean
-  /** A notification when a thread asks a question or for permission and the window is not showing it (Owl, macOS, ADR-0112). */
+  /** A notification when a thread asks a question or for permission and the window is not showing it (Owl, macOS, ADR-0114). */
   notifyNeedsYou: boolean
-  /** A notification when a thread has wrapped up: finished everything, nothing left running or waiting (Owl, macOS, ADR-0112). */
+  /** A notification when a thread has wrapped up: finished everything, nothing left running or waiting (Owl, macOS, ADR-0114). */
   notifyFinished: boolean
   /** Linux-only, read-only, supplied by main: the shell pill has taken the floating widget's place. Never saved or patched. */
   shellPillInUse?: boolean | undefined

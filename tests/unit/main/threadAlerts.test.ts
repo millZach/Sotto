@@ -1,5 +1,5 @@
 // @vitest-environment node
-/** When a desktop notification is due (ADR-0112), on states built by hand with fake timers. The sink's words are in desktopNotifier.test.ts. */
+/** When a desktop notification is due (ADR-0114), on states built by hand with fake timers. The sink's words are in desktopNotifier.test.ts. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ThreadAlerts, type ThreadAlertsOptions } from '../../../src/main/notifications/threadAlerts'
 import { EMPTY_AGENT_HOST, type AgentDelivery, type AgentFollowup, type AgentState, type AgentThread } from '../../../src/shared/agents'
