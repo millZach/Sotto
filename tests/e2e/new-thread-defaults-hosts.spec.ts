@@ -11,7 +11,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * ADR-0074 in the built app, over a scripted ssh that runs the real launch script and a real headless host. With a
- * project on forge selected, Settings → Agents once sent forge its new-thread defaults and forge refused every one.
+ * project on forge selected, Settings → Threads once sent forge its new-thread defaults and forge refused every one.
  * Now they are this computer's: the change saves, forge's own projects folder has its own row, and a thread opened in
  * forge's project starts on the permission chosen here.
  */
@@ -47,7 +47,7 @@ test('one set of new-thread defaults applies on every host, and each computer ke
 
     // Add forge.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -69,7 +69,7 @@ test('one set of new-thread defaults applies on every host, and each computer ke
     expect(created.hostId).toBe(forge)
 
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const section = page.locator('#settings-agents')
     await expect(section.getByText('New threads start with these on every connected computer. Change them for one thread in its composer.')).toBeVisible()
     await section.getByRole('combobox', { name: 'Default permissions for new threads' }).click()

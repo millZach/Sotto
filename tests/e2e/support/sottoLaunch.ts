@@ -195,7 +195,8 @@ export async function openThreads(page: Page): Promise<void> {
   }
   const link = page.getByRole('link', { name: 'Threads', exact: true })
   if ((await link.count()) > 0) await link.click()
-  else await page.getByRole('tab', { name: 'Threads', exact: true }).click()
+  // Settings has a page named Threads too; the room switch is every other tablist.
+  else await page.locator('[role="tablist"]:not([aria-label="Settings sections"])').getByRole('tab', { name: 'Threads', exact: true }).click()
   await expect(sidebar).toBeVisible()
 }
 

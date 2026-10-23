@@ -43,11 +43,6 @@
 .account-connection { display: flex; align-items: center; gap: 20px; padding: 16px 0; }
 .account-connection p { flex: 1; color: var(--tt-text-muted); }
 .side-sheet .account-rows > label { grid-template-columns: 1fr; }
-.account-rows__heading { grid-column: 1 / -1; margin: 26px 0 2px; font-size: 15px; font-weight: 600; }
-/* Only the very first heading on the page sits flush; a later one, even as the first child of its own
-   rows block, still wants the usual gap from whatever came before it. */
-.account-rows__heading--first { margin-top: 0; }
-.account-rows__subheading { grid-column: 1 / -1; margin: 0 0 4px; color: var(--tt-text-muted); font-size: 13px; }
 .account-row__heading { display: block; }
 .account-row__heading strong { display: block; font-weight: 600; }
 .account-row__heading span { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 13px; }
@@ -107,8 +102,18 @@
 .settings-subnav button:hover { background: var(--theme-sidebar-row-hover); color: var(--tt-text); }
 .settings-subnav button[aria-selected='true'] { color: var(--tt-text); background: var(--theme-sidebar-row-active); }
 .settings-subnav button[aria-selected='true'] > svg:first-child { color: var(--theme-accent); }
-.settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 32px; }
-.settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
+.settings-subnav button[data-run-start] { margin-top: 32px; }
+.settings-subnav button[data-run-start]::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
+.settings-subnav[hidden] { display: none; }
+/* Find a setting: the Threads sidebar's search field, with the matches in place of the pages while it holds text. */
+.settings-view .settings-find { height: 36px; margin: 0 0 14px; }
+.settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; }
+.settings-find__results button:hover { background: var(--theme-sidebar-row-hover); }
+.settings-find__results small { color: var(--tt-text-muted); font-size: 12.5px; }
+.settings-find__empty { margin: 4px 12px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
+/* A row of its own inside a group's card: the card's dividers already separate it. */
+.settings-view .settings-rows > .settings-danger-row { border-top: 0; }
 .settings-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .settings-view .settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 42px 6vw 40px; overflow: auto; scroll-padding-top: 24px; }
 .settings-form { width: 100%; max-width: 790px; margin: 0 auto; }
@@ -214,8 +219,8 @@
   .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
   .settings-subnav button { padding: 8px 10px; gap: 8px; min-height: 38px; }
   .settings-subnav button > svg:last-child:not(:first-child) { display: none; }
-  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 24px; }
-  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { top: -14px; }
+  .settings-subnav button[data-run-start] { margin-top: 24px; }
+  .settings-subnav button[data-run-start]::before { top: -14px; }
   .settings-view .settings-scroll { padding: 28px; }
   .settings-feedback { padding-inline: 28px; }
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 28px; }
@@ -231,8 +236,8 @@
   .settings-sidebar { padding-top: 22px; }
   .settings-sidebar h1 { margin-bottom: 22px; }
   .settings-subnav button { min-height: 36px; padding-block: 8px; }
-  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 20px; }
-  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { top: -12px; }
+  .settings-subnav button[data-run-start] { margin-top: 20px; }
+  .settings-subnav button[data-run-start]::before { top: -12px; }
   .settings-view .settings-scroll { padding-top: 22px; }
   .settings-view .settings-section__heading { padding-bottom: 13px; margin-bottom: 5px; }
   .settings-view .settings-section__heading h2 { margin-bottom: 7px; font-size: 26px; }
@@ -292,7 +297,7 @@
 .settings-view .agent-voice-settings progress { width: 100%; accent-color: var(--theme-accent); }
 @media (max-width: 620px) { .settings-view .agent-fields { grid-template-columns: minmax(0, 1fr); } }
 
-/* The speech model's download and status (ADR-0071), in Settings → Transcription and setup. */
+/* The speech model's download and status (ADR-0071), in Settings → Dictation and setup. */
 .speech-model-status { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
 .speech-model-status__bar { width: 100%; height: 6px; border-radius: 2px; background: var(--tt-hairline); overflow: hidden; }
 .speech-model-status__bar > span { display: block; height: 100%; background: var(--tt-accent); transition: width 240ms ease-out; }

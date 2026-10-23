@@ -2188,7 +2188,7 @@ struct HeldDetail {
     private enum Revocation {
         case confirmed, unreachable, unconfirmed
         func words(name: String, clientID: String) -> String {
-            let there = "Remove it there too: in Settings › Phones on \(name). For a computer without a screen, use Phones on its row in Settings › Hosts on your main computer, or its --revoke-client \(clientID) command."
+            let there = "Remove it there too: in Settings › Hosts & phones on \(name). For a computer without a screen, use Phones on its row in Settings › Hosts & phones on your main computer, or its --revoke-client \(clientID) command."
             switch self {
             case .confirmed: return "Removed \(name)."
             case .unreachable: return "Removed \(name) from this iPhone. It couldn’t be reached, so it still lists this iPhone. " + there

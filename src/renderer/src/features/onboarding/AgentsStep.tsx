@@ -19,7 +19,7 @@ type RowKind = 'ready' | 'checking' | 'not-installed' | 'needs-you' | 'off' | 'u
 interface Row { readonly kind: RowKind; readonly state: string; readonly detail: string; readonly guide: boolean }
 
 const CHECK_FAILED = 'Sotto could not check your coding agents. Nothing was changed. Press Check again.'
-const LOCAL_HOST_OFF = 'This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts, then restart Sotto.'
+const LOCAL_HOST_OFF = 'This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto.'
 const SWITCH_FAILED = 'Sotto could not switch to this computer, so it checked nothing. Press Check again.'
 
 /**

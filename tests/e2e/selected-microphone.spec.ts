@@ -115,7 +115,7 @@ test('Settings tests the selected input and clears its result when the choice ch
       await expect(state).toHaveAttribute('data-state', 'idle')
       await run()
       await expect(state).toHaveAttribute('data-state', id)
-      await page.getByRole('tab', { name: 'Output', exact: true }).click()
+      await page.getByRole('tab', { name: 'Cleanup', exact: true }).click()
       await page.getByRole('tab', { name: 'Dictation', exact: true }).click()
       await expect(state).toHaveAttribute('data-state', id)
     }

@@ -352,7 +352,7 @@ export function createSottoBridge(
   delegationEnabled = false,
   continueEnabled = false,
   opencodeEnabled = false,
-  /** A host's OpenCode signed in from Settings > Hosts (#1107): on whenever OpenCode is not held, local host or not. */
+  /** A host's OpenCode signed in from Settings > Hosts & phones (#1107): on whenever OpenCode is not held, local host or not. */
   opencodeHostsEnabled = false,
   /** Main's watch on itself and Record a minute (ADR-0098): only while the `main-freeze` Owl feature is on. */
   mainActivityEnabled = false,

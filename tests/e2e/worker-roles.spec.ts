@@ -251,7 +251,7 @@ test('stable shows no worker roles and no Watcher page in Settings', async () =>
       await page.reload()
       await openPage(page, 'Settings')
       const tabs = page.getByRole('tablist', { name: 'Settings sections' })
-      await expect(tabs.getByRole('tab', { name: 'Agents', exact: true })).toBeVisible()
+      await expect(tabs.getByRole('tab', { name: 'Threads', exact: true })).toBeVisible()
       await expect(tabs.getByRole('tab', { name: 'Watcher', exact: true })).toHaveCount(0)
       await expect(page.locator('#settings-watcher')).toHaveCount(0)
       await expect(page.locator('.worker-role')).toHaveCount(0)

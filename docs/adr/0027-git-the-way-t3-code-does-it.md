@@ -4,6 +4,8 @@ October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-manag
 
 Accepted September 23, 2026. Issue #127; the plan is `docs/plans/2026-09-23-git-interface.md`. Amended September 23 and 24, 2026, once for each ticket or pair that decided something of its own (#265 to #267, #268, #269, #270, #271), in that order below. Where an amendment changes an earlier line it says so there. The whole interface is proved in the built app in `docs/verification/2026-09-24-git-interface.md`.
 
+Amended October 22, 2026 ([ADR-0112](0112-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): Settings → Git is now Settings → Git & worktrees. Decision 7's groups by moment stand, after a new first group, Removing worktrees, and with the Generated commit message and pull request switches and Let agents babysit pull requests beside the settings they act with.
+
 ## Context
 
 Sotto's Git work grew in two halves that did not know each other: a Changes surface in the Tools panel that stages files, commits, switches branches and opens a pull request from Electron main, and a working-copy record on each thread that the host keeps (ADR-0014, ADR-0041). Nothing pulled, nothing fetched outside worktree setup, nothing pushed outside the pull request form, and no surface said whether a branch was ahead or behind. Every day started and ended in a terminal.

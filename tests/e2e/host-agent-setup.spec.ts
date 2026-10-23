@@ -126,10 +126,10 @@ async function typeAHost(page: Page, target: string): Promise<void> {
   await expect(field).toBeFocused()
   await field.fill(target)
 }
-/** Settings > Hosts, Add host, forge, and Start setup on the model the picker starts on. */
+/** Settings > Hosts & phones, Add host, forge, and Start setup on the model the picker starts on. */
 async function startSetup(page: Page): Promise<void> {
   await openPage(page, 'Settings')
-  await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+  await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
   await page.getByRole('button', { name: 'Add host', exact: true }).click()
   const form = page.getByRole('dialog', { name: 'Add host' })
   await typeAHost(page, 'forge')
@@ -152,7 +152,7 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
     await connectAgents(page)
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     await typeAHost(page, 'forge')
     await capture(launched, 'agent-setup-choose')
@@ -188,9 +188,9 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
     await expect(page.getByRole('heading', { name: 'Set up forge' }).first()).toBeVisible()
     await page.getByRole('button', { name: 'Allow', exact: true }).click()
 
-    // Back in Settings > Hosts: the setup is still running, and Show setup brings the dialog back.
+    // Back in Settings > Hosts & phones: the setup is still running, and Show setup brings the dialog back.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await expect(page.locator('.hosts-setup-line p')).toHaveText('Claude Test is setting up forge in the thread Set up forge.')
     await page.getByRole('button', { name: 'Show setup of forge' }).click()
     await expect(page.getByRole('dialog', { name: 'Setting up forge' })).toBeVisible()
@@ -215,10 +215,10 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
 
     // Connected: saved, paired, and the dialog says who set it up.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await expect(page.getByRole('region', { name: 'forge', exact: true }).getByText('SSH forge · Connected')).toBeVisible({ timeout: 90_000 })
     expect((JSON.parse(await readFile(join(profile, 'remote-hosts.json'), 'utf8')) as { name: string }[]).map(host => host.name)).toEqual(['forge'])
-    // The finished setup stays on the Hosts page until put away; Show setup gives the dialog's last word on it.
+    // The finished setup stays on the Hosts & phones page until put away; Show setup gives the dialog's last word on it.
     await expect(page.locator('.hosts-setup-line p')).toHaveText('forge is set up and connected. Claude Test set it up in the thread Set up forge.')
     await page.getByRole('button', { name: 'Show setup of forge' }).click()
     const done = page.getByRole('dialog', { name: 'forge is connected' })

@@ -13,7 +13,7 @@ import { workspaceFixture } from '../fixtures/workspaceFixture'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-const TOO_WIDE = 'Watcher cannot give a thread more permission than your new-thread default. Nothing was sent or started. To give it more, widen New threads start with in Settings → Agents first.'
+const TOO_WIDE = 'Watcher cannot give a thread more permission than your new-thread default. Nothing was sent or started. To give it more, widen New threads start with in Settings → Threads first.'
 
 async function fixture(newThread: AgentRuntimeMode) {
   const workspace = await workspaceFixture(undefined, { history: true })

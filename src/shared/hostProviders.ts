@@ -4,7 +4,7 @@ import type { HeldProviders } from './heldProviders'
 import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestSchema, signInDoneSchema } from './opencodeSignIn'
 
 /**
- * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
+ * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts & phones, the
  * host's own connect, disconnect and refresh for one of its providers, and a provider's sign-in, run on the host by its
  * own client and finished by the user in this computer's browser.
  */
@@ -116,7 +116,7 @@ export type ProviderSignInView = Omit<HostSignIn, 'url'>
 /** The longest code Sotto hands a client. Claude Code's is a code and a state joined by `#`, well under this. */
 export const PASTED_CODE_MAX = 2048
 
-/** What Settings > Hosts asks of one of a saved host's providers. `id` is the saved host's. */
+/** What Settings > Hosts & phones asks of one of a saved host's providers. `id` is the saved host's. */
 export const hostProviderActionSchema = z.object({
   id: z.uuid(), provider: hostProviderIdSchema, action: z.enum(['connect', 'disconnect', 'refresh']),
 }).strict()
@@ -174,7 +174,7 @@ export function hostProviderJobTitle(jobCase: HostProviderJobCase, provider: Pro
   return `${HOST_PROVIDER_JOB_WORDS[jobCase].title} ${PROVIDER_LABELS[provider]} on ${host}`
 }
 /**
- * A provider job as Settings > Hosts shows it: which saved host (`hostId`, its saved ID) and provider, the thread working
+ * A provider job as Settings > Hosts & phones shows it: which saved host (`hostId`, its saved ID) and provider, the thread working
  * on it and its model. `starting` until the thread has its brief, `running` while it works, then `found` once the host
  * finds the provider, `stopped` on Stop, or `failed` when the thread did not start working, with the reason.
  */

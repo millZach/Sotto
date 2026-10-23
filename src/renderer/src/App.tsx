@@ -466,6 +466,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           // The press opens the same confirmation the footer control uses; the
           // install itself happens only once that is answered.
           onInstallUpdate={async () => { updateFlow.activate('install'); return true }}
+          openSection={app.settingsRequest ?? null}
         />
         break
       case 'help':
@@ -487,7 +488,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onStop={app.actions.stop}
           onRetry={app.actions.retry}
           onDismiss={app.actions.dismiss}
-          onOpenSettings={() => app.actions.navigate('settings')}
+          onOpenSettings={section => app.actions.navigate('settings', section)}
           onCopy={app.actions.copyHistory}
           onDelete={app.actions.deleteHistory}
           onClear={app.actions.clearHistory}

@@ -202,7 +202,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     })
   }, [store, placeCarriedDraft])
   // The pen and the empty page's button already know their project: the thread opens at once, on the defaults
-  // from Settings → Agents, selected and focused; a refusal shows in the sidebar's own error place.
+  // from Settings → Threads, selected and focused; a refusal shows in the sidebar's own error place.
   // Settles once the thread has opened or been refused.
   const createThreadIn = useCallback((project: AgentProject, carried?: CarriedDraft): Promise<void> => {
     if (state === null) return Promise.resolve()
@@ -273,7 +273,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   if (state === null) return <div className={mac ? 'threads-view threads-view--bare threads-view--mac' : 'threads-view threads-view--bare'}>
     <p role="status">{agents.error ?? 'Preparing agent controls…'}</p>
     {/* An error can stand for good, and this page has no sidebar to leave by. */}
-    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings')}>Open Settings</Button> : null}
+    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}>Open Settings</Button> : null}
     <PageWindowControls />
   </div>
   const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })

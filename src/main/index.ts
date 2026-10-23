@@ -1004,7 +1004,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     clients: { updating: hostId => hostRouter.clientLineRunning(hostId) } })
   desktopHosts.useUpdates(hostUpdates)
   quitHandles.hostUpdates = hostUpdates
-  // Start at boot from Settings > Hosts (ADR-0054), which asks the same busy-host question before it restarts a host.
+  // Start at boot from Settings > Hosts & phones (ADR-0054), which asks the same busy-host question before it restarts a host.
   const hostBoot = new HostBootChanges({ threads: busyThreads,
     hosts: { candidate: id => desktopHosts.bootCandidate(id), keeps: id => desktopHosts.bootKeeps(id), setBootStart: (id, action) => desktopHosts.setBootStart(id, action), subscribe: listener => desktopHosts.subscribe(() => listener()) } })
   desktopHosts.useBoot(hostBoot)

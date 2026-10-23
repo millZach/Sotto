@@ -231,7 +231,7 @@ describe('Personal dictionary draft acknowledgements', () => {
 describe('Settings draft editing work', () => {
   it.each([
     { category: 'Cleanup', label: 'Personal dictionary', field: 'llmDictionary', text: 'Sotto', saved: 'Sotto', blurCommits: 0 },
-    { category: 'Output', label: 'Paste delay', field: 'pasteDelayMs', text: '300', saved: 300, blurCommits: 1 },
+    { category: 'Dictation', label: 'Paste delay', field: 'pasteDelayMs', text: '300', saved: 300, blurCommits: 1 },
   ])('does no extra render or request while editing $label', async ({ category, label, field, text, saved, blurCommits }) => {
     const pending = deferred<boolean>()
     const update = vi.fn(() => pending.promise)

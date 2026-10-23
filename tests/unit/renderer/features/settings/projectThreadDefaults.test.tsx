@@ -26,7 +26,7 @@ function withProjects(hostId?: string): AgentState {
   return clientState
 }
 
-describe('Project thread defaults in Application settings', () => {
+describe('Project thread defaults in Threads settings', () => {
   it('saves a local host project override that new thread creation actually uses', async () => {
     const state = withProjects('11111111-1111-4111-8111-111111111111')
     state.host.models = [{ id: 'codex:model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true }]
@@ -39,7 +39,7 @@ describe('Project thread defaults in Application settings', () => {
     vi.stubGlobal('sotto', { getSettings: async () => settings })
     try {
       const { rerender } = render(<SettingsView {...baseProps({ settings, onUpdateSettings })} />)
-      await selectCategory('Application')
+      await selectCategory('Threads')
       await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
       const choice = screen.getByRole('combobox', { name: 'New threads in this project work in' })
       await userEvent.selectOptions(choice, 'independent')
@@ -63,7 +63,7 @@ describe('Project thread defaults in Application settings', () => {
     state.connections = [{ hostId: localHostId, kind: 'local', name: 'Local', connected: true }]
     const onUpdateSettings = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, projectThreadWorkingCopyDefaults: { one: 'shared' } }, onUpdateSettings })} />)
-    await selectCategory('Application')
+    await selectCategory('Threads')
     await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
     const choice = screen.getByRole('combobox', { name: 'New threads in this project work in' })
     expect(choice).toHaveValue('inherit')
@@ -76,7 +76,7 @@ describe('Project thread defaults in Application settings', () => {
     const onUpdateSettings = vi.fn(async () => true)
     const props = baseProps({ settings: { ...DEFAULT_SETTINGS, projectThreadWorkingCopyDefaults: { one: 'independent', missing: 'shared' } }, onUpdateSettings })
     const { rerender } = render(<SettingsView {...props} />)
-    await selectCategory('Application')
+    await selectCategory('Threads')
     await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
     const choice = screen.getByRole('combobox', { name: 'New threads in this project work in' })
     expect(choice).toHaveValue('independent')
@@ -98,7 +98,7 @@ describe('Project thread defaults in Application settings', () => {
     const pending = deferred<boolean>()
     const onUpdateSettings = vi.fn(() => pending.promise)
     render(<SettingsView {...baseProps({ onUpdateSettings })} />)
-    await selectCategory('Application')
+    await selectCategory('Threads')
     await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
     const choice = screen.getByRole('combobox', { name: 'New threads in this project work in' })
     await userEvent.selectOptions(choice, 'independent')
@@ -112,7 +112,7 @@ describe('Project thread defaults in Application settings', () => {
 
   it('explains how to add a project when there are none', async () => {
     render(<SettingsView {...baseProps()} />)
-    await selectCategory('Application')
+    await selectCategory('Threads')
     await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
     expect(screen.getByText('Add a project in Threads to set its default working copy.')).toBeVisible()
   })

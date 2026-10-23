@@ -331,7 +331,7 @@ describe('DictateRoom', () => {
       dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_MODEL_NOT_READY', message: 'internal', kept: true }} />)
     expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
-    expect(onOpenSettings).toHaveBeenCalledOnce()
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith('settings-transcription')
   })
 
   it('offers Dismiss for an error that keeps nothing, and keeps Start dictation', async () => {
@@ -346,16 +346,16 @@ describe('DictateRoom', () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
-  it('says no speech model is chosen and sends people to Settings → Transcription instead of a dead pill', async () => {
+  it('says no speech model is chosen and sends people to the speech model in Settings → Dictation instead of a dead pill', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()
     render(<DictateRoom {...baseProps} speechModel={{ state: 'missing' }} onOpenSettings={onOpenSettings} />)
     expect(screen.getByRole('heading', { level: 1, name: 'No speech model is chosen.' })).toBeVisible()
-    expect(screen.getByText('Choose one in Settings → Transcription.')).toBeVisible()
+    expect(screen.getByText('Choose one in Settings → Dictation, under Speech model.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Speech model needed' })).toBeDisabled()
     expect(screen.getByText('No speech model chosen')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
-    expect(onOpenSettings).toHaveBeenCalledOnce()
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith('settings-transcription')
     expect(screen.queryByText(/press/i)).not.toBeInTheDocument()
   })
 
@@ -378,7 +378,7 @@ describe('DictateRoom', () => {
     expect(screen.getByText(MICROPHONE_NOT_SET_UP_DETAIL)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Microphone needed' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
-    expect(onOpenSettings).toHaveBeenCalledOnce()
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith('settings-capture')
     expect(onStart).not.toHaveBeenCalled()
   })
 

@@ -2,6 +2,8 @@
 
 Accepted September 22, 2026.
 
+Amended October 22, 2026 ([ADR-0112](0112-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): the cleanup rules moved from Settings → Application to the first group of Settings → Git & worktrees, **Removing worktrees**. Where this record says Application or Git below, read that.
+
 Amended October 21, 2026 (#1297): a removal cut off partway is finished, or repaired when Sotto did not start it, rather than left for Git to call prunable. See the correction at the end.
 
 Amended September 30, 2026 (#485): Zach chose prototype variant B, **List and tick**. Both manual removal questions list ignored folders and nested work, and the separate acknowledgement permits removing them. See the amendment below for the accepted copy and checks.

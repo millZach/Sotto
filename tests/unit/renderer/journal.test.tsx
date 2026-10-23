@@ -287,7 +287,7 @@ describe('Journal', () => {
     expect(screen.getByRole('button', { name: 'Delete saved transcript' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'More transcript actions' })).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
-    expect(onOpenSettings).toHaveBeenCalledOnce()
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith('settings-history')
 
     // With no transcripts left, the numbers alone can still be cleared.
     rerender(<Journal {...baseProps} historyEnabled={false} entries={[]} />)

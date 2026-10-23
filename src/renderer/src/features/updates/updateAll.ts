@@ -182,7 +182,7 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   if (ranSincePress && update.state === 'updated') return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
   if (ranSincePress && update.state === 'failed') {
     // What the installer printed stays where Sotto keeps it for each machine; the card says what happened and what next.
-    const where = machine.kind === 'host' ? `Settings → Hosts shows what the installer said on ${machine.name}.` : 'Settings → Providers shows what the installer said.'
+    const where = machine.kind === 'host' ? `Settings → Hosts & phones shows what the installer said on ${machine.name}.` : 'Settings → Providers shows what the installer said.'
     return { ...base, state: 'failed', detail: `${name} did not update. Nothing was changed. ${where}`, commands: update.byHand?.length ? update.byHand.join('\n') : undefined }
   }
   if (ranSincePress && update.state === 'unchanged') {

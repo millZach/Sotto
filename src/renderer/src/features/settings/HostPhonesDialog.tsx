@@ -63,7 +63,7 @@ export function hostPhonesFailure(state: PhonesState, name: string): string | nu
 const time = (iso: string): string => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
 /**
- * Phones on a remote host (ADR-0050): the host's own phone access, opened from its row in Settings > Hosts. The switch,
+ * Phones on a remote host (ADR-0050): the host's own phone access, opened from its row in Settings > Hosts & phones. The switch,
  * the three checks the host ran, its pairing code and its paired phones, each press sent on to the host over SSH.
  */
 export function HostPhonesDialog({ host, view, bridge, onClose }: {

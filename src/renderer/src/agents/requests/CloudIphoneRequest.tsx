@@ -89,7 +89,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
       <div className="agent-request__head"><strong>{threadTitle} could not start a cloud iPhone.</strong></div>
       <p className="agent-request__error" role="status">{text}</p>
       {mentionsSettings ? <div className="agent-request__actions">
-        <Button variant="ghost" onClick={() => app?.actions.navigate('settings')}>Open Settings</Button>
+        <Button variant="ghost" onClick={() => app?.actions.navigate('settings', 'settings-cloud-iphone')}>Open Settings</Button>
       </div> : null}
     </section>
   }

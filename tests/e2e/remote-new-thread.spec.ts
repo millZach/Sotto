@@ -36,7 +36,7 @@ test('a thread created on a remote host stays open after leaving Threads and com
     const { page } = launched
     page.on('pageerror', error => errors.push(error.message))
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -58,7 +58,7 @@ test('a thread created on a remote host stays open after leaving Threads and com
     expect(refusal).toBeNull()
     await page.evaluate(async hostId => { await window.sotto!.hosts!.command({ type: 'select', hostId }) }, hosts.local)
 
-    await page.getByRole('tab', { name: 'Threads', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Page', exact: true }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'New thread in Space Race' }).click()
     const pane = page.locator('.thread-pane')
     await expect(pane.locator('h2')).toHaveText('New thread')

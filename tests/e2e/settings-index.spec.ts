@@ -6,7 +6,7 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
-const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application', 'Git'] as const
+const categories = ['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
 const sizes = [[1280, 800], [1600, 1000], [820, 560]] as const
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
@@ -68,15 +68,17 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
           })
           layout.push({ width, height, mode, category: name, ...bounds })
           expect(bounds, `${name} ${width} ${mode}`).toEqual({ pageOverflow: false, formOverflow: false, clippedControls: [] })
-          await shot(page, `${name.toLowerCase()}-${width}-${mode}`)
+          // A file name for the page: Git & worktrees is git-worktrees.
+          const slug = name.toLowerCase().replace(/[^a-z]+/gu, '-')
+          await shot(page, `${slug}-${width}-${mode}`)
           if (width === 820 && name === 'Appearance') {
             await page.getByLabel('Contrast', { exact: true }).scrollIntoViewIfNeeded()
             await expect(page.getByLabel('Contrast', { exact: true })).toBeInViewport()
             await shot(page, `appearance-${width}-${mode}-sliders`)
           }
-          if (width === 820 && ['Appearance', 'Application', 'Agents', 'Providers'].includes(name)) {
+          if (width === 820 && ['Dictation', 'Threads', 'Git & worktrees', 'Hosts & phones', 'Appearance', 'Application', 'Providers'].includes(name)) {
             await page.locator('.settings-scroll').evaluate(element => { element.scrollTop = element.scrollHeight })
-            await shot(page, `${name.toLowerCase()}-${width}-${mode}-bottom`)
+            await shot(page, `${slug}-${width}-${mode}-bottom`)
           }
         }
       }
@@ -93,12 +95,14 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await page.keyboard.up('Alt')
     await page.keyboard.up('Control')
     await expect(pressRow.getByRole('alert')).toContainText('Another app already uses Ctrl + Alt + 9.')
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Cleanup', exact: true }).click()
     expect((await settings()).hotkey).toBe(originalHotkey)
-    // A validation failure survives category navigation without accepting an invalid value.
+    // A validation failure survives category navigation without accepting an invalid value. Paste delay is in
+    // Dictation's After you dictate group.
+    await category(page, 'Dictation')
     await page.getByRole('textbox', { name: 'Paste delay', exact: true }).fill('not a number')
     await category(page, 'Cleanup')
-    await category(page, 'Output')
+    await category(page, 'Dictation')
     await expect(page.getByRole('textbox', { name: 'Paste delay', exact: true })).toHaveValue('not a number')
     await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
     await page.getByRole('textbox', { name: 'Paste delay', exact: true }).fill('325')
@@ -121,7 +125,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await expect(dictionary).toHaveValue('a'.repeat(3990) + 'b'.repeat(9))
     await expect(page.locator('#settings-formatting .settings-input-action [role="status"]')).toBeEmpty()
     await page.getByRole('textbox', { name: 'Personal dictionary' }).fill('Sotto\nZach\nOregon')
-    await category(page, 'Transcription')
+    await category(page, 'Dictation')
     await expect.poll(async () => (await settings()).llmDictionary).toBe('Sotto\nZach\nOregon')
     // The key is AI cleanup's alone, under its switch; the E2E bridge answers Verify key itself.
     await category(page, 'Cleanup')
@@ -146,7 +150,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     const contrast = page.getByLabel('Contrast', { exact: true })
     await contrast.focus()
     await page.keyboard.press('End')
-    await category(page, 'Output')
+    await category(page, 'Dictation')
     await expect.poll(async () => (await settings()).appearanceContrast).toBe(200)
     await category(page, 'Appearance')
     await expect(contrast).toHaveValue('200')
@@ -168,14 +172,14 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await page.keyboard.press('Escape')
     await expect(importer).toBeHidden()
 
-    await category(page, 'Agents')
+    await category(page, 'Threads')
     const projects = page.getByRole('textbox', { name: 'Default projects directory', exact: true })
     const projectsDirectory = join(launched.userData, 'projects')
     await projects.fill(projectsDirectory)
     await projects.press('Tab')
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).configuration.projectsDirectory)).toBe(projectsDirectory)
-    await category(page, 'Output')
-    await category(page, 'Agents')
+    await category(page, 'Dictation')
+    await category(page, 'Threads')
     await expect(projects).toHaveValue(projectsDirectory)
     await expect(page.getByRole('switch', { name: 'Spoken replies', exact: true })).toHaveCount(0)
     await expect(page.getByText('Advanced wake settings', { exact: true })).toHaveCount(0)
@@ -211,7 +215,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
 
     await page.reload()
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await category(page, 'Output')
+    await category(page, 'Dictation')
     await expect(page.getByRole('textbox', { name: 'Paste delay', exact: true })).toHaveValue('325')
     await category(page, 'Cleanup')
     await expect(page.getByRole('textbox', { name: 'Personal dictionary' })).toHaveValue('Sotto\nZach\nOregon')

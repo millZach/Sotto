@@ -789,7 +789,7 @@ export class AgentControl {
     /**
      * Which process this coordinator runs in. The headless host (`src/host/index.ts`) connects every provider
      * that is installed and signed in when it starts, except the ones the user turned off, and its refusals point
-     * at Settings → Hosts on whichever desktop shows them (ADR-0036). Absent means the desktop, which connects the
+     * at Settings → Hosts & phones on whichever desktop shows them (ADR-0036). Absent means the desktop, which connects the
      * providers the user connected in Settings → Providers.
      */
     runsAs?: 'desktop' | 'headless-host'
@@ -2513,7 +2513,7 @@ export class AgentControl {
   }
   /**
    * The effort, runtime mode and provider mode a create-thread ends up on: the caller's own choice where it made
-   * one, Settings → Agents' new-thread defaults otherwise, each fit to what `model` actually offers (issue #347).
+   * one, Settings → Threads' new-thread defaults otherwise, each fit to what `model` actually offers (issue #347).
    * An install with no new-thread defaults saved leaves every option the caller left unset alone, which is
    * today's behaviour: the model's own default effort and the provider's own starting permission mode.
    */
@@ -4153,7 +4153,7 @@ export class AgentControl {
         if (!this.state.host.capabilities.threads) throw new Error('This provider cannot create threads.')
         if (!this.state.host.projects.some(p => p.id === command.projectId)) throw new Error('Choose an available project.')
         if (!model?.ready) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
-        // A create-thread that leaves an option unset takes Settings → Agents' new-thread defaults instead,
+        // A create-thread that leaves an option unset takes Settings → Threads' new-thread defaults instead,
         // a caller's explicit choice still wins.
         const defaults = this.newThreadOptionDefaults(command, model)
         validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults })

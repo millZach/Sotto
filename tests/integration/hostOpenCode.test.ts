@@ -242,7 +242,7 @@ async function everything(folder: string): Promise<string> {
   return texts.join('\n')
 }
 
-/** A desktop that reaches `forge`, a headless host in this process, over its own SSH stand-in, as Settings > Hosts does. */
+/** A desktop that reaches `forge`, a headless host in this process, over its own SSH stand-in, as Settings > Hosts & phones does. */
 async function desktopWithForge(sottoVersion: string, opencode: Awaited<ReturnType<typeof opencodeFixture>> | undefined) {
   const root = await scratch('sotto-host-opencode-sign-in-')
   const hostLog: string[] = []

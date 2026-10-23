@@ -101,7 +101,7 @@ describe('a provider job', () => {
     expect(f.jobs.state()).toEqual({ id: JOB, hostId: FORGE, host: 'forge', provider: 'grok', case: 'update', threadId: 'host:local:thread-1', threadTitle: 'Update Grok Build on forge',
       modelName: 'Claude Opus 5.5', phase: 'running' })
     expect(f.jobs.threadId()).toBe('thread-1')
-    expect(f.jobs.busySentence()).toBe('An agent is updating Grok Build on forge now. Stop it on its tile in Settings > Hosts first. Nothing was started.')
+    expect(f.jobs.busySentence()).toBe('An agent is updating Grok Build on forge now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started.')
   })
 
   it('runs one at a time, beside a host setup too, and refuses a provider the host can already use', async () => {

@@ -48,7 +48,7 @@ test('Forget revokes this computer over an admin connection, and says how to rev
     const { page } = launched
     page.on('pageerror', error => errors.push(error.message))
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     const row = page.getByRole('region', { name: 'forge', exact: true })
     const addForge = async (): Promise<string> => {
       await page.getByRole('button', { name: 'Add host', exact: true }).click()

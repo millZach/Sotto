@@ -282,7 +282,7 @@ test('stable shows none of it and starts no watch', async () => {
     await expect(pill(page)).toHaveCount(0)
     await thaw(launched)
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await expect(page.getByRole('tab', { name: 'Git' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Git & worktrees', exact: true })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Performance' })).toHaveCount(0)
   } finally {
     await thaw(launched).catch(() => undefined)

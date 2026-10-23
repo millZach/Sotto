@@ -8,7 +8,7 @@ import { FixCommand } from './HostSetupChecklist'
 import './hostBoot.css'
 
 /**
- * Start at boot in Settings > Hosts (ADR-0054, variant C of `docs/prototypes/host-tailnet-prototype.html` with A's
+ * Start at boot in Settings > Hosts & phones (ADR-0054, variant C of `docs/prototypes/host-tailnet-prototype.html` with A's
  * controls): the offer on Add host's connected card, and the row's More menu items, each opening a consent modal that
  * says what changes on the host. A change that would restart a host with working threads asks the busy-host question
  * first, the way Update does (ADR-0040). Main runs the change; this window shows where it stands.

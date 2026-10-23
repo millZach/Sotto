@@ -62,7 +62,7 @@ export function ProvidersSettings(): ReactNode {
   const local = hasHostConnections ? state.host.clientHosts?.find(host => host.hostId === localHost) : undefined
   const here = hasHostConnections && localHost ? { hostId: localHost } : {}
   // With this computer's host off there are no clients here to show, and nothing on this page may reach another host's.
-  if (hasHostConnections && !local) return <p role="status" className="provider-models__empty">This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts, then restart Sotto. A host’s own providers are on its tiles there.</p>
+  if (hasHostConnections && !local) return <p role="status" className="provider-models__empty">This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there.</p>
   const providers = localProviders(state)
   const hostModels = hasHostConnections ? local?.models ?? [] : state.host.models
   const clientUpdates = hasHostConnections ? local?.clientUpdates : state.clientUpdates

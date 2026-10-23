@@ -305,7 +305,7 @@ test('a thread uses the browser without asking by default, the user can stop or 
     // Turning the setting off makes another thread, which never answered, ask too.
     await panel.getByRole('button', { name: 'Close tools panel' }).click()
     await page.getByRole('link', { name: 'Settings' }).click()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const grantToggle = page.getByRole('switch', { name: 'Let agents use the browser without asking' })
     await expect(grantToggle).toBeChecked()
     await grantToggle.click()
@@ -330,7 +330,7 @@ test('a thread uses the browser without asking by default, the user can stop or 
 
     // The auto-show switch: the player does not open on its own anywhere, and the work still shows in Tools > Browser.
     await page.getByRole('link', { name: 'Settings' }).click()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const autoShowToggle = page.getByRole('switch', { name: 'Show the browser when an agent opens a page' })
     await expect(autoShowToggle).toBeChecked()
     await autoShowToggle.click()

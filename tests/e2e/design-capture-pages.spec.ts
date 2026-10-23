@@ -147,7 +147,7 @@ test.describe('authoritative design-review captures', () => {
 
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
-      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
       await pasteSwitch.scrollIntoViewIfNeeded()
       await assertFocusPresentation(pasteSwitch)
@@ -159,25 +159,29 @@ test.describe('authoritative design-review captures', () => {
       await startSettingsAtHeading(page)
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
 
+      // Each capture is a page, or a group on Dictation where Transcription and Output were pages of their own: the
+      // group keeps the old page's id and its capture keeps the old name.
       const settingsSections = [
-        ['Providers', 'providers'],
-        ['Agents', 'agents'],
-        ['Dictation', 'capture'],
-        ['Transcription', 'transcription'],
-        ['Cleanup', 'cleanup'],
-        ['Output', 'output'],
-        ['Appearance', 'appearance'],
-        ['Application', 'application-privacy'],
-        ['Git', 'git'],
+        ['Providers', 'providers', null],
+        ['Threads', 'agents', null],
+        ['Dictation', 'capture', null],
+        ['Dictation', 'transcription', '#settings-transcription'],
+        ['Cleanup', 'cleanup', null],
+        ['Dictation', 'output', '#settings-output'],
+        ['Appearance', 'appearance', null],
+        ['Application', 'application-privacy', null],
+        ['Git & worktrees', 'git', null],
       ] as const
-      for (const [heading, state] of settingsSections) {
-        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
-        const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
+      for (const [heading, state, group] of settingsSections) {
+        const tab = page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true })
+        await tab.click()
+        await expect(tab).toHaveAttribute('aria-selected', 'true')
+        const section = group === null
+          ? page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
+          : page.locator(group)
         await expect(section).toHaveCount(1)
         if (state === 'agents') {
-          await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
           await expect(section.getByLabel('Default projects directory', { exact: true })).toBeVisible()
-          await expect(page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute('aria-selected', 'true')
           await capturePage(page, 'settings-agents.png', { category: 'settings', state })
           continue
         }
@@ -188,7 +192,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: 'Verify key', exact: true }).click()
       await expect(page.getByText('Key verified.')).toBeVisible()
       await capturePage(page, 'settings-key-verified.png')
-      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByLabel('Paste delay').fill('10')
       await page.getByLabel('Paste delay').press('Tab')
       await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()

@@ -4,7 +4,7 @@ import { useMergeMethod } from '../state/gitSettings'
 
 /**
  * The merge method the merge checklist offers first, and the way to change it. It starts where the Merge method
- * setting says (Settings → Git, #271): the method chosen there, or under Last selected the one picked last. A pick
+ * setting says (Settings → Git & worktrees, #271): the method chosen there, or under Last selected the one picked last. A pick
  * beside Merge holds for this surface until the setting's method changes, the way Changes yields to its settings;
  * under Last selected the pick is saved as the one to start on next time, in every window and after a restart, and
  * under a fixed default nothing is saved. The surface falls back to the first method a repository allows when this

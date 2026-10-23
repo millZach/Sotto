@@ -3,8 +3,10 @@ import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
+import { SettingsFindField, SettingsFindResults } from './SettingsFind'
+import { findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, Eye, Gauge, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
+import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -22,9 +24,8 @@ import type {
   HistoryRetention,
   ReducedMotion,
   SettingsPatch,
-  WorktreeCleanupDays,
 } from '../../../../shared/settings'
-import { dictationOn, TYPING_SPEED_MAX_WPM, TYPING_SPEED_MIN_WPM, WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
+import { dictationOn, TYPING_SPEED_MAX_WPM, TYPING_SPEED_MIN_WPM } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
@@ -99,31 +100,33 @@ export interface SettingsViewProps {
   readonly onCheckForUpdates: () => Promise<UpdateStatus | null>
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
+  /** Opens Settings at a page or group instead of its first page: an Open Settings press elsewhere (settingsPages.ts). */
+  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number } | null
 }
 
-const SETTINGS_SECTIONS = [
-  { id: 'settings-capture', label: 'Dictation', icon: Mic },
-  { id: 'settings-transcription', label: 'Transcription', icon: AudioLines },
-  { id: 'settings-formatting', label: 'Cleanup', icon: Sparkles },
-  { id: 'settings-providers', label: 'Providers', icon: Command },
-  { id: 'settings-hosts', label: 'Hosts', icon: Server },
-  { id: 'settings-phones', label: 'Phones', icon: Smartphone },
-  { id: 'settings-cloud-iphone', label: 'Cloud iPhone', icon: Cloud },
-  { id: 'settings-agents', label: 'Agents', icon: Workflow },
+type RailIcon = React.ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
+
+const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
+  'settings-capture': Mic,
+  'settings-formatting': Sparkles,
+  'settings-agents': MessagesSquare,
+  'settings-git': GitBranch,
   // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
-  { id: 'settings-watcher', label: 'Watcher', icon: WatcherNavIcon },
-  { id: 'settings-output', label: 'Output', icon: ArrowUpRight },
-  { id: 'settings-appearance', label: 'Appearance', icon: Palette },
-  { id: 'settings-privacy', label: 'Application', icon: Settings2 },
-  { id: 'settings-git', label: 'Git', icon: GitBranch },
+  'settings-watcher': WatcherNavIcon,
+  'settings-providers': Command,
+  'settings-hosts': Server,
+  'settings-cloud-iphone': Cloud,
+  'settings-appearance': Palette,
+  'settings-privacy': Settings2,
   // Main's watch on itself (#1233), an Owl feature: shown only while the Owl list turns `main-freeze` on.
-  { id: 'settings-performance', label: 'Performance', icon: Gauge },
-] as const
+  'settings-performance': Gauge,
+}
 
-type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
+/** The pages that serve dictation alone; they leave the rail while dictation is off (ADR-0107). */
+const DICTATION_ONLY_PAGES: ReadonlySet<SettingsPageId> = new Set(['settings-formatting'])
 
-/** The sections that serve dictation alone; they leave the rail while dictation is off. */
-const DICTATION_ONLY_SECTIONS: ReadonlySet<SettingsSectionId> = new Set(['settings-transcription', 'settings-output'])
+/** The element a page's tab controls: Appearance's card sits inside a panel of its own. */
+const panelIdOf = (id: SettingsPageId): string => id === 'settings-appearance' ? 'settings-appearance-panel' : id
 
 /** Watcher's owl at the rail's icon size; the rail passes lucide's props, of which the owl takes only the size. */
 function WatcherNavIcon({ size }: { readonly size?: number; readonly strokeWidth?: number; readonly 'aria-hidden'?: 'true' }): ReactNode {
@@ -187,6 +190,7 @@ export function SettingsView({
   onCheckForUpdates,
   onDownloadUpdate,
   onInstallUpdate,
+  openSection = null,
 }: SettingsViewProps): ReactNode {
   const [linuxStartupSupported, setLinuxStartupSupported] = useState(false)
   useEffect(() => {
@@ -383,7 +387,12 @@ export function SettingsView({
 
   const copy = platformCopy(platform)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(SETTINGS_SECTIONS[0].id)
+  const [activeSection, setActiveSection] = useState<SettingsPageId>(SETTINGS_PAGES[0].id)
+  const [findQuery, setFindQuery] = useState('')
+  const findInputRef = useRef<HTMLInputElement>(null)
+  const findListRef = useRef<HTMLUListElement>(null)
+  /** A group or setting to bring into view once its page shows. */
+  const [reveal, setReveal] = useState<{ readonly group: string | null; readonly setting: string | null; readonly key: number } | null>(null)
   // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
   const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
   const workerRoles = watcherOn && workerRolesOn
@@ -391,8 +400,11 @@ export function SettingsView({
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
   const dictation = dictationOn(settings, dictationSwitch)
-  const sections = SETTINGS_SECTIONS.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn)
-    && (dictation || !DICTATION_ONLY_SECTIONS.has(section.id)))
+  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn)
+    && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart }
+  // Find a setting reaches only what the page shows now.
+  const findIndex = settingsIndex(platform).filter(entry => entry.gate === undefined || gates[entry.gate])
   if (!sections.some(section => section.id === activeSection)) setActiveSection('settings-capture')
   useEffect(() => { if (!dictation) stopMicrophoneTest() }, [dictation, stopMicrophoneTest])
   // Panels stay mounted so account, key and theme drafts survive category changes.
@@ -400,6 +412,15 @@ export function SettingsView({
   useLayoutEffect(() => {
     if (scrollRef.current !== null) scrollRef.current.scrollTop = 0
   }, [activeSection])
+  // After the visit's scroll to the top: a group or setting asked for comes into view, a setting with focus on it.
+  useLayoutEffect(() => {
+    if (reveal === null) return
+    const panel = document.getElementById(panelIdOf(activeSection))
+    const control = panel && reveal.setting !== null ? findSettingControl(panel, reveal.setting) : null
+    const group = reveal.group === null ? null : document.getElementById(reveal.group)
+    if (control) revealSetting(control)
+    else if (group) group.scrollIntoView?.({ block: 'start' })
+  }, [reveal, activeSection])
   const microphoneKnown = settings.microphoneId === null || microphones.some(({ deviceId }) => deviceId === settings.microphoneId)
 
   const saveMotion = async (reducedMotion: ReducedMotion): Promise<void> => {
@@ -411,12 +432,31 @@ export function SettingsView({
     }
   }
 
-  const selectSection = (id: SettingsSectionId): void => {
+  const selectSection = (id: SettingsPageId): void => {
     if (id !== 'settings-capture') stopMicrophoneTest()
     setActiveSection(id)
   }
 
-  const panelProps = (id: SettingsSectionId) => ({
+  /** Opens the page a section or setting is on, and brings the group or setting into view. */
+  const openAt = (section: SettingsSectionId, setting: string | null = null): void => {
+    const home = settingsSectionHome(section)
+    const page = sections.some(item => item.id === home.page) ? home.page : 'settings-capture'
+    selectSection(page)
+    setReveal(previous => ({ group: page === home.page ? home.group : null, setting, key: (previous?.key ?? 0) + 1 }))
+  }
+  const openRequest = useRef<number | null>(null)
+  useEffect(() => {
+    if (!openSection || openRequest.current === openSection.key || !isSettingsSection(openSection.section)) return
+    openRequest.current = openSection.key
+    openAt(openSection.section)
+  })
+  const openFound = (entry: SettingEntry): void => {
+    setFindQuery('')
+    openAt(entry.section, entry.target ?? entry.label)
+  }
+  const pageLabel = (entry: SettingEntry): string => SETTINGS_PAGES.find(page => page.id === settingsSectionHome(entry.section).page)?.label ?? ''
+
+  const panelProps = (id: SettingsPageId) => ({
     role: 'tabpanel',
     'aria-labelledby': `tab-${id}`,
     hidden: activeSection !== id,
@@ -431,9 +471,14 @@ export function SettingsView({
           <SidebarTop />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}>Settings</h1>
-          <nav className="settings-subnav" aria-label="Settings sections" role="tablist" aria-orientation="vertical">
+          <SettingsFindField query={findQuery} onQueryChange={setFindQuery} inputRef={findInputRef}
+            onOpenFirst={() => { const first = findSettings(findIndex, findQuery)[0]; if (first) openFound(first) }}
+            onEnterResults={() => findListRef.current?.querySelector('button')?.focus()} />
+          {findQuery.trim() ? <SettingsFindResults query={findQuery} index={findIndex} pageOf={pageLabel} onOpen={openFound} listRef={findListRef}
+            onLeave={clear => { if (clear) setFindQuery(''); findInputRef.current?.focus() }} /> : null}
+          <nav className="settings-subnav" aria-label="Settings sections" role="tablist" aria-orientation="vertical" hidden={findQuery.trim() !== ''}>
             {sections.map((section, index) => {
-              const Icon = section.icon
+              const Icon = PAGE_ICONS[section.id]
               return <button
                 type="button"
                 key={section.id}
@@ -441,7 +486,9 @@ export function SettingsView({
                 className="tt-focusable"
                 role="tab"
                 aria-selected={activeSection === section.id}
-                aria-controls={section.id === 'settings-appearance' ? 'settings-appearance-panel' : section.id}
+                aria-controls={panelIdOf(section.id)}
+                // A divider opens each run of pages after the first.
+                {...(index > 0 && sections[index - 1]!.run !== section.run ? { 'data-run-start': '' } : {})}
                 tabIndex={activeSection === section.id ? 0 : -1}
                 onClick={() => selectSection(section.id)}
                 onKeyDown={(event) => {
@@ -467,8 +514,8 @@ export function SettingsView({
           <div className="settings-scroll" ref={scrollRef}>
             <div className="settings-form">
               <Card className="settings-section" id="settings-capture" {...panelProps('settings-capture')}>
-                <div className="settings-section__heading"><h2>Dictation</h2><p>Microphone & recording</p></div>
-                <div className="settings-rows">
+                <div className="settings-section__heading"><h2>Dictation</h2><p>{dictation ? 'Microphone, speech model & what happens to the text' : 'Dictation is off'}</p></div>
+                <SettingsGroup title="Microphone" icon={Mic}>
                   {dictationSwitch ? <Toggle label="Dictate with Sotto" checked={settings.dictationEnabled} onCheckedChange={(checked) => void save({ dictationEnabled: checked })} description="Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model." /> : null}
                   {dictation ? null : <p className="settings-disclosure">Dictation is off. The hotkey is free for other apps and the Dictate room is hidden. Your transcripts, vocabulary and speech model are kept.</p>}
                   {dictation ? <>
@@ -510,19 +557,25 @@ export function SettingsView({
                       {microphoneState === 'denied' ? <OpenSystemSettingsButton platform={platform} pane="microphone" /> : null}
                     </div>
                   </Field>
+                  </> : null}
+                </SettingsGroup>
+                {dictation ? <>
+                <SettingsGroup title="Shortcuts" icon={Keyboard}>
                   {platform === 'linux'
                     ? <LinuxDictationShortcuts settings={settings} visible={activeSection === 'settings-capture'} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />
                     : <DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />}
+                </SettingsGroup>
+                <SettingsGroup title="While you dictate" icon={Timer}>
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>
                   <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="A short sound when recording starts and stops." />
                   <div className="settings-input-action"><Field label="Typing speed" description={`How fast you type, in words per minute (${TYPING_SPEED_MIN_WPM} to ${TYPING_SPEED_MAX_WPM}). The Dictate room counts the time dictation saves you against it.`} {...(typingSpeedError === undefined ? {} : { error: typingSpeedError })}><input className="tt-input" inputMode="numeric" value={typingSpeedDraft.value} onBlur={() => void saveTypingSpeed()} onChange={(event) => { typingSpeedDraft.edit(event.currentTarget.value) }} /></Field></div>
-                  </> : null}
-                </div>
-              </Card>
-
-              {dictation ? <Card className="settings-section" id="settings-transcription" {...panelProps('settings-transcription')}>
-                <div className="settings-section__heading"><h2>Transcription</h2><p>Speech to text, on this computer</p></div>
-                <div className="settings-rows">
+                  {/* While Omarchy's shell pill stands in for the widget, the switch would change nothing anyone can see. */}
+                  <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
+                    {...(platform === 'linux' && settings.shellPillInUse === true
+                      ? { disabled: true, description: 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.' }
+                      : { description: 'Keep the small dictation sliver on screen between sessions. Click it to dictate.' })} />
+                </SettingsGroup>
+                <SettingsGroup id="settings-transcription" title="Speech model" icon={AudioLines}>
                   <SpeechModelPicker
                     models={speechModels}
                     choice={settings.speechModel}
@@ -534,14 +587,19 @@ export function SettingsView({
                   />
                   <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trims extra spaces without changing any words." />
                   <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
-                </div>
-              </Card> : null}
+                </SettingsGroup>
+                <SettingsGroup id="settings-output" title="After you dictate" icon={ClipboardPaste}>
+                  <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always on. Every successful transcript is copied." />
+                  <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
+                  <div className="settings-input-action"><Field label="Paste delay" description="How long to wait before pasting, in milliseconds (50 to 1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  <div className="settings-input-action"><Field label="Success message duration" description="How long the success message stays up, in milliseconds (500 to 5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
+                </SettingsGroup>
+                </> : null}
+              </Card>
 
-              {/* Dictation off keeps Cleanup for the thread drafting toggles (ADR-0107); its dictation rows go. */}
-              <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
-                <div className="settings-section__heading"><h2>Cleanup</h2><p>{dictation ? 'Formatting, vocabulary & writing' : 'Writing for threads'}</p></div>
+              {dictation ? <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
+                <div className="settings-section__heading"><h2>Cleanup</h2><p>AI cleanup through OpenRouter</p></div>
                 <div className="settings-rows">
-                  {dictation ? <>
                   <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript." />
                   <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
                   <div className="settings-input-action">
@@ -557,27 +615,40 @@ export function SettingsView({
                       }} />
                     </Field>
                     <p className="settings-disclosure" role="status">{dictionaryPasteCut ? 'The pasted text was cut to fit the 4,000-character limit.' : ''}</p>
-
                   </div>
-                  </> : null}
-                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept." />
-                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”." />
-                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="The thread's own model writes a new pull request's title and body from the branch's commits and diff." />
-
                 </div>
+              </Card> : null}
+
+              <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}>
+                <div className="settings-section__heading"><h2>Threads</h2><p>New threads, replies, the browser & visuals</p></div>
+                <AgentSetupFields />
+                <SettingsGroup title="Working copy" icon={FolderGit2}>
+                  <Field label="New threads work in" description="Project defaults below can override this. Existing threads keep their folder."><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">Project folder</option><option value="independent">New worktree</option></Select></Field>
+                  <ProjectThreadDefaults settings={settings} onSave={save} />
+                </SettingsGroup>
+                <SettingsGroup title="In a thread" icon={MessageSquareText}>
+                  <Field label="Replies in threads" description="Show replies as they are written or once finished. Commands and tool calls always show as they run."><SegmentedControl label="Replies in threads" value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: 'As written' }, { value: 'complete', label: 'When finished' }]} /></Field>
+                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept." />
+                  {/* ADR-0076: an Owl feature, read when Sotto next starts. */}
+                  {resumeAfterRestart ? <Toggle label="Resume threads after a restart" checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
+                    description={settings.resumeThreadsAfterRestart
+                      ? 'A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.'
+                      : 'A thread working when Sotto closes waits for your next message.'} /> : null}
+                </SettingsGroup>
+                <SettingsGroup id="settings-browser" title="Links and Sotto’s browser" icon={Globe}>
+                  <Field label="Web links in threads" description="Where links in threads open. To choose for one link, right-click it or press Shift+F10."><SegmentedControl label="Web links in threads" value={settings.webLinkDestination} onChange={value => void save({ webLinkDestination: value as AppSettings['webLinkDestination'] })} options={[{ value: 'external', label: 'System browser' }, { value: 'embedded', label: 'Sotto browser' }]} /></Field>
+                  <Toggle label="Show the browser when an agent opens a page" checked={settings.showBrowserPreviews} onCheckedChange={checked => void save({ showBrowserPreviews: checked })} description="Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools." />
+                </SettingsGroup>
+                <SettingsGroup title="What agents can do without asking" icon={ShieldCheck}>
+                  <Toggle label="Let agents use the browser without asking" checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description="Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser." />
+                  <Toggle label="Let agents draw visuals in threads" checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description="Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online." />
+                </SettingsGroup>
               </Card>
 
-              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings /></Card>
-
-              <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}><div className="settings-section__heading"><h2>Hosts</h2><p>Local & remote hosts</p></div><HostsSettings localHostEnabled={settings.localHostEnabled} onLocalHostChange={enabled => onUpdateSettings({ localHostEnabled: enabled })} /></Card>
-
-              <Card className="settings-section" id="settings-phones" {...panelProps('settings-phones')}><div className="settings-section__heading"><h2>Phones</h2><p>Sotto on your iPhone, reaching this computer</p></div><PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
-                onOpenHosts={() => { selectSection('settings-hosts'); document.getElementById('tab-settings-hosts')?.focus() }} /></Card>
-
-              <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2>Cloud iPhone</h2><p>Native iOS builds on a run.cloud simulator</p></div>
-                <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
-
-              <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>New threads & projects</p></div><AgentSetupFields /></Card>
+              <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
+                <div className="settings-section__heading"><h2>Git & worktrees</h2><p>Worktrees, commits, pull requests, Changes & fetching</p></div>
+                <GitSettings settings={settings} onSave={save} />
+              </Card>
 
               {watcherOn ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>
                 <div className="settings-section__heading"><h2>Watcher</h2><p>{workerRoles ? 'How Watcher looks after threads, and what each kind of work runs on' : 'How Watcher looks after threads'}</p></div>
@@ -588,50 +659,30 @@ export function SettingsView({
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
-              {dictation ? <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
-                <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>
-                <div className="settings-rows">
-                  <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always on. Every successful transcript is copied." />
-                  <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
-                  <div className="settings-input-action"><Field label="Paste delay" description="How long to wait before pasting, in milliseconds (50 to 1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
-                  <div className="settings-input-action"><Field label="Success message duration" description="How long the success message stays up, in milliseconds (500 to 5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
-                </div>
-              </Card> : null}
+              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings /></Card>
 
-              <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}><AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current} /></div>
+              <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}>
+                <div className="settings-section__heading"><h2>Hosts & phones</h2><p>This computer, other computers, and your iPhone</p></div>
+                <HostsSettings localHostEnabled={settings.localHostEnabled} onLocalHostChange={enabled => onUpdateSettings({ localHostEnabled: enabled })} />
+                <SettingsGroup id="settings-phones" title="Phones" icon={Smartphone} rows={false}>
+                  {/* Run the local host is on this page, above: the press brings it into view with focus on it. */}
+                  <PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
+                    onOpenHosts={() => { const panel = document.getElementById('settings-hosts'); const control = panel && findSettingControl(panel, 'Run the local host'); if (control) revealSetting(control) }} />
+                </SettingsGroup>
+              </Card>
+
+              <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2>Cloud iPhone</h2><p>Native iOS builds on a run.cloud simulator</p></div>
+                <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
+
+              <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}>
+                <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current}>
+                  <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
+                </AppearanceSettings>
+              </div>
 
               <Card className="settings-section" id="settings-privacy" {...panelProps('settings-privacy')}>
-                <div className="settings-section__heading"><h2>Application</h2><p>Startup, privacy & updates</p></div>
-                <div className="settings-rows">
-
-                  <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
-                  <Field label="Web links in threads" description="Where links in threads open. To choose for one link, right-click it or press Shift+F10."><SegmentedControl label="Web links in threads" value={settings.webLinkDestination} onChange={value => void save({ webLinkDestination: value as AppSettings['webLinkDestination'] })} options={[{ value: 'external', label: 'System browser' }, { value: 'embedded', label: 'Sotto browser' }]} /></Field>
-                  <Toggle label="Show the browser when an agent opens a page" checked={settings.showBrowserPreviews} onCheckedChange={checked => void save({ showBrowserPreviews: checked })} description="Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools." />
-                  <Toggle label="Let agents use the browser without asking" checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description="Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser." />
-                  <Toggle label="Let agents draw visuals in threads" checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description="Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online." />
-                  {/* ADR-0061 decision 12: the switch governs the agent's tool alone; the user's own Babysit pull request stays either way. */}
-                  <Toggle label="Let agents babysit pull requests" checked={settings.babysitPullRequests} onCheckedChange={checked => void save({ babysitPullRequests: checked })}
-                    description={settings.babysitPullRequests
-                      ? 'An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.'
-                      : 'Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.'} />
-                  {/* ADR-0076: an Owl feature, read when Sotto next starts. */}
-                  {resumeAfterRestart ? <Toggle label="Resume threads after a restart" checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
-                    description={settings.resumeThreadsAfterRestart
-                      ? 'A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.'
-                      : 'A thread working when Sotto closes waits for your next message.'} /> : null}
-                  <Field label="Replies in threads" description="Show replies as they are written or once finished. Commands and tool calls always show as they run."><SegmentedControl label="Replies in threads" value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: 'As written' }, { value: 'complete', label: 'When finished' }]} /></Field>
-                  <Field label="New threads work in" description="Project defaults below can override this. Existing threads keep their folder."><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">Project folder</option><option value="independent">New worktree</option></Select></Field>
-                  <Field label="Remove idle worktrees after" description="Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void save({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>
-                  <Toggle label="Remove a worktree when its thread is settled" checked={settings.worktreeCleanup.onSettle} onCheckedChange={checked => void save({ worktreeCleanup: { onSettle: checked } })} description="Settling removes a clean worktree without asking. One with uncommitted changes still asks." />
-                  <Toggle label="Remove a worktree once its commits are in the default branch" checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void save({ worktreeCleanup: { unchanged: checked } })} description="Checked hourly against your local copy of the default branch." />
-                  <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { merged: checked } })} description="Checked hourly with GitHub through gh, using your own sign-in." />
-                  <ProjectThreadDefaults settings={settings} onSave={save} />
-                  {/* While Omarchy's shell pill stands in for the widget, the switch would change nothing anyone can see. */}
-                  {/* No widget runs while dictation is off. */}
-                  {dictation ? <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
-                    {...(platform === 'linux' && settings.shellPillInUse === true
-                      ? { disabled: true, description: 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.' }
-                      : { description: 'Keep the small dictation sliver on screen between sessions. Click it to dictate.' })} /> : null}
+                <div className="settings-section__heading"><h2>Application</h2><p>Startup, history, updates & reset</p></div>
+                <SettingsGroup title="When your computer starts" icon={Power}>
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
                     {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Sotto cannot change sign-in startup here.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
@@ -643,11 +694,16 @@ export function SettingsView({
                         : { text: 'Startup setting saved.', error: false })
                   }} />
                   <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
+                </SettingsGroup>
+                <SettingsGroup id="settings-history" title="History" icon={History}>
                   <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away." />
                   <Field label="History retention" description="How many transcripts to keep."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
-                </div>
-                <div className="settings-updates" id="settings-updates">
-                  <div className="settings-section__heading"><h2>Updates</h2><p>{copy.settingsUpdatesLead}</p></div>
+                  <div className="settings-danger-row">
+                    <div><h3>Clear transcript history</h3><p>Remove saved text without changing settings or models.</p></div>
+                    <Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
+                  </div>
+                </SettingsGroup>
+                <SettingsGroup id="settings-updates" title="Updates" icon={Download} note={copy.settingsUpdatesLead}>
                   {/* Where Sotto never updates itself, the row says how to update by hand and offers nothing to press. */}
                   <div className="settings-update-row">
                     <div>
@@ -665,24 +721,16 @@ export function SettingsView({
                       <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
                     </div> : null}
                   </div>
-                  {copy.settingsUpdatesByHand === null ? <div className="settings-rows">
-                    <Toggle label="Check for updates automatically" checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
-                  </div> : null}
-                </div>
-
-                <div className="settings-danger-row">
-                  <div><h3>Clear transcript history</h3><p>Remove saved text without changing settings or models.</p></div>
-                  <Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
-                </div>
-                <div className="settings-danger-row">
-                  <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay.</p></div>
-                  <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
-                </div>
-              </Card>
-
-              <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
-                <div className="settings-section__heading"><h2>Git</h2><p>Commits, pull requests, Changes & fetching</p></div>
-                <GitSettings settings={settings} onSave={save} />
+                  {copy.settingsUpdatesByHand === null
+                    ? <Toggle label="Check for updates automatically" checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
+                    : null}
+                </SettingsGroup>
+                <SettingsGroup title="Start over" icon={RotateCcw}>
+                  <div className="settings-danger-row">
+                    <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay.</p></div>
+                    <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
+                  </div>
+                </SettingsGroup>
               </Card>
 
               {performanceOn ? <Card className="settings-section" id="settings-performance" {...panelProps('settings-performance')}>
@@ -723,7 +771,7 @@ const PICKER_STEPS: Readonly<Record<string, (index: number, last: number) => num
 })
 
 /**
- * Settings → Transcription's speech model: a list of the models already on
+ * Settings → Dictation's speech model: a list of the models already on
  * this computer, then Sotto's models to download, then the chosen one's
  * statement and where it stands.
  *

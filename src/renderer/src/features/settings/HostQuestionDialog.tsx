@@ -76,7 +76,7 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
   }
   if (!saved) {
     const name = state?.setup?.name ?? host.name
-    const putOff = ' Not now leaves it waiting, and Show setup in Settings > Hosts has it too.'
+    const putOff = ' Not now leaves it waiting, and Show setup in Settings > Hosts & phones has it too.'
     if (!prompt) return <ConfirmationDialog key={setupKey} danger={false} fallbackFocusRef={fallbackFocusRef} title={`Approve the connection to ${name} in Tailscale`}
       confirmLabel="Open approval page" cancelLabel="Not now" onCancel={dismiss}
       onConfirm={() => run({ type: 'open-approval', id: host.id }, 'The approval page could not open. Nothing was changed. Try again.')}
@@ -87,7 +87,7 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
       title={hostKey ? `Trust the SSH host ${name}?` : `Unlock the SSH connection to ${name}`}
       confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel="Not now" onCancel={dismiss}
       // The dialog stays until main clears the question, which it does once SSH has the answer.
-      onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Answer it again from Show setup in Settings > Hosts.'); setAnswer(''); return false }}
+      onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Answer it again from Show setup in Settings > Hosts & phones.'); setAnswer(''); return false }}
       {...(error ? { failureMessage: error } : {})}
       description={<div className="hosts-dialog__fields">
         <p>{(hostKey ? `An agent is setting up ${name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
@@ -109,8 +109,8 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
     onDismiss={dismiss}
     onCancel={() => {
       setAnswer('')
-      if (admin) void run({ type: 'stop-admin-sign-in', id: host.id }, `Sotto could not stop signing in to ${host.name}. Try again in Settings > Hosts.`)
-      else void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts.`)
+      if (admin) void run({ type: 'stop-admin-sign-in', id: host.id }, `Sotto could not stop signing in to ${host.name}. Try again in Settings > Hosts & phones.`)
+      else void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts & phones.`)
     }}
     // The dialog stays until main clears the question, which it does once SSH has the answer.
     onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Switch the host off and on to try again.'); setAnswer(''); return false }}

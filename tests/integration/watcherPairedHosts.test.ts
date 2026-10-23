@@ -93,7 +93,7 @@ async function master(native?: CodexAppServerHost, usage = false) {
   }
   return { ...f, ...paired, watcher, router, connection, workspace, id, requestId, start, call }
 }
-/** Lets the paired desktop answer on the host, or stops it, as Settings > Hosts does, and waits for the desktop to hear. */
+/** Lets the paired desktop answer on the host, or stops it, as Settings > Hosts & phones does, and waits for the desktop to hear. */
 async function allowAnswers(f: Awaited<ReturnType<typeof master>>, allowed: boolean) {
   const { adminToken } = JSON.parse(await readFile(join(remote.root, 'host-listener.json'), 'utf8')) as { adminToken: string }
   const response = await fetch(remote.url + '/v1/admin/' + (allowed ? 'allow-answers' : 'deny-answers'), { method: 'POST',
@@ -729,7 +729,7 @@ it('sends to a full-access thread on a paired host above the new-thread default,
   expect(writes).toHaveBeenCalledOnce()
   // A start there is still held to the new-thread default, in the same words, before anything crosses the wire.
   expect(await startFullAccess()).toEqual({ status: 'refused', code: 'PERMISSION_TOO_WIDE', retryable: false,
-    message: 'Watcher cannot give a thread more permission than your new-thread default. Nothing was sent or started. To give it more, widen New threads start with in Settings → Agents first.' })
+    message: 'Watcher cannot give a thread more permission than your new-thread default. Nothing was sent or started. To give it more, widen New threads start with in Settings → Threads first.' })
   expect(writes).toHaveBeenCalledOnce()
   // A restarted host learns again from the desktop's next read whether it may answer, so restored operations are not held back.
   const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher

@@ -299,7 +299,7 @@ await pending2.promise })
   })
 
   it('does not start beside a provider job: one agent job at a time', async () => {
-    const f = fixture(() => 'An agent is installing Devin on forge now. Stop it on its tile in Settings > Hosts first. Nothing was started.')
+    const f = fixture(() => 'An agent is installing Devin on forge now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started.')
     await expect(f.setup.command(start())).rejects.toThrow('An agent is installing Devin on forge now.')
     expect(f.threads.start).not.toHaveBeenCalled()
     expect(f.setup.state()).toBeUndefined()

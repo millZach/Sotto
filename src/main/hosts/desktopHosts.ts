@@ -37,14 +37,14 @@ import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUp
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
 type Connection = Omit<RemoteHost, 'enabled'>
-/** What Settings > Hosts asks of the host setup (ADR-0035), which runs beside the saved hosts and reports into them. */
+/** What Settings > Hosts & phones asks of the host setup (ADR-0035), which runs beside the saved hosts and reports into them. */
 export interface HostSetupSource {
   state(): HostSetupState | undefined
   choice(): HostSetupChoice | undefined
   command(command: Extract<HostsCommand, { type: 'start-setup' | 'stop-setup' | 'dismiss-setup' }>): Promise<void>
   subscribe(listener: () => void): () => void
 }
-/** Each remote host's phone access (ADR-0050): Settings > Hosts shows it, and its Phones dialog sends it presses. */
+/** Each remote host's phone access (ADR-0050): Settings > Hosts & phones shows it, and its Phones dialog sends it presses. */
 export interface HostPhonesSource {
   state(): HostPhonesView[]
   command(id: string, command: HostPhonesCommand): Promise<void>
@@ -61,7 +61,7 @@ export interface HostUpdateSource {
   busy(id: string): string | undefined
   subscribe(listener: () => void): () => void
 }
-/** What Settings > Hosts asks of the start at boot changes (ADR-0054), which follow the saved hosts. */
+/** What Settings > Hosts & phones asks of the start at boot changes (ADR-0054), which follow the saved hosts. */
 export interface HostBootSource {
   state(): HostBootState[]
   command(id: string, action: HostBootAction): Promise<void>
@@ -187,7 +187,7 @@ export class DesktopHosts {
   private pendingAdd: Promise<void> = Promise.resolve()
   private pendingSetup: Promise<void> = Promise.resolve()
   private generation = 0
-  /** The host setup, once main has one; Settings > Hosts shows it and sends it its commands. */
+  /** The host setup, once main has one; Settings > Hosts & phones shows it and sends it its commands. */
   private setup: HostSetupSource | undefined
   private unsubscribeSetup: (() => void) | undefined
   /** The provider job, once main has one (ADR-0035): the tiles show it and send it their Start and Stop. */
@@ -196,7 +196,7 @@ export class DesktopHosts {
   /** The host updates, once main has them (ADR-0040): the Threads page shows them and sends them its presses. */
   private updates: HostUpdateSource | undefined
   private unsubscribeUpdates: (() => void) | undefined
-  /** The start at boot changes, once main has them (ADR-0054): Settings > Hosts shows them and sends them its presses. */
+  /** The start at boot changes, once main has them (ADR-0054): Settings > Hosts & phones shows them and sends them its presses. */
   private boot: HostBootSource | undefined
   private unsubscribeBoot: (() => void) | undefined
   /** Each host's phone access, once main has it (ADR-0050). */
@@ -297,7 +297,7 @@ export class DesktopHosts {
       ...(this.boot ? { boot: this.boot.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
-  /** Gives Settings > Hosts the host setup: its state joins every published state, and its commands go to it. */
+  /** Gives Settings > Hosts & phones the host setup: its state joins every published state, and its commands go to it. */
   useSetup(setup: HostSetupSource): void {
     this.unsubscribeSetup?.()
     this.setup = setup
@@ -318,14 +318,14 @@ export class DesktopHosts {
     this.unsubscribeUpdates = updates.subscribe(() => this.emit())
     this.emit()
   }
-  /** Gives Settings > Hosts the start at boot changes: their state joins every published state, and its presses go to them. */
+  /** Gives Settings > Hosts & phones the start at boot changes: their state joins every published state, and its presses go to them. */
   useBoot(boot: HostBootSource): void {
     this.unsubscribeBoot?.()
     this.boot = boot
     this.unsubscribeBoot = boot.subscribe(() => this.emit())
     this.emit()
   }
-  /** Gives Settings > Hosts each host's phone access: its state joins every published state, and the dialog's presses go to it. */
+  /** Gives Settings > Hosts & phones each host's phone access: its state joins every published state, and the dialog's presses go to it. */
   usePhones(phones: HostPhonesSource): void {
     this.unsubscribePhones?.()
     this.phones = phones
@@ -561,14 +561,14 @@ export class DesktopHosts {
     }
     if (command.type === 'host-phones' || command.type === 'watch-host-phones') {
       if (!this.phones) throw new Error('Phone access on hosts cannot be changed from this window. Nothing was changed.')
-      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
       if (command.type === 'watch-host-phones') this.phones.watch(command.id, command.watching)
       else await this.phones.command(command.id, command.command)
       return this.get()
     }
     if (command.type === 'host-boot') {
       if (!this.boot) throw new Error('Start at boot cannot be changed from this window. Nothing was changed.')
-      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
       if (command.action === 'install' || command.action === 'remove') { const busy = this.updates?.busy(command.id); if (busy) throw new Error(busy) }
       await this.boot.command(command.id, command.action)
       return this.get()
@@ -593,7 +593,7 @@ export class DesktopHosts {
     }
     if (command.type === 'save') return this.edit(command.host, command.prefer)
     const host = this.saved.find(item => item.id === command.id)
-    if (!host) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+    if (!host) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
     if (command.type === 'ssh-answer') {
       this.answerPrompt(host.id, command.promptId, command.answer)
       return this.get()
@@ -782,7 +782,7 @@ export class DesktopHosts {
     catch { throw new Error('The approval page could not open in your browser. Nothing was changed. Try Open approval page again.') }
   }
   /**
-   * The host's own connect, disconnect or refresh for one of its providers, from its tile in Settings > Hosts (ADR-0037).
+   * The host's own connect, disconnect or refresh for one of its providers, from its tile in Settings > Hosts & phones (ADR-0037).
    * It goes to that host and nowhere else: nothing about this computer's providers changes. A refusal comes back to the
    * tile, named for the host, rather than to the Threads page.
    */
@@ -803,7 +803,7 @@ export class DesktopHosts {
     return state.error ? { error: nameHostInRefusal(state.error, host.name) } : {}
   }
   /**
-   * A provider's sign-in on a connected host (ADR-0037), for Settings > Hosts. The host runs the client and holds what it
+   * A provider's sign-in on a connected host (ADR-0037), for Settings > Hosts & phones. The host runs the client and holds what it
    * printed; the window gets the code to show and never the page's address. Open sign-in page asks the host for the page
    * again, checks it is one of that provider's own, and opens it in the default browser, keeping nothing here.
    */
@@ -942,7 +942,7 @@ export class DesktopHosts {
    */
   private async edit(input: Connection, prefer?: HostConnectionPreference): Promise<HostsState> {
     const existing = this.saved.find(item => item.id === input.id)
-    if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+    if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
     validateConnection(input)
     const choosing = prefer !== undefined && prefer !== this.tailnet.get(existing.id).prefer
     if (!choosing) return this.saveConnection(existing, input)

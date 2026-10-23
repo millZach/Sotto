@@ -229,7 +229,7 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
 }
 
 /**
- * A connected host's providers, under its row in Settings > Hosts (ADR-0037, layout B of `prototype/host-providers`):
+ * A connected host's providers, under its row in Settings > Hosts & phones (ADR-0037, layout B of `prototype/host-providers`):
  * Show providers opens a tile for each provider this build offers, and each tile acts on that host alone. Sign in opens a small dialog
  * that runs the provider's own sign-in on the host and finishes it in this computer's browser. A provider the host cannot
  * use offers an agent to install, update or fix it (ADR-0035), and its tile follows that agent while it works. Under the

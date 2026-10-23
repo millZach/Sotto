@@ -17,6 +17,7 @@ import {
   wordsLabel,
   type JournalRow,
 } from './journalFacts'
+import type { SettingsSectionId } from '../settings/settingsPages'
 
 export interface JournalProps {
   readonly entries: readonly HistoryEntry[]
@@ -33,7 +34,8 @@ export interface JournalProps {
   readonly onCopy: (text: string) => Promise<boolean>
   readonly onDelete: (id: string) => Promise<boolean>
   readonly onClear: () => Promise<boolean>
-  readonly onOpenSettings: () => void
+  /** Opens Settings, at the page or group named when there is one. */
+  readonly onOpenSettings: (section?: SettingsSectionId) => void
 }
 
 const COPIED_MS = 1_600
@@ -150,7 +152,7 @@ export const Journal = memo(function Journal({
           <span>{entries.length > 0
             ? 'History is off. New dictations keep their numbers only; older transcripts stay here until you delete them.'
             : 'History is off. New dictations keep their numbers only.'}</span>
-          <Button variant="ghost" onClick={onOpenSettings}>Open Settings</Button>
+          <Button variant="ghost" onClick={() => onOpenSettings('settings-history')}>Open Settings</Button>
         </p>
       )}
       {ready ? (

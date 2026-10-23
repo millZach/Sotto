@@ -50,11 +50,11 @@ test('Settings mode row fits and keeps keyboard navigation', async () => {
     const modes = page.getByRole('tablist', { name: 'Page', exact: true })
     await modes.getByRole('tab', { name: 'Dictate', exact: true }).focus()
     await page.keyboard.press('End')
-    await expect(page.getByRole('tab', { name: 'Threads', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(modes.getByRole('tab', { name: 'Threads', exact: true })).toHaveAttribute('aria-selected', 'true')
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await modes.getByRole('tab', { name: 'Dictate', exact: true }).focus()
     await page.keyboard.press('ArrowRight')
-    await expect(page.getByRole('tab', { name: 'Threads', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(modes.getByRole('tab', { name: 'Threads', exact: true })).toHaveAttribute('aria-selected', 'true')
   } finally {
     await writeFile(join(evidence, 'geometry.json'), JSON.stringify(geometry, null, 2))
     await closeSotto(launched)

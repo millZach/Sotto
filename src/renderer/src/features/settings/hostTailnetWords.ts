@@ -2,7 +2,7 @@ import type { HostAddTailnet, HostTailnetNote } from '../../../../shared/hosts'
 import { mergedWhen } from '../../tools/pullRequestSurface.logic'
 
 /**
- * Words Settings > Hosts uses about Tailscale and a host's tailnet connection (ADR-0053), kept apart from the dialogs so the
+ * Words Settings > Hosts & phones uses about Tailscale and a host's tailnet connection (ADR-0053), kept apart from the dialogs so the
  * row, Add host's checklist, Edit connection and the Phones dialog find them in one place.
  */
 

@@ -84,7 +84,7 @@ ${PROVIDER_INSTALL_METHODS[input.provider]}
 How to work
 - Use the sotto_host_setup tools. provider_status says what Sotto knows about ${name} on ${input.host}. provider_check has ${input.host}'s host look for ${name} again and start it, the same as Check again on its tile; it says whether the host found it.
 - Start with provider_status, then look at ${input.host} over SSH before changing anything.${update}
-- After each fix, call provider_check. Stop as soon as it says the host found ${name}: the job is over, and the user signs in from Settings > Hosts.
+- After each fix, call provider_check. Stop as soon as it says the host found ${name}: the job is over, and the user signs in from Settings > Hosts & phones.
 - Never sign in, sign out or change ${name}'s account, and never run its login command. Signing in is the user's.
 - Every command you run is a request the user answers. Say briefly what each one is for.
 - Ask the user before you use sudo, change system packages, or change anything outside the account's home folder.

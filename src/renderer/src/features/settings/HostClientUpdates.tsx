@@ -9,7 +9,7 @@ import {
 } from './hostClientUpdateWords'
 
 /**
- * A host's client updates in Settings > Hosts (#480, variant D of `prototype/host-client-updates`): the line and the
+ * A host's client updates in Settings > Hosts & phones (#480, variant D of `prototype/host-client-updates`): the line and the
  * Update press on each provider tile, and the chip beside Show providers that opens Update all. Both put clients in the
  * host's own one-at-a-time update line; the host runs them and its shell says how each went.
  */

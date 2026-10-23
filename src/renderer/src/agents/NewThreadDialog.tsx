@@ -14,7 +14,7 @@ export type { ThreadCreationStart } from './newThread'
 
 /**
  * New thread. The pen on a project row and the empty Threads page's button already know their project and skip
- * this dialog, opening the thread at once through `beginNewThread` on the defaults from Settings → Agents, with
+ * this dialog, opening the thread at once through `beginNewThread` on the defaults from Settings → Threads, with
  * no further form to fill in (issue #347); the sidebar's top New thread button does the same once a project is
  * chosen here.
  */

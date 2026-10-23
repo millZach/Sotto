@@ -56,6 +56,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
   readonly phoneAccess: boolean
   readonly phoneAccessName: string
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
+  /** Brings Run the local host, above on the same page, into view with focus on it. */
   readonly onOpenHosts: () => void
   readonly bridge?: PhonesBridge | undefined
 }): ReactNode {
@@ -151,8 +152,8 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
   return <div className="hosts-settings phones-settings">
     {!localHostRunning ? <div className="hosts-notice phones-needs-host">
       <Info size={16} aria-hidden="true" />
-      <p>Phone access needs the local host. Turn on Run the local host under Hosts, then restart Sotto.</p>
-      <Button variant="secondary" onClick={onOpenHosts}>Go to Hosts</Button>
+      <p>Phone access needs the local host. Turn on Run the local host above, then restart Sotto.</p>
+      <Button variant="secondary" onClick={onOpenHosts}>Show Run the local host</Button>
     </div> : null}
     <div className="phones-switch">
       <Toggle label="Let phones connect" checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}

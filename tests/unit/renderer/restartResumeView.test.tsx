@@ -52,17 +52,17 @@ describe('a resume note in the thread', () => {
 })
 
 describe('Resume threads after a restart in Settings', () => {
-  it('sits after the babysitting switch, on by default, and says what each value does', async () => {
+  it('sits with what happens in a thread, after Generated thread titles, on by default, and says what each value does', async () => {
     owl(true)
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     const view = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Threads')
     const toggle = screen.getByRole('switch', { name: 'Resume threads after a restart' })
     expect(toggle).toBeChecked()
     expect(toggle).toHaveAccessibleDescription('A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.')
     const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
-    expect(switches.indexOf('Resume threads after a restart')).toBe(switches.indexOf('Let agents babysit pull requests') + 1)
+    expect(switches.indexOf('Resume threads after a restart')).toBe(switches.indexOf('Generated thread titles') + 1)
     await user.click(toggle)
     expect(update).toHaveBeenCalledWith({ resumeThreadsAfterRestart: false })
     view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, resumeThreadsAfterRestart: false } })} />)
@@ -72,7 +72,7 @@ describe('Resume threads after a restart in Settings', () => {
   it('is not there where the Owl list keeps the feature off', async () => {
     owl(false)
     render(<SettingsView {...baseProps()} />)
-    await selectCategory('Application')
-    expect(screen.queryByRole('switch', { name: 'Resume threads after a restart' })).toBeNull()
+    await selectCategory('Threads')
+    expect(screen.queryByRole('switch', { name: 'Resume threads after a restart', hidden: true })).toBeNull()
   })
 })

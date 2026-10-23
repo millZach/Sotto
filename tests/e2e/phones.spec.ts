@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
 /**
- * Settings > Phones in the built app, through every state the prototype drew: off, Tailscale not
+ * Settings > Hosts & phones in the built app, through every state the prototype drew: off, Tailscale not
  * running, ports 8443 and 10000 taken, ready, a pairing code, and a paired phone. Tailscale is the end-to-end
  * stand-in in the profile (`e2e-tailscale.json`), never the machine's own; the phone is this test,
  * pairing over the listener's loopback port the way Tailscale Serve would carry it.
@@ -44,12 +44,14 @@ test('Phones: sets up through the checklist, pairs a phone with a code, and clos
   try {
     await openPage(page, 'Settings')
     const tabs = page.getByRole('tablist', { name: 'Settings sections' })
-    await expect(tabs.getByRole('tab')).toHaveText(['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Phones', 'Cloud iPhone', 'Agents', 'Output', 'Appearance', 'Application', 'Git'])
-    // The keyboard reaches Phones from Hosts with one arrow.
-    await tabs.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await expect(tabs.getByRole('tab')).toHaveText(['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'])
+    // Phones is a group on Hosts & phones, under the hosts; the keyboard reaches the page with one arrow from Providers.
+    await tabs.getByRole('tab', { name: 'Providers', exact: true }).click()
     await page.keyboard.press('ArrowDown')
-    await expect(tabs.getByRole('tab', { name: 'Phones', exact: true })).toBeFocused()
-    await expect(page.getByRole('heading', { name: 'Phones', exact: true })).toBeVisible()
+    const hostsTab = tabs.getByRole('tab', { name: 'Hosts & phones', exact: true })
+    await expect(hostsTab).toBeFocused()
+    await expect(hostsTab).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tabpanel', { name: 'Hosts & phones', exact: true }).getByRole('heading', { name: 'Phones', exact: true })).toBeVisible()
     const toggle = page.getByRole('switch', { name: 'Let phones connect' })
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
     await expect(step('Tailscale is running')).toContainText('Checked when you turn this on.')

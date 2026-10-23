@@ -383,14 +383,14 @@ test('persists settings through reload', async () => {
   try {
     await completeOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'Settings' }).click()
-    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
     const delay = launched.page.getByLabel('Paste delay')
     await delay.fill('275')
     await launched.page.getByLabel('Paste delay').press('Tab')
     await expect(launched.page.getByText('Paste delay saved.')).toBeVisible()
     await launched.page.reload()
     await launched.page.getByRole('link', { name: 'Settings' }).click()
-    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
     await expect(launched.page.getByLabel('Paste delay')).toHaveValue('275')
   } finally {
     await closeSotto(launched)
@@ -568,7 +568,7 @@ test('hiding the idle widget terminates its renderer drag before the next reveal
     await expect(widget.locator('.widget-shell')).toHaveAttribute('data-dragging', 'true')
 
     await launched.page.getByRole('link', { name: 'Settings' }).click()
-    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
     const idleWidgetToggle = launched.page.getByRole('switch', {
       name: 'Show floating widget when idle',
     })

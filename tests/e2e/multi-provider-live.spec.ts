@@ -219,7 +219,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     }, previousSize)
 
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     for (const coordinator of ['codex', 'claude'] as const) {
       await page.evaluate(provider => window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: provider } }), coordinator)
       const changed = await state(page)

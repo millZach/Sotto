@@ -6,7 +6,7 @@ import { bareEntityId, closeSotto, launchSotto, openPage, openThreads } from './
 
 const evidence = evidenceDirectory('artifacts/new-thread-setup')
 
-test('project defaults remain editable in Application', async () => {
+test('project defaults remain editable in Settings → Threads', async () => {
   test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page, app } = launched
@@ -17,7 +17,7 @@ test('project defaults remain editable in Application', async () => {
     })
     await page.reload()
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
     const project = page.getByRole('combobox', { name: 'Project', exact: true })
     const projectId = bareEntityId(await project.inputValue())!
@@ -33,7 +33,7 @@ test('project defaults remain editable in Application', async () => {
       return state.host.threads.find(thread => thread.id === state.activeThreadId)?.worktree?.mode
     })).toBe('independent')
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
     await expect(choice).toHaveValue('independent')
     await mkdir(evidence, { recursive: true })
@@ -80,7 +80,7 @@ test('a saved host-keyed local project default is migrated before a new thread o
     await page.reload()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).projectThreadWorkingCopyDefaults)).toEqual({ [bareEntityId(projectId)!]: 'independent' })
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
     await expect(page.getByRole('combobox', { name: 'New threads in this project work in' })).toHaveValue('independent')
     await openThreads(page)

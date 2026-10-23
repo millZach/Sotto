@@ -1,4 +1,5 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
+import { FolderOpen, SlidersHorizontal } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../../shared/newThreadDefaults'
 import { chosenModelId, resolveModel } from '../../../shared/modelCatalog'
@@ -8,10 +9,11 @@ import { ChoiceChip, effortChoices, RUNTIME_LABELS } from './ThreadOptions'
 import { EffortPicker } from './EffortPicker'
 import { ModelPicker } from './ModelPicker'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
+import { SettingsGroup } from '../features/settings/SettingsGroup'
 import './agents.css'
 
 /**
- * Settings → Agents' "New threads start with" row: the composer's own model, reasoning and permission chips,
+ * Settings → Threads' "New threads start with" row: the composer's own model, reasoning and permission chips,
  * saving on change (issue #347). The permissions chip always lists Sotto's four modes, whatever the chosen
  * model offers, because the default is a Sotto-wide preference; the note under the row says when the chosen
  * model's provider starts a thread on a different mode instead (the nearest safer one it offers, or, for a
@@ -83,19 +85,25 @@ export function AgentSetupFields(): ReactNode {
   }
   // Each computer keeps its own projects folder, so with a host connected there is a row for each (ADR-0074).
   const computers = (state.connections?.length ?? 0) > 1 ? state.connections ?? [] : null
-  return <div className="account-settings"><div className="account-rows">
-    <h3 className="account-rows__heading account-rows__heading--first">New threads</h3>
-    <p className="account-rows__subheading">{computers ? 'New threads start with these on every connected computer. Change them for one thread in its composer.'
-      : 'New threads start with these. Change them for one thread in its composer.'}</p>
-    <NewThreadDefaultsRow state={state} command={command} />
-    <ProviderUpgradeNotice state={state} command={command} />
-    <h3 className="account-rows__heading">Projects</h3>
-    {computers ? <>
-      <p className="account-rows__subheading">Where a new project goes. Each computer has its own folder.</p>
-      {computers.map(computer => <SavedField key={computer.hostId} heading={computer.name}
-        label={`Default projects directory on ${computer.kind === 'local' ? 'this computer' : computer.name}`}
-        description={computer.connected ? 'Default projects directory' : `Connect ${computer.name} to change its projects directory.`} disabled={!computer.connected}
-        value={state.host.clientHosts?.find(host => host.hostId === computer.hostId)?.projectsDirectory ?? ''} onSave={projectsDirectory => save({ projectsDirectory }, computer.hostId)} />)}
-    </> : <SavedField label="Default projects directory" value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
-  </div>{state.error ? <p className="agent-error" role="alert">{state.error}</p> : null}</div>
+  // Two of Settings → Threads' cards: what new threads start with, and where new projects go.
+  return <div className="account-settings">
+    <SettingsGroup title="New threads" icon={SlidersHorizontal} rows={false} note={computers
+      ? 'New threads start with these on every connected computer. Change them for one thread in its composer.'
+      : 'New threads start with these. Change them for one thread in its composer.'}>
+      <div className="settings-rows account-rows">
+        <NewThreadDefaultsRow state={state} command={command} />
+        <ProviderUpgradeNotice state={state} command={command} />
+      </div>
+    </SettingsGroup>
+    <SettingsGroup title="Projects" icon={FolderOpen} rows={false} {...(computers ? { note: 'Where a new project goes. Each computer has its own folder.' } : {})}>
+      <div className="settings-rows account-rows">
+        {computers ? computers.map(computer => <SavedField key={computer.hostId} heading={computer.name}
+          label={`Default projects directory on ${computer.kind === 'local' ? 'this computer' : computer.name}`}
+          description={computer.connected ? 'Default projects directory' : `Connect ${computer.name} to change its projects directory.`} disabled={!computer.connected}
+          value={state.host.clientHosts?.find(host => host.hostId === computer.hostId)?.projectsDirectory ?? ''} onSave={projectsDirectory => save({ projectsDirectory }, computer.hostId)} />)
+          : <SavedField label="Default projects directory" value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
+      </div>
+    </SettingsGroup>
+    {state.error ? <p className="agent-error" role="alert">{state.error}</p> : null}
+  </div>
 }

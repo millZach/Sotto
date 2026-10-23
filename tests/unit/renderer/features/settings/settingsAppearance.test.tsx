@@ -11,7 +11,7 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Appearance')
 
     expect(screen.queryByRole('combobox', { name: 'Theme' })).not.toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
@@ -28,7 +28,7 @@ describe('SettingsView', () => {
 
     expect(within(section).getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
     // The scope stays short; checked choices communicate the persisted selections.
-    expect(within(section).getByText('Themes & interface')).toBeVisible()
+    expect(within(section).getByText('Themes, contrast & motion')).toBeVisible()
     expect(section).not.toHaveTextContent(/using Citrine/u)
     expect(within(section).queryByRole('radiogroup', { name: 'Accent' })).not.toBeInTheDocument()
     expect(within(within(section).getByRole('radiogroup', { name: 'Color scheme' })).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')

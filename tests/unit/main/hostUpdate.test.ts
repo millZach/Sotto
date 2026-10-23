@@ -129,7 +129,7 @@ describe('which hosts need an update', () => {
       '# On forge:', 'cd ~/.local/share/sotto-host',
       `curl -fLO https://releases.example/download/v${DESKTOP}/${FILE}`, `curl -fLO https://releases.example/download/v${DESKTOP}/${FILE}.sha256`,
       `sha256sum -c ${FILE}.sha256`, `mkdir -p versions/${DESKTOP} && tar -xzf ${FILE} -C versions/${DESKTOP}`, `printf '${DESKTOP}\\n' > current`,
-      '# Then press Stop host for forge in Settings > Hosts, and switch forge on again.'].join('\n'))
+      '# Then press Stop host for forge in Settings > Hosts & phones, and switch forge on again.'].join('\n'))
   })
 })
 
@@ -335,7 +335,7 @@ describe('an update', () => {
     const { hosts, updates, one } = setup()
     hosts.list = [forge({ owned: false })]; hosts.emit()
     expect(one()).toMatchObject({ phase: 'needs', owned: false })
-    expect(one().commands).toMatch(/# Then stop the host on forge, and connect to it again from Settings > Hosts\.$/u)
+    expect(one().commands).toMatch(/# Then stop the host on forge, and connect to it again from Settings > Hosts & phones\.$/u)
     await expect(updates.command(ID, 'update')).rejects.toThrow('Sotto did not start the host on forge, so it cannot restart it. Nothing was changed.')
     expect(hosts.operations).toEqual([])
   })
@@ -348,7 +348,7 @@ describe('an update', () => {
     hosts.list = []; hosts.emit()
     expect(one().phase).toBe('failed')
     await updates.command(ID, 'update')
-    expect(one()).toMatchObject({ phase: 'failed', error: 'forge is not connected, so nothing was updated. Switch it on in Settings > Hosts, then try again.' })
+    expect(one()).toMatchObject({ phase: 'failed', error: 'forge is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.' })
   })
 })
 

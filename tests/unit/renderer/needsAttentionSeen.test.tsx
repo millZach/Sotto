@@ -149,7 +149,7 @@ describe('why the last turn failed', () => {
   })
 
   it('still shows a banner about the provider itself beside the thread\'s own reason', () => {
-    const health = 'Codex is not signed in. Sign in from Settings > Agents, then reconnect.'
+    const health = 'Codex is not signed in. Sign in from Settings > Threads, then reconnect.'
     mount({ ...edit(threadsStateFixture(), 'wav-stall', thread => ({ ...thread, activities: [failedTurn(REASON)] })), activeThreadId: 'wav-stall', error: health })
     expect(document.querySelector('.thread-workspace__error')).toHaveTextContent(health)
     expect(screen.getAllByText(REASON)).toHaveLength(1)

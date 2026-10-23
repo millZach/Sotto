@@ -18,7 +18,7 @@ export interface PhoneStepProps {
 
 /**
  * Setup's iPhone step: get the beta from TestFlight, then let phones reach this computer and show a pairing code.
- * Phone access is the same setting and the same code as Settings › Phones, which keeps the steps, the paired phones and
+ * Phone access is the same setting and the same code as Settings › Hosts & phones, which keeps the steps, the paired phones and
  * the name phones show; this step shows only what a first pairing needs.
  */
 export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, bridge = window.sotto?.phones }: PhoneStepProps): ReactNode {
@@ -33,7 +33,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError('Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Phones.') })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError('Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones.') })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -46,7 +46,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
     return () => clearInterval(timer)
   }, [code])
   // Show a pairing code gives way to the code, so focus goes to the code; when the code closes, focus that went with
-  // it comes back to the button, as on Settings › Phones.
+  // it comes back to the button, as on Settings › Hosts & phones.
   const codeShown = code?.code ?? null
   const previousCode = useRef<string | null>(null)
   useEffect(() => {
@@ -103,7 +103,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
               description="Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
               onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setSaveFailed(!saved)) }}
             />
-            {!localHostRunning ? <span className="onboarding-recovery">Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts, then restart Sotto.</span> : null}
+            {!localHostRunning ? <span className="onboarding-recovery">Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto.</span> : null}
             {saveFailed ? <span className="onboarding-recovery" role="alert">Phone access could not be saved. Nothing was changed. Try again.</span> : null}
             {phoneAccess && state?.phase === 'starting' ? <span role="status">Checking Tailscale on this computer…</span> : null}
             {failure ? <span className="onboarding-recovery" role="alert">{failure}</span> : null}
@@ -122,7 +122,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
           </div>
         </li>
       </ol>
-      <p className="onboarding-aside">Paired phones, and the name they show for this computer, are in Settings › Phones.</p>
+      <p className="onboarding-aside">Paired phones, and the name they show for this computer, are in Settings › Hosts & phones.</p>
     </section>
   )
 }

@@ -59,8 +59,8 @@ function folderNameProblem(name: string, listing: Listed): string | null {
 /** How a host is named in a sentence: this computer, or its saved name. */
 const where = (host: Pick<BrowsableHost, 'kind' | 'name'>): string => host.kind === 'local' ? 'this computer' : host.name
 const notConnected = (host: BrowsableHost): string => host.off
-  ? `${host.name} is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts, then try again.`
-  : `${host.name} is not connected, so its folders can't be listed. Nothing was changed. Connect it in Settings > Hosts, then try again.`
+  ? `${host.name} is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again.`
+  : `${host.name} is not connected, so its folders can't be listed. Nothing was changed. Connect it in Settings > Hosts & phones, then try again.`
 /** A main-process refusal as the sentence it carries, never the IPC wrapper or a bare error code. */
 function refusalText(caught: unknown, fallback: string): string {
   const message = caught instanceof Error ? caught.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() : ''

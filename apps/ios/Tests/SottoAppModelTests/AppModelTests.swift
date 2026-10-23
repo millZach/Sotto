@@ -113,7 +113,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.computers.isEmpty)
         XCTAssertNil(TestKeychain.items[ComputerStore.account(ref.hostID)])
         XCTAssertTrue(model.feedback?.contains("couldn’t confirm removal there") == true)
-        XCTAssertTrue(model.feedback?.contains("Settings › Phones") == true)
+        XCTAssertTrue(model.feedback?.contains("Settings › Hosts & phones") == true)
     }
     @MainActor func testDroppedConnectionRetriesWithoutResendingPendingCommands() async throws {
         let (_, ref) = try fixture()
