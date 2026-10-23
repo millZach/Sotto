@@ -44,7 +44,8 @@ import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
-import { HostFactsSource, hostMachineReport } from './hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
+import type { HostMachineReport } from '../../shared/hostFacts'
 import { threadDelegations } from './agentsView'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -76,6 +77,11 @@ export interface AgentRuntimeOptions {
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
+  /**
+   * The Owl list's answer for Work across machines (ADR-0082), read once by the process owner. Absent fails closed: this
+   * machine's report is its host facts and running threads alone, no live load is sampled, and list_machines shows none.
+   */
+  crossMachineEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -132,13 +138,15 @@ export interface AgentRuntimeOptions {
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
-  // The first live load sample is taken now too, so the first ask reads over a window without waiting (#1311).
+  // With Work across machines on, the first live load sample is taken now too, so the first ask reads over a window
+  // without waiting (#1311); with it off, nothing is sampled and the report carries no load.
+  const crossMachine = options.crossMachineEnabled === true
   const facts = new HostFactsSource()
-  void facts.read().then(() => facts.primeLoad()).catch(() => undefined)
+  void facts.read().then(() => crossMachine ? facts.primeLoad() : undefined).catch(() => undefined)
   // Its threads and sends are read in place, after the load, as the report is answered, with Watcher's starts still on
   // their way to a thread here.
-  const machineFacts = () => hostMachineReport(facts, () => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
-    ...watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }))
+  const machineFacts = (): Promise<HostMachineReport> => hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
+    ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
@@ -241,7 +249,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts,
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
@@ -254,7 +262,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's

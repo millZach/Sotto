@@ -335,6 +335,11 @@ export class WatcherService implements WatcherControlHooks {
     roles?: () => WorkerRoleChoices
     /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
     machineFacts?: () => Promise<HostMachineReport>
+    /**
+     * The Owl answer for Work across machines (ADR-0082), read once at start. With it on, list_machines shows each machine's
+     * live load and work placed but not started (#1311); with it off, or absent, it shows neither, whatever a host sends.
+     */
+    crossMachine?: boolean
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
     ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
     /**
@@ -3456,16 +3461,21 @@ ${operation.draftId}`)
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
   private async listMachines() {
-    // Live load and work placed but not started (#1311) read unknown wherever the facts do.
-    const noLoad = { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const }
+    // Live load and work placed but not started (#1311) are shown only with Work across machines on, and read unknown
+    // wherever the facts do, or where a host does not send them.
+    const live = this.options.crossMachine === true
+    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
+    const loadOf = (report: HostMachineReport) => {
+      if (!live) return {}
+      const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
+      return { load, placedNotStarted: report.placedNotStarted ?? null, memoryState: states.memory, cpuState: states.cpu }
+    }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
       try {
         const report = await facts()
         if (!report) return unknown(older)
-        const states = machineLoadStates(report.load, report.facts.totalMemoryBytes, Date.now())
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, load: report.load,
-          placedNotStarted: report.placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,

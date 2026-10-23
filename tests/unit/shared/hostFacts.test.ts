@@ -36,10 +36,9 @@ describe('hostFactsSchema', () => {
 
 describe('hostMachineReportSchema', () => {
   it('reads a later host’s report, dropping what it adds, and an unreadable running count as unknown', () => {
-    const unknownLoad = { load: null, placedNotStarted: null }
-    expect(hostMachineReportSchema.parse({ facts, runningThreads: 2, queued: 4 })).toEqual({ facts, runningThreads: 2, ...unknownLoad })
-    expect(hostMachineReportSchema.parse({ facts, runningThreads: -1 })).toEqual({ facts, runningThreads: null, ...unknownLoad })
-    expect(hostMachineReportSchema.parse({ facts })).toEqual({ facts, runningThreads: null, ...unknownLoad })
+    expect(hostMachineReportSchema.parse({ facts, runningThreads: 2, queued: 4 })).toEqual({ facts, runningThreads: 2 })
+    expect(hostMachineReportSchema.parse({ facts, runningThreads: -1 })).toEqual({ facts, runningThreads: null })
+    expect(hostMachineReportSchema.parse({ facts })).toEqual({ facts, runningThreads: null })
   })
 
   it('refuses a report without facts', () => {
@@ -58,14 +57,15 @@ const load = {
 }
 
 describe('live load in the machine report (#1311)', () => {
-  it('reads an older host’s report, which has no load and no placed work, as unknown', () => {
-    expect(hostMachineReportSchema.parse({ facts, runningThreads: 1 })).toEqual({ facts, runningThreads: 1, load: null, placedNotStarted: null })
+  it('keeps a report without load and placed work without them, as an older host or one with Work across machines off sends it', () => {
+    expect(hostMachineReportSchema.parse({ facts, runningThreads: 1 })).toEqual({ facts, runningThreads: 1 })
   })
 
   it('reads a load it cannot make sense of as unknown and keeps the rest', () => {
     expect(hostMachineReportSchema.parse({ facts, runningThreads: 1, load: { ...load, cpuBusyPercent: 140 }, placedNotStarted: 2 }))
       .toEqual({ facts, runningThreads: 1, load: null, placedNotStarted: 2 })
     expect(hostMachineReportSchema.parse({ facts, runningThreads: 1, load: { ...load, observedAt: 'soon' } }).load).toBeNull()
+    expect(hostMachineReportSchema.parse({ facts, runningThreads: 1, load, placedNotStarted: -2 }).placedNotStarted).toBeNull()
   })
 
   it('drops what a later host adds to its load', () => {

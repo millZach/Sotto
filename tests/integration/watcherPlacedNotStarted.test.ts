@@ -42,7 +42,7 @@ async function fixture() {
   // The report as the runtime reads it: threads and sends in place, with Watcher's starts still on their way here.
   const facts = new HostFactsSource({ sleep: async () => undefined })
   const report = () => hostMachineReport(facts, () => ({ threads: f.control.watcherSnapshot().threads, ...f.control.watcherSendRecords(),
-    startsNotYetSent: service.startsNotYetSent() }))
+    startsNotYetSent: service.startsNotYetSent() }), true)
   return { ...f, service, start, report }
 }
 

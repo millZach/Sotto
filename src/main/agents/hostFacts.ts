@@ -316,9 +316,16 @@ export interface MachineWork {
 /**
  * A machine's facts, how many of its threads are running a turn now, its live load, and its work placed but not started
  * (#1311): threads not running a turn that hold a send not yet begun, such as a thread Watcher has just started there.
- * The counts are read after the facts and the load, so they are as of the answer.
+ * The counts are read after the facts and the load, so they are as of the answer. The load and the placed work are part
+ * of the Owl feature Work across machines: with `live` off the report is the facts and running threads alone, as it was,
+ * and no load is read.
  */
-export async function hostMachineReport(facts: HostFactsSource, work: () => MachineWork): Promise<HostMachineReport> {
+export async function hostMachineReport(facts: HostFactsSource, work: () => MachineWork, live: boolean): Promise<HostMachineReport> {
+  if (!live) {
+    const machine = await facts.read()
+    const running = work().threads.filter(thread => thread.status === 'running').length
+    return { facts: machine, runningThreads: running <= HOST_RUNNING_THREADS_MAX ? running : null }
+  }
   // A load that cannot be read leaves the facts standing and reads unknown.
   const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
   const { threads, deliveries = [], followups = [], startsNotYetSent = [] } = work()

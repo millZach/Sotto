@@ -106,18 +106,20 @@ export function machineLoadStates(load: HostLoad | null, totalMemoryBytes: numbe
   return { memory, cpu }
 }
 
-const threadCount = z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable().catch(null)
+const threadCount = z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable()
 
 /**
  * What the optional `host-facts` feature answers (#1031): the machine's facts, how many of the host's threads are running a
  * turn now, its live load and its work placed but not started (#1311): threads sent work on this host whose turn has not
  * begun, so two starts seconds apart do not both count the same free memory. Read leniently, as the facts are, so a later
- * host's additions still read on an older desktop; an older host sends no load and no placed work, and both read unknown.
+ * host's additions still read on an older desktop. The load and the placed work are part of the Owl feature Work across
+ * machines (`cross-machine-work`): a host whose answer has it off sends neither, as an older host does, and both stay
+ * absent and read unknown; one it sends that cannot be read reads null.
  */
 export const hostMachineReportSchema = z.object({
   facts: hostFactsSchema,
-  runningThreads: threadCount,
-  load: hostLoadSchema.nullable().catch(null),
-  placedNotStarted: threadCount,
+  runningThreads: threadCount.catch(null),
+  load: hostLoadSchema.nullable().optional().catch(null),
+  placedNotStarted: threadCount.optional().catch(null),
 })
 export type HostMachineReport = z.infer<typeof hostMachineReportSchema>

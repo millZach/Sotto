@@ -189,9 +189,17 @@ describe('HostFactsSource', () => {
 
   it('counts only the threads running a turn as the machine’s running threads', async () => {
     const m = machine()
-    const report = await hostMachineReport(m.source, shell([{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }, { id: 'c', status: 'running' }, { id: 'd', status: 'error' }]))
+    const report = await hostMachineReport(m.source, shell([{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }, { id: 'c', status: 'running' }, { id: 'd', status: 'error' }]), true)
     expect(report).toMatchObject({ runningThreads: 2, facts: { os: { name: 'Omarchy' } } })
-    expect((await hostMachineReport(m.source, shell([]))).runningThreads).toBe(0)
+    expect((await hostMachineReport(m.source, shell([]), true)).runningThreads).toBe(0)
+  })
+
+  it('answers the facts and running threads alone, reading no load, with Work across machines off', async () => {
+    const source = new HostFactsSource({ os: system(), now: () => NOW, sleep: async () => { throw new Error('No load is read with the feature off.') } })
+    const load = vi.spyOn(source, 'load')
+    const report = await hostMachineReport(source, shell([{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }], { deliveries: [{ threadId: 'b', status: 'queued' }] }), false)
+    expect(report).toEqual({ facts: expect.objectContaining({ os: expect.objectContaining({ name: 'Windows 11' }) }), runningThreads: 1 })
+    expect(load).not.toHaveBeenCalled()
   })
 })
 
@@ -317,7 +325,7 @@ describe('the machine report', () => {
       [{ id: 'new', status: 'idle' }, { id: 'busy', status: 'running' }, { id: 'next', status: 'idle' }, { id: 'done', status: 'idle' }, { id: 'failed', status: 'error' }],
       { deliveries: [{ threadId: 'new', status: 'queued' }, { threadId: 'new', status: 'submitting' }, { threadId: 'busy', status: 'submitting' },
         { threadId: 'done', status: 'accepted' }, { threadId: 'failed', status: 'failed' }],
-        followups: [{ threadId: 'next', status: 'dispatching' }, { threadId: 'busy', status: 'queued' }] }))
+        followups: [{ threadId: 'next', status: 'dispatching' }, { threadId: 'busy', status: 'queued' }] }), true)
     expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
     expect(report.load).toMatchObject({ availableMemoryBytes: 11 * GIB })
   })
@@ -326,14 +334,14 @@ describe('the machine report', () => {
     // Once the follow-up queue owns a send its delivery record goes, so the queue's own item is what is left to count.
     const threads = ['queued', 'dispatching', 'paused', 'failed', 'uncertain', 'withdrawn'].map(id => ({ id, status: 'idle' }))
     const followups = ['queued', 'dispatching', 'paused', 'failed', 'uncertain'].map(status => ({ threadId: status, status }))
-    expect(await hostMachineReport(quiet(), shell(threads, { followups }))).toMatchObject({ placedNotStarted: 2 })
+    expect(await hostMachineReport(quiet(), shell(threads, { followups }), true)).toMatchObject({ placedNotStarted: 2 })
     // Withdrawn: the item is gone from the queue, and so is the count.
-    expect(await hostMachineReport(quiet(), shell(threads, { followups: followups.filter(item => item.status !== 'queued') }))).toMatchObject({ placedNotStarted: 1 })
+    expect(await hostMachineReport(quiet(), shell(threads, { followups: followups.filter(item => item.status !== 'queued') }), true)).toMatchObject({ placedNotStarted: 1 })
   })
 
   it('counts Watcher’s starts not yet sent, created or not, once each, and not once their thread is running', async () => {
     const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }, { id: 'began', status: 'running' }],
-      deliveries: [{ threadId: 'created', status: 'queued' }], startsNotYetSent: ['pending', 'created', 'began'] }) as unknown as MachineWork)
+      deliveries: [{ threadId: 'created', status: 'queued' }], startsNotYetSent: ['pending', 'created', 'began'] }) as unknown as MachineWork, true)
     expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
   })
 
@@ -343,13 +351,13 @@ describe('the machine report', () => {
     // The load's window is waited out, and the start that was placed begins its turn meanwhile.
     const source = new HostFactsSource({ os: system(), now: () => NOW,
       sleep: async () => { threads = [{ id: 'new', status: 'running' }]; sends = { deliveries: [{ threadId: 'new', status: 'accepted' }] } } })
-    const report = await hostMachineReport(source, () => ({ threads, ...sends }) as unknown as MachineWork)
+    const report = await hostMachineReport(source, () => ({ threads, ...sends }) as unknown as MachineWork, true)
     expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 0 })
   })
 
   it('keeps the facts when the load cannot be read', async () => {
     const source = quiet()
     vi.spyOn(source, 'load').mockRejectedValue(new Error('unreadable'))
-    expect(await hostMachineReport(source, shell([]))).toMatchObject({ load: null, placedNotStarted: 0, facts: { os: { name: 'Windows 11' } } })
+    expect(await hostMachineReport(source, shell([]), true)).toMatchObject({ load: null, placedNotStarted: 0, facts: { os: { name: 'Windows 11' } } })
   })
 })

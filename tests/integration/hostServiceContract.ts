@@ -61,9 +61,10 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect(idle.facts.os.family).toBe(family)
       expect(idle.facts.totalMemoryBytes).toBeGreaterThan(0)
       expect(idle.runningThreads).toBe(0)
-      // Its live load is read with the facts, and nothing is placed on it yet (#1311).
-      expect(idle.load?.windowMs).toBeGreaterThan(0)
-      expect(idle.placedNotStarted).toBe(0)
+      // Its live load is read with the facts only where the host's Owl answer turns on Work across machines, and nothing
+      // is placed on it yet (#1311); elsewhere its facts are as they were, with neither.
+      if (idle.load === undefined) expect(idle.placedNotStarted).toBeUndefined()
+      else { expect(idle.load?.windowMs).toBeGreaterThan(0); expect(idle.placedNotStarted).toBe(0) }
       expect((await send()).error).toBeNull()
       // The client reads running only once the host does, so the count read after it is the host's running one.
       await sentRunning()
