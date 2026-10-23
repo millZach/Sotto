@@ -539,7 +539,7 @@ export class GitActions {
         if (await this.operationInProgress(checkout)) throw new BringBackRefusal('target-uncommitted', `Nothing was brought to ${target}. A merge or rebase is in progress where ${target} is checked out, so Sotto didn’t touch it.`, { checkout })
         if (targetCommits === 0) {
           await this.refuseIgnoredCollisions(cwd, checkout, target, targetHead, branchHead)
-          await this.advance(target, branchHead, checkout)
+          await this.advance(target, targetHead, branchHead, checkout)
           return { kind: 'fast-forward', branch, commits, head: branchHead, checkout }
         }
         // Conflicts are found before anything is asked, so the question is only ever about a merge Git can make.
@@ -551,7 +551,7 @@ export class GitActions {
         const head = (await this.git(cwd, ['commit-tree', tree, '-p', targetHead, '-p', branchHead, '-F', '-'], { stdin: `${subject}\n` }).catch((error: unknown) => {
           throw new BringBackRefusal('git', 'Git couldn’t make the merge commit.', { gitSaid: gitWords(error) })
         })).trim()
-        await this.advance(target, head, checkout)
+        await this.advance(target, targetHead, head, checkout)
         return { kind: 'merge-commit', branch, commits, targetCommits, head, subject, checkout }
       } finally { release?.() }
     })
@@ -632,17 +632,32 @@ export class GitActions {
     }
   }
   /**
-   * Moves the target to `next`, a descendant of its tip, in the folder that has it checked out: `merge --ff-only` moves the
-   * branch and that folder's files together, and refuses rather than overwrite anything.
+   * Moves the target from `from` to `next`, a descendant, in the folder that has it checked out. The branch moves by its own
+   * name and only from the tip Sotto read (`update-ref` with the old value), never through HEAD, so a branch switched to in
+   * that folder meanwhile is never the one that moves. Once it has moved, the folder must still be on it, or the branch is
+   * put back; then its index and files follow by a two-tree `read-tree`, which refuses rather than overwrite anything.
    */
-  private async advance(target: string, next: string, checkout: string): Promise<void> {
-    const on = (await this.git(checkout, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')).trim()
-    if (on !== target) throw new BringBackRefusal('parent-moved', `Nothing was brought to ${target}. The folder that had ${target} checked out moved to another branch, and Sotto doesn’t switch branches.`, { checkout })
-    try { await this.git(checkout, ['merge', '--ff-only', '--no-autostash', '--quiet', next], { timeoutMs: PULL_TIMEOUT_MS }) }
+  private async advance(target: string, from: string, next: string, checkout: string): Promise<void> {
+    const ref = `refs/heads/${target}`
+    const onTarget = async (): Promise<boolean> => (await this.git(checkout, ['symbolic-ref', '--quiet', 'HEAD']).catch(() => '')).trim() === ref
+    const switched = (): BringBackRefusal => new BringBackRefusal('parent-moved', `Nothing was brought to ${target}. The folder that had ${target} checked out moved to another branch, and Sotto doesn’t switch branches.`, { checkout })
+    if (!await onTarget()) throw switched()
+    try { await this.git(checkout, ['update-ref', '-m', `Sotto: bring changes to ${target}`, ref, next, from]) }
     catch (error) {
-      throw new BringBackRefusal('git', `Git refused to move ${target} where it is checked out, and that folder is as it was.`, { gitSaid: gitWords(error), checkout })
+      throw new BringBackRefusal('moved', `Nothing was brought to ${target}, and nothing changed: Git couldn’t move ${target} from where Sotto read it. Press Bring changes to ${target} again.`, { gitSaid: gitWords(error), checkout })
+    }
+    // The folder may have switched between the read above and the move: then the branch goes back and the folder is left alone.
+    if (!await onTarget()) {
+      await this.git(checkout, ['update-ref', '-m', `Sotto: put ${target} back`, ref, from, next]).catch(() => undefined)
+      throw switched()
+    }
+    try { await this.git(checkout, ['read-tree', '-m', '-u', from, next], { timeoutMs: PULL_TIMEOUT_MS }) }
+    catch (error) {
+      await this.git(checkout, ['update-ref', '-m', `Sotto: put ${target} back`, ref, from, next]).catch(() => undefined)
+      throw new BringBackRefusal('git', `Git refused to update the folder where ${target} is checked out, so ${target} was put back where it was.`, { gitSaid: gitWords(error), checkout })
     }
   }
+
 
   /**
    * T3's `switchRef`: a local branch is checked out; a remote ref with no tracking branch gets one; an

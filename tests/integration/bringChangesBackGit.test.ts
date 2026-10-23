@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BringBackRefusal, GitActions } from '../../src/main/agents/gitActions'
-import { GitStatusReader } from '../../src/main/agents/gitStatus'
+import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { initializeGitRepository, runFixtureGit } from '../fixtures/gitRepository'
 
 /**
@@ -178,6 +178,26 @@ describe('bringing a worktree’s commits to the branch it was made from', () =>
     expect((await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout }))).reason).toBe('ignored')
     expect(main()).toBe(before)
     expect(await readFile(join(project, 'out'), 'utf8')).toBe('the parent’s build output\n')
+  })
+
+  it('moves only the target, by name, when the parent’s folder switches branch while it is brought back', async () => {
+    const { project, child, main } = await repository()
+    git(project, 'branch', 'other', 'main')
+    const other = git(project, 'rev-parse', 'other')
+    await commitFile(child, 'test.txt', 'mid-chunk\n', 'Test')
+    // Someone switches the parent's folder to another branch just before Sotto's first change to it.
+    let switched = false
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      if (!switched && command === 'git' && ['merge', 'update-ref', 'read-tree'].includes(args[0] ?? '')) { switched = true; git(project, 'switch', '-q', 'other') }
+      return runGitStatusCommand(cwd, command, args, options)
+    }
+    const actions = new GitActions({ run, status: new GitStatusReader({ fetchIntervalMs: () => 0 }), writeCommitMessage: async () => null, writePullRequestText: async () => null })
+    const before = main()
+    const refusal = await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout: async () => true }))
+    expect(refusal.reason).toBe('parent-moved')
+    expect(git(project, 'rev-parse', 'other')).toBe(other)
+    expect(main()).toBe(before)
+    expect(git(project, 'status', '--porcelain')).toBe('')
   })
 
   it('refuses when the parent is no longer on the target, and switches no branch', async () => {
