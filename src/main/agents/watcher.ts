@@ -2598,8 +2598,8 @@ export class WatcherService implements WatcherControlHooks {
         const queued = sent.delivery === 'now' && !remote ? this.options.control.pendingThreadWorkReason(thread.id) : null
         if (queued) refuse('THREAD_BUSY', queueHold(queued, this.preserveUserQueue(thread.id) && this.userWorkPending(thread.id, record)))
         // A queue the user must review first takes nothing more, as a delegated brief is refused, rather than hold it unsaid.
-        const review = sent.delivery === 'queue' && !remote ? this.options.control.pendingThreadWorkReason(thread.id) : null
-        if (review === 'paused-followups' || review === 'failed-followups') refuse('THREAD_BUSY', queueHold(review, false))
+        const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
+        if (review) refuse('THREAD_BUSY', queueHold(review, false))
         if (sent.delivery === 'steer' && thread.status !== 'running' && thread.lastTurn?.status !== 'running') refuse('STEER_UNAVAILABLE', NO_TURN_TO_STEER)
         if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || !sent.expectedTurnId || sent.expectedTurnId !== thread.lastTurn?.id || thread.status !== 'running')) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }

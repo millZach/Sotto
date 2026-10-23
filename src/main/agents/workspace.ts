@@ -3451,8 +3451,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.dirty = true
       try { await this.flush() }
       catch (error) {
-        project.workspaceSettledAt = projectSettledAt
-        for (const thread of inherited) thread.workspaceSettledAt = null
+        // A snapshot taken while the write waited replaced these records: the rollback finds them again by ID.
+        const current = this.state.snapshot.projects.find(item => item.id === projectId)
+        if (current) current.workspaceSettledAt = projectSettledAt
+        const ids = new Set(inherited.map(thread => thread.id))
+        for (const thread of this.state.snapshot.threads) if (ids.has(thread.id)) thread.workspaceSettledAt = null
         throw error
       }
       this.publish()
