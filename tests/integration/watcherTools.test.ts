@@ -950,6 +950,27 @@ it('lets a Watcher send whose prompt the user set aside hold nothing open, while
 })
 
 
+it('refuses settle_thread while sub-agents still work or are not known to have ended, as Settle finished threads counts them', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const summaries = f.workspace.host as unknown as { subagentSummaries: Map<string, NonNullable<AgentThread['subagentSummary']>> }
+  const agents = async (summary: NonNullable<AgentThread['subagentSummary']>) => {
+    summaries.subagentSummaries.set(first.target.threadId, summary)
+    f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  }
+  const settle = () => f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
+  const settled = () => Boolean(f.control.watcherSnapshot().threads.find(item => item.id === first.target.threadId)!.workspaceSettledAt)
+  await agents({ total: 3, working: 3, completed: 0, failed: 0, interrupted: 0, unknown: 0 })
+  expect(await settle()).toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING' })
+  await agents({ total: 3, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 1 })
+  expect(await settle()).toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING' })
+  expect(settled()).toBe(false)
+  await agents({ total: 3, working: 0, completed: 3, failed: 0, interrupted: 0, unknown: 0 })
+  expect(await settle()).toMatchObject({ status: 'ok' })
+  expect(settled()).toBe(true)
+})
+
 it('refunds a coordinator preparation refusal returned as a failed result', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')

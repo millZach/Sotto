@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -58,16 +59,18 @@ describe('worktree cleanup rules', () => {
   })
   it('reclaims an idle thread’s clean folder after the chosen days, and leaves a busy or recent one', async () => {
     const r = await repository()
-    const [old, recent, running] = [await r.checkout(), await r.checkout(), await r.checkout()]
+    const [old, recent, running, background] = [await r.checkout(), await r.checkout(), await r.checkout(), await r.checkout()]
     const now = Date.parse('2026-09-22T12:00:00.000Z')
     const host = fakeHost([
       thread('old', old, { updatedAt: '2026-08-01T00:00:00.000Z' }),
       thread('recent', recent, { updatedAt: '2026-09-20T00:00:00.000Z' }),
       thread('running', running, { status: 'running', updatedAt: '2026-08-01T00:00:00.000Z' }),
+      // Its turn is over, but background agents it started still work in the folder.
+      thread('background', background, { backgroundWork: [{ id: randomUUID(), type: 'subagent', label: 'Synthetic agent' }], updatedAt: '2026-08-01T00:00:00.000Z' }),
     ], r.worktrees)
     await new WorktreeCleanup({ host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, afterDays: 30 }), now: () => now }).sweep()
     expect(host.reclaimed).toEqual(['old'])
-    expect((await git(r.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(3)
+    expect((await git(r.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(4)
   })
   it('reclaims a folder whose commits are already in the default branch, never one with work of its own', async () => {
     const r = await repository()
@@ -216,6 +219,22 @@ describe('auto-settle merged threads', () => {
     await cleanup.sweep()
     expect(pullRequestMerged).not.toHaveBeenCalled()
   })
+  it('leaves a merged thread alone while its background work, sub-agents or monitoring still run', async () => {
+    const threads = [
+      thread('background', own('feature/background'), { backgroundWork: [{ id: randomUUID(), type: 'subagent', label: 'Synthetic agent' }] }),
+      thread('subagents', own('feature/subagents'), { subagentSummary: { total: 3, working: 3, completed: 0, failed: 0, interrupted: 0, unknown: 0 } }),
+      thread('unknown', own('feature/unknown'), { subagentSummary: { total: 1, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 1 } }),
+      thread('monitoring', own('feature/monitoring'), { monitoring: [{ id: randomUUID(), label: 'Synthetic monitor' }] }),
+      thread('turn', own('feature/turn'), { lastTurn: { id: randomUUID(), status: 'running' } }),
+      thread('done', own('feature/done')),
+    ]
+    const host = settlingHost(threads)
+    const pullRequestMerged = vi.fn(async () => true)
+    await new WorktreeCleanup({ host, git: trunkGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged }).sweep()
+    // Settling ends what the thread babysits and reads its work as put aside, so only a thread with nothing running goes.
+    expect(host.settled).toEqual(['done'])
+  })
+
   it('asks GitHub once per branch when the merged rule wants the same answer, and never without gh', async () => {
     const threads = [thread('merged', own('feature/merged'))]
     const host = settlingHost(threads)

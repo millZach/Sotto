@@ -784,7 +784,8 @@ export class WatcherService implements WatcherControlHooks {
   private checkSettlement(thread: AgentThread): void {
     this.pending(thread)
     if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
-    if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
+    // Sub-agents still working, or not yet known to have ended, count as Settle finished threads counts them.
+    if (watcherBackgroundWorkCount(thread) > 0) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
   }
   /**
    * Watcher's starts still working, on every machine: what the phone's page counts as Watcher working, and sends where

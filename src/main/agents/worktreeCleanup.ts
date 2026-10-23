@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import type { WorktreeCleanupRules } from '../../shared/settings'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isWatcherWorkActive } from '../../shared/watcherOverview'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
 
@@ -33,6 +34,12 @@ export interface WorktreeCleanupDependencies {
 }
 export type WorktreeCleanupEvent = 'worktree-cleanup-reclaimed' | 'worktree-cleanup-skipped' | 'thread-auto-settled' | 'thread-auto-settle-skipped'
 const HOUR_MS = 3_600_000
+/**
+ * A thread still at work or waiting on the user: its turn, background work, sub-agents working or not yet known to have
+ * ended, or monitoring, as Settle finished threads counts them. Neither sweep settles it or takes its folder, where that
+ * work may still be writing (October 23, 2026).
+ */
+const busy = (thread: AgentThread): boolean => thread.requests.length > 0 || isWatcherWorkActive(thread) || (thread.subagentSummary?.unknown ?? 0) > 0
 const DAY_MS = 86_400_000
 const rulesOn = (rules: WorktreeCleanupRules): boolean => rules.afterDays !== null || rules.merged || rules.onSettle || rules.unchanged
 
@@ -149,7 +156,7 @@ export class WorktreeCleanup {
       const worktree = thread.worktree
       const project = snapshot.projects.find(item => item.id === thread.projectId)
       if (!worktree?.repositoryRoot || thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
-      if (thread.status === 'running' || thread.requests.length) continue
+      if (busy(thread)) continue
       const branch = worktree.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree.sentBranch
       if (!branch) continue
       const key = `${thread.id}\0${branch}`
@@ -187,7 +194,7 @@ export class WorktreeCleanup {
       if (this.disposed) return
       const worktree = thread.worktree
       if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || !worktree.branch || worktree.reused || worktree.reclaimedAt) continue
-      if (thread.status === 'running' || thread.requests.length) continue
+      if (busy(thread)) continue
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue
