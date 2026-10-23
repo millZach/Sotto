@@ -330,12 +330,14 @@ export async function hostMachineReport(facts: HostFactsSource, work: () => Mach
   const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
   const { threads, deliveries = [], followups = [], startsNotYetSent = [] } = work()
   const running = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
-  const placed = new Set([
+  const placed = [...new Set([
     ...deliveries.filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
     ...followups.filter(item => PLACED_FOLLOWUPS.has(item.status)).map(item => item.threadId),
     // A start whose thread is not created yet has no thread to be running, so it counts.
     ...startsNotYetSent,
-  ].filter(threadId => !running.has(threadId))).size
+  ].filter(threadId => !running.has(threadId)))]
   const within = (value: number) => value <= HOST_RUNNING_THREADS_MAX ? value : null
-  return { facts: machine, runningThreads: within(running.size), load, placedNotStarted: within(placed) }
+  // The IDs go with the count, so a desktop with a start on its way here counts it once (`placedNotStartedWith`).
+  return { facts: machine, runningThreads: within(running.size), load, placedNotStarted: within(placed.length),
+    ...within(placed.length) === null ? {} : { placedThreadIds: placed } }
 }

@@ -70,3 +70,39 @@ it('counts a start as placed from its admission, before its thread exists, and s
   expect(await second).toMatchObject({ status: 'ok' })
   expect(f.service.startsNotYetSent()).toEqual([])
 }, 60_000)
+
+it('reads Watcher’s admitted starts from an index of the record, however long its history is', async () => {
+  const f = await fixture()
+  const gate = deferred()
+  let held = 0
+  const command = f.control.commandFromWatcher.bind(f.control)
+  vi.spyOn(f.control, 'commandFromWatcher').mockImplementation(async (sent, origin) => {
+    if (sent.type === 'create-thread') { held += 1; await gate.promise }
+    return command(sent, origin)
+  })
+  const started = f.start('Synthetic indexed worker')
+  await vi.waitFor(() => expect(held).toBe(1))
+  // The same record with five thousand older operations before its own, every element read counted.
+  const record = f.control.watcherRecordView(), older = record.operations[0]!
+  let reads = 0
+  const operations = new Proxy([...Array.from({ length: 5_000 }, () => ({ ...older, id: randomUUID(), action: 'send' as const, deliveryState: 'accepted' as const })),
+    ...record.operations], { get(target, property, receiver) {
+    if (typeof property === 'string' && /^\d+$/u.test(property)) reads += 1
+    return Reflect.get(target, property, receiver) as unknown
+  } })
+  const long = { ...record, operations }
+  const view = vi.spyOn(f.control, 'watcherRecordView').mockReturnValue(long)
+  expect(f.service.startsNotYetSent()).toHaveLength(1)
+  // The first read walks back from the newest only as far as the reserved start.
+  expect(reads).toBeLessThanOrEqual(record.operations.length)
+  const first = reads
+  // Every later read of the same record, a machine report or the phone's page, reads the index alone.
+  for (let index = 0; index < 50; index++) { f.service.startsNotYetSent(); f.service.startsInFlight() }
+  expect(f.service.startsInFlight()).toBe(1)
+  expect(reads).toBe(first)
+  view.mockRestore()
+  gate.resolve()
+  expect(await started).toMatchObject({ status: 'ok' })
+  // A change replaces the record, so the index is worked out again and the start has gone from it.
+  expect(f.service.startsNotYetSent()).toEqual([])
+}, 60_000)

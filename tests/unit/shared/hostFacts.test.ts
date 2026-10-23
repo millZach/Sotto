@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hostFactsSchema, hostMachineReportSchema, machineLoadStates, MACHINE_LOAD_THRESHOLDS } from '../../../src/shared/hostFacts'
+import { HOST_RUNNING_THREADS_MAX, hostFactsSchema, hostMachineReportSchema, machineLoadStates, MACHINE_LOAD_THRESHOLDS, placedNotStartedWith } from '../../../src/shared/hostFacts'
 
 const facts = {
   observedAt: '2026-10-14T12:00:00.000Z',
@@ -68,6 +68,13 @@ describe('live load in the machine report (#1311)', () => {
     expect(hostMachineReportSchema.parse({ facts, runningThreads: 1, load, placedNotStarted: -2 }).placedNotStarted).toBeNull()
   })
 
+  it('reads the placed thread IDs leniently: ones it cannot read are left out, and the count stands', () => {
+    expect(hostMachineReportSchema.parse({ facts, runningThreads: 0, placedNotStarted: 1, placedThreadIds: ['a'] }).placedThreadIds).toEqual(['a'])
+    const unreadable = hostMachineReportSchema.parse({ facts, runningThreads: 0, placedNotStarted: 1, placedThreadIds: [''] })
+    expect(unreadable.placedThreadIds).toBeUndefined()
+    expect(unreadable.placedNotStarted).toBe(1)
+  })
+
   it('drops what a later host adds to its load', () => {
     expect(hostMachineReportSchema.parse({ facts, runningThreads: 0, load: { ...load, swapBytes: 1 }, placedNotStarted: 0 }).load).toEqual(load)
   })
@@ -110,8 +117,41 @@ describe('machineLoadStates', () => {
     // On 8 GiB a tenth, 0.8 GiB, is the smaller: 1.5 GiB is enough there and 0.7 GiB is short.
     expect(memory(1.5 * GIB, 1.5 * GIB, 8 * GIB)).toBe('enough')
     expect(memory(0.7 * GIB, 0.7 * GIB, 8 * GIB)).toBe('short')
-    // Without a total, only the fixed 2 GiB applies.
-    expect(memory(1.5 * GIB, 1.5 * GIB, null)).toBe('short')
-    expect(memory(3 * GIB, 3 * GIB, null)).toBe('enough')
+    // Without a total the line cannot be drawn, so short is never guessed: under 2 GiB reads unknown however low it is.
+    expect(memory(1.5 * GIB, 1.5 * GIB, null)).toBe('unknown')
+    expect(memory(0.1 * GIB, 0.1 * GIB, null)).toBe('unknown')
+    expect(memory(null, null, null)).toBe('unknown')
+    // The line is never above 2 GiB on any total, so 2 GiB or more at the window's end is enough without one.
+    expect(memory(3 * GIB, 0.5 * GIB, null)).toBe('enough')
+    expect(memory(2 * GIB, null, null)).toBe('enough')
+  })
+})
+
+describe('a paired machine’s work placed but not started as the desktop reads it (#1311)', () => {
+  const idle = () => false
+
+  it('adds a start this desktop admitted there before the host can count it', () => {
+    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'], idle)).toBe(1)
+    expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['a', 'b'] }, ['started', 'next'], idle)).toBe(4)
+  })
+
+  it('counts a start once the host counts it, by its Sotto thread ID', () => {
+    expect(placedNotStartedWith({ placedNotStarted: 1, placedThreadIds: ['started'] }, ['started'], idle)).toBe(1)
+    expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['started', 'other'] }, ['started', 'started'], idle)).toBe(2)
+  })
+
+  it('does not count a start the desktop already sees running there: its work has begun', () => {
+    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'], threadId => threadId === 'started')).toBe(0)
+  })
+
+  it('keeps an unknown count unknown, and takes an answer without IDs at its count', () => {
+    expect(placedNotStartedWith({ placedNotStarted: null }, ['started'], idle)).toBeNull()
+    expect(placedNotStartedWith({}, ['started'], idle)).toBeNull()
+    expect(placedNotStartedWith({ placedNotStarted: 1 }, ['started'], idle)).toBe(1)
+    expect(placedNotStartedWith({ placedNotStarted: 3, placedThreadIds: [] }, [], idle)).toBe(3)
+  })
+
+  it('reads unknown above the most threads any machine holds', () => {
+    expect(placedNotStartedWith({ placedNotStarted: HOST_RUNNING_THREADS_MAX, placedThreadIds: [] }, ['started'], idle)).toBeNull()
   })
 })
