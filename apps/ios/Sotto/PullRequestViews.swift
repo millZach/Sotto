@@ -315,7 +315,7 @@ private struct PullRequestBody: View {
             if description.isEmpty {
                 Text("It has no description.").font(.sotto(.body)).foregroundStyle(Palette.muted)
             } else {
-                MarkdownText(text: description).foregroundStyle(Palette.ink)
+                MarkdownText(text: description).equatable().foregroundStyle(Palette.ink)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

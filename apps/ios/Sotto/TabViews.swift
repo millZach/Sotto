@@ -51,8 +51,8 @@ struct ThreadsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let groups = FocusThreads(model.lists, show: model.show, query: query, opened: model.selected)
-        let unsearched = query.isEmpty ? groups : FocusThreads(model.lists, show: model.show, opened: model.selected)
+        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
+        let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
         SheetPage(warm: unsearched.requestCount > 0) {
             heading
             controls(unsearched)
