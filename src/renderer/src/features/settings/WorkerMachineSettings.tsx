@@ -58,10 +58,14 @@ function NowWords({ choice }: { readonly choice: Choice }): ReactNode {
   const machine = choice.machine
   const over = choice.working > WORKING_THREADS_QUIET_MAX
   const bits: ReactNode[] = [<span key="working" data-warn={over || undefined}>{choice.working} working{over ? ', may slow down' : ''}</span>]
-  if (machine !== null && machine.load != null && !loadUnknown(machine)) {
+  const load = machine?.load ?? null
+  if (machine !== null && load !== null && !loadUnknown(machine)) {
+    // Each half shows when it is known; the other says it is unknown, as a Mac's memory does.
     const busy = machine.cpuState === 'busy', short = machine.memoryState === 'short'
-    bits.push(<span key="cpu" data-warn={busy || undefined}>CPU {machine.load.cpuBusyPercent}%{busy ? ', busy' : ''}</span>,
-      <span key="memory" data-warn={short || undefined}>{memoryWords(machine.load.availableMemoryBytes!)} free{short ? ', short on memory' : ''}</span>)
+    bits.push((machine.cpuState ?? 'unknown') !== 'unknown' && load.cpuBusyPercent !== null
+      ? <span key="cpu" data-warn={busy || undefined}>CPU {load.cpuBusyPercent}%{busy ? ', busy' : ''}</span> : <span key="cpu">CPU unknown</span>,
+    (machine.memoryState ?? 'unknown') !== 'unknown' && load.availableMemoryBytes !== null
+      ? <span key="memory" data-warn={short || undefined}>{memoryWords(load.availableMemoryBytes)} free{short ? ', short on memory' : ''}</span> : <span key="memory">memory unknown</span>)
   } else if (machine !== null) bits.push(<span key="unknown" data-warn="true">load unknown</span>)
   return <span className="worker-machine__now">{bits.flatMap((bit, index) => index === 0 ? [bit] : [<span key={`dot-${index}`} className="worker-machine__dot" aria-hidden="true">·</span>, bit])}</span>
 }

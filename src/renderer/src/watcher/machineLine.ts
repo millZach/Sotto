@@ -36,10 +36,19 @@ export const MACHINE_WORDS = {
   unknown: 'load unknown',
 } as const
 
-/** Whether a machine's load reads unknown for placement: either half missing, older than a minute, or not reported at all. */
+const cpuUnknown = (machine: WatcherMachine): boolean => (machine.cpuState ?? 'unknown') === 'unknown'
+const memoryUnknown = (machine: WatcherMachine): boolean => (machine.memoryState ?? 'unknown') === 'unknown'
+/**
+ * Whether the line says a machine's load is unknown: only when its CPU and its memory both are (Zach, October 23, 2026),
+ * as for a reading over a minute old, an older host, or a list without load at all. A Mac, which reports its CPU and not
+ * its memory, says "busy" from its CPU, and its panel says the memory is unknown.
+ */
 export function loadUnknown(machine: WatcherMachine): boolean {
-  // A list without load at all, as an older desktop's Watcher gives it, reads unknown too.
-  return (machine.cpuState ?? 'unknown') === 'unknown' || (machine.memoryState ?? 'unknown') === 'unknown'
+  return cpuUnknown(machine) && memoryUnknown(machine)
+}
+/** Whether any half of a machine's load is unknown, for its panel to say why. */
+export function partlyUnknown(machine: WatcherMachine): boolean {
+  return cpuUnknown(machine) || memoryUnknown(machine)
 }
 
 /** The words a machine's problems add after its count, empty when nothing is wrong. */
@@ -150,7 +159,7 @@ export function systemWords(machine: WatcherMachine): string | null {
  */
 export function unknownWhy(entry: MachineEntry, now: number): string | null {
   const machine = entry.machine
-  if (machine === null || !entry.connected || !loadUnknown(machine)) return null
+  if (machine === null || !entry.connected || !partlyUnknown(machine)) return null
   const name = entry.thisComputer ? 'This computer' : entry.name
   const whose = entry.thisComputer ? 'this computer’s' : `${entry.name}’s`
   if (machine.factsState === 'unknown') {

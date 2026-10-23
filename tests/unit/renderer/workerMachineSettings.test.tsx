@@ -53,6 +53,15 @@ describe('Settings, under Watcher: Where new workers start (#1032)', () => {
     expect(forgeCard).toHaveTextContent('41 GB free')
   })
 
+  it('shows the CPU of a machine that does not report its memory, and says only the memory is unknown', async () => {
+    show({ machines: [local, { ...forge, load: { ...load(93, 41), availableMemoryBytes: null }, memoryState: 'unknown' }] })
+    await act(async () => undefined)
+    const forgeCard = group().getByRole('radio', { name: 'forge' }).closest('label')!
+    expect(within(forgeCard).getByText('CPU 93%, busy')).toBeInTheDocument()
+    expect(forgeCard).toHaveTextContent('memory unknown')
+    expect(forgeCard).not.toHaveTextContent('load unknown')
+  })
+
   it('saves the choice as it is made', async () => {
     const { update } = show()
     await act(async () => undefined)

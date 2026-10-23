@@ -85,8 +85,10 @@ describe('The machines line’s words (#1032, pick D)', () => {
     expect(unknownWhy(older, NOW)).toMatch(/^forge runs an older Sotto host that does not report its load\. Watcher treats it as unknown, never idle\./u)
     const stale = machineEntries([local(), forge({ load: read(22, 41 * GIB, NOW - 190_000), memoryState: 'unknown', cpuState: 'unknown' })], counts({}))[1]!
     expect(unknownWhy(stale, NOW)).toBe('The last reading is 3 min ago, older than a minute, so Watcher treats forge’s load as unknown, not idle.')
-    const mac = machineEntries([local(), forge({ load: read(30, null), memoryState: 'unknown' })], counts({}))[1]!
+    const mac = machineEntries([local(), forge({ load: read(93, null), memoryState: 'unknown', cpuState: 'busy' })], counts({}))[1]!
     expect(unknownWhy(mac, NOW)).toMatch(/does not report the memory a new process could have/u)
+    // The line says load unknown only when both halves are: a Mac says busy from its CPU and leaves its memory to the panel.
+    expect(lineText(mac)).toBe('forge 0 working, busy')
     expect(unknownWhy(machineEntries([local(), forge()], counts({}))[1]!, NOW)).toBeNull()
   })
 
