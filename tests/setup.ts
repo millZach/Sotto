@@ -3,6 +3,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { afterEach, vi } from 'vitest'
+import { installGitGuard, scrubRedirectingGitVariables } from './fixtures/gitGuard'
 
 // macOS: /var/folders is a symlink to /private/var/folders. Git, fs.realpath and PATH
 // lookups return the physical path, so a test that builds expected paths from os.tmpdir()
@@ -12,6 +13,13 @@ if (process.platform === 'darwin') {
   process.env.TMPDIR = realpathSync(tmpdir())
   putGitFirstOnPath()
 }
+
+// A test may change only repositories it made under the temporary folder (`fixtures/gitGuard.ts`). Variables a Git
+// hook or alias that ran the tests left behind would point every child Git at that repository, so they go first; the
+// guard then refuses a commit, reset, checkout or any other change to a repository outside the temporary folder.
+// It is installed after the macOS TMPDIR above, so it guards the folder the fixtures actually use.
+scrubRedirectingGitVariables()
+installGitGuard()
 
 // macOS: a spawn by bare name tries each PATH folder in turn, and from a test worker every folder that
 // holds no match costs a few milliseconds. npx's node_modules/.bin folders and a developer's own PATH put

@@ -5,6 +5,8 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
     exclude: [...configDefaults.exclude, 'tests/e2e/**', '**/.worktrees/**', '.claude/**'],
+    // Refuses a temporary folder inside a Git repository before any test makes a folder there (`tests/globalSetup.ts`).
+    globalSetup: ['./tests/globalSetup.ts'],
     setupFiles: ['./tests/setup.ts'],
     // Waiting is not the assertion. A two-core CI runner with two workers on it takes several times
     // longer over a provider round trip or a child process start than a developer machine does, and a
