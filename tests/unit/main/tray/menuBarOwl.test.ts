@@ -34,7 +34,7 @@ class FakeTimers implements OwlTimers {
 
 interface Frame { readonly png1x: Buffer; readonly png2x: Buffer }
 
-function setup(options: { settings?: Partial<MenuBarOwlSettings>; systemReduced?: boolean; missing?: readonly string[]; stopThrows?: boolean; env?: Partial<MenuBarOwlEnvironment<Frame>> } = {}) {
+function setup(options: { settings?: Partial<MenuBarOwlSettings>; systemReduced?: boolean; missing?: readonly string[]; stopThrows?: boolean; setImageFailsAfter?: number; env?: Partial<MenuBarOwlEnvironment<Frame>> } = {}) {
   const timers = new FakeTimers()
   const shown: Frame[] = []
   const events: OwlEvent[] = []
@@ -67,7 +67,13 @@ function setup(options: { settings?: Partial<MenuBarOwlSettings>; systemReduced?
     ...options.env,
   }
   const settings: MenuBarOwlSettings = { menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal', reducedMotion: 'system', ...options.settings }
-  const owl = startMenuBarOwl({ setImage: image => shown.push(image) }, settings, env)
+  const tray = {
+    setImage(image: Frame): void {
+      if (options.setImageFailsAfter !== undefined && shown.length >= options.setImageFailsAfter) throw new Error('tray destroyed')
+      shown.push(image)
+    },
+  }
+  const owl = startMenuBarOwl(tray, settings, env)
   return { owl, timers, shown, events, state, settings }
 }
 
@@ -217,6 +223,15 @@ describe('a failure inside the menu bar owl', () => {
     expect(() => { for (const listener of state.reducedListeners) listener() }).not.toThrow()
     expect(timers.pending.size).toBe(0)
     expect(events).toContain('owl-failed')
+  })
+
+  it('lets go of its watchers and kept frames when the animator stops itself', () => {
+    const { timers, state, events } = setup({ setImageFailsAfter: 1 })
+    expect(state.reducedListeners.size + state.powerListeners.size).toBe(2)
+    expect(() => timers.fireNext()).not.toThrow()
+    expect(timers.pending.size).toBe(0)
+    expect(state.reducedListeners.size + state.powerListeners.size).toBe(0)
+    expect(events).toEqual(['owl-started', 'owl-failed', 'owl-stopped'])
   })
 
   it('stops its timer and every other watcher even when one will not let go', () => {

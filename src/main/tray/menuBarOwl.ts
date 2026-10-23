@@ -107,8 +107,14 @@ export function startMenuBarOwl<Image>(tray: { setImage(image: Image): void }, s
     let latest = settings
     // The colours last asked for, so a palette that will not load is tried again only when the choice changes.
     let requested = { body: settings.menuBarOwlBody, eyes: settings.menuBarOwlEyes }
+    // The animator stops itself when the tray refuses a picture or the schedule throws, and says so with `owl-failed`: the
+    // watchers and the kept frames go with it.
+    const log = (event: OwlEvent): void => {
+      env.log?.(event)
+      if (event === 'owl-failed') dispose()
+    }
     const animator = new TrayOwlAnimator<Image>(
-      { setImage: image => tray.setImage(image), frames, ...(env.random ? { random: env.random } : {}), ...(env.timers ? { timers: env.timers } : {}), ...(env.log ? { log: env.log } : {}) },
+      { setImage: image => tray.setImage(image), frames, log, ...(env.random ? { random: env.random } : {}), ...(env.timers ? { timers: env.timers } : {}) },
       { ...requested, reducedMotion: reduced(settings) },
     )
     cleanups.push(() => animator.dispose())
