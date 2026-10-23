@@ -72,4 +72,4 @@ Amended October 10, 2026, by [ADR-0071](0071-dictation-transcribes-on-this-compu
 
 ## Terminal mode removed
 
-Amended October 22, 2026, by [ADR-0107](0107-terminal-mode-is-removed.md). Terminal mode and `src/main/terminals/service.ts` are gone. `node-pty` stays a production dependency, on the same terms, for the Tools panel's terminal and the Terminal drawer, both started by `src/main/tools/terminal.ts`.
+Amended October 22, 2026, by [ADR-0111](0111-terminal-mode-is-removed.md). Terminal mode and `src/main/terminals/service.ts` are gone. `node-pty` stays a production dependency, on the same terms, for the Tools panel's terminal and the Terminal drawer, both started by `src/main/tools/terminal.ts`.

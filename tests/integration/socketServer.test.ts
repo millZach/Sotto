@@ -219,7 +219,7 @@ it('offers terminals to nobody, and sends a phone that still accepts them an emp
   const health = await (await fetch(`http://127.0.0.1:${listener.descriptor.port}/v1/health`)).json() as { features: string[] }
   expect(health.features).not.toContain('terminals')
 
-  // An iPhone from before ADR-0107 still lists `terminals`; an empty list is how it learns its terminal left.
+  // An iPhone from before ADR-0111 still lists `terminals`; an empty list is how it learns its terminal left.
   const older = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
   const hello = (await older.call('hello', { op: 'hello', accepts: ['terminals'] })).result as { features: string[]; shell: { terminals?: unknown } }
   expect(hello.features).not.toContain('terminals')

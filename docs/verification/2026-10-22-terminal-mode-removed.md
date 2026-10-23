@@ -1,6 +1,6 @@
 # Terminal mode removed
 
-Checked October 22, 2026, on Windows 11, for [ADR-0107](../adr/0107-terminal-mode-is-removed.md).
+Checked October 22, 2026, on Windows 11, for [ADR-0111](../adr/0111-terminal-mode-is-removed.md).
 
 The built app was captured with `node scripts/capture-design.mjs` after `npm run build`. The populated Threads page at 1080x720, dark:
 

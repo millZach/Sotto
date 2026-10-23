@@ -169,7 +169,7 @@ describe('Omarchy M3 and readability check', () => {
     // #936, which needed new design baselines on Windows. The token file last changed when glass turned solid and
     // the frost tokens went (ADR-0084), then when OpenCode's mark got its own token (ADR-0087), and then when Usage's
     // split chart got its series colours (ADR-0083), and then when the Owl night sky's switch colours went with
-    // Terminal mode's switch (ADR-0107); none of them changes a palette.
+    // Terminal mode's switch (ADR-0111); none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     expect(createHash('sha256').update(tokenText).digest('hex')).toBe('eb841d6c073fb7a5d299a472310c9a45aeb3e249d08ca92ec8723da033cb5235')
