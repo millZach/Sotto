@@ -1,5 +1,6 @@
 import { platformCopy } from '../../platformCopy'
 import type { SottoPlatform } from '../../../../shared/platform'
+import type { ProviderId } from '../../../../shared/agents'
 
 /**
  * Settings' pages, in the rail's order, and the run each sits in: a divider falls between runs. Zach's pick B from
@@ -67,6 +68,8 @@ export interface SettingEntry {
    * Custom instructions shows only while that style is chosen, Shell sandbox only while Muse is selected.
    */
   readonly fallback?: string
+  /** On Providers, the provider whose page holds it, which Find shows before bringing it into view. */
+  readonly provider?: ProviderId
   readonly gate?: SettingGate
 }
 
@@ -136,6 +139,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Thread providers', section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { label: 'Check for client updates', section: 'settings-providers', words: 'agent clients' },
     { label: 'Shell sandbox', section: 'settings-providers', words: 'muse', fallback: 'Thread providers', gate: 'muse' },
+    { label: 'Compact idle threads', section: 'settings-providers', words: 'claude code cache compaction context cost idle', fallback: 'Thread providers', provider: 'claude' },
     { label: 'Run the local host', section: 'settings-hosts', words: 'this computer' },
     { label: 'Remote hosts', section: 'settings-hosts', words: 'ssh tailscale add host computers' },
     { label: 'Let phones connect', section: 'settings-phones', words: 'iphone' },

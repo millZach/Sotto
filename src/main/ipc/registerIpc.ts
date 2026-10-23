@@ -177,6 +177,7 @@ const settingKeys = [
   'resumeThreadsAfterRestart',
   'workerRoles',
   'watcherSettlesFinishedThreads',
+  'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',

@@ -4,6 +4,7 @@ import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
+import { aimProviderSettings } from './settingsTarget'
 import { describeSetting, findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
@@ -109,7 +110,7 @@ export interface SettingsViewProps {
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
   /** Opens Settings at a page or group instead of its first page: an Open Settings press elsewhere (settingsPages.ts). */
-  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number } | null
+  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number; readonly settings?: readonly string[] } | null
 }
 
 type RailIcon = React.ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
@@ -486,10 +487,11 @@ export function SettingsView({
   useEffect(() => {
     if (!openSection || openRequest.current === openSection.key || !isSettingsSection(openSection.section)) return
     openRequest.current = openSection.key
-    openAt(openSection.section)
+    openAt(openSection.section, openSection.settings)
   })
   const openFound = (entry: SettingEntry): void => {
     setFindQuery('')
+    if (entry.provider) aimProviderSettings(entry.provider)
     openAt(entry.section, [entry.target ?? entry.label, ...entry.fallback ? [entry.fallback] : []])
   }
   const pageLabel = (entry: SettingEntry): string => SETTINGS_PAGES.find(page => page.id === settingsSectionHome(entry.section).page)?.label ?? ''
@@ -698,7 +700,7 @@ export function SettingsView({
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
-              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings /></Card>
+              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings compactIdle={{ checked: settings.compactIdleThreads, onChange: checked => void save({ compactIdleThreads: checked }) }} /></Card>
 
               <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}>
                 <div className="settings-section__heading"><h2>Hosts & phones</h2><p>This computer, other computers, and your iPhone</p></div>

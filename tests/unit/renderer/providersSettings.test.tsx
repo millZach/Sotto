@@ -7,6 +7,7 @@ import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type Agen
 import { HELD_PROVIDER_ENTRIES } from '../../../src/shared/heldProviders'
 import { useAgentConnection, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
+import { aimProviderSettings, takeAimedProvider } from '../../../src/renderer/src/features/settings/settingsTarget'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
 import { AgentSetupFields } from '../../../src/renderer/src/agents/AgentAccountSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -282,5 +283,30 @@ describe('the installed client, in provider settings', () => {
     render(<ProvidersSettings />)
     fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false } }))
+  })
+})
+
+describe('idle compaction on Claude Code’s page (ADR-0123)', () => {
+  it('shows the switch only for Claude Code and saves what the user chooses', () => {
+    provide()
+    const onChange = vi.fn()
+    render(<ProvidersSettings compactIdle={{ checked: true, onChange }} />)
+    expect(screen.queryByRole('switch', { name: 'Compact idle threads' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
+    const toggle = screen.getByRole('switch', { name: 'Compact idle threads' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText(/After 54 minutes idle, Sotto compacts a large Claude thread/)).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(onChange).toHaveBeenCalledWith(false)
+  })
+  it('opens at Claude Code when a thread’s Turn off sent the user here, and only that once', () => {
+    provide()
+    aimProviderSettings('claude')
+    const view = render(<ProvidersSettings compactIdle={{ checked: true, onChange: vi.fn() }} />)
+    expect(screen.getByRole('switch', { name: 'Compact idle threads' })).toBeInTheDocument()
+    expect(takeAimedProvider()).toBeUndefined()
+    view.unmount()
+    render(<ProvidersSettings compactIdle={{ checked: true, onChange: vi.fn() }} />)
+    expect(screen.queryByRole('switch', { name: 'Compact idle threads' })).not.toBeInTheDocument()
   })
 })
