@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: bn\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr "{count, plural, one {থিম সরানো হয়েছে।} other {#টি থিম সরানো হয়েছে।}}"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr "{name} এক্সপোর্ট করা যায়নি।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr "{name} এক্সপোর্ট করা হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr "চেহারা"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr "রঙ ও সীমানার তীব্রতা।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr "রঙের স্কিম সংরক্ষিত হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr "কনট্রাস্ট"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr "কনট্রাস্ট সংরক্ষিত হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr "চরিত্রটি লুকানো হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr "চরিত্রটি সংরক্ষিত হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr "চরিত্রটি দেখানো হচ্ছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr "প্রচেষ্টার রঙ সংরক্ষিত হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr "এই উইন্ডোতে এক্সপোর্ট করা যায় না।"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr "ভাষা"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr "ভাষা সংরক্ষিত হয়েছে।"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr "মেনু, বোতাম আর বার্তা। আপনি যা ডিক্টেট করেন আর এজেন্টরা যা লেখে, তা যেমন আছে তেমনই থাকে।"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr "প্রিভিউ"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr "কনট্রাস্ট {amount}-এ ফিরিয়ে দিন"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr "এই কম্পিউটারের মতো ({computerLanguage})"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr "থিমটি সংরক্ষণ করা যায়নি। আপনার আগের থিমটি এখনও চালু আছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr "থিম সংরক্ষিত হয়েছে।"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr "থিম, কনট্রাস্ট ও মোশন"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr "অনুবাদগুলো নতুন এবং প্রথমে Owl-এ আসে। কিছু শব্দ এখনও ইংরেজিতে থাকতে পারে।"

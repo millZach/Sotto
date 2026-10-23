@@ -101,6 +101,8 @@ import {
 import type { RendererRole } from '../security'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
+import { INTERFACE_LANGUAGE_GET } from '../../shared/interfaceLanguageBridge'
+import type { InterfaceLanguageState } from '../../shared/interfaceLanguages'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -115,6 +117,7 @@ const settingKeys = [
   'menuBarOwlEyes',
   'creature',
   'showCreature',
+  'interfaceLanguage',
   'customThemes',
   'reducedMotion',
   'roomTransition',
@@ -415,6 +418,8 @@ export interface RegisterIpcDependencies {
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
   readonly microphoneAccess?: { ensure(): Promise<boolean> }
+  /** Supplied only while the `interface-language` Owl feature is on (ADR-0123); both windows ask it as they start. */
+  readonly interfaceLanguage?: { current(): InterfaceLanguageState }
 }
 
 export interface WidgetIpcService {
@@ -593,6 +598,10 @@ export function registerIpc(
       dependencies.settings.update(patch),
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
+    if (dependencies.interfaceLanguage) {
+      const interfaceLanguage = dependencies.interfaceLanguage
+      register(INTERFACE_LANGUAGE_GET, noPayloadSchema, 0, () => interfaceLanguage.current(), ['main', 'widget'])
+    }
 
     // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
     register(HISTORY_LIST, noPayloadSchema, 0, async () => {

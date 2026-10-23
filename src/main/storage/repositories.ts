@@ -11,7 +11,7 @@ export function createStorageRepositories(
   now: () => number = Date.now,
   defaults: AppSettings = DEFAULT_SETTINGS,
   log?: (event: HistoryLogEvent) => void,
-  options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled' | 'dictationHoldShortcutsEnabled'> = {},
+  options: Pick<SettingsRepositoryOptions, 'omarchyTheme' | 'shellPillInUse' | 'workerRolesEnabled' | 'dictationHoldShortcutsEnabled' | 'interfaceLanguageEnabled'> = {},
 ): Readonly<{
   settings: SettingsRepository
   history: HistoryRepository

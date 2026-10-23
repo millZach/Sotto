@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: te\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr "{count, plural, one {థీమ్ తీసివేయబడింది.} other {# థీమ్‌లు తీసివేయబడ్డాయి.}}"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr "{name}ను ఎగుమతి చేయడం సాధ్యపడలేదు."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr "{name} ఎగుమతి చేయబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr "రూపం"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr "రంగులు, అంచుల తీవ్రత."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr "రంగు పథకం సేవ్ చేయబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr "కాంట్రాస్ట్"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr "కాంట్రాస్ట్ సేవ్ చేయబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr "పాత్ర దాచబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr "పాత్ర సేవ్ చేయబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr "పాత్ర చూపబడుతోంది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr "ప్రయత్నం రంగు సేవ్ చేయబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr "ఈ విండోలో ఎగుమతి అందుబాటులో లేదు."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr "భాష"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr "భాష సేవ్ చేయబడింది."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr "మెనూలు, బటన్‌లు, సందేశాలు. మీరు డిక్టేట్ చేసేది, ఏజెంట్‌లు రాసేది అలాగే ఉంటాయి."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr "ప్రివ్యూ"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr "కాంట్రాస్ట్‌ను {amount}కి రీసెట్ చేయి"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr "ఈ కంప్యూటర్‌లాగే ({computerLanguage})"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr "ఆ థీమ్‌ను సేవ్ చేయడం సాధ్యపడలేదు. మీ మునుపటి థీమ్ ఇంకా యాక్టివ్‌గా ఉంది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr "థీమ్ సేవ్ చేయబడింది."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr "థీమ్‌లు, కాంట్రాస్ట్, కదలిక"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr "అనువాదాలు కొత్తవి, ముందుగా Owlలో వస్తాయి. కొన్ని పదాలు ఇంకా ఇంగ్లీష్‌లో ఉండవచ్చు."
