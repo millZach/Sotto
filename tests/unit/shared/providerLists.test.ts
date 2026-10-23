@@ -87,7 +87,7 @@ describe('provider lists', () => {
     expect(threadTakesSottoTools({ providerId: 'opencode', sottoToolsWithheld: true })).toBe(false)
   })
 
-  it('gives Cursor side writing and Sotto’s tools (ADR-0123)', () => {
+  it('gives Cursor side writing and Sotto’s tools (ADR-0125)', () => {
     expect(providerWritesShortText('cursor')).toBe(true)
     expect(providerTakesSottoTools('cursor')).toBe(true)
     expect(threadTakesSottoTools({ providerId: 'cursor' })).toBe(true)

@@ -79,7 +79,7 @@
 .agent-request__clear:disabled { cursor: default; opacity: .72; }
 .agent-request__fallback { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
 
-/* A Cursor plan (ADR-0123): its name, overview and steps on the card's inset, read before Accept plan or Reject. The
+/* A Cursor plan (ADR-0125): its name, overview and steps on the card's inset, read before Accept plan or Reject. The
    steps are Markdown, drawn as a reply's are, and scroll inside the card when a plan is long. */
 .agent-request__plan { display: grid; gap: 6px; min-width: 0; max-height: 360px; overflow: auto; padding: 10px 14px; border-radius: var(--tt-radius-md); background: var(--tt-card-inset); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .agent-request__plan:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }

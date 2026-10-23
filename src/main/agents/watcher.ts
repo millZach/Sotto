@@ -2919,7 +2919,7 @@ ${operation.draftId}`)
   }
   /**
    * An older host refuses a Watcher identity that names a provider it did not know Watcher on, so a Watcher on Muse asks only
-   * hosts that list `watcher-muse`, and one on Cursor only hosts that list `watcher-cursor` (ADR-0079, ADR-0123).
+   * hosts that list `watcher-muse`, and one on Cursor only hosts that list `watcher-cursor` (ADR-0079, ADR-0125).
    */
   private takesMaster(host: { readonly muse?: boolean; readonly cursor?: boolean }): boolean {
     const provider = this.view().current?.provider

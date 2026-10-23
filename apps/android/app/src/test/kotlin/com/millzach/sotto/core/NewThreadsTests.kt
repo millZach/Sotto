@@ -122,7 +122,7 @@ class NewThreadsTests {
         assertEquals(JsonPrimitive("cursor"), command["provider"])
     }
 
-    // Cursor names each model's maker in its source (ADR-0123). A row reads the maker between Cursor and the model, so a
+    // Cursor names each model's maker in its source (ADR-0125). A row reads the maker between Cursor and the model, so a
     // Cursor thread on Claude never reads as Claude Code.
     @Test fun aCursorModelReadsItsMakerAndIsAChoiceWhileCursorIsConnected() {
         val host = decode<HostSnapshot>("""{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"cursor:claude-sonnet-5-5","name":"Claude Sonnet 5.5","provider":"Cursor","providerId":"cursor","source":"Anthropic","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"cursor","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}""")

@@ -20,7 +20,7 @@ data class ThreadModel(
     val runtimeModes: List<String>? = null,
     val providerModes: List<ProviderMode>? = null,
     // Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
-    // maker, the company that made it, such as Anthropic (ADR-0123). Other providers' models say nothing.
+    // maker, the company that made it, such as Anthropic (ADR-0125). Other providers' models say nothing.
     val source: String? = null,
 ) {
     @Serializable

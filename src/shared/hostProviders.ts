@@ -11,7 +11,7 @@ import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestS
 
 /**
  * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
- * brief. OpenCode joined in #1107 and Cursor with ADR-0123; a host sends either one's provider row, models and threads only
+ * brief. OpenCode joined in #1107 and Cursor with ADR-0125; a host sends either one's provider row, models and threads only
  * to a client whose hello accepts its feature, `provider-opencode` or `provider-cursor` (`PROVIDER_HOST_FEATURES` in
  * `hostProtocol.ts`).
  */
@@ -37,7 +37,7 @@ export const PROVIDER_SIGN_IN_LIFETIME_MS = 15 * 60_000
  * The three ways a provider's client signs in without a terminal. `device-code`: it prints a page and a short code, the
  * user enters the code on that page, and the client finishes by itself (Codex, Grok Build). `paste-code`: it prints a
  * page, the page shows a code once the user signs in, and the client waits for that code (Claude Code). `page`: it prints
- * a page and no code, and finishes by itself once the user has signed in there (Cursor, ADR-0123).
+ * a page and no code, and finishes by itself once the user has signed in there (Cursor, ADR-0125).
  */
 export const providerSignInShapeSchema = z.enum(['device-code', 'paste-code', 'page'])
 export type ProviderSignInShape = z.infer<typeof providerSignInShapeSchema>

@@ -209,11 +209,11 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
- * `provider-cursor`: as `provider-opencode`, for Cursor (ADR-0123). A host sends Cursor's provider row, models, projects and
+ * `provider-cursor`: as `provider-opencode`, for Cursor (ADR-0125). A host sends Cursor's provider row, models, projects and
  * threads only to a client whose hello accepts it, since a client from before Cursor reads provider IDs against a list
  * without `cursor` and would refuse a whole shell that names it.
  * `watcher-cursor`: as `watcher-muse`, for a desktop whose Watcher runs on Cursor, whose identity names `cursor` as its
- * provider (ADR-0123). It adds no request, field or push. A desktop whose Watcher is on Cursor reads and directs no thread
+ * provider (ADR-0125). It adds no request, field or push. A desktop whose Watcher is on Cursor reads and directs no thread
  * on a host that does not list it, and says to update that host.
  */
 export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor'] as const

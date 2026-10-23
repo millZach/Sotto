@@ -14,7 +14,7 @@ import { cursorEnvironment, findCursorProgram } from '../main/agents/cursorRpc'
  * (ADR-0037). The client is started as a child process with pipes, as the host has no terminal to give it: Codex's and
  * Grok Build's device-code sign-ins print a page and a code and finish by themselves once the code is entered there,
  * Claude Code's subscription sign-in prints a page and waits for the code that page shows to be pasted back, and Cursor's
- * prints a page and no code and finishes by itself once the user has signed in there (ADR-0123).
+ * prints a page and no code and finishes by itself once the user has signed in there (ADR-0125).
  *
  * What the client prints (the page's address, the code) and the code pasted back are held here in memory, for the
  * client that started the sign-in and for no one else, and only until it ends or its fifteen minutes run out. None of it
@@ -26,7 +26,7 @@ export interface SignInCommand { readonly executable: string; readonly args: rea
 export interface ProviderSignInOptions {
   /** Each provider's sign-in command, or undefined when its client is not on this machine. */
   readonly command?: (provider: ProviderId) => Promise<SignInCommand | undefined>
-  /** Sotto's own Cursor folder, which Cursor's sign-in runs with (ADR-0123): the host's data directory's, or this computer's user data's. */
+  /** Sotto's own Cursor folder, which Cursor's sign-in runs with (ADR-0125): the host's data directory's, or this computer's user data's. */
   readonly cursorConfigDirectory?: string
   /** Connects the provider once its client says it signed in, for the client that asked; answers the provider's error when it did not connect. */
   readonly connect: (provider: ProviderId, clientId: string) => Promise<string | undefined>

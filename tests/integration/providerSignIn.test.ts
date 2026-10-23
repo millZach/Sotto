@@ -80,7 +80,7 @@ describe('the sign-in on the host', () => {
     } finally { service.close() }
   })
 
-  it('runs Cursor\'s agent login, reads its cursor.com page with no code, and connects once the user signs in there (ADR-0123)', async () => {
+  it('runs Cursor\'s agent login, reads its cursor.com page with no code, and connects once the user signs in there (ADR-0125)', async () => {
     const service = signIns()
     try {
       const started = await service.start('cursor', 'desktop')

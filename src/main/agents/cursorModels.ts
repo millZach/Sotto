@@ -3,7 +3,7 @@ import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
 import { effortRank, orderReasoningEfforts } from '../../shared/reasoningEfforts'
 
 /**
- * Cursor's model catalog as Sotto offers it (ADR-0123). Cursor runs every model on the user's Cursor plan, so the menu
+ * Cursor's model catalog as Sotto offers it (ADR-0125). Cursor runs every model on the user's Cursor plan, so the menu
  * groups them by **model maker**, the company that made each one, read from its name. The maker travels in the
  * model's `source`, the field the menu already groups OpenCode's model sources by, while `provider` stays 'Cursor', so
  * a Cursor thread on Claude never reads as Claude Code.
@@ -22,7 +22,7 @@ export function cursorModelMaker(modelId: string): CursorMaker {
   return MAKER_PREFIXES.find(([pattern]) => pattern.test(id))?.[1] ?? 'Cursor'
 }
 
-/** The permission modes a Cursor thread offers: Allow edits would do on Cursor exactly what Ask for approval does (ADR-0123). */
+/** The permission modes a Cursor thread offers: Allow edits would do on Cursor exactly what Ask for approval does (ADR-0125). */
 export const CURSOR_RUNTIME_MODES = ['approval-required', 'auto', 'full-access'] as const satisfies readonly AgentRuntimeMode[]
 export type CursorRuntimeMode = typeof CURSOR_RUNTIME_MODES[number]
 /** The mode a saved one becomes: Allow edits, as a thread continued from another provider may carry, asks for approval. */

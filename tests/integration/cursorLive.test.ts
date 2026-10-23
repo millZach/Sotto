@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Cursor's own CLI (ADR-0123). Never in CI: it needs Cursor's CLI installed and signed in, and it spends a few short turns on
+ * Cursor's own CLI (ADR-0125). Never in CI: it needs Cursor's CLI installed and signed in, and it spends a few short turns on
  * the user's Cursor plan. Run with
  *
  *   SOTTO_CURSOR_LIVE=1 npx vitest run tests/integration/cursorLive.test.ts

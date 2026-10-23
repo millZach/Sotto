@@ -68,7 +68,7 @@ function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly
   if (provider === 'grok') return [grokBin(environment)]
   // OpenCode 2's install script (`opencode.ai/v2/install`) puts it here, and `opencode upgrade` updates it in place.
   if (provider === 'opencode') return [join(home, '.opencode', 'bin')]
-  // Cursor's installer keeps each version in its own folder and `agent update` replaces them (ADR-0123).
+  // Cursor's installer keeps each version in its own folder and `agent update` replaces them (ADR-0125).
   if (provider === 'cursor') return [cursorInstallRoot(environment), ...(process.platform === 'win32' ? [] : [join(home, '.local', 'bin')])].filter((folder): folder is string => Boolean(folder))
   return []
 }
@@ -572,7 +572,7 @@ export interface ProviderClientsOptions {
   readonly opencodeFolders?: OpenCodeFolders
   /** The platform whose install layouts are read: this one's, by default. */
   readonly platform?: NodeJS.Platform
-  /** Sotto's own Cursor folder: `agent update` runs with it, never with the user's own Cursor folder (ADR-0123). */
+  /** Sotto's own Cursor folder: `agent update` runs with it, never with the user's own Cursor folder (ADR-0125). */
   readonly cursorConfigDirectory?: string
 }
 
@@ -632,7 +632,7 @@ export class ProviderClients {
     } catch { return undefined }
   }
 
-  /** The version Cursor's own install script downloads, the one place Cursor says what it has published (ADR-0123). */
+  /** The version Cursor's own install script downloads, the one place Cursor says what it has published (ADR-0125). */
   private async publishedCursorVersion(afresh: boolean): Promise<string | undefined> {
     const key = 'cursor:install', cached = this.cache.get(key)
     if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
@@ -721,7 +721,7 @@ export class ProviderClients {
     // never the user's own OpenCode folders or other providers' keys.
     const opencodeOwn = provider === 'opencode' && install.channel === 'self-update' && this.opencodeFolders
       ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) }
-      // Cursor's updater runs with Sotto's Cursor folder and the shared allow-list, never the user's own ~/.cursor (ADR-0123).
+      // Cursor's updater runs with Sotto's Cursor folder and the shared allow-list, never the user's own ~/.cursor (ADR-0125).
       : provider === 'cursor' && this.cursorConfigDirectory ? { environment: cursorEnvironment(this.cursorConfigDirectory, withCliPath(environment, action.executable)) } : {}
     const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env || opencodeOwn.environment
       ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}), ...opencodeOwn } : undefined)

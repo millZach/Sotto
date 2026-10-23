@@ -150,7 +150,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true })),
-    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0123).
+    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0125).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
@@ -393,7 +393,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  // Signing Cursor in from its tile on this computer (ADR-0123): only where its adapter runs, and never on a headless host, whose
+  // Signing Cursor in from its tile on this computer (ADR-0125): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorSignIn = providers.cursor instanceof CursorAcpHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
     configDirectory: join(directory, 'cursor', 'config'), openExternal: async url => { await options.openExternal(url) },

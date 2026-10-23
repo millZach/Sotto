@@ -20,7 +20,7 @@ const OWL = '0.1.37-owl.20261012.1'
 /** Provider IDs remain inside the fixture driver; every tested client operation uses HostService. */
 async function hostFixture(provider: ProviderId, native: AdapterFixture): Promise<HostServiceFixture> {
   const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: native.host }
-  // OpenCode and Cursor are Owl providers (ADR-0087, ADR-0123): a host runs either only on an Owl build, as this computer does.
+  // OpenCode and Cursor are Owl providers (ADR-0087, ADR-0125): a host runs either only on an Owl build, as this computer does.
   const host = await startHeadlessHost({ dataDirectory: native.root, providers, reasoner: e2eAgentReasoner, ...(provider === 'opencode' || provider === 'cursor' ? { sottoVersion: OWL } : {}) })
   await host.service.command({ type: 'configure', patch: { enabledProviders: [provider], provider } }, desktopWindowClient('host-contract'))
   const binding = async (threadId: string): Promise<string | undefined> => {
@@ -64,7 +64,7 @@ const fixtures: { provider: ProviderId; create: (session?: AdapterSessionOptions
   { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session), skips: devinFixtureSkips },
   // Hosts take OpenCode since #1107.
   { provider: 'opencode', create: session => opencodeFixture(undefined, undefined, session), skips: opencodeFixtureSkips },
-  // And Cursor with ADR-0123.
+  // And Cursor with ADR-0125.
   { provider: 'cursor', create: session => cursorFixture(undefined, undefined, session), skips: cursorFixtureSkips },
 ]
 for (const fixture of fixtures) describeHostServiceContract('Headless ' + fixture.provider, async session => hostFixture(fixture.provider, await fixture.create(session)), fixture.skips)

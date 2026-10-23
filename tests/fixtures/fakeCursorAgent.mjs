@@ -1,4 +1,4 @@
-// A stand-in for Cursor's CLI (`agent`), shaped on the frames Cursor 2026.10.22-27dcf5f sent live (ADR-0123,
+// A stand-in for Cursor's CLI (`agent`), shaped on the frames Cursor 2026.10.22-27dcf5f sent live (ADR-0125,
 // docs/research/cursor-cli.md Appendix B). `node fakeCursorAgent.mjs <root> [flags] acp` speaks ACP on stdio as one
 // thread's process; `--version`, `status --format json`, `login`, `logout` and `update` answer as Cursor's do.
 // Sessions are kept one file each under <root>/sessions, so `session/load` in a later process replays them.
