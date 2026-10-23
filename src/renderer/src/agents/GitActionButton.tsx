@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useLingui } from '@lingui/react/macro'
 import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, FolderGit2, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequestArrow, RefreshCw, Upload, X } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { GitStackedAction } from '../../../shared/gitActions'
@@ -27,10 +28,10 @@ function changedFilesBridge(): ((request: { threadId: string }) => Promise<GitCh
 }
 
 const NO_THREADS: readonly AgentThread[] = []
-/** A machine's name as the window lists it: This computer for the desktop's own. */
-function machineName(connections: AgentState['connections'], hostId: string | undefined): string | undefined {
+/** A machine's name as the window lists it: `thisComputer` for the desktop's own. */
+function machineName(connections: AgentState['connections'], hostId: string | undefined, thisComputer: string): string | undefined {
   const connection = hostId === undefined ? undefined : connections?.find(item => item.hostId === hostId)
-  return connection ? connection.kind === 'local' ? 'This computer' : connection.name : undefined
+  return connection ? connection.kind === 'local' ? thisComputer : connection.name : undefined
 }
 
 /** The glyph for each action, on the button and in its menu. */
@@ -83,6 +84,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const quick = quickAction(status)
   // Bring changes to <branch> (#1030; Owl only): offered from the records alone, run on the host only when pressed.
   const bringOffered = useOwlFeature('cross-machine-work')
+  const { t } = useLingui()
   const windowState = useOptionalAgents()?.state
   const windowThreads = windowState?.host.threads
   const allThreads = givenThreads ?? windowThreads ?? NO_THREADS
@@ -92,7 +94,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const bringView = bringOffered ? bringBackView(thread, allThreads, dismissals) : null
   const bringParent = bringTarget ? allThreads.find(item => item.id === bringTarget.parentId) : undefined
   // A parent on another machine is named by that machine, so the strip says where its branch is (#1030).
-  const bringMachine = bringTarget?.away ? machineName(windowState?.connections, parseHostEntityKey(bringTarget.parentId)?.hostId) : undefined
+  const bringMachine = bringTarget?.away ? machineName(windowState?.connections, parseHostEntityKey(bringTarget.parentId)?.hostId, t`This computer`) : undefined
   const [bringPressed, setBringPressed] = useState<string | null>(null)
   useEffect(() => { setBringPressed(null) }, [thread.id])
 
@@ -147,8 +149,10 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
     return { id: entry.id, label: entry.label, disabled: running || entry.hint !== undefined, ...(entry.hint ? { hint: entry.hint } : {}), icon: <EntryIcon size={15} aria-hidden="true" />, run: () => press(entry.id) }
   })
   // The same press as the strip's, first in the menu, so the Git action stays the one place Git acts (ADR-0027).
-  const uncommitted = status?.dirty ? `Commit the ${changedFileCount(Math.max(1, status.changedFiles))} changed first.` : undefined
-  const bringMenu: PaneMenuItem[] = bringTarget ? [{ id: 'bring-changes-back', label: `Bring changes to ${bringTarget.target}`, icon: <GitMerge size={15} aria-hidden="true" />,
+  const changed = changedFileCount(Math.max(1, status?.changedFiles ?? 1))
+  const uncommitted = status?.dirty ? t`Commit the ${changed} changed first.` : undefined
+  const target = bringTarget?.target ?? ''
+  const bringMenu: PaneMenuItem[] = bringTarget ? [{ id: 'bring-changes-back', label: t`Bring changes to ${target}`, icon: <GitMerge size={15} aria-hidden="true" />,
     disabled: running || uncommitted !== undefined, ...(uncommitted ? { hint: uncommitted } : {}), run: () => bring() }] : []
   const menuGroups = [bringMenu, menu].filter(group => group.length > 0)
 

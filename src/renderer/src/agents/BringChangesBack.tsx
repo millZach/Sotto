@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, type ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, GitMerge, X } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
 import { outcomeWords, questionWords, readyWords, fileCount, type BringBackView } from './bringChangesBack.logic'
 import './bringChangesBack.css'
@@ -26,6 +27,7 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
   readonly onCommit: () => void
   readonly onOpenParent: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const titleId = useId(), reasonId = useId()
   const first = useRef<HTMLButtonElement>(null)
   const region = useRef<HTMLElement>(null)
@@ -46,25 +48,27 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
   const notNow = (): void => { restore.current = true; onNotNow() }
   const dismiss = (): void => { restore.current = true; onDismiss() }
   const { target } = view.found
-  const bring = `Bring changes to ${target}`
+  const bring = t`Bring changes to ${target}`
   if (view.kind === 'ready' || view.kind === 'uncommitted') {
     const words = readyWords(view.found, parentTitle, machine)
+    const { branch } = view.found
+    const changed = view.kind === 'uncommitted' ? fileCount(view.files) : ''
     const blocked = view.kind === 'uncommitted'
-    return <section ref={region} className="bring-back" aria-label="Bring changes back">
+    return <section ref={region} className="bring-back" aria-label={t`Bring changes back`}>
       <GitMerge size={16} aria-hidden="true" className="bring-back__icon" />
-      <p id={reasonId} className="bring-back__text">
+      <p id={reasonId} className="bring-back__text tt-paragraph">
         {blocked
-          ? <><strong>{view.found.branch}</strong> has uncommitted changes in {fileCount(view.files)}. Commit them first; Sotto won’t bring back uncommitted work.</>
-          : <><strong>{view.found.branch}</strong> was made from <strong>{target}</strong>. {words.rest}</>}
+          ? <Trans><strong>{branch}</strong> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work.</Trans>
+          : <><Trans><strong>{branch}</strong> was made from <strong>{target}</strong>.</Trans> {words.rest}</>}
       </p>
       <div className="bring-back__actions">
-        {blocked ? <Button variant="secondary" onClick={onCommit}>Commit…</Button> : null}
+        {blocked ? <Button variant="secondary" onClick={onCommit}><Trans>Commit…</Trans></Button> : null}
         <Button ref={first} variant={blocked ? 'secondary' : 'primary'} aria-disabled={blocked || busy || undefined} aria-busy={busy || undefined}
-          {...(blocked ? { 'aria-describedby': reasonId, title: `Commit the ${fileCount(view.files)} changed first.` } : {})}
+          {...(blocked ? { 'aria-describedby': reasonId, title: t`Commit the ${changed} changed first.` } : {})}
           onClick={() => { if (!blocked && !busy) onBring() }}>
           <GitMerge size={15} aria-hidden="true" />{bring}
         </Button>
-        {blocked ? null : <button type="button" className="bring-back__dismiss tt-focusable" aria-label="Hide until this branch changes" title="Hide until this branch changes" onClick={onHide}>
+        {blocked ? null : <button type="button" className="bring-back__dismiss tt-focusable" aria-label={t`Hide until this branch changes`} title={t`Hide until this branch changes`} onClick={onHide}>
           <X size={14} aria-hidden="true" />
         </button>}
       </div>
@@ -75,10 +79,10 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
     return <section ref={region} className="bring-back" data-tone="ask" role="group" aria-labelledby={titleId}
       onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); notNow() } }}>
       <GitMerge size={16} aria-hidden="true" className="bring-back__icon" />
-      <p className="bring-back__text"><strong id={titleId}>{words.title}</strong> {words.body}</p>
+      <p className="bring-back__text tt-paragraph"><strong id={titleId}>{words.title}</strong> {words.body}</p>
       <div className="bring-back__actions">
-        <Button ref={first} variant="primary" aria-disabled={busy || undefined} aria-busy={busy || undefined} onClick={() => { if (!busy) onMergeCommit() }}>Make merge commit</Button>
-        <Button variant="secondary" disabled={busy} onClick={notNow}>Not now</Button>
+        <Button ref={first} variant="primary" aria-disabled={busy || undefined} aria-busy={busy || undefined} onClick={() => { if (!busy) onMergeCommit() }}><Trans>Make merge commit</Trans></Button>
+        <Button variant="secondary" disabled={busy} onClick={notNow}><Trans>Not now</Trans></Button>
       </div>
     </section>
   }
@@ -87,14 +91,14 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
   return <section ref={region} tabIndex={-1} className="bring-back" data-tone={words.tone} role={words.tone === 'error' ? 'alert' : 'status'} aria-label={words.title}
     onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); dismiss() } }}>
     <Icon size={16} aria-hidden="true" className="bring-back__icon" />
-    <div className="bring-back__text">
+    <div className="bring-back__text tt-paragraph">
       <p><strong>{words.title}</strong> {words.body}</p>
       {words.gitSaid ? <pre className="bring-back__git-said">{words.gitSaid}</pre> : null}
     </div>
     <div className="bring-back__actions">
-      {words.commit ? <Button variant="secondary" onClick={onCommit}>Commit…</Button> : null}
-      {words.openParent ? <Button variant="secondary" onClick={onOpenParent}>Open {parentTitle}</Button> : null}
-      <button type="button" className="bring-back__dismiss tt-focusable" aria-label="Dismiss" title="Dismiss" onClick={dismiss}>
+      {words.commit ? <Button variant="secondary" onClick={onCommit}><Trans>Commit…</Trans></Button> : null}
+      {words.openParent ? <Button variant="secondary" onClick={onOpenParent}><Trans>Open {parentTitle}</Trans></Button> : null}
+      <button type="button" className="bring-back__dismiss tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={dismiss}>
         <X size={14} aria-hidden="true" />
       </button>
     </div>
