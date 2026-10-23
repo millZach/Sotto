@@ -772,3 +772,14 @@ artifacts/message-scrubber/*
 # Terminal mode removed (ADR-0111); retain only the capture its verification note cites.
 artifacts/remove-terminal-mode/*
 !artifacts/remove-terminal-mode/threads-populated-after.png
+artifacts/sidebar-crossing/*
+!artifacts/sidebar-crossing/before-threads-foot-dark.png
+!artifacts/sidebar-crossing/before-settings-foot-dark.png
+!artifacts/sidebar-crossing/threads-foot-dark.png
+!artifacts/sidebar-crossing/settings-foot-dark.png
+!artifacts/sidebar-crossing/threads-foot-light.png
+!artifacts/sidebar-crossing/settings-foot-light.png
+!artifacts/sidebar-crossing/owl-threads-foot-dark.png
+!artifacts/sidebar-crossing/owl-settings-foot-dark.png
+!artifacts/sidebar-crossing/threads-820x560-dark.png
+!artifacts/sidebar-crossing/settings-820x560-dark.png
