@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
+import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import {
   APPEARANCE_CONTRAST,
@@ -120,6 +121,10 @@ export interface AppSettings {
   appearanceContrast: number
   /** The colour the effort control turns at a model's highest level. */
   effortColor: EffortColor
+  /** The colour of the menu bar owl's body on a Mac running an Owl build (ADR-0114); kept whole where the feature is off. */
+  menuBarOwlBody: MenuBarOwlBody
+  /** The colour its eyes glow. */
+  menuBarOwlEyes: MenuBarOwlEyes
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
   creature: Creature
   /** Themes the user created, duplicated or imported, already canonical. */
@@ -322,6 +327,8 @@ const fieldSchemas = {
   darkTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
+  menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
+  menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   creature: z.enum(CREATURES),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
@@ -411,6 +418,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearanceContrast: APPEARANCE_CONTRAST.default,
   // Ember is the warning role's gold: the colour the effort control turned before it became a choice.
   effortColor: 'ember',
+  menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
+  menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   creature: 'sotto',
   customThemes: [],
   webLinkDestination: 'external',
@@ -559,6 +568,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     darkTheme: half('darkTheme'),
     appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
     effortColor: parseField(persisted, 'effortColor', defaults),
+    menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
+    menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     creature: parseField(persisted, 'creature', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),

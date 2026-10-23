@@ -1,11 +1,11 @@
 /* Queue and skills around the Threads composer. Same field, ink and accent as the prompt; nothing new competes with it. */
 
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 8px; }
-/* While a turn runs, Steer now is a text button in the accent beside Stop (ADR-0112). */
+/* While a turn runs, Steer now is a text button in the accent beside Stop (ADR-0113). */
 .thread-prompt__steer.tt-button { height: 28px; min-height: 28px; padding: 0 7px; border-color: transparent; background: transparent; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; }
 .thread-prompt__steer.tt-button:hover:not(:disabled), .thread-prompt__steer.tt-button:active:not(:disabled) { border-color: transparent; background: var(--tt-hover); color: var(--tt-accent-text); }
 
-/* Follow-up queue (ADR-0112): no card and no card per row. The list hangs off a thin rule in the accent above the composer,
+/* Follow-up queue (ADR-0113): no card and no card per row. The list hangs off a thin rule in the accent above the composer,
    under a muted line that says what it holds and when it sends; each row is its words on one line, then Steer now as a
    text button in the accent and the row's other actions as ghost icons. It is the one part of the compose area that
    gives up height: its rows scroll under a head that stays put, never the prompt below it. The 5px it keeps at the right

@@ -109,6 +109,8 @@ const settingKeys = [
   'darkTheme',
   'appearanceContrast',
   'effortColor',
+  'menuBarOwlBody',
+  'menuBarOwlEyes',
   'creature',
   'customThemes',
   'reducedMotion',
