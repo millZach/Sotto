@@ -44,7 +44,8 @@ import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
-import { HostFactsSource, hostMachineReport } from './hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
+import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
 
@@ -78,8 +79,10 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
-   * The Owl list's answer for Work across machines (#1032), read once by the process owner. Absent fails closed: a start
-   * names no machine or system, nothing reads where new workers start, and the host does not report its projects' origins.
+   * The Owl list's answer for Work across machines (ADR-0082), read once by the process owner. Absent fails closed: a
+   * start names no machine or system, nothing reads where new workers start, the host does not report its projects'
+   * origins, this machine's report is its host facts and running threads alone, no live load is sampled, and
+   * list_machines shows none of it.
    */
   crossMachineEnabled?: boolean
   claudeHistoryModulePath?: string
@@ -138,8 +141,15 @@ export interface AgentRuntimeOptions {
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
+  // With Work across machines on, the first live load sample is taken now too, so the first ask reads over a window
+  // without waiting (#1311); with it off, nothing is sampled and the report carries no load.
+  const crossMachine = options.crossMachineEnabled === true
   const facts = new HostFactsSource()
-  void facts.read().catch(() => undefined)
+  void facts.read().then(() => crossMachine ? facts.primeLoad() : undefined).catch(() => undefined)
+  // Its threads and sends are read in place, after the load, as the report is answered, with Watcher's starts still on
+  // their way to a thread here.
+  const machineFacts = (): Promise<HostMachineReport> => hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
+    ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
@@ -242,12 +252,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
-  const crossMachine = options.crossMachineEnabled === true
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects) } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
@@ -329,8 +338,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const resumeFrozen = restartResume?.freeze()
     agentControl.dispose()
     stoppingProviders = (async () => {
-      // The record's last write runs beside the providers' closing; nothing they do changes it now.
-      const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()),
+      // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
+      // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
+      const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
         ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
@@ -391,7 +401,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),

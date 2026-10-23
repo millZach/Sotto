@@ -40,7 +40,7 @@ async function nativeFixtureProfile() {
 }
 async function openThread(page: Page, title: string) {
   await openThreads(page)
-  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click()
+  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click({ position: { x: 16, y: 12 } })
   const pane = page.locator('section.thread-pane:not([data-hidden])')
   return { pane, transcript: pane.getByLabel('Thread transcript') }
 }

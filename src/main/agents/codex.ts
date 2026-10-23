@@ -98,7 +98,10 @@ const aliasesSchema = z.record(z.string(), aliasSchema)
 
 type Alias = z.infer<typeof aliasSchema>
 type Origin = z.infer<typeof originSchema>
-const itemSchema = codexItemSchema
+/** The text parts of a user message's content, the only shape of it Sotto reads. */
+const userContent = z.array(z.object({ type: z.string(), text: z.string().optional() })).optional()
+/** A user message whose content Sotto cannot read fails with its item, so the whole frame is refused before any of it applies (#680). */
+const itemSchema = codexItemSchema.refine(item => item.type !== 'userMessage' || userContent.safeParse(item.content).success)
 const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish(),
   itemsView: z.enum(['notLoaded', 'summary', 'full']).default('full'),
   completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() })
@@ -179,7 +182,7 @@ const turnKey = (id: string, nativeId: string): string => `${id}\n${nativeId}`
 type ModelList = AgentHostSnapshot['models']
 
 /** What happened to Sotto's own Codex role files (#1042), as stable event names; never a path, a model or Codex's words. */
-export type CodexAdapterEvent = 'codex-role-malformed' | CodexRoleFilesEvent
+export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unreadable' | CodexRoleFilesEvent
 
 export interface CodexAppServerHostOptions {
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
@@ -189,6 +192,9 @@ export interface CodexAppServerHostOptions {
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
 }
+
+/** A load's role table: the instructions that name its roles, and the widest permission its role files were written for (#1042). */
+interface LaunchRoles { instructions: string | undefined; widest: AgentRuntimeMode | undefined }
 
 /** Provider session aliases isolate server-assigned Codex thread IDs from Sotto's thread interface. */
 export class CodexAppServerHost implements AgentHost {
@@ -279,17 +285,30 @@ export class CodexAppServerHost implements AgentHost {
   }
   /**
    * A load's role table (#1042): Sotto's role files for the roles on a ready Codex model, added to `config` as
-   * `agents.sotto_<role>`, and the instructions that name them. Nothing for Watcher, which starts its workers through its
-   * own tools, or while worker roles are off.
+   * `agents.sotto_<role>`, the instructions that name them, and the widest permission the files were written for.
+   * Nothing for Watcher, which starts its workers through its own tools, or while worker roles are off. The load records
+   * that permission (`recordLoadedRoles`) once it holds the thread, so a start or fork that fails or is given up leaves none.
    */
-  private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<string | undefined> {
+  private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<LaunchRoles> {
     this.roleModes.delete(id)
-    if (!this.workerRoles || this.watcherProfiles.has(id)) return undefined
+    if (!this.workerRoles || this.watcherProfiles.has(id)) return { instructions: undefined, widest: undefined }
     const table = this.workerRoles.table()
     const written = codexTakesRoles(this.state.version) ? await this.roleFiles.write(table, mode, this.state.models) : undefined
-    if (written) { config.agents = written.agents; this.roleModes.set(id, written.widest) }
+    if (written) config.agents = written.agents
     const canDelegate = DELEGATE_MCP_SERVER in ((config.mcp_servers as Record<string, unknown> | undefined) ?? {})
-    return subagentRoleInstructions(table, { provider: 'codex', agents: written?.kinds ?? new Set(), agentTool: 'codex', canDelegate })
+    return { instructions: subagentRoleInstructions(table, { provider: 'codex', agents: written?.kinds ?? new Set(), agentTool: 'codex', canDelegate }), widest: written?.widest }
+  }
+  /** The thread's app-server holds it with role files written for `widest` (#1042). */
+  private recordLoadedRoles(id: string, widest: AgentRuntimeMode | undefined): void { if (widest) this.roleModes.set(id, widest) }
+  /**
+   * A new thread's configuration and role table, once its own app-server has started for a start or a fork. Setup that
+   * fails lets that app-server go at once, rather than leaving it for the reaper (#1133).
+   */
+  private async newThreadSetup(id: string, effort: string | undefined, mode: AgentRuntimeMode): Promise<{ configuration: { config: Record<string, unknown> }; roles: LaunchRoles }> {
+    try {
+      const configuration = await this.threadConfiguration(id, effort)
+      return { configuration, roles: await this.launchRoles(id, mode, configuration.config) }
+    } catch (error) { this.creating.delete(id); this.stopSession(id); throw error }
   }
   /**
    * Role files keep the permission a thread was loaded with, so a thread whose confirmed permission is narrower lets its
@@ -1136,7 +1155,8 @@ export class CodexAppServerHost implements AgentHost {
       // An unconfirmed settings change may land either way, so its role files are held to the narrower of the two.
       const mode = alias.runtimeMode ?? 'auto-accept-edits'
       const roles = await this.launchRoles(id, alias.pendingSettings ? capRuntimeMode(alias.pendingSettings.runtimeMode, mode) : mode, configuration.config)
-      const developerInstructions = [await this.projectInstructions(alias.cwd, id), roles].filter(Boolean).join('\n\n')
+      this.recordLoadedRoles(id, roles.widest)
+      const developerInstructions = [await this.projectInstructions(alias.cwd, id), roles.instructions].filter(Boolean).join('\n\n')
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
@@ -1198,7 +1218,7 @@ export class CodexAppServerHost implements AgentHost {
   private identityItem(item: z.infer<typeof itemSchema>): IdentityItem | undefined {
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
     return { id: item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', clientId: item.clientId,
-      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))) }
+      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : textOf(userContent.parse(item.content))) }
   }
   private stableMessageId(id: string, turnId: string, itemId: string): string {
     return this.aliases[id]!.messageIdentities.find(turn => turn.turnId === turnId)?.messages.find(m => m.nativeIds.includes(itemId))?.id ?? itemId
@@ -1243,7 +1263,7 @@ export class CodexAppServerHost implements AgentHost {
     if (item.type === 'agentMessage' && lifecycle.phase === 'started' && this.completedMessages.has(messageKey)) return
     if (item.type === 'agentMessage' && (lifecycle.phase === 'completed' || lifecycle.terminal)) this.completedMessages.add(messageKey)
     const alias = this.aliases[id]!
-    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))
+    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(userContent.parse(item.content))
     const input = this.identityItem(item)!
     let origin = turnId && item.type === 'userMessage' ? messageOrigin(alias.origins, turnId, input) : undefined
     const identities = turnId ? identityTurn(alias.messageIdentities, turnId) : undefined
@@ -1476,12 +1496,11 @@ export class CodexAppServerHost implements AgentHost {
       server = await this.runtimeServer(request.threadId)
     } catch (error) { this.creating.delete(request.threadId); throw error }
     this.reaper.touch(request.threadId)
+    // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
+    const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits')
     try {
-      // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
-      const configuration = await this.threadConfiguration(request.threadId, request.reasoningEffort)
-      const roles = await this.launchRoles(request.threadId, request.runtimeMode ?? 'auto-accept-edits', configuration.config)
       await this.rpc('thread/fork', { threadId: nativeSource, ...(lastTurnId ? { lastTurnId } : {}), cwd, model: request.modelId, modelProvider: 'openai',
-        developerInstructions: [developerInstructions, roles].filter(Boolean).join('\n\n'), ...runtimePolicy(request.runtimeMode), ...configuration,
+        developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'), ...runtimePolicy(request.runtimeMode), ...configuration,
         // Durable, so the copy outlives this app-server; without its turns, which are read back the way every thread's are.
         ephemeral: false, excludeTurns: true }, async value => {
         const response = settingsResponse.parse(value)
@@ -1495,7 +1514,7 @@ export class CodexAppServerHost implements AgentHost {
           runtimeMode: request.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
           ...(response.thread.historyMode ? { historyMode: response.thread.historyMode } : {}),
           createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
-        this.providerSessionIds.set(response.thread.id, request.threadId)
+        this.providerSessionIds.set(response.thread.id, request.threadId); this.recordLoadedRoles(request.threadId, roles.widest)
         await this.persist(); this.creating.delete(request.threadId); this.ensureThread(request.threadId); this.live.add(request.threadId)
         this.reaper.touch(request.threadId); this.watcher?.observe(response.thread.id); this.emit()
       }, () => { this.creating.delete(request.threadId); this.stopSession(request.threadId) }, server)
@@ -1578,13 +1597,9 @@ export class CodexAppServerHost implements AgentHost {
         try { server = await this.runtimeServer(command.threadId) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
-        let configuration: { config: Record<string, unknown> }, roles: string | undefined
-        try {
-          configuration = await this.threadConfiguration(command.threadId, command.reasoningEffort)
-          roles = await this.launchRoles(command.threadId, command.runtimeMode ?? 'auto-accept-edits', configuration.config)
-        } catch (error) { this.creating.delete(command.threadId); this.stopSession(command.threadId); throw error }
+        const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
-          developerInstructions: [developerInstructions, roles].filter(Boolean).join('\n\n'),
+          developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'),
           ...runtimePolicy(command.runtimeMode), ...configuration, ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
@@ -1595,7 +1610,7 @@ export class CodexAppServerHost implements AgentHost {
             title: command.title, modelId: command.modelId,
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
-          this.providerSessionIds.set(response.thread.id, command.threadId)
+          this.providerSessionIds.set(response.thread.id, command.threadId); this.recordLoadedRoles(command.threadId, roles.widest)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
           this.reaper.touch(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
@@ -1849,7 +1864,11 @@ export class CodexAppServerHost implements AgentHost {
       return
     }
     if (frame.method === 'thread/started') {
-      const { thread } = threadResponse.parse(frame.params); const id = this.sessionId(thread.id)
+      // An unreadable notification is skipped whole: one Codex sends in a new shape must not end the app-server
+      // and every turn on it (#680). Only the event is logged; the params can hold prompt text.
+      const started = threadResponse.safeParse(frame.params)
+      if (!started.success) { this.options.logEvent?.('codex-notification-unreadable'); return }
+      const { thread } = started.data; const id = this.sessionId(thread.id)
       if (id) { this.touch(id); this.applyThread(id, thread); this.emit() }
       return
     }
@@ -1905,7 +1924,9 @@ export class CodexAppServerHost implements AgentHost {
     if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved',
       'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress',
       'turn/plan/updated', 'thread/status/changed'].includes(frame.method ?? '')) return
-    const params = notificationSchema.parse(frame.params); const id = this.sessionId(params.threadId)
+    const parsed = notificationSchema.safeParse(frame.params)
+    if (!parsed.success) { this.options.logEvent?.('codex-notification-unreadable'); return }
+    const params = parsed.data; const id = this.sessionId(params.threadId)
     if (!id) {
       const owner = this.activity.childNotification(params.threadId, frame.method!, params)
       if (owner) { this.touch(owner.id); this.emit(true) }

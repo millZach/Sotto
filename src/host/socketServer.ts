@@ -453,6 +453,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     return { state: { ...state, host }, carries: null }
   }
   const recordCatalog = (peer: Peer, shell: WireShell): void => { if (shell.carries !== null) peer.catalogSent = shell.carries }
+  /**
+   * A shell's state as it is written, and the text that says whether it repeats the last one pushed. Watcher's page on a
+   * phone's shell says when it was read (`observedAt`), a new time on every read, so with it no phone's shell ever
+   * repeated: every publish sent a phone its whole shell and Watcher's conversation again. The comparison leaves that
+   * time out, so a page with nothing new but its time is not pushed again. Each part is serialized once.
+   */
+  const shellText = (state: HostWireShell): { text: string; compared: string } => {
+    const page = state.watcher
+    if (!page) { const text = JSON.stringify(state); return { text, compared: text } }
+    const rest = JSON.stringify({ ...state, watcher: undefined }), untimed = JSON.stringify({ ...page, observedAt: undefined })
+    const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(page.observedAt) + '}}'
+    return { text, compared: rest + untimed }
+  }
   const authenticated = (peer: Peer): boolean => pairing.verifySession(peer.session) === peer.client.clientId
   const fits = (text: string): boolean => Buffer.byteLength(text) <= HOST_MAX_FRAME_BYTES
   /**
@@ -550,14 +563,14 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
-    const stateText = JSON.stringify(state)
+    const { text: stateText, compared } = shellText(state)
     const full = '{"v":1,"event":"shell","state":' + stateText + ',"eventPage":' + JSON.stringify(eventPage) + '}'
     if (fits(full)) {
       // A shell whose state is byte for byte the last one this client was pushed, with no events to bring, would only
       // cost the link its bytes again. It is not written; the cursor still moves past what the page left out for this
       // client, so those events are not read again on every publish. The catalog it would have carried is the one that
       // shell carried.
-      const digest = createHash('sha1').update(stateText).digest('base64')
+      const digest = createHash('sha1').update(compared).digest('base64')
       if (digest === peer.shellSent && eventPage.events.length === 0 && !eventPage.hasMore) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
       else { peer.frames.sendText(full); peer.shellSent = digest; peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     } else {
@@ -1215,7 +1228,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code], ...error instanceof Refusal && error.reason ? { reason: error.reason } : {} } } }
       // An answer that carries a shell gives the client a picture of its own, so the next shell push goes whatever it repeats.
-      if (carried) peer.shellSent = null
+      // So does one that carries Watcher's page: a phone shows the page it was answered with until a shell replaces it.
+      if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
       else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {

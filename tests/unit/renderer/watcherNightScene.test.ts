@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, CELL, COLUMN_GAP, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
-  LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk,
+  addRipple, along, boxDistance, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  LIGHT_INK_BOOST, LINE_GAP, lineGap, MAX_RIPPLES, nearestLine, MOVING_MS, nextPlace, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
 import { RAIL_OWL, spriteCells } from '../../../src/renderer/src/watcher/owlFamily'
@@ -81,17 +81,58 @@ describe('the night scene in the margins', () => {
     expect(none.spots).toEqual([])
   })
 
-  it('draws nothing in the column or under words, quiets the header band, and fades toward the column', () => {
-    const layout = layoutScene(room(1600, 1000, { words: [{ x: 20, y: 300, w: 200, h: 20 }] }))
+  it('shows the column at its share, nothing under still words or the composer, and quiets the header band', () => {
+    const layout = layoutScene(room(1600, 1000, { words: [{ x: 20, y: 300, w: 200, h: 20 }, { x: 500, y: 600, w: 300, h: 20 }] }))
     const { left, right } = layout.column
-    expect(quietAt(layout, (left + right) / 2, 400)).toBe(0)
-    expect(quietAt(layout, left - COLUMN_GAP + 1, 400)).toBe(0)
-    expect(quietAt(layout, 100, 310)).toBe(0)
+    const middle = (left + right) / 2
+    near(quietAt(layout, middle, 400), COLUMN_QUIET.dark)
+    near(quietAt(layout, middle, 400, COLUMN_QUIET.light), COLUMN_QUIET.light)
+    // The column's part of the header band stays empty; the margins' fades to a tenth.
+    expect(quietAt(layout, middle, 20)).toBe(0)
     near(quietAt(layout, 200, 10), 0.1)
+    // Under the still words and the composer, and in the column within their hard gap, nothing.
+    expect(quietAt(layout, 100, 310)).toBe(0)
+    expect(quietAt(layout, 600, 610)).toBe(0)
+    expect(quietAt(layout, 600, 600 - LINE_GAP.hard + 1)).toBe(0)
+    expect(quietAt(layout, middle, layout.composer.y + 5)).toBe(0)
+    expect(quietAt(layout, middle, layout.composer.y - LINE_GAP.hard + 1)).toBe(0)
+    // The margins keep only the still words' small pad, as before.
+    expect(quietAt(layout, 100, 300 - 6)).toBeGreaterThan(0)
     expect(quietAt(layout, 200, 400)).toBe(1)
-    expect(quietAt(layout, left - 12, 400)).toBeLessThan(0.5)
+    // The column's edge is halfway between its share and the whole.
+    near(quietAt(layout, left, 400), (COLUMN_QUIET.dark + 1) / 2)
     expect(inMargin(layout, left - COLUMN_GAP - 1)).toBe(true)
     expect(inMargin(layout, right + COLUMN_GAP - 1)).toBe(false)
+  })
+
+  it('blends the column’s share to the whole across its edges', () => {
+    const layout = layoutScene(room(1600, 1000))
+    const { left, right } = layout.column
+    near(columnFactor(layout, (left + right) / 2, 0.35), 0.35)
+    near(columnFactor(layout, left + COLUMN_BLEND, 0.35), 0.35)
+    near(columnFactor(layout, right - COLUMN_BLEND, 0.35), 0.35)
+    near(columnFactor(layout, left - COLUMN_BLEND, 0.35), 1)
+    near(columnFactor(layout, right + COLUMN_BLEND, 0.35), 1)
+    near(columnFactor(layout, right, 0.35), 0.675)
+    expect(columnFactor(layout, left - 10, 0.35)).toBeGreaterThan(columnFactor(layout, left + 10, 0.35))
+    // Light's share is lower, since its ink is made stronger.
+    expect(COLUMN_QUIET.light).toBeLessThan(COLUMN_QUIET.dark)
+  })
+
+  it('keeps a hard gap around each line of words and lets the scene back by the soft one, nearest line first', () => {
+    const lines = [{ x: 100, y: 100, w: 200, h: 24 }, { x: 100, y: 136, w: 200, h: 24 }]
+    expect(boxDistance(lines[0]!, 150, 110)).toBe(0)
+    expect(boxDistance(lines[0]!, 90, 110)).toBe(10)
+    expect(lineGap(0)).toBe(0)
+    expect(lineGap(LINE_GAP.hard)).toBe(0)
+    expect(lineGap(LINE_GAP.soft)).toBe(1)
+    expect(lineGap(Number.POSITIVE_INFINITY)).toBe(1)
+    near(lineGap((LINE_GAP.hard + LINE_GAP.soft) / 2), 0.5)
+    expect(LINE_GAP.hard).toBeGreaterThanOrEqual(12)
+    // Between two lines 12 pixels apart nothing shows; past both the gap is the nearest's, not the two multiplied.
+    expect(lineGap(nearestLine(lines, 200, 130))).toBe(0)
+    near(lineGap(nearestLine(lines, 200, 160 + 22)), lineGap(22))
+    expect(nearestLine([], 0, 0)).toBe(Number.POSITIVE_INFINITY)
   })
 })
 
@@ -209,17 +250,17 @@ describe('the night scene’s pace, stars and ripples', () => {
     expect(new Set([0, 0.7, 3.1].map(t => starStrength(star, twinkleStep(t, false), false))).size).toBe(3)
   })
 
-  it('scatters stars only in the margins’ open sky, below the header and above the far hills', () => {
+  it('scatters stars over the open sky, the column’s too, below the header and above the far hills', () => {
     const layout = layoutScene(room(1600, 1000))
     const grid = gridFor(layout.width, layout.height)
     const ink = new Float32Array(grid.cols * grid.rows)
     for (let c = 0; c < grid.cols; c++) ink[10 * grid.cols + c] = 1
     const stars = placeStars(layout, grid, ink)
     expect(stars.length).toBeGreaterThan(20)
+    expect(stars.some(star => !inMargin(layout, (star.i % grid.cols + 0.5) * grid.cw)), 'a star in the column').toBe(true)
     for (const star of stars) {
-      const row = Math.floor(star.i / grid.cols), col = star.i % grid.cols
+      const row = Math.floor(star.i / grid.cols)
       expect(row).not.toBe(10)
-      expect(inMargin(layout, (col + 0.5) * grid.cw)).toBe(true)
       expect(row * grid.ch).toBeGreaterThanOrEqual(layout.header)
       expect(row * grid.ch).toBeLessThanOrEqual(layout.horizon - layout.sky * 0.08)
     }

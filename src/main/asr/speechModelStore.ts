@@ -34,6 +34,20 @@ class SpeechModelError extends Error {
   }
 }
 
+/**
+ * Errors that mean this computer would not let the model be written: full, over a per-user or
+ * network-storage quota, read-only, or not allowed. Each is `disk`, so the user is told to free up
+ * space rather than that GitHub could not be reached.
+ */
+const STORAGE_ERROR_CODES = new Set(['ENOSPC', 'EDQUOT', 'EACCES', 'EPERM', 'EROFS'])
+
+/** What a failed attempt tells the user: its own reason, `disk` for a storage error, otherwise `network`. */
+function failureOf(error: unknown): SpeechModelFailure {
+  if (error instanceof SpeechModelError) return error.reason
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code !== undefined && STORAGE_ERROR_CODES.has(code) ? 'disk' : 'network'
+}
+
 export interface SpeechModelStoreDependencies {
   /** The folder that holds every speech model, under userData. */
   readonly directory: string
@@ -178,7 +192,7 @@ export class SpeechModelStore {
       this.engine = engine
       publish({ state: 'ready' })
     } catch (error) {
-      const reason = error instanceof SpeechModelError ? error.reason : 'network'
+      const reason = failureOf(error)
       publish({ state: 'failed', reason, receivedBytes: Math.min(received, this.totalBytes), totalBytes: this.totalBytes })
     }
   }
@@ -283,8 +297,7 @@ export class SpeechModelStore {
         await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>), counter, sink)
       } catch (error) {
         if (error instanceof SpeechModelError) throw error
-        const code = (error as NodeJS.ErrnoException | null)?.code
-        throw new SpeechModelError(code === 'ENOSPC' || code === 'EACCES' || code === 'EPERM' || code === 'EROFS' ? 'disk' : 'network')
+        throw new SpeechModelError(failureOf(error))
       }
       if (received !== file.bytes) throw new SpeechModelError('network')
     } finally {

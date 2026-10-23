@@ -70,3 +70,9 @@ Zach asked for every Owl release to ship for Mac users. [ADR-0093](0093-sotto-ow
 ## October 21, 2026: Owl ships for Linux too
 
 Zach asked for each Owl to ship for Linux. [ADR-0099](0099-sotto-owl-also-ships-for-linux.md) records the decision and supersedes the October 13 sentence that Linux has no Owl desktop build and the October 19 sentence that Linux still has none. Each Owl's x64 tarball and `sotto-bin` pacman package are made by GitHub Actions from the Windows Owl's exact source commit and version and attached to the same prerelease. Owl and stable replace each other on Linux as elsewhere. Linux has no updater, so each Owl is installed by hand with `sudo pacman -U`.
+
+## October 23, 2026: every Owl feature goes to stable
+
+Zach sent every Owl feature to stable: "for everything that is currently on OWL only I want to push that all to stable. It's awesome and ready." All nineteen entries in `src/shared/owlFeatures.ts`, Watcher through desktop notifications, now say `sentToStable: true`, and Stable 0.1.40 is the first stable release to carry them. Nothing else in the rule changes: the switches stay in the code until a later change removes them, the entries stay as the record, and the next feature Zach calls an Owl feature is held again with `sentToStable: false`. The cross-machine orchestration work in flight (epic #1023) is not among the nineteen; Zach has said it will be an Owl feature when it lands.
+
+Stable desktops from 0.1.40 run Usage, so, like an Owl desktop, they ask a paired host for exactly their own version. A stable release therefore attaches a host archive for every platform its hosts run on, or a host on a platform without one is told there is none. Stable 0.1.39 and earlier still hide these features and keep their saved records, as above.

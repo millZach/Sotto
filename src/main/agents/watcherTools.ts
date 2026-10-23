@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
+import { watcherMachinesWithoutLoadOutput, watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
 import { ThreadToolServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadMcpServer, type ThreadToolResult } from './threadToolServer'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
@@ -13,7 +13,7 @@ const descriptions: Record<WatcherToolName, string> = {
   watch_thread: 'Keep watching and managing a thread until the user stops watching. This does not send a prompt or answer a card.',
   unwatch_thread: 'Stop watching a thread and fence automatic messages for its standing watch. Does not interrupt the user\'s turn.',
   list_threads: 'List worker threads and their state using Sotto identities: each row gives the thread’s title, status, group, what it waits on, whether you watch it and its open pull requests. prototypeReady: true means a prototype it made waits for the user to review, which only the user can do, so the thread needs the user. watchedOnly: true lists only the threads you watch. detail: "full" adds every evidence fact, model and participation; ask for it only when you need those. Does not mark anything read by the user.',
-  read_thread: 'Read a bounded window of a worker thread. Its pull requests come as one summary each, beside its own facts such as a failed turn or a takeover; evidence: "full" gives every pull request fact as well. Questions and permissions must be answered by the user on that thread, and a prototype it made (prototypeReady: true) is the user’s to review.',
+  read_thread: 'Read a bounded window of a worker thread. News already carries a finished turn’s reply, so read only for what the reply does not say. Its pull requests come as one summary each, beside its own facts such as a failed turn or a takeover; evidence: "full" gives every pull request fact as well. Questions and permissions must be answered by the user on that thread, and a prototype it made (prototypeReady: true) is the user’s to review.',
   start_thread: `Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt. ${WORKING_WARNING}`,
   send_to_thread: 'Send now, queue or steer explicitly under an active Watcher request. Cannot answer pending questions or permissions. When this message gives the thread its turn to merge a pull request (GO MERGE), set mergeTurn to that pull request’s number: the user’s picture of your work shows whose turn it is. It changes nothing about the send.',
   stop_thread: 'Request interrupt of one eligible worker under the active Watcher request. Does not delete or reclaim anything.',
@@ -25,6 +25,8 @@ const descriptions: Record<WatcherToolName, string> = {
   list_working_copies: 'Read host-issued working-copy and base-ref choices for a known project. No arbitrary paths or remote fetch.',
   read_operation: 'Read an admitted operation’s receipt and, for a start or send, its outcome: working, background, answered, failed, stopped, paused or unknown. Accepted means delivered; the outcome says how its turn ended. Once answered it carries that turn’s reply, the worker’s own words. Uncertain or unknown means reconcile, never resend.',
 }
+/** With Work across machines on (ADR-0082), list_machines also says how busy each machine is and what waits to start there (#1311). */
+const LIST_MACHINES_WITH_LOAD = 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, how many threads it is running, how many it has been sent work for that have not started, and how busy its CPU and memory are now. A machine that does not report these reads unknown; one not connected says so.'
 /** With worker roles on (#1041), a start names its role and leaves the rest to the user's Settings. */
 const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt. ${WORKING_WARNING}`
 /** With Work across machines on (#1032), a start may name its machine or system, and list_machines says where one that names neither goes. */
@@ -39,24 +41,25 @@ const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
 }
 
 /**
- * The results as offered while Work across machines is off (#1032): without the start's placement and without where new
- * workers start, so Stable advertises none of it. Only the answer carries them; the refusal is the same.
+ * The results as offered while Work across machines is off: without the start's placement (#1032), and list_machines
+ * without where new workers start (#1032) or any machine's live load (#1311), so Stable advertises none of it. Only the
+ * answer carries them; the refusal is the same.
  */
-const { start_thread: startOutput, list_machines: machinesOutput } = watcherToolSchemas
 const MACHINELESS_OUTPUTS: Partial<Record<WatcherToolName, z.ZodType>> = {
-  start_thread: z.union([startOutput.output.options[0].omit({ placement: true }), startOutput.output.options[1]]),
-  list_machines: z.union([machinesOutput.output.options[0].omit({ newWorkersStart: true }), machinesOutput.output.options[1]]),
+  start_thread: z.union([watcherToolSchemas.start_thread.output.options[0].omit({ placement: true }), watcherToolSchemas.start_thread.output.options[1]]),
+  list_machines: watcherMachinesWithoutLoadOutput,
 }
 const offeredOutput = (name: WatcherToolName, machines: boolean): z.ZodType => (machines ? undefined : MACHINELESS_OUTPUTS[name]) ?? watcherToolSchemas[name].output
 
 /**
  * The tools Watcher is offered: with worker roles on, start_thread takes a role and its model is optional; with Work across
- * machines on (#1032), it takes a machine or a system.
+ * machines on (`machines`), it takes a machine or a system (#1032), and list_machines shows each machine's live load
+ * (#1311) and where new workers start.
  */
 export function watcherToolDefinitions(roles: boolean, machines = false): readonly ThreadToolDefinition[] {
   return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
     description: name === 'start_thread' ? `${roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE}` : ''}`
-      : name === 'list_machines' && machines ? descriptions[name] + MACHINES_WHERE : descriptions[name],
+      : name === 'list_machines' && machines ? LIST_MACHINES_WITH_LOAD + MACHINES_WHERE : descriptions[name],
     inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines) : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(offeredOutput(name, machines)),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,
       idempotentHint: true, openWorldHint: false } })))
@@ -71,6 +74,7 @@ export class WatcherToolServer implements WatcherProfileTools {
   readonly instructions: string | undefined
   private readonly transport: ThreadToolServer
   private running = 0
+  /** `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles. */
   constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean } = {}) {
     const roles = options.roles === true, machines = options.machines === true
     this.definitions = roles || machines ? watcherToolDefinitions(roles, machines) : WATCHER_TOOL_DEFINITIONS

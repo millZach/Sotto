@@ -92,7 +92,7 @@
   .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy]::before,
   .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
   .threads-view .thread-pane .working-copy__trigger { max-width: 160px; }
-  .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px; }
+  .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px calc(22px + var(--thread-compose-height, 0px)); }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
   .threads-view .thread-pane .thread-message[data-role='user'] { margin-left: 24px; }
@@ -101,7 +101,7 @@
 /* A short pane (rows of panes on a laptop, or a short window) composes like a short window does, so the transcript keeps
    its height and the composer its actions: the title and its crumb share a row, the composer rests smaller. */
 @container thread-pane (max-height: 600px) {
-  .threads-view .thread-pane .thread-workspace__transcript { padding-block: 14px; }
+  .threads-view .thread-pane .thread-workspace__transcript { padding-block: 14px calc(14px + var(--thread-compose-height, 0px)); }
   /* The composer keeps its actions whole; the transcript above gives way. */
   .threads-view .thread-pane .thread-workspace__compose { flex: none; padding-block: 4px 10px; }
   .threads-view .thread-pane > .thread-transcript { min-height: min(96px, 24%); }
