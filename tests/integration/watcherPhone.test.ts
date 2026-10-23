@@ -689,7 +689,13 @@ async function startNews(f: Fixture) {
   master.lastUserMessageId = master.messages.findLast(message => message.role === 'user')?.id
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await f.control.deliverWakeUp(f.target.threadId, { source: 'watcher', watcher: f.watcher.state().current!.target, events: [event], omitted: 0 }, { tool: false })
-  await vi.waitFor(() => expect(f.control.watcherWakeUpTurn(f.target.threadId)).toBe(true), { timeout: 30_000 })
+  // The news turn has started: the provider runs it, and Watcher has recorded the wake-up as what it last sent. A wake-up
+  // still on its way already reads as Watcher's turn (`watcherWakeUpTurn`), and a steer then meets that send in flight:
+  // refused while the provider has yet to start the turn, or joined to the request of the newest message before it (#1322).
+  await vi.waitFor(() => {
+    expect(f.control.watcherPhoneTurn(f.target.threadId).running).toBe(true)
+    expect(f.watcher.lastSendWasWakeUp(f.target.threadId)).toBe(true)
+  }, { timeout: 30_000 })
 }
 const lastSteer = (f: Fixture) => {
   const steer = f.workspace.adapters.codex.commands.findLast(command => command.type === 'steer')

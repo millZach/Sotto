@@ -320,14 +320,17 @@
 .watcher-dock { grid-row: 2; display: flex; justify-content: center; align-items: flex-start; min-width: 0; padding: 2px 8px 0; }
 .watcher-dock__pill { position: relative; z-index: 0; display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; -webkit-app-region: no-drag; }
 .watcher-dock__pill::before { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); clip-path: inset(21px calc(50% - 28px) 0 round 10px); pointer-events: none; }
-.watcher-dock__pill > :not(.watcher-dock__tab) { opacity: 0; }
+/* Open, the pill sets --watcher-dock-open and its controls read it. A :has() test followed by a part with no class, such
+   as `:has(...) > :not(.watcher-dock__tab)`, made Chromium restyle every element in the window after any change to the
+   page, on every page, which slowed each of the terminal's text size steps to seconds (#1423). */
+.watcher-dock__pill > :not(.watcher-dock__tab) { opacity: var(--watcher-dock-open, 0); }
 /* A touch tap has no hover first, so on a touch screen the shut bar's unseen controls take no tap; the first opens it. */
-@media (any-pointer: coarse) { .watcher-dock__pill > :not(.watcher-dock__tab) { pointer-events: none; } }
+@media (any-pointer: coarse) { .watcher-dock__pill > :not(.watcher-dock__tab) { pointer-events: var(--watcher-dock-press, none); } }
 .watcher-dock__tab { position: absolute; left: 50%; bottom: 0; width: 56px; height: 21px; display: grid; place-items: center; border: 1px solid var(--tt-hairline); border-radius: 10px; color: var(--tt-text-muted); transform: translateX(-50%); pointer-events: none; }
 :is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill::before,
 .watcher-dock__pill:has(.update-control:not([data-state='idle'], [data-state='checking']))::before { clip-path: inset(0 0 0 0 round 10px); }
-:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill > :not(.watcher-dock__tab),
-.watcher-dock__pill:has(.update-control:not([data-state='idle'], [data-state='checking'])) > :not(.watcher-dock__tab) { opacity: 1; pointer-events: auto; }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill,
+.watcher-dock__pill:has(.update-control:not([data-state='idle'], [data-state='checking'])) { --watcher-dock-open: 1; --watcher-dock-press: auto; }
 :is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__tab,
 .watcher-dock__pill:has(.update-control:not([data-state='idle'], [data-state='checking'])) > .watcher-dock__tab { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {

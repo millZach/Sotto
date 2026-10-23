@@ -275,6 +275,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/workerMachine.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
+      'src/renderer/src/features/settings/languagePicker.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/activityBodies.css',
       'src/renderer/src/agents/requests/requests.css',

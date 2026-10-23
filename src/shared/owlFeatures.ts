@@ -35,6 +35,7 @@ export const OWL_FEATURES = [
   { id: 'reveal-linked-files', name: 'Show linked files in Finder or File Explorer', owlSince: '2026-10-23', owner: 'docs/adr/0120-a-file-link-in-a-reply-shows-the-file-in-its-folder.md', sentToStable: false },
   { id: 'cleanup-model', name: 'Choose the AI cleanup model and mode', owlSince: '2026-10-23', owner: 'docs/adr/0122-the-cleanup-model-can-be-chosen-on-owl.md', sentToStable: false },
   { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
+  { id: 'interface-language', name: 'Interface language', owlSince: '2026-10-23', owner: 'docs/adr/0123-sottos-interface-speaks-the-computers-language.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

@@ -23,6 +23,8 @@ import {
 } from '../shared/opencodeSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
+import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
+import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
@@ -363,6 +365,8 @@ export function createSottoBridge(
   desktopNotificationsEnabled = false,
   /** The machines line and Settings' Where new workers start (#1032): only while Watcher and Work across machines are on. */
   watcherMachinesEnabled = false,
+  /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
+  interfaceLanguage: InterfaceLanguageState | null = null,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -425,6 +429,7 @@ export function createSottoBridge(
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
     }) } : {}),
     // Notifications (ADR-0117): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
+    ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
       test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
       onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, z.null(), () => listener()),
@@ -589,9 +594,19 @@ export function createSottoBridge(
   return hostClientBridge(bridge)
 }
 
+function createInterfaceLanguageBridge(renderer: IpcRendererAdapter, startup: InterfaceLanguageState): InterfaceLanguageBridge {
+  return Object.freeze<InterfaceLanguageBridge>({
+    startup: Object.freeze({ ...startup }),
+    current: () => invokeParsed(renderer, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema),
+    onChanged: listener => subscribe(renderer, INTERFACE_LANGUAGE_CHANGED, interfaceLanguageStateSchema, listener),
+  })
+}
+
 export function createSottoWidgetBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
+  /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
+  interfaceLanguage: InterfaceLanguageState | null = null,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -607,6 +622,7 @@ export function createSottoWidgetBridge(
   )
   return Object.freeze({
     platform,
+    ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
 
     onWidgetState,
     onWidgetVisibilityChange,
@@ -669,13 +685,14 @@ export function exposeRendererBridge(
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
-      arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT)))
+      arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT),
+      parseInterfaceLanguageArgument(arguments_)))
     return true
   }
   if (rendererRole === 'widget') {
     context.exposeInMainWorld(
       'sottoWidget',
-      createSottoWidgetBridge(renderer, platform),
+      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_)),
     )
     return true
   }
