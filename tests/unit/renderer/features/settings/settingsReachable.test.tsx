@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import {
-  findSettingControl, findSettings, isSettingsSection, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingsSectionId,
+  findSettingControl, isSettingsSection, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingsSectionId,
 } from '../../../../../src/renderer/src/features/settings/settingsPages'
 import type { MainActivityBridge, MainActivityState } from '../../../../../src/shared/mainActivity'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
@@ -61,7 +61,8 @@ describe.each<SottoPlatform>(['win32', 'darwin', 'linux'])('Every setting is rea
     const missing: string[] = []
     for (const entry of index) {
       const page = settingsSectionHome(entry.section).page
-      const control = findSettingControl(panelOf(page), entry.target ?? entry.label)
+      // A setting that shows only in some states lands on its fallback until then.
+      const control = findSettingControl(panelOf(page), entry.target ?? entry.label) ?? (entry.fallback ? findSettingControl(panelOf(page), entry.fallback) : null)
       if (control) resolved.set(entry, control)
       else missing.push(`${entry.label} (${pageLabel(page)})`)
     }
@@ -120,6 +121,31 @@ describe('Find a setting', () => {
     expect(screen.getByRole('combobox', { name: 'Default merge method' })).toHaveFocus()
   })
 
+  it('finds a setting by what the page says under it', async () => {
+    const user = userEvent.setup()
+    render(<SettingsView {...baseProps()} />)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'offline')
+    expect(within(screen.getByRole('list', { name: 'Settings found' })).getAllByRole('button').map(button => button.textContent)).toEqual(['AI formattingCleanup'])
+  })
+
+  it('lands on a setting that shows only in some states, or where it will show until then', async () => {
+    const user = userEvent.setup()
+    const view = render(<SettingsView {...baseProps()} />)
+    const field = screen.getByRole('searchbox', { name: 'Find a setting' })
+    await user.type(field, 'custom instructions{Enter}')
+    expect(screen.getByRole('combobox', { name: 'Commit and pull request style' })).toHaveFocus()
+    view.rerender(<SettingsView {...baseProps({ settings: { ...baseProps().settings, gitWritingStyle: 'custom' } })} />)
+    await user.type(field, 'custom instructions{Enter}')
+    expect(screen.getByRole('textbox', { name: 'Custom instructions' })).toHaveFocus()
+  })
+
+  it('lands on the first computer’s projects folder when each computer has its own', () => {
+    document.body.innerHTML = '<section id="root"><label>Default projects directory on this computer<input aria-label="Default projects directory on this computer"></label><input aria-label="Default projects directory on forge"></section>'
+    const control = findSettingControl(document.getElementById('root')!, 'Default projects directory')
+    expect(control).toHaveAttribute('aria-label', 'Default projects directory on this computer')
+    document.body.innerHTML = ''
+  })
+
   it('finds a setting by the other words it goes by, and says so when nothing matches', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)
@@ -132,15 +158,27 @@ describe('Find a setting', () => {
     expect(screen.queryByRole('list', { name: 'Settings found' })).toBeNull()
   })
 
-  it('offers only what the page shows: no Owl settings on stable, no dictation settings while dictation is off', () => {
+  it('offers only what the page shows: no Owl settings on stable, no dictation settings while dictation is off', async () => {
+    const user = userEvent.setup()
     owl.on = false
-    const stable = settingsIndex('win32').filter(entry => entry.gate === undefined || entry.gate === 'dictation')
-    expect(stable.map(entry => entry.label)).not.toContain('Worker roles')
+    const stable = render(<SettingsView {...baseProps()} />)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'resume')
+    expect(screen.getByText('No setting matches “resume”.')).toBeVisible()
+    stable.unmount()
+    owl.on = true
+    render(<SettingsView {...baseProps({ settings: { ...baseProps().settings, dictationEnabled: false } })} />)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'paste')
+    expect(screen.getByText('No setting matches “paste”.')).toBeVisible()
+  })
+
+  it('pulls focus to a found setting once, not on every later visit to its page', async () => {
+    const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)
-    const field = screen.getByRole('searchbox', { name: 'Find a setting' })
-    act(() => { field.focus() })
-    expect(findSettings(stable, 'resume')).toEqual([])
-    expect(findSettings(settingsIndex('win32'), 'resume').map(entry => entry.label)).toEqual(['Resume threads after a restart'])
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'reduced motion{Enter}')
+    expect(screen.getByRole('combobox', { name: 'Reduced motion' })).toHaveFocus()
+    settingsTab('Appearance').focus()
+    await user.keyboard('{ArrowDown}{ArrowUp}')
+    expect(settingsTab('Appearance')).toHaveFocus()
   })
 })
 

@@ -4,7 +4,7 @@ import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
-import { findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
+import { describeSetting, findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
 
@@ -29,7 +29,7 @@ import { dictationOn, TYPING_SPEED_MAX_WPM, TYPING_SPEED_MIN_WPM } from '../../.
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
-import { useOwlFeature } from '../../state/owlFeature'
+import { useHeldProviders, useOwlFeature } from '../../state/owlFeature'
 import { requestUpdateAll } from '../updates/UpdateAllCard'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
@@ -403,7 +403,7 @@ export function SettingsView({
   const findInputRef = useRef<HTMLInputElement>(null)
   const findListRef = useRef<HTMLUListElement>(null)
   /** A group or setting to bring into view once its page shows. */
-  const [reveal, setReveal] = useState<{ readonly group: string | null; readonly setting: string | null; readonly key: number } | null>(null)
+  const [reveal, setReveal] = useState<{ readonly group: string | null; readonly settings: readonly string[]; readonly key: number } | null>(null)
   // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
   const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
   const workerRoles = watcherOn && workerRolesOn
@@ -413,9 +413,16 @@ export function SettingsView({
   const dictation = dictationOn(settings, dictationSwitch)
   const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn)
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart }
-  // Find a setting reaches only what the page shows now.
-  const findIndex = settingsIndex(platform).filter(entry => entry.gate === undefined || gates[entry.gate])
+  const museHeld = useHeldProviders().has('muse')
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld }
+  // Find a setting reaches only what the page shows now, by name, other words and, while it holds text, what the page
+  // says under each setting.
+  const searching = findQuery.trim() !== ''
+  const findIndex = settingsIndex(platform).filter(entry => entry.gate === undefined || gates[entry.gate]).map(entry => {
+    if (!searching) return entry
+    const panel = document.getElementById(panelIdOf(settingsSectionHome(entry.section).page))
+    return panel ? { ...entry, words: `${entry.words ?? ''} ${describeSetting(panel, entry.target ?? entry.label)}` } : entry
+  })
   if (!sections.some(section => section.id === activeSection)) setActiveSection('settings-capture')
   useEffect(() => { if (!dictation) stopMicrophoneTest() }, [dictation, stopMicrophoneTest])
   // Panels stay mounted so account, key and theme drafts survive category changes.
@@ -424,10 +431,14 @@ export function SettingsView({
     if (scrollRef.current !== null) scrollRef.current.scrollTop = 0
   }, [activeSection])
   // After the visit's scroll to the top: a group or setting asked for comes into view, a setting with focus on it.
+  // Each request is applied once: a later visit to its page must not pull focus back to it.
+  const revealedRef = useRef<number | null>(null)
   useLayoutEffect(() => {
-    if (reveal === null) return
+    if (reveal === null || revealedRef.current === reveal.key) return
+    revealedRef.current = reveal.key
     const panel = document.getElementById(panelIdOf(activeSection))
-    const control = panel && reveal.setting !== null ? findSettingControl(panel, reveal.setting) : null
+    // The setting itself, or where it goes while the page is not showing it.
+    const control = panel ? reveal.settings.reduce<HTMLElement | null>((found, name) => found ?? findSettingControl(panel, name), null) : null
     const group = reveal.group === null ? null : document.getElementById(reveal.group)
     if (control) revealSetting(control)
     else if (group) group.scrollIntoView?.({ block: 'start' })
@@ -449,11 +460,11 @@ export function SettingsView({
   }
 
   /** Opens the page a section or setting is on, and brings the group or setting into view. */
-  const openAt = (section: SettingsSectionId, setting: string | null = null): void => {
+  const openAt = (section: SettingsSectionId, settings: readonly string[] = []): void => {
     const home = settingsSectionHome(section)
     const page = sections.some(item => item.id === home.page) ? home.page : 'settings-capture'
     selectSection(page)
-    setReveal(previous => ({ group: page === home.page ? home.group : null, setting, key: (previous?.key ?? 0) + 1 }))
+    setReveal(previous => ({ group: page === home.page ? home.group : null, settings, key: (previous?.key ?? 0) + 1 }))
   }
   const openRequest = useRef<number | null>(null)
   useEffect(() => {
@@ -463,7 +474,7 @@ export function SettingsView({
   })
   const openFound = (entry: SettingEntry): void => {
     setFindQuery('')
-    openAt(entry.section, entry.target ?? entry.label)
+    openAt(entry.section, [entry.target ?? entry.label, ...entry.fallback ? [entry.fallback] : []])
   }
   const pageLabel = (entry: SettingEntry): string => SETTINGS_PAGES.find(page => page.id === settingsSectionHome(entry.section).page)?.label ?? ''
 

@@ -106,8 +106,8 @@
 /* Find a setting: the Threads sidebar's search field, with the matches in place of the pages while it holds text. */
 .settings-view .settings-find { height: 36px; margin: 0 0 14px; }
 .settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; }
-.settings-find__results button:hover { background: var(--theme-sidebar-row-hover); }
+.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; }
+.settings-find__results button:hover { background: var(--tt-sidebar-row-hover); }
 .settings-find__results small { color: var(--tt-text-muted); font-size: 12.5px; }
 .settings-find__empty { margin: 4px 12px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
 /* A row of its own inside a group's card: the card's dividers already separate it. */

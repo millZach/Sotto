@@ -74,7 +74,10 @@ test('Settings pages fit every checked size in both modes, and Find a setting la
     await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
     const find = page.getByRole('searchbox', { name: 'Find a setting' })
     await find.fill('worktree')
-    await expect(page.getByRole('list', { name: 'Settings found' }).getByRole('button')).toHaveCount(6)
+    // The four removal rules lead, by name; settings that only mention worktrees in what they say follow.
+    const found = page.getByRole('list', { name: 'Settings found' }).getByRole('button')
+    await expect(found.first()).toContainText('Remove idle worktrees after')
+    expect(await found.count()).toBeGreaterThanOrEqual(6)
     await shot(page, 'find-worktree-dark-1280x800')
     await find.fill('reduced motion')
     await find.press('Enter')

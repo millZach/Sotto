@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -60,8 +60,13 @@ export interface SettingEntry {
   readonly section: SettingsSectionId
   /** The control's own name, where it differs from `label`. */
   readonly target?: string
-  /** More words that should find it. */
+  /** More words that should find it. Its description on the page counts too (`describeSetting`). */
   readonly words?: string
+  /**
+   * Where to land while the setting itself is not on the page, for a control that shows only in some states:
+   * Custom instructions shows only while that style is chosen, Shell sandbox only while Muse is selected.
+   */
+  readonly fallback?: string
   readonly gate?: SettingGate
 }
 
@@ -109,6 +114,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Remove a worktree once its commits are in the default branch', section: 'settings-worktrees', words: 'cleanup' },
     { label: 'Remove a worktree when its pull request is merged', section: 'settings-worktrees', words: 'cleanup' },
     { label: 'Commit and pull request style', section: 'settings-git', words: 'writing conventional' },
+    { label: 'Custom instructions', section: 'settings-git', words: 'commit pull request writing style', fallback: 'Commit and pull request style' },
     { label: 'Generated commit messages', section: 'settings-git' },
     { label: 'Generated pull request text', section: 'settings-git', words: 'title body' },
     { label: 'Follow pull request templates', section: 'settings-git' },
@@ -127,6 +133,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
 
     { label: 'Thread providers', section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { label: 'Check for client updates', section: 'settings-providers', words: 'agent clients' },
+    { label: 'Shell sandbox', section: 'settings-providers', words: 'muse', fallback: 'Thread providers', gate: 'muse' },
     { label: 'Run the local host', section: 'settings-hosts', words: 'this computer' },
     { label: 'Remote hosts', section: 'settings-hosts', words: 'ssh tailscale add host computers' },
     { label: 'Let phones connect', section: 'settings-phones', words: 'iphone' },
@@ -198,7 +205,15 @@ export function findSettingControl(root: HTMLElement, name: string): HTMLElement
     }
     return heading
   }
-  return null
+  // A control named for one of several computers, such as Default projects directory on forge: the first of them.
+  return [...root.querySelectorAll<HTMLElement>('[aria-label]')].find(element => (element.getAttribute('aria-label') ?? '').startsWith(`${name} on `)) ?? null
+}
+
+/** What the page says under a setting, so Find a setting matches its description as well as its name. */
+export function describeSetting(root: HTMLElement, name: string): string {
+  const control = findSettingControl(root, name)
+  const ids = control?.getAttribute('aria-describedby')?.split(/\s+/u) ?? []
+  return ids.map(id => root.ownerDocument.getElementById(id)?.textContent ?? '').join(' ')
 }
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
