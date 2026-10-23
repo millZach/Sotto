@@ -66,7 +66,7 @@ test('Restart now lets every window close, and a refused restart brings Sotto ba
     expect(await restored.evaluate(async () => { const status = await window.sotto!.getUpdateStatus(); return 'phase' in status ? status.phase : null }))
       .toEqual({ phase: 'downloaded', version: VERSION, problem: REFUSAL })
     await app.evaluate(({ autoUpdater }) => { autoUpdater.emit('before-quit-for-update') })
-    const afterClose =await app.evaluate(({ BrowserWindow }, ids) => new Promise<{ destroyed: boolean; visible: boolean }>(resolve => {
+    const afterClose = await app.evaluate(({ BrowserWindow }, ids) => new Promise<{ destroyed: boolean; visible: boolean }>(resolve => {
       const main = BrowserWindow.getAllWindows().find(window => !ids.includes(window.id) && window.webContents.getURL().endsWith('/index.html'))!
       const read = (): void => resolve({ destroyed: main.isDestroyed(), visible: main.isDestroyed() ? false : main.isVisible() })
       main.once('hide', read)
