@@ -8,8 +8,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
 import { startSocketServer } from '../../src/host/socketServer'
-import { BranchBundles } from '../../src/main/agents/branchBundles'
+import { BranchBundles, type BranchBundlesOptions } from '../../src/main/agents/branchBundles'
 import { DesktopBranchMoves, type BranchMoveFolders, type BranchMoveHost } from '../../src/main/agents/branchMoves'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import type { HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { movedBranchRef, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
@@ -31,7 +32,7 @@ function service(): HostService {
 }
 
 /** A host behind a socket stand-in that moves branches with this desktop, with its threads and projects in `folders`. */
-async function hostOf(folders: BranchMoveFolders, data: { stagingDirectory: string; recordsPath: string }) {
+async function hostOf(folders: BranchMoveFolders, data: BranchBundlesOptions) {
   const server = await startSocketServer({ service: service(), pairing: fixture.host.pairing,
     watcherDesktops: { refresh: async () => undefined, has: () => true }, branchMoves: new HostBranchMoves(new BranchBundles(data), folders) })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Laptop')
@@ -40,12 +41,12 @@ async function hostOf(folders: BranchMoveFolders, data: { stagingDirectory: stri
   return { server, client }
 }
 /** Forge: its `forge-project` is the forge clone, and its `forge-thread` works in `threadFolder`. */
-const forgeHost = (threadFolder?: string) => hostOf({ projectFolder: id => id === 'forge-project' ? machines.forge : undefined,
-  threadFolder: id => id === 'forge-thread' ? threadFolder ?? machines.forge : undefined }, machines.data('forge'))
+const forgeHost = (threadFolder?: string, run?: RunGitCommand) => hostOf({ projectFolder: id => id === 'forge-project' ? machines.forge : undefined,
+  threadFolder: id => id === 'forge-thread' ? threadFolder ?? machines.forge : undefined }, { ...machines.data('forge'), ...run ? { run } : {} })
 
 /** The laptop's mover: its `laptop-thread` works in `threadFolder`, and `laptop-project` is the laptop clone. */
-function laptop(hosts: Record<string, BranchMoveHost>, threadFolder?: string): DesktopBranchMoves {
-  return new DesktopBranchMoves({ bundles: new BranchBundles(machines.data('laptop')), hostName: id => id === FORGE ? 'forge' : 'mac', host: id => hosts[id],
+function laptop(hosts: Record<string, BranchMoveHost>, threadFolder?: string, run?: RunGitCommand): DesktopBranchMoves {
+  return new DesktopBranchMoves({ bundles: new BranchBundles({ ...machines.data('laptop'), ...run ? { run } : {} }), hostName: id => id === FORGE ? 'forge' : 'mac', host: id => hosts[id],
     folders: { threadFolder: id => id === 'laptop-thread' ? threadFolder ?? machines.laptop : undefined, projectFolder: id => id === 'laptop-project' ? machines.laptop : undefined } })
 }
 
@@ -56,6 +57,9 @@ async function workerWorktree(machine: 'laptop' | 'forge', project: string, move
   const allocated = await worktrees.allocate(project, 'independent', { incomingRef: await movedBranchRef(project, moveId) })
   return { worktrees, made: await worktrees.ensure(allocated) }
 }
+/** Git as Sotto runs it, but with every snapshot commit dated alike, so the same work snapshots to the same commit twice. */
+const sameDates: RunGitCommand = (cwd, command, args, options) => runGitStatusCommand(cwd, command, args,
+  args[0] === 'commit-tree' ? { ...options, env: { ...options?.env, GIT_AUTHOR_DATE: '2026-10-23T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-23T12:00:00Z' } } : options)
 /** A checkout's text as committed: this computer's own `core.autocrlf` may give it CRLF on the way out. */
 const lf = (text: string): string => text.replace(/\r\n/gu, '\n')
 const moved = (receipt: BranchMoveReceipt): BranchMoved => { if (receipt.type !== 'moved') throw new Error(receipt.message); return receipt }
@@ -112,6 +116,24 @@ describe('a worker started from a thread’s branch (#1033)', () => {
     // The thread's own feat/here is checked out where it was, so the worker's branch takes the next name.
     expect(made).toMatchObject({ branch: 'feat/here-2', baseCommit: commit })
     expect(machines.untouched(machines.laptop)).toEqual({ ...before, branches: expect.stringContaining('refs/heads/feat/here-2 ' + commit) })
+    expect(git(machines.laptop, 'rev-parse', 'refs/heads/feat/here')).toBe(commit)
+  })
+
+  it('gives two starts beside the same branch a name each, even when both read the same free name', async () => {
+    git(machines.laptop, 'switch', '-q', '-c', 'feat/here')
+    const commit = await commitFile(machines.laptop, 'here.txt', 'here')
+    const moves = [randomUUID(), randomUUID()]
+    for (const moveId of moves) {
+      moved(await laptop({}).forStart({ from: { hostId: LAPTOP, threadId: 'laptop-thread' }, to: { hostId: LAPTOP, projectId: 'laptop-project' }, here: LAPTOP, moveId, snapshot: false }))
+    }
+    const directory = join(machines.root, 'laptop-sotto'); await mkdir(directory, { recursive: true })
+    const worktrees = new ThreadWorktrees(directory)
+    // Both allocations read feat/here-2 as free before either worktree is made.
+    const allocated = await Promise.all(moves.map(async moveId => worktrees.allocate(machines.laptop, 'independent', { incomingRef: await movedBranchRef(machines.laptop, moveId) })))
+    expect(allocated.map(record => record.branch)).toEqual(['feat/here-2', 'feat/here-2'])
+    const made = await Promise.all(allocated.map(record => worktrees.ensure(record)))
+    expect(made.map(record => record.branch).sort()).toEqual(['feat/here-2', 'feat/here-3'])
+    for (const record of made) expect(git(record.path!, 'rev-parse', 'HEAD')).toBe(commit)
     expect(git(machines.laptop, 'rev-parse', 'refs/heads/feat/here')).toBe(commit)
   })
 
@@ -204,6 +226,33 @@ describe('a worker started from a thread’s branch (#1033)', () => {
       expect(git(machines.forge, 'rev-parse', onForge.ref)).toBe(commit)
       expect(await moves.forStart({ from: { hostId: FORGE, threadId: 'forge-thread' }, to: { hostId: 'gone-id', projectId: 'x' }, here: LAPTOP, moveId: randomUUID(), snapshot: false }))
         .toEqual({ type: 'refused', reason: 'unsupported', message: branchMoveWords.notConnected('mac') })
+    } finally { await forge.server.close(); await mac.server.close() }
+  })
+
+  it('keeps a test run’s snapshot on the receipt when the receiver already has its commit, in every direction', async () => {
+    const worktree = join(machines.root, 'forge-work')
+    git(machines.forge, 'worktree', 'add', '-q', '-b', 'fix/t', worktree)
+    await writeFile(join(worktree, 'scratch.txt'), 'forge scratch')
+    git(machines.laptop, 'switch', '-q', '-c', 'feat/t')
+    await writeFile(join(machines.laptop, 'notes.txt'), 'laptop notes')
+    const forge = await forgeHost(worktree, sameDates)
+    const mac = await hostOf({ projectFolder: id => id === 'mac-project' ? machines.laptop : undefined, threadFolder: () => undefined },
+      { stagingDirectory: join(machines.root, 'mac-data', 'branch-moves'), recordsPath: join(machines.root, 'mac-data', 'branch-moves.json'), run: sameDates })
+    try {
+      const moves = laptop({ [FORGE]: forge.client, [MAC]: mac.client }, undefined, sameDates)
+      const starts = [
+        { from: { hostId: LAPTOP, threadId: 'laptop-thread' }, to: { hostId: FORGE, projectId: 'forge-project' }, snapshot: { untracked: ['notes.txt'], untrackedCount: 1 } },
+        { from: { hostId: FORGE, threadId: 'forge-thread' }, to: { hostId: LAPTOP, projectId: 'laptop-project' }, snapshot: { untracked: ['scratch.txt'], untrackedCount: 1 } },
+        { from: { hostId: FORGE, threadId: 'forge-thread' }, to: { hostId: MAC, projectId: 'mac-project' }, snapshot: { untracked: ['scratch.txt'], untrackedCount: 1 } },
+      ]
+      for (const { from, to, snapshot } of starts) {
+        // The first start carries the snapshot across; the second finds its commit already there, and still says what it carried.
+        const first = moved(await moves.forStart({ from, to, here: LAPTOP, moveId: randomUUID(), snapshot: true }))
+        const again = moved(await moves.forStart({ from, to, here: LAPTOP, moveId: randomUUID(), snapshot: true }))
+        expect(again.commit).toBe(first.commit)
+        expect(first.snapshot).toEqual(snapshot)
+        expect(again.snapshot).toEqual(snapshot)
+      }
     } finally { await forge.server.close(); await mac.server.close() }
   })
 })

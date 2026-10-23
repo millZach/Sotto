@@ -1,12 +1,13 @@
 // @vitest-environment node
-import { randomUUID } from 'node:crypto'
-import { readdir } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { readdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
 import { BranchBundles, type PreparedBundle } from '../../src/main/agents/branchBundles'
 import type { BranchMoveFolders } from '../../src/main/agents/branchMoves'
 import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
-import { BRANCH_TRANSFERS_MAX, branchMoveWords } from '../../src/shared/branchMoves'
+import { BRANCH_TRANSFERS_MAX, branchMoveWords, incomingRef } from '../../src/shared/branchMoves'
 import { commitFile, git, twoMachines } from '../fixtures/branchRepositories'
 
 let machines: Awaited<ReturnType<typeof twoMachines>>
@@ -32,6 +33,19 @@ function held(step: (args: readonly string[]) => boolean) {
     return output
   }
   return { run, reached, release }
+}
+
+/** A step held before Git runs it, until `release`; `reached` resolves when it is waiting. Gates combine with `gated`. */
+function gate(step: (args: readonly string[]) => boolean) {
+  let reach!: () => void, release!: () => void
+  const reached = new Promise<void>(resolve => { reach = resolve }), released = new Promise<void>(resolve => { release = resolve })
+  return { step, reached, release, async wait(args: readonly string[]) { if (step(args)) { reach(); await released } } }
+}
+function gated(...gates: ReturnType<typeof gate>[]): RunGitCommand {
+  return async (cwd, command, args, options) => {
+    for (const each of gates) await each.wait(args)
+    return runGitStatusCommand(cwd, command, args, options)
+  }
 }
 
 /** A feature branch on the laptop, bundled for `moveId` against nothing. */
@@ -113,5 +127,85 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
     expect(await host.handle({ action: 'end', moveId }, fresh.owner, fresh.gone)).toBeNull()
     expect(await readdir(machines.data('forge').stagingDirectory)).toEqual([])
     expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+  })
+
+  it('drops only the attempts a closed connection held, never a retry that took one of their places meanwhile', async () => {
+    const first = randomUUID(), second = randomUUID()
+    const { laptop, prepared, commit } = await laptopBundle(first)
+    let verified = 0
+    // The first move's ref is held as it is created, so the closed connection's cleanup waits on it.
+    const landing = gate(args => args[0] === 'update-ref' && args.includes(incomingRef(first, 'feature/login')))
+    // The second move's first check is held, then fails: it did not arrive whole, so its place comes free on its own.
+    const checking = gate(args => args[0] === 'bundle' && args[1] === 'verify' && args.some(arg => arg.includes(second)) && ++verified === 1)
+    const host = forge(gated(landing, checking)), old = connection(), fresh = connection()
+    const send = async (moveId: string, bytes: Buffer, sha256: string, peer: ReturnType<typeof connection>) => {
+      expect(await host.handle({ action: 'receive-begin', moveId, projectId: 'forge-project', branch: 'feature/login', commit, size: bytes.byteLength, sha256 }, peer.owner, peer.gone))
+        .toEqual({ type: 'receiving' })
+      expect(await host.handle({ action: 'receive-chunk', moveId, offset: 0, data: bytes.toString('base64') }, peer.owner, peer.gone)).toEqual({ type: 'received', bytes: bytes.byteLength })
+      return host.handle({ action: 'receive-finish', moveId }, peer.owner, peer.gone)
+    }
+    const firstFinished = send(first, await laptop.readChunk(prepared.path, 0), prepared.sha256, old)
+    await landing.reached
+    const garbage = Buffer.from('not a bundle')
+    const secondFinished = send(second, garbage, createHash('sha256').update(garbage).digest('hex'), old)
+    await checking.reached
+    old.close()
+    checking.release()
+    expect(await secondFinished).toMatchObject({ type: 'refused', reason: 'not-whole' })
+    // The retry of the second move, on a new connection, takes the place the old attempt left.
+    const retry = await laptop.prepare({ repository: machines.laptop, moveId: second, commit, bases: [] })
+    if (retry.type !== 'sending') throw new Error('The laptop could not bundle its branch again.')
+    expect(await host.handle({ action: 'receive-begin', moveId: second, projectId: 'forge-project', branch: 'feature/login', commit, size: retry.size, sha256: retry.sha256 }, fresh.owner, fresh.gone))
+      .toEqual({ type: 'receiving' })
+    landing.release()
+    await firstFinished
+    // The old connection's cleanup has run past the first move; the retry is still the host's to finish.
+    expect(await host.handle({ action: 'receive-chunk', moveId: second, offset: 0, data: (await laptop.readChunk(retry.path, 0)).toString('base64') }, fresh.owner, fresh.gone))
+      .toEqual({ type: 'received', bytes: retry.size })
+    expect(await host.handle({ action: 'receive-finish', moveId: second }, fresh.owner, fresh.gone))
+      .toEqual({ type: 'moved', moveId: second, branch: 'feature/login', commit, ref: incomingRef(second, 'feature/login') })
+    await laptop.discard(prepared)
+    await laptop.discard(retry)
+  })
+
+  it('creates no ref for a move of a commit the host already has once it is ended or its connection drops', async () => {
+    for (const ending of ['end', 'drop'] as const) {
+      const moveId = randomUUID(), commit = git(machines.forge, 'rev-parse', 'main')
+      const checking = gate(args => args[0] === 'rev-list' && args.includes(commit))
+      const host = forge(gated(checking)), peer = connection()
+      const landed = host.handle({ action: 'receive-ref', moveId, projectId: 'forge-project', branch: 'main', commit }, peer.owner, peer.gone)
+      await checking.reached
+      if (ending === 'end') expect(await host.handle({ action: 'end', moveId }, peer.owner, peer.gone)).toBeNull()
+      else peer.close()
+      checking.release()
+      expect(await landed).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+      expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+      await expect.poll(() => host.staged).toBe(0)
+    }
+  })
+
+  it('creates no ref for a copy on the same host once it is ended or its connection drops, however far it had got', async () => {
+    // Held while the thread's working copy is read, before anything is copied; and, for a test run's snapshot that has to
+    // go across as a bundle, while that bundle is imported.
+    const cases = [
+      { snapshot: false, step: (args: readonly string[]) => args[0] === 'status' },
+      { snapshot: true, step: (args: readonly string[]) => args[0] === 'bundle' && args[1] === 'unbundle' },
+    ]
+    for (const { snapshot, step } of cases) {
+      for (const ending of ['end', 'drop'] as const) {
+        if (snapshot) await writeFile(join(machines.forge, 'notes.txt'), 'draft')
+        const moveId = randomUUID(), held = gate(step)
+        const host = forge(gated(held)), peer = connection()
+        const copied = host.handle({ action: 'copy', moveId, threadId: 'forge-thread', projectId: 'forge-project', snapshot }, peer.owner, peer.gone)
+        await held.reached
+        if (ending === 'end') expect(await host.handle({ action: 'end', moveId }, peer.owner, peer.gone)).toBeNull()
+        else peer.close()
+        held.release()
+        expect(await copied).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+        expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+        await expect.poll(() => host.staged).toBe(0)
+        await expect.poll(() => readdir(machines.data('forge').stagingDirectory).catch(() => [])).toEqual([])
+      }
+    }
   })
 })

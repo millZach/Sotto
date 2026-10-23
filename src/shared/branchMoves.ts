@@ -52,7 +52,8 @@ export const outgoingRef = (moveId: string): string => `refs/sotto/outgoing/${mo
  * whatever the move staged, either way. Each step names its move; a retry of a finished move answers as done.
  * `copy` lands a thread's branch in a project on the same machine, for a worker started there from it, with nothing sent.
  * `snapshot`, on `send-begin` and `copy`, is a test run's (#1033, #1312): uncommitted work goes too, as a commit object
- * made from a temporary index, instead of being refused.
+ * made from a temporary index, instead of being refused. `forget` removes the incoming ref a move landed in a project, for a
+ * start the desktop knows never made its thread there, so no ref holds the branch for nothing.
  */
 export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tips'), projectId: id }).strict(),
@@ -65,6 +66,7 @@ export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('send-chunk'), moveId: branchMoveIdSchema, offset: z.number().int().nonnegative().max(BRANCH_BUNDLE_MAX_BYTES) }).strict(),
   z.object({ action: z.literal('end'), moveId: branchMoveIdSchema }).strict(),
   z.object({ action: z.literal('copy'), moveId: branchMoveIdSchema, threadId: id, projectId: id, snapshot: z.boolean().optional() }).strict(),
+  z.object({ action: z.literal('forget'), moveId: branchMoveIdSchema, projectId: id }).strict(),
 ])
 export type HostBranchMoveRequest = z.infer<typeof hostBranchMoveRequestSchema>
 
@@ -90,7 +92,7 @@ export const branchReceiveFinishAnswerSchema = z.union([branchMovedSchema, branc
 export const branchReceiveRefAnswerSchema = branchReceiveFinishAnswerSchema
 export const branchSendBeginAnswerSchema = z.union([z.object({ type: z.literal('sending'), branch: branchNameSchema, commit: commitIdSchema,
   size: z.number().int().positive().max(BRANCH_BUNDLE_MAX_BYTES), sha256: sha256Schema, snapshot: snapshotCarriedSchema.optional() }).strict(),
-  z.object({ type: z.literal('present'), branch: branchNameSchema, commit: commitIdSchema }).strict(), branchMoveRefusalSchema])
+  z.object({ type: z.literal('present'), branch: branchNameSchema, commit: commitIdSchema, snapshot: snapshotCarriedSchema.optional() }).strict(), branchMoveRefusalSchema])
 export const branchCopyAnswerSchema = z.union([branchMovedSchema, branchMoveRefusalSchema])
 export const branchSendChunkAnswerSchema = z.union([z.object({ type: z.literal('chunk'), data: chunkData }).strict(), branchMoveRefusalSchema])
 
@@ -110,6 +112,7 @@ export const branchMoveWords = {
   cutOff: 'The connection dropped while the branch was moving, so what arrived was discarded. Nothing was changed. Try the move again.',
   busy: 'This machine is already moving as many branches as it can. Wait for one to finish, then try again. Nothing was moved.',
   failed: 'Git could not move the branch. Nothing was changed. Try the move again.',
+  submoduleChanges: 'A submodule in this thread has uncommitted changes, and a test run cannot carry them. Commit them inside the submodule first, then start again. Nothing was started.',
   olderHost: (name: string): string => `${name} needs a newer Sotto to move branches. Update it from the Threads page, then try again. Nothing was moved.`,
   notConnected: (name: string): string => `${name} isn't connected, so nothing can move there now. Connect it, then try again. Nothing was moved.`,
 } as const

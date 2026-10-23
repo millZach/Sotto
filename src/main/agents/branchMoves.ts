@@ -105,7 +105,7 @@ export class DesktopBranchMoves {
       const prepared = await this.options.bundles.prepare({ repository: folder, moveId, commit: source.commit, bases: tips.tips })
       // The host already has the commit: only its incoming ref is made, and nothing travels.
       if (prepared.type === 'present') {
-        return answer(branchReceiveRefAnswerSchema, await host.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: source.branch, commit: source.commit }))
+        return carrying(answer(branchReceiveRefAnswerSchema, await host.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: source.branch, commit: source.commit })), source.snapshot)
       }
       if (prepared.type !== 'sending') return prepared
       staged = prepared
@@ -145,7 +145,7 @@ export class DesktopBranchMoves {
       const sending = answer(branchSendBeginAnswerSchema, await host.branchMove({ action: 'send-begin', moveId, threadId: input.threadId, bases: tips,
         ...input.snapshot ? { snapshot: true } : {} }))
       if (refused(sending)) return sending
-      if (sending.type === 'present') return await this.options.bundles.receiveRef({ repository: folder, moveId, branch: sending.branch, commit: sending.commit })
+      if (sending.type === 'present') return carrying(await this.options.bundles.receiveRef({ repository: folder, moveId, branch: sending.branch, commit: sending.commit }), sending.snapshot)
       const begun = await this.options.bundles.receive({ repository: folder, moveId, branch: sending.branch, commit: sending.commit, size: sending.size, sha256: sending.sha256 })
       if (!(begun instanceof IncomingBundle)) return carrying(begun, sending.snapshot)
       incoming = begun
@@ -184,7 +184,7 @@ export class DesktopBranchMoves {
       if (refused(sending)) return sending
       // The receiving host already has the commit: only its incoming ref is made, and nothing travels.
       if (sending.type === 'present') {
-        return answer(branchReceiveRefAnswerSchema, await to.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: sending.branch, commit: sending.commit }))
+        return carrying(answer(branchReceiveRefAnswerSchema, await to.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: sending.branch, commit: sending.commit })), sending.snapshot)
       }
       const begun = answer(branchReceiveBeginAnswerSchema, await to.branchMove({ action: 'receive-begin', moveId, projectId: input.projectId,
         branch: sending.branch, commit: sending.commit, size: sending.size, sha256: sending.sha256 }))
@@ -246,6 +246,17 @@ export class DesktopBranchMoves {
     if (from.hostId === here) return to.hostId === here ? this.here(common) : this.toHost({ ...common, hostId: to.hostId })
     if (to.hostId === here) return this.fromHost({ ...common, hostId: from.hostId })
     return from.hostId === to.hostId ? this.onHost({ ...common, hostId: from.hostId }) : this.betweenHosts({ ...common, fromHostId: from.hostId, toHostId: to.hostId })
+  }
+
+  /**
+   * Lets go of the incoming ref a move landed for a start that then never made its thread, on whichever machine it landed:
+   * this computer's project, or a connected host's. Best effort: a host that cannot be asked keeps the ref.
+   */
+  async forget(input: { readonly hostId: string; readonly projectId: string; readonly moveId: string; readonly here: string }): Promise<void> {
+    if (input.hostId === input.here) return this.forgetHere(input)
+    const connection = this.connected(input.hostId)
+    if ('type' in connection) return
+    await connection.host.branchMove({ action: 'forget', moveId: input.moveId, projectId: input.projectId }).catch(() => undefined)
   }
 
   /** Asks the host to discard what it staged for a move, and answers with `receipt` whether or not it could. */
