@@ -122,10 +122,10 @@
 @container thread-pane (width < 470px) { .watcher-head__list-text { display: none; } }
 
 /* Conversation and Watched, beside All threads: two segments in a hairline track, the one shown raised. */
-.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
-.watcher-tabs__tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 3px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-surface-sunken, var(--tt-hover)); }
+.watcher-tabs__tab { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .watcher-tabs__tab:hover { color: var(--tt-text); }
-.watcher-tabs__tab[aria-selected='true'] { background: var(--tt-surface-elevated); box-shadow: 0 1px 2px var(--tt-shadow-color); color: var(--tt-text); }
+.watcher-tabs__tab[aria-selected='true'] { background: var(--tt-segment-on); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); }
 .watcher-tabs__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
 @container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } .watcher-tabs__tab { padding: 0 7px; } }
 /* Visualize, the third tab (#1339), keeps its word where the row holds it with three-digit counts, from 640 pixels of
