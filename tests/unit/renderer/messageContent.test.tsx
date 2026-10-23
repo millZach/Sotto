@@ -4,8 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentAttachmentPreviewDataSchema } from '../../../src/shared/agents'
 import {
-  AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, attachmentTypeLabel, formatAttachmentSize, safeLinkUrl,
+  AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, attachmentTypeLabel, formatAttachmentSize, localFilePath, safeLinkUrl,
 } from '../../../src/renderer/src/agents/MessageContent'
+import { ThreadWebLinks } from '../../../src/renderer/src/tools/webLinks'
+
+const owl = vi.hoisted(() => ({ on: true }))
+vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
+  useOwlFeature: (id: string) => id === 'reveal-linked-files' && owl.on,
+}))
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII='
 
@@ -555,5 +562,64 @@ describe('image viewer', () => {
     expect(viewer).toHaveAttribute('data-scope', 'window')
     expect(viewer).not.toHaveTextContent('1 of 1')
     expect(within(viewer).queryByRole('group', { name: 'Images in this message' })).toBeNull()
+  })
+})
+
+describe('file links in a thread', () => {
+  it('reads file URLs, absolute, home and relative paths, and nothing with another scheme or on a network share', () => {
+    expect(localFilePath('/Users/me/health/guides/Insulin%20Use.pdf')).toBe('/Users/me/health/guides/Insulin Use.pdf')
+    expect(localFilePath('file:///Users/me/a%20b.pdf')).toBe('/Users/me/a b.pdf')
+    expect(localFilePath('file:///C:/Users/me/a.pdf')).toBe('C:/Users/me/a.pdf')
+    expect(localFilePath('C:\\Users\\me\\a.pdf')).toBe('C:\\Users\\me\\a.pdf')
+    expect(localFilePath('~/Documents/a.pdf')).toBe('~/Documents/a.pdf')
+    // Main drops a trailing location only when the path as written is not found.
+    expect(localFilePath('src/main/index.ts:42')).toBe('src/main/index.ts:42')
+    expect(localFilePath('notes.md:12')).toBe('notes.md:12')
+    for (const raw of ['https://example.com', 'javascript:alert(1)', 'vscode://file/a', 'file://server/share/a', '#anchor', '//evil.example',
+      '\\\\evil.example\\share\\a.pdf', '%5c%5cevil.example%5cshare', '%2f%2fevil.example/share', 'C:a.pdf', '', undefined]) expect(localFilePath(raw)).toBeNull()
+  })
+
+  it('shows a linked file in its folder on click or Enter and says why when it cannot', async () => {
+    const user = userEvent.setup()
+    const revealLink = vi.fn(async () => ({ ok: false as const, error: { code: 'path-unavailable' as const, message: 'This file is not on this computer, or it has moved. Nothing was opened.' } }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    const { container } = render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](</Users/me/health/guides/Guide.pdf>)" /></ThreadWebLinks>)
+    const link = screen.getByRole('link', { name: 'Show /Users/me/health/guides/Guide.pdf in Finder' })
+    expect(link).toHaveTextContent('Guide')
+    expect(link).toHaveAttribute('title', 'Show in Finder: /Users/me/health/guides/Guide.pdf')
+    expect(link).not.toHaveAttribute('href')
+    await user.click(link)
+    expect(revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '/Users/me/health/guides/Guide.pdf' })
+    expect(await screen.findByText('This file is not on this computer, or it has moved. Nothing was opened.')).toBeInTheDocument()
+    link.focus(); await user.keyboard('{Enter}')
+    expect(revealLink).toHaveBeenCalledTimes(2)
+    assertInert(container)
+  })
+
+  it('names File Explorer on Windows and the file manager on Linux', () => {
+    ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn() } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](<C:\\Users\\me\\Guide.pdf>)" /></ThreadWebLinks>)
+    expect(screen.getByRole('link', { name: 'Show C:\\Users\\me\\Guide.pdf in File Explorer' })).toBeInTheDocument()
+    cleanup()
+    ;(window as { sotto?: unknown }).sotto = { platform: 'linux', files: { revealLink: vi.fn() } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](/home/me/Guide.pdf)" /></ThreadWebLinks>)
+    expect(screen.getByRole('link', { name: 'Show /home/me/Guide.pdf in the file manager' })).toBeInTheDocument()
+  })
+
+  it('stays inert text while the Owl feature is off, as on stable', () => {
+    owl.on = false
+    try {
+      const revealLink = vi.fn()
+      ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+      render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](/Users/me/Guide.pdf)" /></ThreadWebLinks>)
+      expect(screen.queryByRole('link')).toBeNull()
+      expect(screen.getByText('Guide')).toBeInTheDocument()
+      expect(revealLink).not.toHaveBeenCalled()
+    } finally { owl.on = true }
+  })
+
+  it('stays inert outside a thread, where there is no folder to read a path from', () => {
+    render(<MessageContent text="[Guide](/Users/me/Guide.pdf)" />)
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })

@@ -146,6 +146,16 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
+/* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
+   around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
+   questions keep their scroll above the message bar and nothing in the transcript hides under them. */
+.thread-pane:has(> .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose:not(:has(> .thread-questions))) { --thread-compose-height: var(--thread-compose-measured, 0px); }
+.thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
+.thread-workspace__compose > * { pointer-events: auto; }
+.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
+.thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
+.thread-workspace__compose > :is(.thread-pane__meta, .thread-followups) { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
 /* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
 .thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }

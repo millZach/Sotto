@@ -20,7 +20,8 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       const open = async (title: string): Promise<void> => {
         const toggle = page.getByRole('button', { name: title, exact: true })
-        await toggle.click()
+        // Press the title, as a person does: a row's hover actions (Watch, Open beside) cover its middle.
+        await toggle.click({ position: { x: 16, y: 12 } })
         await expect(toggle).toHaveAttribute('aria-current', 'page')
         await toggle.scrollIntoViewIfNeeded()
       }
@@ -67,10 +68,10 @@ test.describe('authoritative design-review captures', () => {
         await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
       }
       await openThreads(page)
-      await page.getByRole('button', { name: 'Grok voice previews', exact: true }).click()
+      await page.getByRole('button', { name: 'Grok voice previews', exact: true }).click({ position: { x: 16, y: 12 } })
       await resize(1600)
       // A row's actions take their place only while the row is hovered or focused.
-      await page.getByRole('button', { name: 'Footer links', exact: true }).hover()
+      await page.getByRole('button', { name: 'Footer links', exact: true }).hover({ position: { x: 16, y: 12 } })
       await page.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
       await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
       await capturePage(page, `threads-split-workspace-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-workspace' })

@@ -16,9 +16,10 @@ import type { UpdateStatus } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { deferred } from '../../fixtures/deferred'
 import { e2eUpdater } from '../../../src/main/updates/e2eUpdater'
+import { owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
 
-/** Stable answers every Owl feature off. */
-const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false, 'continue-on-provider': false, 'continue-agent-thread': false, opencode: false, 'dictation-hold-shortcuts': false, 'main-freeze': false, 'iphone-pull-request-view': false, 'iphone-agents-view': false, 'dictation-off': false, 'message-scrubber': false, 'menu-bar-owl': false, 'desktop-notifications': false, 'recent-projects': false, 'creature-toggle': false }
+/** Stable's answers, as the Owl feature list gives them. */
+const STABLE_FEATURES = owlFeaturesForTrack('stable')
 
 type Emit = (event: UpdaterEvent) => void
 
@@ -118,7 +119,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: available,
       checkedAt: 1_000,
     })
@@ -145,7 +146,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'up-to-date' },
       checkedAt: 5_000,
     })
@@ -287,7 +288,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'unsupported' },
       checkedAt: null,
     })
@@ -308,7 +309,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'unsupported' },
       checkedAt: null,
     })
@@ -326,7 +327,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'failed', problem: 'net::ERR_NAME_NOT_RESOLVED' },
       checkedAt: 1_000,
     })
@@ -675,7 +676,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'idle' },
       checkedAt: null,
     })

@@ -25,8 +25,8 @@ async function runtime(options: { agentsViewEnabled?: boolean; delegationEnabled
     historyEnabled: () => true, openExternal: async () => undefined, host: new E2EAgentHost(), reasoner: e2eAgentReasoner, ...options })
 }
 
-it('is off on stable and on in Owl', () => {
-  expect(owlFeaturesForTrack('stable')['iphone-agents-view']).toBe(false)
+it('is on in both tracks now that it is sent to stable', () => {
+  expect(owlFeaturesForTrack('stable')['iphone-agents-view']).toBe(true)
   expect(owlFeaturesForTrack('owl')['iphone-agents-view']).toBe(true)
 })
 

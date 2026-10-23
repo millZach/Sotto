@@ -206,6 +206,10 @@ export interface AppSettings {
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
+  /** On by default. Moving between Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
+  roomTransition: boolean
+  /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
+  roomTransitionSpeed: number
   microphoneId: string | null
   hotkey: string
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
@@ -349,6 +353,8 @@ const fieldSchemas = {
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
+  roomTransition: z.boolean(),
+  roomTransitionSpeed: z.number().min(0.5).max(2),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
@@ -442,6 +448,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
   reducedMotion: 'system',
+  roomTransition: true,
+  roomTransitionSpeed: 1,
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
@@ -504,7 +512,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
-  // On by default in Owl, the only place it shows: a freeze is worth hearing about until the owner says otherwise.
+  // On by default: a freeze is worth hearing about until the owner says otherwise.
   mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
@@ -596,6 +604,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
+    roomTransition: parseField(persisted, 'roomTransition', defaults),
+    roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),

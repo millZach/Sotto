@@ -8,13 +8,15 @@ import { startSocketServer } from '../../src/host/socketServer'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
-import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
+import { HOST_FEATURES, hostVersionMismatch, type HostFeature, type HostOperation } from '../../src/shared/hostProtocol'
+import { owlFeaturesForTrack, type OwlFeatureId } from '../../src/shared/owlFeatures'
+import { getReleaseTrack } from '../../src/shared/releaseTrack'
 import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
-import { useSocketHostFixture } from '../fixtures/socketHostFixture'
+import { SAME_VERSION_HELD, useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
 
@@ -164,13 +166,29 @@ describe('the iPhone’s pull request sheet (#1281)', () => {
 })
 
 describe('host version and features', () => {
+  /** What a host lists whatever its Owl answers say, in health and its listener file, and in the hello to a paired client. */
+  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes']
+  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes']
+  /**
+   * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
+   * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
+   */
+  const OWL_GATED: Partial<Record<HostFeature, OwlFeatureId>> = { 'usage-dashboard': 'usage', 'usage-history': 'usage', 'thread-starts': 'continue-agent-thread',
+    'usage-muse-opencode': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view' }
+  const offered = (always: readonly HostFeature[]): HostFeature[] => {
+    const answers = owlFeaturesForTrack(getReleaseTrack(packageVersion))
+    return HOST_FEATURES.filter(feature => always.includes(feature) || OWL_GATED[feature] !== undefined && answers[OWL_GATED[feature]!])
+  }
+
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
+    // Its own features, and those its version's Owl answers turn on, in the protocol's order.
+    const listed = offered(LISTED), greeted = offered(GREETED)
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: listed })
     const listener = JSON.parse(await readFile(join(fixture.root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: listed })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: greeted, capabilities: { mayAnswer: false } })
   })
 
   it('takes the user’s Babysit pull request from a paired client, and refuses one the thread does not know in words (ADR-0061)', async () => {
@@ -379,7 +397,7 @@ describe('model catalog revisions (#699)', () => {
     const { service, publish } = catalogHost(() => models)
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
-    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
     const transport = client as unknown as { receive(text: string): void }
     const receive = transport.receive.bind(client), wire: Record<string, unknown>[] = []
     transport.receive = text => { wire.push(JSON.parse(text) as Record<string, unknown>); receive(text) }

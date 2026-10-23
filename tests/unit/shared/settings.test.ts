@@ -46,6 +46,8 @@ const customSettings = {
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
   reducedMotion: 'on',
+  roomTransition: false,
+  roomTransitionSpeed: 1.5,
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
@@ -349,6 +351,8 @@ describe('settings', () => {
       showCreature: true,
       customThemes: [],
       reducedMotion: 'system',
+      roomTransition: true,
+      roomTransitionSpeed: 1,
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
       pressShortcuts: [],
@@ -596,5 +600,21 @@ describe('settings', () => {
     first.theme = 'light'
     expect(second.theme).toBe('dark')
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+  })
+})
+
+describe('night falls settings', () => {
+  it('defaults to on at speed 1 and keeps a saved choice', () => {
+    expect(DEFAULT_SETTINGS.roomTransition).toBe(true)
+    expect(DEFAULT_SETTINGS.roomTransitionSpeed).toBe(1)
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
+    expect(parsed.roomTransition).toBe(false)
+    expect(parsed.roomTransitionSpeed).toBe(0.5)
+  })
+
+  it('falls back to the default for a speed outside the dial', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 3 }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 'fast' }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransition: 'yes' }).roomTransition).toBe(true)
   })
 })
