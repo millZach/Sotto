@@ -156,7 +156,8 @@ test('a delegated thread brings its commits to main: a fast-forward, the merge-c
       await page.reload()
       await openThreads(page)
       await resizeWindow(launched, 1280, 800)
-      await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: CHILD, exact: true }).click()
+      // The sidebar lists a delegated thread under the thread that delegated to it, so it is opened by its ID.
+      await page.evaluate(async threadId => { await window.sotto!.agents!.command({ type: 'select-thread', threadId }) }, childId)
       await expect(pane(page).locator('.thread-workspace__head h2')).toHaveText(CHILD)
 
       // The strip: what this branch came from, where main is checked out, and the press named for main.
