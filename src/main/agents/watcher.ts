@@ -233,6 +233,26 @@ interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests
 const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
   participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
 
+/** A start Watcher holds a reservation for, and whether its first prompt is still to go (`queued` or `dispatching`). */
+interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
+/**
+ * The record's reserved starts. The file holds at most eight reservations (#1183), and a reservation's start is usually among
+ * the newest operations, so the walk goes back from the newest and stops once every reservation is found.
+ */
+function reservedStarts(record: Readonly<WatcherRecord>): ReservedStart[] {
+  if (record.reservations.length === 0) return []
+  const waiting = new Map(record.reservations.map(item => [item.operationId, item.target]))
+  const starts: ReservedStart[] = []
+  for (let index = record.operations.length - 1; index >= 0 && waiting.size > 0; index--) {
+    const operation = record.operations[index]!, target = waiting.get(operation.id)
+    if (target === undefined) continue
+    waiting.delete(operation.id)
+    if (operation.action === 'start') starts.push({ target, operationId: operation.id,
+      notYetSent: operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' })
+  }
+  return starts
+}
+
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
@@ -783,31 +803,31 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * The threads Watcher has admitted a start for on this machine whose first prompt has not gone yet (#1311). Admission
    * records the start's reservation before the working copy is resolved and the thread is created, so this machine's
-   * work placed but not started counts the start from then, and a second placement seconds later sees the first.
+   * work placed but not started counts the start from then, and a second placement seconds later sees the first. Read
+   * from the record's index of reserved starts, so a machine report costs the same however long Watcher's history is.
    */
   startsNotYetSent(): string[] {
-    const record = this.view(), hostId = this.options.control.hostId()
-    if (!hostId || record.reservations.length === 0) return []
-    const reserved = new Map(record.reservations.filter(item => item.target.hostId === hostId).map(item => [item.operationId, item.target.threadId]))
-    if (reserved.size === 0) return []
-    const threads: string[] = []
-    for (const operation of record.operations) {
-      const threadId = operation.action === 'start' && (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching') ? reserved.get(operation.id) : undefined
-      if (threadId !== undefined) threads.push(threadId)
-    }
-    return threads
+    const hostId = this.options.control.hostId()
+    if (!hostId) return []
+    return this.reservedStarts().flatMap(start => start.notYetSent && start.target.hostId === hostId ? [start.target.threadId] : [])
   }
-  /** One pass over the operations whatever the number of reservations: the phone's page asks on every build. */
-  private inFlight(record: Readonly<WatcherRecord> = this.view()): number {
-    if (record.reservations.length === 0) return 0
-    const reserved = new Map(record.reservations.map(item => [item.operationId, key(item.target)]))
-    const targets = new Set<string>()
-    for (const operation of record.operations) {
-      const target = operation.action === 'start' ? reserved.get(operation.id) : undefined
-      if (target !== undefined) targets.add(target)
-    }
-    return targets.size
+  /** Distinct threads among the reserved starts: the phone's page asks on every build. */
+  private inFlight(): number {
+    const starts = this.reservedStarts()
+    return starts.length === 0 ? 0 : new Set(starts.map(start => key(start.target))).size
   }
+  /**
+   * Watcher's reserved starts, worked out once per record. The record is replaced on every change and never edited
+   * (`watcherRecordView`), so the index stands until the next change, and every read between changes, such as a machine
+   * report or the phone's page, reads it without walking the operations.
+   */
+  private reservedStarts(): readonly ReservedStart[] {
+    const record = this.view()
+    let starts = this.reservedStartIndex.get(record)
+    if (!starts) { starts = reservedStarts(record); this.reservedStartIndex.set(record, starts) }
+    return starts
+  }
+  private readonly reservedStartIndex = new WeakMap<Readonly<WatcherRecord>, readonly ReservedStart[]>()
   /** The working threads warning (#1183) after a start on this computer, counting the new thread as working: only above ten. */
   private workingWarning(threadId: string): { warning: string } | Record<string, never> {
     const warning = workingThreadsWarning(countWorkingThreads(this.options.control.watcherSnapshot().threads, threadId))
