@@ -63,7 +63,7 @@ export class IdleCompaction {
    * Compactions this sweep started, from the command until the thread shows its result. Claude accepts `/compact` long
    * before it finishes, so the command returning does not free the place: the thread's own compaction record does.
    */
-  private readonly running = new Map<string, { readonly since: number; accepted: boolean; seenRunning: boolean }>()
+  private readonly running = new Map<string, { readonly since: number; readonly before: string | undefined; accepted: boolean; seenRunning: boolean }>()
   private stopped = false
 
   constructor(private readonly options: IdleCompactionOptions) {
@@ -96,7 +96,8 @@ export class IdleCompaction {
       const stretch = thread.usage!.contextUpdatedAt!
       if (this.tried.get(thread.id) === stretch) continue
       this.tried.set(thread.id, stretch)
-      const run = { since: this.now(), accepted: false, seenRunning: false }
+      // The compaction record the thread had before, so one that settles before any sweep sees it running still counts.
+      const run = { since: this.now(), before: thread.compaction?.commandId, accepted: false, seenRunning: false }
       this.running.set(thread.id, run)
       started.push(thread.id)
       // Asked again as the command dispatches: the user may have typed, settled or started a turn since this sweep. Not
@@ -124,7 +125,8 @@ export class IdleCompaction {
       const thread = threads.find(item => item.id === id)
       const pending = compactionPending(thread?.compaction)
       if (pending) run.seenRunning = true
-      if ((pending || !run.seenRunning) && this.now() - run.since < SETTLE_WITHIN_MS) continue
+      const finished = !pending && (run.seenRunning || (thread?.compaction !== undefined && thread.compaction.commandId !== run.before))
+      if (!finished && this.now() - run.since < SETTLE_WITHIN_MS) continue
       this.running.delete(id)
       const after = thread?.usage?.contextUpdatedAt
       if (after) this.tried.set(id, after)

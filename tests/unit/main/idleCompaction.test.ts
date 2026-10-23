@@ -118,6 +118,15 @@ describe('the idle compaction sweep', () => {
     expect(f.sweeper.sweep()).toEqual(['c'])
   })
 
+  it('frees the place of a compaction that finished before any sweep saw it running', async () => {
+    const f = fixture([quiet({ id: 'a', compaction: { commandId: 'earlier', status: 'completed' } }), quiet({ id: 'b' }), quiet({ id: 'c' })])
+    expect(f.sweeper.sweep()).toEqual(['a', 'b'])
+    await f.accepted()
+    // Done, or failed fast, inside one 30-second sweep: a new record, never seen running.
+    f.thread('a').compaction = { commandId: 'idle-a', status: 'failed', idle: true }
+    expect(f.sweeper.sweep()).toEqual(['c'])
+  })
+
   it('gives up the place of a compaction that never shows a result after ten minutes', async () => {
     const f = fixture([quiet({ id: 'a' }), quiet({ id: 'b' }), quiet({ id: 'c', usage: { ...quiet().usage!, contextUpdatedAt: ago(IDLE_COMPACTION_AFTER_MS - 9 * 60_000 - 30_000) } })])
     expect(f.sweeper.sweep()).toEqual(['a', 'b'])
