@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -145,6 +145,39 @@ describe('bringing a worktree’s commits to the branch it was made from', () =>
     expect(refusal).toMatchObject({ reason: 'target-uncommitted', detail: { files: 1 } })
     expect(main()).toBe(before)
     expect(await readFile(join(project, 'scratch.txt'), 'utf8')).toBe('the parent’s scratch\n')
+  })
+
+  it('refuses to replace the parent’s ignored file with one the commits add, on a fast-forward and on a merge, and leaves it whole', async () => {
+    const { project, child, actions, main, parentCheckout } = await repository()
+    // Ignored in both folders, as a local .env or build output is, through the repository's own exclude file.
+    await writeFile(join(project, '.git', 'info', 'exclude'), 'secret.env\nout\n')
+    await writeFile(join(project, 'secret.env'), 'the parent’s own key\n')
+    await writeFile(join(child, 'secret.env'), 'the child’s placeholder\n')
+    git(child, 'add', '-f', 'secret.env'); git(child, 'commit', '-qm', 'Track a placeholder env file')
+    const before = main()
+    const fastForward = await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout }))
+    expect(fastForward).toMatchObject({ reason: 'ignored', detail: { files: 1 } })
+    expect(fastForward.message).toBe('These commits add secret.env, and the folder where main is checked out already has an ignored file there, so Sotto didn’t touch it. Move that file aside, then try again.')
+    expect(main()).toBe(before)
+    expect(await readFile(join(project, 'secret.env'), 'utf8')).toBe('the parent’s own key\n')
+    // main moves on, so this would be a merge commit: refused before anything is asked.
+    await commitFile(project, 'notes.txt', 'meanwhile\n', 'Meanwhile')
+    const merging = await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout }))
+    expect(merging.reason).toBe('ignored')
+    expect(await readFile(join(project, 'secret.env'), 'utf8')).toBe('the parent’s own key\n')
+  })
+
+  it('refuses commits that add a file under a path the parent has as an ignored file', async () => {
+    const { project, child, actions, main, parentCheckout } = await repository()
+    await writeFile(join(project, '.git', 'info', 'exclude'), 'out\n')
+    await writeFile(join(project, 'out'), 'the parent’s build output\n')
+    await mkdir(join(child, 'out'), { recursive: true })
+    await writeFile(join(child, 'out', 'kept.txt'), 'kept\n')
+    git(child, 'add', '-f', 'out/kept.txt'); git(child, 'commit', '-qm', 'Keep a file under out')
+    const before = main()
+    expect((await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout }))).reason).toBe('ignored')
+    expect(main()).toBe(before)
+    expect(await readFile(join(project, 'out'), 'utf8')).toBe('the parent’s build output\n')
   })
 
   it('refuses when the parent is no longer on the target, and switches no branch', async () => {

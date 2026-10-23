@@ -41,9 +41,10 @@ export const bringBackSchema = z.object({
   /**
    * Why nothing was brought: uncommitted work here or where the target is checked out, a conflict, a branch that moved
    * since the question, this worktree off its branch, the target gone, a folder busy with other work, Git refusing, the
-   * thread it began from no longer on the target, or a test run's snapshot of uncommitted changes in the branch.
+   * thread it began from no longer on the target, a check's snapshot of uncommitted changes in the branch, or files the
+   * target would gain that its folder already has as ignored files (`message` says which).
    */
-  refusal: z.enum(['uncommitted', 'target-uncommitted', 'conflict', 'moved', 'detached', 'gone', 'busy', 'git', 'parent-moved', 'snapshot']).optional(),
+  refusal: z.enum(['uncommitted', 'target-uncommitted', 'conflict', 'moved', 'detached', 'gone', 'busy', 'git', 'parent-moved', 'snapshot', 'ignored']).optional(),
   /** How many files hold the uncommitted work that refused it. */
   files: z.number().int().nonnegative().optional(),
   /** Sotto's own sentence for a refusal that has no plainer one: a busy folder, or why Git could not start. */

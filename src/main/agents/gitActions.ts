@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
@@ -538,11 +538,14 @@ export class GitActions {
         if (dirty > 0) throw new BringBackRefusal('target-uncommitted', `Nothing was brought to ${target}. ${target} is checked out in a folder with uncommitted changes in ${files(dirty)}, so Sotto didn’t touch it.`, { files: dirty, checkout })
         if (await this.operationInProgress(checkout)) throw new BringBackRefusal('target-uncommitted', `Nothing was brought to ${target}. A merge or rebase is in progress where ${target} is checked out, so Sotto didn’t touch it.`, { checkout })
         if (targetCommits === 0) {
+          await this.refuseIgnoredCollisions(cwd, checkout, target, targetHead, branchHead)
           await this.advance(target, branchHead, checkout)
           return { kind: 'fast-forward', branch, commits, head: branchHead, checkout }
         }
         // Conflicts are found before anything is asked, so the question is only ever about a merge Git can make.
         const tree = await this.mergeTree(cwd, target, targetHead, branchHead)
+        // An ignored file the merge would replace refuses it before anything is asked, and again before the yes is acted on.
+        await this.refuseIgnoredCollisions(cwd, checkout, target, targetHead, tree)
         if (!input.mergeCommit) return { kind: 'asks', branch, commits, targetCommits, targetHead, branchHead, checkout }
         const subject = `Merge branch '${branch}' into ${target}`
         const head = (await this.git(cwd, ['commit-tree', tree, '-p', targetHead, '-p', branchHead, '-F', '-'], { stdin: `${subject}\n` }).catch((error: unknown) => {
@@ -552,6 +555,22 @@ export class GitActions {
         return { kind: 'merge-commit', branch, commits, targetCommits, head, subject, checkout }
       } finally { release?.() }
     })
+  }
+  /**
+   * Refuses when the files the target would gain are already in the folder that has it checked out as ignored files, or
+   * sit under one: Git replaces an ignored file it checks out over, and the folder's status leaves ignored files out, so
+   * nothing else would notice. Only paths the target does not track yet can collide, so only those are looked at.
+   */
+  private async refuseIgnoredCollisions(cwd: string, checkout: string, target: string, from: string, to: string): Promise<void> {
+    const added = (await this.git(cwd, ['diff', '--name-only', '--no-renames', '--diff-filter=A', '-z', from, to])).split('\0').filter(Boolean)
+    const collisions: string[] = []
+    for (const path of added) if (await occupied(checkout, path)) collisions.push(path)
+    if (collisions.length === 0) return
+    const first = collisions[0]!
+    const words = collisions.length === 1
+      ? `These commits add ${first}, and the folder where ${target} is checked out already has an ignored file there, so Sotto didn’t touch it. Move that file aside, then try again.`
+      : `These commits add ${first} and ${collisions.length - 1} more ${collisions.length === 2 ? 'path' : 'paths'} where the folder that has ${target} checked out already has ignored files, so Sotto didn’t touch it. Move those files aside, then try again.`
+    throw new BringBackRefusal('ignored', words, { files: collisions.length, checkout })
   }
   /** Whether any commit `targetHead` lacks on the way to `head` is a test run's snapshot, by its author or committer (#1033). */
   private async snapshotIn(cwd: string, targetHead: string, head: string): Promise<boolean> {
@@ -707,6 +726,19 @@ const cut = (text: string): string => text.length > 72 ? `${text.slice(0, 69)}..
 function branchHeadOf(output: string): string {
   const head = output.split('\0').find(record => record.startsWith('# branch.head '))?.slice('# branch.head '.length) ?? ''
   return head === '(detached)' ? '' : head
+}
+/**
+ * Whether a path a checkout would gain is taken there already: by a file or folder at the path, or by a file where one of
+ * its folders would go. In a folder with nothing uncommitted, anything there is ignored.
+ */
+async function occupied(checkout: string, path: string): Promise<boolean> {
+  const parts = path.split('/')
+  for (let depth = 1; depth <= parts.length; depth++) {
+    const found = await lstat(join(checkout, ...parts.slice(0, depth))).catch(() => null)
+    if (!found) return false
+    if (depth === parts.length || !found.isDirectory()) return true
+  }
+  return false
 }
 const files = (count: number): string => `${count} ${count === 1 ? 'file' : 'files'}`
 /** Git's last few lines, as Git said them, with any credentials in a remote's address left out. */

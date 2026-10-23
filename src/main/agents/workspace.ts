@@ -1243,7 +1243,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(refusal?.detail.files !== undefined ? { files: refusal.detail.files } : {}),
       ...(refusal?.detail.gitSaid ? { gitSaid: refusal.detail.gitSaid } : {}),
       ...(refusal?.detail.checkout !== undefined ? { checkedOut: await this.checkoutPlace(refusal.detail.checkout, projectPath) } : {}),
-      ...(!refusal || refusal.reason === 'busy' || refusal.reason === 'git' ? { message: (error instanceof Error ? error.message : 'Git did not answer.').slice(0, 1_000) } : {}) }
+      ...(!refusal || refusal.reason === 'busy' || refusal.reason === 'git' || refusal.reason === 'ignored' ? { message: (error instanceof Error ? error.message : 'Git did not answer.').slice(0, 1_000) } : {}) }
   }
   private bringBackRecord(outcome: BringBackOutcome, checkedOut: NonNullable<BringBack['checkedOut']>): Omit<BringBack, 'actionId' | 'target' | 'branch' | 'at'> {
     switch (outcome.kind) {
