@@ -29,6 +29,7 @@ export const OWL_FEATURES = [
   { id: 'message-scrubber', name: 'Message scrubber', owlSince: '2026-10-22', owner: 'docs/adr/0109-a-column-of-ticks-reaches-every-message-the-user-sent.md', sentToStable: false },
   { id: 'menu-bar-owl', name: 'The menu bar owl', owlSince: '2026-10-22', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: false },
   { id: 'desktop-notifications', name: 'Notifications when a thread has finished or needs you', owlSince: '2026-10-22', owner: 'docs/adr/0117-the-desktop-notifies-when-a-thread-has-finished-everything-or-needs-you.md', sentToStable: false },
+  { id: 'recent-projects', name: 'Recent projects on a new thread', owlSince: '2026-10-23', owner: 'docs/adr/0121-a-new-thread-can-move-to-a-recent-project.md', sentToStable: false },
   { id: 'creature-toggle', name: 'Show the creature', owlSince: '2026-10-23', owner: 'docs/adr/0116-the-creature-above-the-composer-is-a-choice.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
