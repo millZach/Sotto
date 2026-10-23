@@ -118,7 +118,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
     grok: options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true }),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
-    muse: options.museEnabled === true ? options.providers?.muse ?? new MuseMspHost(directory) : new MuseDisabledHost(),
+    muse: options.museEnabled === true ? options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox }) : new MuseDisabledHost(),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,

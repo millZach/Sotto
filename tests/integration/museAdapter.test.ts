@@ -8,6 +8,21 @@ import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
+it('starts every host without the sandbox only when the setting says so, captured at connect', async () => {
+  let off = false
+  const f = await museFixture(undefined, undefined, {}, { disableSandbox: () => off })
+  const argv = async (): Promise<string[][]> => (await readFile(join(f.root, 'argv.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as string[])
+  try {
+    expect((await f.host.connect()).sandboxDisabled).toBe(false)
+    expect((await argv()).every(args => !args.includes('--disable-sandbox'))).toBe(true)
+    // Flipping the setting mid-connection changes nothing running: the posture was captured at connect.
+    off = true
+    expect((await f.host.connect()).sandboxDisabled).toBe(true)
+    const hosts = await argv()
+    expect(hosts.at(-1)).toContain('--disable-sandbox')
+  } finally { await f.cleanup() }
+})
+
 const open = async () => {
   const f = await museFixture()
   await f.host.connect()

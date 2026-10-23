@@ -121,7 +121,7 @@ function clientRefusal(client: MuseClient): MuseUnsupported | undefined {
 }
 
 /** How Sotto spawns the native client: one MSP host per thread (`muse serve`, ADR-0038, ADR-0079). */
-export function museServeArguments(): string[] { return ['serve'] }
+export function museServeArguments(disableSandbox = false): string[] { return disableSandbox ? ['serve', '--disable-sandbox'] : ['serve'] }
 
 /** The capability a host grants before it takes tool servers on `session/start` and `session/resume` (ADR-0079). */
 const SESSION_MCP = 'sessionMcp'
@@ -173,6 +173,8 @@ const freshFold = (): Fold => ({ items: new Map(), streams: new Map(), turnMessa
 
 export interface MuseMspOptions {
   executable?: string
+  /** Read at each connect: start this machine's `muse serve` hosts without Muse's shell sandbox. Absent keeps the sandbox. */
+  disableSandbox?: () => boolean
   /** Arguments before `serve`, used by the scripted provider. */
   args?: string[]
   environment?: NodeJS.ProcessEnv
@@ -335,6 +337,8 @@ export class MuseMspHost implements AgentHost {
   private readonly exits = new Set<Promise<void>>()
   private executable: string | undefined
   private clientRevision = 0
+  /** The sandbox posture captured at the last connect; every host this connection spawns keeps it, so a changed setting applies on reconnect. */
+  private serveSandboxDisabled = false
   /** The permission modes this machine's client let a probe select, which is all its threads may be offered. */
   private offeredModes: readonly MuseRuntimeMode[] = ['approval-required']
   private writing = Promise.resolve()
@@ -410,7 +414,7 @@ export class MuseMspHost implements AgentHost {
     })
   }
   private spawn(executable: string, lost: () => void, ephemeral = false): MuseRpc {
-    const rpc: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(), ...(ephemeral ? ['--no-session-log'] : [])],
+    const rpc: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(this.serveSandboxDisabled), ...(ephemeral ? ['--no-session-log'] : [])],
       this.userDataDirectory, museEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
       frame => this.frame(frame, rpc), lost)
     const exit = rpc.closed.finally(() => { this.exits.delete(exit) }); this.exits.add(exit)
@@ -430,6 +434,8 @@ export class MuseMspHost implements AgentHost {
     this.state.version = `${nativeVersion ?? client.serverInfo.version} / MSP ${MUSE_MSP_VERSION}`
     if (compareClientVersions(client.serverInfo.version, MUSE_CLI_VERSION) > 0) this.state.verifiedVersion = MUSE_CLI_VERSION
     else delete this.state.verifiedVersion
+    // The posture the running hosts were spawned with, so Settings can tell a saved change from a live one.
+    this.state.sandboxDisabled = this.serveSandboxDisabled
     this.state.models = models.map(model => ({
       id: model.modelId, name: model.displayLabel, provider: 'Muse', ready: true,
       runtimeModes: [...this.offeredModes], supportsImages: true,
@@ -554,10 +560,13 @@ export class MuseMspHost implements AgentHost {
     this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
     this.executable = executable
+    // The sandbox posture for everything this connection spawns, probes included: sealed by each host at
+    // startup, so it is captured here and a changed setting applies on the next connect.
+    this.serveSandboxDisabled = this.options.disableSandbox?.() === true
     let tooOld: string | undefined
     // Connecting checks the client, its catalog and its mode ceiling on a memory-only host of its own, which
     // ends once it has answered. Threads start their own durable hosts as they are needed.
-    const probe: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(), '--no-session-log'],
+    const probe: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(this.serveSandboxDisabled), '--no-session-log'],
       this.userDataDirectory, museEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
       frame => this.unsupported(probe, frame), () => undefined)
     const probeExit = probe.closed.finally(() => { this.exits.delete(probeExit) }); this.exits.add(probeExit)
@@ -597,7 +606,7 @@ export class MuseMspHost implements AgentHost {
     const executable = await Promise.resolve(this.options.executable ?? findMuseExecutable(this.options.environment)).catch(() => undefined)
     if (generation !== this.generation || !this.state.connected) return
     if (!executable || !isAbsolute(executable)) throw new Error('Muse was updated, but Sotto cannot find it now. Threads that are working carry on and nothing was lost. Check the Muse install, then connect Muse again.')
-    const probe: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(), '--no-session-log'],
+    const probe: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(this.serveSandboxDisabled), '--no-session-log'],
       this.userDataDirectory, museEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
       frame => this.unsupported(probe, frame), () => undefined)
     const probeExit = probe.closed.finally(() => { this.exits.delete(probeExit) }); this.exits.add(probeExit)
@@ -1548,7 +1557,7 @@ export class MuseMspHost implements AgentHost {
     this.activeTurns.clear()
     if (ended) void this.persist().catch(() => undefined)
     for (const entry of this.processes.values()) this.closeProcess(entry)
-    this.processes.clear(); this.outdated.clear(); this.state.connected = false; this.emit()
+    this.processes.clear(); this.outdated.clear(); this.state.connected = false; delete this.state.sandboxDisabled; this.emit()
   }
   async closed(): Promise<void> { await Promise.all([...this.exits]); await Promise.allSettled(this.loading.values()); await this.writing }
 }

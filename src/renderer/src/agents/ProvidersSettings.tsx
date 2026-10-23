@@ -52,7 +52,7 @@ export function ProvidersSettings(): ReactNode {
   if (!state || !command) return <p role="status">Loading providers…</p>
   const enabled = enabledThreadProviders(state.configuration)
   const statusFor = (id: ProviderId) => state.host.providers?.find(provider => provider.id === id)
-    ?? { connection: id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
+    ?? { connection: id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined, sandboxDisabled: undefined }
   const status = statusFor(selected)
   const connected = status.connection === 'connected'
   const working = pending[selected] || status.connection === 'connecting'
@@ -111,6 +111,10 @@ export function ProvidersSettings(): ReactNode {
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not update this provider. Try again.' })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
   }
+  // Muse's shell sandbox posture is sealed when each of its hosts starts, so the saved switch and the
+  // running hosts can disagree until Muse reconnects; the tile says so instead of implying it is live.
+  const museSandboxOwed = selected === 'muse' && connected && status.sandboxDisabled !== undefined && status.sandboxDisabled !== state.configuration.museDisableSandbox
+  const reconnectMuse = async (): Promise<void> => { await perform('muse', 'disconnect'); await perform('muse', 'connect') }
   const inheritedModelId = defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
@@ -156,6 +160,20 @@ export function ProvidersSettings(): ReactNode {
               </div>
             </div>
             {selected === 'muse' && state.configuration.checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{update.channel === 'unknown' || !update.byHand?.length ? 'Update Muse with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openMuseGuide()}>Open Muse installation guide</Button></details>}
+            {selected === 'muse' && <div className="provider-client">
+              <div>
+                <h4>Shell sandbox</h4>
+                <p>{state.configuration.museDisableSandbox
+                  ? "Muse's shell commands run as you on this computer, with no sandbox. Only turn this off where Muse's sandbox cannot be set up. Ask mode still asks before a command runs."
+                  : "Muse's shell commands run inside its sandbox on this computer."}</p>
+                {museSandboxOwed && <p>Reconnect Muse to apply. Threads running now keep their current setting until they restart.</p>}
+              </div>
+              <div className="provider-client__actions">
+                {museSandboxOwed && <Button variant="primary" disabled={Boolean(working)} aria-label="Reconnect Muse to apply the shell sandbox setting" onClick={() => void reconnectMuse()}>Reconnect</Button>}
+                <Toggle label="Shell sandbox" checked={!state.configuration.museDisableSandbox}
+                  onCheckedChange={value => void command({ type: 'configure', patch: { museDisableSandbox: !value } })} />
+              </div>
+            </div>}
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}

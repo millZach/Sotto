@@ -125,6 +125,26 @@ describe('Muse in provider settings', () => {
     expect(within(steps).getByRole('button', { name: 'Open Muse installation guide' })).toBeInTheDocument()
   })
 
+  it('saves the shell sandbox switch through configure, starting from on', async () => {
+    const { command } = await mount()
+    const sandbox = screen.getByRole('switch', { name: 'Shell sandbox' })
+    expect(sandbox).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(sandbox)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { museDisableSandbox: true } }))
+  })
+
+  it('offers reconnect only while the saved sandbox switch and the running hosts disagree', async () => {
+    const state = fixture()
+    state.configuration.museDisableSandbox = true
+    state.host.providers = state.host.providers!.map(provider => provider.id === 'muse' ? { ...provider, sandboxDisabled: false } : provider)
+    const { command } = await mount(state)
+    expect(screen.getByText(/Reconnect Muse to apply/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Muse to apply the shell sandbox setting' }))
+    await waitFor(() => expect(command).toHaveBeenCalledTimes(2))
+    expect(command).toHaveBeenNthCalledWith(1, { type: 'disconnect', provider: 'muse' })
+    expect(command).toHaveBeenNthCalledWith(2, { type: 'connect', provider: 'muse', notice: false })
+  })
+
   it('offers no update when the check switch is off', async () => {
     const state = fixture()
     state.configuration.checkClientUpdates = false

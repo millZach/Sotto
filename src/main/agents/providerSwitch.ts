@@ -159,6 +159,7 @@ export class ConfiguredProviderHost implements AgentHost {
       capabilities: owned.connected ? owned.capabilities : slot.status.capabilities,
       connection: snapshot.connected ? 'connected' : snapshot.error ? 'error' : slot.connecting ? 'connecting' : 'disconnected',
       ...(snapshot.verifiedVersion ? { verifiedVersion: snapshot.verifiedVersion } : {}),
+      ...(snapshot.connected && snapshot.sandboxDisabled !== undefined ? { sandboxDisabled: snapshot.sandboxDisabled } : {}),
       ...(snapshot.error ? { error: snapshot.error } : {}),
       // What the Hosts page's tile decides on (ADR-0037): why it is not connected, or what it is signed in with.
       ...(!snapshot.connected && snapshot.error && snapshot.problem ? { problem: snapshot.problem } : {}),
