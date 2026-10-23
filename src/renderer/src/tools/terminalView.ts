@@ -209,8 +209,10 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       measureGpu = false
       if (disposed || renderer && !includeGpu || !element.isConnected) return
       const weight = terminal.options.fontWeight ?? 'normal'
+      (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['respace:start', Date.now()])
       terminal.options.fontWeight = weight === 'normal' ? 400 : 'normal'
       terminal.options.fontWeight = weight
+      (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['respace:end', Date.now()])
       if (includeGpu) {
         const grid = view.fit()
         if (grid) handlers.onResize?.(grid)
@@ -356,11 +358,18 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   const stopFollowingFont = followTerminalFontSize(() => {
     const size = terminalFontSize()
     if (terminal.options.fontSize === size) return
+    const d = (label: string): void => { (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push([label, Date.now()]) }
+    d(`font:start buffer=${terminal.buffer.active.length} bar=${search.isOpen()}`)
     terminal.options.fontSize = size
+    d('font:set')
     const grid = view.fit()
+    d('font:fit')
     if (grid) handlers.onResize?.(grid)
+    d('font:onResize')
     search.refresh()
+    d('font:searchRefresh')
     respace()
+    d('font:end')
   })
   return view
 }

@@ -230,7 +230,10 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await expect(search).toBeHidden(); await expect(input).toBeFocused()
       const before = await grid()
       await app.evaluate(() => { (globalThis as { __zoomDiag?: unknown[] }).__zoomDiag = [] })
-      await page.evaluate(() => { (window as { __zoomDiag?: unknown[] }).__zoomDiag = [] })
+      await page.evaluate(() => {
+        const list: [string, number][] = []; (window as { __zoomDiag?: unknown[] }).__zoomDiag = list
+        new PerformanceObserver(entries => { for (const entry of entries.getEntries()) list.push([`longtask ${Math.round(entry.duration)}ms`, Math.round(performance.timeOrigin + entry.startTime)]) }).observe({ type: 'longtask', buffered: false })
+      })
       const diagStart = Date.now()
       await input.press('Control+Shift+=')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)

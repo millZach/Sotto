@@ -339,6 +339,7 @@ export function AppProvider({
       return queued.then(
         ({ next, version }) => {
           if (!isCurrentGeneration(generation)) return false
+          (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['commit:setSettings', Date.now()])
           if (settingsVersionRef.current === version) commitSettings(next)
           setFailure(null)
           return true

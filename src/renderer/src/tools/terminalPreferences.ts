@@ -14,6 +14,7 @@ const notify = (): void => { for (const listener of listeners) listener() }
 
 /** App owns settings and serializes saves. Views outlive their panes, so they read the current preferences here. */
 export function setTerminalPreferences(settings: Preferences, update: (patch: SettingsPatch) => Promise<boolean>): void {
+  zoomDiag(`layoutEffect ${settings.terminalFontSize}`)
   confirmed = settings
   save = update
   if (!pending) fontSize = settings.terminalFontSize
