@@ -170,6 +170,16 @@ describe('the same press in the Git action’s menu', () => {
     expect(sent(command)[0]).toMatchObject({ type: 'bring-changes-back', threadId: 'child' })
   })
 
+  it('offers nothing, in the strip or the menu, while the thread’s turn is running', () => {
+    mount(child({ status: 'running' }))
+    expect(screen.queryByRole('region', { name: 'Bring changes back' })).toBeNull()
+    const more = screen.queryByRole('button', { name: 'More Git actions' })
+    if (more) {
+      fireEvent.click(more)
+      expect(within(screen.getByRole('menu', { name: 'More Git actions' })).queryByText(/Bring changes to/u)).toBeNull()
+    }
+  })
+
   it('is disabled with the reason while the worktree has uncommitted changes', () => {
     mount(child({ worktree: worktree({ git: status('sotto/wav-mid-chunk', { dirty: true, changedFiles: 1 }) }) }))
     fireEvent.click(screen.getByRole('button', { name: 'More Git actions' }))

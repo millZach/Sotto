@@ -87,7 +87,8 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const windowThreads = windowState?.host.threads
   const allThreads = givenThreads ?? windowThreads ?? NO_THREADS
   const dismissals = useBringBackDismissals()
-  const bringTarget = bringOffered ? bringBackTarget(thread, allThreads) : null
+  // While this thread's turn runs nothing is offered, so no press is ever refused for it (Zach, October 23).
+  const bringTarget = bringOffered && thread.status !== 'running' ? bringBackTarget(thread, allThreads) : null
   const bringView = bringOffered ? bringBackView(thread, allThreads, dismissals) : null
   const bringParent = bringTarget ? allThreads.find(item => item.id === bringTarget.parentId) : undefined
   // A parent on another machine is named by that machine, so the strip says where its branch is (#1030).

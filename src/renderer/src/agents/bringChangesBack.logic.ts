@@ -55,6 +55,8 @@ export function branchSignature(thread: Pick<AgentThread, 'worktree'>): string {
 
 /** What the strip shows for a thread now, or null for no strip. */
 export function bringBackView(thread: AgentThread, threads: readonly AgentThread[], dismissals: Pick<BringBackDismissals, 'dismissed' | 'hiddenAt'>): BringBackView | null {
+  // Nothing shows while the thread's turn runs: its branch is still moving, and a press would only be refused.
+  if (thread.status === 'running') return null
   const found = bringBackTarget(thread, threads)
   if (!found) return null
   const record = bringBackRecord(thread, found, threads)
