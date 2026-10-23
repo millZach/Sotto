@@ -53,7 +53,7 @@ describe('a start that names no machine or system', () => {
   })
   it('starts on This computer and says why when the machine new workers start on is not connected or no longer saved', async () => {
     expect(await placeWorker({}, FORGE, onLaptop, sources([laptop(), forge({ machine: { hostId: FORGE, name: 'forge', thisComputer: false, connected: false } })]))).toEqual({
-      hostId: LAPTOP, projectId: 'laptop-sotto', receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
+      hostId: LAPTOP, projectId: 'laptop-sotto', receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true, defaultName: 'forge',
         note: 'Forge, where new workers start, is not connected, so this one started on This computer.' } })
     expect((await placeWorker({}, MAC, onLaptop, sources([laptop(), forge()]))).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
       note: 'The machine new workers start on is no longer saved, so this one started on This computer.' })
@@ -61,7 +61,7 @@ describe('a start that names no machine or system', () => {
   it('keeps a project named on another machine there, and says it is away from where new workers start', async () => {
     const onForge = { hostId: FORGE, projectId: 'forge-sotto' }
     expect(await placeWorker({}, 'this-computer', onForge, sources([laptop(), forge()]))).toEqual({ hostId: FORGE, projectId: 'forge-sotto',
-      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true } })
+      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true, defaultName: 'This computer' } })
     expect((await placeWorker({}, 'watcher', onForge, sources([laptop(), forge()]))).receipt.awayFromDefault).toBe(false)
     expect((await placeWorker({}, MAC, onForge, sources([laptop(), forge(), mac()]))).hostId).toBe(FORGE)
   })
@@ -77,7 +77,7 @@ describe('a start that names no machine or system', () => {
 describe('a start that names a machine', () => {
   it('starts on that machine’s copy, whatever the setting says', async () => {
     expect(await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), forge()]))).toEqual({ hostId: FORGE, projectId: 'forge-sotto',
-      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true } })
+      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true, defaultName: 'This computer' } })
     expect(await placeWorker({ machine: LAPTOP }, FORGE, { hostId: FORGE, projectId: 'forge-sotto' }, sources([laptop(), forge()]))).toMatchObject({ hostId: LAPTOP, projectId: 'laptop-sotto',
       receipt: { awayFromDefault: true } })
   })

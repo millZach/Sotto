@@ -95,6 +95,8 @@ describe('The machines line’s words (#1032, pick D)', () => {
   it('says under a receipt why a start went where it did, and nothing when it went where it was meant to', () => {
     expect(placementLine({ hostId: LOCAL, name: 'This computer', awayFromDefault: true, note: 'Forge, where new workers start, is not connected, so this one started on This computer.' }))
       .toBe('Forge, where new workers start, is not connected, so this one started on This computer.')
+    expect(placementLine({ hostId: FORGE, name: 'forge', awayFromDefault: true, defaultName: 'This computer' })).toBe('Not your default, This computer. Watcher says why in its reply.')
+    // A default no longer saved has no name to give.
     expect(placementLine({ hostId: FORGE, name: 'forge', awayFromDefault: true })).toBe('Not your default machine. Watcher says why in its reply.')
     expect(placementLine({ hostId: FORGE, name: 'forge', awayFromDefault: false })).toBeNull()
     expect(placementLine(undefined)).toBeNull()

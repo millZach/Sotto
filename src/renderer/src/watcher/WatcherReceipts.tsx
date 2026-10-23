@@ -93,12 +93,13 @@ export function receiptLead(operation: Pick<WatcherOperation, 'action' | 'delive
 
 /**
  * Why a start went where it did, under its card (#1032): Sotto's own sentence when it placed the start itself, or that it
- * is not on the machine new workers start on; Watcher says why in its reply. Nothing when it went where it was meant to.
+ * is not on the machine new workers start on, named (Zach, October 23, 2026); Watcher says why in its reply. Nothing when it went where it was meant to.
  */
 export function placementLine(placement: WorkerPlacementReceipt | undefined): string | null {
   if (placement === undefined) return null
   if (placement.note !== undefined) return placement.note
-  return placement.awayFromDefault ? 'Not your default machine. Watcher says why in its reply.' : null
+  if (!placement.awayFromDefault) return null
+  return placement.defaultName ? `Not your default, ${placement.defaultName}. Watcher says why in its reply.` : 'Not your default machine. Watcher says why in its reply.'
 }
 
 /**
