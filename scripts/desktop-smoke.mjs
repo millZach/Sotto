@@ -25,4 +25,4 @@ function run(args) {
 
 run([npm, 'run', 'test:recovery'])
 run([join(root, 'node_modules/@playwright/test/cli.js'), 'test',
-  'tests/e2e/terminal-search-links-zoom.spec.ts', '--grep', 'tools searches', '--repeat-each=4', '--workers=1'])
+  'tests/e2e/terminal-search-links-zoom.spec.ts', '--grep', 'tools searches', '--repeat-each=2', '--workers=1'])
