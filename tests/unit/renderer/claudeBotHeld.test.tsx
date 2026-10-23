@@ -5,7 +5,7 @@ import { ThreadHeld, ThreadWaitingCommand } from '../../../src/renderer/src/agen
 import type { HeldAction } from '../../../src/renderer/src/agents/threadActivityView'
 
 /** Claude bot's held pose: standing still, an hourglass in its raised right hand, the sand running as Sotto's does. */
-vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreature: () => 'claude' }))
+vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreatureShown: () => true, useCreature: () => 'claude' }))
 
 const NOW = Date.parse('2026-10-22T15:00:00.000Z')
 const action: HeldAction = {

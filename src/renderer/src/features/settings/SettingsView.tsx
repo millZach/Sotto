@@ -417,8 +417,9 @@ export function SettingsView({
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
+  const creatureToggle = useOwlFeature('creature-toggle')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, notifications: notificationsShown }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, notifications: notificationsShown, 'creature-toggle': creatureToggle }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
