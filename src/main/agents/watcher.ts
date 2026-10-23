@@ -474,6 +474,27 @@ export class WatcherService implements WatcherControlHooks {
     this.remoteOff = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
     void this.reconcileRemote().catch(() => undefined)
   }
+  /**
+   * unsettle_thread (October 23, 2026): a settled thread on this computer back to active, as Restore does, a settled project
+   * returning with it alone, under an active request of this Watcher's or the thread's own standing watch. Its watch stays
+   * as it is. Restoring changes nothing a second time, so the call keeps no operation: a retry restores nothing more, and
+   * the record, the phone and paired hosts see no new action. A paired host's thread is refused: the only way there now is
+   * the user's own Restore, which that host would read as a takeover.
+   */
+  private async unsettleThread(callerThreadId: string, input: WatcherToolInput<'unsettle_thread'>): Promise<WatcherToolOutput<'unsettle_thread'>> {
+    const record = this.record(), target = input.target, request = record.requests.find(item => item.id === input.requestId)
+    const watch = record.watches?.find(item => item.id === input.requestId && key(item.target) === key(target))
+    if (!watch && (!request || request.state !== 'active' || request.watcher.threadId !== callerThreadId || request.watcher.hostId !== this.hostId())) {
+      refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request, or name the thread’s standing watch.')
+    }
+    if (target.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Watcher restores only this computer’s threads. Ask the user to restore it from Settled. Nothing was changed.')
+    const thread = this.thread(target)
+    if (!isWorkspaceThreadSettled(thread, this.options.control.watcherSnapshot().projects.find(project => project.id === thread.projectId))) return { status: 'ok', target, settled: false }
+    if (!this.options.host.reopenThreadForWork) refuse('PROVIDER_UNAVAILABLE', 'Sotto cannot restore threads here. Nothing was changed.')
+    try { await this.options.host.reopenThreadForWork(target.threadId) }
+    catch { refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save the thread as restored. It is still settled. Try again.', true) }
+    return { status: 'ok', target, settled: false }
+  }
   private thread(target: WatcherThreadTarget): AgentThread {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
@@ -2389,7 +2410,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
   private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {
-    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' ? STILL_WATCHING : STILL_READING, true)
+    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' || name === 'unsettle_thread' ? STILL_WATCHING : STILL_READING, true)
     const operation = progress.operationId ? this.record().operations.find(item => item.id === progress.operationId) : undefined
     return operation ? { ...watcherRefusal('DELIVERY_UNCERTAIN', STILL_DELIVERING, true), receipt: this.receipt(operation) }
       : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
@@ -2410,6 +2431,7 @@ export class WatcherService implements WatcherControlHooks {
         const result = await this.unwatchThread(parsed.data as WatcherToolInput<'unwatch_thread'>, undefined, 'watcher')
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
+      if (name === 'unsettle_thread') return await this.unsettleThread(threadId, parsed.data as WatcherToolInput<'unsettle_thread'>)
       if (name === 'list_machines') return await this.listMachines()
       if (name === 'keep_state') {
         const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())

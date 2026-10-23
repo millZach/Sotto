@@ -104,3 +104,42 @@ it('restores a settled thread the user sends to, and from a settled project brin
   expect(snapshot.threads.find(item => item.id === f.target.threadId)!.workspaceSettledAt ?? null).toBeNull()
   expect(snapshot.threads.find(item => item.id === other)!.workspaceSettledAt).toBeTruthy()
 })
+
+it('unsettles a settled thread whose background work still runs, keeping its watch and sending nothing, and again safely', async () => {
+  const f = await fixture()
+  // Its turn is over, but agents it started still work: no prompt is coming that would restore it.
+  const native = f.native()
+  native.backgroundWork = [{ id: randomUUID(), type: 'subagent', label: 'Synthetic agent' }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const watches = () => (f.control.watcherRecord().watches ?? []).filter(watch => watch.target.threadId === f.target.threadId).map(watch => watch.id)
+  const watched = watches(), sends = f.workspace.adapters.codex.commands.filter(command => command.type === 'send').length
+  expect(watched).toHaveLength(1)
+  const requestId = f.service.state().requests.at(-1)!.id
+  const unsettle = () => f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: f.target })
+  expect(await unsettle()).toEqual({ status: 'ok', target: f.target, settled: false })
+  expect(f.settled()).toBe(false)
+  expect(watches()).toEqual(watched)
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send').length).toBe(sends)
+  // Again: nothing more to restore, and nothing else changes.
+  expect(await unsettle()).toEqual({ status: 'ok', target: f.target, settled: false })
+  expect(watches()).toEqual(watched)
+})
+
+it('unsettles a thread in a settled project alone, and refuses without an active request or for another computer', async () => {
+  const f = await fixture()
+  const thread = f.control.watcherSnapshot().threads.find(item => item.id === f.target.threadId)!
+  const other = randomUUID()
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: other, projectId: thread.projectId, modelId: thread.modelId, title: 'Synthetic other', workingCopy: 'shared' })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'restore-thread', threadId: f.target.threadId })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'settle-project', projectId: thread.projectId })).error).toBeNull()
+  expect(f.settled()).toBe(false)
+  const requestId = f.service.state().requests.at(-1)!.id
+  expect(await f.call('unsettle_thread', { requestId: randomUUID(), retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: { hostId: randomUUID(), threadId: f.target.threadId } }))
+    .toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
+  expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'ok', settled: false })
+  const snapshot = f.control.watcherSnapshot()
+  expect(snapshot.projects.find(item => item.id === thread.projectId)!.workspaceSettledAt ?? null).toBeNull()
+  expect(snapshot.threads.find(item => item.id === f.target.threadId)!.workspaceSettledAt ?? null).toBeNull()
+  expect(snapshot.threads.find(item => item.id === other)!.workspaceSettledAt).toBeTruthy()
+})
