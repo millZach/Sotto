@@ -189,7 +189,10 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
 
     const more = page.getByRole('button', { name: 'More usage actions', exact: true })
     const clear = async (): Promise<void> => { await more.click(); await page.getByRole('menuitem', { name: 'Clear usage…', exact: true }).click() }
-    await more.focus(); await more.press('ArrowDown')
+    // Focus scrolls the page back up to the button. A popup closes on a scroll, so let that scroll land first,
+    // as it always has before a person's next key.
+    await more.focus(); await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))
+    await more.press('ArrowDown')
     await expect(page.getByRole('menuitem', { name: 'Clear usage…', exact: true })).toBeFocused()
     await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toHaveCount(0); await expect(more).toBeFocused()
     await clear(); await expect(page.getByRole('dialog', { name: 'Clear saved usage?', exact: true })).toBeVisible()

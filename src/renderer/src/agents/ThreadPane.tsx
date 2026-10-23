@@ -83,6 +83,21 @@ function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTML
 }
 
 /**
+ * The composer floats over the transcript's foot: the pane learns its height, so the transcript scrolls under it and
+ * keeps room to bring its last line clear of the card.
+ */
+function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>): void {
+  useLayoutEffect(() => {
+    const element = compose.current
+    const pane = element?.parentElement
+    if (!element || !pane || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => pane.style.setProperty('--thread-compose-measured', `${element.offsetHeight}px`))
+    observer.observe(element)
+    return () => { observer.disconnect(); pane.style.removeProperty('--thread-compose-measured') }
+  }, [compose])
+}
+
+/**
  * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
  * A plain question points at the composer; everything the provider structured is answered in place.
  */
@@ -176,6 +191,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
   const liftComposer = useComposerLift(greetingSlot, compose, row.thread.id)
+  useComposerFloat(compose)
   const submissions = useSubmissions(store)
   // The pane only needs to know whether a draft exists. Subscribing to its text
   // re-renders the transcript and header synchronously on every keystroke.

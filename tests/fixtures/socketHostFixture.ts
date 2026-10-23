@@ -6,6 +6,17 @@ import { afterEach, beforeEach } from 'vitest'
 import { startFixtureHeadlessHost as startHeadlessHost } from './desktopHostStack'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
+import { owlFeaturesForTrack } from '../../src/shared/owlFeatures'
+import { getReleaseTrack } from '../../src/shared/releaseTrack'
+import { version as packageVersion } from '../../package.json'
+
+/**
+ * What a desktop of the fixture host's own version holds: the host runs the source version, and so does this desktop. A
+ * client built without a held set holds Muse and OpenCode, as a desktop before 0.1.40 does, and refuses a command that
+ * may name one of them. The fakes all share their native IDs, so an unscoped one names a Muse project as well.
+ */
+export const SAME_VERSION_HELD = heldProvidersOf(owlFeaturesForTrack(getReleaseTrack(packageVersion)))
 
 export function useSocketHostFixture() {
   let root: string
@@ -29,7 +40,7 @@ export function useSocketHostFixture() {
 
   async function pair(name = 'Socket test', onPushError?: (message: string) => void) {
     const result = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, name)
-    const client = new SocketHostService({ url, token: result.token, expectedHostId: result.hostId, ...(onPushError ? { onPushError } : {}) }); clients.push(client)
+    const client = new SocketHostService({ url, token: result.token, expectedHostId: result.hostId, heldProviders: SAME_VERSION_HELD, ...(onPushError ? { onPushError } : {}) }); clients.push(client)
     await client.connect(); return { client, result }
   }
 

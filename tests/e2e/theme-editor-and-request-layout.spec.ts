@@ -410,7 +410,7 @@ test('the composer beside a pending permission says to allow or deny once, throu
       const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
       const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
       for (const title of ['Footer links', 'Weekly note', 'Visual gate flake']) {
-        await sidebar.getByRole('button', { name: title, exact: true }).hover()
+        await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
         await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
       }
       await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(4)

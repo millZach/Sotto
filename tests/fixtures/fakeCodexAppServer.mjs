@@ -386,6 +386,12 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     save()
     const settings = { model: thread.model, effort: thread.reasoningEffort, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
       sandboxPolicy: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } }
+    if (script.stopBeforeSettingsConfirmation) {
+      // Acknowledge the change, then stop before confirming it: the confirmation is lost without waiting out a deadline.
+      delete script.stopBeforeSettingsConfirmation; writeFileSync(file('script.json'), JSON.stringify(script))
+      process.stdout.write(JSON.stringify({ id, result: {} }) + '\n', () => process.exit(0))
+      return
+    }
     if (!script.dropSettingsNotification) {
       const changed = () => notify('thread/settings/updated', { threadId: thread.id, threadSettings: settings })
       if (script.settingsNotificationDelay) setTimeout(changed, script.settingsNotificationDelay)

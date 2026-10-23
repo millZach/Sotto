@@ -24,7 +24,7 @@ const withTools = (f: Fixture): Fixture => { f.host.useBrowserTools(browser()); 
 async function setUp(script?: Record<string, unknown>) {
   // The adapter's own read pace: a send that finds no sign of its prompt reads the replay again every second and a half
   // until its deadline. A configured pace replaces that cadence, and a long one left a send a single read (#1086).
-  const f = withTools(await devinFixture(undefined, 5000, undefined, {}, new Map(), { productionPace: true }))
+  const f = withTools(await devinFixture(undefined, undefined, undefined, {}, new Map(), { productionPace: true }))
   cleanup.push(() => f.cleanup())
   if (script) await f.script(script)
   expect((await f.host.connect()).connected).toBe(true)
@@ -72,7 +72,7 @@ describe('Devin thread tools', () => {
   })
 
   it.each(['3000.10.31', '3000.11.3'])('refuses a thread on a Devin replaced by %s after connecting, before any session is given Sotto’s servers', async version => {
-    const f = withTools(await devinFixture(undefined, 5000, undefined, {}, new Map(), { productionPace: true }))
+    const f = withTools(await devinFixture(undefined, undefined, undefined, {}, new Map(), { productionPace: true }))
     cleanup.push(() => f.cleanup())
     expect((await f.host.connect()).connected).toBe(true)
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })

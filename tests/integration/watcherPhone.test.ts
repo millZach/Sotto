@@ -10,7 +10,7 @@ import { UsageService } from '../../src/main/agents/usageService'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
-import { watcherPhoneResultSchema, watcherPhoneSendResultSchema } from '../../src/shared/watcherPhone'
+import { watcherPhoneResultSchema, watcherPhoneSendResultSchema, watcherPhoneStateSchema } from '../../src/shared/watcherPhone'
 import { hostReceiptSchema } from '../../src/shared/hostProtocol'
 import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -860,4 +860,44 @@ it('sends the machines line only to a phone that accepts it, where Work across m
   expect(fresh.state.machines?.rows).toEqual([expect.objectContaining({ name: 'This computer', cpuState: 'busy', memoryState: 'enough', system: 'Omarchy (Linux)',
     logicalCpuCount: 24, cpuBusyPercent: 93, windowMs: 2_000, availableMemoryBytes: 41 * GIB, totalMemoryBytes: 64 * GIB, isDefault: true, unknownWhy: null, threads: [] })])
   expect(watcherPhoneResultSchema.parse((await phone.call('again', { op: 'watcher-phone-read' })).result)).toMatchObject({ state: { machines: { readAt: fresh.state.machines!.readAt } } })
+})
+
+it('pushes a phone no shell whose only news is when Watcher\'s page was read, and pushes the next change whole', async () => {
+  const f = await fixture(), peer = await f.pair()
+  type Pushed = { state: { watcher?: { observedAt: string }; clientCapabilities?: { mayAnswer: boolean } } }
+  const shells = () => peer.messages.filter(message => message.event === 'shell') as unknown as Pushed[]
+  // A publish reads the shell once, as it sends, so a read means the listener has handled it.
+  const reads = vi.spyOn(f.service, 'shell')
+  // Each publish reads Watcher's page a second later, as a phone's publishes come while the computer works.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+  try {
+    const publish = async () => {
+      const before = reads.mock.calls.length
+      vi.setSystemTime(Date.now() + 1_000)
+      await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+      await expect.poll(() => reads.mock.calls.length).toBeGreaterThan(before)
+    }
+    // An answer to a request made after a publish comes behind any shell that publish wrote, on the same socket. This read
+    // moves nothing the listener remembers for the phone, so a shell missing once it is answered was never written.
+    let asked = 0
+    const received = () => peer.call(`after-${++asked}`, { op: 'events', afterSeq: 0, threadId: f.target.threadId })
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(1)
+    await publish(); await publish(); await received()
+    expect(shells()).toHaveLength(1)
+    // The phone may answer now: its shell says so, with the page as read then.
+    f.canAnswer(true)
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(2)
+    const [first, second] = shells()
+    expect(second!.state.clientCapabilities).toEqual({ mayAnswer: true })
+    expect(() => watcherPhoneStateSchema.parse(second!.state.watcher)).not.toThrow()
+    expect(Date.parse(second!.state.watcher!.observedAt)).toBeGreaterThan(Date.parse(first!.state.watcher!.observedAt))
+    // A page the phone was answered with replaces the one its last shell carried, so the next shell goes though it repeats.
+    expect(await peer.call('read', { op: 'watcher-phone-read' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(3)
+    await publish(); await received()
+    expect(shells()).toHaveLength(3)
+  } finally { vi.useRealTimers() }
 })

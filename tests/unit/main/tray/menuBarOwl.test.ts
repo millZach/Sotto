@@ -78,11 +78,12 @@ function setup(options: { settings?: Partial<MenuBarOwlSettings>; systemReduced?
 }
 
 describe('the menu bar owl is wanted', () => {
-  it('on a Mac in an Owl build, and nowhere else', () => {
+  it('on a Mac whose build has the feature on, and nowhere else', () => {
     const owlBuild = owlFeaturesForTrack('owl')
-    const stable = owlFeaturesForTrack('stable')
+    const held = { ...owlBuild, 'menu-bar-owl': false }
     expect(menuBarOwlWanted('darwin', owlBuild, false)).toBe(true)
-    expect(menuBarOwlWanted('darwin', stable, false)).toBe(false)
+    expect(menuBarOwlWanted('darwin', owlFeaturesForTrack('stable'), false)).toBe(true)
+    expect(menuBarOwlWanted('darwin', held, false)).toBe(false)
     expect(menuBarOwlWanted('win32', owlBuild, false)).toBe(false)
     expect(menuBarOwlWanted('linux', owlBuild, false)).toBe(false)
     expect(menuBarOwlWanted('darwin', owlBuild, true)).toBe(false)

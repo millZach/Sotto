@@ -15,6 +15,7 @@ import {
   type DictationShortcutsResult,
   type HotkeyChangeResult,
   type OpenRouterKeyCheck,
+  type OpenRouterModelList,
   type StartupState,
   type UpdateStatus,
 } from '../../../../shared/contracts'
@@ -39,6 +40,7 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
+import { NightFallsSettings } from './NightFallsSettings'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -46,6 +48,7 @@ import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModel
 import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
+import { CleanupModelFields } from '../../components/CleanupModelFields'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
@@ -91,6 +94,8 @@ export interface SettingsViewProps {
   readonly onResetSettings: () => Promise<boolean>
   readonly onClearHistory: () => Promise<boolean>
   readonly onCheckOpenRouterKey: () => Promise<OpenRouterKeyCheck>
+  /** Owl `cleanup-model`: OpenRouter's text models for the cleanup model picker. */
+  readonly onListOpenRouterModels: () => Promise<OpenRouterModelList>
   /** Where the speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
   /** Starts the speech model download, or retries one that failed. */
@@ -203,6 +208,7 @@ export function SettingsView({
   onResetSettings,
   onClearHistory,
   onCheckOpenRouterKey,
+  onListOpenRouterModels,
   speechModel,
   onDownloadSpeechModel,
   speechModels = null,
@@ -427,8 +433,11 @@ export function SettingsView({
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
+  const nightFallsOn = useOwlFeature('night-falls') && watcherOn
+  const creatureToggle = useOwlFeature('creature-toggle')
+  const cleanupModelOn = useOwlFeature('cleanup-model')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, notifications: notificationsShown }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -641,6 +650,7 @@ export function SettingsView({
                 <div className="settings-rows">
                   <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript." />
                   <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
+                  {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels} /> : null}
                   <div className="settings-input-action">
                     <Field label="Personal dictionary" description={`One word or name per line, so AI cleanup spells them your way.${llmDictionaryDraft.value.length >= 4000 ? ' 4,000 characters maximum.' : ''}`}>
                       <textarea className="tt-input" rows={5} maxLength={4000} value={llmDictionaryDraft.value} onPaste={(event) => {
@@ -718,6 +728,7 @@ export function SettingsView({
               <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}>
                 <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current}>
                   <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
+                  {nightFallsOn ? <NightFallsSettings settings={settings} onSave={save} /> : null}
                 </AppearanceSettings>
               </div>
 

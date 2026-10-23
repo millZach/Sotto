@@ -24,7 +24,7 @@ import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 import { version as packageVersion } from '../../package.json'
 import { getReleaseTrack } from '../shared/releaseTrack'
-import { owlFeaturesForTrack } from '../shared/owlFeatures'
+import { owlFeaturesForTrack, type OwlFeatureStates } from '../shared/owlFeatures'
 import { heldProvidersOf } from '../shared/heldProviders'
 import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
@@ -48,6 +48,11 @@ export interface HeadlessHostOptions {
   signInCommand?: ProviderSignInOptions['command']
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
   sottoVersion?: string
+  /**
+   * Tests stand in for a host whose version still holds a feature, as hosts before 0.1.40 do: these answers are laid over
+   * its version's. A host reads its own version's answers; the command line never passes this.
+   */
+  owlFeatures?: Partial<OwlFeatureStates>
   /** Tests stand in for the registry, the installers and where each client is; the host finds and runs the real ones. */
   clients?: AgentRuntimeOptions['clients']
   locateClient?: AgentRuntimeOptions['locateClient']
@@ -99,7 +104,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // Headless hosts enforce admitted workers on either release track; they never create a master.
   const watcherEnabled = true
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
-  const owlFeatures = owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion))
+  const owlFeatures: OwlFeatureStates = { ...owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion)), ...options.owlFeatures }
   const usageEnabled = owlFeatures.usage
   // Its Owl answers, and every provider hosts do not take yet (none since #1107 added OpenCode to HOST_PROVIDERS).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
