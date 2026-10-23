@@ -172,6 +172,18 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(git(machines.forge, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads')).toBe(`refs/heads/main ${main}`)
   })
 
+  it('never writes through or removes a symbolic ref in the outgoing ref’s place', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), moveId = randomUUID()
+    const main = git(machines.laptop, 'rev-parse', 'main'), ref = `refs/sotto/outgoing/${moveId}`
+    git(machines.laptop, 'symbolic-ref', ref, 'refs/heads/main')
+    expect(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+      .toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.failed })
+    expect(git(machines.laptop, 'rev-parse', 'refs/heads/main')).toBe(main)
+    expect(git(machines.laptop, 'symbolic-ref', ref)).toBe('refs/heads/main')
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+  })
+
   it('refuses a bundle over the cap on both sides, in plain words, and keeps nothing staged', async () => {
     git(machines.laptop, 'switch', '-q', '-c', 'big')
     const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(64 * 1024))

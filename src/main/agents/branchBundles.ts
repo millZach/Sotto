@@ -184,12 +184,17 @@ export class BranchBundles {
       if (bases.length > 0 && (await this.git(input.repository, ['rev-list', '--count', input.commit, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n')).trim() === '0') {
         return { type: 'present' }
       }
-      await this.withOutgoingRef(input.moveId, async ref => {
-        await this.git(input.repository, ['update-ref', ref, input.commit], undefined, 30_000)
+      const written = await this.withOutgoingRef(input.moveId, async ref => {
+        // A symbolic ref already in the outgoing ref's place is never written through or removed: pointing it, or deleting
+        // it, would move or delete the branch it names. Both writes use `--no-deref` so only the ref itself is touched.
+        if (await this.symbolic(input.repository, ref)) return false
+        await this.git(input.repository, ['update-ref', '--no-deref', ref, input.commit], undefined, 30_000)
         try {
           await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 600_000)
-        } finally { await this.git(input.repository, ['update-ref', '-d', ref], undefined, 30_000).catch(() => undefined) }
+        } finally { await this.git(input.repository, ['update-ref', '--no-deref', '-d', ref], undefined, 30_000).catch(() => undefined) }
+        return true
       })
+      if (!written) return branchMoveRefusal('failed', branchMoveWords.failed)
       const { size } = await stat(path)
       if (size > this.maxBytes) { await unlink(path).catch(() => undefined); return branchMoveRefusal('too-large', branchMoveWords.tooLarge(size, this.maxBytes)) }
       return { type: 'sending', path, size, sha256: await fileDigest(path) }
