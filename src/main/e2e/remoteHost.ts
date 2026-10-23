@@ -27,6 +27,7 @@ declare global { var sottoRemoteHostE2E: RemoteHostE2E | undefined }
 export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: RetainedDraftStore, watcherEnabled = false,
   heldProviders?: HeldProviders, crossMachineEnabled = false): RemoteHostE2E {
   const sockets = new Map<string, SocketHostService>()
+  const connections = new Map<string, { up: boolean }>()
   const gates = new Map<string, { wait: Promise<void>; release: () => void; reads: number; completed: number; completedIdle: number }>()
   const harness: RemoteHostE2E = {
     async connect(input) {
@@ -34,9 +35,9 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('The remote host test requires a loopback listener.')
       if (sockets.has(input.hostId)) throw new Error('The remote host test is already connected.')
       // Whether the socket is up, as the real launcher tells the router (`available`), so a dropped host reads as away.
-      let up = false
+      const state = { up: false }
       const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, crossMachineEnabled, ...(heldProviders ? { heldProviders } : {}),
-        onConnectionChange: value => { up = value } })
+        onConnectionChange: value => { state.up = value } })
       try {
         const hello = await socket.connect()
         let release = (): void => {}
@@ -53,15 +54,20 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
             if (idle) gate.completedIdle++
           },
           detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request),
-          observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => up,
+          observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => state.up,
           // A thread's Agents, read on the host as the real launcher's connection reads them.
           subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
           activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
         })
         sockets.set(hello.hostId, socket)
+        connections.set(hello.hostId, state)
       } catch (error) { await socket.close(); throw error }
     },
     async disconnect(hostId, keepThreads = false) {
+      // Down before the router hears of it, as a dropped socket is: a close this harness makes may tell the socket nothing.
+      const state = connections.get(hostId)
+      connections.delete(hostId)
+      if (state) state.up = false
       const socket = sockets.get(hostId)
       sockets.delete(hostId)
       gates.get(hostId)?.release()
