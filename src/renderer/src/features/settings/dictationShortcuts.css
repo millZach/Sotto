@@ -46,6 +46,8 @@
 .settings-rows :is(.dictation-shortcuts__chip, .dictation-shortcuts__recording) { border-color: transparent; background: var(--tt-card-inset); }
 .dictation-shortcuts__chip:hover { border-color: var(--tt-text-muted); }
 .dictation-shortcuts__recording { border-color: var(--tt-accent); padding-left: 10px; }
+/* On a card the recorder keeps its accent edge while it listens; the card rule above would otherwise hide it. */
+.settings-rows .dictation-shortcuts__recording { border-color: var(--tt-accent); }
 .dictation-shortcuts__prompt { color: var(--tt-text-muted); font-size: 12.5px; }
 
 .dictation-shortcuts__icon,

@@ -176,6 +176,11 @@
 .settings-view .providers-list__select small { grid-area: status; min-width: 0; }
 /* The toggle's words are hidden here, so it is only its 36 pixel track, the width the name's line keeps free for it. */
 .settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; grid-template-columns: 36px; gap: 0; margin: 13px 12px 0 0; padding: 0; }
+/* Four cards need about 760 pixels of form, which a window between 900 and 1100 wide does not leave beside the
+   Settings sidebar, so the list counts its columns from its own width: two below that, one below 380. */
+.settings-view .providers-settings { container: providers / inline-size; }
+@container providers (width < 760px) { .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+@container providers (width < 380px) { .settings-view .providers-list { grid-template-columns: minmax(0, 1fr); } }
 /* The selected provider's detail is a card of its own under them. */
 .settings-view .provider-detail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .settings-view .provider-detail__header { padding: 18px 0 14px; }
