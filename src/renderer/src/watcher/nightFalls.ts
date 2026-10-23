@@ -38,6 +38,15 @@ export function frontEdge(u: number, width: number, rows: number, forward: boole
   return Array.from({ length: rows }, (_, row) => Math.round(x + ((hash(row, 7, 11) % 3) - 1) * CELL_W))
 }
 
+/** The time (0..1 of the run) at which the front reaches `x`, so the owl can leave and land with it. */
+export function frontTimeAt(x: number, width: number, forward: boolean): number {
+  const travel = width + BAND * 2
+  const u = Math.min(1, Math.max(0, forward ? (x + BAND) / travel : (width + BAND - x) / travel))
+  let lo = 0, hi = 1
+  for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (easeInOut(mid) < u) lo = mid; else hi = mid }
+  return (lo + hi) / 2
+}
+
 /** The clip that shows the opened page behind the front: everything the front has passed. */
 export function revealPolygon(u: number, width: number, height: number, forward: boolean): string {
   const rows = Math.ceil(height / CELL_H)
@@ -117,9 +126,19 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   root.dataset.roomTransition = options.forward ? 'in' : 'out'
   root.style.setProperty('--room-transition-ms', `${duration}ms`)
 
+  const owlSelector = ':is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room="watcher"]'
+  const centre = (): number | null => { const owl = document.querySelector(owlSelector)?.getBoundingClientRect(); return owl && owl.width > 0 ? owl.left + owl.width / 2 : null }
+  const from = centre()
   const transition = document.startViewTransition(() => {
     flushSync(update)
     document.body.append(canvas)
+    // The owl leaves when the band reaches it and lands when the band reaches its new place.
+    const to = centre()
+    if (from !== null && to !== null) {
+      const start = frontTimeAt(from, width, options.forward), end = Math.max(start + 0.05, frontTimeAt(to, width, options.forward))
+      root.style.setProperty('--room-owl-delay', `${Math.round(start * duration)}ms`)
+      root.style.setProperty('--room-owl-ms', `${Math.round((end - start) * duration)}ms`)
+    }
   })
   running = transition
   let frame = 0
@@ -130,6 +149,8 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
       running = null
       delete root.dataset.roomTransition
       root.style.removeProperty('--room-transition-ms')
+      root.style.removeProperty('--room-owl-delay')
+      root.style.removeProperty('--room-owl-ms')
     }
   }
   transition.ready.then(() => {

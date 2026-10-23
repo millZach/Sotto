@@ -2,7 +2,7 @@
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { frontEdge, NIGHT_FALLS_MS, nightFallsAvailable, playNightFalls, revealPolygon } from '../../../src/renderer/src/watcher/nightFalls'
+import { frontEdge, frontTimeAt, NIGHT_FALLS_MS, nightFallsAvailable, playNightFalls, revealPolygon } from '../../../src/renderer/src/watcher/nightFalls'
 import { NightFallsSettings, speedLabel } from '../../../src/renderer/src/features/settings/NightFallsSettings'
 
 type StartViewTransition = (update: () => void) => ViewTransition
@@ -36,6 +36,12 @@ describe('the night falls front', () => {
     for (const x of frontEdge(1, 1280, 10, true)) expect(x).toBeGreaterThan(1280)
     for (const x of frontEdge(0, 1280, 10, false)) expect(x).toBeGreaterThan(1280)
     for (const x of frontEdge(1, 1280, 10, false)) expect(x).toBeLessThan(0)
+  })
+
+  it('reaches a point later the further along the way it is, in either direction', () => {
+    expect(frontTimeAt(40, 1280, true)).toBeLessThan(frontTimeAt(560, 1280, true))
+    expect(frontTimeAt(560, 1280, false)).toBeLessThan(frontTimeAt(40, 1280, false))
+    expect(frontTimeAt(-500, 1280, true)).toBe(0)
   })
 
   it('is ragged by at most one cell and the same on every run', () => {
