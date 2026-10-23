@@ -1401,6 +1401,91 @@ it('starts Watcher’s news afresh after a restart: wake-ups an earlier build sa
   void started
 }, 40_000)
 
+it('reads Watcher’s turn from one copy of its thread, and records it once that copy holds it (#1249)', async () => {
+  const f = await fixture()
+  const live = f.control.watcherSnapshot(), latest = f.control.watcherRecord().promptTurns!.at(-1)!
+  // A turn of Watcher's the record has not named yet, in the snapshot the pass is handed.
+  const turnId = randomUUID()
+  const turned = { ...live, threads: live.threads.map(thread => thread.id === f.id ? { ...thread, status: 'running' as const, lastTurn: { id: turnId, status: 'running' as const } } : thread) }
+  // The coordinator's own copy does not hold Watcher's thread for the moment: the pass refuses nothing and records nothing.
+  const elsewhere = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...live, threads: live.threads.filter(thread => thread.id !== f.id) })
+  try { expect(() => f.service.observe(turned, new Set())).not.toThrow() } finally { elsewhere.mockRestore() }
+  expect(f.control.watcherRecord().promptTurns!.find(turn => turn.id === latest.id)!.nativeTurnId).not.toBe(turnId)
+  // Once it holds the thread again, the next pass records the turn.
+  const held = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue(turned)
+  try { f.service.observe(turned, new Set()) } finally { held.mockRestore() }
+  expect(f.control.watcherRecord().promptTurns!.find(turn => turn.id === latest.id)!.nativeTurnId).toBe(turnId)
+})
+
+it('waits while this computer has no host ID, refusing nothing, and does what it waited on once the ID is back (#1129)', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const worker = started.target.threadId, watch = () => f.control.watcherRecord().watches!.find(item => item.target.threadId === worker)!
+  expect(f.service.watchedThreadIds()).toContain(worker)
+  const rooms: unknown[] = [], unsubscribe = f.service.subscribe(room => rooms.push(room))
+  const observed = vi.spyOn(f.workspace.host, 'observeThreads')
+  // Registered after Watcher's own listener, so each broadcast it counts has already reached Watcher's.
+  let broadcasts = 0
+  const counting = f.control.subscribe(() => { broadcasts++ })
+  // The coordinator as it is while Sotto starts: no host ID, and a snapshot that names none.
+  const live = f.control.watcherSnapshot(), userMessageId = randomUUID()
+  const noHost = vi.spyOn(f.control, 'hostId').mockReturnValue(undefined)
+  const noSnapshotHost = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...live, hostId: undefined })
+  try {
+    // What the snapshot subscriber, the coordinator's observe and the news timers ask of Watcher.
+    expect(() => f.service.observe({ ...live, hostId: undefined }, new Set())).not.toThrow()
+    expect(f.service.watchedThreadIds()).toEqual([])
+    expect(() => f.control.refreshWatcherObservation()).not.toThrow()
+    expect(f.service.phoneSnapshot().threads.some(thread => thread.id === worker)).toBe(true)
+    // The user writes in the watched thread meanwhile, and the coordinator takes the snapshot and publishes it.
+    const native = f.native(worker)
+    native.messages.push({ id: userMessageId, role: 'user', text: 'Synthetic native user prompt', createdAt: new Date().toISOString() })
+    native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+    f.workspace.adapters.codex.emit()
+    const before = broadcasts
+    expect((await f.control.commandShell({ type: 'refresh', provider: 'codex' })).error).toBeNull()
+    await vi.waitFor(() => expect(broadcasts).toBeGreaterThan(before))
+    // Watcher heard both and waited: no room yet, and the user's message is not yet a takeover.
+    expect(rooms).toHaveLength(0)
+    expect(watch()).toMatchObject({ pausedByUserMessageId: null })
+    expect(watch().lastUserMessageId).not.toBe(userMessageId)
+  } finally { noHost.mockRestore(); noSnapshotHost.mockRestore(); counting() }
+  const calls = observed.mock.calls.length
+  // The ID is back: the next snapshot's pass pauses the watch for the user's message, the room hears it, and the
+  // watched thread is observed again.
+  expect((await f.control.commandShell({ type: 'refresh', provider: 'codex' })).error).toBeNull()
+  expect(watch()).toMatchObject({ pausedByUserMessageId: userMessageId, lastUserMessageId: userMessageId })
+  await vi.waitFor(() => expect(rooms.length).toBeGreaterThan(0))
+  expect(f.service.watchedThreadIds()).toContain(worker)
+  expect(observed.mock.calls.slice(calls).some(([ids]) => ids.includes(worker))).toBe(true)
+  unsubscribe(); observed.mockRestore()
+})
+
+it('keeps Watcher’s waiting news queued and a stopped thread’s queue held while this computer has no host ID (#1129)', async () => {
+  const f = await fixture(), { started, hidden } = await heldQuestion(f)
+  const worker = started.target.threadId
+  // As while Sotto starts: no host ID, and a snapshot that names none.
+  const hostless = () => {
+    const live = f.control.watcherSnapshot()
+    const noHost = vi.spyOn(f.control, 'hostId').mockReturnValue(undefined)
+    const noSnapshotHost = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...live, hostId: undefined })
+    return () => { noHost.mockRestore(); noSnapshotHost.mockRestore() }
+  }
+  // The queue prunes Watcher's waiting news: nothing says it is out of date, so it stays.
+  const waiting = hidden().map(item => item.id)
+  expect(waiting).toHaveLength(1)
+  let restore = hostless()
+  try {
+    await expect(f.control.pruneWatcherWakeUps()).resolves.toBeUndefined()
+    expect(hidden().map(item => item.id)).toEqual(waiting)
+  } finally { restore() }
+  // The queue asks whether Watcher's Stop holds the thread: it still does.
+  expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target })).toMatchObject({ status: 'ok' })
+  await vi.waitFor(() => expect(f.service.preserveUserQueue(worker)).toBe(true))
+  restore = hostless()
+  try { expect(f.service.preserveUserQueue(worker)).toBe(true) } finally { restore() }
+})
+
 it('rechecks answered news after checkpoint preparation and before the provider writer', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
