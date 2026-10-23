@@ -10,6 +10,7 @@ import { WatcherEvidenceStore } from '../../src/main/agents/watcherEvidence'
 import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { watcherTurnOutcome } from '../../src/main/agents/watcherOutcomes'
+import type { AgentThread } from '../../src/shared/agents'
 import type { WatcherOperation } from '../../src/shared/watcher'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -48,10 +49,15 @@ async function worker(provider: keyof typeof providers, script?: Record<string, 
     await expect.poll(async () => (await thread()).messages.some(message => message.role === 'user' && message.id === messageId)).toBe(true)
     return { messageId, delivery }
   }
-  const outcome = async (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>) => watcherTurnOutcome(operation, await thread(), messageId => watcherMessages.has(messageId))
-  const replyText = async (messageId: string | undefined) => (await thread()).messages.find(message => message.id === messageId)?.text
+  const outcomeIn = (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>, current: AgentThread) => watcherTurnOutcome(operation, current, messageId => watcherMessages.has(messageId))
+  const outcome = async (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>) => outcomeIn(operation, await thread())
+  // The words of the reply a brief's outcome names, read from the same snapshot as the outcome.
+  const reply = async (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>) => {
+    const current = await thread(), replyMessageId = outcomeIn(operation, current)?.replyMessageId
+    return replyMessageId === undefined ? undefined : current.messages.find(message => message.id === replyMessageId)?.text
+  }
   const idle = async () => { await expect.poll(async () => (await thread()).status).toBe('idle') }
-  return { f, id, thread, brief, outcome, replyText, idle }
+  return { f, id, thread, brief, outcome, reply, idle }
 }
 
 describe.each(['claude', 'codex'] as const)('%s', provider => {
@@ -62,7 +68,7 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic worker reply')
     await w.idle()
     await expect.poll(() => w.outcome(start)).toMatchObject({ outcome: 'answered', turnMessageId: start.messageId, replyMessageId: expect.any(String) })
-    expect(await w.replyText((await w.outcome(start))?.replyMessageId)).toBe('Synthetic worker reply')
+    expect(await w.reply(start)).toBe('Synthetic worker reply')
   })
 
   it('folds a steer into the turn it was read into, sharing that turn\'s answer', async () => {
@@ -80,7 +86,7 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.idle()
     await expect.poll(() => w.outcome(first)).toMatchObject({ outcome: 'answered' })
     // The reply can land after the outcome reads answered, so it is waited for like the outcome.
-    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic answer to both')
+    await expect.poll(() => w.reply(first)).toBe('Synthetic answer to both')
     expect(await w.outcome(steer)).toEqual(await w.outcome(first))
   })
 
@@ -94,8 +100,8 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
     await w.idle()
     await expect.poll(() => w.outcome(queued)).toMatchObject({ outcome: 'answered', turnMessageId: queued.messageId })
-    await expect.poll(async () => w.replyText((await w.outcome(queued))?.replyMessageId)).toBe('Synthetic second answer')
-    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic first answer')
+    await expect.poll(() => w.reply(queued)).toBe('Synthetic second answer')
+    await expect.poll(() => w.reply(first)).toBe('Synthetic first answer')
     const own = await w.outcome(queued), earlier = await w.outcome(first)
     expect(earlier).toMatchObject({ outcome: 'answered', turnMessageId: first.messageId })
     expect(own?.replyMessageId).not.toBe(earlier?.replyMessageId)
@@ -203,7 +209,7 @@ describe('claude', () => {
     await w.f.driver.completeTurn(w.id, 'Synthetic answer after the cut')
     await w.idle()
     await expect.poll(() => w.outcome(first)).toMatchObject({ outcome: 'answered', turnMessageId: steer.messageId })
-    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic answer after the cut')
+    await expect.poll(() => w.reply(first)).toBe('Synthetic answer after the cut')
     expect(await w.outcome(steer)).toEqual(await w.outcome(first))
   })
 
@@ -218,8 +224,8 @@ describe('claude', () => {
     await w.idle()
     await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'answered', turnMessageId: steer.messageId })
     // The first turn's reply can land after the steer's outcome does (#1113), so each reply is waited for.
-    await expect.poll(async () => w.replyText((await w.outcome(steer))?.replyMessageId)).toBe('Synthetic second answer')
-    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic first answer')
+    await expect.poll(() => w.reply(steer)).toBe('Synthetic second answer')
+    await expect.poll(() => w.reply(first)).toBe('Synthetic first answer')
   })
 
   it('pauses a brief whose turn the user cut with a steer of their own', async () => {
