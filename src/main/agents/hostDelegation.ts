@@ -15,11 +15,14 @@ const keptSchema = z.object({
   clientId: z.string().min(1).max(512),
   newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
   workerRoles: z.unknown().optional(),
+  /** When they came, by this host's clock: returned in the receipt and never used to order them, as a clock can move back. */
   receivedAt: z.iso.datetime(),
+  /** The order they came in: one more than the newest kept when they were received. The last sent is the highest. */
+  sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 }).strict()
 const fileSchema = z.object({ version: z.literal(1), desktops: z.array(keptSchema).max(512) }).strict()
 type DesktopDefaultsFile = z.infer<typeof fileSchema>
-interface Kept extends DesktopDefaults { readonly clientId: string; readonly receivedAt: string }
+interface Kept extends DesktopDefaults { readonly clientId: string; readonly receivedAt: string; readonly sequence: number }
 /** How many desktops' defaults a host keeps; the oldest beyond it are dropped. A forgotten desktop's stop counting anyway. */
 export const KEPT_DESKTOP_DEFAULTS = 16
 /** Whether a desktop's defaults count on this host now: it is still paired here and may answer permission requests here. */
@@ -27,7 +30,7 @@ export type DesktopCounts = (clientId: string) => boolean
 
 /**
  * The desktop defaults a headless host keeps (#1310): the new-thread default and worker roles each desktop last sent, with
- * its client ID and when they came, in `desktop-defaults.json` beside the host's other records. Settings, not a key:
+ * its client ID, when they came and the order they came in, in `desktop-defaults.json` beside the host's other records. Settings, not a key:
  * nothing here is secret and nothing here grants anything. Kept across restarts, so a host a desktop has told keeps to
  * them while the desktop is away.
  *
@@ -54,9 +57,10 @@ export class DesktopDefaultsStore {
   async load(): Promise<void> {
     return this.serialized(async () => {
       const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
-      this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, newThreadRuntimeMode: saved.newThreadRuntimeMode,
+      // Newest first by the order they came in, never by the clock, so the last sent stays the last after a restart.
+      this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, sequence: saved.sequence, newThreadRuntimeMode: saved.newThreadRuntimeMode,
         ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
-        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(0, KEPT_DESKTOP_DEFAULTS)
+        .sort((a, b) => b.sequence - a.sequence).slice(0, KEPT_DESKTOP_DEFAULTS)
     })
   }
   /**
@@ -66,10 +70,11 @@ export class DesktopDefaultsStore {
   async record(clientId: string, input: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     const defaults = readDesktopDefaults(input)
     return this.serialized(async () => {
-      const receivedAt = this.now().toISOString()
-      const next = [{ clientId, receivedAt, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
+      // The newest kept is first and is never dropped, so the next number is always above every number on record.
+      const receivedAt = this.now().toISOString(), sequence = (this.kept[0]?.sequence ?? 0) + 1
+      const next = [{ clientId, receivedAt, sequence, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
       await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
-        ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt })) })
+        ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt, sequence: item.sequence })) })
       this.kept = next
       return { receivedAt }
     })
