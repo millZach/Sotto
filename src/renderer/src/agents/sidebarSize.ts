@@ -11,7 +11,8 @@ const MOST = 480
 export function defaultSidebarWidth(viewport: number): number {
   return Math.round(Math.max(MINIMUM, Math.min(280, viewport * 0.3)))
 }
-/** The default before ADR-0110, which Collapse and Reset wrote down as if the user had chosen it. */
+/** The default before ADR-0110, which Collapse and Reset wrote down as if the user had chosen it. A record from then
+    carries no `chosen` mark, so only an unmarked 320 is read as no choice; every width saved since is marked. */
 const OLD_DEFAULT = 320
 /** The last value this window saved for each key, and the keys whose last write storage refused. */
 const fallback = new Map<string, string>()
@@ -41,14 +42,14 @@ export function useSidebarSize(key: string = THREADS_SIDEBAR_KEY) {
   try {
     const value: unknown = JSON.parse(stored)
     if (value !== null && typeof value === 'object') {
-      if ('width' in value && typeof value.width === 'number' && Number.isFinite(value.width) && value.width !== OLD_DEFAULT) chosen = Math.min(MOST, Math.max(MINIMUM, value.width))
+      if ('width' in value && typeof value.width === 'number' && Number.isFinite(value.width) && ('chosen' in value || value.width !== OLD_DEFAULT)) chosen = Math.min(MOST, Math.max(MINIMUM, value.width))
       if ('collapsed' in value) collapsed = value.collapsed === true
     }
   } catch { /* An old or damaged preference starts at the default. */ }
   const preferred = chosen ?? defaultSidebarWidth(viewport)
   const maximum = Math.min(MOST, Math.max(MINIMUM, viewport - 470))
   const save = (width: number | null, hidden: boolean): void => {
-    const next = JSON.stringify(width === null ? { collapsed: hidden } : { width, collapsed: hidden })
+    const next = JSON.stringify(width === null ? { collapsed: hidden } : { width, chosen: true, collapsed: hidden })
     fallback.set(key, next)
     try { localStorage.setItem(key, next); unsaved.delete(key) } catch { unsaved.add(key) }
     window.dispatchEvent(new Event(CHANGED))

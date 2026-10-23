@@ -5,7 +5,7 @@ import { defaultSidebarWidth, useSidebarSize } from '../../../src/renderer/src/a
 
 function Probe() {
   const size = useSidebarSize()
-  return <><output>{size.width} {size.collapsed ? 'collapsed' : 'expanded'}</output><button onClick={() => size.resize(400)}>Resize</button><button onClick={() => size.collapse(true)}>Collapse</button><button onClick={size.reset}>Reset</button></>
+  return <><output>{size.width} {size.collapsed ? 'collapsed' : 'expanded'}</output><button onClick={() => size.resize(400)}>Resize</button><button onClick={() => size.resize(size.width + 10)}>Wider</button><button onClick={() => size.collapse(true)}>Collapse</button><button onClick={size.reset}>Reset</button></>
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 }) })
 
@@ -48,9 +48,24 @@ it('keeps a width the user dragged, and reads the old 320 default as no choice a
   render(<Probe />)
   expect(screen.getByRole('status')).toHaveTextContent('300 expanded')
   fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
-  expect(JSON.parse(localStorage.getItem('sotto.threadWorkspace.sidebar')!)).toEqual({ width: 300, collapsed: true })
+  expect(JSON.parse(localStorage.getItem('sotto.threadWorkspace.sidebar')!)).toEqual({ width: 300, chosen: true, collapsed: true })
   cleanup()
   localStorage.setItem('sotto.threadWorkspace.sidebar', JSON.stringify({ width: 320, collapsed: false }))
   render(<Probe />)
   expect(screen.getByRole('status')).toHaveTextContent('280 expanded')
+})
+
+it('keeps a width the user chooses now, 320 included, so the arrow keys walk past it', () => {
+  atWindowWidth(1280)
+  localStorage.clear()
+  render(<Probe />)
+  expect(screen.getByRole('status')).toHaveTextContent('280 expanded')
+  for (const width of [290, 300, 310, 320, 330]) {
+    fireEvent.click(screen.getByRole('button', { name: 'Wider' }))
+    expect(screen.getByRole('status')).toHaveTextContent(`${width} expanded`)
+  }
+  cleanup()
+  localStorage.setItem('sotto.threadWorkspace.sidebar', JSON.stringify({ width: 320, chosen: true, collapsed: false }))
+  render(<Probe />)
+  expect(screen.getByRole('status')).toHaveTextContent('320 expanded')
 })
