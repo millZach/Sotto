@@ -1585,6 +1585,58 @@ it('warns when starts the paired machine answered before its list holds them lea
   expect(await f.call('start_thread', held())).toMatchObject({ status: 'ok', warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
 })
 
+it('counts a started worker the paired machine lists by its own turn, so one finished and kept for its background work is not working (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const nine = Array.from({ length: 9 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
+  // The first worker's turn has finished on the paired machine; its background work keeps Watcher's hold on it.
+  const finished = { threadId: '' }
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => {
+    const snapshot = real(id)
+    return snapshot && id === hostId ? { ...snapshot, threads: [...snapshot.threads.map(thread => thread.id === finished.threadId ? { ...thread, status: 'idle' as const,
+      lastTurn: { id: 'synthetic-finished-turn', status: 'completed' as const }, backgroundWork: [{ id: randomUUID(), label: 'Synthetic background command', type: 'command' as const }] } : thread), ...nine] } : snapshot
+  })
+  const held = () => ({ ...f.start(), machine: hostId, title: 'Synthetic held worker' })
+  const first = await f.call('start_thread', held())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('first-start-refused')
+  expect(first).not.toHaveProperty('warning')
+  finished.threadId = first.target.threadId
+  await expect.poll(() => f.control.watcherRecord().reservations.some(item => item.target.threadId === first.target.threadId)).toBe(true)
+  // Nine working and the new start make ten: the finished worker is counted by its turn, not as a start.
+  const second = await f.call('start_thread', held())
+  expect(second).toMatchObject({ status: 'ok', target: { hostId } })
+  expect(second).not.toHaveProperty('warning')
+})
+
+it('does not count a start that never reached the paired machine among its working threads (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const nine = Array.from({ length: 9 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => {
+    const snapshot = real(id)
+    return snapshot && id === hostId ? { ...snapshot, threads: [...snapshot.threads, ...nine] } : snapshot
+  })
+  // The first start is lost on the way, before the host admits it, and its exact receipt cannot be read: it stays unconfirmed.
+  vi.spyOn(f.socket, 'watcherControl').mockRejectedValueOnce(new Error('synthetic-connection-lost'))
+  const reads = f.socket.watcherRead.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async request => {
+    if ((request as { call?: { name?: string } }).call?.name === 'read_operation') throw new Error('synthetic-connection-lost')
+    return reads(request)
+  })
+  const held = () => ({ ...f.start(), machine: hostId, title: 'Synthetic held worker' })
+  const lost = await f.call('start_thread', held())
+  expect(lost).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  const operationId = 'receipt' in lost ? lost.receipt?.operationId : undefined
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)?.deliveryState).toBe('uncertain')
+  // Nine working and the new start make ten: an unconfirmed delivery alone is not a working thread.
+  const next = await f.call('start_thread', held())
+  expect(next).toMatchObject({ status: 'ok', target: { hostId } })
+  expect(next).not.toHaveProperty('warning')
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)?.deliveryState).toBe('uncertain')
+})
+
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
