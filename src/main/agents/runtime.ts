@@ -247,15 +247,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const crossMachine = options.crossMachineEnabled === true
   // Starting a worker from a thread's branch (#1033) moves that branch first: only the desktop places starts, so only it
   // moves branches, asked once here with the Owl answer. Its own bundles wait in its data folder while they cross.
-  let watcher: WatcherService | undefined
+  // The mover reaches hosts through Watcher's view of them, which exists only once Watcher is made below.
+  const moving: { watcher?: WatcherService | undefined } = {}
   const branchMoves = desktopBranchMoves(crossMachine && options.runsAs !== 'headless-host', {
     bundles: new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }),
-    folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => watcher?.branchMoveHost(hostId),
-    hostName: hostId => watcher?.machineName(hostId) ?? 'That machine' })
+    folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
+    hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' })
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...branchMoves ? { branchMoves } : {} } : {}
-  watcher = options.watcherEnabled === true
+  const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},

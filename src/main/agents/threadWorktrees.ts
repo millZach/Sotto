@@ -19,9 +19,8 @@ const MOVED_BRANCH_SUFFIXES_MAX = 99
  */
 export async function movedBranchRef(projectPath: string, moveId: string, git: RunGit = runWorktreeGit): Promise<string> {
   if (!/^[0-9a-f-]{36}$/u.test(moveId)) throw new Error('That is not a branch Sotto moved here. Nothing was made.')
-  let refs: string[] = []
-  try { refs = (await git(await existingWorkingDirectory(projectPath), ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`])).split(/\r?\n/u).filter(Boolean) }
-  catch { refs = [] }
+  const refs = await existingWorkingDirectory(projectPath).then(folder => git(folder, ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`]))
+    .then(output => output.split(/\r?\n/u).filter(Boolean), () => [] as string[])
   if (refs.length !== 1 || !INCOMING_REF.test(refs[0]!)) throw new Error('The branch this worker starts from is not in this project. Start the worker again. Nothing was made.')
   return refs[0]!
 }
