@@ -49,17 +49,19 @@ export function workingThreadsByMachine(threads: readonly CountedOnMachine[]): R
 
 /**
  * The working threads in one machine's own list, as that machine's host gives it, so none of them is marked as another
- * computer's. `alsoWorking` counts a start whose first prompt is on its way, as `countWorkingThreads` does, and counts it
- * once more when the list does not hold it yet: a thread just started on another machine reaches this computer later.
+ * computer's. `alsoWorking` names the starts whose first prompt is on its way, counted as `countWorkingThreads` counts one,
+ * and each counted once more when the list does not hold it yet: a thread just started on another machine reaches this
+ * computer later, and several starts may be accepted before it does. None is counted twice.
  */
-export function countMachineWorkingThreads(threads: readonly Counted[], alsoWorking?: string): number {
-  let count = 0, seen = false
+export function countMachineWorkingThreads(threads: readonly Counted[], alsoWorking: ReadonlySet<string> = new Set()): number {
+  let count = 0, seen = 0
   for (const thread of threads) {
     if (!counts(thread)) continue
-    if (thread.id === alsoWorking) seen = true
-    if (thread.id === alsoWorking || isThreadTurnRunning(thread)) count++
+    const starting = alsoWorking.has(thread.id)
+    if (starting) seen++
+    if (starting || isThreadTurnRunning(thread)) count++
   }
-  return alsoWorking !== undefined && !seen ? count + 1 : count
+  return count + alsoWorking.size - seen
 }
 
 /**
