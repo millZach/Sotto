@@ -138,11 +138,14 @@ export class BranchBundles {
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
   }
 
-  /** The receiver's newest branch tips, which a sender bundles against so the bundle carries only what they lack. */
+  /**
+   * The receiver's newest tips, which a sender bundles against so the bundle carries only what they lack: its branches,
+   * its remote-tracking branches, and the incoming refs earlier moves left, so moving a branch again sends only what is new.
+   */
   async tips(repository: string): Promise<string[] | BranchMoveRefusal> {
     if (!await this.isRepository(repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
     try {
-      const output = await this.git(repository, ['for-each-ref', '--sort=-committerdate', `--count=${BRANCH_TIPS_MAX * 2}`, '--format=%(objectname)', 'refs/heads', 'refs/remotes'], undefined, 30_000)
+      const output = await this.git(repository, ['for-each-ref', '--sort=-committerdate', `--count=${BRANCH_TIPS_MAX * 2}`, '--format=%(objectname)', 'refs/heads', 'refs/remotes', 'refs/sotto/incoming'], undefined, 30_000)
       return [...new Set(output.split(/\r?\n/u).map(line => line.trim()).filter(line => commitIdSchema.safeParse(line).success))].slice(0, BRANCH_TIPS_MAX)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
   }

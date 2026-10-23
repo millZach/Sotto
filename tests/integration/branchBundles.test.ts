@@ -58,6 +58,25 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(git(join(machines.root, 'forge-login'), 'log', '-1', '--format=%H')).toBe(commit)
   })
 
+  it('counts what earlier moves left as the receiver’s, so moving a branch again carries only what is new', async () => {
+    const first = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const move = async (commit: string) => {
+      const moveId = randomUUID()
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] }))
+      const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+      const required = git(machines.forge, 'bundle', 'verify', prepared.path)
+      await carry(laptop, prepared, receiving)
+      expect(await forge.finish(receiving)).toMatchObject({ type: 'moved', commit })
+      return required
+    }
+    await move(first)
+    expect(await forge.tips(machines.forge)).toContain(first)
+    const second = await commitFile(machines.laptop, 'login.txt', 'form\nsubmit\nremember me\n')
+    // The second bundle needs the first move's commit, which forge has only in its incoming ref.
+    expect(await move(second)).toContain(first)
+  })
+
   it('moves the commit it checked even when the receiver already has it', async () => {
     const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
     const commit = git(machines.laptop, 'rev-parse', 'main'), moveId = randomUUID()
