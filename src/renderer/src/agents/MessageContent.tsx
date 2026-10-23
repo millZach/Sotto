@@ -12,6 +12,7 @@ import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
+import { useOwlFeature } from '../state/owlFeature'
 import './rich-messages.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
@@ -55,6 +56,39 @@ export function safeLinkUrl(raw: string | undefined): string | null {
   } catch { return null }
 }
 
+/**
+ * The path a link names when it is a file rather than a web page: a `file:` URL, an absolute path, a `~/` path or one
+ * relative to the thread's folder. Never a network share. Null otherwise. Main drops a trailing `:12` or `#L12` if the
+ * path as written is not found.
+ */
+export function localFilePath(raw: string | undefined): string | null {
+  let value = raw?.trim() ?? ''
+  if (!value || value.length > 4096 || value.startsWith('#')) return null
+  if (/^file:/iu.test(value)) {
+    try {
+      const url = new URL(value)
+      if (url.host && url.host !== 'localhost') return null
+      value = url.pathname
+      // file:///C:/Users becomes /C:/Users; Windows wants the drive first.
+      if (/^\/[a-z]:\//iu.test(value)) value = value.slice(1)
+    } catch { return null }
+  }
+  try { value = decodeURIComponent(value) } catch { /* Kept as written: a literal % in a file name. */ }
+  // A network share or device path (\\host, //host, \\?\) would reach the network.
+  if (/^[\\/]{2}/u.test(value)) return null
+  // Any other scheme (http:, javascript:, vscode:) is not a file here; a Windows drive letter is, and so is a file named
+  // `notes.md:12`, which main looks up as written first.
+  if (/^[a-z][a-z0-9+.-]*:(?!\d)/iu.test(value) && !/^[a-z]:[\\/]/iu.test(value)) return null
+  // eslint-disable-next-line no-control-regex -- File paths must reject NUL and control bytes.
+  return value && !/[\x00-\x1f\x7f]/u.test(value) && !/\p{Bidi_Control}/u.test(value) ? value : null
+}
+
+/** The file manager by its own name on each platform: File Explorer first, Finder on a Mac, the file manager on Linux. */
+const fileManager = (): string => {
+  const platform = (window.sotto as { platform?: string } | undefined)?.platform
+  return platform === 'darwin' ? 'Finder' : platform === 'linux' ? 'the file manager' : 'File Explorer'
+}
+
 function linkLabel(url: string): string {
   return url.startsWith('mailto:') ? url.slice('mailto:'.length).split('?')[0]! : new URL(url).host
 }
@@ -82,6 +116,8 @@ export function attachmentTypeLabel(mimeType: string | undefined): string | null
 interface LinkActions {
   readonly open: (url: string, destination?: WebLinkDestination) => void
   readonly menu: (url: string, anchor: HTMLElement, at: { x: number; y: number }) => void
+  /** Shows a linked file in its folder, when this message is in a thread that can. */
+  readonly reveal?: ((path: string) => void) | undefined
 }
 const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
 /** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
@@ -166,8 +202,13 @@ function DiagramBlock({ source, start, end }: { source: string; start: number | 
 }
 
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
-  const { open, menu } = useContext(LinkContext)
+  const { open, menu, reveal } = useContext(LinkContext)
   const url = safeLinkUrl(href)
+  const file = !url && reveal ? localFilePath(href) : null
+  // No href: a file path never becomes something the window could navigate to.
+  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={`Show in ${fileManager()}: ${file}`}
+    aria-label={`Show ${file} in ${fileManager()}`}
+    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</a>
   // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
   if (!url) return <span className="rich-link rich-link--inert" title={href ? `Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden"> (link not opened: not a web address)</span> : null}</span>
   return <a className="rich-link tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={title || url}
@@ -302,6 +343,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
   const [copyFeedback, showCopyFeedback] = useTransientFlag()
   const router = useWebLinkRouter()
+  const revealLinks = useOwlFeature('reveal-linked-files')
   const opener = useRef<(url: string, destination?: WebLinkDestination) => Promise<WebLinkResult> | WebLinkResult>(openWithBridge)
   opener.current = onOpenLink ?? ((url, destination) => router.open(url, destination))
   const context = useMemo<LinkActions>(() => ({
@@ -314,7 +356,13 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
       )
     },
     menu: (url, anchor, at) => setLinkMenu({ url, anchor, at }),
-  }), [])
+    // Showing linked files is an Owl feature (ADR-0120): while it is off a file link stays inert text, as before.
+    reveal: revealLinks && router.revealFile ? path => {
+      setFailedLink(null)
+      setLinkNotice(null)
+      void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice('Sotto could not show this file. Nothing was opened.'))
+    } : undefined,
+  }), [router, revealLinks])
   const menuItems = (url: string): LinkMenuItem[] => {
     const web = !url.startsWith('mailto:')
     return [

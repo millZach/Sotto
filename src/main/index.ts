@@ -1794,7 +1794,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers(), {
         list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request),
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
-      })
+      }, owlFeatures['reveal-linked-files'])
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
       const cleanupUsage = registerUsageIpc(ipcMain, { read: query => hostRouter.usageRead(query),
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
