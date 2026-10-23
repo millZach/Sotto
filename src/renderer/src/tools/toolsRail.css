@@ -133,8 +133,8 @@
 /* At the minimum desktop window, Tools and the conversation take the field together. Closing Tools restores
    project navigation; the selected thread and sidebar state stay mounted. */
 @media (max-width: 950px) {
-  .threads-view:has(.tools-panel) { grid-template-columns: minmax(0, 1fr); }
-  .threads-view:has(.tools-panel) > .thread-nav { display: none; }
+  .threads-view[data-tools] { grid-template-columns: minmax(0, 1fr); }
+  .threads-view[data-tools] > .thread-nav { display: none; }
 }
 
 /* Surfaces inside the panel: controls keep to the edges and the page, terminal and code get the field. */
