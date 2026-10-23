@@ -180,8 +180,9 @@ async function availableMemory(system: HostFactsSystem, family: HostOsFamily | n
   // Windows' free memory counts standby pages as available, which is what a new process could have.
   if (family === 'windows') return count(attempt(() => system.freemem()))
   if (family === 'linux') {
+    // Linux's free memory leaves out the cache it would give back, so without MemAvailable the honest answer is unknown.
     const meminfo = await readText(readFile, MEMINFO)
-    return (meminfo === null ? null : parseMemAvailable(meminfo)) ?? count(attempt(() => system.freemem()))
+    return meminfo === null ? null : parseMemAvailable(meminfo)
   }
   // macOS's free memory leaves out what the system would give back, so it understates; another system is not known.
   return null

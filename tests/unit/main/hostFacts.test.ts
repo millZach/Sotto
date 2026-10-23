@@ -198,7 +198,7 @@ describe('HostFactsSource', () => {
 
 describe('live load', () => {
   /** A machine whose CPU counters, memory and clock the test moves. Each CPU's counters are given as busy and idle time. */
-  function loaded(platform: 'win32' | 'linux' | 'darwin', files: Readonly<Record<string, string>> = {}) {
+  function loaded(platform: 'win32' | 'linux' | 'darwin', files: Readonly<Record<string, string>> = {}, { meminfo: meminfoText }: { meminfo?: string | null } = {}) {
     let at = NOW.getTime(), busy = 0, idle = 0, free = 11 * GIB, available = 9 * GIB, cpuReads = 0
     const sleeps: number[] = []
     const os = system({
@@ -210,7 +210,10 @@ describe('live load', () => {
     const meminfo = () => `MemTotal:       32000000 kB\nMemFree:         1000000 kB\nMemAvailable:   ${available / 1024} kB\n`
     const source = new HostFactsSource({ os, now: () => new Date(at),
       readFile: async path => {
-        if (path === '/proc/meminfo') return meminfo()
+        if (path === '/proc/meminfo') {
+          if (meminfoText === null) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+          return meminfoText ?? meminfo()
+        }
         if (path === '/etc/os-release') return 'PRETTY_NAME="Omarchy"\n'
         const content = files[path]
         if (content === undefined) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
@@ -279,6 +282,13 @@ describe('live load', () => {
   it('reads Linux without pressure where the kernel gives none', async () => {
     const m = loaded('linux')
     expect(await m.source.load()).toMatchObject({ memoryPressurePercent: null, availableMemoryBytes: 9 * GIB })
+  })
+
+  it('reads Linux available memory as unknown, not as free memory, when MemAvailable cannot be read', async () => {
+    const unreadable = loaded('linux', {}, { meminfo: null })
+    expect(await unreadable.source.load()).toMatchObject({ availableMemoryBytes: null, windowStartAvailableMemoryBytes: null })
+    const without = loaded('linux', {}, { meminfo: 'MemTotal:       32000000 kB\nMemFree:         1000000 kB\n' })
+    expect(await without.source.load()).toMatchObject({ availableMemoryBytes: null, windowStartAvailableMemoryBytes: null })
   })
 
   it('reads macOS memory as unknown, since its free memory understates, and keeps its load average', async () => {
