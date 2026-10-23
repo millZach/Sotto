@@ -72,6 +72,14 @@ describe("Watcher's picture", () => {
     expect(picture(state, roomState, null, true).clusters[0]!.nodes.map(node => node.title)).toContain('Host update waits for clients')
   })
 
+  it('draws a thread whose prototype waits for review as waiting on the user for it (ADR-0108)', () => {
+    const page = { token: 'p'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
+    const state = stateWith([thread('greeting', { title: 'Greeting', prototypeReady: { source: 'reply:m1', pages: [page] } })])
+    const model = picture(state, room([row('greeting')]))
+    expect(model.nodes.get(targetKey(target('greeting')))).toMatchObject({ tone: 'needs', waits: 'prototype' })
+    expect(model.waiting).toBe(1)
+  })
+
   it('reads the merge turns: the queue as READY, a merge turn Watcher gave as GO, and the two merged last, in that order', () => {
     const state = stateWith([
       thread('a', { title: 'Watched tab keyboard order', pullRequests: [pr(1288, 'merged')] }),

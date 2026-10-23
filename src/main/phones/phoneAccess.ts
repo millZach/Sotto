@@ -344,6 +344,14 @@ export class PhoneAccess {
   settled(): Promise<void> { return this.queue }
 
   /**
+   * The loopback port the listener serves question pages on while it runs, for Sotto's browser to open a page's file
+   * through (ADR-0108), since that browser opens no `file://` pages. Undefined while phone access is off.
+   */
+  pagePort(): number | undefined {
+    return this.listener && !this.listenerStopped && this.listenerWanted() ? this.listener.descriptor.port : undefined
+  }
+
+  /**
    * The parts of `get()` health and hello read, without the per-phone policy lookups: whether phone access is on, the
    * phase and address as `get()` reports them, and how many phones are paired.
    */

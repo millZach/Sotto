@@ -114,5 +114,8 @@ describe('the note after a compaction (#1189)', () => {
     expect(watcherWaitsOn({ ...thread, backgroundWorkCount: 2 })).toBe('The background work or sub-agents its last turn left running to end.')
     expect(watcherWaitsOn({ ...thread, waitsOn: [{ kind: 'permission' }] })).toBe('The user’s answer to its permission request.')
     expect(watcherWaitsOn({ ...thread, connected: false })).toBe('Its computer or provider to connect again.')
+    // A prototype waiting for review is the user's to open (ADR-0108); a card it waits on is said first.
+    expect(watcherWaitsOn({ ...thread, prototypeReady: true })).toBe('The user’s review of the prototype it made. Only the user can review it.')
+    expect(watcherWaitsOn({ ...thread, prototypeReady: true, waitsOn: [{ kind: 'question' }] })).toBe('The user’s answer to its question.')
   })
 })

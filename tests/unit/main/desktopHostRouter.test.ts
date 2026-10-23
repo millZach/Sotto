@@ -1067,7 +1067,7 @@ describe('a question’s pages (ADR-0085)', () => {
     withPage(local, 'file', 'greeting.html'); withPage(remote, 'file', 'greeting.html')
     router.add({ ...local.connection, questionPage: asked => asked === token ? { kind: 'file', root: '/repo/docs', file: '/repo/docs/greeting.html' } : undefined })
     router.add({ ...remote.connection, pageAddress: asked => `https://forge.example.ts.net:8443/page/${asked}/` })
-    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html' })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html', token, start: 'greeting.html' })
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token }))
       .toEqual({ kind: 'url', url: `https://forge.example.ts.net:8443/page/${token}/greeting.html` })
   })
@@ -1086,6 +1086,28 @@ describe('a question’s pages (ADR-0085)', () => {
     expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token: other })).toBeNull()
     expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'another', token })).toBeNull()
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token })).toBeNull()
+  })
+
+  it('opens a page of a thread’s waiting prototype by its token alone, and nothing that is not one of its pages (ADR-0108)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) f.state.host.threads[0]!.prototypeReady = { source: 'reply:m', pages: [{ token, kind: 'file', name: 'greeting.html', start: 'greeting.html' }] }
+    router.add({ ...local.connection, questionPage: asked => asked === token || asked === other ? { kind: 'file', root: '/repo/docs', file: '/repo/docs/greeting.html' } : undefined })
+    router.add({ ...remote.connection, pageAddress: asked => `https://forge.example.ts.net:8443/page/${asked}/` })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html', token, start: 'greeting.html' })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), token })).toEqual({ kind: 'url', url: `https://forge.example.ts.net:8443/page/${token}/greeting.html` })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), token: other })).toBeNull()
+    // A question's token is not a prototype's, and the other way round.
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toBeNull()
+  })
+
+  it('tells this computer’s host a page was opened, and leaves a remote host to hear it from its own page route (ADR-0108)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const opened: string[] = []
+    router.add({ ...local.connection, questionPageOpened: asked => opened.push(`local ${asked}`) })
+    router.add({ ...remote.connection, questionPageOpened: asked => opened.push(`remote ${asked}`) })
+    router.questionPageOpened({ threadId: hostEntityKey(LOCAL, 'thread'), token })
+    router.questionPageOpened({ threadId: hostEntityKey(REMOTE, 'thread'), token })
+    expect(opened).toEqual([`local ${token}`])
   })
 })
 

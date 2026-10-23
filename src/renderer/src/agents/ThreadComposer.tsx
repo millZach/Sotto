@@ -25,6 +25,8 @@ import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useThreadStarts } from './ThreadStart'
 import { useWatcherSendGate } from '../watcher/WatcherHandover'
 import { WatcherNewButton } from '../watcher/WatcherNew'
+import { useWatchActions } from '../watcher/watcherRoom'
+import { watchAfterSend } from '../watcher/watchOnSend'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -70,17 +72,18 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
  * Send, queue or steer one revision of a thread's manual prompt. The echo in the transcript (or the
  * queue row) renders before the command leaves the renderer, and the composer is already empty.
  * With `retryDraftId` the prompt is sent again from its own copy, under the revision it already has.
+ * Resolves true when main took it, false when it was refused, and null when main's answer never came.
  */
 export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string,
   /** A step before the prompt goes, given its draft: Watcher's handover is told which draft carries it. A refusal keeps the prompt back. */
-  beforeSend?: (draftId: string) => Promise<string | null>): Promise<void> {
+  beforeSend?: (draftId: string) => Promise<string | null>): Promise<boolean | null> {
   const threadId = row.thread.id
   const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
-  if (draft === null) return
+  if (draft === null) return false
   try {
     const refused = beforeSend === undefined ? null : await beforeSend(draft.draftId)
     // Refused before it left the window: it is back in the composer, with why under it.
-    if (refused !== null) { store.resolve(threadId, draft.draftId, refused, true); return }
+    if (refused !== null) { store.resolve(threadId, draft.draftId, refused, true); return false }
     const payload = {
       threadId, draftId: draft.draftId, text: draft.text,
       ...(draft.attachments.length ? { attachments: [...draft.attachments] } : {}),
@@ -92,8 +95,10 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
     const error = result === null ? UNCONFIRMED_SUBMISSION[mode]
       : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error
     store.resolve(threadId, draft.draftId, error)
+    return result === null ? null : error === null
   } catch {
     store.resolve(threadId, draft.draftId, UNCONFIRMED_SUBMISSION[mode])
+    return null
   }
 }
 
@@ -153,6 +158,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const threadId = row.thread.id
   // An answer written here is kept for Watcher's line about its request, never its words, and only where Watcher is on.
   const watcherOn = useWatcherEnabled()
+  const watchActions = useWatchActions()
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
   const submissions = useSubmissions(store)
@@ -293,7 +299,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     // shows what was sent, and a refused prompt comes back to the composer with them written out.
     if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
     onSend()
+    // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
+    const first = row.thread.nativeSessionStarted === false
     void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
+      .then(sent => watchAfterSend(threadId, sent, mode, first, watchActions))
     if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */

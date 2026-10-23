@@ -2,10 +2,25 @@ import type { AgentMessage, AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
+import { parsePrototypeSource, replySource, requestSource } from './prototypeSources'
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
-    event.kind === 'needs-user' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId : event.turnId ?? null])
+    event.kind === 'needs-user' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
+      : event.kind === 'prototype-ready' ? watcherPrototypeSource(event) ?? null : event.turnId ?? null])
+}
+/**
+ * The prototype a `prototype-ready` event is of (ADR-0108), as the thread's mark names its source: the question it waits
+ * in, or the reply that named its page.
+ */
+export function watcherPrototypeSource(event: Pick<WatcherEvent, 'requestCardId' | 'messageId'>): string | undefined {
+  return event.requestCardId !== undefined ? requestSource(event.requestCardId) : event.messageId !== undefined ? replySource(event.messageId) : undefined
+}
+/** What a `prototype-ready` event carries to name a mark's source, or undefined when the source is too long to carry. */
+export function watcherPrototypeFields(source: string): Pick<WatcherEvent, 'requestCardId' | 'messageId'> | undefined {
+  const parsed = parsePrototypeSource(source)
+  if (!parsed || parsed.id.length > 512) return undefined
+  return parsed.kind === 'request' ? { requestCardId: parsed.id } : { messageId: parsed.id }
 }
 export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: readonly WatcherEvent[]): WatcherEvent[] {
   const events = new Map(earlier.map(event => [eventSlot(event), event]))
@@ -39,6 +54,7 @@ const words: Record<WatcherEvent['kind'], string> = {
   'taken-over': 'You took over this thread. Watcher stopped sending to it.',
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
   'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
+  'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',
 }
 const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
 /**
