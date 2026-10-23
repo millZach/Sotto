@@ -1597,10 +1597,14 @@ export class WatcherService implements WatcherControlHooks {
       case null: break
     }
     if (change === 'model') return null
-    let queued = 0
-    for (const operation of record.operations) if (operation.deliveryState === 'queued') queued++
+    // A send that waits on the user's review, or for a thread put aside, would wait for good: only one behind a thread's
+    // turn holds a replacement. A paired host's queue is its own to read, so a send queued there still holds it.
+    // Read once, and only when a send of this computer's is queued: this runs on every publish (newWatcherAnswer).
+    const local = this.hostId()
+    let queued = 0, waiting: ReadonlySet<string> | undefined
+    for (const operation of record.operations) if (operation.deliveryState === 'queued'
+      && (operation.target.hostId !== local || (waiting ??= this.options.control.watcherQueuedSendsWaiting()).has(operation.id))) queued++
     if (queued === 0) {
-      const local = this.hostId()
       const remote = record.reservations.some(item => item.target.hostId !== local && record.operations.some(operation => operation.id === item.operationId && operation.action === 'start'))
       return remote ? `A thread Watcher started on another computer is still working, and only this Watcher can stop it there. Wait for it to finish, or stop it with Stop all, then ${then}. Nothing was changed.` : null
     }
