@@ -152,7 +152,8 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
       <p className="own-servers__notice tt-paragraph" role="status">{notice}</p>
       {error ? <p className="provider-detail__error tt-paragraph" role="alert">{error}</p> : null}
     </div>
-    {open ? <AddOwnServerDialog bridge={bridge} fallbackFocus={addRef} onClose={() => setOpen(false)} onAdded={server => { added(server); setOpen(false) }} /> : null}
+    {open ? <AddOwnServerDialog bridge={bridge} fallbackFocus={addRef} onClose={() => setOpen(false)} onAdded={server => { added(server); setOpen(false) }}
+      onListChanged={() => setReads(count => count + 1)} /> : null}
   </SettingsGroup>
 }
 
@@ -189,13 +190,15 @@ type Checked = { readonly phase: 'running' } | { readonly phase: 'done'; readonl
  * keeps what was typed. Focus stays inside, and Escape closes and hands focus back. With `confirm`, used from the model
  * menu, the dialog says where the models are and waits for Done instead of closing on Add.
  */
-export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, confirm = false }: {
+export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, confirm = false, onListChanged }: {
   readonly bridge: OwnServersBridge
   readonly fallbackFocus?: RefObject<HTMLElement | null> | undefined
   readonly onClose: () => void
   /** The server main saved. Called even when the dialog was closed before main answered, since the server is saved. */
   readonly onAdded?: ((server: OwnServer) => void) | undefined
   readonly confirm?: boolean
+  /** Main's list changed though the add was refused, as when a server stayed saved without its key. */
+  readonly onListChanged?: (() => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
   const [address, setAddress] = useState('')
@@ -276,7 +279,10 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
       if (result.status === 'ok') {
         onAdded?.(result.server)
         if (live.current && confirm) setDone(result.server)
-      } else if (live.current) refuse(result.reason, refusedWords(result.reason, 'add', result.message), addRef)
+      } else {
+        if (result.reason === 'added-partly') onListChanged?.()
+        if (live.current) refuse(result.reason, refusedWords(result.reason, 'add', result.message), addRef)
+      }
     } catch { if (live.current) refuse('sign-in-failed', notAnswered(), addRef) } finally { if (live.current) setAdding(false) }
   }
   const enter = (event: React.KeyboardEvent<HTMLInputElement>): void => { if (event.key === 'Enter') { event.preventDefault(); void check() } }

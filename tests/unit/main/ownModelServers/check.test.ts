@@ -82,6 +82,22 @@ describe('what a check answers', () => {
     expect(await checkOwnServer(moved.address, 'made-up-key')).toMatchObject({ reason: 'not-openai' })
   })
 
+  it('stops reading an answer past its size cap, even one that never ends and gives no length', async () => {
+    const chunk = Buffer.alloc(64 * 1024, 32)
+    let stopped = false
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.on('close', () => { stopped = true })
+      const pour = (): void => { while (!stopped && response.write(chunk)) { /* until the socket is full */ } if (!stopped) response.once('drain', pour) }
+      pour()
+    })
+    servers.push(server)
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    expect(await checkOwnServer(address, undefined)).toMatchObject({ status: 'refused', reason: 'not-openai' })
+    await expect.poll(() => stopped).toBe(true)
+  })
+
   it('says the server has no models when its list is empty', async () => {
     const server = await fake({ 'GET /v1/models': list() })
     expect(await checkOwnServer(server.address, undefined)).toEqual({ status: 'refused', reason: 'no-models', message: OWN_SERVER_WORDS.noModels(server.host) })

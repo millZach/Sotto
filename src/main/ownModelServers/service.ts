@@ -161,8 +161,9 @@ export class OwnServers {
         // OpenCode may have kept the key all the same, such as when its answer was lost; it is asked to forget it while
         // the record still declares the source, so no key is left behind for a source nothing lists.
         if (!await openCode.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
-        // Nothing is kept: the record goes, and the processes started with it are outdated again.
-        await this.save((await this.servers()).filter(item => item.id !== id))
+        // Nothing is kept: the record goes, and the processes started with it are outdated again. A record that cannot be
+        // written now still lists the server, without its key, and the answer says so rather than that nothing changed.
+        try { await this.save((await this.servers()).filter(item => item.id !== id)) } catch { return refusal('added-partly', OWN_SERVER_WORDS.addPartly(server.name)) }
         openCode.outdated()
         void openCode.catalogAgain().catch(() => false)
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))

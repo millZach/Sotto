@@ -175,6 +175,10 @@ msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try r
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
 msgstr ""
 

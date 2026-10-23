@@ -102,6 +102,7 @@ export function refusalWords(reason: OwnServerRefusal | string, doing: OwnServer
     case 'sign-in-failed': return doing === 'remove'
       ? t`OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`
       : t`OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`
+    case 'added-partly': return t`OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`
     case 'removed-partly': return t`OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`
     case 'not-found': return t`That server is no longer saved. Nothing was changed.`
     case 'full': return t`Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.`

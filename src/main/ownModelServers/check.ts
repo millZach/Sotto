@@ -69,12 +69,37 @@ function asker(key: string | undefined, options: OwnServerCheckOptions, overall:
       }
       const length = Number(response.headers.get('content-length') ?? '0')
       if (length > ANSWER_BYTES_MAX) { await response.body?.cancel().catch(() => undefined); throw new Answered(response.status) }
-      let raw: string
-      try { raw = await response.text() } catch { throw new Unanswered('The answer did not arrive.') }
-      if (raw.length > ANSWER_BYTES_MAX) throw new Answered(response.status)
+      const raw = await boundedText(response)
       try { return JSON.parse(raw) as unknown } catch { throw new Answered(response.status) }
     },
   }
+}
+
+/**
+ * An answer's text, read only up to `ANSWER_BYTES_MAX`: a server that sends more, such as a chunked answer with no
+ * length, is cut off there rather than held whole in main's memory.
+ */
+async function boundedText(response: Response): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > ANSWER_BYTES_MAX) { await reader.cancel().catch(() => undefined); throw new Answered(response.status) }
+      chunks.push(value)
+    }
+  } catch (error) {
+    if (error instanceof Answered) throw error
+    throw new Unanswered('The answer did not arrive.')
+  }
+  const whole = new Uint8Array(size)
+  let at = 0
+  for (const chunk of chunks) { whole.set(chunk, at); at += chunk.byteLength }
+  return new TextDecoder().decode(whole)
 }
 
 /** Runs `work` on each item with at most `limit` at once. */

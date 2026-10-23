@@ -70,6 +70,8 @@ export const ownServerRefusalSchema = z.enum([
   'failed',
   /** Remove signed OpenCode out of the server's key but could not take the server off the list; a second Remove finishes it. */
   'removed-partly',
+  /** Add could not sign the key in and then could not take the server back off the list: it is saved, without its key. */
+  'added-partly',
 ])
 export type OwnServerRefusal = z.infer<typeof ownServerRefusalSchema>
 const refused = z.object({ status: z.literal('refused'), reason: ownServerRefusalSchema, message: z.string().min(1).max(600) }).strict()
@@ -130,6 +132,7 @@ export const OWN_SERVER_WORDS = {
   full: 'Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.',
   removeNeedsOpenCode: (name: string) => `Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`,
   signOutFailed: (name: string) => `OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`,
+  addPartly: (name: string) => `OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`,
   removePartly: (name: string) => `OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`,
   failed: 'Sotto could not finish that, so nothing was changed. Try again.',
   contextUnknown: 'The server does not say how much context this model has. Type it from the model’s page.',
@@ -152,6 +155,7 @@ export function ownServerRefusalWords(reason: OwnServerRefusal, host: string, se
     case 'full': return OWN_SERVER_WORDS.full
     case 'failed': return OWN_SERVER_WORDS.failed
     case 'removed-partly': return OWN_SERVER_WORDS.removePartly(serverName)
+    case 'added-partly': return OWN_SERVER_WORDS.addPartly(serverName)
   }
 }
 

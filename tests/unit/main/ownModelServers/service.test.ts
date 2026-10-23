@@ -89,6 +89,17 @@ describe('adding a server', () => {
     expect(events).toEqual(['own-server-sign-in-failed', 'own-server-sign-out-failed', 'own-server-add-refused'])
   })
 
+  it('says the server stayed, without its key, when the record cannot be written back after a refused key', async () => {
+    const { openCode } = fakeOpenCode({ signIn: false })
+    const { service, events } = servers({ openCode })
+    // The key is refused, and a folder where the record goes makes the write that takes the server back out fail.
+    openCode.signInWithKey = async () => { await rm(join(directory, OWN_SERVERS_FILE)); await mkdir(join(directory, OWN_SERVERS_FILE)); return false }
+    expect(await service.add({ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] }))
+      .toEqual({ status: 'refused', reason: 'added-partly', message: OWN_SERVER_WORDS.addPartly('Spark') })
+    expect((await service.list()).map(server => server.id)).toEqual(['own-test0'])
+    expect(events).toEqual(['own-server-sign-in-failed', 'own-server-add-refused'])
+  })
+
   it('takes the record out again when the sign-in throws', async () => {
     const { openCode } = fakeOpenCode()
     openCode.signInWithKey = async () => { throw new Error('gone') }
