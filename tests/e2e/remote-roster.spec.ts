@@ -177,7 +177,7 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(cards.getByRole('group', { name: 'Delegated to Run the host contract tests' }).locator('.delegation-card__held'))
         .toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
       await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__held'))
-        .toHaveText('Held at Ask for approval: this computer can\'t answer on Forge. To let it, open Settings › Hosts & phones and choose SSH only under Edit connection for Forge.')
+        .toHaveText('Held at Ask for approval: this computer can\'t answer on Forge.')
       await expect(cards.getByRole('note', { name: 'Not delegated: Building' }).locator('.delegation-card__wait'))
         .toHaveText(`Asked for ${process.platform === 'darwin' ? 'a Windows machine' : 'a Mac'}. Forge can start threads only on Forge for now. Nothing was started.`)
       await capture(launched, 'cards-dark-1280x800')
@@ -192,7 +192,7 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(row('List the agents-view fields')).toHaveAttribute('data-nested', 'true')
       await expect(row('Find what the iPhone reads for agents').locator('.delegated-row__status')).toHaveText('Answered')
       await expect(row('Run the host contract tests').locator('.delegated-row__held')).toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
-      await expect(row('Review the delegation socket changes').locator('.delegated-row__held')).toHaveText(/^Held at Ask for approval: this computer can't answer on Forge\./u)
+      await expect(row('Review the delegation socket changes').locator('.delegated-row__held')).toHaveText('Held at Ask for approval: this computer can\'t answer on Forge.')
       await expect(row('Review the delegation socket changes').locator('.subagent-meta')).toContainText('Codex · Building')
       // The keyboard opens a row to its whole brief, read from the host, and the held reason; Escape closes it.
       const head = row('Review the delegation socket changes').locator('.subagent-head')

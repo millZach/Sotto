@@ -134,27 +134,22 @@ export function lastReadOutcome(machine: string, outcome: DelegationOutcome | 'n
   return `${was}${machine} is not connected, so Sotto cannot read how it went since. It reads it again when ${machine} reconnects.`
 }
 
-/**
- * The control in Settings › Hosts & phones that lets this computer answer on a host: under Edit connection, SSH only, whose
- * next connection signs in over SSH and writes this desktop's answers grant where none was ever written (ADR-0053).
- */
-export const ANSWERS_GRANT_CONTROL = 'SSH only'
 type HostHold = NonNullable<DelegatedView['held']>
 /**
  * Why a delegated thread on another machine started at Ask for approval, on its row and card (#1310): the prototype's
- * words for a host never told, Zach's (October 23, 2026) for one this computer cannot answer on, and no fix for a grant
- * taken away, since setting the host up again does not restore it.
+ * words for a host never told, and Zach's (October 23, 2026) for one this computer cannot answer on, which give the reason
+ * only until a control of its own lets this computer answer there (#1447), and for a grant taken away, with no fix.
  */
 export function heldLine(held: HostHold, machine: string): string {
   if (held === 'not-told') return `Started at Ask for approval: ${machine} had no new-thread default from this computer yet.`
   if (held === 'answers-revoked') return `Held at Ask for approval: ${machine} no longer lets this computer answer there.`
-  return `Held at Ask for approval: this computer can't answer on ${machine}. To let it, open Settings › Hosts & phones and choose ${ANSWERS_GRANT_CONTROL} under Edit connection for ${machine}.`
+  return `Held at Ask for approval: this computer can't answer on ${machine}.`
 }
 /** The same, in full, where a row's details say its latest outcome. */
 export function heldOutcome(held: HostHold, machine: string): string {
-  if (held === 'not-told') return `It started at Ask for approval, because ${machine} had not been sent your new-thread default from this computer when it started. Threads started on ${machine} from now on use your default.`
+  if (held === 'not-told') return `${machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then.`
   if (held === 'answers-revoked') return `It started at Ask for approval, because ${machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more.`
-  return `It started at Ask for approval, because this computer can't answer permission requests on ${machine}, so a thread there cannot be given more. To let it, open Settings › Hosts & phones and choose ${ANSWERS_GRANT_CONTROL} under Edit connection for ${machine}.`
+  return `It started at Ask for approval, because this computer can't answer permission requests on ${machine}, so a thread there cannot be given more.`
 }
 /** What a refused start asked for, by the window's names for its machines (#1310): "this computer", "forge", "a Mac". */
 export function askedFor(asked: NonNullable<RefusedView['asked']>, machineName: (hostId: string) => string | undefined): string | undefined {

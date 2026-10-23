@@ -105,7 +105,10 @@ describe('a remote parent\'s roster', () => {
 
   it('says why a start there began at Ask for approval, and why another machine was refused, in the prototype\'s words', () => {
     expect(heldLine('not-told', 'forge')).toBe('Started at Ask for approval: forge had no new-thread default from this computer yet.')
-    expect(heldLine('no-answer-grant', 'forge')).toBe("Held at Ask for approval: this computer can't answer on forge. To let it, open Settings › Hosts & phones and choose SSH only under Edit connection for forge.")
+    // The reason only, until a control of its own lets this computer answer there (#1447).
+    expect(heldLine('no-answer-grant', 'forge')).toBe("Held at Ask for approval: this computer can't answer on forge.")
+    expect(heldOutcome('no-answer-grant', 'forge')).not.toMatch(/Settings|SSH/u)
+    expect(heldOutcome('not-told', 'forge')).toBe("forge hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then.")
     // A grant taken away is said as such, with no fix that cannot work.
     expect(heldLine('answers-revoked', 'forge')).toBe('Held at Ask for approval: forge no longer lets this computer answer there.')
     expect(heldOutcome('answers-revoked', 'forge')).not.toMatch(/Settings/u)
@@ -182,7 +185,7 @@ describe('Tools › Agents for a remote parent', () => {
     expect(within(review).getByText('Started at Ask for approval: forge had no new-thread default from this computer yet.')).toBeInTheDocument()
     const head = within(review).getByRole('button', { name: /^Review the socket changes, delegated thread on Codex, Working, Started at Ask for approval/u })
     fireEvent.click(head)
-    expect(within(review).getByText(/^It started at Ask for approval, because forge had not been sent your new-thread default/u)).toBeInTheDocument()
+    expect(within(review).getByText(/^forge hasn't had this computer's defaults yet\. It gets them the next time this computer connects to it/u)).toBeInTheDocument()
     // Escape closes it and gives the focus back to the row.
     fireEvent.keyDown(head, { key: 'Escape' })
     expect(head).toHaveAttribute('aria-expanded', 'false')
