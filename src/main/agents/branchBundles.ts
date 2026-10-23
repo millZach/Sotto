@@ -192,6 +192,7 @@ export class BranchBundles {
       const head = (await this.git(workingCopy, ['rev-parse', '--verify', 'HEAD^{commit}'], undefined, 30_000)).trim()
       if (!commitIdSchema.safeParse(head).success) return branchMoveRefusal('failed', branchMoveWords.failed)
       if (!(await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal'], undefined, 60_000)).trim()) return { branch, commit: head }
+      if (await this.dirtySubmodule(workingCopy)) return branchMoveRefusal('uncommitted', branchMoveWords.submoduleChanges)
       // From the top of the working tree, so `add -A` takes all of it and the untracked paths read from its root.
       const top = (await this.git(workingCopy, ['rev-parse', '--show-toplevel'], undefined, 30_000)).trim()
       const untracked = (await this.git(top, ['ls-files', '--others', '--exclude-standard', '-z'], undefined, 60_000)).split('\0').filter(Boolean)
@@ -207,6 +208,20 @@ export class BranchBundles {
       return { branch, commit, snapshot: { untracked: untracked.slice(0, SNAPSHOT_UNTRACKED_LISTED), untrackedCount: untracked.length } }
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally { await unlink(index).catch(() => undefined) }
+  }
+
+  /**
+   * Whether a submodule of the working copy has changes of its own, tracked or untracked. `git add -A` in the parent takes
+   * only a submodule's commit, so a test run's snapshot would leave that work behind while saying it carried everything.
+   * Porcelain v2 marks a submodule `S<c><m><u>`: `M` for its tracked changes, `U` for its untracked files.
+   */
+  private async dirtySubmodule(workingCopy: string): Promise<boolean> {
+    const lines = (await this.git(workingCopy, ['status', '--porcelain=v2', '--untracked-files=normal'], undefined, 60_000)).split(/\r?\n/u)
+    return lines.some(line => {
+      const fields = line.split(' ')
+      const sub = fields[2] ?? ''
+      return (fields[0] === '1' || fields[0] === '2') && sub.startsWith('S') && (sub[2] === 'M' || sub[3] === 'U')
+    })
   }
 
   /**

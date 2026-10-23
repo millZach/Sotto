@@ -268,4 +268,24 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     }
     expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
   })
+
+  it('refuses a test run whose submodule has changes of its own, in plain words, rather than leave them behind', async () => {
+    const library = join(machines.root, 'library')
+    git(machines.root, 'init', '-q', library)
+    await commitFile(library, 'lib.txt', 'one')
+    git(machines.laptop, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', library, 'lib')
+    git(machines.laptop, 'commit', '-q', '-m', 'Add the library')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const refused = { type: 'refused', reason: 'uncommitted', message: branchMoveWords.submoduleChanges }
+    await writeFile(join(machines.laptop, 'lib', 'lib.txt'), 'edited in the submodule')
+    expect(await laptop.snapshotOf(machines.laptop)).toEqual(refused)
+    git(join(machines.laptop, 'lib'), 'checkout', '-q', '--', 'lib.txt')
+    await writeFile(join(machines.laptop, 'lib', 'new.txt'), 'untracked in the submodule')
+    expect(await laptop.snapshotOf(machines.laptop)).toEqual(refused)
+    git(join(machines.laptop, 'lib'), 'clean', '-qf')
+    // The parent's own uncommitted work beside a clean submodule still goes as a snapshot.
+    await writeFile(join(machines.laptop, 'app.txt'), 'edited in the parent')
+    expect(await laptop.snapshotOf(machines.laptop)).toMatchObject({ branch: 'main', snapshot: { untrackedCount: 0 } })
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+  })
 })
