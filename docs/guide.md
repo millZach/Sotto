@@ -1094,7 +1094,7 @@ Nothing runs until you press. Then Sotto brings the branch's commits to main, in
 - Uncommitted changes where main is checked out are refused too, including new files, and Sotto doesn't touch that folder. Commit or set them aside there, then press again.
 - If the thread it began from has switched to another branch, the press is refused. Sotto never switches a branch: switch it back to main there, then press again.
 - A conflict is refused in Git's own words, with main unchanged. Sotto never resolves a conflict: ask the thread to merge main into its branch and resolve it, then press again.
-- A worker started as a test run begins from a snapshot of uncommitted changes. Sotto won't bring that snapshot back as a commit, so the press is refused; ask the worker to put its own commits on a branch made from main.
+- A worker started as a check begins from a snapshot of uncommitted changes. Sotto won't bring that snapshot back as a commit, so the press is refused; ask the worker to put its own commits on a branch made from main.
 
 When the thread it began from is on another machine, Sotto on your desktop first moves this thread's committed branch there over the connection it already keeps, then brings it to main on that machine. Nothing else goes there, and nothing goes through GitHub. If that machine isn't connected, the press says so and nothing changes.
 

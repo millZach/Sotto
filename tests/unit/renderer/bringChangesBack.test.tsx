@@ -213,9 +213,9 @@ describe('a child on another machine than the thread it began from', () => {
     expect(outcomeWords(done, 'WAV preview stall', 'This computer').body).toBe('Git fast-forwarded feat/x to a41c2e9; nothing else changed. WAV preview stall works on feat/x in the project folder on This computer and sees them now.')
   })
 
-  it('says why a test run’s snapshot is never brought back, and when the parent left its branch', () => {
+  it('says why a check’s snapshot is never brought back, and when the parent left its branch', () => {
     expect(outcomeWords(record({ status: 'refused', refusal: 'snapshot', target: 'feat/x', branch: 'feat/x-2' }), 'WAV preview stall').body)
-      .toBe('feat/x-2 starts from a test run’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from feat/x, then try again.')
+      .toBe('feat/x-2 starts from a check’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from feat/x, then try again.')
     expect(outcomeWords(record({ status: 'refused', refusal: 'parent-moved', target: 'feat/x', branch: 'feat/x-2' }), 'WAV preview stall'))
       .toMatchObject({ title: 'Nothing was brought to feat/x.', body: 'WAV preview stall isn’t on feat/x any more, and Sotto doesn’t switch branches. Switch it back to feat/x there, then try again.', openParent: true })
   })

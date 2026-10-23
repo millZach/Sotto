@@ -529,7 +529,7 @@ export class GitActions {
       if (commits === 0) return { kind: 'nothing', branch, checkout }
       // A test run's snapshot is someone's uncommitted work made into a commit (#1033): it never goes back as a commit.
       if (await this.snapshotIn(cwd, targetHead, branchHead)) {
-        throw new BringBackRefusal('snapshot', `Nothing was brought to ${target}. ${branch} starts from a test run’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from ${target}, then try again.`)
+        throw new BringBackRefusal('snapshot', `Nothing was brought to ${target}. ${branch} starts from a check’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from ${target}, then try again.`)
       }
       const release = input.holdCheckout ? await this.holdCheckout(checkout, target, input.holdCheckout) : undefined
       try {
