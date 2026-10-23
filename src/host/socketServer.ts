@@ -977,8 +977,10 @@ export async function startSocketServer(options: SocketServerOptions) {
           return phone.get(mayAnswer(), standing, steer)
         }
       } })()
+      // The machines line goes on every page an answer carries, Stop all's included: the iPhone takes that page whole.
+      const paged = answerWithMachines(peer, answer)
       // Stop all's result keeps a row for every thread its confirmation listed, so a phone hears which it could not stop.
-      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(answer, scopeOf(peer)) : watcherFor(peer, answerWithMachines(peer, answer))
+      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(paged, scopeOf(peer)) : watcherFor(peer, paged)
     }
     if ('threadId' in request && request.threadId && hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
     if ('request' in request && request.request && 'threadId' in request.request && hiddenThread(peer, request.request.threadId as string)) throw new Refusal('forbidden')

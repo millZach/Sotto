@@ -909,3 +909,13 @@ it('knows the threads Watcher started from an index of its record, for the phone
   expect(f.watcher.startedByWatcher(f.target.hostId, f.target.threadId)).toBe(false)
   expect(f.watcher.startedByWatcher(worker.hostId, 'another-thread')).toBe(false)
 })
+
+it('keeps the machines line on the page Stop all answers with, which the iPhone takes whole (#1032)', async () => {
+  const f = await fixture(true, false, false, true), peer = await f.pair([...STEER, 'watcher-phone-machines'])
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  const confirmationId = (preview.result as { confirmationId: string }).confirmationId
+  const stopped = await peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId })
+  expect(stopped).toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }],
+    state: { machines: { rows: [expect.objectContaining({ name: 'This computer', thisComputer: true })] } } } })
+})
