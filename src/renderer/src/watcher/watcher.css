@@ -292,6 +292,7 @@
 /* What does not fit the room under the name scrolls here, between the heading and the foot, which stay in reach. */
 .watcher-machine-panel__body { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .watcher-machine-panel__body > :last-child { margin-bottom: 0; }
+.watcher-machine-panel__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 4px; }
 .watcher-machine-panel__close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .watcher-machine-panel__close:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-machine-panel p { margin: 0 0 8px; color: var(--tt-text-2); }

@@ -134,7 +134,10 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
     style={place ? { top: place.top, left: place.left, maxHeight: place.maxHeight } : { visibility: 'hidden' }}>
     <h2 id={heading}><MachineIcon entry={entry} size={15} /><span>{entry.name}</span></h2>
     <button type="button" className="watcher-machine-panel__close tt-focusable" aria-label={`Close ${entry.name}’s panel`} onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
-    <div className="watcher-machine-panel__body">{!entry.connected ? <p>{entry.name} is not connected.{entry.isDefault ? ' It is where new workers start, so until it connects they start on this computer, and Watcher says so.' : ''} Connect it in Settings, under Hosts & phones.</p> : <>
+    {/* A stop in the Tab order between Close and Change where new workers start, so what does not fit can be scrolled
+        from the keyboard as well as read. */}
+    <div className="watcher-machine-panel__body tt-focusable" role="region" tabIndex={0}
+      aria-label={`${entry.thisComputer ? 'This computer’s' : `${entry.name}’s`} load and what runs there`}>{!entry.connected ? <p>{entry.name} is not connected.{entry.isDefault ? ' It is where new workers start, so until it connects they start on this computer, and Watcher says so.' : ''} Connect it in Settings, under Hosts & phones.</p> : <>
       <dl>
         {system !== null ? <><dt>System</dt><dd>{system}{cpus !== null ? ` · ${cpus} CPUs` : ''}</dd></> : null}
         <dt>CPU</dt><dd data-warn={busy || !cpuKnown || undefined}>{cpuKnown ? `${load!.cpuBusyPercent}% busy over ${windowWords(load!.windowMs)}${busy ? '. Busy' : ''}` : 'unknown'}</dd>

@@ -1293,6 +1293,9 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Tab')
         await expect(panel.getByRole('button', { name: 'Close forge’s panel' })).toBeFocused()
         await page.keyboard.press('Tab')
+        // What the panel says is its own stop, so what does not fit the room scrolls from the keyboard.
+        await expect(panel.getByRole('region', { name: 'forge’s load and what runs there' })).toBeFocused()
+        await page.keyboard.press('Tab')
         await expect(panel.getByRole('button', { name: 'Change where new workers start' })).toBeFocused()
         await page.keyboard.press('Tab')
         await expect(panel.getByRole('button', { name: 'Close forge’s panel' })).toBeFocused()
