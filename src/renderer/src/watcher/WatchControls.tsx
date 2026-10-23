@@ -1,7 +1,8 @@
-import React, { useLayoutEffect, useRef, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { useStandingWatch, useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
+import { useWatchOnSend, watchOnSend } from './watchOnSend'
 import { WATCHED_BY_WATCHER, WatcherOwl } from './WatcherOwl'
 
 /** What a press on a toggle does, for its tooltip: the toggle's name stays Watch, and its pressed state says the rest. */
@@ -44,6 +45,32 @@ export function WatchListToggle({ threadId, title }: { readonly threadId: string
   const toggle = useWatchToggle(threadId, title)
   if (toggle === null) return null
   return <button className="watcher-row__watch tt-focusable" {...toggle}><WatcherOwl size={15} /></button>
+}
+
+const WATCH_ON_SEND_TIP = 'Watch: Watcher watches this thread from your first message until you stop it'
+const WATCHED_ON_SEND_TIP = 'Watched: Watcher watches this thread from your first message. Press again to leave it unwatched'
+
+/**
+ * Watch among a new thread's option chips, after its permissions, named Watch like the other toggles: pressed, the first send puts the thread under a
+ * standing watch. It is pressed too while Watcher already watches the thread, and a press then stops watching at once.
+ * Not drawn where the Watcher gate is off or the bridge offers no Watch.
+ */
+export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): ReactNode {
+  const actions = useWatchActions()
+  const watched = useWatchedThread(threadId)
+  const wanted = useWatchOnSend(threadId)
+  // Watched from elsewhere first (the pane header), the request has nothing left to do, and must not watch it twice.
+  useEffect(() => { if (watched && wanted) watchOnSend.set(threadId, false) }, [threadId, watched, wanted])
+  if (actions === null) return null
+  const on = watched || wanted
+  return <button type="button" className="thread-chip watch-on-send tt-focusable" aria-pressed={on}
+    title={on ? WATCHED_ON_SEND_TIP : WATCH_ON_SEND_TIP}
+    onClick={() => {
+      if (!watched) { watchOnSend.set(threadId, !wanted); return }
+      watchOnSend.set(threadId, false); void actions.setThread(threadId, false)
+    }}>
+    <WatcherOwl size={14} /><span>Watch</span>
+  </button>
 }
 
 /**

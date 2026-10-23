@@ -4,6 +4,7 @@ import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { parseHostEntityKey } from '../shared/clientIdentity'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
+import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
@@ -14,6 +15,7 @@ import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
+import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
 import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
 import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
 import { FIGTREE_FONT_FACES } from '../shared/figtreeFonts'
@@ -902,6 +904,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     hostFolders: request => hostService.hostFolders(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
     questionPage: token => agentControl.questionPage(token),
+    questionPageOpened: token => agentControl.questionPageOpened(token),
   })
   // A Playwright journey adds hosts through a scripted ssh; development only, like the gh stand-in.
   const sshStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_SSH_SCRIPT'] : undefined
@@ -1798,15 +1801,28 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         trustedSenders: () => windows.getTrustedRenderers(),
         openExternalLink: url => shell.openExternal(url),
         openQuestionPage: async input => {
-          // A file opens in this computer's own browser as a file; a loopback page and a remote host's page open at their address.
           const opening = hostRouter.questionPageOpening(input)
           if (!opening) return { ok: false, reason: 'gone' }
-          if (opening.kind === 'url') { await shell.openExternal(opening.url); return { ok: true } }
+          // Opening a page reviews the prototype it belongs to (ADR-0108); this computer's host hears it here, and a remote
+          // host from its own page route.
+          const opened = (result: QuestionPageOpenResult): QuestionPageOpenResult => { if (result.ok) hostRouter.questionPageOpened(input); return result }
+          // Web links in threads chooses the browser (ADR-0108). Sotto's browser opens a file through the phone access
+          // listener; a thread with no folder for that browser opens its page in the system browser, as its links do.
+          const destination = questionPageDestination(opening, (await settingsCoordinator.getSettings()).webLinkDestination, phoneAccess.pagePort())
+          if (destination.browser === 'sotto' && browserService) {
+            const listing = await browserService.list({ threadId: input.threadId })
+            if (listing.ok) {
+              const shown = await browserService.openLink({ url: destination.url, destination: 'embedded', target: { threadId: input.threadId, workspaceId: listing.value.workspace.workspaceId } })
+              if (shown.ok && shown.value.page) return opened({ ok: true, page: shown.value.page })
+            }
+          }
+          // In the system browser a file opens as a file; a loopback page and a remote host's page open at their address.
+          if (opening.kind === 'url') { await shell.openExternal(opening.url); return opened({ ok: true }) }
           // The file must still be the HTML file found when the question was asked, after links are followed: openPath runs
           // whatever it is handed, so a page since replaced by a link to a program is not opened.
           const real = await realpath(opening.file).catch(() => undefined)
           if (real !== opening.file || !/\.html?$/iu.test(real) || !await stat(real).then(info => info.isFile(), () => false)) return { ok: false, reason: 'gone' }
-          return await shell.openPath(real) === '' ? { ok: true } : { ok: false, reason: 'unavailable' }
+          return await shell.openPath(real) === '' ? opened({ ok: true }) : { ok: false, reason: 'unavailable' }
         },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
         dictation: {

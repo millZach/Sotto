@@ -16,6 +16,8 @@ import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isDelegationNews, isDe
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
+/** Why a queue Watcher's stop holds for the user's review (ADR-0073) is paused. */
+export const WATCHER_STOP_PAUSE = 'Watcher stopped this thread, so its queue waits for you. Review the thread and resume its queue when ready.'
 /** Shared identity for prompt admission, the outbox and queue receipts. Images stay handles, never content reads. */
 export function followupDigest(input: Pick<AgentFollowup, 'text' | 'skills' | 'files'> & { readonly attachments?: readonly AgentAttachmentHandle[] | undefined }): string {
   const base = input.skills?.length ? [input.text.trim(), input.attachments ?? [], input.skills] : [input.text.trim(), input.attachments ?? []]
@@ -117,7 +119,7 @@ export class FollowupStore {
         const remaining = item.attachments.filter(kept)
         if (remaining.length === item.attachments.length && !lost.has(item.id)) continue
         item.attachments = remaining
-        if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES }
+        if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES; delete item.pausedBy }
       }
       for (const item of state.items) if (active(item.threadId) && item.status === 'dispatching') {
         item.status = 'uncertain'; item.error = 'Dispatch was interrupted. Refresh to reconcile; this message will not be replayed.'
@@ -258,7 +260,7 @@ export class FollowupStore {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined } : {}
+        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined, pausedBy: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
       } else {
@@ -392,9 +394,12 @@ export class FollowupStore {
     })
   }
   /** Pauses the thread's queued follow-ups. A hidden wake-up never pauses: no one could resume it. */
-  pause(threadId: string, error: string): Promise<void> {
+  pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {
     return this.change(state => {
-      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isHiddenWakeUp(item)) Object.assign(item, { status: 'paused', error })
+      // A Watcher stop's pause holds the user's queue and Sotto's news; Watcher's own sends are fenced by the stop itself.
+      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isHiddenWakeUp(item) && !(by && item.watcherOperationId)) {
+        Object.assign(item, { status: 'paused', error, ...by ? { pausedBy: by } : {} })
+      }
     })
   }
   /**
@@ -404,15 +409,29 @@ export class FollowupStore {
    */
   pauseUserPrompts(threadId: string, error: string, held: (item: QueuedFollowup) => boolean): Promise<void> {
     return this.change(state => {
-      const items = state.items.filter(item => item.threadId === threadId && item.status === 'queued' && !item.wakeUp && !item.watcherOperationId && held(item))
+      // A prompt the stop already paused is paused again the same way: once the news turn runs, the hold ending is no
+      // longer the review, so only Resume queue sends it.
+      const items = state.items.filter(item => item.threadId === threadId && (item.status === 'queued' || item.status === 'paused' && item.pausedBy === 'watcher')
+        && !item.wakeUp && !item.watcherOperationId && held(item))
       if (!items.length) return false
-      for (const item of items) Object.assign(item, { status: 'paused', error, updatedAt: new Date().toISOString() })
+      for (const item of items) { Object.assign(item, { status: 'paused', error, updatedAt: new Date().toISOString() }); delete item.pausedBy }
+    })
+  }
+  /**
+   * Puts back what a Watcher stop paused once its hold has ended: the user's own command in the thread was the review
+   * (ADR-0073), so the queue goes on as it would have. Any other pause still waits for Resume queue.
+   */
+  releaseWatcherPause(threadId: string): Promise<void> {
+    return this.change(state => {
+      const items = state.items.filter(item => item.threadId === threadId && item.status === 'paused' && item.pausedBy === 'watcher')
+      if (!items.length) return false
+      for (const item of items) { item.status = 'queued'; delete item.error; delete item.pausedBy }
     })
   }
   resume(threadId: string, turnId?: string): Promise<void> {
     return this.change(state => {
       for (const item of state.items) if (item.threadId === threadId && ['paused', 'failed'].includes(item.status)) {
-        item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error
+        item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error; delete item.pausedBy
       }
     })
   }

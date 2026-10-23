@@ -185,7 +185,7 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
     {node.threadId === null ? <p className="watcher-picture__card-none">This window does not list this thread.</p>
       : <div className="watcher-picture__card-actions">
         {node.waits !== null ? <button type="button" className="watcher-answer tt-focusable" onClick={() => { onClose(false); onOpen(node.threadId!, { atRequest: true, from }) }}>
-          {node.waits === 'failed' ? 'Open' : 'Open to answer'}</button> : null}
+          {node.waits === 'failed' || node.waits === 'prototype' ? 'Open' : 'Open to answer'}</button> : null}
         <button type="button" className="watched-card__stop tt-focusable" onClick={() => { onClose(false); onOpen(node.threadId!, { from }) }}>Open beside Watcher</button>
       </div>}
   </div>

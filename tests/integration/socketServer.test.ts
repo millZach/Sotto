@@ -434,13 +434,17 @@ it('serves a question’s page by its token alone, whatever origin asks, and not
   const token = 'p'.repeat(32)
   // The host keeps a page's folder as it is after links are followed.
   const root = await realpath(directory)
+  const opened: string[] = []
   const service = { shell: () => ({ hostId: 'host' }), subscribe: () => () => {},
-    questionPage: (asked: string) => asked === token ? { kind: 'file', root, file: join(root, 'greeting.html') } : undefined } as unknown as HostService
+    questionPage: (asked: string) => asked === token ? { kind: 'file', root, file: join(root, 'greeting.html') } : undefined,
+    questionPageOpened: (asked: string) => opened.push(asked) } as unknown as HostService
   listener = await startSocketServer({ service, pairing })
   const base = `http://127.0.0.1:${listener.descriptor.port}`
   const origin = { Origin: 'https://laptop.example.ts.net:8443' }
   const page = await fetch(`${base}/page/${token}/greeting.html`, { headers: origin })
   expect([page.status, await page.text()]).toEqual([200, '<h1>Greeting</h1>'])
+  // Opening the page tells the host, which clears the prototype-ready mark it belongs to (ADR-0108).
+  expect(opened).toEqual([token])
   expect((await fetch(`${base}/page/${'q'.repeat(32)}/greeting.html`)).status).toBe(404)
   // The token opens its page and nothing of the listener's own.
   expect((await fetch(`${base}/v1/session`, { method: 'POST', headers: origin })).status).toBe(401)

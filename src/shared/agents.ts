@@ -247,10 +247,21 @@ export const questionPageSchema = z.object({
   token: z.string().regex(/^[A-Za-z0-9_-]{32}$/u), kind: z.enum(['file', 'server']), name: z.string().min(1).max(512), start: z.string().max(4_096),
 })
 export type QuestionPage = z.infer<typeof questionPageSchema>
+/**
+ * A thread's prototype waiting for review (ADR-0108). `source` is `reply:<message ID>` for the newest reply that named the
+ * pages, or `request:<request ID>` for a waiting question; `pages` are the ones that opened when Sotto looked.
+ */
+export const prototypeReadySchema = z.object({
+  source: z.string().min(1).max(1_024), pages: z.array(questionPageSchema).min(1).max(QUESTION_PAGES_MAX),
+}).strict()
+export type PrototypeReady = z.infer<typeof prototypeReadySchema>
 export const agentRequestSchema = z.object({
   id, kind: z.enum(['question', 'permission']), text,
   /** The pages Sotto found for a question, which every client offers to open (ADR-0085). The host adds them; no provider does. */
   pages: z.array(questionPageSchema).max(QUESTION_PAGES_MAX).optional(),
+  /** A question about a prototype that still names no page that opens after Sotto sent its thread back for one (ADR-0108).
+   * The host adds it; no provider does. */
+  linkMissing: z.literal(true).optional(),
   options: z.array(z.object({ id, label: text })).default([]),
   questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
@@ -503,6 +514,10 @@ export const agentThreadSchema = z.object({
   /** The thread finished its work while no client showed it, and no client has shown it since (ADR-0046). The host's
    * coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   finishedUnread: z.literal(true).optional(),
+  /** A prototype the thread made waits for the user to review (ADR-0108): the pages its newest reply or a waiting question
+   * names that open, found and served as a question's are (ADR-0085). `source` names that reply or question. The host's
+   * coordinator sets it and clears it once the user opens one of the pages or replies; absent otherwise, and from older hosts. */
+  prototypeReady: prototypeReadySchema.optional().catch(undefined),
   /** The thread's last turn failed and a client has shown it since, or the user dismissed it (ADR-0092): its row reads Done.
    * The host's coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   failureSeen: z.literal(true).optional(),
@@ -797,6 +812,8 @@ export const agentFollowupSchema = z.object({
   status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
   error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
   wakeUp: z.literal(true).optional().catch(undefined),
+  // A queue Watcher's stop holds for the user's review (ADR-0073) is paused by Watcher, and says so.
+  pausedBy: z.literal('watcher').optional().catch(undefined),
 })
 export type AgentFollowup = z.infer<typeof agentFollowupSchema>
 export const agentDeliverySchema = z.object({

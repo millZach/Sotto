@@ -121,6 +121,7 @@ export default tseslint.config(
       'artifacts/git-settings/**',
       'artifacts/question-message-links/**',
       'artifacts/question-prototype-pages/**',
+      'artifacts/prototype-ready/**',
       'artifacts/review-comments-run/**',
       'artifacts/git-interface-run/**',
       'artifacts/worktree-origin-fallback-run/**',

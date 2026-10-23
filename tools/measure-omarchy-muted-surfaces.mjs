@@ -1,4 +1,4 @@
-// Usage: mise exec node@24.21.0 -- node tools/measure-omarchy-muted-surfaces.mjs [output.json]
+// Usage: mise exec node@24.22.1 -- node tools/measure-omarchy-muted-surfaces.mjs [output.json]
 import console from 'node:console'
 import process from 'node:process'
 import { createRequire } from 'node:module'

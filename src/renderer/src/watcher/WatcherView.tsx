@@ -15,7 +15,6 @@ import { ModelPicker } from '../agents/ModelPicker'
 import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
-import { useSubmissions } from '../agents/threadDraftStore'
 import { useShared } from '../agents/stateSharing'
 import { describeThreads, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
@@ -24,9 +23,9 @@ import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext } from '../tools/webLinks'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
-import { watcherTakeovers } from '../../../shared/watcherRoom'
+import { watcherTakeovers, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { rowStatus } from '../agents/threadFacts'
-import { threadForTarget, useWatcherRoom, type WatcherRoom } from './watcherRoom'
+import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView, type RoomTab } from './WatcherBeside'
@@ -40,6 +39,7 @@ import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOver
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherNightScene } from './WatcherNightScene'
+import { moodOf, owlKey, type WatchedOwl } from './owlFamily'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
@@ -321,7 +321,8 @@ const FAILURE_MARGIN_PX = 12
 function focusBeside(atRequest: boolean): void {
   const pane = document.getElementById(BESIDE_PANE_ID)
   if (pane === null) return
-  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
+  // What it waits on: its request's card, or the strip of a prototype waiting for review (ADR-0108).
+  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind], .prototype-ready') : null
   if (atRequest && card === null && focusFailure(pane)) return
   const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
   if (target === null) return
@@ -362,24 +363,17 @@ function focusInlineAsk(threadId: string, requestId: string | undefined): boolea
   return true
 }
 
-/** The first entry's conversation, before there is a Watcher. */
-const FIRST_ENTRY = 'first'
-
 /**
- * Whether the night scene shows: while the room is empty, until its first message. `key` names the conversation, the
- * first entry's or a Watcher's. Only `started`, something sent or already there, ends the scene for it, and a refusal
- * or a reload of the same conversation does not bring it back. The first entry's end carries to the Watcher its message
- * created, which is empty only until the message reaches it. A new Watcher after a provider change is a new
- * conversation, and the scene shows again. `hidden` puts it away without ending it: while the room or the conversation
- * loads or cannot be read, and while the Watched view stands in the conversation's place.
+ * The threads Watcher watches, as the night scene's thread owls: one for each watched row, with its thread in this
+ * window to open and how its owl looks. The same owls keep the same list, so the scene takes only the updates that
+ * change one.
  */
-function useSceneShown(key: string, started: boolean, hidden: boolean): boolean {
-  const [memory, setMemory] = useState({ key, ended: started })
-  let next = memory
-  if (next.key !== key) next = { key, ended: next.key === FIRST_ENTRY && next.ended }
-  if (started && !next.ended) next = { ...next, ended: true }
-  if (next !== memory) setMemory(next)
-  return !hidden && !next.ended
+function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null): readonly WatchedOwl[] {
+  // One pass over the threads for the index, then a look-up a row, so the work grows with the threads and no faster.
+  const idOf = useMemo(() => threadAddressIndex(state), [state])
+  return useShared(useMemo<readonly WatchedOwl[]>(() => room === null ? [] : watchedRows(room).map(row => ({
+    key: owlKey(row.target), title: row.title, threadId: idOf(row.target) ?? null, mood: moodOf(row),
+  })), [room, idOf]))
 }
 
 /**
@@ -388,10 +382,11 @@ function useSceneShown(key: string, started: boolean, hidden: boolean): boolean 
  * its own real pane, the Overview over the room on All threads, and the switch and page links floating at the bottom.
  * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
  * Threads or Shift with a press, which go there on purpose; Watcher itself is in neither the Overview nor Threads.
- * While the room is empty, an ASCII night with an owl is drawn behind it (`WatcherNightScene`).
+ * An ASCII night is drawn in its side margins, with Watcher's owl and a thread owl for each watched thread
+ * (`WatcherNightScene`).
  */
 export function WatcherView({ now: fixedNow, updateControl }: {
-  /** A fixed clock for captures; the rows' times then hold still, and so does the night scene, settled on the composer. */
+  /** A fixed clock for captures; the rows' times then hold still, and so does the night scene, every owl sitting. */
   readonly now?: number | undefined
   readonly updateControl?: ReactNode
 }): ReactNode {
@@ -577,21 +572,13 @@ export function WatcherView({ now: fixedNow, updateControl }: {
       : tab === 'visualize' ? <WatcherPicture room={room} state={state} entries={entries} id={picturePanel} labelledBy={pictureTab} onOpen={openThread} /> : null}
     focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
 
-  // The night scene behind the room while it is empty: the first entry with its composer, or Watcher's conversation
-  // before anything is sent to it, the first entry's message included.
-  const first = useFirstMessage()
-  const submissions = useSubmissions(agents.threadDrafts)
-  const shownThread = watcherRow?.thread
-  // What ends it: a message sent or on its way, or a conversation already there. A thread whose messages are not read
-  // yet carries their count in its summary instead.
-  const started = first.phase !== 'writing' || (shownThread !== undefined && (shownThread.messages.length > 0 || (shownThread.summary?.messageCount ?? 0) > 0
-    || shownThread.earlierAvailable === true || shownThread.status === 'running' || shownThread.requests.length > 0
-    || submissions.some(item => item.threadId === shownThread.id)))
-  // What only puts it away: the room or the conversation still loading or unreadable, or the Watched view in its place.
+  // The night scene in the room's margins, with a thread owl for each watched thread. It steps away while Visualize
+  // shows, whose picture takes the pane's whole width (Zach, October 22, 2026), and while the room or Watcher's
+  // conversation cannot be read yet.
   const roomOpen = room !== null && room.status === 'ready' && state !== null && !(room.error !== null && room.state === null)
-  const conversationReady = shownThread !== undefined && shownThread.status === 'idle' && shownThread.historyStatus !== 'loading' && shownThread.historyStatus !== 'error'
-  const sceneKey = current === null ? FIRST_ENTRY : JSON.stringify([current.target.hostId, current.target.threadId])
-  const sceneShown = useSceneShown(sceneKey, started, !roomOpen || (current !== null && !conversationReady) || tab !== 'conversation')
+  const sceneShown = roomOpen && tab !== 'visualize' && (current === null || watcherRow !== undefined)
+  const owls = useWatchedOwls(room?.state ?? null, state)
+  const showWatched = useCallback((): void => roomView.set({ tab: 'watched' }), [])
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
@@ -603,7 +590,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
             <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
-              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} />
+              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} owls={owls} onOpen={openThread} onShowWatched={showWatched} />
               <OwlRoomSky />
               {watcherContent}
             </section>

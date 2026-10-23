@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX, workingThreadsLead } from '../../../shared/workingThreads'
@@ -92,8 +92,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   readonly settle: ReturnType<typeof useSettleThread>['settle']
 }): ReactNode {
   const title = row.thread.title
-  // Just finished (ADR-0046) and Babysitting #74 (ADR-0061) both stand where the row would say Done.
-  const { text: status, finished, babysitting } = rowStatus(row)
+  // Prototype ready (ADR-0108), Just finished (ADR-0046) and Babysitting #74 (ADR-0061) stand where the row would say Done.
+  const { text: status, finished, babysitting, prototype } = rowStatus(row)
   // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const [renaming, setRenaming] = useState(false)
@@ -139,7 +139,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
           {watched ? <WatchedBadge size={14} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
-        <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnectedLabel(row)}><span className="tt-visually-hidden">{row.provider}, </span>{status}{disconnectedLabel(row)}</span>
+        <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-prototype={prototype || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnectedLabel(row)}><span className="tt-visually-hidden">{row.provider}, </span>{prototype ? <AppWindow size={12} aria-hidden="true" /> : null}{status}{disconnectedLabel(row)}</span>
       </span>
       <span className="thread-nav__branch" data-working-copy-state={copy.status} title={branchName !== copyLabel ? `${branchName} · ${copyLabel}` : copyLabel}>
         <WorkingCopyIcon size={12} aria-hidden="true" />{row.thread.hostLabel ? <span>{row.thread.hostLabel} · </span> : null}

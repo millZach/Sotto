@@ -1,4 +1,6 @@
 import { mkdir } from 'node:fs/promises'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import type { AgentRequest } from '../../src/shared/agents'
@@ -9,11 +11,21 @@ import { evidenceDirectory } from '../fixtures/evidence'
 // The question card docks over the end of the agent's message, so the links in that message come with it as rows. The
 // loopback review page is one of the question's pages (ADR-0085), so its row opens the page through main rather than as a
 // link. The app is real end to end; only the provider's effects come from the E2E host, and only the OS browser is recorded.
+// The review page is served for real: a prototype question whose page does not answer is held and sent back (ADR-0108).
 const evidence = evidenceDirectory('artifacts/question-message-links')
-const review = 'http://localhost:8075/'
 const tag = 'https://github.com/millZach/Sotto/tree/prototype/cloud-iphone-settings-layout'
+let server: Server
+let place = ''
+let review = ''
+test.beforeAll(async () => {
+  server = createServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'text/html' }); response.end('<h1>Cloud iPhone layouts</h1>') })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  place = `localhost:${(server.address() as AddressInfo).port}`
+  review = `http://${place}/`
+})
+test.afterAll(async () => { await new Promise(resolve => server.close(resolve)) })
 
-const message = [
+const message = (): string => [
   `**Review page:** ${review} (it’s open in your browser)`,
   'I found why the page looks different. Every other Settings page is a flat list of rows split by thin lines.',
   `The three layouts are also on [the prototype tag](${tag}).`,
@@ -66,13 +78,13 @@ test('a question brings the links from the agent’s message before it, as rows 
   await resize(app, page, 1280, 800)
   const event = (type: 'manual' | 'ready', text: string) => page.evaluate(async ([type, text]) => window.sottoE2E!.agentEvent!({ type, threadId: 'workshop', text, status: 'running' }), [type, text] as const)
   await event('manual', 'The cloud iPhone page in settings looks different. Can you make sure the layout matches?')
-  await event('ready', message)
+  await event('ready', message())
   await page.evaluate(async request => window.sottoE2E!.agentEvent!({ type: 'question', threadId: 'workshop', text: request.text, request, status: 'running' }), question)
 
   const card = page.locator('.thread-questions .agent-request')
   const links = card.getByRole('group', { name: 'Pages and links for this question' })
   await expect(links.getByRole('link')).toHaveCount(2)
-  await expect(links.getByRole('link', { name: 'Open the prototype, localhost:8075', exact: true })).toBeVisible()
+  await expect(links.getByRole('link', { name: `Open the prototype, ${place}`, exact: true })).toBeVisible()
   await expect(links.getByRole('link', { name: 'Open the link, github.com/millZach/Sotto/tree/prototype/cloud-iphone-settings-layout', exact: true })).toBeVisible()
 
   for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
