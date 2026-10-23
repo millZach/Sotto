@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { EFFORT_COLORS } from '../../../src/shared/settings'
@@ -41,19 +41,19 @@ function palette(mode: Mode, themeId: string, options: PaintOptions = {}): (name
 describe('main-window theme tokens', () => {
   it.each(combinations)('%s mode of %s keeps text readable on the surfaces it sits on', (mode, id) => {
     const color = palette(mode, id)
-    for (const surface of ['canvas', 'surface', 'surface-elevated', 'hover-strong', 'selected', 'field'] as const) {
+    for (const surface of ['canvas', 'surface', 'surface-elevated', 'hover-strong', 'selected', 'field', 'card', 'card-selected'] as const) {
       for (const ink of ['text', 'text-2'] as const) {
         expect(contrast(color(ink), color(surface)), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
     // Muted text lifts T3's muted foreground slightly toward the text colour so
     // metadata on raised panels and the sidebar still reads at 4.5:1.
-    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'sidebar'] as const) {
+    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'sidebar', 'card', 'card-selected'] as const) {
       expect(contrast(color('text-muted'), color(surface)), `muted text on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     // Faint text is still text: placeholders, ghost buttons and instrument labels read at 4.5:1 on the surfaces
     // they sit on. (The sidebar sets its own text roles.)
-    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated'] as const) {
+    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'card'] as const) {
       expect(contrast(color('text-faint'), color(surface)), `faint text on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(color('sidebar-text'), color('sidebar'))).toBeGreaterThanOrEqual(4.5)
@@ -83,7 +83,7 @@ describe('main-window theme tokens', () => {
 
   it.each(combinations)('%s mode of %s keeps accent text, actions, focus, boundaries and status readable', (mode, id) => {
     const color = palette(mode, id)
-    for (const surface of ['canvas', 'surface'] as const) {
+    for (const surface of ['canvas', 'surface', 'card'] as const) {
       expect(contrast(color('accent-text'), color(surface)), `accent text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('link'), color(surface)), `link on ${surface}`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('focus-ring'), color(surface)), `focus ring on ${surface}`).toBeGreaterThanOrEqual(3)
@@ -102,6 +102,10 @@ describe('main-window theme tokens', () => {
     for (const surface of ['field', 'selected'] as const) {
       expect(contrast(color('accent-text'), color(surface)), `question recommendation on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
+    // A provider's Connected line on its card, the selected card included.
+    expect(contrast(color('accent-text'), color('card-selected')), 'Connected on the selected card').toBeGreaterThanOrEqual(4.5)
+    // A card is a step off the room: a fill the eye finds, never one that reads as a different room.
+    expect(contrast(color('card'), color('canvas')), 'card against the room').toBeGreaterThan(1.05)
     expect(contrast(color('on-accent'), color('accent')), 'on-accent on accent').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('primary-contrast'), color('primary')), 'primary action').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('error-text'), color('error-surface'))).toBeGreaterThanOrEqual(4.5)
@@ -115,9 +119,9 @@ describe('main-window theme tokens', () => {
 
   it.each(combinations)('%s mode of %s draws every chart series and Other at 3:1 on the room and the surface', (mode, id) => {
     const color = palette(mode, id)
-    // Usage draws its charts on the room; the surface is checked too, for a chart that moves onto a card.
+    // Usage draws its charts on a card; the room and the surface are checked too, for a chart drawn on either.
     for (const series of [...CHART_SERIES, 'chart-other'] as const) {
-      for (const surface of ['canvas', 'surface'] as const) {
+      for (const surface of ['canvas', 'surface', 'card'] as const) {
         expect(contrast(color(series), color(surface)), `${series} on ${surface}`).toBeGreaterThanOrEqual(3)
       }
     }
@@ -144,8 +148,6 @@ describe('main-window theme tokens', () => {
     const onHeader = [
       ['text-faint', 'sidebar', 'owl-night', 'Add project and New thread'],
       ['text-muted', 'sidebar', 'owl-night', 'Collapse sidebar'],
-      ['text-muted', 'surface-sunken', 'owl-night-control', 'the Threads | Terminal switch'],
-      ['text', 'surface-elevated', 'owl-night-control-on', 'the switch\'s lit side'],
       ['text-faint', 'field', 'owl-night-field', 'the search placeholder'],
       ['text-muted', 'field', 'owl-night-field', 'the search icon'],
     ] as const
@@ -299,6 +301,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/visualCard.css',
       'src/renderer/src/agents/delegation.css',
+      'src/renderer/src/agents/messageScrubber.css',
       'src/renderer/src/agents/continueThread.css',
       'src/renderer/src/agents/threadStart.css',
       'src/renderer/src/agents/interactiveVisual.css',
@@ -324,5 +327,33 @@ describe('main-window theme tokens', () => {
       expect(css.match(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/giu) ?? [], path).toEqual([])
       expect(css, `${path} must read tokens instead of branching on the theme`).not.toMatch(/data-theme|data-accent|prefers-color-scheme/u)
     }
+  })
+
+  it('draws no pill: every renderer stylesheet rounds its corners by a few pixels, and only dots are circles (ADR-0110)', () => {
+    const root = join(process.cwd(), 'src/renderer/src')
+    const sheets = (readdirSync(root, { recursive: true }) as string[]).filter(name => name.endsWith('.css')).map(name => join(root, name))
+    expect(sheets.length).toBeGreaterThan(60)
+    // The floating widget keeps its capsule until Zach decides its shape; it is the one sheet this rule leaves alone.
+    const undecided = new Set([join(root, 'widget', 'widget.css')])
+    const capsules: string[] = []
+    for (const path of sheets) {
+      const css = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+      expect(css.match(/\b9{3,}px|--tt-radius-pill/gu) ?? [], relative(process.cwd(), path)).toEqual([])
+      if (undecided.has(path)) continue
+      // A corner of 50 pixels or more, or a corner at least half a rule's own height on anything but a square, rounds
+      // the whole end: a pill. Thin bars may keep 2px corners, as the ADR allows.
+      for (const [, selector = '', body = ''] of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+        const radius = /(?:^|[;\s])border-radius:\s*([^;]+)/u.exec(body)?.[1]
+        if (!radius) continue
+        const corners = [...radius.matchAll(/(\d+(?:\.\d+)?)px/gu)].map(match => Number(match[1]))
+        if (!corners.length) continue
+        const height = /(?:^|[;\s])height:\s*(\d+(?:\.\d+)?)px/u.exec(body)?.[1]
+        const width = /(?:^|[;\s])width:\s*(\d+(?:\.\d+)?)px/u.exec(body)?.[1]
+        const largest = Math.max(...corners)
+        const capsule = height !== undefined && width !== height && largest * 2 >= Number(height) && largest > 2
+        if (largest >= 50 || capsule) capsules.push(`${relative(process.cwd(), path)}: ${selector.trim()}`)
+      }
+    }
+    expect(capsules).toEqual([])
   })
 })

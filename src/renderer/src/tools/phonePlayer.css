@@ -5,16 +5,16 @@
 :root[data-reduced-motion='on'] .phone-player { animation: none; }
 @keyframes phone-player-arrive { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 
-.phone-player__label { display: flex; align-items: center; gap: 4px; height: 34px; max-width: 100%; padding: 0 3px 0 8px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); cursor: grab; user-select: none; }
+.phone-player__label { display: flex; align-items: center; gap: 4px; height: 34px; max-width: 100%; padding: 0 3px 0 8px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); cursor: grab; user-select: none; }
 .phone-player__label:active { cursor: grabbing; }
 .phone-player__label:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
 .phone-player__label > svg { flex: none; color: var(--tt-text-muted); }
 .phone-player__grip { flex: none; width: 6px; height: 14px; margin-right: 2px; background-image: radial-gradient(circle, var(--tt-text-faint) 1.2px, transparent 1.4px); background-size: 3px 4.6px; }
 .phone-player__name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.phone-player__size { flex: none; height: 26px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.phone-player__size { flex: none; height: 26px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: 4px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12px; cursor: pointer; }
 .phone-player__size:hover { background: var(--tt-hover); color: var(--tt-text); }
 /* The player sits outside the Tools panel, so its icon buttons carry the panel's own reset (tools.css). */
-.phone-player__label .files-icon { display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.phone-player__label .files-icon { display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .phone-player__label .files-icon:hover { background: var(--tt-hover); color: var(--tt-text); }
 
 /* The phone: a bezel in the theme's code surface, so it reads as hardware in light and dark alike. */

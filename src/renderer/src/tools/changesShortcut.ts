@@ -14,5 +14,5 @@ export function changesChord(hotkey: string | undefined, platform: SottoPlatform
 
 /** A key pressed where the chord means something else: a terminal's own Ctrl+D ends its input, so it keeps it. */
 export function chordBelongsElsewhere(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('.xterm, .terminal-view, .terminal-pane') !== null
+  return target instanceof Element && target.closest('.xterm, .terminal-view') !== null
 }

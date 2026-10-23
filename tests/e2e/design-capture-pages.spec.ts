@@ -56,7 +56,7 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-9-phone.png', { category: 'onboarding', state: 'iphone' })
 
       await page.getByRole('button', { name: /finish setup/i }).click()
-      await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
+      await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       const tour = page.locator('.threads-tour')
       await expect(tour).toBeVisible()
       await capturePage(page, 'threads-tour-projects.png', { category: 'threads', state: 'tour-projects' })

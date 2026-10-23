@@ -9,7 +9,7 @@ export const loadXtermView = (): Promise<TerminalViewFactory> => loading ??= imp
 
 /**
  * The injected factory when a caller passes one (tests do), otherwise the xterm one once its chunk arrives.
- * Nothing loads while `enabled` is false, so a closed panel or an empty Terminal mode costs no chunk.
+ * Nothing loads while `enabled` is false, so a closed panel or drawer costs no chunk.
  */
 export function useTerminalViewFactory(override?: TerminalViewFactory, enabled = true): { factory: TerminalViewFactory | null; failed: boolean } {
   const [factory, setFactory] = useState<TerminalViewFactory | null>(() => override ?? null)

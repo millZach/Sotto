@@ -105,7 +105,7 @@
   left: 36%;
   width: 44%;
   height: 5px;
-  border-radius: 3px;
+  border-radius: 2px;
   opacity: 0.85;
 }
 
@@ -189,18 +189,16 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 999px;
-  background: var(--tt-surface);
-  padding: 3px 9px;
+  padding: 3px 0;
   color: var(--tt-text-muted);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
-/* The words keep the text colour, which reads at 4.5:1 on the tint; the icon beside them carries the state's colour. */
+/* A state is its mark and its words, never a capsule (ADR-0110): the words keep the text colour and the icon beside
+   them carries the state's colour. */
 .onboarding-agent[data-kind='ready'] .onboarding-agent__state {
-  background: color-mix(in srgb, var(--tt-success) 12%, transparent);
   color: var(--tt-text);
 }
 
@@ -209,7 +207,6 @@
 }
 
 .onboarding-agent[data-kind='needs-you'] .onboarding-agent__state {
-  background: color-mix(in srgb, var(--tt-warning) 12%, transparent);
   color: var(--tt-text);
 }
 
@@ -346,7 +343,7 @@
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 4px;
   background: var(--tt-surface);
   font-size: 12.5px;
   font-weight: 700;

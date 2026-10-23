@@ -10,7 +10,7 @@ The renderer's main chunk is parsed before the first frame. Measured from `npm r
 | `main-*.js` | 2,396,693 | 544,206 |
 
 Two libraries rode in it that nothing draws at start. `@xterm/xterm` with its fit and WebGL addons is
-used once a terminal is open, in the Tools panel or in Terminal mode. lowlight's `common` grammar set,
+used once a terminal is open, in the Tools panel or a thread pane's drawer. lowlight's `common` grammar set,
 thirty-seven languages, is used once a fenced code block that names a language is rendered. Someone who
 opens Sotto to dictate paid for both on every launch. Mermaid was already loaded with the first diagram
 (`MermaidDiagram.tsx`); that is the pattern both now follow.

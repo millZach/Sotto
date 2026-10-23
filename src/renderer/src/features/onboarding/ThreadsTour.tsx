@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 
 import { formatAccelerator } from '../../../../shared/accelerator'
 import type { SottoPlatform } from '../../../../shared/platform'
-import { useSidebarMode } from '../../agents/SidebarFrame'
 import { Button } from '../../components/Button'
 import './threadsTour.css'
 
@@ -87,7 +86,6 @@ export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): R
   const [target, setTarget] = useState<Box | null>(null)
   // Which stops' parts are on the page now; the tour shows and counts only those.
   const [present, setPresent] = useState<readonly number[]>(() => stops.map((_, at) => at))
-  const [, setSidebarMode] = useSidebarMode()
   const [bubbleHeight, setBubbleHeight] = useState(180)
   const bubble = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -105,9 +103,6 @@ export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): R
     onDone()
     queueMicrotask(() => document.querySelector<HTMLElement>(stops[1]!.selector)?.focus())
   }
-
-  // The tour describes the Threads sidebar, so a window that remembered Terminal mode shows Threads for it.
-  useEffect(() => { setSidebarMode('threads') }, [setSidebarMode])
 
   // Follow the part as the page lays out, the way an anchored popover does. A part that stays missing is passed
   // over for the next one on the page, and with none left the tour ends.

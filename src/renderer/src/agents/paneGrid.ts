@@ -16,7 +16,7 @@ export function useClock(fixed: number | undefined, intervalMs = 30_000, active 
 /** Puts keyboard focus inside a pane once it has rendered. */
 export const focusPaneLater = (id: string): void => { window.setTimeout(() => focusInPane(id), 0) }
 
-/** What the grid's actions need from the workspace that owns it: threads and terminals answer alike. */
+/** What the grid's actions need from the workspace that owns it. */
 export interface PaneGrid {
   readonly layout: SplitLayout
   readonly focusedId: string | null

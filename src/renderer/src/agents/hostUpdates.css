@@ -34,7 +34,7 @@
   height: 28px;
   padding: 0 11px 0 9px;
   border: 1px solid var(--tt-border);
-  border-radius: var(--tt-radius-pill);
+  border-radius: 6px;
   background: var(--tt-surface-elevated);
   color: var(--tt-text);
   font: inherit;

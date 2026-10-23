@@ -25,10 +25,8 @@
 /* Light mode drops the faintest stars outright, so none of them sits there invisible, twinkling. */
 .thread-nav__star[data-tier='4'] { --owl-star-strength: var(--tt-owl-star-o4); display: var(--tt-owl-faintest-stars); }
 
-/* The search field and the Threads | Terminal switch take the night, as in Zach's screenshot. */
+/* The search field takes the night, as in Zach's screenshot. */
 .thread-nav[data-sky] .threads-search .tt-input { background: var(--tt-owl-night-field); }
-.thread-nav[data-sky] .thread-nav__top .thread-nav__seg { background: var(--tt-owl-night-control); }
-.thread-nav[data-sky] .thread-nav__top .thread-nav__seg button[aria-checked='true'] { background: var(--tt-owl-night-control-on); }
 
 /* Four stars dim to a fifth of their strength and come back, each on its own slow cycle and never in step; by day
    the fourth is among the faintest, which light mode drops, so three are seen. With reduced motion, from the system

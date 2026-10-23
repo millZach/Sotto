@@ -72,10 +72,10 @@
 .changes-base__check[data-shown] { visibility: visible; }
 .changes-base__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes-base__switch {
-  position: relative; justify-self: end; width: 28px; height: 16px; margin-right: 8px; padding: 0; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill);
+  position: relative; justify-self: end; width: 28px; height: 16px; margin-right: 8px; padding: 0; border: 1px solid var(--tt-field-border); border-radius: 5px;
   background: var(--tt-field); cursor: pointer;
 }
-.changes-base__thumb { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--tt-text-muted); }
+.changes-base__thumb { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 3px; background: var(--tt-text-muted); }
 .changes-base__switch[aria-checked='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent); }
 .changes-base__switch[aria-checked='true'] .changes-base__thumb { left: 14px; background: var(--tt-on-accent); }
 .changes-base__remote-only { display: grid; justify-self: end; margin-right: 14px; color: var(--tt-text-muted); }
@@ -183,7 +183,7 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-comment-pill { height: 0; }
 .changes-comment-pill__button {
   position: absolute; top: -11px; right: 10px; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px;
-  border: 0; border-radius: var(--tt-radius-pill); background: var(--tt-pill); color: var(--tt-pill-ink); box-shadow: var(--tt-shadow-sm);
+  border: 0; border-radius: 6px; background: var(--tt-pill); color: var(--tt-pill-ink); box-shadow: var(--tt-shadow-sm);
   font: 500 12.5px var(--tt-font-ui); cursor: pointer; transform: translateY(-50%);
 }
 .changes-comment-pill__button:hover:not([aria-disabled='true']) { filter: brightness(1.12); }

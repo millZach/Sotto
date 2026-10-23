@@ -26,6 +26,11 @@ export interface SceneMeasure {
   readonly composer: Box
   /** Every block of words in the pane. Nothing is drawn under them, whatever reaches the margins. */
   readonly words: readonly Box[]
+  /**
+   * The message scrubber's lane beside the column's left edge, while a long conversation shows it (ADR-0109). The scene
+   * keeps it clear: it is among the words, and the left margin's trees, owls and rail are laid out from its outer edge.
+   */
+  readonly lane?: Box | undefined
 }
 
 export const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value))
@@ -87,6 +92,8 @@ export interface SceneLayout {
   readonly header: number
   /** The column's two edges: the composer's sides. Nothing is drawn between them. */
   readonly column: { readonly left: number; readonly right: number }
+  /** The message scrubber's lane, which the scene keeps clear, or null while it does not show. */
+  readonly lane: Box | null
   /** The narrower margin's width. */
   readonly margin: number
   readonly mode: SceneMode
@@ -141,11 +148,16 @@ function limbSpots(along: Limb, kind: SpotKind, clear: readonly { readonly x: nu
 export function layoutScene(measure: SceneMeasure): SceneLayout {
   const { width: W, height: H, composer: comp, header } = measure
   const colL = comp.x, colR = comp.x + comp.w
-  const margin = Math.max(0, Math.min(colL, W - colR))
-  const mode: SceneMode = margin >= TREES_MIN_MARGIN ? 'trees' : margin >= RAIL_MIN_MARGIN ? 'rail' : 'none'
+  const lane = measure.lane ?? null
+  // The left margin's room ends at the scrubber's lane while it shows (Zach's pick, October 22, 2026).
+  const inL = lane === null ? colL : Math.max(0, Math.min(colL, lane.x))
+  const leftRoom = Math.max(0, inL), rightRoom = Math.max(0, W - colR)
+  const margin = Math.min(leftRoom, rightRoom)
+  // Too narrow a left margin for its tree shows the rail of eyes on the right alone.
+  const mode: SceneMode = margin >= TREES_MIN_MARGIN ? 'trees' : Math.max(leftRoom, rightRoom) >= RAIL_MIN_MARGIN ? 'rail' : 'none'
   const groundY = comp.y + comp.h * 0.55
   const sky = Math.max(1, groundY - header)
-  const L = { x0: 6, x1: colL - 14 }, R = { x0: colR + 14, x1: W - 6 }
+  const L = { x0: 6, x1: inL - 14 }, R = { x0: colR + 14, x1: W - 6 }
   const Mw = Math.max(1, Math.min(L.x1 - L.x0, R.x1 - R.x0))
   const s = clamp(Math.min(margin / OWL_SCALE.perMargin, sky / OWL_SCALE.perSky), OWL_SCALE.min, OWL_SCALE.max)
   const lh = sky * 0.8, rh = sky * 0.64
@@ -187,10 +199,11 @@ export function layoutScene(measure: SceneMeasure): SceneLayout {
     for (let x = L.x1 - 20; x > L.x0 + 16; x -= SPOT) if (open(x, ltx)) ground.push({ x, y: groundAt({ groundY }, x), kind: 'ground' })
     spots = [...limbFirst, ...tree, ...ground]
   } else if (mode === 'rail') {
-    // A column of eyes down the middle of each margin, the right one first.
-    for (const x of [(colR + OWL_GAP + W) / 2, (colL - OWL_GAP) / 2]) for (let y = header + RAIL_STEP; y < H - 14; y += RAIL_STEP) spots.push({ x, y, kind: 'rail' })
+    // A column of eyes down the middle of each margin with room for it, the right one first.
+    const rails = [...rightRoom >= RAIL_MIN_MARGIN ? [(colR + OWL_GAP + W) / 2] : [], ...leftRoom >= RAIL_MIN_MARGIN ? [(inL - OWL_GAP) / 2] : []]
+    for (const x of rails) for (let y = header + RAIL_STEP; y < H - 14; y += RAIL_STEP) spots.push({ x, y, kind: 'rail' })
   }
-  return { width: W, height: H, composer: comp, words: measure.words, header, column: { left: colL, right: colR }, margin, mode, s,
+  return { width: W, height: H, composer: comp, words: lane === null ? measure.words : [...measure.words, lane], header, column: { left: colL, right: colR }, lane, margin, mode, s,
     groundY, sky, horizon: groundY - sky * 0.3, left, right, moon, home, visit, branches, composerPerch, spots }
 }
 
@@ -292,10 +305,11 @@ export function stayAt(place: OwlPlace, roll: number): number {
 
 /**
  * Where the owl flies next from `at`, for a roll between 0 and 1: from home to the other tree or the composer's left
- * branch; from the other tree home, or now and then to the composer's right branch; from the composer home.
+ * branch; from the other tree home, or now and then to the composer's right branch; from the composer home. While the
+ * message scrubber shows, the left branch's perch would put the owl's head in its lane, so home flies to the other tree.
  */
-export function nextPlace(at: OwlPlace, roll: number): OwlPlace {
-  if (at === 'home') return roll < 0.5 ? 'tree' : 'composer'
+export function nextPlace(at: OwlPlace, roll: number, leftBranch = true): OwlPlace {
+  if (at === 'home') return roll < 0.5 || !leftBranch ? 'tree' : 'composer'
   if (at === 'tree') return roll < 0.35 ? 'composer' : 'home'
   return 'home'
 }
