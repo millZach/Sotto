@@ -71,20 +71,28 @@ export function defaultMachineId(start: NewWorkersStart | undefined, thisCompute
 }
 
 /**
- * The line's machines, This computer first and then the others in the order main lists them. Before the first read, or
- * when it fails, This computer stands alone with its count, so the line is never empty.
+ * The line's machines: This computer first, then each machine this computer has paired with in the order Settings lists
+ * them, then any other the last read named. Whether a machine is connected comes from the saved hosts, which main keeps
+ * current; its facts and load come from the last read, which happens only when Watcher places work or the user opens a
+ * machine's numbers, so a connected machine that read as not connected then has no facts yet, not "not connected". Before
+ * any read, This computer stands alone with its count unless machines are saved, so the line is never empty.
  */
-export function machineEntries(machines: readonly WatcherMachine[] | null, working: ReadonlyMap<string, number>, start?: NewWorkersStart): readonly MachineEntry[] {
+export function machineEntries(machines: readonly WatcherMachine[] | null, working: ReadonlyMap<string, number>, start?: NewWorkersStart,
+  saved?: readonly { readonly hostId: string; readonly name: string; readonly connected: boolean }[]): readonly MachineEntry[] {
   const local = machines?.find(machine => machine.thisComputer)
   const defaultId = defaultMachineId(start, local?.hostId)
-  const entry = (machine: WatcherMachine | null, thisComputer: boolean): MachineEntry => {
-    const count = working.get(thisComputer ? THIS_COMPUTER : machine!.hostId) ?? 0
-    const connected = thisComputer || (machine?.connected === true && machine.factsState !== 'not-connected')
-    return { hostId: machine?.hostId ?? THIS_COMPUTER, name: thisComputer ? 'This computer' : machine!.name, thisComputer, connected,
-      working: count, starting: connected ? machine?.placedNotStarted ?? 0 : 0, words: machineWords(machine, count),
-      isDefault: machine !== null && machine.hostId === defaultId, machine }
+  const readAs = (machine: WatcherMachine | null): boolean => machine !== null && machine.connected && machine.factsState !== 'not-connected'
+  const entry = (hostId: string, name: string, machine: WatcherMachine | null, thisComputer: boolean, connected: boolean): MachineEntry => {
+    const count = working.get(thisComputer ? THIS_COMPUTER : hostId) ?? 0
+    const facts = connected && readAs(machine) ? machine : null
+    return { hostId, name, thisComputer, connected, working: count, starting: connected ? facts?.placedNotStarted ?? 0 : 0,
+      words: connected ? machineWords(facts, count) : [MACHINE_WORDS.notConnected], isDefault: hostId === defaultId, machine: connected ? facts : null }
   }
-  return [entry(local ?? null, true), ...(machines ?? []).filter(machine => !machine.thisComputer).map(machine => entry(machine, false))]
+  const others = (machines ?? []).filter(machine => !machine.thisComputer)
+  const remotes = saved === undefined ? others.map(machine => entry(machine.hostId, machine.name, machine, false, readAs(machine)))
+    : [...saved.map(host => entry(host.hostId, host.name, others.find(machine => machine.hostId === host.hostId) ?? null, false, host.connected)),
+      ...others.filter(machine => !saved.some(host => host.hostId === machine.hostId)).map(machine => entry(machine.hostId, machine.name, machine, false, readAs(machine)))]
+  return [entry(local?.hostId ?? THIS_COMPUTER, 'This computer', local ?? null, true, true), ...remotes]
 }
 
 /** "3 working", or "3 working, 1 starting" while work placed there has not begun; nothing for a machine not connected. */

@@ -9,11 +9,14 @@ import { WatcherMachines } from '../../../src/renderer/src/watcher/WatcherMachin
 import { lineText, machineEntries, machineLabel, shortLine, unknownWhy } from '../../../src/renderer/src/watcher/machineLine'
 import { placementLine } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
+import { machinesStore } from '../../../src/renderer/src/watcher/useMachines'
+import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
+import type { HostsBridge } from '../../../src/shared/hosts'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 
 vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>(), useWatcherRoom: vi.fn() }))
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); machinesStore.clear() })
 
 const NOW = Date.parse('2026-10-23T12:40:00Z')
 const LOCAL = '7d1c8a52-5f0a-4d55-9a38-1f9b7a2a0c11', FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10', STUDIO = 'c5e2a1f8-9b3d-4e72-a6c1-3f8d2b5e9a07'
@@ -36,12 +39,15 @@ function thread(id: string, title: string, remote?: string, over: Partial<AgentT
 function agentState(threads: AgentThread[]): AgentState {
   return { host: { threads, projects: [] } } as unknown as AgentState
 }
-function show(machines: WatcherMachine[], threads: AgentThread[], extra: Partial<Extract<WatcherMachinesRead, { status: 'ok' }>> = {}) {
+/** A start Watcher placed this run, which the line reads the machines for. */
+const PLACED = { requests: [], receiptPlacements: [{ operationId: '5b3c9e1a-7d24-4f6b-8a90-2c1e4d7f6a35', placement: { hostId: FORGE, name: 'forge', awayFromDefault: false } }] }
+function show(machines: WatcherMachine[], threads: AgentThread[], extra: Partial<Extract<WatcherMachinesRead, { status: 'ok' }>> = {},
+  options: { readonly placed?: boolean; readonly hosts?: HostsBridge } = {}) {
   const readMachines = vi.fn(async (): Promise<WatcherMachinesRead> => ({ status: 'ok', machines, observedAt: new Date(NOW).toISOString(), ...extra }))
-  vi.mocked(useWatcherRoom).mockReturnValue({ readMachines, state: null } as unknown as ReturnType<typeof useWatcherRoom>)
+  vi.mocked(useWatcherRoom).mockReturnValue({ readMachines, state: options.placed === false ? null : PLACED } as unknown as ReturnType<typeof useWatcherRoom>)
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({ actions: { navigate } } as unknown as ReturnType<typeof useOptionalApp>)
-  const view = render(<WatcherMachines state={agentState(threads)} now={NOW} />)
+  const view = render(<WatcherMachines state={agentState(threads)} now={NOW} hosts={options.hosts} />)
   return { ...view, readMachines, navigate }
 }
 const wide = () => within(document.querySelector<HTMLElement>('.watcher-machines__wide')!)
@@ -173,6 +179,38 @@ describe('The machines line in Watcher’s room', () => {
     await act(async () => { fireEvent.click(narrow().getByRole('button', { name: '2 more machines. Show every machine' })) })
     expect(document.querySelector('.watcher-machines')).toHaveAttribute('data-all', 'true')
     expect(wide().getByRole('button', { name: /^forge,/u })).toHaveFocus()
+  })
+
+  it('reads machine facts only when Watcher places work or a panel opens, never on a timer, and once per placement', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { readMachines, unmount } = show([local(), forge()], [], {}, { placed: false })
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
+      expect(readMachines).not.toHaveBeenCalled()
+      await act(async () => { fireEvent.click(wide().getByRole('button', { name: /^This computer,/u })) })
+      expect(readMachines).toHaveBeenCalledTimes(1)
+      // A read that names This computer's host ID leaves its panel open.
+      await act(async () => undefined)
+      expect(screen.getByRole('dialog', { name: 'This computer' })).toBeInTheDocument()
+      unmount()
+      const again = show([local(), forge()], [])
+      await act(async () => undefined)
+      expect(again.readMachines).toHaveBeenCalledTimes(1)
+      cleanup()
+      // The same placements read for once already are not read for again when the room opens again.
+      const third = show([local(), forge()], [])
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+      expect(third.readMachines).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('takes whether a machine is connected from the saved hosts, which stay current between reads', async () => {
+    const hosts = hostsBridgeFixture({ initial: hostsState({ localHostId: LOCAL, hosts: [hostStatus({ id: FORGE, hostId: FORGE, name: 'forge', phase: 'connected' }),
+      hostStatus({ id: STUDIO, hostId: STUDIO, name: 'studio', phase: 'disconnected' })] }) })
+    // The last read, from before forge connected, says it was not connected and knows nothing of studio.
+    show([local(), forge({ connected: false, factsState: 'not-connected', facts: null, load: null, memoryState: 'unknown', cpuState: 'unknown' })], [], {}, { hosts: hosts.bridge })
+    await act(async () => undefined)
+    expect(document.querySelector('.watcher-machines__wide')).toHaveTextContent('This computer 0 working·forge 0 working·studio not connected')
   })
 
   it('shows This computer alone, with its count, where the bridge offers no machines read', () => {

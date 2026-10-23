@@ -1,37 +1,44 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import type { WatcherMachinesRead } from '../../../shared/watcherRoom'
-
-/** How often the machines line and Settings read the machines again while they show: a host keeps its last reading five seconds. */
-export const MACHINES_READ_EVERY_MS = 15_000
 
 type MachinesOk = Extract<WatcherMachinesRead, { status: 'ok' }>
 
 /**
- * Watcher's machines (#1032), read through the room's bridge while a surface that shows them is on screen, and again
- * every fifteen seconds and whenever `read` is called, such as when a machine's panel opens. Nothing reads on a timer
- * while the window is hidden. Null until the first read answers, and after a read that fails or is refused the last
- * good one stays.
+ * The window's last read of Watcher's machines (#1032), shared by the machines line and Settings and kept while the window
+ * lives, so leaving the room and coming back shows the same words. Nothing reads on a timer (Zach, October 23, 2026): the
+ * window reads machine facts only when Watcher places work or the user opens a machine's numbers, a panel or Settings.
  */
-export function useMachines(readMachines: (() => Promise<WatcherMachinesRead>) | null): { readonly machines: MachinesOk | null; readonly read: () => void } {
-  const [machines, setMachines] = useState<MachinesOk | null>(null)
+class MachinesStore {
+  private machines: MachinesOk | null = null
+  private readonly listeners = new Set<() => void>()
+  private inFlight = false
+  /** The placements the line last read for, so a placement is read for once however often the room is opened. */
+  placementsRead = ''
+  readonly subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  readonly get = (): MachinesOk | null => this.machines
+  read(call: () => Promise<WatcherMachinesRead>): void {
+    if (this.inFlight) return
+    this.inFlight = true
+    void call().then(result => { if (result.status === 'ok') { this.machines = result; for (const listener of this.listeners) listener() } }, () => undefined)
+      .finally(() => { this.inFlight = false })
+  }
+  /** For tests: forget the last read. */
+  clear(): void { this.machines = null; this.placementsRead = ''; this.inFlight = false }
+}
+export const machinesStore = new MachinesStore()
+
+/**
+ * Watcher's machines as last read, and `read` to read them again. `readNow` reads once when the surface appears, for a
+ * surface whose opening is the user asking for the numbers (Settings). Null until a read answers; a read that fails or is
+ * refused leaves the last good one.
+ */
+export function useMachines(readMachines: (() => Promise<WatcherMachinesRead>) | null, options: { readonly readNow?: boolean } = {}): { readonly machines: MachinesOk | null; readonly read: () => void } {
   const reader = useRef(readMachines)
   reader.current = readMachines
-  const live = useRef(true)
-  const inFlight = useRef(false)
-  const read = useCallback((): void => {
-    const call = reader.current
-    if (call === null || inFlight.current) return
-    inFlight.current = true
-    void call().then(result => { if (live.current && result.status === 'ok') setMachines(result) }, () => undefined)
-      .finally(() => { inFlight.current = false })
-  }, [])
+  const machines = useSyncExternalStore(machinesStore.subscribe, machinesStore.get)
+  const read = useCallback((): void => { if (reader.current !== null) machinesStore.read(reader.current) }, [])
   const available = readMachines !== null
-  useEffect(() => {
-    live.current = true
-    if (!available) return () => { live.current = false }
-    read()
-    const timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') read() }, MACHINES_READ_EVERY_MS)
-    return () => { live.current = false; window.clearInterval(timer) }
-  }, [available, read])
+  const readNow = options.readNow === true
+  useEffect(() => { if (available && readNow) read() }, [available, readNow, read])
   return { machines: available ? machines : null, read }
 }

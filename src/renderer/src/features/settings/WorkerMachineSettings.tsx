@@ -1,6 +1,7 @@
-import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import React, { useId, useMemo, type ReactNode } from 'react'
 import { Laptop, MapPin, Server } from 'lucide-react'
-import type { HostsBridge, HostsState } from '../../../../shared/hosts'
+import type { HostsBridge } from '../../../../shared/hosts'
+import { useHostsState } from '../../state/hostsState'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import type { WatcherMachine } from '../../../../shared/watcherRoom'
 import { workerMachineHostId, type WorkerMachineSetting } from '../../../../shared/workerMachine'
@@ -16,18 +17,6 @@ import './workerMachine.css'
 /** The settings section the room's panels open: this group, on the Watcher page. */
 export const WORKER_MACHINE_SECTION = 'settings-new-workers'
 export const WORKER_MACHINE_NOTE = 'Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns.'
-
-function useHostsState(bridge: HostsBridge | undefined): HostsState | null {
-  const [state, setState] = useState<HostsState | null>(null)
-  useEffect(() => {
-    if (!bridge) return
-    let live = true
-    void bridge.get().then(next => { if (live) setState(next) }, () => undefined)
-    const off = bridge.onChanged(next => { if (live) setState(next) })
-    return () => { live = false; off() }
-  }, [bridge])
-  return state
-}
 
 interface Choice {
   readonly value: WorkerMachineSetting
@@ -85,7 +74,8 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
   const name = useId()
   const hostsState = useHostsState(bridge)
   const room = useWatcherRoom()
-  const { machines } = useMachines(room?.readMachines ?? null)
+  // Opening this group is asking for the machines' numbers, so they are read once now, and never on a timer.
+  const { machines } = useMachines(room?.readMachines ?? null, { readNow: true })
   const threads = useOptionalAgents()?.state?.host.threads
   const working = useMemo(() => workingThreadsByMachine(threads ?? []), [threads])
   const chosen = settings.newWorkerMachine

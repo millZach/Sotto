@@ -7,7 +7,9 @@ import { THIS_COMPUTER, workingThreadsByMachine } from '../../../shared/workingT
 import { useOptionalApp } from '../state/AppContext'
 import { agoWords, countWords, lineText, machineEntries, machineLabel, memoryWords, overWords, shortLine, systemWords, unknownWhy, windowWords,
   type MachineEntry } from './machineLine'
-import { useMachines } from './useMachines'
+import { machinesStore, useMachines } from './useMachines'
+import { savedMachines, useHostsState } from '../state/hostsState'
+import type { HostsBridge } from '../../../shared/hosts'
 import { threadAddressIndex, useWatcherRoom } from './watcherRoom'
 
 /** How many working threads a machine's panel names before it counts the rest. */
@@ -146,13 +148,28 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
  * machine's panel; a problem adds words after the count in the needs-you line's warning ink. A narrow room drops the
  * "starting" counts and names only the machines with a problem, then counts the rest, which a press shows.
  */
-export function WatcherMachines({ state, now }: { readonly state: AgentState | null; readonly now?: number | undefined }): ReactNode {
+export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.hosts }: {
+  readonly state: AgentState | null
+  readonly now?: number | undefined
+  readonly hosts?: HostsBridge | undefined
+}): ReactNode {
   const room = useWatcherRoom()
   const app = useOptionalApp()
   const { machines, read } = useMachines(room?.readMachines ?? null)
+  const hostsState = useHostsState(bridge)
+  const saved = useMemo(() => savedMachines(hostsState), [hostsState])
+  // Machine facts are read when Watcher places work (Zach, October 23, 2026): once for each placement the room has not
+  // been read for, so the line's words follow a start, and never on a timer.
+  const placements = room?.state?.receiptPlacements
+  const placementsKey = placements?.map(item => item.operationId).join(',') ?? ''
+  useEffect(() => {
+    if (placementsKey === '' || placementsKey === machinesStore.placementsRead) return
+    machinesStore.placementsRead = placementsKey
+    read()
+  }, [placementsKey, read])
   const threads = state?.host.threads
   const working = useMemo(() => workingThreadsByMachine(threads ?? []), [threads])
-  const entries = useMemo(() => machineEntries(machines?.machines ?? null, working, machines?.newWorkersStart), [machines, working])
+  const entries = useMemo(() => machineEntries(machines?.machines ?? null, working, machines?.newWorkersStart, saved), [machines, working, saved])
   const watcherIds = useMemo(() => startedByWatcher(room?.state ?? null, state), [room?.state, state])
   const [open, setOpen] = useState<string | null>(null)
   const [all, setAll] = useState(false)
@@ -162,10 +179,13 @@ export function WatcherMachines({ state, now }: { readonly state: AgentState | n
     setOpen(null)
     if (refocus && opener.current?.isConnected) opener.current.focus()
   }, [])
-  const toggle = (hostId: string, button: HTMLButtonElement): void => {
-    if (open === hostId) { setOpen(null); return }
+  // This computer's key stays the same before and after a read names its host ID, so a read never closes its panel.
+  const keyOf = (entry: MachineEntry): string => entry.thisComputer ? THIS_COMPUTER : entry.hostId
+  const toggle = (key: string, button: HTMLButtonElement): void => {
+    if (open === key) { setOpen(null); return }
     opener.current = button
-    setOpen(hostId)
+    setOpen(key)
+    // Opening a machine's numbers reads them afresh.
     read()
   }
   const label = useId()
@@ -182,17 +202,17 @@ export function WatcherMachines({ state, now }: { readonly state: AgentState | n
   const name = (entry: MachineEntry, withStarting: boolean): ReactNode => {
     const count = countWords(entry, withStarting)
     return <span className="watcher-machines__machine" data-host={entry.thisComputer ? THIS_COMPUTER : entry.hostId}>
-      <button type="button" className="watcher-machines__name tt-focusable" aria-haspopup="dialog" aria-expanded={open === entry.hostId}
-        aria-label={machineLabel(entry, withStarting)} title={lineText(entry, withStarting)} onClick={event => toggle(entry.hostId, event.currentTarget)}>
+      <button type="button" className="watcher-machines__name tt-focusable" aria-haspopup="dialog" aria-expanded={open === keyOf(entry)}
+        aria-label={machineLabel(entry, withStarting)} title={lineText(entry, withStarting)} onClick={event => toggle(keyOf(entry), event.currentTarget)}>
         <span>{entry.name}</span></button>
       {count ? <span className="watcher-machines__count" aria-hidden="true"> {count}</span> : null}
       {entry.words.length ? <span className="watcher-machines__words" aria-hidden="true">{count ? ', ' : ' '}{entry.words.join(', ')}</span> : null}
     </span>
   }
-  const run = (list: readonly MachineEntry[], withStarting: boolean): ReactNode => list.map((entry, index) => <Fragment key={entry.hostId}>
+  const run = (list: readonly MachineEntry[], withStarting: boolean): ReactNode => list.map((entry, index) => <Fragment key={keyOf(entry)}>
     {index > 0 ? <><span className="watcher-machines__sep" aria-hidden="true">·</span><wbr /></> : null}{name(entry, withStarting)}
   </Fragment>)
-  const opened = entries.find(entry => entry.hostId === open) ?? null
+  const opened = entries.find(entry => keyOf(entry) === open) ?? null
   const changeDefault = app === null ? null : (): void => { setOpen(null); app.actions.navigate('settings', 'settings-new-workers') }
   return <div ref={line} className="watcher-machines" role="group" aria-labelledby={label} data-all={all || undefined}>
     <span id={label} className="tt-visually-hidden">Machines and what works on each</span>
@@ -202,7 +222,7 @@ export function WatcherMachines({ state, now }: { readonly state: AgentState | n
         <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={`${short.more} more machine${short.more === 1 ? '' : 's'}. Show every machine`}
           onClick={() => setAll(true)}>{short.more} more</button></> : null}
     </span>
-    {opened !== null ? <MachinePanel key={opened.hostId} entry={opened} threads={threads ?? []} watcherIds={watcherIds} now={now ?? Date.now()}
+    {opened !== null ? <MachinePanel key={keyOf(opened)} entry={opened} threads={threads ?? []} watcherIds={watcherIds} now={now ?? Date.now()}
       anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} /> : null}
   </div>
 }
