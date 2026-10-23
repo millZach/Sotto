@@ -29,6 +29,7 @@ export const OWL_FEATURES = [
   { id: 'message-scrubber', name: 'Message scrubber', owlSince: '2026-10-22', owner: 'docs/adr/0109-a-column-of-ticks-reaches-every-message-the-user-sent.md', sentToStable: false },
   { id: 'menu-bar-owl', name: 'The menu bar owl', owlSince: '2026-10-22', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: false },
   { id: 'desktop-notifications', name: 'Notifications when a thread has finished or needs you', owlSince: '2026-10-22', owner: 'docs/adr/0117-the-desktop-notifies-when-a-thread-has-finished-everything-or-needs-you.md', sentToStable: false },
+  { id: 'night-falls', name: 'Night falls between Threads and Watcher', owlSince: '2026-10-23', owner: 'docs/adr/0119-night-falls-moves-the-window-between-threads-and-watchers-room.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']
