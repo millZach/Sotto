@@ -12,6 +12,8 @@ export interface SettingsRepositoryOptions {
   workerRolesEnabled?: boolean
   /** The Owl list's answer for extra and hold dictation shortcuts, read once at start. Off, a save or a reset keeps the saved lists. */
   dictationHoldShortcutsEnabled?: boolean
+  /** The Owl list's answer for the interface language (ADR-0123), read once at start. Off, a save, a patch or a reset keeps the saved choice. */
+  interfaceLanguageEnabled?: boolean
   now?: () => number
   store?: AtomicJsonStore<AppSettings>
   onRecovery?: (notice: RecoveryNotice) => void
@@ -30,11 +32,13 @@ export class SettingsRepository {
   private readonly shellPillInUse: (() => boolean) | undefined
   private readonly workerRolesEnabled: boolean
   private readonly dictationHoldShortcutsEnabled: boolean
+  private readonly interfaceLanguageEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.workerRolesEnabled = options.workerRolesEnabled ?? true
     this.dictationHoldShortcutsEnabled = options.dictationHoldShortcutsEnabled ?? true
+    this.interfaceLanguageEnabled = options.interfaceLanguageEnabled ?? true
     this.omarchyTheme = options.omarchyTheme
     this.shellPillInUse = options.shellPillInUse
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
@@ -72,6 +76,7 @@ export class SettingsRepository {
         throw new Error('Worker roles are available in Sotto Owl. Nothing was changed.')
       }
       if (!this.workerRolesEnabled) delete patchSnapshot.workerRoles
+      if (!this.interfaceLanguageEnabled) delete patchSnapshot.interfaceLanguage
       const settings = this.parse({ ...current, ...patchSnapshot })
       await this.writeSettings(settings)
       return this.project(settings)
@@ -90,10 +95,11 @@ export class SettingsRepository {
 
   /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
   private async keepHeld(settings: AppSettings): Promise<AppSettings> {
-    if (this.workerRolesEnabled && this.dictationHoldShortcutsEnabled) return settings
+    if (this.workerRolesEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
     const saved = await this.readSettings()
     return { ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
-      ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }) }
+      ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
+      ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }
   }
 
   async exists(): Promise<boolean> {

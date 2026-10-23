@@ -64,6 +64,18 @@ describe('SettingsRepository', () => {
     expect((await reopened.get()).pressShortcuts).toEqual(['Alt+Shift+D'])
     expect((await reopened.reset()).pressShortcuts).toEqual(DEFAULT_SETTINGS.pressShortcuts)
   })
+  it('keeps a saved interface language whole through a build without it: a save, a patch and a reset leave it (ADR-0123)', async () => {
+    const { filePath, repository: owl } = await createRepository()
+    await owl.update({ interfaceLanguage: 'ja' })
+    const stable = new SettingsRepository(filePath, { interfaceLanguageEnabled: false })
+    expect((await stable.save({ ...DEFAULT_SETTINGS, autoPaste: false })).interfaceLanguage).toBe('ja')
+    expect((await stable.update({ interfaceLanguage: 'de' })).interfaceLanguage).toBe('ja')
+    const reset = await stable.reset()
+    expect([reset.autoPaste, reset.interfaceLanguage]).toEqual([DEFAULT_SETTINGS.autoPaste, 'ja'])
+    const reopened = new SettingsRepository(filePath, { interfaceLanguageEnabled: true })
+    expect((await reopened.get()).interfaceLanguage).toBe('ja')
+    expect((await reopened.reset()).interfaceLanguage).toBe('system')
+  })
   it('reads saved worker roles row by row, dropping only a damaged or unknown row', async () => {
     const { filePath, repository } = await createRepository()
     await writeFile(filePath, JSON.stringify({ ...DEFAULT_SETTINGS, workerRoles: {
