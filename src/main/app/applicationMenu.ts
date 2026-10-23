@@ -137,7 +137,7 @@ function windowMenu(): ApplicationMenuItem {
 
 /**
  * Builds macOS's application menu in the interface language shown now; main builds it again when that
- * changes (ADR-0122). Role items take their words from Electron and macOS, and the app menu keeps the
+ * changes (ADR-0123). Role items take their words from Electron and macOS, and the app menu keeps the
  * app's name. Windows and Linux return null so the caller retains Electron's default menu and its zoom
  * and developer-tool accelerators.
  */

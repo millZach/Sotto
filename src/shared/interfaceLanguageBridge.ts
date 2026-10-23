@@ -7,7 +7,7 @@ export const INTERFACE_LANGUAGE_GET = 'sotto:interface-language:get' as const
 /** Sent to every window when the interface language changes. */
 export const INTERFACE_LANGUAGE_CHANGED = 'sotto:interface-language:changed' as const
 /**
- * Given to both windows while the `interface-language` Owl feature is on (ADR-0122), carrying the language as the window
+ * Given to both windows while the `interface-language` Owl feature is on (ADR-0123), carrying the language as the window
  * is made, `--sotto-interface-language=ja,en`: the language shown, then the computer's. A window draws its first frame in
  * it without asking main, which trusts a window only once it has loaded. Without it a window stays English.
  */

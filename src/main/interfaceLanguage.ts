@@ -13,7 +13,7 @@ import {
 import type { AppSettings } from '../shared/settings'
 
 /**
- * Main's own words, the tray, the application menu and main's dialogs, in the interface language (ADR-0122). Main
+ * Main's own words, the tray, the application menu and main's dialogs, in the interface language (ADR-0123). Main
  * loads its own catalog and the shared one; each window loads the renderer's. English is in the bundle and active before
  * anything asks for a word; another language's catalogs are read the first time it is shown.
  */

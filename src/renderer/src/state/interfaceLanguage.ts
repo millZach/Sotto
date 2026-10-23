@@ -10,7 +10,7 @@ import {
 } from '../../../shared/interfaceLanguages'
 
 /**
- * A window's interface language (ADR-0122). Each window loads every renderer area's catalog, so a component shows its
+ * A window's interface language (ADR-0123). Each window loads every renderer area's catalog, so a component shows its
  * words whichever area it was extracted into; main's catalog stays in main. English is in the bundle and active before
  * the first frame. Another language is read from the bundle the first time it is shown: no request leaves the computer.
  */
@@ -49,7 +49,7 @@ export async function showInterfaceLanguage(next: InterfaceLanguageState, root: 
   state = next
   if (i18n.locale !== next.language) i18n.loadAndActivate({ locale: next.language, messages })
   root.lang = next.language
-  // ADR-0122 keeps the English layout in every language: only text inside its own box runs right to left.
+  // ADR-0123 keeps the English layout in every language: only text inside its own box runs right to left.
   root.dir = 'ltr'
   for (const listener of [...listeners]) listener()
 }

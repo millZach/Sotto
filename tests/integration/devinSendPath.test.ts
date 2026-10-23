@@ -14,7 +14,7 @@ let f: Awaited<ReturnType<typeof devinFixture>> | undefined
 afterEach(async () => { await f?.cleanup(); f = undefined })
 
 // No poll and no replay fallback before a deadline: only the thread's own stream can accept a send, unless a test says otherwise.
-const streamOnly = () => devinFixture(undefined, 5000, 60_000, {}, undefined, { acceptanceGraceMs: 60_000 })
+const streamOnly = () => devinFixture(undefined, undefined, 60_000, {}, undefined, { acceptanceGraceMs: 60_000 })
 async function opened(fixture: NonNullable<typeof f>): Promise<string> {
   await fixture.host.connect()
   await fixture.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: fixture.projectId, title: 'Project', path: fixture.root })
@@ -100,7 +100,7 @@ it('shows reply text in the message log as it streams, before any observer read 
 })
 
 it('reads the replay once the stream has been silent for the grace period, and accepts from it', async () => {
-  f = await devinFixture(undefined, 5000, 60_000, {}, undefined, { acceptanceGraceMs: 200 })
+  f = await devinFixture(undefined, undefined, 60_000, {}, undefined, { acceptanceGraceMs: 200 })
   const id = await opened(f)
   const loaded = await loads(f)
   expect(await send(f, id)).toEqual({ accepted: true })
@@ -110,7 +110,7 @@ it('reads the replay once the stream has been silent for the grace period, and a
 // A slow configured poll is not the wait's pace: a send whose first replay read comes before Devin saved its prompt, as on
 // a loaded runner, reads again at the busy pace and is accepted before its deadline (#1086, #1097).
 it('reads the replay again when the first read comes before the prompt is saved, however slow the poll is set', async () => {
-  f = await devinFixture(undefined, 5000, 60_000)
+  f = await devinFixture(undefined, undefined, 60_000)
   const id = await opened(f)
   await f.script({ delayPrompt: 1_000 })
   const loaded = await loads(f)
@@ -221,7 +221,7 @@ it('reads the replay at once when the turn ends without streaming any work, and 
 })
 
 it('polls a running turn at the busy pace until the stream shows it taken, then at the idle pace', async () => {
-  f = await devinFixture(undefined, 5000, undefined, {}, undefined, { acceptanceGraceMs: 60_000, productionPace: true })
+  f = await devinFixture(undefined, undefined, undefined, {}, undefined, { acceptanceGraceMs: 60_000, productionPace: true })
   const id = await opened(f)
   await f.script({ delayPrompt: 60_000 })
   const sending = send(f, id)

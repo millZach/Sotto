@@ -4,7 +4,7 @@ import { formatter } from '@lingui/format-po'
 import { INTERFACE_LANGUAGE_CODES, INTERFACE_PSEUDO_LANGUAGES, SOURCE_INTERFACE_LANGUAGE } from './src/shared/interfaceLanguages'
 
 /**
- * Sotto's interface catalogs (ADR-0122). English is the source: each message is written in English where it is used,
+ * Sotto's interface catalogs (ADR-0123). English is the source: each message is written in English where it is used,
  * and `npm run i18n:extract` writes every area's catalog for every language, `src/locales/<area>/<language>.po`.
  *
  * One catalog per area of the tree, so pull requests that translate different areas never touch the same file:

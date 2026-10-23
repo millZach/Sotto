@@ -1,4 +1,4 @@
-/* Settings > Appearance > Language (ADR-0122): one row above the themes, its list opening over them. */
+/* Settings > Appearance > Language (ADR-0123): one row above the themes, its list opening over them. */
 .language-picker { position: relative; display: grid; gap: 6px; min-width: 0; padding-bottom: 18px; border-bottom: 1px solid var(--tt-hairline); margin-bottom: 18px; }
 .language-picker__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .language-picker__head .tt-field__label { font-size: 15px; font-weight: 500; }

@@ -33,7 +33,7 @@ function nameIn(locale: string, language: InterfaceLanguage): string {
 const TYPEAHEAD_MS = 600
 
 /**
- * Settings > Appearance > Language (ADR-0122): a list that starts with "Same as this computer (…)", then names each
+ * Settings > Appearance > Language (ADR-0123): a list that starts with "Same as this computer (…)", then names each
  * language in its own script with its name in the current language beside it. The English word "Language" stays
  * beside the label whatever the interface is in, so someone who chose a language they cannot read finds the way back.
  * From the keyboard: the arrow keys, Home and End move, typed letters jump to a language, Enter or Space picks, and
@@ -124,7 +124,7 @@ export function LanguagePicker({ value, onChoose }: {
         {locale === SOURCE_INTERFACE_LANGUAGE ? null : <span className="language-picker__anchor" lang="en" dir="ltr" aria-hidden="true">Language</span>}
         <span className="language-picker__badge">{t`Preview`}</span>
       </div>
-      {/* A sentence runs in its own language's direction, from the right edge in Arabic and Urdu (ADR-0122). */}
+      {/* A sentence runs in its own language's direction, from the right edge in Arabic and Urdu (ADR-0123). */}
       <p className="tt-field__description" id={descriptionId} dir="auto">{t`Menus, buttons and messages. What you dictate and what agents write stay as they are.`}</p>
       <button type="button" role="combobox" className="language-picker__button tt-focusable"
         aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${labelId} ${valueId}`} aria-describedby={descriptionId}

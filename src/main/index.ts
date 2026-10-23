@@ -135,6 +135,7 @@ import { createDictationGate } from './hotkeys/dictationGate'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
+import { listOpenRouterModels } from './llm/openRouterModels'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
@@ -663,6 +664,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
+const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
@@ -710,7 +712,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
-  // The interface language (ADR-0122), read before the tray, the menu or a window shows a word. An end-to-end run reads
+  // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
   // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
   const interfaceLanguageEnabled = owlFeatures['interface-language']
@@ -1282,6 +1284,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // was already short" from "polish truncated it" when users report loss.
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
+    chosenModel: cleanupModelEnabled,
     onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
@@ -1574,7 +1577,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
-      // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0122).
+      // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
       if (await applyInterfaceLanguage(settings)) {
         trayController.update(currentTrayState)
         installApplicationMenu()
@@ -2025,6 +2028,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             getSettings: () => settings.forFormatting(),
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
+          ...(cleanupModelEnabled ? {
+            models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+          } : {}),
         },
         updates: {
           status: () => updates.status(),

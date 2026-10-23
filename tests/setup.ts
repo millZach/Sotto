@@ -6,7 +6,7 @@ import { i18n } from '@lingui/core'
 import { compileMessage } from '@lingui/message-utils/compileMessage'
 import { afterEach, vi } from 'vitest'
 
-// Tests read English whatever this computer's language is (ADR-0122): nothing here asks the system, and every
+// Tests read English whatever this computer's language is (ADR-0123): nothing here asks the system, and every
 // message shows its English source, extracted or not, compiled the way a catalog would compile it.
 i18n.setMessagesCompiler(compileMessage)
 i18n.loadAndActivate({ locale: 'en', messages: {} })

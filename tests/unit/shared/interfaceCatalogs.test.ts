@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { INTERFACE_LANGUAGE_CODES, SOURCE_INTERFACE_LANGUAGE } from '../../../src/shared/interfaceLanguages'
 
 /**
- * The interface catalogs (ADR-0122), checked the way CI must before a pull request merges. A build shows a message by
+ * The interface catalogs (ADR-0123), checked the way CI must before a pull request merges. A build shows a message by
  * its id, so a message the code writes and the catalog lacks would show as that id: every catalog carries every message,
  * and `npm run i18n:extract` is how it gets there. A language may leave a message untranslated (it shows in English);
  * what it writes must parse and name the same placeholders as English.

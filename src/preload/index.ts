@@ -84,6 +84,7 @@ import {
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
+  OPENROUTER_LIST_MODELS,
   SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_GET_STATUS,
@@ -113,6 +114,7 @@ import {
 import {
   dictationCommandSchema,
   openRouterKeyCheckSchema,
+  openRouterModelListSchema,
   transcriptionResultSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
@@ -361,7 +363,7 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
-  /** The interface language as the window was made (ADR-0122): only while the `interface-language` Owl feature is on. */
+  /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
@@ -560,6 +562,7 @@ export function createSottoBridge(
     chooseSpeechModel: (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
     onSpeechModelStatus,
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
+    listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
     ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
@@ -599,7 +602,7 @@ function createInterfaceLanguageBridge(renderer: IpcRendererAdapter, startup: In
 export function createSottoWidgetBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
-  /** The interface language as the window was made (ADR-0122): only while the `interface-language` Owl feature is on. */
+  /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(

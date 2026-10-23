@@ -9,7 +9,7 @@ import { showInterfaceLanguage, startInterfaceLanguage } from '../../../../../sr
 import type { InterfaceLanguageState } from '../../../../../src/shared/interfaceLanguages'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../../../src/shared/settings'
 
-// The row is an Owl feature (ADR-0072, ADR-0122); each test says whether this build has it.
+// The row is an Owl feature (ADR-0072, ADR-0123); each test says whether this build has it.
 const gate = vi.hoisted(() => ({ owl: true }))
 vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/state/owlFeature')>(),

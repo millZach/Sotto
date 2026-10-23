@@ -248,7 +248,7 @@ describe('IPC validation and lifecycle', () => {
     })
 })
 
-describe('the interface language channel (ADR-0122)', () => {
+describe('the interface language channel (ADR-0123)', () => {
   const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
   const widgetFrame = { parent: null, url: widgetUrl }
   const widgetContents = { getURL: (): string => widgetUrl, isDestroyed: (): boolean => false, mainFrame: widgetFrame }

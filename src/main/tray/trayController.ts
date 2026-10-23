@@ -37,7 +37,7 @@ export class TrayController {
     private readonly actions: TrayActions,
   ) {}
 
-  /** Builds the menu in the interface language shown now; main calls it again when that language changes (ADR-0122). */
+  /** Builds the menu in the interface language shown now; main calls it again when that language changes (ADR-0123). */
   update(state: TrayState): void {
     if (this.disposed) {
       return

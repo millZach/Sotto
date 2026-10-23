@@ -15,6 +15,7 @@ import type {
   DictationShortcutsChange,
   DictationShortcutsResult,
   OpenRouterKeyCheck,
+  OpenRouterModelList,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
@@ -160,6 +161,8 @@ export interface AppActions {
   copyHistory(text: string): Promise<boolean>
   dismissDictationRecovery(id: string): void
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
+  /** OpenRouter's text models for the cleanup model picker (ADR-0122); a failure is a reason, never a throw. */
+  listOpenRouterModels(): Promise<OpenRouterModelList>
   /** Starts the speech model download, or retries one that failed. */
   downloadSpeechModel(): Promise<void>
   /**
@@ -787,6 +790,10 @@ export function AppProvider({
     checkOpenRouterKey: async () => {
       if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
       try { return await bridge.checkOpenRouterKey() } catch { return { ok: false, reason: 'network' } }
+    },
+    listOpenRouterModels: async () => {
+      if (bridge === undefined) return { ok: false, reason: 'network' }
+      try { return await bridge.listOpenRouterModels() } catch { return { ok: false, reason: 'network' } }
     },
     downloadSpeechModel: async () => {
       if (bridge === undefined) return

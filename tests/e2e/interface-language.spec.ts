@@ -1,5 +1,5 @@
 /**
- * The interface language (ADR-0122) in the built app with the `interface-language` Owl feature on: Settings > Appearance
+ * The interface language (ADR-0123) in the built app with the `interface-language` Owl feature on: Settings > Appearance
  * > Language changes the window at once, the English word Language stays beside the label, the window keeps its
  * left-to-right layout, the row fits at the 820x560 minimum, and with the feature off nothing of it shows. An end-to-end
  * run reads English as the computer's language unless SOTTO_E2E_SYSTEM_LANGUAGES says otherwise.

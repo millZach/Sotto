@@ -30,7 +30,7 @@ const controllerFactory = e2e === undefined ? undefined : createE2EControllerFac
 // An end-to-end run can seed Watcher's projection; otherwise the room reads main's own bridge.
 const watcherBridge = e2e === undefined ? undefined : createE2EWatcherBridge()
 
-// The first frame is in the interface language: its catalogs load from the bundle before React draws (ADR-0122).
+// The first frame is in the interface language: its catalogs load from the bundle before React draws (ADR-0123).
 await startInterfaceLanguage(window.sotto?.interfaceLanguage)
 
 createRoot(rootElement).render(

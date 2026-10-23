@@ -1,6 +1,6 @@
 # Interface language picker verification
 
-October 23, 2026. The first part of ADR-0122 on `feat/interface-language` from `main` at 452fa2729, on Windows 11 with the built app (`npm run build`), the `interface-language` Owl feature turned on with `SOTTO_OWL_FEATURES`. The picker is variant A of the prototype tagged `prototype/interface-language`: one **Language** row at the top of Settings → Appearance.
+October 23, 2026. The first part of ADR-0123 on `feat/interface-language` from `main` at 452fa2729, on Windows 11 with the built app (`npm run build`), the `interface-language` Owl feature turned on with `SOTTO_OWL_FEATURES`. The picker is variant A of the prototype tagged `prototype/interface-language`: one **Language** row at the top of Settings → Appearance.
 
 What this part covers: the setting, the thirty languages and how the computer's language picks one, the catalogs and their check, the picker, and the first messages: the Appearance section's own words, the picker's, the tray's and the application menu's, drafted for all twenty-nine other languages. The rest of the window is still English, as the screenshots show; the other areas follow in their own pull requests. Right-to-left styling beyond the picker and bundled fonts come later.
 
@@ -34,4 +34,4 @@ The tray menu and the macOS application menu are built again in the new language
 
 ## Not checked here
 
-Reduced motion: the row has no motion of its own. The floating widget loads the catalogs and follows the language, but none of its words are messages yet. The Japanese captures show the computer's Japanese font with Figtree's tracking; per-script type is a later part of ADR-0122.
+Reduced motion: the row has no motion of its own. The floating widget loads the catalogs and follows the language, but none of its words are messages yet. The Japanese captures show the computer's Japanese font with Figtree's tracking; per-script type is a later part of ADR-0123.

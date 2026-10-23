@@ -1006,7 +1006,7 @@ SOFTWARE.
 
 ## Interface language MIT licenses
 
-`@lingui/core` and `@lingui/react` are development dependencies compiled into the main-process and window bundles, so Sotto's interface can be shown in the interface language (ADR-0122). Both carry this license.
+`@lingui/core` and `@lingui/react` are development dependencies compiled into the main-process and window bundles, so Sotto's interface can be shown in the interface language (ADR-0123). Both carry this license.
 
 ```text
 The MIT License (MIT)

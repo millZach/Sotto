@@ -1,5 +1,5 @@
 /**
- * The languages Sotto's interface can be written in (ADR-0122), and how the computer's language picks one. This module
+ * The languages Sotto's interface can be written in (ADR-0123), and how the computer's language picks one. This module
  * imports nothing, so `lingui.config.ts` reads the same list the app does.
  */
 
@@ -132,7 +132,7 @@ export function systemInterfaceLanguage(systemLanguages: readonly string[]): Int
   return SOURCE_INTERFACE_LANGUAGE
 }
 
-/** The interface language: a choice in Settings wins over the computer (ADR-0122). */
+/** The interface language: a choice in Settings wins over the computer (ADR-0123). */
 export function resolveInterfaceLanguage(setting: string, systemLanguages: readonly string[]): InterfaceLanguageCode {
   return isInterfaceLanguageCode(setting) ? setting : systemInterfaceLanguage(systemLanguages)
 }

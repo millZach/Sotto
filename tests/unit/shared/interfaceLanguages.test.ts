@@ -13,7 +13,7 @@ import {
 import { DEFAULT_SETTINGS, parseSettings, settingsSchema } from '../../../src/shared/settings'
 
 describe('interface languages', () => {
-  it('lists the thirty languages of ADR-0122, each once, English first', () => {
+  it('lists the thirty languages of ADR-0123, each once, English first', () => {
     expect(INTERFACE_LANGUAGE_CODES).toEqual([
       'en', 'es-MX', 'es-ES', 'fr', 'de', 'it', 'pt-BR', 'pt-PT', 'nl', 'pl', 'sv', 'da', 'nb', 'fi', 'cs', 'ro', 'hu', 'el', 'uk', 'tr',
       'ar', 'zh-Hans', 'zh-Hant', 'ja', 'hi', 'bn', 'mr', 'te', 'ta', 'ur',

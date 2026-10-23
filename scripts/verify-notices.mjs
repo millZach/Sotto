@@ -32,7 +32,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
   ...COMPOSER_NOTICE_COMPONENTS,
-  // The interface language (ADR-0122), compiled into main and both windows.
+  // The interface language (ADR-0123), compiled into main and both windows.
   packageComponent('@lingui/core', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('@lingui/react', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),

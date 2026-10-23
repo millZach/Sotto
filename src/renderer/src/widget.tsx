@@ -27,7 +27,7 @@ const bridge = preview === null && previewRequested ? undefined : widgetBridge
 // process resolved. Without a bridge (visual preview) the Windows row applies.
 const platform = widgetBridge?.platform ?? 'win32'
 
-// The widget follows the interface language too, from its first frame (ADR-0122).
+// The widget follows the interface language too, from its first frame (ADR-0123).
 await startInterfaceLanguage(bridge?.interfaceLanguage)
 
 createRoot(rootElement).render(

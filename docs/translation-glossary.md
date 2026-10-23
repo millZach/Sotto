@@ -1,6 +1,6 @@
 # Translation glossary
 
-What a translation of Sotto's interface follows (ADR-0122). The catalogs are `src/locales/<area>/<language>.po`, one per area of the tree (`lingui.config.ts` lists them); English is the source and `npm run i18n:extract` writes every catalog. A draft is a model's until a native speaker reviews it, so keep drafts plain enough to review.
+What a translation of Sotto's interface follows (ADR-0123). The catalogs are `src/locales/<area>/<language>.po`, one per area of the tree (`lingui.config.ts` lists them); English is the source and `npm run i18n:extract` writes every catalog. A draft is a model's until a native speaker reviews it, so keep drafts plain enough to review.
 
 ## How Sotto sounds
 

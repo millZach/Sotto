@@ -249,10 +249,18 @@ export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
+/** OpenRouter's text models, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
+export const openRouterModelListSchema = z.discriminatedUnion('ok', [
+  /** `complete` is false when the read stopped before OpenRouter's last page. */
+  z.object({ ok: z.literal(true), complete: z.boolean(), models: z.array(z.object({ id: z.string().min(1).max(128), name: z.string().max(200) }).strict()).max(5_000) }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['http', 'network', 'timeout']) }).strict(),
+])
+
 export type TranscriptionFailureReason = z.infer<typeof transcriptionFailureReasonSchema>
 export type TranscriptionRequest = z.infer<typeof transcriptionRequestSchema>
 export type TranscriptionResult = z.infer<typeof transcriptionResultSchema>
 export type OpenRouterKeyCheck = z.infer<typeof openRouterKeyCheckSchema>
+export type OpenRouterModelList = z.infer<typeof openRouterModelListSchema>
 
 export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto is out. GitHub sees your IP address, your version and a random ID for this install.' as const
 
@@ -363,7 +371,7 @@ export interface SottoBridge {
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
   /** Notifications when a thread has finished or needs the user (ADR-0117), present only while the Owl feature is on, on a Mac that can show them. */
   readonly notifications?: import('./desktopNotifications').NotificationsBridge
-  /** The interface language (ADR-0122), present only while the `interface-language` Owl feature is on. */
+  /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
@@ -442,6 +450,8 @@ export interface SottoBridge {
   chooseSpeechModel(id: string): Promise<CommandResult>
   onSpeechModelStatus(listener: (status: SpeechModelStatus) => void): Unsubscribe
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
+  /** OpenRouter's text models, newest list on every call; no key is sent. */
+  listOpenRouterModels(): Promise<OpenRouterModelList>
   /** Asks the operating system for the microphone before Chromium captures. */
   ensureMicrophoneAccess(): Promise<boolean>
 
@@ -476,7 +486,7 @@ export interface SottoBridge {
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
   readonly platform: SottoPlatform
-  /** The interface language (ADR-0122), present only while the `interface-language` Owl feature is on. */
+  /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe

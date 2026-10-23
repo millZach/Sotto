@@ -5,7 +5,7 @@ import { TransNoContext, type TransProps } from '@lingui/react/server'
 /**
  * What Lingui's `useLingui` and `<Trans>` macros compile to in Sotto (`runtimeConfigModule` in lingui.config.ts). They read
  * the window's one `i18n` directly instead of a provider, so a component renders its words the same in a test as in a
- * window, and every component that shows a message draws again when the interface language changes (ADR-0122).
+ * window, and every component that shows a message draws again when the interface language changes (ADR-0123).
  */
 interface InterfaceLingui {
   readonly i18n: I18n
