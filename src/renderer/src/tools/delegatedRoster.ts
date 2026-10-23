@@ -294,7 +294,8 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
  */
 export function rosterCounts(rows: readonly DelegatedRosterRow[], summary: Pick<SubagentSummary, 'total' | 'working' | 'unknown'>): { readonly title: string; readonly detail: string | null } {
   const needs = rows.filter(row => row.status === 'needs').length
-  const working = rows.filter(row => row.status === 'working' || row.status === 'background').length + summary.working
+  // A row whose machine is not connected is only as Sotto last read it, so it is not counted as working now (#1310).
+  const working = rows.filter(row => !row.lastRead && (row.status === 'working' || row.status === 'background')).length + summary.working
   const title = [plural(rows.length, 'delegated thread'), ...summary.total ? [plural(summary.total, 'agent')] : []].join(' · ')
   const detail = [needs ? `${needs} needs you` : '', working ? `${working} working` : ''].filter(Boolean).join(' · ')
   return { title, detail: detail || (summary.unknown ? 'Activity not confirmed' : 'None working') }

@@ -5,7 +5,7 @@ import type { AgentState, AgentThread } from '../../../../src/shared/agents'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationsRead, DelegationView } from '../../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { EMPTY_SUBAGENT_SUMMARY, type SubagentsBridge } from '../../../../src/shared/subagents'
-import { delegatedRoster, machineCount, rosterByMachine, rosterMachine, THIS_COMPUTER, type DelegationReadOf } from '../../../../src/renderer/src/tools/delegatedRoster'
+import { delegatedRoster, machineCount, rosterByMachine, rosterCounts, rosterMachine, THIS_COMPUTER, type DelegationReadOf } from '../../../../src/renderer/src/tools/delegatedRoster'
 import { delegatedStatusWord } from '../../../../src/renderer/src/tools/DelegatedThreads'
 import { askedFor, delegationRefusalLine, heldLine, heldOutcome, lastReadOutcome } from '../../../../src/renderer/src/agents/delegationWords'
 import { clockLabel } from '../../../../src/renderer/src/agents/threadFacts'
@@ -95,8 +95,9 @@ describe('a remote parent\'s roster', () => {
     expect(delegatedStatusWord(rows.find(row => row.thread.id === TESTS)!)).toBe('Failed when last read')
     expect(lastReadOutcome('forge', 'working', LOST)).toBe(`It was working at ${clockLabel(LOST)}, when Sotto last read it. forge is not connected, so Sotto cannot read how it went since. It reads it again when forge reconnects.`)
     const groups = rosterByMachine(machineOf(state.host.threads.find(thread => thread.id === PARENT)!), [rows.filter(row => row.level === 1)], reads(LOST), undefined, true)!
-    // Not connected: no count of what is working, which Sotto cannot know.
+    // Not connected: no count of what is working, which Sotto cannot know, in the heading or the line of chrome.
     expect(machineCount(groups[0]!, undefined)).toBe('2 threads')
+    expect(rosterCounts(rows, { total: 0, working: 0, unknown: 0 }).detail).toBe('None working')
     // A machine reconnecting is not connected either.
     const reconnecting = { ...state.host.threads.find(thread => thread.id === REVIEW)!, clientReconnecting: true }
     expect(rosterMachine(remoteState().connections, reconnecting).connected).toBe(false)
