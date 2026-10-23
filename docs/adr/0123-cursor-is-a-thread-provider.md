@@ -1,0 +1,82 @@
+# Cursor is a thread provider
+
+Accepted October 23, 2026. Zach asked for Cursor beside Codex, Claude Code, Grok Build, Devin, Muse and OpenCode, and chose its shape the same day: an Owl feature (ADR-0072) with one gate of its own (ADR-0087), Cursor's own sign-in with no key in Sotto, every model Cursor lists grouped by **model maker** the way OpenCode's menu groups model sources, Watcher on Cursor from the start, Sotto's short text on Cursor, and paired hosts and the phone clients in the same change. From the [prototype](https://github.com/millZach/Sotto/blob/prototype/cursor-provider/docs/prototypes/cursor-provider-prototype.html) (tag `prototype/cursor-provider`) he picked variant A, signing in on the tile. He first chose all four permission modes, and chose three, said plainly, once the live check showed what Cursor cannot ask about (see Permissions). The wire facts below were checked live against Cursor's CLI 2026.10.22-27dcf5f on the Windows laptop on October 23, 2026; [the research note](../research/cursor-cli.md) records the docs and, in its Appendix B, the live checks.
+
+Cursor joins as a thread provider, id `cursor`, shown as **Cursor**. Its adapter speaks ACP over `agent acp` on stdio, as Grok Build's and Devin's do: one `agent acp` process per thread (ADR-0038), `initialize` with protocol 1, then `session/new` or `session/load`, `session/prompt`, `session/cancel`, `session/update` notifications and `session/request_permission` requests. Cursor's own print mode (`agent -p --output-format stream-json`) has no way to ask the user anything, so threads never use it.
+
+## The gate
+
+Cursor is an Owl feature (`cursor` in `src/shared/owlFeatures.ts`) and one entry in `HELD_PROVIDER_ENTRIES`, held off stable the way Muse and OpenCode were: a stand-in host that connects nothing and refuses work in words ("Cursor is available in Sotto Owl. Open an Owl build to continue. Nothing was sent."), provider lists that ask the gate before showing a Cursor tile or row, and saved records left whole so returning to Owl restores the provider. The headless host asks the same gate.
+
+## Finding the client
+
+Cursor's installers put the program in a version folder: `%LOCALAPPDATA%\cursor-agent\versions\<version>\` on Windows and `~/.local/share/cursor-agent/versions/<version>/` on macOS and Linux, with `agent` and `cursor-agent` launchers beside it (`.cmd` and `.ps1` on Windows, symlinks in `~/.local/bin` elsewhere). The program is Cursor's own `node` running `index.js` in that folder. On Windows Sotto starts that `node.exe` with `index.js` directly, never the `.cmd` or `.ps1` launcher, so no shell stands between Sotto and the agent; it picks the newest version folder the way the launcher does and sets `CURSOR_INVOKED_AS=agent` as the launcher does. Elsewhere Sotto finds `agent` by its CLI lookup (ADR-0036), plus `~/.local/bin`, and follows the link. Version folders are named `YYYY.MM.DD-<commit>` or `YYYY.MM.DD-HH-MM-SS-<commit>`, and `agent --version` prints the same. The floor is 2026.10.22-27dcf5f, the version checked here; an older client is refused at connect with the version it reported and how to update it.
+
+**Updates.** Cursor's CLI updates itself by default, staging a new version folder that its launchers promote; a running `agent acp` keeps the folder it started from, so a working thread is not cut off. Sotto's update line runs `agent update` for a copy Cursor's installer owns. Sotto learns the newest version from Cursor's own install script (`https://cursor.com/install`), which names the version it downloads. Once a newer folder exists, idle threads move to it as outdated processes (ADR-0038).
+
+## Sign-in and Sotto's Cursor folder
+
+Cursor keeps its own sign-in, and Sotto stores no Cursor key. Sotto never passes `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN` to Cursor, never sends `--api-key`, and answers no `authenticate` request with a key. A connected Cursor whose `agent status --format json` says `unauthenticated` reads as signed out.
+
+**Signing in is variant A of the prototype.** The Cursor tile's **Sign in** runs `agent login` with `NO_OPEN_BROWSER=1`, reads the `https://cursor.com/...` page it prints, opens it in the browser from main only when it is `https:` on `cursor.com`, and says "Finish signing in on cursor.com in your browser." with **Open the page again** and **Cancel**. The client finishes by itself once the user has signed in on the page, and the tile turns connected. This is the device-code shape (ADR-0037) without a code. On a host, the same request runs the host's own `agent login`, and the page opens in this computer's browser, since Cursor's page finishes the sign-in on Cursor's side and never sends the browser back to the host. **Sign out** runs `agent logout`.
+
+**Sotto's Cursor folder.** Cursor writes a thread's model and effort into its config folder whenever they change over ACP, and every later Cursor session starts on them, the user's own included: the first live check moved the user's own default from Auto to the model it had picked (put back the same day). So every Cursor process Sotto starts runs with `CURSOR_CONFIG_DIR` set to `cursor/config` under Sotto's user data, or under its data directory on a headless host, made on first use. The user's own `~/.cursor` config is never read or written by Sotto, and Cursor's choices for the user's own sessions are never changed by a Sotto thread. The sign-in is not in that folder (on Windows it is `%APPDATA%\Cursor\auth.json`, on macOS the Keychain), so Sotto's Cursor uses the user's sign-in without copying it. Cursor saves ACP sessions in the config folder (`acp-sessions/<sessionId>/`), so a Sotto thread's Cursor chat lives in Sotto's folder and the user's own `agent ls` does not list it. The user's skills, global rules and the project's own `.cursor` files still reach Sotto's threads (checked). Sotto writes the folder's `cli-config.json` itself before each start: the permission rules below, and nothing that names the user.
+
+The environment Cursor gets is otherwise the shared allow-list without other providers' keys, with `NO_OPEN_BROWSER=1`.
+
+## Models and the model menu
+
+Sotto asks for Cursor's parameterized model picker (`clientCapabilities._meta.parameterizedModelPicker: true`). Cursor then lists one entry per model (46 for the account checked, `default` being **Auto**) and gives each its own options, which `cursor/list_available_models` returns for every model in one call. An option in category `thought_level` is that model's effort, whatever Cursor calls it (`effort`, `reasoning` or `reasoning_effort`): its values become the model's effort levels in Sotto's order (ADR-0044), and its current value the model's default. Options in category `model_config` (`context` and `fast`) are left at Cursor's own default for the model and not offered; both change what a turn costs, and choosing them is not part of this decision. A model with no `thought_level` option, such as Auto, has no effort menu. Images can be attached, since Cursor says it takes them.
+
+A model is chosen with `session/set_config_option` (`configId: "model"`), then its effort with the option's own ID, before the prompt that needs them, and both are read back from Cursor's answer. Cursor applies a model change to every session in its process, which with one process per thread is only that thread's.
+
+**Model maker.** Cursor runs every model on the user's Cursor plan, so the menu cannot group them by what bills the turn, which is what **model source** means for OpenCode. It groups them by **model maker** (CONTEXT.md), the company that made the model: Cursor (Auto first, then Composer), Anthropic, OpenAI, Google, xAI, Moonshot, Z.ai and Meta, read from the model's name, with any other model under Cursor. The model menu opens on Cursor's model makers and then shows the chosen maker's models, as it does for OpenCode's model sources (ADR-0087, variant C), and typing searches every maker at once. The chip shows Cursor's mark and reads "Anthropic / Claude Sonnet 5.5", with "Claude Sonnet 5.5 from Anthropic, in Cursor" as its tooltip, so a Cursor thread on Claude never reads as Claude Code. The menu's back control reads **Makers**, and its foot says every model here runs through Cursor, on the user's Cursor plan.
+
+Cursor's mark is a cube drawn for Sotto, not Cursor's own logo.
+
+## Permissions
+
+A thread's permission mode becomes its process's approval mode, set when the process starts:
+
+- **Ask for approval** runs Cursor in its `allowlist` mode with Sotto's own rules and no others. Cursor asks before every command, web fetch, web search and tool call, and before an edit outside the project folder or to a file it protects. **It makes edits inside the project folder without asking.** The live check found no way for a client to change that: in `allowlist` mode Cursor allows a write inside the workspace unless a rule denies it, it never routes writes through the client's file capability, and no Cursor hook runs before a file edit. A deny rule would take edits away rather than ask about them. The permission menu says so in its description of the mode for a Cursor thread.
+- **Auto** runs Cursor with `--auto-review`, Cursor's own auto-review: a classifier on Cursor's servers runs the actions it judges safe and asks about the rest. The menu says the classifier runs on Cursor's servers.
+- **Full access** runs Cursor with `--force`, which runs everything a rule does not deny.
+
+**Allow edits** is not offered, since on Cursor it would do exactly what Ask for approval does. A thread whose saved mode is Allow edits, as a thread continued from another provider may carry, starts as Ask for approval and says so once.
+
+A permission Cursor asks for arrives with the command, or the file and its change, and is shown as a request card. The user answers every one (ADR-0004) with allow once (`allow-once`) or reject (`reject-once`); a reject reaches the model as a refused tool call and the turn goes on. Sotto never answers `allow-always`, which would save a grant in the folder's rules, and disconnecting sends no decision. A mode change on a live thread starts a fresh process in the new mode and loads the provider session there (`session/load`) once the thread is idle, as Grok Build's mode changes close the session first.
+
+Sotto's own rules in the folder's `cli-config.json` allow only Sotto's tool servers that thread was given, by name (`Mcp(<server>:*)`), as Claude Code's launch allows them, and deny nothing. They change nothing about what Cursor asks for anything else. A project's own `.cursor/cli.json` rules still apply, as the user's own Cursor would apply them.
+
+## Questions and plans
+
+Cursor's question tool, `cursor/ask_question`, is a request whose questions each have choices and may allow several. It is shown as a question card, and answered `answered` with the chosen option IDs for each question, `skipped` when the user skips it, or `cancelled` when the thread stops. Cursor's plan tool, `cursor/create_plan`, is a request carrying a plan's name, overview, Markdown body and steps, which also arrive as an ACP `plan` update. It is shown as a plan card with **Accept plan** and **Reject**; Sotto answers `accepted` or `rejected` and never writes the plan anywhere itself. Cursor's `cursor/update_todos` and the ACP `plan` update become the thread's plan activity, `cursor/task` a subagent's row, and `cursor/generate_image` an activity naming the image. Sotto does not offer Cursor's own plan or ask modes as thread modes; a thread runs in Cursor's `agent` mode.
+
+## What a Cursor thread can do in this first version
+
+Streaming replies with reasoning (`agent_thought_chunk`), commands, file changes with their diffs, reads, web and tool calls as thread activity; Cursor's own title for a new thread (`session_info_update`) as the thread's title until the first exchange names it; queueing a message behind a running turn; stopping (`session/cancel`); images; model and effort per turn; Cursor's skills as `/name` in the composer, from `available_commands_update`; resume after Sotto restarts (ADR-0076) by `session/load`, which replays the whole conversation. A replayed message has no ID or time of Cursor's own, so a message's identity is its turn, its place in the turn and a digest of its text, as Grok Build's are.
+
+**Not offered:** steering a running turn, which Cursor's ACP agent does not take, so a message sent while a turn runs waits behind it; **Fork from here**, since Cursor has no fork over ACP ("Cursor has no fork of its own, so nothing was made."); rewinding to a checkpoint; and compacting. Cursor does not say how full a thread's context is, so the compaction recommendation is never offered. Continue on another provider works, as it starts a new thread (ADR-0089).
+
+**Sotto's tools.** Cursor takes HTTP MCP servers in `session/new` and `session/load`, so a Cursor thread gets Sotto's tool servers as Grok Build and Muse do, each with the thread's bearer token, and the rules above allow exactly those.
+
+**Short text** (ADR-0026). A side call is one prompt in a provider session of its own, started for that call in Cursor's `ask` mode, which makes no edits and runs no commands, on the thread's model at its least effort, in a process with Sotto's Cursor folder. Its session stays in Sotto's folder, where the user's own Cursor never lists it. A thread whose own session is not known to exist gets no side text. A refused or failed call writes no side text, and the first-message title, temporary branch or stand-in subject stays.
+
+**Watcher runs on Cursor** (ADR-0073), with its own tools as Sotto's tool servers allowed by name, Watcher's own approvals asked of the user as on every provider, and Watcher's model chosen from Cursor's models like a thread's.
+
+**Usage.** Cursor reports no token counts or cost, live or in its ACP agent, and has no route for its plan's limits. So Cursor is outside Usage's numeric history and has no Subscriptions card, and a Cursor thread shows no per-turn token readout. Nothing is read from the user's own Cursor folders.
+
+## Hosts and phones
+
+The headless host runs the same adapter under the same gate, with its own Sotto Cursor folder under its data directory, so a paired host offers Cursor where the host machine has Cursor's CLI installed and signed in. A desktop signs a host's Cursor in with the provider sign-in request (ADR-0037), Cursor's shape being a page with no code. Host protocol version 1 carries provider IDs, but a desktop or phone from before Cursor reads them against a list without `cursor` and would refuse a whole shell that names it, so Cursor has a host feature of its own, `provider-cursor` (`PROVIDER_HOST_FEATURES`): a host sends Cursor's provider row, models, projects and threads only to a client whose hello accepts it, and leaves every one of them out for any other client, as `provider-opencode` does. The iPhone and Android clients accept it, name Cursor, show a model's maker beside it, and may open threads on it.
+
+## Privacy
+
+Sotto itself contacts one new host for Cursor: `cursor.com`, for the install script that names Cursor's newest version, and to open Cursor's own sign-in page in the browser. The README names it. Cursor's client talks to Cursor's own servers (`api2.cursor.sh`, `cursor.com`, and its error reporting), as every provider's client talks to its provider; Auto's classifier is one of those servers. Prompts, replies, approvals and the sign-in page's address never reach Sotto's logs; the adapter logs stable event names only.
+
+## Consequences
+
+- Cursor is the seventh provider ID. Its profile writes short text, takes Sotto's tools, runs Watcher, takes `$` and `/` skill mentions, and neither compacts nor reports context.
+- Ask for approval means less on Cursor than on the other providers. The menu says so, and the gap closes only if Cursor gives a client a way to be asked about edits.
+- A Cursor thread's chats are not in the user's own `agent ls`, and the user's own Cursor model choice is never changed by Sotto.
+- Cursor's CLI keeps evolving fast (a release most days in October 2026). The floor moves only after the adapter contract and the live test pass against a newer client.
