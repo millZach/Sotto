@@ -1,20 +1,26 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { AgentThread } from '../../../shared/agents'
+import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
+import { firstMessageTitle, THREAD_TITLE_MAX_CHARACTERS } from '../../../shared/threadTitle'
 import type { ThreadRow } from './threadFacts'
 import { hasDraftContent, type ComposerDraft, type ThreadDraftStore } from './threadDraftStore'
 
-const TITLE_LENGTH = 80
+/** Enough of a draft for its title, so a long paste is not reread on every keystroke. */
+const TITLE_SOURCE_CHARACTERS = 4 * THREAD_TITLE_MAX_CHARACTERS
 
-/** A thread opened and never sent to: on its default title, at rest, with nothing in its transcript. */
+/**
+ * A thread opened and never sent to: on its default title, at rest, with nothing in its transcript, open, and not a
+ * delegated thread, which lives under the thread that delegated to it.
+ */
 export function isUnsentThread(thread: AgentThread): boolean {
-  return thread.titleSource === 'default' && thread.status === 'idle' && (thread.summary?.messageCount ?? thread.messages.length) === 0
+  return thread.titleSource === 'default' && thread.status === 'idle' && thread.delegatedBy === undefined
+    && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread)
+    && (thread.summary?.messageCount ?? thread.messages.length) === 0
 }
 
-/** What the sidebar calls an unsent thread: the first line of its draft, or null while the composer is empty. */
+/** What the sidebar calls an unsent thread: what its first message would name it, or null while there are no words. */
 export function unsentTitle(text: string): string | null {
-  const line = text.split('\n').map(item => item.trim()).find(item => item !== '')
-  if (line === undefined) return null
-  return line.length > TITLE_LENGTH ? `${line.slice(0, TITLE_LENGTH - 1)}…` : line
+  return firstMessageTitle(text.slice(0, TITLE_SOURCE_CHARACTERS))
 }
 
 /** What an unsent thread holds: its composer's draft, and the text of a prompt sent from it that main has not shown yet. */
@@ -32,7 +38,7 @@ export function listedRows(rows: readonly ThreadRow[], content: (threadId: strin
   let changed = false
   const listed: ThreadRow[] = []
   for (const row of rows) {
-    if (!isUnsentThread(row.thread)) { listed.push(row); continue }
+    if (row.settledBy !== null || !isUnsentThread(row.thread)) { listed.push(row); continue }
     changed = true
     const { draft, submitted } = content(row.thread.id)
     if (!hasDraftContent(draft) && submitted === undefined) continue
@@ -53,7 +59,7 @@ function unsentContent(store: ThreadDraftStore | undefined, threadId: string): U
 
 /** `listedRows` kept current with every thread's draft. Re-lists only when an unsent thread's listing changes. */
 export function useListedRows(store: ThreadDraftStore | undefined, rows: readonly ThreadRow[]): readonly ThreadRow[] {
-  const key = useSyncExternalStore(store?.subscribe ?? noSubscription, () => listedRows(rows.filter(row => isUnsentThread(row.thread)),
+  const key = useSyncExternalStore(store?.subscribe ?? noSubscription, () => listedRows(rows.filter(row => row.settledBy === null && isUnsentThread(row.thread)),
     threadId => unsentContent(store, threadId)).map(row => `${row.thread.id}\u0000${row.thread.title}`).join('\u0001'))
   // `key` stands for every draft the listing reads.
   return useMemo(() => listedRows(rows, threadId => unsentContent(store, threadId)), [rows, store, key])

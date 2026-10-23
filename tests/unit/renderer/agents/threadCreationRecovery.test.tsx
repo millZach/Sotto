@@ -40,7 +40,7 @@ describe('a thread created without a round trip', () => {
     expect(request).toMatchObject({ type: 'create-thread', projectId: 'workshop', title: 'New thread', titleSource: 'default', threadId: expect.any(String) })
     const threadId = request.threadId!
     setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Start on the failing test.')
-    const arrived: AgentState['host']['threads'][number] = { id: threadId, projectId: 'workshop', title: 'New thread', modelId: 'claude:sonnet',
+    const arrived: AgentState['host']['threads'][number] = { id: threadId, projectId: 'workshop', title: 'New thread', titleSource: 'default', modelId: 'claude:sonnet',
       status: 'idle', messages: [], requests: [], nativeSessionStarted: false, worktree: { mode: 'independent', status: 'ready', path: 'C:/workshop-1' } }
     const published: AgentState = { ...state, activeThreadId: threadId, host: { ...state.host, threads: [...state.host.threads, arrived] } }
     // Until main has the thread, naming it to main would say nothing, so the panes reported exclude it.
@@ -48,11 +48,11 @@ describe('a thread created without a round trip', () => {
     await act(async () => { settle(published) })
     vi.mocked(useAgents).mockReturnValue(connection(published, command))
     rerender(view())
-    // Main's own record replaces the local one; the thread is listed once and the draft is untouched.
+    // Main's own record replaces the local one; the thread is listed once, under its draft, and the draft is untouched.
     await waitFor(() => expect(draftThreads.get()).toEqual([]))
     rerender(view())
     expect(observed.at(-1)).toEqual([threadId])
-    expect(within(screen.getByRole('region', { name: 'Projects' })).getAllByRole('button', { name: 'New thread' })).toHaveLength(1)
+    expect(within(screen.getByRole('region', { name: 'Projects' })).getAllByRole('button', { name: 'Start on the failing test.' })).toHaveLength(1)
     expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible()
     expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Start on the failing test.')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

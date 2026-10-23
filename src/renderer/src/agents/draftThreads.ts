@@ -32,7 +32,7 @@ export function draftThread(values: {
   readonly host?: Pick<AgentThread, 'hostId' | 'hostLabel' | 'remoteHost'> | undefined
 }): AgentThread {
   return {
-    id: values.id, projectId: values.projectId, title: values.title, modelId: values.modelId,
+    id: values.id, projectId: values.projectId, title: values.title, titleSource: 'default', modelId: values.modelId,
     ...(values.host?.hostId ? { hostId: values.host.hostId } : {}),
     ...(values.host?.hostLabel ? { hostLabel: values.host.hostLabel } : {}),
     ...(values.host?.remoteHost ? { remoteHost: true } : {}),
