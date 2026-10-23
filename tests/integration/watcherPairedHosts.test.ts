@@ -1633,6 +1633,30 @@ it('reads the paired machine’s list once for every start it counts, rather tha
   expect(reads).toBeLessThanOrEqual(2 * idle.length)
 })
 
+it('counts the new start by its own turn once the paired machine lists it, so a fast worker already finished is not working (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const started = await f.call('start_thread', { ...f.start(), machine: hostId, title: 'Synthetic fast worker' })
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
+  const ten = Array.from({ length: 10 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
+  const fast = { ...shape, id: started.target.threadId, kind: undefined, title: 'Synthetic fast worker' }
+  let list: typeof ten = []
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => { const snapshot = real(id); return snapshot && id === hostId ? { ...snapshot, threads: list } : snapshot })
+  const warning = () => (f.watcher as unknown as { machineWorkingWarning(target: WatcherThreadTarget): object }).machineWorkingWarning(started.target)
+  // Ten working, and the new worker's turn already over before its answer came back: ten, not eleven.
+  list = [...ten, { ...fast, status: 'idle', lastTurn: { id: 'synthetic-fast-turn', status: 'completed' } }]
+  expect(warning()).toEqual({})
+  // Still running, it is working.
+  list = [...ten, { ...fast, status: 'running', lastTurn: { id: 'synthetic-fast-turn', status: 'running' } }]
+  expect(warning()).toEqual({ warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
+  // Not listed yet, or listed before its first turn shows, it counts as starting.
+  list = ten
+  expect(warning()).toEqual({ warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
+  list = [...ten, { ...fast, status: 'idle', lastTurn: undefined, messages: [], summary: undefined }]
+  expect(warning()).toEqual({ warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
+})
+
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
