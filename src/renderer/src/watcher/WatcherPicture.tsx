@@ -348,9 +348,10 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
     if (watcher > 0 && you > 0 && (Math.abs(watcher - labels.watcher) > 1 || Math.abs(you - labels.you) > 1)) setLabels({ watcher, you })
   })
   // The layout depends only on which threads stand in which project on which computer, so a sample that changes nothing
-  // else keeps it, and the landscape is not built again.
+  // else keeps it, and the landscape is not built again. A project's threads are named in a fixed order here, as the
+  // layout stands them, so one moving up its project's list as its state changes changes nothing.
   const shape = useMemo(() => JSON.stringify(model.clusters.map(cluster => ({ key: cluster.key, project: cluster.project, computer: cluster.computer,
-    nodes: cluster.nodes.map(node => ({ key: node.key })) }))), [model])
+    nodes: cluster.nodes.map(node => node.key).sort().map(key => ({ key })) }))), [model])
   const layout = useMemo(() => size.width === 0 ? null : layoutGrove(JSON.parse(shape) as GroveCluster[], size.width, size.height, labels), [shape, size.width, size.height, labels])
   const [open, setOpen] = useState<{ readonly key: string; readonly from: HTMLElement | null } | null>(null)
   const opened = open === null ? undefined : model.nodes.get(open.key)

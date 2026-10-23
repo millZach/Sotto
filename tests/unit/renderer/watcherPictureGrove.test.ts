@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { Box } from '../../../src/renderer/src/watcher/nightScene'
 import { GROVE, layoutGrove, overlaps, type GroveCluster, type GroveLayout } from '../../../src/renderer/src/watcher/pictureGrove'
+import { groveFrameKey } from '../../../src/renderer/src/watcher/pictureGrovePainter'
+import { owlEyes, perchedGlyphs } from '../../../src/renderer/src/watcher/owlFamily'
 
 /** Clusters of these sizes, on this computer unless a computer is named. */
 const clustersOf = (sizes: readonly (number | readonly [number, string])[]): GroveCluster[] => sizes.map((size, index) => {
@@ -106,5 +108,22 @@ describe("Watcher's picture as a night of trees and owls", () => {
     expect(new Set([...layout.at.values()].map(owl => owl.side))).toEqual(new Set(['left']))
     expect(meetings(layout)).toEqual([])
     expect(outside(layout)).toEqual([])
+  })
+
+  it('paints again when an owl falls asleep mid-blink, though its eyes look the same', () => {
+    const owl = { key: 'a', x: 100, y: 200, settled: false, order: 0 }
+    // Owl 0 blinks at the start of each 6.1-second cycle.
+    const t = 0.05
+    const awake = { ...owl, mood: 'awake' as const }, asleep = { ...owl, mood: 'asleep' as const }
+    const lines = (frame: typeof awake | typeof asleep) => [perchedGlyphs(owlEyes(frame, t, true))]
+    expect(lines(awake)).toEqual(lines(asleep))
+    expect(groveFrameKey(0, false, [awake], lines(awake), t, false)).not.toBe(groveFrameKey(0, false, [asleep], lines(asleep), t, false))
+  })
+
+  it('keeps every owl in its place when only the order of a project’s threads changes', () => {
+    const [cluster] = clustersOf([4])
+    const one = layoutGrove([cluster!], 1280, 600, LABELS)
+    const reversed = layoutGrove([{ ...cluster!, nodes: [...cluster!.nodes].reverse() }], 1280, 600, LABELS)
+    for (const [key, owl] of one.at) expect(reversed.at.get(key)?.box).toEqual(owl.box)
   })
 })

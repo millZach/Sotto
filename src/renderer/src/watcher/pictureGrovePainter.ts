@@ -99,6 +99,14 @@ function drawGrove(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2D, g
   }
 }
 
+/**
+ * What a frame shows, summed up: the same key means the same picture, so it is not painted again. Each owl's mood is in
+ * it as well as its eyes, since an asleep owl and an awake one mid-blink share their eyes but not their brightness.
+ */
+export function groveFrameKey(step: number, shut: boolean, owls: readonly GroveOwlFrame[], lines: readonly (readonly string[])[], t: number, still: boolean): string {
+  return [step, shut ? 1 : 0, ...owls.map((owl, k) => `${owl.key}:${Math.round(owl.x)}:${Math.round(owl.y)}:${lines[k]![0]}:${owl.mood}:${owl.settled ? 1 : 0}:${owl.mood === 'waiting' ? glowStep(t, still) : 0}`)].join('|')
+}
+
 interface CellBox { readonly c0: number; readonly r0: number; readonly cn: number; readonly rn: number }
 
 export class GrovePainter {
@@ -218,7 +226,7 @@ export class GrovePainter {
     const step = twinkleStep(t, still)
     const shut = !still && t % WATCHER_BLINK.every < WATCHER_BLINK.for
     const lines = owls.map(owl => perchedGlyphs(owlEyes(owl, t, !still)))
-    const summary = [step, shut ? 1 : 0, ...owls.map((owl, k) => `${owl.key}:${Math.round(owl.x)}:${Math.round(owl.y)}:${lines[k]![0]}:${owl.settled ? 1 : 0}:${owl.mood === 'waiting' ? glowStep(t, still) : 0}`)].join('|')
+    const summary = groveFrameKey(step, shut, owls, lines, t, still)
     if (summary === this.painted) return false
     this.painted = summary
 

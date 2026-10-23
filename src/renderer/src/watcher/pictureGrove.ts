@@ -105,7 +105,45 @@ export interface GroveLayout {
   readonly words: readonly Box[]
 }
 
-interface Placed { readonly cluster: GroveCluster; readonly rows: number; readonly height: number }
+interface Placed { readonly cluster: GroveCluster; readonly order: number; readonly rows: number; readonly height: number }
+
+/**
+ * One side's projects with its height kept as they come and go. A side's height is its projects' blocks, a gap between
+ * two on one tree, and between two trees the upper one's name: with `n` projects on `t` trees, the blocks' sum plus
+ * `n - t` gaps and `t - 1` names.
+ */
+class Share {
+  readonly items = new Set<Placed>()
+  /** The projects first placed here, which may cross to the other side once, last first. */
+  readonly movable: Placed[] = []
+  private readonly trees = new Map<string, number>()
+  private blocks = 0
+  get count(): number { return this.items.size }
+  get height(): number { return Share.measure(this.blocks, this.items.size, this.trees.size) }
+  private static measure(blocks: number, count: number, trees: number): number {
+    return count === 0 ? 0 : blocks + (count - trees) * GROVE.blockGap + (trees - 1) * BETWEEN_TREES
+  }
+  /** The height of these projects together. */
+  static heightOf(items: readonly Placed[]): number {
+    return Share.measure(items.reduce((sum, item) => sum + item.height, 0), items.length, new Set(items.map(item => item.cluster.computer)).size)
+  }
+  heightWith(item: Placed): number {
+    return Share.measure(this.blocks + item.height, this.items.size + 1, this.trees.size + (this.trees.has(item.cluster.computer) ? 0 : 1))
+  }
+  heightWithout(item: Placed): number {
+    return Share.measure(this.blocks - item.height, this.items.size - 1, this.trees.size - (this.trees.get(item.cluster.computer) === 1 ? 1 : 0))
+  }
+  add(item: Placed, movable: boolean): void {
+    this.items.add(item); this.blocks += item.height
+    this.trees.set(item.cluster.computer, (this.trees.get(item.cluster.computer) ?? 0) + 1)
+    if (movable) this.movable.push(item)
+  }
+  remove(item: Placed): void {
+    this.items.delete(item); this.blocks -= item.height
+    const left = this.trees.get(item.cluster.computer)! - 1
+    if (left === 0) this.trees.delete(item.cluster.computer); else this.trees.set(item.cluster.computer, left)
+  }
+}
 
 /** How far a limb rises along its length (Limb.y1), which its owls rise with. */
 const RISE = 4
@@ -145,35 +183,47 @@ export function layoutGrove(clusters: readonly GroveCluster[], width: number, vi
   const fit = perLimb(sideWidth, spacing)
 
   // Whole computers to the side that is shorter so far, the tallest first, so a computer is one tree. Only while a side
-  // is taller than the view, and moving a project across makes the taller side shorter, does its last project go across:
-  // then one computer with many projects stands as a tree on each side. Each side keeps the clusters' own order, a tree
-  // for each computer in the order the computers first come.
-  const placed: Placed[] = clusters.map(cluster => { const rows = Math.ceil(cluster.nodes.length / fit); return { cluster, rows, height: blockHeight(rows) } })
-  const computers = [...new Set(clusters.map(cluster => cluster.computer))]
-  const treesOf = (items: readonly Placed[]): Placed[][] => computers
-    .map(computer => items.filter(item => item.cluster.computer === computer).sort((a, b) => clusters.indexOf(a.cluster) - clusters.indexOf(b.cluster)))
-    .filter(group => group.length > 0)
-  // A side's height: its trees' limbs, and between two trees the upper one's name at its foot.
-  const sideHeight = (trees: readonly Placed[][]): number => trees.reduce((sum, tree, index) =>
-    sum + tree.reduce((inner, item, at) => inner + (at ? GROVE.blockGap : 0) + item.height, 0) + (index ? BETWEEN_TREES : 0), 0)
-  const shares: Placed[][] = sides.map(() => [])
-  const heightOf = (items: readonly Placed[]): number => sideHeight(treesOf(items))
-  for (const group of treesOf(placed).sort((a, b) => sideHeight([b]) - sideHeight([a]))) {
-    const side = shares.reduce((low, next) => heightOf(next) < heightOf(low) ? next : low)
-    side.push(...group)
+  // is taller than the view, and moving a project across makes the taller side shorter, does its last project go across,
+  // once at most: then one computer with many projects stands as a tree on each side. Each side keeps the clusters' own
+  // order, a tree for each computer in the order the computers first come. Every height is kept as a running sum, so
+  // this is a sort and a pass over the projects.
+  const placed: Placed[] = clusters.map((cluster, order) => { const rows = Math.ceil(cluster.nodes.length / fit); return { cluster, order, rows, height: blockHeight(rows) } })
+  const computerOrder = new Map<string, number>()
+  const byComputer = new Map<string, Placed[]>()
+  for (const item of placed) {
+    if (!computerOrder.has(item.cluster.computer)) computerOrder.set(item.cluster.computer, computerOrder.size)
+    const group = byComputer.get(item.cluster.computer)
+    if (group === undefined) byComputer.set(item.cluster.computer, [item]); else group.push(item)
+  }
+  const shares = sides.map(() => new Share())
+  const groups = [...byComputer.values()].map(items => ({ items, height: Share.heightOf(items) })).sort((a, b) => b.height - a.height)
+  for (const group of groups) {
+    const side = shares.reduce((low, next) => next.height < low.height ? next : low)
+    for (const item of group.items) side.add(item, true)
   }
   const viewRoom = viewHeight - GROVE.groundBand - 24 - contentTop
-  for (;;) {
-    if (shares.length < 2) break
-    const [tall, short] = heightOf(shares[0]!) >= heightOf(shares[1]!) ? [shares[0]!, shares[1]!] : [shares[1]!, shares[0]!]
-    if (tall.length < 2 || heightOf(tall) <= viewRoom) break
-    const last = [...tall].sort((a, b) => clusters.indexOf(b.cluster) - clusters.indexOf(a.cluster))[0]!
-    const after = { tall: tall.filter(item => item !== last), short: [...short, last] }
-    if (Math.max(heightOf(after.tall), heightOf(after.short)) >= heightOf(tall)) break
-    tall.splice(tall.indexOf(last), 1)
-    short.push(last)
+  for (const share of shares) share.movable.sort((a, b) => a.order - b.order)
+  while (shares.length === 2) {
+    const [tall, short] = shares[0]!.height >= shares[1]!.height ? [shares[0]!, shares[1]!] : [shares[1]!, shares[0]!]
+    const last = tall.movable.at(-1)
+    if (last === undefined || tall.count < 2 || tall.height <= viewRoom) break
+    if (Math.max(tall.heightWithout(last), short.heightWith(last)) >= tall.height) break
+    tall.movable.pop()
+    tall.remove(last)
+    short.add(last, false)
+  }
+  /** A side's trees: its projects by computer, in the order the computers and the clusters first come. */
+  const treesOf = (share: Share): Placed[][] => {
+    const trees = new Map<string, Placed[]>()
+    for (const item of [...share.items].sort((a, b) => a.order - b.order)) {
+      const tree = trees.get(item.cluster.computer)
+      if (tree === undefined) trees.set(item.cluster.computer, [item]); else tree.push(item)
+    }
+    return [...trees.entries()].sort(([a], [b]) => computerOrder.get(a)! - computerOrder.get(b)!).map(([, items]) => items)
   }
   const grouped = shares.map(treesOf)
+  /** A side's height: its trees' limbs, and between two trees the upper one's name at its foot. */
+  const sideHeight = (trees: readonly Placed[][]): number => Share.heightOf(trees.flat())
   const tallest = Math.max(0, ...grouped.map(sideHeight))
   const height = Math.max(viewHeight, contentTop + tallest + 24 + GROVE.groundBand)
   const ground = height - GROVE.groundBand
@@ -197,7 +247,8 @@ export function layoutGrove(clusters: readonly GroveCluster[], width: number, vi
       let firstLimb = Infinity
       for (const [itemIndex, item] of tree.entries()) {
         if (itemIndex > 0) y += GROVE.blockGap + extra
-        const nodes = item.cluster.nodes
+        // A limb's owls stand in a fixed order, so a thread whose state changes keeps its place.
+        const nodes = [...item.cluster.nodes].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
         let lastX = trunk
         for (let row = 0; row < item.rows; row++) {
           if (row > 0) y += GROVE.blockGap + extra
