@@ -30,6 +30,7 @@ import {
   type AudioRecordingResult,
 } from '../../audio/audioRecorder'
 import { calculateRms } from '../../audio/audioMath'
+import { isSilentTail } from '../../audio/silentTail'
 import type {
   LoadOptions,
   TranscribeOptions,
@@ -605,15 +606,18 @@ export class DictationController {
     recording: AudioRecordingResult,
   ): Promise<void> {
     if (!this.isCurrent(session)) return
-    if (recording.samples.length === 0 && session.parts.length === 0) {
+    // A short tail that never rises above a pause holds no speech; the speech model
+    // would only make a filler word of it, so it is left out like an empty one.
+    const tail = isSilentTail(recording.samples) ? new Float32Array() : recording.samples
+    if (tail.length === 0 && session.parts.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return
     }
 
     session.durationMs = recording.durationMs
-    if (recording.samples.length > 0) {
-      const result = this.sendPart(session, recording.samples, true)
-      session.parts.push({ audio: recording.samples, rms: roundRms(calculateRms(recording.samples)), result })
+    if (tail.length > 0) {
+      const result = this.sendPart(session, tail, true)
+      session.parts.push({ audio: tail, rms: roundRms(calculateRms(tail)), result })
     }
     await this.finishRecording(session)
   }
