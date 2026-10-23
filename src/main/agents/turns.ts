@@ -3,11 +3,13 @@ import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:f
 import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { SEND_STAGE_FIELDS, type SendStageClock, type SendStageField } from './sendStages'
+import { SEND_STAGE_FIELDS, TURN_END_FIELDS, type SendStageClock, type SendStageField, type TurnEndField } from './sendStages'
 
 /** A send's stage durations (`SendStageTimings`): absent from older records and from every turn that sent nothing. */
 const stageMs = z.number().int().nonnegative().nullable().optional()
 const sendStageShape = Object.fromEntries(SEND_STAGE_FIELDS.map(field => [field, stageMs])) as Record<SendStageField, typeof stageMs>
+/** The provider's own turn as its adapter timed it (`TurnEndTimings`): only on a send whose adapter times its turns. */
+const turnEndShape = Object.fromEntries(TURN_END_FIELDS.map(field => [field, stageMs])) as Record<TurnEndField, typeof stageMs>
 
 export const turnRecordSchema = z.object({
   id: z.string(),
@@ -26,7 +28,7 @@ export const turnRecordSchema = z.object({
     retrievalMs: z.number().int().nonnegative(),
     delegationMs: z.number().int().nonnegative(),
     totalMs: z.number().int().nonnegative(),
-  }).extend(sendStageShape),
+  }).extend(sendStageShape).extend(turnEndShape),
   retrievedMemoryIds: z.array(z.string()),
   contextTokenEstimate: z.number().int().nonnegative(),
   outcome: z.enum(['completed', 'clarified', 'failed']),
@@ -46,7 +48,7 @@ export interface ActiveTurn {
   delegationMs: number
   /** When the coordinator received the command this turn carries out (`performance.now()`): where a send's admission starts. */
   receivedAt?: number
-  /** A send's stopwatch, from Send to the reply's first output. Only turns that send a prompt carry one. */
+  /** A send's stopwatch, from Send to the reply's first output and, where its adapter times it, the turn's end. Only turns that send a prompt carry one. */
   stages?: SendStageClock
   contextTokenEstimate: number
   contextCharacters: number
@@ -129,18 +131,19 @@ export class TurnRecorder {
 
   /**
    * Record the turn. Most records are written before this resolves. A send whose client confirmed the prompt waits
-   * for the reply's first output, or for watching it to stop (`SendStageClock.untilFirstOutput`), and is written
-   * then; this resolves at once and `drain` waits for it. Either way the finish time and `totalMs` are now.
+   * for the reply's first output, or for watching it to stop (`SendStageClock.untilFirstOutput`), and then for the end
+   * of the provider's turn where its adapter times it (`SendStageClock.untilTurnEnd`), and is written then; this
+   * resolves at once and `drain` waits for it. Either way the finish time and `totalMs` are now.
    */
   async finish(turn: ActiveTurn | undefined, outcome: TurnRecord['outcome']): Promise<void> {
     if (!turn) return
     try {
       const finishedAtMs = Date.now()
       const stages = turn.stages
-      if (stages && outcome !== 'failed' && stages.awaitsFirstOutput()) {
+      if (stages && outcome !== 'failed' && (stages.awaitsFirstOutput() || stages.awaitsTurnEnd())) {
         // The record holds no text; the prompt need not stay in memory while it waits for the first output.
         turn.text = ''
-        const pending: Promise<void> = stages.untilFirstOutput().then(() => this.write(turn, outcome, finishedAtMs))
+        const pending: Promise<void> = stages.untilFirstOutput().then(() => stages.untilTurnEnd()).then(() => this.write(turn, outcome, finishedAtMs))
           .catch(() => undefined).finally(() => { this.pending.delete(pending) })
         this.pending.add(pending)
         return
@@ -173,7 +176,7 @@ export class TurnRecorder {
         delegationMs: turn.delegationMs,
         totalMs: Math.max(1, finishedAtMs - turn.startedAtMs),
         // Only a turn whose prompt reached its host has send stages; one refused before then carries none.
-        ...(turn.stages?.has('dispatched') ? turn.stages.durations() : {}),
+        ...(turn.stages?.has('dispatched') ? { ...turn.stages.durations(), ...turn.stages.turnEndTimings() } : {}),
       },
       retrievedMemoryIds: turn.retrievedMemoryIds,
       contextTokenEstimate: turn.contextTokenEstimate,

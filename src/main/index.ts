@@ -136,6 +136,7 @@ import { createDictationGate } from './hotkeys/dictationGate'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
+import { listOpenRouterModels } from './llm/openRouterModels'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
@@ -225,6 +226,8 @@ import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
+import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
+import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -337,6 +340,7 @@ type NativeDiagnostic =
   | 'owl-failed'
   | 'desktop-notification-failed'
   | DesktopDefaultsEvent
+  | 'interface-language-load-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -662,6 +666,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
+const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
@@ -699,7 +704,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled: owlFeatures['interface-language'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -712,6 +717,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
+  // English as the computer's language, so every test and design capture reads English on any machine; the setting still
+  // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
+  const interfaceLanguageEnabled = owlFeatures['interface-language']
+  const interfaceLanguage = new MainInterfaceLanguage({
+    enabled: interfaceLanguageEnabled,
+    systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
+    override: app.isPackaged ? undefined : process.env.SOTTO_INTERFACE_LANGUAGE,
+  })
+  // A catalog that cannot be read leaves Sotto in English, which every window can show.
+  const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
+    interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
+  await applyInterfaceLanguage(startupSettings)
   const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
@@ -764,12 +782,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     title: buildName,
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-      const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
+      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
-        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
+        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -1143,22 +1161,26 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       .then(() => { windows.sendToMain(UPDATE_CHECK_REQUESTED, null) })
       .catch(() => logOperational('native-main-show-failed'))
   }
-  const applicationMenuTemplate = buildApplicationMenuTemplate({
-    platform,
-    appName: APP_NAME,
-    includeDeveloperTools: !app.isPackaged,
-    onShowSettings: () => {
-      void windows.showMain().catch(() => logOperational('native-main-show-failed'))
-    },
-    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
-    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
-    onShowTurnRecords: showTurnRecords,
-  })
-  if (applicationMenuTemplate !== null) {
-    // Windows and Linux keep Electron's default menu: installing null would also drop the
-    // reload/devtools accelerators the app ships with today.
-    Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+  // Built again whenever the interface language changes, so the menu's own words follow it.
+  const installApplicationMenu = (): void => {
+    const applicationMenuTemplate = buildApplicationMenuTemplate({
+      platform,
+      appName: APP_NAME,
+      includeDeveloperTools: !app.isPackaged,
+      onShowSettings: () => {
+        void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+      },
+      // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+      ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+      onShowTurnRecords: showTurnRecords,
+    })
+    if (applicationMenuTemplate !== null) {
+      // Windows and Linux keep Electron's default menu: installing null would also drop the
+      // reload/devtools accelerators the app ships with today.
+      Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+    }
   }
+  installApplicationMenu()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const linuxClipboard = e2eState === null && platform === 'linux'
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
@@ -1275,6 +1297,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // was already short" from "polish truncated it" when users report loss.
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
+    chosenModel: cleanupModelEnabled,
     onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
@@ -1567,6 +1590,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
+      // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
+      if (await applyInterfaceLanguage(settings)) {
+        trayController.update(currentTrayState)
+        installApplicationMenu()
+        windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+      }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
@@ -1920,6 +1950,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
+        ...(interfaceLanguageEnabled ? { interfaceLanguage } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -2013,6 +2044,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             getSettings: () => settings.forFormatting(),
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
+          ...(cleanupModelEnabled ? {
+            models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+          } : {}),
         },
         updates: {
           status: () => updates.status(),

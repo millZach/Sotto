@@ -239,6 +239,8 @@ function freezeSaved(value: unknown): void {
 }
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
+/** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
+export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
 /** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
 class WakeUpNoLongerDue extends Error {
   constructor() { super('Babysitting ended before this wake-up went, so what it said of that pull request was taken out.') }
@@ -743,6 +745,13 @@ export class AgentControl {
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
   private readonly titleWrites = new Set<Promise<void>>()
+  /** Set once closing has stopped waiting for title writes: a title that comes back after the final save is let go. */
+  private titleWritesLetGo = false
+  private letGoOfTitleWrites!: () => void
+  /** Settles when closing lets go of the title writes still running, so nothing that waits on one waits longer. */
+  private readonly titleWritesReleased = new Promise<null>(resolve => { this.letGoOfTitleWrites = () => resolve(null) })
+  /** Closing's one wait for title writes, so the runtime and `closed()` share the same two seconds. */
+  private closingTitleWait: Promise<void> | undefined
   /** Threads seen this run with nothing said yet: their first message, when it comes, gives them a first-message title. */
   private readonly awaitingFirstMessage = new Set<string>()
   /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
@@ -1051,6 +1060,23 @@ export class AgentControl {
    */
   hasPendingThreadWork(threadId: string, options: { readonly setAsideIgnored?: boolean } = {}): boolean {
     return this.pendingThreadWorkReason(threadId, options) !== null
+  }
+  /**
+   * Whether a Watcher send's prompt still in its thread's queue waits there for the user: its queue is paused, or holds a
+   * prompt that failed. Null once it has left the queue, or while it waits only for the thread's turn.
+   */
+  watcherQueuedSendHeld(operationId: string): 'paused-followups' | 'failed-followups' | null {
+    const own = this.followupStore.peek().items.find(item => item.watcherOperationId === operationId)
+    return own ? this.queueAwaitsReview(own.threadId) : null
+  }
+  /**
+   * Whether a thread's queue waits for the user's review, a prompt in it paused or failed, whatever else holds it: an
+   * unconfirmed send ahead of it does not hide it, since what queues behind waits for that review all the same.
+   */
+  queueAwaitsReview(threadId: string): 'paused-followups' | 'failed-followups' | null {
+    const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
+    if (items.some(item => item.status === 'failed')) return 'failed-followups'
+    return items.some(item => item.status === 'paused') ? 'paused-followups' : null
   }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
   pendingThreadWorkReason(threadId: string, { setAsideIgnored = false }: { readonly setAsideIgnored?: boolean } = {}): CheckoutPendingWork | null {
@@ -2872,9 +2898,7 @@ export class AgentControl {
       const exchange = firstExchange(thread, 'automatic', this.threadHistory(thread))
       if (!exchange) continue
       this.titled.add(thread.id)
-      const pending = this.writeThreadTitle(thread.id, exchange)
-      this.titleWrites.add(pending)
-      void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
+      this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
     }
   }
   /**
@@ -2890,9 +2914,13 @@ export class AgentControl {
     const first = this.threadHistory(thread).find(message => message.role === 'user' && message.text.trim().length > 0)
     if (!first) return
     this.awaitingFirstMessage.delete(thread.id)
-    const pending = this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message')
+    this.trackTitleWrite(this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message'))
+  }
+  /** Keeps a title write where closing can wait for it (#980). */
+  private trackTitleWrite(pending: Promise<void>): Promise<void> {
     this.titleWrites.add(pending)
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
+    return pending
   }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   private threadHistory(thread: AgentThread): readonly AgentMessage[] {
@@ -2910,13 +2938,15 @@ export class AgentControl {
   private async offerTitle(threadId: string, write: () => Promise<string | null>, source: 'generated' | 'first-message'): Promise<void> {
     if (this.disposed) return
     try {
-      const title = await write()
-      if (this.disposed || title === null) return
+      const title = await Promise.race([write(), this.titleWritesReleased])
+      // A write started before Sotto began closing is still applied, and `closed()` saves it (#980).
+      if (this.titleWritesLetGo || title === null) return
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
       if (source === 'first-message' && (!carriesDefaultTitle(thread) || thread.titledFromFirstMessage)) return
       this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, source))
-      await this.persist()
+      // Once closing, the final save in `closed()` writes it.
+      if (!this.disposed) await this.persist()
     } catch {
       // A name Sotto offered to write is never worth an error banner: the thread keeps the name it has.
       this.dependencies.logFailure?.('thread-title-failed', 'failed')
@@ -2929,7 +2959,7 @@ export class AgentControl {
     const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', this.threadHistory(thread)) : null
     if (thread && exchange) {
       this.titled.add(thread.id)
-      await this.writeThreadTitle(threadId, exchange)
+      await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))
     }
     this.publish()
     return this.shell()
@@ -3349,6 +3379,7 @@ export class AgentControl {
         if (command.type === 'queue-followup') {
           if (thread.archivedAt) throw new Error('This thread is archived. Reopen it before queuing a prompt.')
           if (this.state.threadDrafts?.find(d => d.threadId === thread.id)?.requestId) throw new Error('Send or clear the existing answer before queuing a prompt.')
+          if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
           const receivedAt = performance.now()
           this.setDelivery(thread.id, command.draftId, 'queued')
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
@@ -3805,6 +3836,8 @@ export class AgentControl {
       validatePromptAttachments(this.state.host, thread.modelId, command.attachments)
     }
     validate()
+    // A thread settled while its turn ran is restored by the steer, as by any new work.
+    if (this.settledForWork(this.thread(command.threadId))) await this.reopenForWork(command.threadId)
     if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
     await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
@@ -4864,6 +4897,27 @@ export class AgentControl {
     const latest = this.state.deliveries?.find(matches)
     this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true })
   }
+  /**
+   * New work reopens a settled thread before it is sent or queued (October 23, 2026): a thread working while settled is
+   * taken for put aside, so its queue never sends and Settle finished threads, a request's end and the cleanup's on-settle
+   * rule act on work still under way. Sotto's own news is not new work and never reopens one.
+   */
+  private settledForWork(thread: AgentThread): boolean {
+    return isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
+  /** Asked only of a settled thread, so a send to any other awaits nothing more than it did. */
+  private async reopenForWork(threadId: string): Promise<void> {
+    // Its own provider first: a send that thread's connection refuses restores nothing.
+    this.canAct(threadId)
+    const host = this.dependencies.host
+    if (!host.reopenThreadForWork) throw new Error('This thread is settled. Restore it before sending it a prompt.')
+    this.acceptSnapshot(await host.reopenThreadForWork(threadId))
+  }
+  /** A delegated brief queued for a thread still working restores it as it is queued, as a queued prompt does. */
+  async reopenSettledForWork(threadId: string): Promise<void> {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (thread && this.settledForWork(thread)) await this.reopenForWork(threadId)
+  }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))?.id
@@ -4913,7 +4967,8 @@ export class AgentControl {
       if (latest.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish.')
     }
     validate()
-    const thread = this.thread(threadId)
+    let thread = this.thread(threadId)
+    if (this.settledForWork(thread)) { await this.reopenForWork(threadId); thread = this.thread(threadId) }
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId, this.localClient, undefined, origin)
     this.say(`Sent to ${thread.title}.`)
     this.observe()
@@ -4971,6 +5026,7 @@ export class AgentControl {
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
     this.sendStages(turn)?.addRead(readMs)
+    if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
     this.clearEmptyDraftBinding(thread.id, draftId)
     if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
@@ -5170,11 +5226,26 @@ export class AgentControl {
   }
   /** Called after disconnecting providers, before the headless process releases its stores. */
   async closed(): Promise<void> {
-    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), ...this.titleWrites])
+    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), this.titleWritesSettled()])
     await this.persist(true)
     // A send's record still waiting for its reply is written now, without a first output, rather than when the wait runs out.
     this.firstOutputs.closeAll()
     await this.dependencies.turns?.drain()
+  }
+  /**
+   * Waits for the thread titles still being written, at most `TITLE_WRITE_CLOSING_WAIT_MS` (#980). Once disposed, the
+   * wait is made once, and a title that takes longer is let go: the thread keeps the name it had, nothing is written
+   * after the final save, and a regeneration waiting for it returns. The runtime stops side calls only after this.
+   */
+  titleWritesSettled(): Promise<void> {
+    if (!this.disposed) return this.waitForTitleWrites()
+    return this.closingTitleWait ??= this.waitForTitleWrites().then(() => { this.titleWritesLetGo = true; this.letGoOfTitleWrites() })
+  }
+  private async waitForTitleWrites(): Promise<void> {
+    if (this.titleWrites.size === 0) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cap = new Promise<void>(resolve => { timer = setTimeout(resolve, TITLE_WRITE_CLOSING_WAIT_MS) })
+    try { await Promise.race([Promise.allSettled([...this.titleWrites]), cap]) } finally { clearTimeout(timer) }
   }
   dispose(): void {
     this.disposed = true

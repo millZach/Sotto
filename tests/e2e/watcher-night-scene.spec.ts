@@ -19,8 +19,9 @@ import { resizeContentWindow } from './support/sottoWindow'
 /**
  * Watcher's night scene on the built app (Zach's picks on October 21 and 22, 2026, `prototype/watcher-owl-scene` and
  * `prototype/watcher-owl-family`): the ASCII night in the side margins of Watcher's room, with Watcher's owl and a thread
- * owl for each watched thread, at the three sizes in dark and light, with reduced motion, and live. Nothing may be drawn
- * in the column. A capture run's fixed clock holds the scene still with every owl sitting, so those captures repeat; a
+ * owl for each watched thread, at the three sizes in dark and light, with reduced motion, and live. In the column only
+ * the quieter sky and hills may show, never on or beside a line of words (variant A of
+ * `docs/prototypes/watcher-column-scene-prototype.html`, October 23, 2026), and no owl at all. A capture run's fixed clock holds the scene still with every owl sitting, so those captures repeat; a
  * newcomer's flight out of the moon, a press and the paint rates are checked on a live clock. Main's Watcher is stood in
  * for by a seeded projection, as in watcher.spec.ts. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-owl-family.
@@ -120,10 +121,12 @@ const owl = (page: Page) => page.locator('#watcher-pane > canvas.watcher-scene--
 const owlButtons = (page: Page) => page.locator('#watcher-pane > .watcher-scene--owls > .watcher-scene__owl')
 
 /**
- * The scene is decoration and lives only in the margins: both canvases hidden, never focusable, never pressed, and
- * not one painted pixel on either between the composer's sides, below the header, where the room's words are.
+ * The scene is decoration: both canvases hidden, never focusable, never pressed. Between the composer's sides, below the
+ * header, the owls' canvas paints nothing; the landscape's paints nothing on a line of words or within a few pixels of
+ * it, nor on the composer, and where the margins have trees, and so a landscape (`landscape`; the smallest window's rail
+ * of eyes has none), it paints something elsewhere in the column too, so the column does not read as an empty panel.
  */
-async function sceneHolds(page: Page, key: string): Promise<void> {
+async function sceneHolds(page: Page, key: string, landscape = true): Promise<void> {
   for (const canvas of [land(page), owl(page)]) {
     await expect(canvas).toHaveAttribute('aria-hidden', 'true')
     expect(await canvas.evaluate(node => [node.tabIndex, getComputedStyle(node).pointerEvents])).toEqual([-1, 'none'])
@@ -134,19 +137,47 @@ async function sceneHolds(page: Page, key: string): Promise<void> {
     const base = pane.getBoundingClientRect()
     const composer = pane.querySelector('.thread-workspace__compose .thread-prompt')!.getBoundingClientRect()
     const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+    // Every line of words in the transcript that shows with its 12-pixel hard gap, and the composer with 4, in pane pixels.
+    const PAD = 12, COMPOSER_PAD = 4
+    const transcript = pane.querySelector('.thread-workspace__transcript')!
+    const view = transcript.getBoundingClientRect()
+    const words: Array<{ x0: number; y0: number; x1: number; y1: number }> = []
+    const keep = (r: DOMRect, pad = PAD): void => {
+      if (r.width < 1 || r.height < 1 || r.bottom <= view.top || r.top >= view.bottom) return
+      words.push({ x0: r.left - base.left - pad, y0: Math.max(r.top, view.top) - base.top - pad, x1: r.right - base.left + pad, y1: Math.min(r.bottom, view.bottom) - base.top + pad })
+    }
+    const walker = document.createTreeWalker(transcript, NodeFilter.SHOW_TEXT)
+    const range = document.createRange()
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (!node.nodeValue?.trim()) continue
+      range.selectNodeContents(node)
+      for (const rect of range.getClientRects()) keep(rect)
+    }
+    keep(composer, COMPOSER_PAD)
     const out: Record<string, number> = {}
     for (const canvas of pane.querySelectorAll<HTMLCanvasElement>(':scope > canvas.watcher-scene')) {
       const scale = canvas.width / canvas.clientWidth
       const x0 = Math.ceil((composer.left - base.left + 2) * scale), x1 = Math.floor((composer.right - base.left - 2) * scale)
       const y0 = Math.ceil((header - base.top) * scale), y1 = canvas.height
-      const data = canvas.getContext('2d')!.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data
-      let painted = 0
-      for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted++
-      out[canvas.className] = painted
+      const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0)
+      const data = canvas.getContext('2d')!.getImageData(x0, y0, w, h).data
+      let onWords = 0, elsewhere = 0
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i]! === 0) continue
+        const p = (i - 3) / 4, x = (x0 + p % w) / scale, y = (y0 + Math.floor(p / w)) / scale
+        if (words.some(b => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1)) onWords++
+        else elsewhere++
+      }
+      out[`${canvas.className} on words`] = onWords
+      out[`${canvas.className} elsewhere`] = elsewhere
     }
+    out.lines = words.length
     return out
   })
-  for (const [canvas, painted] of Object.entries(reading)) expect(painted, `${canvas} pixels in the column, ${key}`).toBe(0)
+  expect(reading.lines, `lines measured, ${key}`).toBeGreaterThan(1)
+  expect(reading['watcher-scene watcher-scene--land on words'], `landscape pixels on or beside words, ${key}`).toBe(0)
+  if (landscape) expect(reading['watcher-scene watcher-scene--land elsewhere'], `landscape pixels elsewhere in the column, ${key}`).toBeGreaterThan(0)
+  expect(reading['watcher-scene watcher-scene--owl on words']! + reading['watcher-scene watcher-scene--owl elsewhere']!, `owl pixels in the column, ${key}`).toBe(0)
   recorded[key] = reading
 }
 
@@ -183,7 +214,7 @@ async function laneHolds(page: Page, key: string): Promise<void> {
 
 test.describe("Watcher's night scene on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
-  test.beforeAll(async () => { await mkdir(evidence, { recursive: true }) })
+  test.beforeAll(async () => { for (const folder of [evidence, scrubberEvidence]) await mkdir(folder, { recursive: true }) })
   test.afterAll(async () => {
     if (Object.keys(recorded).length > 0) await writeFile(resolve(evidence, 'readings.json'), `${JSON.stringify(recorded, null, 2)}\n`, 'utf8')
   })
@@ -201,7 +232,7 @@ test.describe("Watcher's night scene on the built app", () => {
           await settle(page)
           expect(await pageBoundProblems(page), `first entry at ${width}x${height}`).toEqual([])
           await expect(owl(page)).toHaveAttribute('data-owl', 'perched')
-          await sceneHolds(page, `first-${appearance}-${width}x${height}`)
+          await sceneHolds(page, `first-${appearance}-${width}x${height}`, width >= 1280)
           await capture(launched, `first-entry-${appearance}-${width}x${height}.png`)
         }
         await seedRoom(page, true, [['footer-links', 'running'], ['visual-gate', 'waiting'], ['weekly-note', 'idle']])
@@ -212,7 +243,7 @@ test.describe("Watcher's night scene on the built app", () => {
           expect(await pageBoundProblems(page), `conversation at ${width}x${height}`).toEqual([])
           // An owl for each watched thread: on the trees, or at the smallest window on the rail of eyes.
           await expect(owlButtons(page)).toHaveCount(3)
-          await sceneHolds(page, `owls-${appearance}-${width}x${height}`)
+          await sceneHolds(page, `owls-${appearance}-${width}x${height}`, width >= 1280)
           await capture(launched, `thread-owls-${appearance}-${width}x${height}.png`)
         }
         // Watched keeps the scene; Visualize, whose picture takes the pane's whole width, puts it away.
@@ -248,7 +279,7 @@ test.describe("Watcher's night scene on the built app", () => {
           await settle(page)
           expect(await pageBoundProblems(page), `scrubber at ${width}x${height}`).toEqual([])
           await expect(owlButtons(page)).toHaveCount(3)
-          await sceneHolds(page, `scrubber-${appearance}-${width}x${height}`)
+          await sceneHolds(page, `scrubber-${appearance}-${width}x${height}`, width >= 1280)
           await laneHolds(page, `${appearance}-${width}x${height}`)
           await settle(page)
           await holdOwlSky(page)

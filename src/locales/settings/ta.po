@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: ta\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr "{count, plural, one {தீம் அகற்றப்பட்டது.} other {# தீம்கள் அகற்றப்பட்டன.}}"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr "{name}-ஐ ஏற்றுமதி செய்ய முடியவில்லை."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr "{name} ஏற்றுமதி செய்யப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr "தோற்றம்"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr "நிறங்கள், விளிம்புகளின் அடர்த்தி."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr "வண்ணத் திட்டம் சேமிக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr "மாறுபாடு"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr "மாறுபாடு சேமிக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr "கதாபாத்திரம் மறைக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr "கதாபாத்திரம் சேமிக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr "கதாபாத்திரம் காட்டப்படுகிறது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr "முயற்சி நிறம் சேமிக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr "இந்தச் சாளரத்தில் ஏற்றுமதி கிடைக்கவில்லை."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr "மொழி"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr "மொழி சேமிக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr "மெனுக்கள், பொத்தான்கள், செய்திகள். நீங்கள் டிக்டேட் செய்வதும் ஏஜென்ட்கள் எழுதுவதும் அப்படியே இருக்கும்."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr "முன்னோட்டம்"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr "மாறுபாட்டை {amount}-க்கு மீட்டமை"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr "இந்தக் கணினியைப் போலவே ({computerLanguage})"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr "அந்தத் தீமைச் சேமிக்க முடியவில்லை. உங்கள் முந்தைய தீம் இன்னும் செயலில் உள்ளது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr "தீம் சேமிக்கப்பட்டது."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr "தீம்கள், மாறுபாடு, இயக்கம்"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr "மொழிபெயர்ப்புகள் புதியவை, முதலில் Owl-இல் வரும். சில சொற்கள் இன்னும் ஆங்கிலத்தில் இருக்கலாம்."
