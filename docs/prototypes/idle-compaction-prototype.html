@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idle compaction - Sotto prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Throwaway prototype. Theme roles are Sotto's default theme (src/renderer/src/styles/tokens.css) at 100% contrast. */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --tt-provider-claude: #e3b58e;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --tt-provider-claude: #b06a2c;
+}
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-border: color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-lg: 14px; --tt-radius-pill: 999px;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Prototype chrome only. Deliberately outside the theme so it never reads as part of the design. */
+  --proto-ink: #111; --proto-paper: #ffd43b; --proto-font: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-height: 100vh; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; padding-bottom: 110px; overflow-x: hidden; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- Prototype chrome ---------- */
+.proto-bar { display: flex; align-items: flex-start; gap: 16px; padding: 14px 20px; border-bottom: 2px dashed var(--proto-paper); font-family: var(--proto-font); font-size: 12.5px; }
+.proto-bar__copy { flex: 1; min-width: 0; }
+.proto-bar__copy b { display: inline-block; margin-right: 8px; padding: 1px 7px; background: var(--proto-paper); color: var(--proto-ink); border-radius: 4px; }
+.proto-bar__copy p { margin: 6px 0 0; color: var(--tt-text-2); max-width: 90ch; }
+.proto-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; min-height: 44px; padding: 0 12px; border: 2px solid var(--proto-ink); border-radius: 999px; background: var(--proto-paper); color: var(--proto-ink); font-family: var(--proto-font); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.proto-btn:focus-visible { outline: 3px solid var(--proto-ink); outline-offset: 2px; box-shadow: 0 0 0 5px var(--proto-paper); }
+.proto-caption { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; font-family: var(--proto-font); font-size: 12px; color: var(--tt-text-2); }
+.proto-caption > span:first-child { padding: 1px 7px; border: 1px dashed var(--proto-paper); border-radius: 4px; color: var(--tt-text); }
+.proto-seg { display: inline-flex; border: 2px solid var(--proto-ink); border-radius: 999px; overflow: hidden; background: var(--proto-paper); }
+.proto-seg button { min-height: 44px; padding: 0 14px; border: 0; background: transparent; color: var(--proto-ink); font-family: var(--proto-font); font-size: 12px; font-weight: 600; cursor: pointer; }
+.proto-seg button[aria-pressed='true'] { background: var(--proto-ink); color: var(--proto-paper); }
+.proto-note { margin: 10px 0 0; font-family: var(--proto-font); font-size: 11.5px; color: var(--tt-text-muted); }
+.switcher { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 20px); padding: 6px; border: 2px solid var(--proto-ink); border-radius: 999px; background: var(--proto-paper); color: var(--proto-ink); box-shadow: 0 8px 28px rgb(0 0 0 / 45%); font-family: var(--proto-font); }
+.switcher .proto-btn { border-color: transparent; background: var(--proto-ink); color: var(--proto-paper); }
+.switcher__label { min-width: 0; padding: 0 8px; font-size: 12.5px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Stage ---------- */
+.stage { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 28px; max-width: 1500px; margin: 0 auto; padding: 22px 20px; }
+.mock { min-width: 0; }
+.mock__frame { border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-canvas); overflow: hidden; }
+
+/* ---------- Settings (crossing-settings.css) ---------- */
+.settings-frame { padding: 30px 32px 34px; }
+.settings-section__heading { margin: 0 0 20px; }
+.settings-section__heading h2 { margin: 0 0 14px; font-size: 28px; font-weight: 500; letter-spacing: -1px; line-height: 1.2; }
+.settings-section__heading p { margin: 0; color: var(--tt-text-2); font-size: 16px; line-height: 1.6; }
+.account-rows__heading { margin: 26px 0 2px; font-size: 15px; font-weight: 600; }
+.account-rows__heading--first { margin-top: 0; }
+.account-rows__subheading { margin: 0 0 4px; color: var(--tt-text-muted); font-size: 13px; }
+.account-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, auto); align-items: center; gap: 12px 22px; padding: 18px 0; border-top: 1px solid var(--tt-hairline); font-size: 15px; }
+.account-row--field { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); }
+.account-row__heading strong { display: block; font-weight: 600; }
+.account-row__heading span { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 13px; }
+.account-row__control { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.chip svg { color: var(--tt-text-muted); }
+.text-input { width: 100%; min-width: 0; height: 36px; padding: 6px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface); color: var(--tt-text); font-size: 13px; }
+.tt-toggle { display: flex; align-items: center; justify-content: space-between; gap: 22px; width: 100%; min-height: 56px; padding: 17px 0; border: 0; border-top: 1px solid var(--tt-hairline); background: transparent; text-align: left; cursor: pointer; }
+.tt-toggle__copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.tt-toggle__copy strong { font-size: 15px; font-weight: 500; line-height: 1.35; }
+.tt-toggle__copy span { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; max-width: 60ch; }
+.tt-toggle__track { position: relative; flex: none; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-surface-sunken); transition: background-color 120ms ease, border-color 120ms ease; }
+.tt-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: transform 120ms ease, background-color 120ms ease; }
+.tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--theme-accent); background: var(--theme-accent); }
+.tt-toggle[aria-checked='true'] .tt-toggle__thumb { transform: translateX(16px); background: var(--theme-accent-foreground); }
+.tt-toggle:focus-visible { outline-offset: 4px; border-radius: 6px; }
+[data-flash] { animation: flash 1.6s ease; border-radius: 8px; }
+@keyframes flash { 0%, 40% { background: var(--tt-accent-wash); box-shadow: 0 0 0 8px var(--tt-accent-wash); } 100% { background: transparent; box-shadow: 0 0 0 8px transparent; } }
+
+/* Providers (providers.css) */
+.providers-workspace { display: grid; grid-template-columns: minmax(180px, 33%) minmax(0, 1fr); border: 1px solid var(--tt-hairline); border-radius: 14px; overflow: hidden; background: var(--tt-surface); }
+.providers-list { border-right: 1px solid var(--tt-hairline); padding: 8px; }
+.providers-list__row { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-radius: 9px; }
+.providers-list__row[data-selected='true'] { background: var(--tt-accent-wash); }
+.providers-list__select { display: flex; align-items: flex-start; flex: 1; gap: 12px; min-width: 0; min-height: 44px; padding: 16px 10px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.providers-list__select > span { display: grid; gap: 6px; min-width: 0; }
+.providers-list__select strong { font-size: 15px; font-weight: 600; }
+.providers-list__select small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }
+.providers-list__select small i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.providers-list__select small[data-status='connected'] { color: var(--tt-accent-text); }
+.mini-switch { flex: none; width: 36px; height: 20px; border: 1px solid var(--theme-accent); border-radius: 999px; background: var(--theme-accent); position: relative; }
+.mini-switch::after { content: ''; position: absolute; top: 2px; left: 18px; width: 14px; height: 14px; border-radius: 50%; background: var(--theme-accent-foreground); }
+.mini-switch[data-off]::after { left: 2px; background: var(--tt-text-muted); }
+.mini-switch[data-off] { background: var(--tt-surface-sunken); border-color: var(--tt-border); }
+.provider-detail__header { display: flex; align-items: center; gap: 11px; min-height: 64px; padding: 16px 24px; }
+.provider-detail__header h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.provider-detail__version { color: var(--tt-text-muted); font-size: 12px; }
+.provider-tabs { display: flex; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--tt-hairline); }
+.provider-tabs span { color: var(--tt-text-muted); min-height: 40px; padding: 0 0 12px; font-size: 14px; border-bottom: 2px solid transparent; }
+.provider-tabs span[aria-selected='true'] { color: var(--tt-text); border-bottom-color: var(--tt-accent-text); }
+.provider-detail__body { padding: 22px 24px 8px; }
+.provider-block { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 14px 20px; padding-bottom: 20px; }
+.provider-block > div { flex: 1 1 200px; }
+.provider-block h4 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.provider-block p { margin: 0; max-width: 32em; font-size: 14px; line-height: 1.6; color: var(--tt-text-muted); }
+.provider-detail__body .tt-toggle { padding: 18px 0 20px; }
+.provider-detail__body .tt-toggle__copy strong { font-weight: 600; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 13px; font-weight: 500; cursor: pointer; }
+.btn--ghost { border-color: transparent; background: transparent; color: var(--tt-text-2); }
+.btn:hover { background: var(--tt-hover); }
+
+/* ---------- Thread pane (threads.css, activity.css, threadCompaction.css) ---------- */
+.thread-frame { display: flex; flex-direction: column; min-height: 640px; }
+.thread-head { position: relative; display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 6px 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.thread-head__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.thread-head h2 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread-head__crumb { display: flex; gap: 7px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.thread-head__crumb::before { content: '/'; }
+.provider-mark { flex: none; color: var(--tt-provider-claude); }
+.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.pane-action:hover, .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-menu { position: absolute; top: 40px; right: 6px; z-index: 5; width: 250px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-overlay); box-shadow: 0 14px 36px rgb(0 0 0 / 35%); }
+.pane-menu[hidden] { display: none; }
+.pane-menu [role^='menuitem'] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text); font-size: 14px; text-align: left; cursor: pointer; }
+.pane-menu [role^='menuitem']:hover, .pane-menu [role^='menuitem']:focus-visible { background: var(--tt-hover); outline: none; }
+.pane-menu [role^='menuitem'] svg { flex: none; color: var(--tt-text-muted); }
+.pane-menu [role^='menuitem'][aria-disabled='true'] { cursor: default; color: var(--tt-text-muted); }
+.pane-menu [role^='menuitem'] .menu-check { margin-left: auto; color: var(--tt-accent-text); }
+.pane-menu [role^='menuitem'] small { display: block; color: var(--tt-text-muted); font-size: 12px; }
+.pane-menu hr { margin: 5px 4px; border: 0; border-top: 1px solid var(--tt-hairline); }
+.transcript { flex: 1; padding: 24px max(22px, calc((100% - 700px) / 2)) 8px; }
+.msg { position: relative; margin: 0 0 26px; }
+.msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg__who { color: var(--tt-text-2); font-weight: 500; }
+.msg time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.msg p { margin: 0 0 10px; color: var(--tt-text-2); font-size: 15px; line-height: 1.6; }
+.msg p:last-child { margin-bottom: 0; }
+.msg code { padding: 1px 5px; border-radius: 5px; background: var(--tt-surface-sunken); color: var(--tt-text); font-size: 13px; }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--tt-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.msg[data-role='user'] p { color: var(--tt-text); }
+.msg .msg__work { margin: -4px 0 10px; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-boundary { display: flex; align-items: center; gap: 12px; margin: 10px 0 18px; color: var(--tt-text-muted); font-size: 12px; }
+.thread-boundary__rule { flex: 1 1 24px; min-width: 16px; height: 1px; background: var(--tt-hairline); }
+.thread-boundary__label { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 6px; flex: 0 1 auto; text-align: center; }
+.thread-boundary__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+.thread-boundary__label svg { flex: none; }
+/* Variant C: a chip that opens its explanation. */
+.compact-chip-wrap { display: flex; flex-direction: column; align-items: center; margin: 6px 0 20px; }
+.compact-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px 0 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface); color: var(--tt-text-2); font-size: 12.5px; cursor: pointer; }
+.compact-chip svg { color: var(--tt-text-muted); }
+.compact-chip .chev { transition: transform 120ms ease; }
+.compact-chip[aria-expanded='true'] .chev { transform: rotate(180deg); }
+.compact-chip__note { max-width: 46ch; margin: 10px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; text-align: center; }
+.compact-chip__note[hidden] { display: none; }
+.compose { padding: 10px max(22px, calc((100% - 700px) / 2)) 16px; }
+.prompt { padding: 14px 16px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-surface); }
+.prompt textarea { display: block; width: 100%; min-height: 44px; padding: 0; border: 0; resize: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.5; }
+.prompt textarea::placeholder { color: var(--tt-text-faint); }
+.prompt textarea:focus-visible { outline: none; }
+.prompt:focus-within { border-color: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border)); }
+.prompt__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.prompt__chips { display: flex; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+.prompt__chips .chip { min-height: 28px; padding: 0 10px; font-size: 12px; border-color: transparent; }
+.send { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--tt-text); color: var(--tt-canvas); cursor: pointer; }
+.meta { min-height: 24px; padding-top: 6px; color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.5; }
+.meta p { margin: 0; }
+.meta__status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.link-btn { padding: 0; border: 0; background: none; color: var(--tt-accent-text); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.recommend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 4px; color: var(--tt-text-muted); }
+.recommend p { flex: 1 1 250px; font-size: 14px; line-height: 1.45; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1100px) { .stage { gap: 20px; } .settings-frame { padding: 24px 22px 26px; } }
+@media (max-width: 960px) {
+  .providers-workspace { grid-template-columns: 1fr; }
+  .providers-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; border-right: 0; border-bottom: 1px solid var(--tt-hairline); }
+  .providers-list__select { padding: 10px 6px; }
+  .provider-detail__header, .provider-detail__body { padding-inline: 16px; }
+  .provider-tabs { padding: 0 16px; }
+}
+@media (max-width: 700px) {
+  .stage { grid-template-columns: minmax(0, 1fr); padding: 16px 12px; gap: 28px; }
+  .proto-bar { padding: 12px; }
+  .settings-frame { padding: 22px 16px 20px; }
+  .settings-section__heading h2 { font-size: 24px; margin-bottom: 8px; }
+  .settings-section__heading p { font-size: 15px; }
+  .account-row, .account-row--field { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .account-row__control { justify-content: flex-start; }
+  .chip { min-height: 44px; }
+  .text-input { height: 44px; }
+  .providers-list__row .mini-switch { display: none; }
+  .transcript, .compose { padding-inline: 14px; }
+  .msg[data-role='user'] { margin-left: 18px; }
+  .thread-frame { min-height: 0; }
+  .thread-head__crumb { display: none; }
+  .pane-action, .send { width: 44px; height: 44px; }
+  .thread-head { height: 52px; }
+  .pane-menu { top: 48px; width: min(270px, calc(100% - 12px)); }
+  .pane-menu [role^='menuitem'], .compact-chip, .btn, .prompt__chips .chip { min-height: 44px; }
+  .link-btn { display: inline-flex; align-items: center; min-height: 44px; }
+  .switcher__label { max-width: 52vw; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  [data-flash] { background: var(--tt-accent-wash); }
+}
+</style>
+</head>
+<body>
+<header class="proto-bar">
+  <div class="proto-bar__copy">
+    <div><b>PROTOTYPE</b>Idle compaction <span id="variant-short"></span></div>
+    <p id="variant-blurb"></p>
+  </div>
+  <button type="button" class="proto-btn" id="theme" aria-label="Switch to light theme">Light</button>
+</header>
+
+<main class="stage">
+  <section class="mock" aria-labelledby="settings-cap">
+    <div class="proto-caption"><span id="settings-cap">Settings</span><span id="settings-where"></span></div>
+    <div class="mock__frame settings-frame" id="settings"></div>
+    <p class="proto-note">The switch works. It is the same setting in every variant, so flipping it here carries over.</p>
+  </section>
+  <section class="mock" aria-labelledby="thread-cap">
+    <div class="proto-caption">
+      <span id="thread-cap">Thread</span>
+      <div class="proto-seg" role="group" aria-label="Moment shown">
+        <button type="button" data-phase="before" aria-pressed="false">Before: idle 53 min</button>
+        <button type="button" data-phase="after" aria-pressed="true">After</button>
+      </div>
+    </div>
+    <div class="mock__frame thread-frame" id="thread"></div>
+    <p class="proto-note" id="thread-note"></p>
+  </section>
+</main>
+
+<nav class="switcher" aria-label="Prototype variants">
+  <button type="button" class="proto-btn" id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="switcher__label" id="switch-label" aria-live="polite"></span>
+  <button type="button" class="proto-btn" id="next" aria-label="Next variant">&rarr;</button>
+</nav>
+
+<script>
+(() => {
+  const VARIANTS = {
+    A: { short: 'A: Agents settings + transcript divider', blurb: 'The switch is a row under a new "Idle threads" heading in Settings > Agents. In the thread, a rule across the transcript marks where Sotto compacted it.' },
+    B: { short: 'B: Claude Code provider + status line', blurb: 'The switch lives in Settings > Providers > Claude Code, since only Claude threads compact this way. In the thread, the quiet line under the composer says Sotto did it, with a link to turn it off.' },
+    C: { short: 'C: Global switch + per-thread menu item', blurb: 'The global switch sits in Settings > Agents as in A. Each thread\'s ••• menu adds a checked "Compact when idle" so one thread can keep its full history. The transcript shows a small chip that opens its explanation.' },
+  }
+  const ORDER = ['A', 'B', 'C']
+  const params = new URLSearchParams(location.search)
+  const state = {
+    variant: ORDER.includes((params.get('variant') || '').toUpperCase()) ? params.get('variant').toUpperCase() : 'A',
+    global: true, thread: true, phase: 'after', menuOpen: false, chipOpen: false,
+  }
+  if (params.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
+
+  const icon = {
+    shrink: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8M9 19.8V15m0 0H4.2M9 15l-6 6M15 4.2V9m0 0h4.8M15 9l6-6M9 4.2V9m0 0H4.2M9 9 3 3"/></svg>',
+    shrink15: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8M9 19.8V15m0 0H4.2M9 15l-6 6M15 4.2V9m0 0h4.8M15 9l6-6M9 4.2V9m0 0H4.2M9 9 3 3"/></svg>',
+    chev: '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+    more: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>',
+    send: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>',
+    check: '<svg class="menu-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+    pencil: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+    sparkle: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg>',
+    columns: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>',
+    archive: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>',
+    clock: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    claude: (s) => `<svg class="provider-mark" width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.1 2h1.8l.5 7.1L18.6 4l1.3 1.3-5.1 5.2 7.2.6v1.8l-7.2.5 5.1 5.3-1.3 1.3-5.2-5.1-.5 7.1h-1.8l-.5-7.1L5.4 20l-1.3-1.3 5.1-5.3L2 12.9v-1.8l7.2-.6-5.1-5.2L5.4 4l5.2 5.1Z"/></svg>`,
+    codex: '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m9 10 2 2-2 2m4 0h3" stroke-linecap="round"/></svg>',
+    grok: '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 19 19 5M8 5h11v11" stroke-linecap="round"/></svg>',
+    devin: '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="5"/></svg>',
+  }
+
+  const DESC = 'After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history.'
+  const toggle = (label, desc, checked) => `<button type="button" class="tt-toggle" role="switch" id="idle-switch" aria-checked="${checked}" data-act="global">
+      <span class="tt-toggle__copy"><strong>${label}</strong><span>${desc}</span></span>
+      <span class="tt-toggle__track" aria-hidden="true"><span class="tt-toggle__thumb"></span></span></button>`
+
+  function agentsCard(extra) {
+    return `<div class="settings-section__heading"><h2>Agents</h2><p>New threads &amp; projects</p></div>
+      <h3 class="account-rows__heading account-rows__heading--first">New threads</h3>
+      <p class="account-rows__subheading">New threads start with these. Change them for one thread in its composer.</p>
+      <div class="account-row">
+        <span class="account-row__heading"><strong>New threads start with</strong><span>Model, reasoning effort and permissions.</span></span>
+        <div class="account-row__control">
+          <button type="button" class="chip" aria-label="Default model for new threads: Opus 4.7">Opus 4.7 ${icon.chev}</button>
+          <button type="button" class="chip" aria-label="Default reasoning effort for new threads: High">High ${icon.chev}</button>
+          <button type="button" class="chip" aria-label="Default permissions for new threads: Ask for approval">Ask for approval ${icon.chev}</button>
+        </div>
+      </div>
+      <h3 class="account-rows__heading">Projects</h3>
+      <p class="account-rows__subheading">Where a new project goes. Each computer has its own folder.</p>
+      <label class="account-row account-row--field"><span class="account-row__heading"><strong>Default projects directory</strong></span>
+        <input class="text-input" value="C:\\Users\\zache\\Projects" aria-label="Default projects directory"></label>
+      <h3 class="account-rows__heading">Idle threads</h3>
+      ${toggle('Compact idle Claude threads', DESC + extra, state.global)}`
+  }
+
+  function providersCard() {
+    const row = (id, name, mark, status, selected, off) => `<div class="providers-list__row" data-selected="${selected}">
+        <button type="button" class="providers-list__select" aria-pressed="${selected}" aria-label="${name}">${mark}<span><strong>${name}</strong><small data-status="${status === 'Connected' ? 'connected' : ''}"><i aria-hidden="true"></i>${status}</small></span></button>
+        <span class="mini-switch" ${off ? 'data-off' : ''} aria-hidden="true"></span></div>`
+    return `<div class="settings-section__heading"><h2>Providers</h2><p>Accounts &amp; connections</p></div>
+      <div class="providers-workspace">
+        <nav class="providers-list" aria-label="Providers">
+          ${row('codex', 'Codex', icon.codex, 'Connected', false)}
+          ${row('claude', 'Claude Code', icon.claude(21), 'Connected', true)}
+          ${row('grok', 'Grok Build', icon.grok, 'Off', false, true)}
+          ${row('devin', 'Devin', icon.devin, 'Off', false, true)}
+        </nav>
+        <section class="provider-detail" aria-label="Claude Code configuration">
+          <header class="provider-detail__header">${icon.claude(21)}<h3>Claude Code</h3><span class="provider-detail__version">2.1.88</span></header>
+          <div class="provider-tabs"><span aria-selected="true">Configuration</span><span aria-selected="false">Models</span></div>
+          <div class="provider-detail__body">
+            <div class="provider-block"><div><h4>Local connection</h4><p>Uses your Claude sign-in on this computer.</p></div><button type="button" class="btn">Disconnect</button></div>
+            <div class="provider-block"><div><h4>Installed client</h4><p>Up to date.</p></div><button type="button" class="btn">Check again</button></div>
+            ${toggle('Compact idle threads', DESC, state.global)}
+          </div>
+        </section>
+      </div>`
+  }
+
+  function menu() {
+    const disabled = !state.global
+    const checked = state.global && state.thread
+    return `<div class="pane-menu" role="menu" id="pane-menu" aria-label="Thread actions" ${state.menuOpen ? '' : 'hidden'}>
+      <button type="button" role="menuitem" tabindex="-1">${icon.pencil}Rename</button>
+      <button type="button" role="menuitem" tabindex="-1">${icon.sparkle}Regenerate title</button>
+      <button type="button" role="menuitem" tabindex="-1">${icon.columns}Open beside</button>
+      <button type="button" role="menuitem" tabindex="-1">${icon.shrink15}Compact context</button>
+      <hr>
+      <button type="button" role="menuitemcheckbox" tabindex="-1" data-act="thread" aria-checked="${checked}" ${disabled ? 'aria-disabled="true"' : ''}>
+        ${icon.clock}<span>Compact when idle${disabled ? '<small>Off in Settings</small>' : ''}</span>${checked ? icon.check : ''}</button>
+      <hr>
+      <button type="button" role="menuitem" tabindex="-1">${icon.archive}Settle</button>
+    </div>`
+  }
+
+  function marker() {
+    const v = state.variant
+    if (v === 'A') return `<p class="thread-boundary" role="separator" aria-label="Compacted after 54 minutes idle, 262k to 41k tokens">
+        <span class="thread-boundary__rule" aria-hidden="true"></span>
+        <span class="thread-boundary__label">${icon.shrink}<span>Compacted after 54 minutes idle</span><span class="thread-boundary__count">262k → 41k tokens</span></span>
+        <span class="thread-boundary__rule" aria-hidden="true"></span></p>`
+    if (v === 'B') return `<p class="thread-boundary" role="separator" aria-label="Context compacted, 262k to 41k tokens">
+        <span class="thread-boundary__rule" aria-hidden="true"></span>
+        <span class="thread-boundary__label">${icon.shrink}<span>Context compacted</span><span class="thread-boundary__count">262k → 41k tokens</span></span>
+        <span class="thread-boundary__rule" aria-hidden="true"></span></p>`
+    return `<div class="compact-chip-wrap">
+        <button type="button" class="compact-chip" data-act="chip" aria-expanded="${state.chipOpen}" aria-controls="chip-note">${icon.shrink}Compacted while idle ${icon.chev}</button>
+        <p class="compact-chip__note" id="chip-note" ${state.chipOpen ? '' : 'hidden'}>After 54 minutes idle, Sotto compacted this thread before Claude's cache expired. Claude now works from a 41k-token summary instead of the full 262k. To keep full history in this thread, turn off Compact when idle in its ••• menu.</p>
+      </div>`
+  }
+
+  function compacted() { return state.global && (state.variant !== 'C' || state.thread) }
+
+  function meta() {
+    if (state.phase === 'before') return ''
+    if (!compacted()) return `<div class="recommend"><p>This context is large and hasn’t been updated for over an hour.</p>
+        <button type="button" class="btn">Compact</button><button type="button" class="btn btn--ghost">Keep full history</button></div>`
+    if (state.variant === 'B') return `<p class="meta__status" role="status"><span>Sotto compacted this idle thread before its cache expired.</span>
+        <button type="button" class="link-btn" data-act="goto-setting" aria-label="Turn off idle compaction in Settings">Turn off</button></p>`
+    if (state.variant === 'C') return ''
+    return ''
+  }
+
+  function thread() {
+    const after = state.phase === 'after' && compacted()
+    return `<div class="thread-head">
+        <div class="thread-head__title">${icon.claude(16)}<h2>Fix flaky host reconnect test</h2><span class="thread-head__crumb">sotto</span></div>
+        ${state.variant === 'C' ? `<button type="button" class="pane-action" id="menu-btn" data-act="menu" aria-haspopup="menu" aria-expanded="${state.menuOpen}" aria-controls="pane-menu" aria-label="More thread actions">${icon.more}</button>${menu()}`
+          : `<button type="button" class="pane-action" aria-label="More thread actions">${icon.more}</button>`}
+      </div>
+      <div class="transcript">
+        <article class="msg" data-role="user"><header><span class="msg__who">You</span><time>10:12</time></header>
+          <p>The host reconnect test fails about one run in ten on CI. Find out why and fix it.</p></article>
+        <article class="msg" data-role="assistant"><header><span class="msg__who">Claude Code</span><time>10:31</time></header>
+          <p class="msg__work">Worked for 19m · 3 files changed</p>
+          <p>Found it. The test waited on a fixed 200 ms timer, and on a slow runner the socket had not closed by then. It now waits for the close event instead.</p>
+          <p>I ran the suite 50 times with no failures. The change is in <code>tests/integration/hostReconnect.test.ts</code>.</p></article>
+        ${after ? marker() : ''}
+      </div>
+      <div class="compose">
+        <div class="prompt">
+          <label class="vh" for="prompt">Message Claude Code</label>
+          <textarea id="prompt" rows="2" placeholder="What would you like to do next?"></textarea>
+          <div class="prompt__footer">
+            <div class="prompt__chips">
+              <button type="button" class="chip" aria-label="Model: Opus 4.7">Opus 4.7 ${icon.chev}</button>
+              <button type="button" class="chip" aria-label="Reasoning effort: High">High ${icon.chev}</button>
+              <button type="button" class="chip" aria-label="Permissions: Ask for approval">Ask for approval ${icon.chev}</button>
+            </div>
+            <button type="button" class="send" aria-label="Send">${icon.send}</button>
+          </div>
+        </div>
+        <div class="meta">${meta()}</div>
+      </div>`
+  }
+
+  function note() {
+    if (state.phase === 'before') return 'Before: the thread has sat idle for 53 minutes with 262k tokens in context. Nothing shows yet.'
+    if (!state.global) return 'Setting off: Sotto never compacts on its own. After an hour, the existing suggestion appears under the composer, as it does today.'
+    if (state.variant === 'C' && !state.thread) return 'This thread opted out in its ••• menu, so it behaves as if the setting were off.'
+    if (state.variant === 'C') return 'Open the chip for the why. The ••• menu holds "Compact when idle" for this thread.'
+    if (state.variant === 'B') return '"Turn off" opens Settings > Providers > Claude Code at the switch (here it scrolls to and highlights it).'
+    return 'The rule sits where the compaction happened. Nothing under the composer.'
+  }
+
+  const $ = (id) => document.getElementById(id)
+  function render(focusId) {
+    const v = VARIANTS[state.variant]
+    $('variant-short').textContent = '· ' + v.short
+    $('variant-blurb').textContent = v.blurb
+    $('switch-label').textContent = v.short
+    $('settings-where').textContent = state.variant === 'B' ? 'Settings > Providers > Claude Code' : 'Settings > Agents'
+    $('settings').innerHTML = state.variant === 'B' ? providersCard() : agentsCard(state.variant === 'C' ? ' Turn it off for one thread in its ••• menu.' : '')
+    $('thread').innerHTML = thread()
+    $('thread-note').textContent = note()
+    document.querySelectorAll('.proto-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.phase === state.phase)))
+    const url = new URL(location.href); url.searchParams.set('variant', state.variant); history.replaceState(null, '', url)
+    if (focusId) { const el = typeof focusId === 'string' ? (document.getElementById(focusId) || document.querySelector(focusId)) : null; if (el) el.focus() }
+  }
+
+  function setVariant(step) {
+    const i = (ORDER.indexOf(state.variant) + step + ORDER.length) % ORDER.length
+    state.variant = ORDER[i]; state.menuOpen = false; state.chipOpen = false; render()
+  }
+  $('prev').addEventListener('click', () => setVariant(-1))
+  $('next').addEventListener('click', () => setVariant(1))
+  document.querySelectorAll('.proto-seg button').forEach(b => b.addEventListener('click', () => { state.phase = b.dataset.phase; render() }))
+
+  $('theme').addEventListener('click', (e) => {
+    const root = document.documentElement
+    const light = root.dataset.theme !== 'light'
+    root.dataset.theme = light ? 'light' : 'dark'
+    e.currentTarget.textContent = light ? 'Dark' : 'Light'
+    e.currentTarget.setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme')
+  })
+  if (document.documentElement.dataset.theme === 'light') { $('theme').textContent = 'Dark'; $('theme').setAttribute('aria-label', 'Switch to dark theme') }
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]')
+    if (!t) { if (state.menuOpen && !e.target.closest('#pane-menu')) { state.menuOpen = false; render() } return }
+    const act = t.dataset.act
+    if (act === 'global') { state.global = !state.global; render('idle-switch') }
+    else if (act === 'menu') { state.menuOpen = !state.menuOpen; render(state.menuOpen ? '#pane-menu [role^="menuitem"]' : 'menu-btn') }
+    else if (act === 'thread') { if (t.getAttribute('aria-disabled') === 'true') return; state.thread = !state.thread; render('#pane-menu [data-act="thread"]') }
+    else if (act === 'chip') { state.chipOpen = !state.chipOpen; render('.compact-chip') }
+    else if (act === 'goto-setting') {
+      const sw = $('idle-switch')
+      sw.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+      sw.removeAttribute('data-flash'); void sw.offsetWidth; sw.setAttribute('data-flash', '')
+      sw.focus({ preventScroll: true })
+    }
+  })
+
+  document.addEventListener('keydown', (e) => {
+    const menuEl = $('pane-menu')
+    if (state.menuOpen && menuEl) {
+      const items = [...menuEl.querySelectorAll('[role^="menuitem"]')]
+      const i = items.indexOf(document.activeElement)
+      if (e.key === 'Escape') { e.preventDefault(); state.menuOpen = false; render('menu-btn'); return }
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); return }
+      if (e.key === 'Tab') { state.menuOpen = false; render(); return }
+    }
+    if (e.key === 'Escape' && state.chipOpen) { state.chipOpen = false; render('.compact-chip'); return }
+    const tag = (document.activeElement && document.activeElement.tagName) || ''
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+    if (e.key === 'ArrowLeft') { e.preventDefault(); setVariant(-1) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); setVariant(1) }
+  })
+
+  render()
+})()
+</script>
+</body>
+</html>
