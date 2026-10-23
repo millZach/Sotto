@@ -154,9 +154,11 @@ function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefine
   const outcome = remote ? (isThreadTurnRunning(thread) ? 'working' : undefined)
     : newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
   const status = threadNeedsYou(thread) ? 'needs' : outcome
-  // A thread whose machine is not connected keeps what Sotto last read of it, greyed, as of when the connection was lost.
-  const lastRead = machine.remote && !machine.connected
-  const asOf = lastRead ? parent?.lastReadAt ?? own?.lastReadAt ?? Number.NaN : Number.NaN
+  // What Sotto holds of a thread on another machine is as it last read it there whenever main says so (`lastReadAt`), a
+  // failed read on a connection still up included, and whenever that machine is not connected: greyed, never current.
+  const markedAt = parent?.lastReadAt ?? own?.lastReadAt
+  const lastRead = machine.remote && (!machine.connected || markedAt !== undefined)
+  const asOf = lastRead ? markedAt ?? Number.NaN : Number.NaN
   return { thread, level, delegatedBy, newest, startedAt, endedAt: working ? Number.NaN : time(newest?.outcomeAt), waitingFor,
     status, finished: !lastRead && thread.finishedUnread === true && status !== 'needs' && status !== 'working' && status !== 'background',
     brief: briefOf(thread, views), meta, provider, machine, lastRead, asOf, held: start?.held }
@@ -234,7 +236,7 @@ export function rosterByMachine(owner: RosterMachine, families: readonly Delegat
  */
 export function machineCount(group: Pick<RosterMachineGroup, 'machine' | 'families'>, agents: Pick<SubagentSummary, 'total' | 'working'> | undefined): string {
   const rows = group.families.flat()
-  const working = rows.filter(row => row.status === 'working' || row.status === 'background').length + (agents?.working ?? 0)
+  const working = rows.filter(row => !row.lastRead && (row.status === 'working' || row.status === 'background')).length + (agents?.working ?? 0)
   return [plural(rows.length, 'thread'), ...agents?.total ? [plural(agents.total, 'agent')] : [], ...group.machine.connected && working ? [`${working} working`] : []].join(' · ')
 }
 

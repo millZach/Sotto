@@ -66,7 +66,7 @@ function Outcome({ view, lastRead = false }: { readonly view: DelegatedView; rea
 
 /** The wait line, counting the seconds while the delegating thread waits in the call. */
 function WaitLine({ view, id, world }: { readonly view: DelegatedView; readonly id: string; readonly world: DelegationCardWorld }): ReactNode {
-  const away = world.away?.connected === false ? world.away : undefined
+  const away = world.away && (!world.away.connected || Number.isFinite(world.away.lastReadAt)) ? world.away : undefined
   const ticking = view.waiting && world.liveClock && !away
   const [now, setNow] = useState(() => world.now ?? Date.now())
   useEffect(() => {
@@ -76,7 +76,7 @@ function WaitLine({ view, id, world }: { readonly view: DelegatedView; readonly 
     return () => window.clearInterval(timer)
   }, [ticking])
   // Its machine is not connected: how it stood when Sotto last read it, never a wait still counting (#1310).
-  return <p id={id} className="delegation-card__wait">{away ? lastReadOutcome(away.name, view.outcome, away.lastReadAt) : delegationWaitLine(view, world.now ?? now)}</p>
+  return <p id={id} className="delegation-card__wait">{away ? lastReadOutcome(away.name, view.outcome, away.lastReadAt, away.connected) : delegationWaitLine(view, world.now ?? now)}</p>
 }
 
 /** The provider's mark and name, then the machine, under a card's first line. */
@@ -125,7 +125,8 @@ export function DelegationCard({ view }: { readonly view: DelegationView }): Rea
   const thread = world.thread(view.thread)
   const title = thread?.title ?? DELEGATION_WORK_TITLES[view.work]
   const detailsId = `delegation-${view.id}-details`, waitId = `delegation-${view.id}-wait`
-  const lastRead = world.away?.connected === false
+  // As Sotto last read it: its machine is not connected, or main could not read it afresh there (#1310).
+  const lastRead = world.away !== undefined && (!world.away.connected || Number.isFinite(world.away.lastReadAt))
   // Its start was held to Ask for approval on its machine (#1310), said as the roster says it.
   const held = view.held && world.away ? heldLine(view.held, thread ? world.hostName(thread) : world.away.name) : undefined
   return <div className="delegation-card" role="group" aria-label={`Delegated to ${title}`} data-outcome={view.outcome}>

@@ -103,6 +103,19 @@ describe('a remote parent\'s roster', () => {
     expect(rosterMachine(remoteState().connections, reconnecting).connected).toBe(false)
   })
 
+  it('greys a row read from what Sotto last read even while its machine stays connected, as when a read there failed', () => {
+    const state = remoteState(true)
+    const rows = delegatedRoster(PARENT, state.host.threads, reads(LOST), state.host, thread => rosterMachine(state.connections, thread)).flat()
+    const review = rows.find(row => row.thread.id === REVIEW)!
+    expect(review).toMatchObject({ lastRead: true, asOf: LOST, machine: { connected: true } })
+    expect(delegatedStatusWord(review)).toBe('Working when last read')
+    // Not counted as working now, in the heading or the line of chrome.
+    const groups = rosterByMachine(review.machine, [rows.filter(row => row.level === 1)], reads(LOST), undefined, true)!
+    expect(machineCount(groups[0]!, undefined)).toBe('2 threads')
+    expect(rosterCounts(rows, { total: 0, working: 0, unknown: 0 }).detail).toBe('None working')
+    expect(lastReadOutcome('forge', 'working', LOST, true)).toBe(`It was working at ${clockLabel(LOST)}, when Sotto last read it. Sotto could not read it again on forge just now. It reads it again when forge says it changed.`)
+  })
+
   it('says why a start there began at Ask for approval, and why another machine was refused, in the prototype\'s words', () => {
     expect(heldLine('not-told', 'forge')).toBe('Started at Ask for approval: forge had no new-thread default from this computer yet.')
     // The reason only, until a control of its own lets this computer answer there (#1447).
@@ -144,6 +157,14 @@ describe('the cards under a remote parent\'s reply', () => {
     expect(refused).toHaveTextContent('Asked for this computer. forge can start threads only on forge for now. Nothing was started.')
     // It names no machine it could have started on: none was.
     expect(refused.querySelector('.delegation-card__machine')).toBeNull()
+  })
+
+  it('greys a card read from what Sotto last read while forge stays connected', () => {
+    render(<DelegationCardProvider world={world({ name: 'forge', connected: true, lastReadAt: LOST })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={cards()} /></DelegationCardProvider>)
+    const card = screen.getByRole('group', { name: 'Delegated to Review the socket changes' })
+    expect(card.querySelector('.delegation-card__outcome')).toHaveTextContent('Working when last read')
+    expect(card.querySelector('.delegation-ring')).toHaveAttribute('data-last-read')
+    expect(card.querySelector('.delegation-card__wait')).toHaveTextContent('Sotto could not read it again on forge just now.')
   })
 
   it('keeps the last outcome greyed while forge is not connected, and says how it stood then', () => {

@@ -84,7 +84,7 @@ function DelegatedElapsed({ row, live }: { readonly row: DelegatedRosterRow; rea
 /** The latest word on a delegated thread in its details: what it waits on you for, then how its delegation stands. */
 function latestOutcome(row: DelegatedRosterRow, now: number): string {
   // Its machine is not connected: how it stood when Sotto last read it, and that Sotto reads it again on reconnecting.
-  if (row.lastRead) return lastReadOutcome(row.machine.name, row.status, row.asOf)
+  if (row.lastRead) return lastReadOutcome(row.machine.name, row.status, row.asOf, row.machine.connected)
   const waiting = row.waitingFor === 'approval' ? 'It is waiting for your approval. Open it to answer there; nothing is answered from here.'
     : row.waitingFor === 'question' ? 'It is waiting for your answer. Open it to answer there; nothing is answered from here.'
     : row.status === 'needs' ? 'Its agent reported an error. Open it to see what happened.' : undefined

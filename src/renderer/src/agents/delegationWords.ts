@@ -128,9 +128,11 @@ const LAST_READ_WAS: Readonly<Record<DelegationOutcome | 'needs', string>> = {
  * How a delegated thread stood when Sotto last read it on `machine`, which is not connected now, at `asOf` when known: what
  * a roster row's details and a card's line say (#1310). Losing the connection stops nothing there.
  */
-export function lastReadOutcome(machine: string, outcome: DelegationOutcome | 'needs' | undefined, asOf: number): string {
+export function lastReadOutcome(machine: string, outcome: DelegationOutcome | 'needs' | undefined, asOf: number, connected = false): string {
   const when = Number.isFinite(asOf) ? ` at ${clockLabel(asOf)}` : ''
   const was = outcome === undefined ? '' : `${LAST_READ_WAS[outcome]}${when}, when Sotto last read it. `
+  // Connected, but the last read there failed: said as such, and read again when the machine next names it as changed.
+  if (connected) return `${was}Sotto could not read it again on ${machine} just now. It reads it again when ${machine} says it changed.`
   return `${was}${machine} is not connected, so Sotto cannot read how it went since. It reads it again when ${machine} reconnects.`
 }
 
