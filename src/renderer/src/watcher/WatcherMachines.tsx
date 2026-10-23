@@ -14,7 +14,8 @@ import { threadAddressIndex, useWatcherRoom } from './watcherRoom'
 
 /** How many working threads a machine's panel names before it counts the rest. */
 const NAMED = 6
-const FOCUSABLE = 'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+/** What may hold focus in a machine's panel, before those that can't take it now (disabled, or out of the Tab order). */
+const FOCUSABLE = 'button, [href], [tabindex]'
 /** The space a machine's panel keeps below it inside the room, and the least height it takes however short the room. */
 const PANEL_GAP = 12
 const PANEL_MIN_HEIGHT = 160
@@ -108,7 +109,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); onClose(true); return }
     if (event.key !== 'Tab') return
-    const stops = [...panel.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []]
+    const stops = [...panel.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []].filter(stop => stop.tabIndex >= 0 && !stop.hasAttribute('disabled'))
     if (stops.length === 0) { event.preventDefault(); return }
     const index = stops.indexOf(document.activeElement as HTMLElement)
     const next = event.shiftKey ? (index <= 0 ? stops.length - 1 : index - 1) : (index === stops.length - 1 ? 0 : index + 1)
