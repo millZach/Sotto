@@ -37,11 +37,6 @@ export class WatcherPhoneService {
     const working = new Map<string, number>([[THIS_COMPUTER, countMachineWorkingThreads(this.watcher.machineThreads(localId ?? ''))]])
     for (const host of paired) working.set(host.hostId, countMachineWorkingThreads(this.watcher.machineThreads(host.hostId)))
     const entries = machineEntries(listed?.machines ?? null, working, listed?.newWorkersStart, paired)
-    const room = this.watcher.state()
-    const startedByWatcher = new Set<string>()
-    for (const request of room.requests) for (const part of request.participants) {
-      if (part.startedBy === 'watcher') startedByWatcher.add(`${part.target.hostId}\n${part.target.threadId}`)
-    }
     const now = Date.now()
     const rows = entries.map(entry => {
       const hostId = entry.thisComputer ? localId ?? entry.hostId : entry.hostId
@@ -52,7 +47,8 @@ export class WatcherPhoneService {
         for (const thread of list) {
           if (threads.length >= WATCHER_PHONE_MACHINE_THREADS_MAX) break
           if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !isThreadTurnRunning(thread)) continue
-          const who = startedByWatcher.has(`${hostId}\n${thread.id}`) ? 'Watcher'
+          // Who started each thread shown comes from an index of Watcher's record, not a walk of its history.
+          const who = this.watcher.startedByWatcher(hostId, thread.id) ? 'Watcher'
             : thread.delegatedBy !== undefined ? `delegated by ${list.find(row => row.id === thread.delegatedBy)?.title ?? 'another thread'}` : 'your thread'
           threads.push({ title: thread.title, who })
         }

@@ -901,3 +901,11 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
 })
+
+it('knows the threads Watcher started from an index of its record, for the phone’s machines line (#1032)', async () => {
+  const f = await fixture()
+  const worker = await f.start()
+  expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
+  expect(f.watcher.startedByWatcher(f.target.hostId, f.target.threadId)).toBe(false)
+  expect(f.watcher.startedByWatcher(worker.hostId, 'another-thread')).toBe(false)
+})

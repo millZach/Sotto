@@ -329,6 +329,8 @@ export class WatcherService implements WatcherControlHooks {
   private roomKeyed: RoomKeys | undefined
   /** Every recorded operation's request and retry key, for the record they were read from (`recorded`). */
   private retryKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
+  /** The threads Watcher started, by target key, for the record it was worked out from (`startedByWatcher`). */
+  private startedKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
@@ -1007,6 +1009,19 @@ export class WatcherService implements WatcherControlHooks {
   pairedMachines(): { hostId: string; name: string; connected: boolean }[] {
     return (this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId())
       .map(host => ({ hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', connected: host.connected }))
+  }
+  /**
+   * Whether Watcher started this thread, from an index of its record built once per record, so asking for each thread an
+   * iPhone's machines line shows costs the same however long Watcher's history is (#1032).
+   */
+  startedByWatcher(hostId: string, threadId: string): boolean {
+    const record = this.view()
+    if (this.startedKeyed?.record !== record) {
+      const keys = new Set<string>()
+      for (const request of record.requests) for (const participant of request.participants) if (participant.startedBy === 'watcher') keys.add(key(participant.target))
+      this.startedKeyed = { record, keys }
+    }
+    return this.startedKeyed.keys.has(key({ hostId, threadId }))
   }
   /** A machine's own thread list, read in place: This computer's, or a paired machine's as it last sent it. */
   machineThreads(hostId: string): readonly AgentThread[] { return this.owningSnapshot(hostId)?.threads ?? [] }
