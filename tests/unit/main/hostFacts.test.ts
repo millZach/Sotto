@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { HostFactsSource, hostMachineReport, parseMemAvailable, parseMemoryPressure, parseOsRelease, readHostFacts, type HostFactsSystem } from '../../../src/main/agents/hostFacts'
-import type { AgentState } from '../../../src/shared/agents'
+import { HostFactsSource, hostMachineReport, parseMemAvailable, parseMemoryPressure, parseOsRelease, readHostFacts, type HostFactsSystem, type MachineWork } from '../../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS } from '../../../src/shared/hostFacts'
 
 const NOW = new Date('2026-10-14T12:00:00.000Z')
@@ -8,8 +7,8 @@ const GIB = 1024 ** 3
 
 type ShellThread = { id: string; status: string }
 type ShellSends = { deliveries?: { threadId: string; status: string }[]; followups?: { threadId: string; status: string }[] }
-/** The parts of a shell the machine report reads. */
-const shell = (threads: ShellThread[], sends: ShellSends = {}) => ({ host: { threads }, ...sends }) as unknown as Pick<AgentState, 'host' | 'deliveries' | 'followups'>
+/** A reader of the threads and sends the machine report counts. */
+const shell = (threads: ShellThread[], sends: ShellSends = {}) => () => ({ threads, ...sends }) as unknown as MachineWork
 
 function system(overrides: Partial<HostFactsSystem> = {}): HostFactsSystem {
   return {
@@ -321,6 +320,16 @@ describe('the machine report', () => {
         followups: [{ threadId: 'next', status: 'dispatching' }, { threadId: 'busy', status: 'queued' }] }))
     expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
     expect(report.load).toMatchObject({ availableMemoryBytes: 11 * GIB })
+  })
+
+  it('reads its counts after the load, so a thread that started while the load was read counts as running', async () => {
+    let threads: ShellThread[] = [{ id: 'new', status: 'idle' }]
+    let sends: ShellSends = { deliveries: [{ threadId: 'new', status: 'queued' }] }
+    // The load's window is waited out, and the start that was placed begins its turn meanwhile.
+    const source = new HostFactsSource({ os: system(), now: () => NOW,
+      sleep: async () => { threads = [{ id: 'new', status: 'running' }]; sends = { deliveries: [{ threadId: 'new', status: 'accepted' }] } } })
+    const report = await hostMachineReport(source, () => ({ threads, ...sends }) as unknown as MachineWork)
+    expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 0 })
   })
 
   it('keeps the facts when the load cannot be read', async () => {

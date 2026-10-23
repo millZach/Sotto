@@ -1,6 +1,6 @@
 import * as nodeOs from 'node:os'
 import { readFile as nodeReadFile } from 'node:fs/promises'
-import type { AgentState } from '../../shared/agents'
+import type { AgentDelivery, AgentFollowup, AgentHostSnapshot } from '../../shared/agents'
 import { HOST_FACTS_CPU_COUNT_MAX, HOST_FACTS_REFRESH_MS, HOST_FACTS_TEXT_MAX, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS, HOST_RUNNING_THREADS_MAX, hostFactsSchema, hostLoadSchema, type HostFacts, type HostLoad, type HostMachineReport, type HostOs, type HostOsFamily } from '../../shared/hostFacts'
 
 /**
@@ -292,19 +292,31 @@ export class HostFactsSource {
 const PLACED_DELIVERIES: ReadonlySet<string> = new Set(['queued', 'submitting'])
 
 /**
+ * What a machine report counts beside its facts, as the host holds it now: its threads, and the sends it has taken. Read
+ * through a function, after the load is read, because a load reading may wait out its window and counts taken before it
+ * would be that much out of date.
+ */
+export interface MachineWork {
+  readonly threads: readonly Pick<AgentHostSnapshot['threads'][number], 'id' | 'status'>[]
+  readonly deliveries?: readonly Pick<AgentDelivery, 'threadId' | 'status'>[]
+  readonly followups?: readonly Pick<AgentFollowup, 'threadId' | 'status'>[]
+}
+
+/**
  * A machine's facts, how many of its threads are running a turn now, its live load, and its work placed but not started
  * (#1311): threads not running a turn that hold a send not yet begun, such as a thread Watcher has just started there.
+ * The counts are read after the facts and the load, so they are as of the answer.
  */
-export async function hostMachineReport(facts: HostFactsSource, shell: Pick<AgentState, 'host' | 'deliveries' | 'followups'>): Promise<HostMachineReport> {
-  const threads = shell.host.threads
+export async function hostMachineReport(facts: HostFactsSource, work: () => MachineWork): Promise<HostMachineReport> {
+  // A load that cannot be read leaves the facts standing and reads unknown.
+  const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
+  const { threads, deliveries = [], followups = [] } = work()
   const running = threads.filter(thread => thread.status === 'running').length
   const notRunning = new Set(threads.filter(thread => thread.status !== 'running').map(thread => thread.id))
   const placed = new Set([
-    ...(shell.deliveries ?? []).filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
-    ...(shell.followups ?? []).filter(item => item.status === 'dispatching').map(item => item.threadId),
+    ...deliveries.filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
+    ...followups.filter(item => item.status === 'dispatching').map(item => item.threadId),
   ].filter(threadId => notRunning.has(threadId))).size
   const within = (value: number) => value <= HOST_RUNNING_THREADS_MAX ? value : null
-  // A load that cannot be read leaves the facts standing and reads unknown.
-  const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
   return { facts: machine, runningThreads: within(running), load, placedNotStarted: within(placed) }
 }

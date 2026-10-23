@@ -7,10 +7,10 @@ import { version as packageVersion } from '../../package.json'
 import { startSocketServer } from '../../src/host/socketServer'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentState, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
+import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
 import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
-import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
@@ -73,8 +73,8 @@ describe('host facts over the socket (#1031)', () => {
     const service: HostService = {
       shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
       command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
-      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, { host: { threads: [{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }] },
-        deliveries: [{ threadId: 'b', status: 'queued' }] } as unknown as AgentState),
+      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, () => ({ threads: [{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }],
+        deliveries: [{ threadId: 'b', status: 'queued' }] }) as unknown as MachineWork),
     }
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     try {
