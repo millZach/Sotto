@@ -52,6 +52,8 @@ export class IncomingBundle {
   received = 0
   private readonly hash: Hash = createHash('sha256')
   private closed = false
+  private ended = false
+  private landing: Promise<void> | undefined
   constructor(readonly moveId: string, readonly repository: string, readonly branch: string, readonly commit: string, readonly size: number,
     readonly sha256: string, readonly path: string, private readonly handle: FileHandle) {}
   /** Takes the next chunk. A chunk out of order, or past the size the sender named, is refused and nothing is written. */
@@ -65,6 +67,20 @@ export class IncomingBundle {
   /** The digest of what arrived, once all of it has. */
   digest(): string | null { return this.received === this.size ? this.hash.copy().digest('hex') : null }
   async close(): Promise<void> { if (this.closed) return; this.closed = true; await this.handle.close().catch(() => undefined) }
+  /** Whether the move was ended, by `end` or by its connection closing, so nothing more of it may land. */
+  get cancelled(): boolean { return this.ended }
+  /**
+   * Runs `write`, which creates the incoming ref, unless the move was ended first: null when it was. Checked and begun in
+   * one turn, so an end either comes first and stops the ref, or comes after and waits for `write` in `cancel`.
+   */
+  land<T>(write: () => Promise<T>): Promise<T> | null {
+    if (this.ended) return null
+    const landing = write()
+    this.landing = landing.then(() => undefined, () => undefined)
+    return landing
+  }
+  /** Ends the move. Once this resolves no ref is created for it: a landing already under way has finished. */
+  async cancel(): Promise<void> { this.ended = true; await this.landing }
 }
 
 export class BranchBundles {
@@ -223,16 +239,26 @@ export class BranchBundles {
       if (heads.length !== 1 || heads[0] !== `${commit} ${outgoingRef(moveId)}`) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
       const landed = await this.landed(repository, moveId, ref, commit)
       if (landed) return landed
+      if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
       await this.record(moveId, commit, ref)
       await this.git(repository, ['bundle', 'unbundle', path], undefined, 600_000)
-      try { await this.git(repository, ['update-ref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
-      return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+      // The fence: a move ended while it was checked or imported creates no ref. Its objects stay, unreferenced, for Git
+      // to collect, and its record lets a retry go ahead.
+      const landing = incoming.land(async (): Promise<BranchMoved | BranchMoveRefusal> => {
+        try { await this.git(repository, ['update-ref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
+        return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+      })
+      return landing ? await landing : branchMoveRefusal('cut-off', branchMoveWords.cutOff)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally { await unlink(path).catch(() => undefined) }
   }
 
-  /** Discards a bundle that will not be finished: the transfer was cut off or ended. */
+  /**
+   * Discards a bundle that will not be finished: the transfer was cut off or ended. A finish under way creates no ref
+   * after this resolves.
+   */
   async abandon(incoming: IncomingBundle): Promise<void> {
+    await incoming.cancel()
     await incoming.close()
     await unlink(incoming.path).catch(() => undefined)
   }

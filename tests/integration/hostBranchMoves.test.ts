@@ -3,22 +3,45 @@ import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
-import { BranchBundles } from '../../src/main/agents/branchBundles'
+import { BranchBundles, type PreparedBundle } from '../../src/main/agents/branchBundles'
 import type { BranchMoveFolders } from '../../src/main/agents/branchMoves'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { BRANCH_TRANSFERS_MAX, branchMoveWords } from '../../src/shared/branchMoves'
-import { git, twoMachines } from '../fixtures/branchRepositories'
+import { commitFile, git, twoMachines } from '../fixtures/branchRepositories'
 
 let machines: Awaited<ReturnType<typeof twoMachines>>
 beforeEach(async () => { machines = await twoMachines() })
 afterEach(async () => { await machines.close() })
 
 /** Forge's side of a move, driven directly: `forge-project` is the forge clone and `forge-thread` works in it. */
-function forge(): HostBranchMoves {
+function forge(run?: RunGitCommand): HostBranchMoves {
   const folders: BranchMoveFolders = {
     projectFolder: id => id === 'forge-project' ? machines.forge : undefined,
     threadFolder: id => id === 'forge-thread' ? machines.forge : undefined,
   }
-  return new HostBranchMoves(new BranchBundles(machines.data('forge')), folders)
+  return new HostBranchMoves(new BranchBundles({ ...machines.data('forge'), ...(run ? { run } : {}) }), folders)
+}
+
+/** Git as the host runs it, except that `step` answers only once `release` is called. `reached` resolves when it has run. */
+function held(step: (args: readonly string[]) => boolean) {
+  let reach!: () => void, release!: () => void
+  const reached = new Promise<void>(resolve => { reach = resolve }), released = new Promise<void>(resolve => { release = resolve })
+  const run: RunGitCommand = async (cwd, command, args, options) => {
+    const output = await runGitStatusCommand(cwd, command, args, options)
+    if (step(args)) { reach(); await released }
+    return output
+  }
+  return { run, reached, release }
+}
+
+/** A feature branch on the laptop, bundled for `moveId` against nothing. */
+async function laptopBundle(moveId: string): Promise<{ laptop: BranchBundles; prepared: PreparedBundle; commit: string }> {
+  git(machines.laptop, 'switch', '-q', '-c', 'feature/login')
+  const commit = await commitFile(machines.laptop, 'login.txt', 'form\n')
+  const laptop = new BranchBundles(machines.data('laptop'))
+  const prepared = await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] })
+  if (prepared.type !== 'sending') throw new Error('The laptop could not bundle its branch.')
+  return { laptop, prepared, commit }
 }
 
 /** A connection as the socket server hands one over: an owner object and the signal that ends when it closes. */
@@ -36,5 +59,29 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
     peer.close()
     await expect.poll(() => host.staged).toBe(0)
     await expect.poll(() => readdir(machines.data('forge').stagingDirectory)).toEqual([])
+  })
+
+  it('creates no ref once a move is ended or its connection drops, even when its import was already under way', async () => {
+    for (const ending of ['end', 'drop'] as const) {
+      const moveId = randomUUID()
+      const { laptop, prepared, commit } = await laptopBundle(moveId)
+      const importing = held(args => args[0] === 'bundle' && args[1] === 'unbundle')
+      const host = forge(importing.run), peer = connection()
+      expect(await host.handle({ action: 'receive-begin', moveId, projectId: 'forge-project', branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }, peer.owner, peer.gone))
+        .toEqual({ type: 'receiving' })
+      expect(await host.handle({ action: 'receive-chunk', moveId, offset: 0, data: (await laptop.readChunk(prepared.path, 0)).toString('base64') }, peer.owner, peer.gone))
+        .toEqual({ type: 'received', bytes: prepared.size })
+      const finished = host.handle({ action: 'receive-finish', moveId }, peer.owner, peer.gone)
+      await importing.reached
+      if (ending === 'end') expect(await host.handle({ action: 'end', moveId }, peer.owner, peer.gone)).toBeNull()
+      else peer.close()
+      importing.release()
+      expect(await finished).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+      expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+      await expect.poll(() => host.staged).toBe(0)
+      await laptop.discard(moveId)
+      git(machines.laptop, 'switch', '-q', 'main')
+      git(machines.laptop, 'branch', '-q', '-D', 'feature/login')
+    }
   })
 })
