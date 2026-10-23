@@ -349,4 +349,20 @@ describe('SpeechModelManager', () => {
     await vi.waitFor(() => expect(manager.status()).toEqual({ state: 'ready' }))
     expect(fetchFn).toHaveBeenCalled()
   })
+
+  it('lets go of the engine when dictation is turned off, keeps the choice and files, and loads again on start', async () => {
+    await downloadSottoModel()
+    const { manager, sottoEngine, fetchFn, choice } = setup()
+    await manager.start()
+    expect(manager.currentEngine()).toBe(sottoEngine)
+
+    await manager.unload()
+    expect(sottoEngine.dispose).toHaveBeenCalledTimes(1)
+    expect(manager.currentEngine()).toBeNull()
+    expect(choice()).toBe(MODEL.id)
+
+    await manager.start()
+    expect(manager.status()).toEqual({ state: 'ready' })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
 })

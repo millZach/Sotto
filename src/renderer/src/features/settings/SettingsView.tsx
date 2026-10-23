@@ -24,7 +24,7 @@ import type {
   SettingsPatch,
   WorktreeCleanupDays,
 } from '../../../../shared/settings'
-import { TYPING_SPEED_MAX_WPM, TYPING_SPEED_MIN_WPM, WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
+import { dictationOn, TYPING_SPEED_MAX_WPM, TYPING_SPEED_MIN_WPM, WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
@@ -121,6 +121,9 @@ const SETTINGS_SECTIONS = [
 ] as const
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
+
+/** The sections that serve dictation alone; they leave the rail while dictation is off. */
+const DICTATION_ONLY_SECTIONS: ReadonlySet<SettingsSectionId> = new Set(['settings-transcription', 'settings-output'])
 
 /** Watcher's owl at the rail's icon size; the rail passes lucide's props, of which the owl takes only the size. */
 function WatcherNavIcon({ size }: { readonly size?: number; readonly strokeWidth?: number; readonly 'aria-hidden'?: 'true' }): ReactNode {
@@ -385,7 +388,13 @@ export function SettingsView({
   const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
   const workerRoles = watcherOn && workerRolesOn
   const performanceOn = useOwlFeature('main-freeze')
-  const sections = SETTINGS_SECTIONS.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn))
+  // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
+  const dictationSwitch = useOwlFeature('dictation-off')
+  const dictation = dictationOn(settings, dictationSwitch)
+  const sections = SETTINGS_SECTIONS.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn)
+    && (dictation || !DICTATION_ONLY_SECTIONS.has(section.id)))
+  if (!sections.some(section => section.id === activeSection)) setActiveSection('settings-capture')
+  useEffect(() => { if (!dictation) stopMicrophoneTest() }, [dictation, stopMicrophoneTest])
   // Panels stay mounted so account, key and theme drafts survive category changes.
   // Each visit starts at the heading; the sidebar keeps its own scroll position.
   useLayoutEffect(() => {
@@ -460,6 +469,9 @@ export function SettingsView({
               <Card className="settings-section" id="settings-capture" {...panelProps('settings-capture')}>
                 <div className="settings-section__heading"><h2>Dictation</h2><p>Microphone & recording</p></div>
                 <div className="settings-rows">
+                  {dictationSwitch ? <Toggle label="Dictate with Sotto" checked={settings.dictationEnabled} onCheckedChange={(checked) => void save({ dictationEnabled: checked })} description="Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model." /> : null}
+                  {dictation ? null : <p className="settings-disclosure">Dictation is off. The hotkey is free for other apps and the Dictate room is hidden. Your transcripts, vocabulary and speech model are kept.</p>}
+                  {dictation ? <>
                   <Field label="Microphone" {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}>
                     <Select value={microphoneId ?? ''} onChange={(event) => {
                       const next = event.currentTarget.value || null
@@ -504,10 +516,11 @@ export function SettingsView({
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>
                   <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="A short sound when recording starts and stops." />
                   <div className="settings-input-action"><Field label="Typing speed" description={`How fast you type, in words per minute (${TYPING_SPEED_MIN_WPM} to ${TYPING_SPEED_MAX_WPM}). The Dictate room counts the time dictation saves you against it.`} {...(typingSpeedError === undefined ? {} : { error: typingSpeedError })}><input className="tt-input" inputMode="numeric" value={typingSpeedDraft.value} onBlur={() => void saveTypingSpeed()} onChange={(event) => { typingSpeedDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  </> : null}
                 </div>
               </Card>
 
-              <Card className="settings-section" id="settings-transcription" {...panelProps('settings-transcription')}>
+              {dictation ? <Card className="settings-section" id="settings-transcription" {...panelProps('settings-transcription')}>
                 <div className="settings-section__heading"><h2>Transcription</h2><p>Speech to text, on this computer</p></div>
                 <div className="settings-rows">
                   <SpeechModelPicker
@@ -522,11 +535,13 @@ export function SettingsView({
                   <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trims extra spaces without changing any words." />
                   <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
                 </div>
-              </Card>
+              </Card> : null}
 
+              {/* Dictation off keeps Cleanup for the thread drafting toggles (ADR-0107); its dictation rows go. */}
               <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
-                <div className="settings-section__heading"><h2>Cleanup</h2><p>Formatting, vocabulary & writing</p></div>
+                <div className="settings-section__heading"><h2>Cleanup</h2><p>{dictation ? 'Formatting, vocabulary & writing' : 'Writing for threads'}</p></div>
                 <div className="settings-rows">
+                  {dictation ? <>
                   <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript." />
                   <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
                   <div className="settings-input-action">
@@ -544,6 +559,7 @@ export function SettingsView({
                     <p className="settings-disclosure" role="status">{dictionaryPasteCut ? 'The pasted text was cut to fit the 4,000-character limit.' : ''}</p>
 
                   </div>
+                  </> : null}
                   <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept." />
                   <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”." />
                   <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="The thread's own model writes a new pull request's title and body from the branch's commits and diff." />
@@ -572,7 +588,7 @@ export function SettingsView({
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
-              <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
+              {dictation ? <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
                 <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>
                 <div className="settings-rows">
                   <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always on. Every successful transcript is copied." />
@@ -580,7 +596,7 @@ export function SettingsView({
                   <div className="settings-input-action"><Field label="Paste delay" description="How long to wait before pasting, in milliseconds (50 to 1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
                   <div className="settings-input-action"><Field label="Success message duration" description="How long the success message stays up, in milliseconds (500 to 5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
                 </div>
-              </Card>
+              </Card> : null}
 
               <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}><AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current} /></div>
 
@@ -611,10 +627,11 @@ export function SettingsView({
                   <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { merged: checked } })} description="Checked hourly with GitHub through gh, using your own sign-in." />
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   {/* While Omarchy's shell pill stands in for the widget, the switch would change nothing anyone can see. */}
-                  <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
+                  {/* No widget runs while dictation is off. */}
+                  {dictation ? <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
                     {...(platform === 'linux' && settings.shellPillInUse === true
                       ? { disabled: true, description: 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.' }
-                      : { description: 'Keep the small dictation sliver on screen between sessions. Click it to dictate.' })} />
+                      : { description: 'Keep the small dictation sliver on screen between sessions. Click it to dictate.' })} /> : null}
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
                     {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Sotto cannot change sign-in startup here.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)

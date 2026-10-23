@@ -12,6 +12,8 @@ export interface TrayAdapter {
 
 export interface TrayActions {
   toggleDictation(): void
+  /** False while dictation is turned off (ADR-0107): the menu leaves Start/Stop Dictation out. */
+  dictationOn?: () => boolean
   setAutoPaste(enabled: boolean): void
   show(): void
   /** Windows has no application menu, so the tray carries "Check for Updates…". */
@@ -39,11 +41,13 @@ export class TrayController {
     }
 
     this.tray.setMenu([
-      {
-        type: 'normal',
-        label: state.dictating ? 'Stop Dictation' : 'Start Dictation',
-        click: this.actions.toggleDictation,
-      },
+      ...(this.actions.dictationOn?.() === false
+        ? []
+        : [{
+            type: 'normal' as const,
+            label: state.dictating ? 'Stop Dictation' : 'Start Dictation',
+            click: this.actions.toggleDictation,
+          }]),
       { type: 'normal', label: 'Show Sotto', click: this.actions.show },
       ...(this.actions.checkForUpdates
         ? [{ type: 'normal' as const, label: 'Check for Updates…', click: this.actions.checkForUpdates }]

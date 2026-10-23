@@ -5,6 +5,7 @@ import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platfor
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
 import {
+  dictationOn,
   APPEARANCES,
   DEFAULT_SETTINGS,
   EFFORT_COLORS,
@@ -56,6 +57,7 @@ const customSettings = {
   launchAtStartup: true,
   startMinimized: true,
   showWidgetWhenIdle: false,
+  dictationEnabled: true,
   historyEnabled: false,
   historyRetention: 'unlimited',
   onboardingComplete: true,
@@ -334,6 +336,7 @@ describe('settings', () => {
       launchAtStartup: false,
       startMinimized: false,
       showWidgetWhenIdle: true,
+      dictationEnabled: true,
       historyEnabled: true,
       historyRetention: 100,
       onboardingComplete: false,
@@ -470,6 +473,15 @@ describe('settings', () => {
     expect(parseSettings({}).showWidgetWhenIdle).toBe(true)
     expect(parseSettings({ showWidgetWhenIdle: false }).showWidgetWhenIdle).toBe(false)
     expect(parseSettings({ showWidgetWhenIdle: 'sometimes' }).showWidgetWhenIdle).toBe(true)
+    expect(parseSettings({}).dictationEnabled).toBe(true)
+    expect(parseSettings({ dictationEnabled: false }).dictationEnabled).toBe(false)
+    expect(parseSettings({ dictationEnabled: 'no' }).dictationEnabled).toBe(true)
+  })
+
+  it('counts dictation off only while its Owl feature is on', () => {
+    expect(dictationOn({ dictationEnabled: false }, false)).toBe(true)
+    expect(dictationOn({ dictationEnabled: false }, true)).toBe(false)
+    expect(dictationOn({ dictationEnabled: true }, true)).toBe(true)
   })
 
   it('recovers invalid fields without discarding valid fields', () => {

@@ -76,3 +76,26 @@ describe('TrayController', () => {
     expect(checkForUpdates).toHaveBeenCalledOnce()
   })
 })
+
+describe('TrayController with dictation turned off', () => {
+  it('leaves Start/Stop Dictation out while dictation is off, and brings it back when on', () => {
+    const setMenu = vi.fn<(items: readonly TrayMenuItem[]) => void>()
+    let on = false
+    const controller = new TrayController({ setMenu, destroy: vi.fn() }, {
+      toggleDictation: vi.fn(),
+      dictationOn: () => on,
+      setAutoPaste: vi.fn(),
+      show: vi.fn(),
+      quit: vi.fn(),
+    })
+
+    controller.update({ dictating: false, autoPaste: true })
+    expect(setMenu.mock.calls.at(-1)?.[0].map((item) => item.label ?? item.type)).toEqual([
+      'Show Sotto', 'separator', 'Auto-paste', 'separator', 'Quit',
+    ])
+
+    on = true
+    controller.update({ dictating: false, autoPaste: true })
+    expect(setMenu.mock.calls.at(-1)?.[0][0]?.label).toBe('Start Dictation')
+  })
+})
