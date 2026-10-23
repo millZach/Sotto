@@ -27,7 +27,10 @@ async function layout(page: Page): Promise<{ pane: Box; greeting: Box | null; co
 test('a new thread greets above its composer in the middle of the pane, and the first send settles the composer at the bottom', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSotto()
+  // Recent projects on a new thread is an Owl feature (ADR-0121); this launch turns it on to check its menu.
+  const previous = process.env.SOTTO_OWL_FEATURES
+  process.env.SOTTO_OWL_FEATURES = 'recent-projects=1'
+  const launched = await launchSotto().finally(() => { if (previous === undefined) delete process.env.SOTTO_OWL_FEATURES; else process.env.SOTTO_OWL_FEATURES = previous })
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -72,6 +75,18 @@ test('a new thread greets above its composer in the middle of the pane, and the 
     expect(listed.y + listed.height).toBeLessThanOrEqual(560)
     await page.screenshot({ path: `${ARTIFACTS}/greeting-820x560-model-picker.png` })
     await page.keyboard.press('Escape')
+
+    // The project opens a menu of the other recent projects, which also fits the window at the minimum.
+    await greeting.getByRole('button', { name: /^Change project, now / }).click()
+    const projects = greeting.getByRole('menu')
+    await expect(projects.getByRole('menuitem', { name: 'Choose another folder…' })).toBeVisible()
+    const menu = (await projects.boundingBox())!
+    expect(menu.x).toBeGreaterThanOrEqual(0)
+    expect(menu.x + menu.width).toBeLessThanOrEqual(820)
+    expect(menu.y + menu.height).toBeLessThanOrEqual(560)
+    await page.screenshot({ path: `${ARTIFACTS}/greeting-820x560-project-menu.png` })
+    await page.keyboard.press('Escape')
+    await expect(projects).toHaveCount(0)
 
     await resizeWindow(launched, 1280, 800)
     await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
