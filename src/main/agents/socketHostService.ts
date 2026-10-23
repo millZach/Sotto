@@ -48,6 +48,13 @@ type ComposeBatch = { command: TargetedCompose; draftId: string; commandId?: str
 export class HostConnectionError extends Error {
   constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
 }
+/**
+ * The host did not answer a request in time. Unlike a closed connection, which ends what the host was doing for it, the
+ * host may still be carrying the request out, so a caller that counts work there keeps counting it (#1311).
+ */
+export class HostRequestTimeoutError extends HostConnectionError {
+  readonly timedOut = true
+}
 /** The address answered as a host other than the one expected. Nothing of this computer's pairing was sent to its session. */
 export class WrongHostError extends HostConnectionError {
   constructor(message = 'This address belongs to a different host. Check the connection before continuing.') { super(message, 'unauthenticated') }
@@ -512,7 +519,7 @@ export class SocketHostService implements HostService {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         if (operation.op === 'detail') { this.lateDetails.set(id, operation.threadId); if (this.lateDetails.size > 32) this.lateDetails.delete(this.lateDetails.keys().next().value!) }
-        reject(new HostConnectionError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined))
+        reject(new HostRequestTimeoutError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, command })
       onPlacement?.()
