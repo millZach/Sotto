@@ -2,9 +2,10 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { CURSOR_ALLOW_EDITS_NOTICE } from '../../src/main/agents/cursor'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CURSOR_ALLOW_EDITS_NOTICE, cursorWatcherInstructions } from '../../src/main/agents/cursor'
 import { CURSOR_PLAN_TOOL } from '../../src/main/agents/cursorRequests'
+import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 import { describeAdapterContract } from './adapterContract'
 import { cursorFixture, cursorFixtureSkips } from '../fixtures/fakeCursorFixture'
 
@@ -158,12 +159,130 @@ describe('Cursor ACP adapter', () => {
     await expect(f.host.connect()).rejects.toMatchObject({ problem: 'too-old', version: '2026.10.21-0123abc', requiredVersion: '2026.10.22-27dcf5f' })
   })
 
-  it('refuses Watcher on Cursor before Cursor hears anything', async () => {
-    const id = await open()
-    const revoked: string[] = []
-    f!.host.useLaunchProfiles!({ profileFor: async () => ({ kind: 'watcher', revoke: (reason: string) => { revoked.push(reason) } }) as never })
-    await expect(f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Hello' })).rejects.toThrow('Watcher does not run on Cursor')
-    expect(revoked).toHaveLength(1)
-    expect((await f!.requests()).some(record => record.method === 'session/prompt')).toBe(false)
+  describe('Watcher on Cursor', () => {
+    const typed = 'Synthetic instruction to Watcher on Cursor'
+    /** Watcher's launch profile for one thread, as main gives it, with a server on a loopback address nothing listens on. */
+    const watcherProfile = (id: string, verified: () => boolean = () => true) => {
+      const revoke = vi.fn()
+      const profile = { kind: 'watcher' as const, server: { name: 'sotto_threads', type: 'http' as const, url: 'http://127.0.0.1:12345/mcp', headers: [{ name: 'Authorization', value: 'Bearer synthetic' }] },
+        toolNames: ['list_threads'], revoke }
+      f!.host.useLaunchProfiles!({ profileFor: async candidate => {
+        if (candidate !== id) return undefined
+        if (!verified()) throw new Error('Synthetic unreadable identity')
+        return profile
+      } })
+      f!.host.useThreadTools!(['sotto_visual', 'sotto_pull_requests', 'sotto_host_setup'].map(name => ({ name, definitions: [{ name: 'fixture_tool', description: 'Synthetic', inputSchema: {} }],
+        mcpServer: async () => ({ name, type: 'http' as const, url: 'http://127.0.0.1:12345/mcp', headers: [] }) })))
+      f!.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
+      return profile
+    }
+    /** A connected fixture with a project, and Watcher's profile for one thread not yet made. */
+    const ready = async (script?: Record<string, unknown>, verified?: () => boolean) => {
+      f = await cursorFixture()
+      if (script) await f.script(script)
+      const id = randomUUID()
+      const profile = watcherProfile(id, verified)
+      await f.host.connect()
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      return { id, profile }
+    }
+    const make = (id: string, title: string) => f!.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f!.projectId, modelId: f!.modelId, title })
+    /** A Watcher thread and an ordinary thread beside it, both made. */
+    const openWatcher = async () => {
+      const { id, profile } = await ready(), ordinary = randomUUID()
+      await make(id, 'Watcher'); await make(ordinary, 'Ordinary')
+      return { id, ordinary, profile }
+    }
+    const prompts = async () => (await f!.requests()).filter(record => record.method === 'session/prompt').map(record => (record.params!.prompt as { text: string }[])[0]!.text)
+
+    it('gives Watcher its own tools, never the browser, and allows them by name in Sotto’s Cursor folder', async () => {
+      await openWatcher()
+      const made = (await f!.requests()).filter(record => record.method === 'session/new').map(record => record.params!.mcpServers as { name: string; headers: unknown }[])
+      expect(made[0]!.map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads', 'sotto_visual'])
+      expect(made[0]!.find(server => server.name === 'sotto_threads')!.headers).toEqual([{ name: 'Authorization', value: 'Bearer synthetic' }])
+      // An ordinary thread beside it gets the browser and every scoped server, and never Watcher's.
+      expect(made[1]!.map(server => server.name).sort()).toEqual(['sotto_browser', 'sotto_host_setup', 'sotto_pull_requests', 'sotto_visual'])
+      const config = JSON.parse(await readFile(join(f!.root, 'cursor-config', 'cli-config.json'), 'utf8')) as { permissions: { allow: string[] } }
+      expect(config.permissions.allow).toContain('Mcp(sotto_threads:*)')
+    })
+
+    it('sends Watcher its instructions ahead of the words and its note after them, and shows the words as typed, live and replayed', async () => {
+      const { id, ordinary } = await openWatcher()
+      f!.host.observeThreads!([id])
+      const note = watcherRequestNote(randomUUID(), randomUUID())
+      for (const target of [id, ordinary]) {
+        expect(await f!.host.execute({ type: 'send', threadId: target, commandId: randomUUID(), messageId: `${target}-m1`, text: typed, watcherRequestNote: note })).toEqual({ accepted: true })
+      }
+      // An ordinary thread is sent the words alone, even when a command carried a note.
+      expect(await prompts()).toEqual([cursorWatcherInstructions() + typed + watcherRequestLine(note), typed])
+      const shown = async () => (await thread(id)).messages.filter(message => message.role === 'user').map(message => message.text)
+      expect(await shown()).toEqual([typed])
+      await f!.driver.completeTurn(id, 'Synthetic reply')
+      await expect.poll(async () => (await thread(id)).status).toBe('idle')
+      // Cursor replays the message as it was sent; Sotto's own parts come off by their counts.
+      f = await f!.driver.restart(); watcherProfile(id); f.host.observeThreads?.([id]); await f.host.connect()
+      await expect.poll(async () => (await thread(id)).messages.length).toBe(2)
+      expect(await shown()).toEqual([typed])
+      const load = (await f.requests()).filter(record => record.method === 'session/load').at(-1)!
+      expect((load.params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads', 'sotto_visual'])
+    })
+
+    it('puts a wake-up’s news on the note’s line', async () => {
+      const { id } = await openWatcher()
+      const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
+      expect(await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'wake', text: 'Synthetic wake-up', watcherNews: news })).toEqual({ accepted: true })
+      expect(await prompts()).toEqual([cursorWatcherInstructions() + 'Synthetic wake-up' + watcherRequestLine(news)])
+    })
+
+    it('asks the user every permission Watcher’s session asks, as allow once or reject, and answers none itself', async () => {
+      const { id } = await openWatcher()
+      await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: typed })
+      await f!.action(id, { type: 'permission', text: 'git status' })
+      await expect.poll(async () => (await thread(id)).requests.length).toBe(1)
+      const request = (await thread(id)).requests[0]!
+      expect(request.permissionChoices?.map(choice => choice.id)).toEqual(['allow-once', 'reject-once'])
+      // Nothing was answered before the user.
+      expect((await f!.requests()).some(record => record.result !== undefined)).toBe(false)
+      await expect(f!.host.execute({ type: 'answer', threadId: id, commandId: randomUUID(), requestId: request.id, answer: '', approved: true, permissionChoice: 'allow-always' })).rejects.toThrow('not offered')
+      await expect(f!.host.execute({ type: 'configure-thread', threadId: id, commandId: randomUUID(), providerMode: 'anything' })).rejects.toThrow('ordinary permission modes')
+      await f!.host.execute({ type: 'answer', threadId: id, commandId: randomUUID(), requestId: request.id, answer: '', approved: false })
+      await expect.poll(async () => (await f!.requests()).some(record => (record.result?.outcome as { optionId?: string } | undefined)?.optionId === 'reject-once')).toBe(true)
+    })
+
+    it('never starts Watcher on a Cursor that takes no tool servers, and sends it nothing', async () => {
+      const { id, profile } = await ready({ httpMcp: false })
+      await expect(make(id, 'Watcher')).rejects.toThrow('cannot give Watcher its Sotto tools')
+      expect((await f!.requests()).some(record => record.method === 'session/new')).toBe(false)
+      expect(profile.revoke).not.toHaveBeenCalled()
+    })
+
+    it('stops Watcher and revokes its tools when main can no longer verify its profile, and sends nothing', async () => {
+      let verified = true
+      const { id, profile } = await ready(undefined, () => verified)
+      await make(id, 'Watcher')
+      verified = false
+      await expect(f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: typed })).rejects.toThrow('could not be verified')
+      expect(profile.revoke).toHaveBeenCalledTimes(1)
+      expect(await thread(id)).toMatchObject({ status: 'error', requestNotice: expect.stringContaining('Reopen Watcher') })
+      expect((await f!.requests()).some(record => record.method === 'session/prompt')).toBe(false)
+    })
+
+    it('stops a thread named Watcher on a process started without Watcher’s tools, and sends nothing', async () => {
+      f = await cursorFixture()
+      const id = randomUUID()
+      await f.host.connect()
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      await make(id, 'Ordinary')
+      const profile = watcherProfile(id)
+      await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: typed })).rejects.toThrow('started without Watcher’s tools')
+      expect(profile.revoke).toHaveBeenCalledTimes(1)
+      expect((await f.requests()).some(record => record.method === 'session/prompt')).toBe(false)
+    })
+
+    it('writes no short text for Watcher', async () => {
+      const { id } = await openWatcher()
+      await expect(f!.host.writeShortText!(id, { instruction: 'Name it.', material: 'Marker' })).resolves.toBeNull()
+      expect(await f!.sideWriting.calls()).toEqual([])
+    })
   })
 })

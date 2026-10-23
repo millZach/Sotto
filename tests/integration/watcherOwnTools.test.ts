@@ -22,13 +22,16 @@ import { devinFixture } from '../fixtures/devinFixture'
 import { museFixture } from '../fixtures/museFixture'
 import { MUSE_WATCHER_INSTRUCTIONS } from '../../src/main/agents/muse'
 import { museToolName } from '../../src/main/agents/museRequests'
+import { cursorWatcherInstructions } from '../../src/main/agents/cursor'
+import { cursorModeArguments } from '../../src/main/agents/cursorModels'
+import { cursorFixture } from '../fixtures/fakeCursorFixture'
 import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 const factories = { codex: () => codexFixture(undefined, false, 10_000), claude: () => claudeFixture(undefined, 10_000),
-  grok: () => grokFixture(undefined, 10_000, 60_000), muse: () => museFixture(undefined, 10_000) }
+  grok: () => grokFixture(undefined, 10_000, 60_000), muse: () => museFixture(undefined, 10_000), cursor: () => cursorFixture(undefined, 10_000) }
 /** Each of Sotto's servers on Muse goes by its own name and the thread's suffix (ADR-0079). */
 const MUSE_SUFFIX = /_[0-9a-f]{10}$/u
 const MSP_MODE: Record<AgentRuntimeMode, string | undefined> = { 'approval-required': 'promptUnmatched', 'auto-accept-edits': undefined, auto: 'onRequest', 'full-access': 'allowAll' }
@@ -40,7 +43,11 @@ function scoped(name: string): ScopedThreadTools {
 }
 async function seedModels(root: string, provider: keyof typeof factories, updated = false) {
   const ids = ['fixture-model', 'fixture-second-model']
-  if (provider === 'claude') await writeFile(join(root, 'models.json'), JSON.stringify(ids.map(value => ({ value, displayName: value, supportsEffort: true, supportedEffortLevels: ['low', 'high'] }))))
+  // Cursor's own list shape: each model with its effort option. The first keeps the fixture's default model's ID.
+  if (provider === 'cursor') await writeFile(join(root, 'script.json'), JSON.stringify({ ...(updated ? { cliVersion: '2026.10.24-01-02-03-abcdef1' } : {}),
+    models: ['gpt-fixture', ids[1]].map(value => ({ value, name: value, configOptions: [{ id: 'reasoning', name: 'Reasoning', category: 'thought_level', type: 'select', currentValue: 'low',
+      options: [{ value: 'low', name: 'low' }, { value: 'high', name: 'high' }] }] })) }))
+  else if (provider === 'claude') await writeFile(join(root, 'models.json'), JSON.stringify(ids.map(value => ({ value, displayName: value, supportsEffort: true, supportedEffortLevels: ['low', 'high'] }))))
   else if (provider === 'muse') await writeFile(join(root, 'script.json'), JSON.stringify({ ...(updated ? { cliVersion: '1.2.0' } : {}),
     models: ids.map(modelId => ({ modelId, providerId: 'meta', displayLabel: modelId, isDefault: modelId === ids[0] })) }))
   else await writeFile(join(root, 'script.json'), JSON.stringify(provider === 'codex' ? {
@@ -48,7 +55,7 @@ async function seedModels(root: string, provider: keyof typeof factories, update
     models: ids.map(model => ({ id: model, model, displayName: model, isDefault: model === ids[0], defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] })),
   } : { ...(updated ? { cliVersion: '1.0.41' } : {}), catalog: { currentModelId: ids[0], availableModels: ids.map(modelId => ({ modelId, name: modelId, _meta: { reasoningEffort: 'high', supportsReasoningEffort: true, reasoningEfforts: [{ id: 'high' }] } })) } }))
 }
-async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok' | 'muse', hostId: string = randomUUID()) {
+async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok' | 'muse' | 'cursor', hostId: string = randomUUID()) {
   const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId, provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
@@ -106,6 +113,15 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       expect((record.params!.input as unknown[])[0]).toEqual({ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS })
       expect(record.params!.displayText).toEqual(expect.any(String))
     }
+  } else if (provider === 'cursor') {
+    // Watcher's session is given its own server and the scoped servers it takes, never the browser, on every new process.
+    const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
+    expect(launches.length).toBeGreaterThan(0)
+    for (const { params } of launches) expect((params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual([...names].sort())
+    // Cursor takes no instructions from a client, so they go ahead of each message to Watcher.
+    const prompts = records.filter(record => record.method === 'session/prompt')
+    expect(prompts.length).toBeGreaterThan(0)
+    for (const record of prompts) expect((record.params!.prompt as { text: string }[])[0]!.text.startsWith(cursorWatcherInstructions())).toBe(true)
   } else {
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
@@ -151,6 +167,12 @@ function assertRuntimeConfiguration(provider: keyof typeof factories, records: R
     // Muse keeps a session's approval mode itself; a start or a change names it, and a resume carries none.
     for (const record of records.filter(record => record.method === 'session/start')) expect(record.params!.approvalMode).toBe(MSP_MODE[mode])
     for (const record of records.filter(record => record.method === 'session/setApprovalMode')) expect(record.params!.mode).toBe(MSP_MODE[mode])
+  } else if (provider === 'cursor') {
+    // Each thread process takes its approval mode when it starts; a model change starts none, so it may have none to read.
+    const threadProcesses = new Set(records.filter(record => ['session/new', 'session/load'].includes(record.method ?? '')).map(record => (record as RecordedRpc & { process?: number }).process))
+    for (const record of records.filter(record => record.method === 'fixture/process' && threadProcesses.has(record.params!.pid as number))) {
+      expect(record.params!.args).toEqual([...cursorModeArguments(mode === 'auto-accept-edits' ? 'approval-required' : mode), 'acp'])
+    }
   } else {
     const settings = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(settings.length).toBeGreaterThan(0)
@@ -167,6 +189,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     if (provider === 'codex') await writeFile(join(f.root, 'script.json'), JSON.stringify({
       skills: [{ name: 'check', description: 'Synthetic', path, scope: 'repo', enabled: true }],
     }))
+    else if (provider === 'cursor') await writeFile(join(f.root, 'script.json'), JSON.stringify({ commands: [{ name: 'check', description: 'Synthetic' }] }))
     else await writeFile(join(f.root, 'skills.json'), JSON.stringify(provider === 'claude'
       ? [{ name: 'check', description: 'Synthetic (project)' }]
       : { skills: [{ name: 'check', description: 'Synthetic', source: { path, type: 'project' }, userInvocable: true }] }))
@@ -182,6 +205,8 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     const records = await f.driver.requests()
     const prompt = records.find(record => record.method === (provider === 'codex' ? 'turn/start' : provider === 'claude' ? 'user' : 'session/prompt'))!
     if (provider === 'codex') expect(prompt.params!.input).toContainEqual({ type: 'skill', name: 'check', path })
+    // Cursor reads a skill at the start of the prompt, so its `/check` goes ahead of Watcher's instructions.
+    else if (provider === 'cursor') expect((prompt.params!.prompt as { text: string }[])[0]!.text).toBe(`/check ${cursorWatcherInstructions()}$check verify`)
     else expect(JSON.stringify(prompt.params)).toContain('/check verify')
     expect(tools.revoke).not.toHaveBeenCalled()
     await writeFile(join(f.root, 'agents.json'), '{')
@@ -202,7 +227,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
     assertConfiguration(provider, await f.driver.requests())
     assertRuntimeConfiguration(provider, await f.driver.requests(), 'full-access')
-    const modes: AgentRuntimeMode[] = provider === 'grok' || provider === 'muse' ? ['approval-required', 'auto', 'full-access'] : ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+    const modes: AgentRuntimeMode[] = provider === 'grok' || provider === 'muse' || provider === 'cursor' ? ['approval-required', 'auto', 'full-access'] : ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
     for (const runtimeMode of modes) {
       const before = (await f.driver.requests()).length
       expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode })).accepted).toBe(true)

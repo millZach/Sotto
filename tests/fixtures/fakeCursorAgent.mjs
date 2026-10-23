@@ -2,6 +2,9 @@
 // docs/research/cursor-cli.md Appendix B). `node fakeCursorAgent.mjs <root> [flags] acp` speaks ACP on stdio as one
 // thread's process; `--version`, `status --format json`, `login`, `logout` and `update` answer as Cursor's do.
 // Sessions are kept one file each under <root>/sessions, so `session/load` in a later process replays them.
+// script.json may name `models` (Cursor's own list shape) and `commands` (the skills a session lists), and `httpMcp: false`
+// says the client takes no HTTP MCP servers. The `mcp-call` action calls one tool on one of a session's servers over HTTP,
+// as Cursor's model would, and records `fixture/mcp-call` with what the server answered.
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -44,7 +47,7 @@ record({ method: 'fixture/process', params: { pid: process.pid, version, args, c
   CURSOR_API_KEY: process.env.CURSOR_API_KEY, CURSOR_AUTH_TOKEN: process.env.CURSOR_AUTH_TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY } } })
 
 const effort = (id, current, values) => ({ id, name: 'Reasoning', category: 'thought_level', type: 'select', currentValue: current, options: values.map(value => ({ value, name: value })) })
-const CATALOG = [
+const CATALOG = startup.models ?? [
   { value: 'default', name: 'Auto', configOptions: [] },
   { value: 'gpt-fixture', name: 'GPT Fixture', configOptions: [effort('reasoning', 'medium', ['none', 'low', 'medium', 'high']),
     { id: 'fast', name: 'Fast', category: 'model_config', type: 'select', currentValue: 'false', options: [{ value: 'false', name: 'Off' }, { value: 'true', name: 'Fast' }] }] },
@@ -72,8 +75,11 @@ const update = (sessionId, body, keep = true) => {
   if (keep && session) { session.history.push(body); save(sessionId) }
   send({ method: 'session/update', params: { sessionId, update: body } })
 }
-const commands = sessionId => send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: [
+const commands = sessionId => send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: read('script.json', {}).commands ?? [
   { name: 'review', description: 'Review the change (global)' }, { name: 'fixture-skill', description: 'A project skill' }] } } })
+/** The servers each session was given on this process, by name, for the model's tool calls. */
+const sessionServers = new Map()
+const keepServers = (sessionId, servers) => sessionServers.set(sessionId, new Map((servers ?? []).map(server => [server.name, server])))
 
 const pending = new Map(); let serial = 0
 let prompt
@@ -125,7 +131,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (frame.method === 'initialize') {
     if (p.clientCapabilities?._meta?.parameterizedModelPicker !== true) violation('Sotto must ask for the parameterized model picker')
     if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
-    send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1, agentCapabilities: { loadSession: true, mcpCapabilities: { http: true, sse: true },
+    send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1, agentCapabilities: { loadSession: true, mcpCapabilities: { http: script.httpMcp !== false, sse: true },
       promptCapabilities: { audio: false, embeddedContext: false, image: true }, sessionCapabilities: { list: {} } },
       authMethods: [{ id: 'cursor_login', name: 'Cursor Login', description: 'Run agent login first.' }] } })
   } else if (frame.method === 'cursor/list_available_models') {
@@ -133,14 +139,14 @@ createInterface({ input: process.stdin }).on('line', line => {
   } else if (frame.method === 'session/new') {
     const sessionId = randomUUID()
     sessions.set(sessionId, { cwd: p.cwd, model: 'default', effort: undefined, mode: 'agent', history: [], mcpServers: (p.mcpServers ?? []).map(server => server.name) })
-    save(sessionId); resident.add(sessionId)
+    save(sessionId); resident.add(sessionId); keepServers(sessionId, p.mcpServers)
     record({ method: 'fixture/session-resident', params: { sessionId, resident: true } })
     send({ id: frame.id, result: { sessionId, ...answer(sessions.get(sessionId)) } })
     commands(sessionId)
   } else if (frame.method === 'session/load') {
     const session = loadSession(p.sessionId)
     if (!session || script.rejectLoad) { send({ id: frame.id, error: { code: -32602, message: 'Session not found' } }); return }
-    resident.add(p.sessionId); session.mcpServers = (p.mcpServers ?? []).map(server => server.name)
+    resident.add(p.sessionId); session.mcpServers = (p.mcpServers ?? []).map(server => server.name); keepServers(p.sessionId, p.mcpServers)
     record({ method: 'fixture/session-resident', params: { sessionId: p.sessionId, resident: true } })
     // The whole conversation again, one message per frame, as Cursor's own load does.
     for (const body of session.history) send({ method: 'session/update', params: { sessionId: p.sessionId, update: body } })
@@ -231,5 +237,22 @@ function run(command) {
     questions: [{ id: 'color', prompt: command.text, options: [{ id: 'Blue', label: 'Blue' }, { id: 'Red', label: 'Red' }], allowMultiple: false }] })
   if (command.type === 'plan') ask('plan', 'cursor/create_plan', { toolCallId: `call_p${serial}`, name: 'fixture-plan', overview: command.text, plan: '1. First\n2. Second', todos: [{ id: 'a', content: 'First', status: 'pending' }] })
   if (command.type === 'todos') ask('ack', 'cursor/update_todos', { toolCallId: `call_t${serial}`, todos: command.todos, merge: false })
+  if (command.type === 'mcp-call') void callTool(sessionId, command)
   if (command.type === 'task') ask('ack', 'cursor/task', { toolCallId: command.toolCallId ?? `call_task`, description: command.text, prompt: command.text, subagentType: 'explore', ...(command.durationMs === undefined ? {} : { durationMs: command.durationMs }) })
+}
+
+/** One tool call as Cursor's model makes it, on the session's server of that name, over streamable HTTP with its headers. */
+async function callTool(sessionId, command) {
+  const server = sessionServers.get(sessionId)?.get(command.server)
+  if (!server) { record({ method: 'fixture/mcp-call', params: { sessionId, server: command.server, tool: command.tool, callId: command.callId, missing: true } }); return }
+  const headers = Object.fromEntries((server.headers ?? []).map(header => [header.name, header.value]))
+  try {
+    const response = await globalThis.fetch(server.url, { method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'tools/call', params: { name: command.tool, arguments: command.arguments ?? {} } }) })
+    const reply = await response.json()
+    record({ method: 'fixture/mcp-call', params: { sessionId, server: command.server, tool: command.tool, callId: command.callId, status: response.status, result: reply.result?.structuredContent ?? null } })
+  } catch (error) {
+    record({ method: 'fixture/mcp-call', params: { sessionId, server: command.server, tool: command.tool, callId: command.callId, failed: String(error?.name ?? 'Error') } })
+  }
 }

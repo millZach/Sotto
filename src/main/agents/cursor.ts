@@ -16,7 +16,7 @@ import { cursorAnswer, cursorDecline, cursorPending, type CursorPending } from '
 import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, CursorUncertain, CURSOR_ACP_VERSION, CURSOR_CLI_VERSION, findCursorProgram,
   readCursorSignIn, readCursorVersion, writeCursorConfig, type CursorFrame, type CursorProgram } from './cursorRpc'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
-  ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
+  ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
@@ -31,7 +31,10 @@ import { effortAfterChange, validatePromptAttachments, validateThreadOptions } f
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
-import { WatcherProfileRefusal } from './watcherProfile'
+import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
+import { watcherRequestLine } from './watcherRequestNote'
 
 /**
  * Cursor as a thread provider (ADR-0123): one `agent acp` process per thread, started from Cursor's own program with
@@ -50,7 +53,13 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const attachmentSchema = z.object({ id: z.string(), name: z.string(), mimeType: z.string(), sizeBytes: z.number() })
 /** One message Sotto sent: its identities, the digest of what Cursor was given, and its turn's place in the session. */
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), turn: z.number().int().nonnegative(),
-  attachments: z.array(attachmentSchema).default([]) })
+  attachments: z.array(attachmentSchema).default([]),
+  /**
+   * How many characters Sotto put before and after the user's words on the wire, for a message to Watcher: its
+   * instructions ahead and its request note's line after (ADR-0123). Counts only, never the words, so a message Cursor
+   * replays is shown as it was typed.
+   */
+  sottoHead: z.number().int().nonnegative().optional(), sottoTail: z.number().int().nonnegative().optional() })
 type Origin = z.infer<typeof originSchema>
 const aliasSchema = z.object({
   cursorSessionId: z.string().min(1).max(256).optional(), projectId: z.string(), cwd: z.string(), title: z.string(), createdAt: z.string(),
@@ -72,7 +81,21 @@ const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), desc
 /** What Sotto says once to a thread that came with Allow edits, which Cursor has not (ADR-0123). */
 export const CURSOR_ALLOW_EDITS_NOTICE = 'Cursor has no Allow edits mode, so this thread asks for approval. Cursor still makes edits inside the project folder without asking.'
 const PROCESS_LOST = 'Cursor stopped before this reply finished, so it may be cut short. Send a message to carry on.'
-const WATCHER_REFUSED = 'Watcher does not run on Cursor in this build yet. Nothing was sent. Choose another provider for Watcher.'
+/**
+ * Watcher's instructions on Cursor (ADR-0123). Cursor's ACP agent takes no system prompt or instructions from a client,
+ * and its rules are files one Cursor folder shares with every thread, so they travel ahead of each message Sotto sends
+ * Watcher, in the same text part, marked as Sotto's. Cursor replays a message exactly as it was sent, so the counts Sotto
+ * keeps take them off again, and every surface shows the message as typed.
+ */
+export const cursorWatcherInstructions = (instructions: string = WATCHER_SYSTEM_PROMPT): string =>
+  `[Sotto: Watcher's instructions. Cursor takes no instructions from Sotto any other way, so they come ahead of each message Sotto sends you. They are not the user's words.]
+${instructions}
+[End of Watcher's instructions. The message follows.]
+
+`
+/** The name of Watcher's own tool server, which Sotto's rules in its Cursor folder allow once a Watcher has run on Cursor. */
+const WATCHER_SERVER = 'sotto_threads'
+const WATCHER_WITHOUT_TOOLS = 'This Cursor client cannot give Watcher its Sotto tools, so Watcher did not start. Nothing was sent. Update Cursor’s CLI and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 
 /**
  * Where each update of one turn belongs (`CursorPlace`). Replies are counted by segment: a reply runs on until a tool or
@@ -115,6 +138,8 @@ interface Connection {
   readonly nonce: string
   readonly clientRevision: number
   readonly mode: CursorRuntimeMode
+  /** Started for Watcher's thread with its launch profile: its session has Watcher's tools, never the browser (ADR-0073). */
+  readonly watcher: boolean
   closing: boolean
   /** The model and effort this process's session is on, as Cursor last said. */
   model: string | undefined
@@ -160,6 +185,8 @@ export class CursorAcpHost implements AgentHost {
   private readonly reaper: SessionReaper
   private history: ThreadHistorySource | undefined
   private launchProfiles: ThreadLaunchProfiles | undefined
+  /** The last profile main gave each Watcher thread: evidence for stopping it when main no longer resolves one, never a grant. */
+  private readonly knownLaunchProfiles = new Map<string, WatcherLaunchProfile>()
   private browserTools: BrowserAgentTools | undefined
   private threadTools: readonly ScopedThreadTools[] = []
   private facts = new Map<string, CursorModelFacts>()
@@ -227,34 +254,84 @@ export class CursorAcpHost implements AgentHost {
   }
 
   /**
-   * Watcher does not run on Cursor in this build: a thread main launches with Watcher's profile is refused before Cursor
-   * hears anything, and its profile is withdrawn, so Watcher never runs as an ordinary thread with ordinary permissions.
+   * Watcher's launch profile for this thread, or undefined for every other thread (ADR-0073, ADR-0123). A Watcher thread
+   * whose profile main can no longer verify is stopped and its tools revoked, and nothing is sent.
    */
-  private async refuseWatcher(id: string): Promise<void> {
-    let profile
-    try { profile = await this.launchProfiles?.profileFor(id) }
-    catch { throw new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Nothing was sent.') }
-    if (!profile) return
-    try { profile.revoke(WATCHER_REFUSED) } catch { /* The refusal stands either way. */ }
-    throw new WatcherProfileRefusal(WATCHER_REFUSED)
+  private async launchProfile(id: string, rpc?: CursorRpc): Promise<WatcherLaunchProfile | undefined> {
+    const generation = this.generation, resolver = this.launchProfiles, connection = this.connections.get(id)
+    const current = (): boolean => generation === this.generation && resolver === this.launchProfiles && (!rpc || this.connections.get(id)?.rpc === rpc)
+    try {
+      const profile = await resolver?.profileFor(id)
+      if (!current()) throw new CursorUncertain('Cursor’s connection changed while the thread’s profile was checked.')
+      if (profile) { validateWatcherProfile(profile); this.knownLaunchProfiles.set(id, profile) }
+      else if (this.knownLaunchProfiles.has(id)) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Its session was stopped. Reopen Watcher to recover.')
+      return profile
+    } catch (error) {
+      if (!current()) throw new CursorUncertain('Cursor’s connection changed while the thread’s profile was checked.')
+      const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.')
+      if (this.connections.get(id) === connection) {
+        try { this.revokeProfile(id, this.knownLaunchProfiles.get(id), refusal.message) } catch { /* A broken server cleanup never keeps the process alive. */ }
+      }
+      throw refusal
+    }
+  }
+  /** The profile, checked against the process already running the thread: one started without Watcher's tools is stopped. */
+  private async checkLaunchProfile(id: string): Promise<WatcherLaunchProfile | undefined> {
+    const generation = this.generation, connection = this.connections.get(id)
+    const profile = await this.launchProfile(id)
+    this.assertGeneration(generation)
+    if (profile && connection && !connection.watcher) {
+      const reason = 'This Cursor process started without Watcher’s tools. Nothing was sent. Reopen Watcher.'
+      this.revokeProfile(id, profile, reason)
+      throw new WatcherProfileRefusal(reason)
+    }
+    return profile
+  }
+  /**
+   * A profile failure ends the thread's process, even if closing it would fail, and revokes Watcher's tools. Every request
+   * still waiting is declined on the way out, which grants nothing.
+   */
+  private revokeProfile(id: string, profile: WatcherLaunchProfile | undefined, reason: string): void {
+    this.endTurn(id, 'failed')
+    const connection = this.connections.get(id)
+    this.connections.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.log.release(id); this.reaper.forget(id)
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) {
+      this.pending.delete(requestId)
+      if (!pending.answering) void pending.connection.rpc.reply(pending.wireId, cursorDecline(pending)).catch(() => undefined)
+    }
+    const thread = this.threads.get(id)
+    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
+    if (connection) this.close(connection)
+    try { profile?.revoke(reason) } finally { this.emit() }
   }
   profileRefusalHandler(id: string) {
-    const connection = this.connections.get(id)
+    const generation = this.generation, connection = this.connections.get(id)
     if (!connection) return undefined
-    return (reason: string): Promise<void> => {
-      if (this.connections.get(id) !== connection) return Promise.resolve()
-      const thread = this.threads.get(id)
-      if (thread) { thread.requestNotice = reason; thread.status = 'error' }
-      return this.stopSession(id)
+    return (reason: string): void => {
+      if (generation === this.generation && this.connections.get(id) === connection) this.revokeProfile(id, this.knownLaunchProfiles.get(id), reason)
     }
   }
 
-  /** The names of every Sotto tool server, which Sotto's rules in its Cursor folder allow (ADR-0123). */
+  /**
+   * The names of every Sotto tool server, which Sotto's rules in its Cursor folder allow (ADR-0123), and Watcher's own once
+   * a Watcher has run on Cursor in this run of Sotto. One folder serves every thread; a thread still reaches only the
+   * servers it was given, and no ordinary thread is given Watcher's.
+   */
   private serverNames(): string[] {
-    return [...(this.browserTools ? [BROWSER_MCP_SERVER] : []), ...this.threadTools.map(tools => tools.name)]
+    return [...(this.browserTools ? [BROWSER_MCP_SERVER] : []), ...this.threadTools.map(tools => tools.name), ...(this.knownLaunchProfiles.size ? [WATCHER_SERVER] : [])]
   }
-  /** Sotto's own tool servers for this thread, each with the thread's bearer token, as Grok Build and Muse get them. */
-  private async toolServers(id: string): Promise<ThreadMcpServer[]> {
+  /**
+   * Sotto's own tool servers for this thread, each with the thread's bearer token, as Grok Build and Muse get them. Watcher's
+   * thread gets its own `sotto_threads` server and the scoped servers Watcher takes, never the browser (ADR-0073).
+   */
+  private async toolServers(id: string, watcher: boolean): Promise<ThreadMcpServer[]> {
+    if (watcher) {
+      const profile = await this.launchProfile(id)
+      if (!profile) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Nothing was sent. Reopen Watcher to recover.')
+      if (!this.httpToolServers) throw new WatcherProfileRefusal(WATCHER_WITHOUT_TOOLS)
+      return [{ name: profile.server.name, type: profile.server.type, url: profile.server.url, headers: profile.server.headers.map(header => ({ ...header })) },
+        ...(await scopedThreadServers(watcherThreadTools(this.threadTools), id)).map(({ server }) => server)]
+    }
     if (!this.httpToolServers) return []
     const servers: ThreadMcpServer[] = []
     if (this.browserTools) servers.push(await this.browserTools.mcpServer(id))
@@ -278,11 +355,11 @@ export class CursorAcpHost implements AgentHost {
     return client!
   }
   /** This thread's own process, started in the thread's permission mode and ready for a session. */
-  private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
+  private async startProcess(id: string, alias: Alias, cwd: string, watcher: boolean): Promise<Connection> {
     const program = this.program
     if (!program || !this.state.connected) throw new Error('Connect Cursor before using its threads.')
     await writeCursorConfig(this.configDirectory, this.serverNames())
-    const connection: Connection = { rpc: undefined as unknown as CursorRpc, nonce: randomUUID(), clientRevision: this.clientRevision, mode: alias.runtimeMode,
+    const connection: Connection = { rpc: undefined as unknown as CursorRpc, nonce: randomUUID(), clientRevision: this.clientRevision, mode: alias.runtimeMode, watcher,
       closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined }
     const rpc = this.spawn(program, [...cursorModeArguments(alias.runtimeMode), 'acp'], cwd, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: CursorRpc }).rpc = rpc
@@ -416,17 +493,17 @@ export class CursorAcpHost implements AgentHost {
   }
   private async load(id: string): Promise<Connection> {
     const generation = this.generation
-    await this.refuseWatcher(id)
+    const profile = await this.launchProfile(id)
     this.assertGeneration(generation)
     const alias = this.aliases[id]
     if (!alias?.cursorSessionId) throw new Error('Cursor did not confirm this thread’s session. Your thread is kept. Start a new thread to carry on.')
     const cwd = await existingWorkingDirectory(alias.cwd)
     this.assertGeneration(generation)
-    const connection = await this.startProcess(id, alias, cwd)
+    const connection = await this.startProcess(id, alias, cwd, profile !== undefined)
     if (generation !== this.generation) { this.close(connection); throw new CursorUncertain('Cursor’s connection changed while the thread was opening.') }
     this.connections.set(id, connection)
     try {
-      const mcpServers = await this.toolServers(id)
+      const mcpServers = await this.toolServers(id, connection.watcher)
       this.assertGeneration(generation)
       connection.replay = { messages: [], activities: [], turns: 0, turn: undefined, createdAt: alias.createdAt, userCreatedAt: alias.createdAt }
       await connection.rpc.request('session/load', { sessionId: alias.cursorSessionId, cwd: alias.cwd, mcpServers }, value => { this.readSettings(connection, value) })
@@ -474,7 +551,7 @@ export class CursorAcpHost implements AgentHost {
   async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
     void draft
     const generation = this.generation
-    await this.refuseWatcher(id)
+    await this.checkLaunchProfile(id)
     this.assertGeneration(generation)
     // A thread whose first send has not happened has no session to open; making one is the send's to do.
     if (!this.state.connected || !this.aliases[id]?.cursorSessionId) return
@@ -491,6 +568,9 @@ export class CursorAcpHost implements AgentHost {
   async snapshot(): Promise<AgentHostSnapshot> { return this.current() }
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]?.cursorSessionId) throw new Error('This Cursor thread has no confirmed session.')
+    const generation = this.generation
+    await this.checkLaunchProfile(id)
+    this.assertGeneration(generation)
     await this.open(id)
     return this.current(purpose?.historyFromEvents)
   }
@@ -550,6 +630,11 @@ export class CursorAcpHost implements AgentHost {
     const requestId = `cursor-request-${digest(JSON.stringify([id, connection.nonce, frame.id]))}`
     const pending: Pending = { ...asked, request: { ...asked.request, id: requestId }, connection }
     if (this.pending.has(requestId)) return
+    // Watcher's profile is checked again before anything of its session is shown: one main no longer verifies stops it.
+    if (connection.watcher) {
+      try { await this.launchProfile(id, connection.rpc) } catch { return }
+      if (this.connections.get(id) !== connection || connection.closing) return
+    }
     if (alias.answeredRequestIds.includes(requestId)) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
     if (this.pending.size >= 128) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
     this.pending.set(requestId, pending)
@@ -622,7 +707,10 @@ export class CursorAcpHost implements AgentHost {
       const key = origin?.messageId ?? `cursor-user-${index}-${hash.slice(0, 16)}`
       const createdAt = origin?.createdAt ?? replay.userCreatedAt
       replay.userCreatedAt = createdAt
-      replay.messages.push({ id: key, role: 'user', text: words, createdAt, ...(origin ? { commandId: origin.commandId } : {}),
+      // A message to Watcher comes back as it was sent, its digest proving it: Sotto's own parts come off by their counts.
+      const head = origin?.sottoHead ?? 0, tail = origin?.sottoTail ?? 0
+      const typed = head + tail > 0 && words.length >= head + tail ? words.slice(head, words.length - tail) : words
+      replay.messages.push({ id: key, role: 'user', text: typed, createdAt, ...(origin ? { commandId: origin.commandId } : {}),
         ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) })
       replay.turn = new TurnPlaces(key)
       return
@@ -681,16 +769,22 @@ export class CursorAcpHost implements AgentHost {
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeGuarded(command, guard) }
   private async executeGuarded(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
-    if ('threadId' in command && command.type !== 'interrupt') { await this.refuseWatcher(command.threadId); this.assertGeneration(generation) }
+    let profile: WatcherLaunchProfile | undefined
+    if ('threadId' in command) {
+      try { profile = await this.checkLaunchProfile(command.threadId) }
+      catch (error) { if (error instanceof CursorUncertain) return { accepted: false, uncertain: true }; throw error }
+      this.assertGeneration(generation)
+      if (profile) assertWatcherPermission(command)
+    }
     if (command.type === 'steer') throw new Error('Cursor takes no message while it works. Queue this follow-up instead.')
     if (command.type === 'compact-thread') throw new Error('Cursor cannot compact a thread.')
     if (!this.state.connected) throw new Error('Connect Cursor before managing threads.')
-    if (command.type !== 'send' && command.type !== 'create-thread') return this.run(command, generation, watcherGuard)
+    if (command.type !== 'send' && command.type !== 'create-thread') return this.run(command, generation, profile, watcherGuard)
     if (this.dispatching.has(command.threadId)) throw new Error('Cursor is already receiving work for this thread. Wait for its delivery result.')
     this.dispatching.add(command.threadId)
-    try { return await this.run(command, generation, watcherGuard) } finally { this.dispatching.delete(command.threadId); this.stopOutdated() }
+    try { return await this.run(command, generation, profile, watcherGuard) } finally { this.dispatching.delete(command.threadId); this.stopOutdated() }
   }
-  private async run(command: AgentHostCommand, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
+  private async run(command: AgentHostCommand, generation: number, profile: WatcherLaunchProfile | undefined, watcherGuard?: () => void): Promise<AgentHostResult> {
     try {
       if (command.type === 'create-project') {
         if (!isAbsolute(command.path)) throw new Error('Cursor projects need an absolute folder.')
@@ -700,7 +794,7 @@ export class CursorAcpHost implements AgentHost {
         }
         this.emit(); return { accepted: true }
       }
-      if (command.type === 'create-thread') return await this.create(command, generation, watcherGuard)
+      if (command.type === 'create-thread') return await this.create(command, generation, profile, watcherGuard)
       if (command.type === 'configure-thread') return await this.configure(command, generation, watcherGuard)
       const id = command.threadId, alias = this.aliases[id]
       if (!alias?.cursorSessionId) throw new Error('Cursor did not confirm this thread’s session. Your thread is kept. Do not repeat its creation automatically.')
@@ -708,15 +802,15 @@ export class CursorAcpHost implements AgentHost {
       const connection = await this.open(id)
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new CursorUncertain('Cursor’s connection changed.')
       this.reaper.touch(id)
-      if (command.type === 'send') return await this.send(command, alias, connection, generation, watcherGuard)
-      if (command.type === 'answer') return await this.answer(command, alias, connection)
+      if (command.type === 'send') return await this.send(command, alias, connection, generation, profile, watcherGuard)
+      if (command.type === 'answer') return await this.answer(command, alias, connection, profile)
       throw new Error('Cursor does not take that action.')
     } catch (error) {
       if (error instanceof CursorUncertain) return { accepted: false, uncertain: true }
       throw error
     }
   }
-  private async create(command: Extract<AgentHostCommand, { type: 'create-thread' }>, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
+  private async create(command: Extract<AgentHostCommand, { type: 'create-thread' }>, generation: number, profile: WatcherLaunchProfile | undefined, watcherGuard?: () => void): Promise<AgentHostResult> {
     const saved = this.aliases[command.threadId]
     if (saved) return saved.cursorSessionId ? { accepted: true } : { accepted: false, uncertain: true }
     const allowEdits = command.runtimeMode === 'auto-accept-edits'
@@ -729,13 +823,13 @@ export class CursorAcpHost implements AgentHost {
     const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, createdAt: new Date().toISOString(),
       modelId: command.modelId, ...(reasoningEffort ? { reasoningEffort } : {}), runtimeMode, turns: 0, origins: [], answeredRequestIds: [] }
     this.assertGeneration(generation)
-    const connection = await this.startProcess(command.threadId, alias, alias.cwd)
+    const connection = await this.startProcess(command.threadId, alias, alias.cwd, profile !== undefined)
     if (generation !== this.generation) { this.close(connection); throw new CursorUncertain('Cursor’s connection changed.') }
     // The process is the thread's from here, so what it says while its session is made reaches the thread.
     this.connections.set(command.threadId, connection)
     try {
       this.aliases[command.threadId] = alias; await this.persist()
-      const mcpServers = await this.toolServers(command.threadId)
+      const mcpServers = await this.toolServers(command.threadId, connection.watcher)
       this.assertGeneration(generation)
       watcherGuard?.()
       await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
@@ -784,6 +878,9 @@ export class CursorAcpHost implements AgentHost {
     validateThreadOptions(this.state, { modelId, ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) }, alias.modelId)
     const thread = this.thread(id)
     const modeChanges = runtimeMode !== undefined && runtimeMode !== alias.runtimeMode
+    // A change Watcher's room or a phone asked for is checked before anything changes, and again at the write: a phone
+    // that let go of Watcher meanwhile changes nothing (ADR-0073).
+    watcherGuard?.()
     // A session still opening or stopping, as one does after the last mode change, is not work: the change waits for it.
     if (modeChanges) { await this.loading.get(id)?.catch(() => undefined); await this.stopping.get(id); this.assertGeneration(generation) }
     // A process takes its approval mode when it starts, so a new mode means a new process, once the thread is quiet.
@@ -807,7 +904,7 @@ export class CursorAcpHost implements AgentHost {
     this.emit()
     return { accepted: true, snapshot: this.current(command.historyFromEvents) }
   }
-  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, alias: Alias, connection: Connection, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
+  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, alias: Alias, connection: Connection, generation: number, profile: WatcherLaunchProfile | undefined, watcherGuard?: () => void): Promise<AgentHostResult> {
     const id = command.threadId
     const current = (): void => {
       if (generation !== this.generation || this.connections.get(id) !== connection || !this.state.connected) throw new CursorUncertain('Cursor’s connection changed. Delivery has not been confirmed.')
@@ -825,13 +922,20 @@ export class CursorAcpHost implements AgentHost {
     verifyFileMentions(command.text, command.files)
     // A skill is Cursor's own `/name`, read at the start of the prompt.
     const skills = (command.skills ?? []).map(skill => `/${skill.name}`).filter(token => !new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}(\\s|$)`, 'u').test(command.text))
-    const nativeText = skills.length ? `${skills.join(' ')} ${command.text}` : command.text
+    // Watcher's instructions go ahead of the words and its request note's line after them, in the one text part Cursor
+    // replays as it was sent (ADR-0123); a wake-up's news for Watcher goes the same way as the note. An ordinary thread
+    // is sent the words alone, even when a command carried a note.
+    const note = profile ? command.watcherRequestNote ?? command.watcherNews : undefined
+    const head = (skills.length ? `${skills.join(' ')} ` : '') + (profile ? cursorWatcherInstructions(profile.instructions) : '')
+    const tail = note ? watcherRequestLine(note) : ''
+    const nativeText = head + command.text + tail
     const images: { type: 'image'; mimeType: string; data: string }[] = []
     for (const attachment of attachments) images.push({ type: 'image', mimeType: attachment.mimeType, data: Buffer.from(await attachment.read()).toString('base64') })
     await this.applySettings(alias, connection)
     current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
-      attachments: attachments.map(({ id: attachmentId, name, mimeType, sizeBytes }) => ({ id: attachmentId, name, mimeType, sizeBytes })) }
+      attachments: attachments.map(({ id: attachmentId, name, mimeType, sizeBytes }) => ({ id: attachmentId, name, mimeType, sizeBytes })),
+      ...(profile ? { sottoHead: head.length, sottoTail: tail.length } : {}) }
     alias.origins.push(origin); alias.turns++
     await this.persist()
     current()
@@ -880,9 +984,11 @@ export class CursorAcpHost implements AgentHost {
     markSendStage(commandId, 'acknowledged')
     return { accepted: true }
   }
-  private async answer(command: Extract<AgentHostCommand, { type: 'answer' }>, alias: Alias, connection: Connection): Promise<AgentHostResult> {
+  private async answer(command: Extract<AgentHostCommand, { type: 'answer' }>, alias: Alias, connection: Connection, profile: WatcherLaunchProfile | undefined): Promise<AgentHostResult> {
     const pending = this.pending.get(command.requestId)
     if (!pending || pending.threadId !== command.threadId) throw new Error('That Cursor request is no longer waiting.')
+    // Watcher keeps no remembered grant on any provider; Cursor offers none, and this holds if it ever does.
+    if (profile) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
     if (pending.connection !== connection) return { accepted: false, uncertain: true }
     if (pending.answering) return { accepted: false, uncertain: true }
     const result = cursorAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
@@ -920,6 +1026,7 @@ export class CursorAcpHost implements AgentHost {
   /** Cursor's skills, as `/name`, from what the thread's session listed (`available_commands_update`). */
   async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
     void forceReload // Cursor lists its skills afresh whenever a session opens.
+    if (this.aliases[threadId]) await this.checkLaunchProfile(threadId)
     const alias = this.aliases[threadId]
     const cwd = alias?.cwd ?? (scope?.providerId === 'cursor' ? scope.workingDirectory : undefined) ?? ''
     if (!this.state.connected) return { threadId, providerId: 'cursor', cwd, status: 'error', skills: [], errors: [], error: 'Connect Cursor to read its skills.' }
@@ -960,7 +1067,7 @@ export class CursorAcpHost implements AgentHost {
       if (signal?.aborted) return null
       await this.handshake(writer)
       await writer.request('session/new', { cwd, mcpServers: [] }, value => { sessionId = sessionNewSchema.parse(value).sessionId })
-      const side: Connection = { rpc: writer, nonce: '', clientRevision: this.clientRevision, mode: 'approval-required', closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined }
+      const side: Connection = { rpc: writer, nonce: '', clientRevision: this.clientRevision, mode: 'approval-required', watcher: false, closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined }
       await this.applySettings(alias, side, writer, sessionId, alias.modelId, leastEffort(this.model(alias.modelId)))
       await writer.request('session/set_config_option', { sessionId, configId: 'mode', value: 'ask' })
       let stop = ''
