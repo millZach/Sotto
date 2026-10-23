@@ -144,9 +144,9 @@ export function layoutGrove(clusters: readonly GroveCluster[], width: number, vi
   const spacing = clamp((sideWidth - GROVE.trunkInset - GROVE.firstOwl) / 3, GROVE.spacingMin, GROVE.spacingMax)
   const fit = perLimb(sideWidth, spacing)
 
-  // Whole computers to the side that is shorter so far, the tallest first, so a computer is one tree. Then, while a side
-  // is taller than the view and moving a project across makes the taller side shorter, its last project goes across:
-  // one computer with many projects stands as a tree on each side. Each side keeps the clusters' own order, a tree
+  // Whole computers to the side that is shorter so far, the tallest first, so a computer is one tree. Only while a side
+  // is taller than the view, and moving a project across makes the taller side shorter, does its last project go across:
+  // then one computer with many projects stands as a tree on each side. Each side keeps the clusters' own order, a tree
   // for each computer in the order the computers first come.
   const placed: Placed[] = clusters.map(cluster => { const rows = Math.ceil(cluster.nodes.length / fit); return { cluster, rows, height: blockHeight(rows) } })
   const computers = [...new Set(clusters.map(cluster => cluster.computer))]
@@ -166,7 +166,7 @@ export function layoutGrove(clusters: readonly GroveCluster[], width: number, vi
   for (;;) {
     if (shares.length < 2) break
     const [tall, short] = heightOf(shares[0]!) >= heightOf(shares[1]!) ? [shares[0]!, shares[1]!] : [shares[1]!, shares[0]!]
-    if (tall.length < 2 || (heightOf(tall) <= viewRoom && short.length > 0)) break
+    if (tall.length < 2 || heightOf(tall) <= viewRoom) break
     const last = [...tall].sort((a, b) => clusters.indexOf(b.cluster) - clusters.indexOf(a.cluster))[0]!
     const after = { tall: tall.filter(item => item !== last), short: [...short, last] }
     if (Math.max(heightOf(after.tall), heightOf(after.short)) >= heightOf(tall)) break

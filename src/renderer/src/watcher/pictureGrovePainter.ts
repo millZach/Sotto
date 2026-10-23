@@ -1,6 +1,6 @@
-import { clamp, gridFor, inkAt, limbY, rampGlyph, seeded, starStrength, twinkleStep, type Box, type Grid, type OwlPose, type SceneInk, type Star } from './nightScene'
+import { clamp, gridFor, inkAt, limbY, rampGlyph, seeded, starStrength, twinkleStep, type Grid, type OwlPose, type SceneInk, type Star } from './nightScene'
 import { context, drawMoon, drawOwl, GLYPH_PX, makeCanvas, prepare, readField, SS, strokeLimb } from './nightScenePainter'
-import { blinking, glowStep, PERCHED_OWL, spriteCells, type OwlMood } from './owlFamily'
+import { glowStep, owlEyes, perchedGlyphs, spriteCells, type OwlMood } from './owlFamily'
 import type { GroveLayout, GroveTree } from './pictureGrove'
 
 /**
@@ -24,13 +24,6 @@ export interface GroveOwlFrame {
 
 /** How long Watcher's own owl keeps its eyes shut, and how often it blinks. */
 const WATCHER_BLINK = { every: 7.3, for: 0.16 } as const
-
-/** A perched thread owl's glyphs at `t`: shut while asleep or mid-blink, round and wide while it waits on the user. */
-export function groveOwlGlyphs(owl: Pick<GroveOwlFrame, 'mood' | 'order'>, t: number, still: boolean): string[] {
-  const shut = owl.mood === 'asleep' || (owl.mood === 'awake' && !still && blinking(owl.order, t))
-  const eyes = shut ? '-' : owl.mood === 'waiting' ? 'O' : 'o'
-  return [PERCHED_OWL[0].replace(/o/g, eyes), PERCHED_OWL[1], PERCHED_OWL[2]]
-}
 
 /** The trunk, its crown and its limbs, one per row of a project's owls. */
 function drawGroveTree(fx: CanvasRenderingContext2D, tree: GroveTree, seed: number): void {
@@ -144,11 +137,13 @@ export class GrovePainter {
     readField(fx, this.land, grid, 0, 0, grid.cols, grid.rows); readField(ax, this.landAccent, grid, 0, 0, grid.cols, grid.rows)
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
-    this.open = new Uint8Array(cells)
-    const pad = 4, under = (x: number, y: number, box: Box): boolean => x >= box.x - pad && x <= box.x + box.w + pad && y >= box.y - pad && y <= box.y + box.h + pad
-    for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
-      const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch
-      this.open[r * grid.cols + c] = layout.words.some(box => under(x, y, box)) ? 0 : 1
+    // Every cell is open but those whose middle falls within a word's box and a little air: each box marks its own cells.
+    this.open = new Uint8Array(cells).fill(1)
+    const pad = 4
+    for (const box of layout.words) {
+      const c0 = Math.max(0, Math.ceil((box.x - pad) / grid.cw - 0.5)), c1 = Math.min(grid.cols - 1, Math.floor((box.x + box.w + pad) / grid.cw - 0.5))
+      const r0 = Math.max(0, Math.ceil((box.y - pad) / grid.ch - 0.5)), r1 = Math.min(grid.rows - 1, Math.floor((box.y + box.h + pad) / grid.ch - 0.5))
+      for (let r = r0; r <= r1 && c0 <= c1; r++) this.open.fill(0, r * grid.cols + c0, r * grid.cols + c1 + 1)
     }
     // Stars in the sky, where nothing else is drawn.
     const S = seeded(5), count = Math.round(layout.width * layout.horizon / 6500)
@@ -222,7 +217,7 @@ export class GrovePainter {
     const { cols, rows, cw, ch } = this.grid
     const step = twinkleStep(t, still)
     const shut = !still && t % WATCHER_BLINK.every < WATCHER_BLINK.for
-    const lines = owls.map(owl => groveOwlGlyphs(owl, t, still))
+    const lines = owls.map(owl => perchedGlyphs(owlEyes(owl, t, !still)))
     const summary = [step, shut ? 1 : 0, ...owls.map((owl, k) => `${owl.key}:${Math.round(owl.x)}:${Math.round(owl.y)}:${lines[k]![0]}:${owl.settled ? 1 : 0}:${owl.mood === 'waiting' ? glowStep(t, still) : 0}`)].join('|')
     if (summary === this.painted) return false
     this.painted = summary

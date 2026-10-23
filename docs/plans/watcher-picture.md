@@ -64,7 +64,9 @@ How it is built:
 
 - **The layout.** `src/renderer/src/watcher/pictureGrove.ts` is pure. It makes a tree for each computer, a limb for each project and an owl for each thread, and gives every word its own box.
   - Wide, Watcher sits on its post in the middle, and the middle is as wide as Watcher's name or You, whichever is wider, measured in the window. Narrower than 960 pixels, the two share a line at the top.
-  - Whole computers go to the shorter side. A project moves to the other side only when one side would otherwise be taller than the view.
+  - Whole computers go to the shorter side. A project moves to the other side only when one side would otherwise be taller than the view, so a single computer stands as one tree, with the other side open, while it fits.
+  - A pull request's chip shows when it fits beside where the thread stands. Otherwise it wraps out of sight and the words keep their line; the merge turns along the top and the card still name it.
+  - The layout is kept while only the threads' states change, so the landscape is built again only when a thread, a project or a computer comes or goes, or the pane changes size.
   - `tests/unit/renderer/watcherPictureGrove.test.ts` checks that no two boxes meet at any size, and that no box leaves the picture.
 - **The painting.** `src/renderer/src/watcher/pictureGrovePainter.ts` draws the landscape, the trees, the moon and every owl as the night scene does. It shares the night scene's owl, moon and glyph helpers (`nightScenePainter.ts`), and nothing is drawn under a word.
   - It checks eight times a second while anything could blink, twinkle or glow, paints only what changed, and holds still with motion reduced or the window hidden.

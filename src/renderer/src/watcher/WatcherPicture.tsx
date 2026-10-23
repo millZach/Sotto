@@ -5,7 +5,7 @@ import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { clockLabel } from '../agents/threadFacts'
 import { prefersReducedMotion, useReducedMotion } from '../state/reducedMotion'
 import { sceneInk } from './nightScene'
-import { layoutGrove, type GroveLayout, type GroveOwl } from './pictureGrove'
+import { layoutGrove, type GroveCluster, type GroveLayout, type GroveOwl } from './pictureGrove'
 import { GrovePainter, type GroveOwlFrame } from './pictureGrovePainter'
 import { threadAddressIndex, type WatcherRoom } from './watcherRoom'
 import { surfaceOf, toRgb } from './WatcherNightScene'
@@ -33,6 +33,8 @@ const BLOB_MS = 1_100
 const LIT_MS = 1_800
 const MARK_MS = 4_000
 const CARD_WIDTH = 320
+/** A card's tallest (watcherPicture.css). */
+const CARD_TALLEST = 420
 /** While anything in the picture blinks, twinkles or glows, it checks this often and paints only what changed. */
 const SCENE_CHECK_MS = 125
 
@@ -182,7 +184,8 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
   const right = at.box.x + at.box.w + 8, left0 = at.box.x - 8 - CARD_WIDTH
   const beside = right + CARD_WIDTH <= layout.width - 8 ? right : left0 >= 8 ? left0 : null
   const left = beside ?? Math.min(Math.max(8, at.x - CARD_WIDTH / 2), layout.width - CARD_WIDTH - 8)
-  const top = beside === null ? at.box.y + at.box.h + 6 : Math.max(8, Math.min(at.box.y - 8, layout.height - 320))
+  // A card that runs past the picture's foot makes the picture scroll, so its actions are always within reach.
+  const top = beside === null ? at.box.y + at.box.h + 6 : Math.max(8, Math.min(at.box.y - 8, layout.height - CARD_TALLEST - 8))
   return <div ref={card} className="watcher-picture__card" role="dialog" aria-label={`${node.title}, details`} style={{ left, top, width: CARD_WIDTH }}
     onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}>
     <div className="watcher-picture__card-head">
@@ -344,7 +347,11 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
     const watcher = nameRef.current?.offsetWidth ?? 0, you = youRef.current?.offsetWidth ?? 0
     if (watcher > 0 && you > 0 && (Math.abs(watcher - labels.watcher) > 1 || Math.abs(you - labels.you) > 1)) setLabels({ watcher, you })
   })
-  const layout = useMemo(() => size.width === 0 ? null : layoutGrove(model.clusters, size.width, size.height, labels), [model, size.width, size.height, labels])
+  // The layout depends only on which threads stand in which project on which computer, so a sample that changes nothing
+  // else keeps it, and the landscape is not built again.
+  const shape = useMemo(() => JSON.stringify(model.clusters.map(cluster => ({ key: cluster.key, project: cluster.project, computer: cluster.computer,
+    nodes: cluster.nodes.map(node => ({ key: node.key })) }))), [model])
+  const layout = useMemo(() => size.width === 0 ? null : layoutGrove(JSON.parse(shape) as GroveCluster[], size.width, size.height, labels), [shape, size.width, size.height, labels])
   const [open, setOpen] = useState<{ readonly key: string; readonly from: HTMLElement | null } | null>(null)
   const opened = open === null ? undefined : model.nodes.get(open.key)
   const shownOpen = opened !== undefined && layout?.at.has(opened.key) ? opened : undefined

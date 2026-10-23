@@ -30,7 +30,7 @@
 
 /* ---------- The picture ---------- */
 .watcher-picture__canvas { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.watcher-picture__space { position: relative; width: 100%; overflow: hidden; }
+.watcher-picture__space { position: relative; width: 100%; }
 .watcher-picture__empty { max-width: 520px; margin: 48px auto; padding: 0 24px; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; text-align: center; }
 /* The landscape and the owls, under every word. Nothing is drawn under a word, so each reads on the room's surface. */
 .watcher-picture__scene { position: absolute; top: 0; left: 0; pointer-events: none; }
@@ -52,9 +52,12 @@
 .watcher-picture__label { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; min-width: 0; padding: 0 4px; }
 .watcher-picture__title { max-width: 100%; overflow: hidden; font-size: 12.5px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .watcher-picture__node[data-settled] .watcher-picture__title { color: var(--tt-text-muted); }
-.watcher-picture__state { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 0; color: var(--tt-text-2); font-size: 11.5px; line-height: 16px; }
+/* Where the thread stands keeps its line; a pull request's chip that does not fit beside it wraps out of sight, and the
+   merge turns along the top and the card still name it. */
+.watcher-picture__state { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; justify-content: center; gap: 0 5px; width: 100%; height: 16px; min-width: 0;
+  overflow: hidden; color: var(--tt-text-2); font-size: 11.5px; line-height: 16px; }
 .watcher-picture__state > .watcher-row__ring { flex: none; width: 8px; height: 8px; }
-.watcher-picture__word { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-picture__word { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 13px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .watcher-picture__word[data-tone='needs'] { color: var(--watcher-needs-ink); }
 .watcher-picture__word[data-tone='working'] { color: var(--tt-activity); }
 .watcher-picture__word:is([data-tone='ready'], [data-tone='landing']) { color: var(--watcher-ready-ink); }

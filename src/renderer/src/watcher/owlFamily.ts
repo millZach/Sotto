@@ -329,14 +329,24 @@ export function glowStep(t: number, still: boolean): number {
   return still ? 0.5 : Math.round((0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 1.8)) * 3) / 3
 }
 
+/** A thread owl's eyes at `t`: shut while asleep or mid-blink, round and wide while it waits on the user. */
+export function owlEyes(owl: { readonly mood: OwlMood; readonly order: number }, t: number, canBlink: boolean): string {
+  const shut = owl.mood === 'asleep' || (owl.mood === 'awake' && canBlink && blinking(owl.order, t))
+  return shut ? '-' : owl.mood === 'waiting' ? 'O' : 'o'
+}
+
+/** A perched thread owl's glyphs with these eyes, rows top to bottom. */
+export function perchedGlyphs(eyes: string): string[] {
+  return [PERCHED_OWL[0].replace(/o/g, eyes), PERCHED_OWL[1], PERCHED_OWL[2]]
+}
+
 /** The glyphs for a thread owl at `t`, rows top to bottom. */
 export function owlGlyphs(pose: Pick<ThreadOwlPose, 'flying' | 'owl'>, t: number, options: { readonly rail: boolean; readonly still: boolean }): string[] {
   const { owl } = pose
-  const shut = owl.mood === 'asleep' || (owl.mood === 'awake' && !options.still && !pose.flying && blinking(owl.order, t))
-  const eyes = shut ? '-' : owl.mood === 'waiting' ? 'O' : 'o'
+  const eyes = owlEyes(owl, t, !options.still && !pose.flying)
   if (options.rail) return [RAIL_OWL.replace(/o/g, eyes)]
   if (pose.flying) { const beat = FLYING_OWL[Math.floor(t * 8 + owl.order) % 3]!; return [beat[0].replace(/o/g, eyes), beat[1]] }
-  return [PERCHED_OWL[0].replace(/o/g, eyes), PERCHED_OWL[1], PERCHED_OWL[2]]
+  return perchedGlyphs(eyes)
 }
 
 /** The cells a sprite covers, its feet at `x`, `y`: its first column and row, and its size in cells. */

@@ -61,6 +61,15 @@ describe("Watcher's picture as a night of trees and owls", () => {
     expect(Math.max(...layout.trees.map(tree => tree.y))).toBe(layout.ground)
   })
 
+  it('keeps one computer as one tree while it fits the view, and gives it a tree on each side only when it does not', () => {
+    const fits = layoutGrove(clustersOf([2, 1]), 1280, 900, LABELS)
+    expect(fits.trees).toHaveLength(1)
+    expect(fits.trees[0]!.limbs).toHaveLength(2)
+    const tall = layoutGrove(clustersOf([3, 3, 3, 3, 3]), 1280, 400, LABELS)
+    expect(tall.trees.map(tree => tree.computer)).toEqual(['This computer', 'This computer'])
+    expect(meetings(tall)).toEqual([])
+  })
+
   it('puts Watcher and You on one line at the top when narrow, and both trees under it', () => {
     const layout = layoutGrove(clustersOf([3, 1, [1, 'forge']]), 820, 330, LABELS)
     expect(layout.wide).toBe(false)
