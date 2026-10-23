@@ -1,6 +1,6 @@
 # Git the way T3 Code does it
 
-October 23, 2026 amendment: [ADR-0112](0112-the-composer-controls-are-text-buttons.md) draws the branch toolbar as one muted line of text buttons under the composer, a faint dot between them, with the pull request badge and the branch picker following the workspace rather than sitting at the right. What each part does is unchanged.
+October 23, 2026 amendment: [ADR-0115](0115-the-composer-controls-are-text-buttons.md) draws the branch toolbar as one muted line of text buttons under the composer, a faint dot between them, with the pull request badge and the branch picker following the workspace rather than sitting at the right. What each part does is unchanged.
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The supervision follow-up send path described below has been removed. Manual sends, queued user follow-ups and explicit babysitting wake-ups retain the read before a send and checkpoint rules.
 

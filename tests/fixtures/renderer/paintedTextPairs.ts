@@ -27,7 +27,7 @@ const each = (ink: string, surfaces: ReadonlyArray<readonly [string, ...string[]
 
 const rooms = [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['sidebar'], ['code-bg'], ['card'], ['card-selected']] as const
 const glass = [['canvas', '--tt-glass'], ['sidebar', '--tt-glass'], ['canvas', '--tt-glass-field']] as const
-// The composer's text buttons and its branch line take the hover wash on the card and on the room (ADR-0112).
+// The composer's text buttons and its branch line take the hover wash on the card and on the room (ADR-0115).
 const hovered = [['sidebar', hover], ['surface-elevated', hover], ['surface-overlay', hover], ['field', hover], ['card', hover], ['canvas', hover]] as const
 /** Changes lines: context on the code background, and added and removed lines with their tint over it. */
 const context = ['code-bg'] as const, added = ['code-bg', '--changes-added'] as const, removed = ['code-bg', '--changes-removed'] as const

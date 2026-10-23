@@ -287,7 +287,7 @@ describe('composer while a turn runs', () => {
   })
 })
 
-describe('queued message line (ADR-0112)', () => {
+describe('queued message line (ADR-0115)', () => {
   it('says when the list sends while a turn runs, keeps the count in the toggle, and gives each row Steer now as a quiet button', () => {
     shortWindow(false)
     const state = manualState({ running: true, capabilities: { steer: true } })

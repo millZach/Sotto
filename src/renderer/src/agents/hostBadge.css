@@ -5,7 +5,7 @@
 .host-badge[data-kind='remote'] > svg { color: var(--tt-accent-text); }
 
 /* The composer's host line: where a thread runs, fixed once the thread exists. It opens nothing, so it is muted text with
-   its icon and no edge, like the composer's text buttons beside it (ADR-0112). */
+   its icon and no edge, like the composer's text buttons beside it (ADR-0115). */
 .thread-host-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; overflow: hidden; padding: 0 7px; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .thread-host-chip > svg { flex: none; }
 
