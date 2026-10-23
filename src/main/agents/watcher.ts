@@ -898,12 +898,14 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * The working threads warning after a start on another machine (#1032): that machine's working threads, counted from its
-   * own list as this computer holds it. Every start there, the new one included, counts by its own turn once the list
-   * shows it, so a fast worker that finished before its answer came back, or one finished and kept for its background
-   * work, is not working; one the list does not hold yet, or holds before its first turn shows, counts as starting. The
-   * new start is made by now; Watcher's other starts count so once the machine has made their thread, so starts made
-   * together still warn. A delivery that is only unconfirmed is not counted, and nothing is counted twice. Only while
-   * Work across machines is on.
+   * own list as this computer holds it. Every start there, the new one included, that the list holds counts by the list:
+   * working while its turn runs or before its first turn shows, so one waiting for its first prompt counts, and a fast
+   * worker that finished before its answer came back, or one finished and kept for its background work, does not. The
+   * machine lists a new thread before its first prompt goes, so a listed thread needs no other proof it was made. One the
+   * list does not hold yet counts as starting once the machine has made its thread: the new start by now, Watcher's other
+   * starts once their first prompt is accepted or the host answered with their thread, so starts made together still
+   * warn. A delivery that is only unconfirmed, with no thread listed, is not counted, and nothing is counted twice. Only
+   * while Work across machines is on.
    */
   private machineWorkingWarning(target: WatcherThreadTarget): { warning: string } | Record<string, never> {
     if (!this.options.workerMachine) return {}
@@ -920,9 +922,11 @@ export class WatcherService implements WatcherControlHooks {
     if (reserved.size) {
       for (const operation of record.operations) {
         if (operation.action !== 'start' || !reserved.has(operation.id) || operation.outcome && WATCHER_FINAL_OUTCOMES.has(operation.outcome)) continue
-        // Made on the machine: its first prompt accepted, or answered with its thread while that prompt is confirmed.
-        if (operation.deliveryState !== 'accepted' && !(operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id))) continue
-        if (beforeFirstTurn(operation.target.threadId)) starting.add(operation.target.threadId)
+        const threadId = operation.target.threadId
+        // Listed: the machine made it, and the list says whether it is working. A running turn is counted with the list.
+        if (listed.has(threadId)) { if (beforeFirstTurn(threadId)) starting.add(threadId); continue }
+        // Not listed yet: made on the machine only if its first prompt was accepted, or the host answered with its thread.
+        if (operation.deliveryState === 'accepted' || operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id)) starting.add(threadId)
       }
     }
     const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(threads, starting), name)
