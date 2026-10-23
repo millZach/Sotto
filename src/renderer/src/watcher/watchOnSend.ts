@@ -40,9 +40,10 @@ export function useWatchOnSend(threadId: string): boolean {
  * After a send: once main accepted it, the standing watch the user asked for on the composer, through the same Watch as
  * the pane header, whose toast says it happened. A refused send keeps the request for the next one. An unconfirmed send
  * (`null`) may have started the thread and taken the chip away, so the request is dropped rather than left to fire,
- * unseen, on some later send; the pane header's Watch is still there. Only a send counts, never a queue or a steer.
+ * unseen, on some later send; the pane header's Watch is still there. Only the thread's first send counts (`first`, read
+ * before it went), never a queue or a steer; a later send, or one made while Watch is unavailable, drops the request too.
  */
-export function watchAfterSend(threadId: string, sent: boolean | null, mode: SubmissionMode, actions: WatchActions | null): void {
-  if (mode !== 'send' || sent === false || actions === null || !watchOnSend.take(threadId)) return
-  if (sent) void actions.setThread(threadId, true)
+export function watchAfterSend(threadId: string, sent: boolean | null, mode: SubmissionMode, first: boolean, actions: WatchActions | null): void {
+  if (mode !== 'send' || sent === false || !watchOnSend.take(threadId)) return
+  if (sent && first && actions !== null) void actions.setThread(threadId, true)
 }

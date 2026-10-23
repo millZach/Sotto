@@ -300,8 +300,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
     onSend()
     // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
+    const first = row.thread.nativeSessionStarted === false
     void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
-      .then(sent => watchAfterSend(threadId, sent, mode, watchActions))
+      .then(sent => watchAfterSend(threadId, sent, mode, first, watchActions))
     if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */

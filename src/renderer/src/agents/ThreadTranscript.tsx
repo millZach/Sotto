@@ -515,7 +515,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
       {status === 'failed' && submission !== undefined ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)}
         onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)
           // A first send retried still carries the Watch pressed on its composer.
-          .then(sent => watchAfterSend(row.thread.id, sent, submission.mode, watchActions))}>Retry</Button> : null}
+          .then(sent => watchAfterSend(row.thread.id, sent, submission.mode, row.thread.nativeSessionStarted === false, watchActions))}>Retry</Button> : null}
       {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>Restore prompt</Button> : null}
       {/* Checking again refreshes the provider, which is global-lane work. */}
       {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy || settingAside} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
