@@ -6,3 +6,205 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: zh-Hant\n"
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{branch} has uncommitted changes in {files}, and Sotto won’t bring back uncommitted work. Commit them first, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{branch} starts from a check’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from {target}, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{branch} was made from {target}."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{count, plural, one {# commit} other {# commits}}"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{count, plural, one {# file} other {# files}}"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} isn’t on {target} any more, and Sotto doesn’t switch branches. Switch it back to {target} there, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in its worktree and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in its worktree on {machine} and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in the project folder and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in the project folder on {machine} and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} already has every commit on {branch}."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} has {theirs} that {branch} doesn’t, so Git can’t fast-forward. Sotto can make a merge commit on {target} that brings in this branch’s {ours}. Nothing is rebased or forced, and this worktree stays as it is."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder on {machine}, where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder, where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder, where a merge or rebase is in progress, so Sotto didn’t touch it. Finish it there, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder, which has uncommitted changes in {files}, so Sotto didn’t touch it. Commit or set them aside in {parentTitle}, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree on {machine} where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree where {parentTitle} works, where a merge or rebase is in progress, so Sotto didn’t touch it. Finish it there, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree where {parentTitle} works, which has uncommitted changes in {files}, so Sotto didn’t touch it. Commit or set them aside in {parentTitle}, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} or {branch} moved since Sotto looked, so nothing changed. Press Bring changes to {target} again."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "<0>{branch}</0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "<0>{branch}</0> was made from <1>{target}</1>."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Bring changes back"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "Bring changes to {target}"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Brought {commits} to {target} with a merge commit."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Brought {commits} to {target}."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "Commit the {changed} changed first."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Commit…"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Dismiss"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git fast-forwarded {target} to {head}; nothing else changed."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git found a conflict, and Sotto doesn’t resolve conflicts. Ask this thread to merge {target} into its branch and resolve it, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git has no branch named {target} any more."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git refused."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git said:"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Hide until this branch changes"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Make a merge commit on {target}?"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Make merge commit"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Merge commit {head} on {target}: “{subject}”."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "No folder has {target} checked out, so only the branch moved."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Not now"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing to bring back."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing was brought back."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing was brought to {target}, and {target} is unchanged."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing was brought to {target}."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Open {parentTitle}"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Something else is using one of the folders. Try again in a moment."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "The folder where {target} is checked out has an ignored file these commits would replace, so Sotto didn’t touch it. Move it aside, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "This computer"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "This worktree isn’t on {branch} any more. Switch it back to its branch, then try again."
+msgstr ""
