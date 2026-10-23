@@ -358,6 +358,16 @@ describe('polish prompt', () => {
       expect(requestBody(fetchFn, 1)).toMatchObject({ model: CLEANUP_MODELS.fallback.id })
     })
 
+    it('backs a chosen Mercury 2 with Haiku rather than itself', async () => {
+      const fetchFn = vi.fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+        .mockResolvedValueOnce(okResponse('Polished text.'))
+      const service = new TranscriptPolishService({ getSettings: () => ({ ...ENABLED, llmModel: CLEANUP_MODELS.fallback.id, llmMode: 'nitro' }), fetchFn, chosenModel: true })
+      await expect(service.polish(words)).resolves.toEqual({ text: 'Polished text.', applied: true })
+      expect(requestBody(fetchFn, 0)).toMatchObject({ model: `${CLEANUP_MODELS.fallback.id}:nitro` })
+      expect(requestBody(fetchFn, 1)).toMatchObject({ model: CLEANUP_MODELS.primary.id })
+    })
+
     it('keeps a free variant, replaces a routing one, and records the model sent', async () => {
       const onDiagnostic = vi.fn()
       for (const [llmModel, llmMode, sent] of [

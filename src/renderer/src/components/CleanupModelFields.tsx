@@ -111,7 +111,7 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
   return <>
     <div className="tt-field cleanup-model">
       <label className="tt-field__label" htmlFor={`${id}-input`}>Cleanup model</label>
-      <p className="tt-field__description" id={descriptionId}>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in.</p>
+      <p className="tt-field__description" id={descriptionId}>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen.</p>
       <div className="cleanup-model__control">
         <input ref={input} id={`${id}-input`} className="tt-input tt-focusable" type="text" role="combobox" autoComplete="off" spellCheck={false}
           aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-describedby={descriptionId}

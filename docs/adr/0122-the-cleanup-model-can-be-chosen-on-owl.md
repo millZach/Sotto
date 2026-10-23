@@ -20,7 +20,7 @@ ADR-0069 made AI cleanup one switch: the owner did not want people to think abou
 
 **4. The mode is a suffix on the first model only.** Nitro appends `:nitro` (hosts sorted by speed, priority endpoints allowed and billed at their rate), Floor `:floor` (hosts sorted by price, flex endpoints allowed). Default sends the slug as it is. It applies to Default's model too.
 
-**5. Mercury 2 stays the backup, unsuffixed.** A chosen model that fails, runs long or no longer exists hands over to Mercury 2 as Haiku does, so dictation never waits on a choice. When OpenRouter no longer lists the saved model, Settings says Mercury 2 is cleaning up instead.
+**5. Mercury 2 stays the backup, unsuffixed.** A chosen model that fails, runs long or no longer exists hands over to Mercury 2 as Haiku does, so dictation never waits on a choice. A user who chose Mercury 2 itself gets Haiku 5.5 as the backup, so a failure is never retried on the same model. When OpenRouter no longer lists the saved model, Settings says Mercury 2 is cleaning up instead.
 
 **6. Off, nothing of it runs.** With the feature off, main never registers the list call, the cleanup pass ignores the saved model and mode, and Settings shows neither. The saved choice stays in settings, so turning the feature on restores it.
 

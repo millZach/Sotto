@@ -148,7 +148,8 @@ export class TranscriptPolishService {
     )
     const deadline =
       this.now() + Math.max(settings.llmTimeoutMs, CLEANUP_MODELS.minTimeoutMs) + lengthBudget
-    const primary = await this.attempt(settings, this.primaryModel(settings), text, deadline - reserve)
+    const first = this.primaryModel(settings)
+    const primary = await this.attempt(settings, first, text, deadline - reserve)
     if (primary.text !== null) {
       return this.report(text, asr, { text: primary.text, applied: true }, primary)
     }
@@ -156,7 +157,9 @@ export class TranscriptPolishService {
     if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) {
       return this.report(text, asr, raw, primary)
     }
-    const fallback = await this.attempt(settings, CLEANUP_MODELS.fallback, text, deadline)
+    // A user who chose Mercury 2 itself gets Haiku as the backup rather than the same model twice.
+    const backup = first.id.split(':')[0] === CLEANUP_MODELS.fallback.id ? CLEANUP_MODELS.primary : CLEANUP_MODELS.fallback
+    const fallback = await this.attempt(settings, backup, text, deadline)
     return this.report(
       text,
       asr,
