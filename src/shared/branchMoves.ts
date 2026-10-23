@@ -45,8 +45,10 @@ export const outgoingRef = (moveId: string): string => `refs/sotto/outgoing/${mo
 
 /**
  * What a desktop asks of a host that lists `branch-moves` (`branch-move` on the socket). Receiving: `tips` reads the
- * receiving project's branch tips, then `receive-begin`, `receive-chunk` in order from offset 0, and `receive-finish`.
- * Sending: `send-begin` checks a thread's working copy and stages its branch, and `send-chunk` reads it. `end` discards
+ * receiving project's branch tips, then `receive-begin`, `receive-chunk` in order from offset 0, and `receive-finish`; or,
+ * when those tips show the project already has the commit, `receive-ref` alone. Sending: `send-begin` checks a thread's
+ * working copy and stages its branch, or answers `present` when the desktop's tips already hold its commit, and
+ * `send-chunk` reads it. `end` discards
  * whatever the move staged, either way. Each step names its move; a retry of a finished move answers as done.
  * `copy` lands a thread's branch in a project on the same machine, for a worker started there from it, with nothing sent.
  * `snapshot`, on `send-begin` and `copy`, is a test run's (#1033, #1312): uncommitted work goes too, as a commit object
@@ -58,6 +60,7 @@ export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
     size: z.number().int().positive().max(BRANCH_BUNDLE_MAX_BYTES), sha256: sha256Schema }).strict(),
   z.object({ action: z.literal('receive-chunk'), moveId: branchMoveIdSchema, offset: z.number().int().nonnegative().max(BRANCH_BUNDLE_MAX_BYTES), data: chunkData }).strict(),
   z.object({ action: z.literal('receive-finish'), moveId: branchMoveIdSchema }).strict(),
+  z.object({ action: z.literal('receive-ref'), moveId: branchMoveIdSchema, projectId: id, branch: branchNameSchema, commit: commitIdSchema }).strict(),
   z.object({ action: z.literal('send-begin'), moveId: branchMoveIdSchema, threadId: id, bases: z.array(commitIdSchema).max(BRANCH_TIPS_MAX), snapshot: z.boolean().optional() }).strict(),
   z.object({ action: z.literal('send-chunk'), moveId: branchMoveIdSchema, offset: z.number().int().nonnegative().max(BRANCH_BUNDLE_MAX_BYTES) }).strict(),
   z.object({ action: z.literal('end'), moveId: branchMoveIdSchema }).strict(),
@@ -84,8 +87,10 @@ export const branchTipsAnswerSchema = z.union([z.object({ type: z.literal('tips'
 export const branchReceiveBeginAnswerSchema = z.union([z.object({ type: z.literal('receiving') }).strict(), branchMovedSchema, branchMoveRefusalSchema])
 export const branchReceiveChunkAnswerSchema = z.union([z.object({ type: z.literal('received'), bytes: z.number().int().nonnegative() }).strict(), branchMoveRefusalSchema])
 export const branchReceiveFinishAnswerSchema = z.union([branchMovedSchema, branchMoveRefusalSchema])
+export const branchReceiveRefAnswerSchema = branchReceiveFinishAnswerSchema
 export const branchSendBeginAnswerSchema = z.union([z.object({ type: z.literal('sending'), branch: branchNameSchema, commit: commitIdSchema,
-  size: z.number().int().positive().max(BRANCH_BUNDLE_MAX_BYTES), sha256: sha256Schema, snapshot: snapshotCarriedSchema.optional() }).strict(), branchMoveRefusalSchema])
+  size: z.number().int().positive().max(BRANCH_BUNDLE_MAX_BYTES), sha256: sha256Schema, snapshot: snapshotCarriedSchema.optional() }).strict(),
+  z.object({ type: z.literal('present'), branch: branchNameSchema, commit: commitIdSchema }).strict(), branchMoveRefusalSchema])
 export const branchCopyAnswerSchema = z.union([branchMovedSchema, branchMoveRefusalSchema])
 export const branchSendChunkAnswerSchema = z.union([z.object({ type: z.literal('chunk'), data: chunkData }).strict(), branchMoveRefusalSchema])
 

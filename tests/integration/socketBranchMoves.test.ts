@@ -92,6 +92,26 @@ describe('branch moves over the host socket (ADR-0105 decision 8)', () => {
     } finally { await server.close() }
   })
 
+  it('sends no bundle either way when the receiving side already has the commit', async () => {
+    const commit = git(machines.laptop, 'rev-parse', 'main')
+    const { server, client } = await forgeHost()
+    try {
+      const calls: string[] = []
+      const counting: BranchMoveHost = { supportsBranchMoves: true, branchMove: request => { calls.push(request.action); return client.branchMove(request) } }
+      const there = await laptopMoves(counting).toHost({ threadId: 'laptop-thread', hostId: 'forge-id', projectId: 'forge-project' })
+      expect(there).toMatchObject({ type: 'moved', branch: 'main', commit })
+      expect(git(machines.forge, 'rev-parse', (there as { ref: string }).ref)).toBe(commit)
+      expect(calls).toEqual(['tips', 'receive-ref'])
+      calls.length = 0
+      const back = await laptopMoves(counting).fromHost({ hostId: 'forge-id', threadId: 'forge-thread', projectId: 'laptop-project' })
+      expect(back).toMatchObject({ type: 'moved', branch: 'main', commit })
+      expect(git(machines.laptop, 'rev-parse', (back as { ref: string }).ref)).toBe(commit)
+      expect(calls).toEqual(['send-begin', 'end'])
+      expect(await readdir(machines.data('forge').stagingDirectory)).toEqual([])
+      expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+    } finally { await server.close() }
+  })
+
   it('refuses a forge thread with uncommitted work, in plain words, and moves nothing', async () => {
     await writeFile(join(machines.forge, 'app.txt'), 'half done\n')
     const { server, client } = await forgeHost()

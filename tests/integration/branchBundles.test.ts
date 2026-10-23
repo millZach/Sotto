@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
+import { BranchBundles, IncomingBundle, type AlreadyPresent, type PreparedBundle } from '../../src/main/agents/branchBundles'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
 import { commitFile, git, incompressible, twoMachines } from '../fixtures/branchRepositories'
 
@@ -11,7 +12,7 @@ let machines: Awaited<ReturnType<typeof twoMachines>>
 beforeEach(async () => { machines = await twoMachines() })
 afterEach(async () => { await machines.close() })
 
-const sending = (value: PreparedBundle | BranchMoveRefusal): PreparedBundle => { expect(value.type).toBe('sending'); return value as PreparedBundle }
+const sending = (value: PreparedBundle | AlreadyPresent | BranchMoveRefusal): PreparedBundle => { expect(value.type).toBe('sending'); return value as PreparedBundle }
 const incoming = (value: unknown): IncomingBundle => { expect(value).toBeInstanceOf(IncomingBundle); return value as IncomingBundle }
 
 /** Carries a staged bundle into `receiver` in chunks, as the socket would. */
@@ -57,13 +58,40 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(git(join(machines.root, 'forge-login'), 'log', '-1', '--format=%H')).toBe(commit)
   })
 
-  it('moves the commit it checked even when the receiver already has it', async () => {
+  it('counts what earlier moves left as the receiver’s, so moving a branch again carries only what is new', async () => {
+    const first = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const move = async (commit: string) => {
+      const moveId = randomUUID()
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] }))
+      const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+      const required = git(machines.forge, 'bundle', 'verify', prepared.path)
+      await carry(laptop, prepared, receiving)
+      expect(await forge.finish(receiving)).toMatchObject({ type: 'moved', commit })
+      return required
+    }
+    await move(first)
+    expect(await forge.tips(machines.forge)).toContain(first)
+    const second = await commitFile(machines.laptop, 'login.txt', 'form\nsubmit\nremember me\n')
+    // The second bundle needs the first move's commit, which forge has only in its incoming ref.
+    expect(await move(second)).toContain(first)
+  })
+
+  it('sends nothing when the receiver already has the commit, and only makes its incoming ref', async () => {
     const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
     const commit = git(machines.laptop, 'rev-parse', 'main'), moveId = randomUUID()
-    const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] }))
-    const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'main', commit, size: prepared.size, sha256: prepared.sha256 }))
-    await carry(laptop, prepared, receiving)
-    expect(await forge.finish(receiving)).toMatchObject({ type: 'moved', commit })
+    expect(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] })).toEqual({ type: 'present' })
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+    expect(git(machines.laptop, 'for-each-ref', 'refs/sotto')).toBe('')
+    expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'main', commit }))
+      .toEqual({ type: 'moved', moveId, branch: 'main', commit, ref: incomingRef(moveId, 'main') })
+    expect(git(machines.forge, 'rev-parse', incomingRef(moveId, 'main'))).toBe(commit)
+    // A retry is done from the record; a receiver that turns out not to have the commit refuses, and nothing lands.
+    expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'main', commit })).toMatchObject({ type: 'moved', commit })
+    const missing = await featureBranch(), other = randomUUID()
+    expect(await forge.receiveRef({ repository: machines.forge, moveId: other, branch: 'feature/login', commit: missing }))
+      .toEqual({ type: 'refused', reason: 'not-whole', message: branchMoveWords.notWhole })
+    expect(git(machines.forge, 'for-each-ref', '--format=%(refname)', 'refs/sotto')).toBe(incomingRef(moveId, 'main'))
   })
 
   it('refuses uncommitted work and a working copy on no branch, and moves nothing', async () => {
@@ -105,6 +133,32 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(git(machines.forge, 'rev-parse', incomingRef(other, 'feature/login'))).toBe(git(machines.forge, 'rev-parse', 'main'))
   })
 
+  it('never writes through a symbolic ref in the incoming ref’s place, even one that points nowhere', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const main = git(machines.forge, 'rev-parse', 'main')
+    for (const target of ['refs/heads/unborn', 'refs/heads/main']) {
+      const moveId = randomUUID(), ref = incomingRef(moveId, 'feature/login')
+      git(machines.forge, 'symbolic-ref', ref, target)
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+      expect(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+        .toEqual({ type: 'refused', reason: 'move-differs', message: branchMoveWords.moveDiffers })
+      expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'feature/login', commit })).toMatchObject({ reason: 'move-differs' })
+      expect(git(machines.forge, 'symbolic-ref', ref)).toBe(target)
+      await laptop.discard(prepared)
+    }
+    expect(git(machines.forge, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads')).toBe(`refs/heads/main ${main}`)
+    // Should one appear between the check and the write, the write is to the ref itself and never where it points.
+    const moveId = randomUUID(), ref = incomingRef(moveId, 'feature/login')
+    const racing: RunGitCommand = (cwd, command, args, options) => {
+      if (args[0] === 'update-ref' && args.includes(ref)) git(machines.forge, 'symbolic-ref', ref, 'refs/heads/unborn')
+      return runGitStatusCommand(cwd, command, args, options)
+    }
+    const raced = new BranchBundles({ ...machines.data('forge'), run: racing })
+    expect(await raced.receiveRef({ repository: machines.forge, moveId, branch: 'feature/login', commit: main })).not.toMatchObject({ type: 'refused', reason: 'failed' })
+    expect(git(machines.forge, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads')).toBe(`refs/heads/main ${main}`)
+  })
+
   it('refuses a bundle over the cap on both sides, in plain words, and keeps nothing staged', async () => {
     git(machines.laptop, 'switch', '-q', '-c', 'big')
     const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(64 * 1024))
@@ -138,9 +192,38 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     // A bundle a crash left behind is cleared when the next run starts; other files stay.
     const staging = machines.data('forge').stagingDirectory
     await mkdir(staging, { recursive: true })
-    await writeFile(join(staging, `${randomUUID()}.in.bundle`), 'partial')
+    await writeFile(join(staging, `${randomUUID()}.${randomUUID()}.in.bundle`), 'partial')
     await writeFile(join(staging, 'keep.txt'), 'not ours')
     await new BranchBundles(machines.data('forge')).start()
     expect(await readdir(staging)).toEqual(['keep.txt'])
+  })
+
+  it('keeps every move’s record when moves finish together', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const together = 4
+    // Once armed, the read of each move's incoming ref answers only when all of them have, so every finish reaches its
+    // record in the same turn.
+    const gate: { armed?: Array<() => void> } = {}
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      const output = await runGitStatusCommand(cwd, command, args, options)
+      const waiting = gate.armed
+      if (waiting && args[0] === 'rev-parse' && args.includes('--quiet')) {
+        await new Promise<void>(resolve => { waiting.push(resolve); if (waiting.length === together) for (const release of waiting) release() })
+      }
+      return output
+    }
+    const forge = new BranchBundles({ ...machines.data('forge'), run })
+    const moves = await Promise.all(Array.from({ length: together }, async () => {
+      const moveId = randomUUID()
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+      const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+      await carry(laptop, prepared, receiving)
+      return { moveId, receiving }
+    }))
+    gate.armed = []
+    for (const receipt of await Promise.all(moves.map(({ receiving }) => forge.finish(receiving)))) expect(receipt).toMatchObject({ type: 'moved', commit })
+    const records = JSON.parse(await readFile(machines.data('forge').recordsPath, 'utf8')) as { moves: Record<string, unknown> }
+    expect(Object.keys(records.moves).sort()).toEqual(moves.map(({ moveId }) => moveId).sort())
   })
 })

@@ -29,6 +29,8 @@ const SNAPSHOT_IDENTITY = { GIT_AUTHOR_NAME: 'Sotto', GIT_AUTHOR_EMAIL: 'sotto@l
 const SNAPSHOT_MESSAGE = 'Snapshot of uncommitted work for a test run\n\nMade by Sotto from a temporary index. It is on no branch, and the working tree it came from is unchanged.\n'
 /** A bundle staged for sending, with what the receiver checks it against. */
 export interface PreparedBundle { readonly type: 'sending'; readonly path: string; readonly size: number; readonly sha256: string }
+/** The receiver already has the commit, from the tips it named: no bundle is needed, only its incoming ref. */
+export interface AlreadyPresent { readonly type: 'present' }
 
 /**
  * Each move a receiver took, by its ID, with the commit and ref it was for. Written before anything is imported, so a
@@ -39,8 +41,11 @@ type Records = z.infer<typeof recordsSchema>
 /** Records kept, newest by time; one a later move pushes out only stops an old retry being recognised. */
 const RECORDS_MAX = 1000
 
-/** The bundle and snapshot index file names this module stages, so a start clears what a crash left and nothing else. */
-const STAGED = /^[0-9a-f-]{36}\.(?:(?:in|out)\.bundle|snapshot\.index)$/u
+/**
+ * The bundle and test-run snapshot index file names this module stages, so a start clears what a crash left and nothing else: the move, then the
+ * attempt, so an attempt that outlives its connection can only ever remove its own file.
+ */
+const STAGED = /^[0-9a-f-]{36}\.(?:[0-9a-f-]{36}\.(?:in|out)\.bundle|snapshot\.index)$/u
 
 export interface BranchBundlesOptions {
   /** A folder of Sotto's own, in its data folder, where bundles wait while they cross. Emptied of them at start. */
@@ -58,6 +63,8 @@ export class IncomingBundle {
   received = 0
   private readonly hash: Hash = createHash('sha256')
   private closed = false
+  private ended = false
+  private landing: Promise<void> | undefined
   constructor(readonly moveId: string, readonly repository: string, readonly branch: string, readonly commit: string, readonly size: number,
     readonly sha256: string, readonly path: string, private readonly handle: FileHandle) {}
   /** Takes the next chunk. A chunk out of order, or past the size the sender named, is refused and nothing is written. */
@@ -71,6 +78,20 @@ export class IncomingBundle {
   /** The digest of what arrived, once all of it has. */
   digest(): string | null { return this.received === this.size ? this.hash.copy().digest('hex') : null }
   async close(): Promise<void> { if (this.closed) return; this.closed = true; await this.handle.close().catch(() => undefined) }
+  /** Whether the move was ended, by `end` or by its connection closing, so nothing more of it may land. */
+  get cancelled(): boolean { return this.ended }
+  /**
+   * Runs `write`, which creates the incoming ref, unless the move was ended first: null when it was. Checked and begun in
+   * one turn, so an end either comes first and stops the ref, or comes after and waits for `write` in `cancel`.
+   */
+  land<T>(write: () => Promise<T>): Promise<T> | null {
+    if (this.ended) return null
+    const landing = write()
+    this.landing = landing.then(() => undefined, () => undefined)
+    return landing
+  }
+  /** Ends the move. Once this resolves no ref is created for it: a landing already under way has finished. */
+  async cancel(): Promise<void> { this.ended = true; await this.landing }
 }
 
 export class BranchBundles {
@@ -78,6 +99,10 @@ export class BranchBundles {
   private readonly maxBytes: number
   private readonly records: AtomicJsonStore<Records>
   private started: Promise<void> | undefined
+  /** The records' last read-modify-write, which the next one waits for, so moves finishing together each keep theirs. */
+  private recording: Promise<void> = Promise.resolve()
+  /** Each move's outgoing ref in use, so two attempts at one move never point, bundle or remove it at the same time. */
+  private readonly outgoing = new Map<string, Promise<unknown>>()
   constructor(private readonly options: BranchBundlesOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.maxBytes = Math.min(options.maxBytes ?? BRANCH_BUNDLE_MAX_BYTES, BRANCH_BUNDLE_MAX_BYTES)
@@ -100,6 +125,11 @@ export class BranchBundles {
   }
   private async refCommit(repository: string, ref: string): Promise<string | null> {
     try { return (await this.git(repository, ['rev-parse', '--verify', '--quiet', ref + '^{commit}'], undefined, 30_000)).trim() || null } catch { return null }
+  }
+
+  /** Whether `ref` is a symbolic ref, whether or not what it points at exists. */
+  private async symbolic(repository: string, ref: string): Promise<boolean> {
+    try { await this.git(repository, ['symbolic-ref', '--quiet', ref], undefined, 30_000); return true } catch { return false }
   }
 
   // The sending side.
@@ -162,40 +192,29 @@ export class BranchBundles {
 
   /**
    * Lands a branch on the same machine, for a worker started there from a thread's branch: in `repository`'s incoming ref
-   * for the move, written once, as a move lands. When `repository` already holds the commit, as a thread's own worktree
-   * and its project's checkout share one object store, only the ref is written; otherwise the commit goes across from
-   * `from` as a bundle staged here and taken in at once.
+   * for the move, written once, as a move lands. When `repository` already has the commit and its history, as a thread's
+   * worktree and its project's checkout share one object store, only the ref is written; otherwise, as for a test-run
+   * snapshot that no ref names yet, the commit goes across from `from` as a bundle staged here and taken in at once.
    */
   async copy(input: { readonly from: string; readonly source: BranchSource; readonly repository: string; readonly moveId: string }): Promise<BranchMoved | BranchMoveRefusal> {
     const { source, repository, moveId } = input
-    if (!await this.isRepository(repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
-    const ref = incomingRef(moveId, source.branch)
-    try { await this.git(repository, ['check-ref-format', ref], undefined, 30_000) } catch { return branchMoveRefusal('unsupported', branchMoveWords.branchName) }
     const carried = (moved: BranchMoved | BranchMoveRefusal): BranchMoved | BranchMoveRefusal => moved.type === 'moved' && source.snapshot ? { ...moved, snapshot: source.snapshot } : moved
+    const tips = await this.tips(repository)
+    if (!Array.isArray(tips)) return tips
+    const prepared = await this.prepare({ repository: input.from, moveId, commit: source.commit, bases: tips })
+    if (prepared.type === 'refused') return prepared
+    if (prepared.type === 'present') return carried(await this.receiveRef({ repository, moveId, branch: source.branch, commit: source.commit }))
     try {
-      if (await this.refCommit(repository, source.commit) !== source.commit) {
-        const tips = await this.tips(repository)
-        if (!Array.isArray(tips)) return tips
-        const prepared = await this.prepare({ repository: input.from, moveId, commit: source.commit, bases: tips })
-        if (prepared.type !== 'sending') return prepared
-        try {
-          const incoming = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
-          if (!(incoming instanceof IncomingBundle)) return carried(incoming)
-          for (let offset = 0; offset < prepared.size;) {
-            const chunk = await this.readChunk(prepared.path, offset)
-            if (!await incoming.write(offset, chunk)) { await this.abandon(incoming); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
-            offset += chunk.byteLength
-          }
-          return carried(await this.finish(incoming))
-        } finally { await this.discard(moveId) }
+      const incoming = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
+      if (!(incoming instanceof IncomingBundle)) return carried(incoming)
+      for (let offset = 0; offset < prepared.size;) {
+        const chunk = await this.readChunk(prepared.path, offset)
+        if (chunk.byteLength === 0 || !await incoming.write(offset, chunk)) { await this.abandon(incoming); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
+        offset += chunk.byteLength
       }
-      const landed = await this.landed(repository, moveId, ref, source.commit)
-      if (landed) return carried(landed)
-      await this.record(moveId, source.commit, ref)
-      try { await this.git(repository, ['update-ref', ref, source.commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
-      return carried(await this.refCommit(repository, ref) === source.commit ? { type: 'moved', moveId, branch: source.branch, commit: source.commit, ref }
-        : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers))
+      return carried(await this.finish(incoming))
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+    finally { await this.discard(prepared) }
   }
 
   /** Removes the incoming ref a move landed in `repository`, for a start that never made its worktree. Best effort. */
@@ -203,15 +222,18 @@ export class BranchBundles {
     if (!/^[0-9a-f-]{36}$/u.test(moveId)) return
     try {
       const refs = (await this.git(repository, ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`], undefined, 30_000)).split(/\r?\n/u).filter(Boolean)
-      for (const ref of refs) await this.git(repository, ['update-ref', '-d', ref], undefined, 30_000)
+      for (const ref of refs) await this.git(repository, ['update-ref', '-d', '--no-deref', ref], undefined, 30_000)
     } catch { /* Kept: its commits stay until the thread goes. */ }
   }
 
-  /** The receiver's newest branch tips, which a sender bundles against so the bundle carries only what they lack. */
+  /**
+   * The receiver's newest tips, which a sender bundles against so the bundle carries only what they lack: its branches,
+   * its remote-tracking branches, and the incoming refs earlier moves left, so moving a branch again sends only what is new.
+   */
   async tips(repository: string): Promise<string[] | BranchMoveRefusal> {
     if (!await this.isRepository(repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
     try {
-      const output = await this.git(repository, ['for-each-ref', '--sort=-committerdate', `--count=${BRANCH_TIPS_MAX * 2}`, '--format=%(objectname)', 'refs/heads', 'refs/remotes'], undefined, 30_000)
+      const output = await this.git(repository, ['for-each-ref', '--sort=-committerdate', `--count=${BRANCH_TIPS_MAX * 2}`, '--format=%(objectname)', 'refs/heads', 'refs/remotes', 'refs/sotto/incoming'], undefined, 30_000)
       return [...new Set(output.split(/\r?\n/u).map(line => line.trim()).filter(line => commitIdSchema.safeParse(line).success))].slice(0, BRANCH_TIPS_MAX)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
   }
@@ -219,27 +241,39 @@ export class BranchBundles {
   /**
    * Stages a bundle of `commit` for a move, against the bases the receiver named that this repository also has. Git bundles
    * only a named ref, so the commit is pointed at by `refs/sotto/outgoing/<move>` while the bundle is written, and the ref
-   * is removed straight after. When the receiver already has the commit, the bundle carries it alone against its parents.
+   * is removed straight after. When the receiver already has the commit, nothing is staged and the answer says so: the
+   * receiver only needs its incoming ref (`receiveRef`), and no object it has travels again.
    */
-  async prepare(input: { readonly repository: string; readonly moveId: string; readonly commit: string; readonly bases: readonly string[] }): Promise<PreparedBundle | BranchMoveRefusal> {
+  async prepare(input: { readonly repository: string; readonly moveId: string; readonly commit: string; readonly bases: readonly string[] }): Promise<PreparedBundle | AlreadyPresent | BranchMoveRefusal> {
     await this.start()
-    const path = this.stagedPath(input.moveId, 'out'), ref = outgoingRef(input.moveId)
+    const path = this.stagedPath(input.moveId, 'out')
     try {
-      let bases = await this.present(input.repository, input.bases)
+      const bases = await this.present(input.repository, input.bases)
       if (bases.length > 0 && (await this.git(input.repository, ['rev-list', '--count', input.commit, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n')).trim() === '0') {
-        bases = (await this.git(input.repository, ['rev-list', '--parents', '-n', '1', input.commit])).trim().split(/\s+/u).slice(1)
+        return { type: 'present' }
       }
-      await this.git(input.repository, ['update-ref', ref, input.commit], undefined, 30_000)
-      try {
-        await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 600_000)
-      } finally { await this.git(input.repository, ['update-ref', '-d', ref], undefined, 30_000).catch(() => undefined) }
+      await this.withOutgoingRef(input.moveId, async ref => {
+        await this.git(input.repository, ['update-ref', ref, input.commit], undefined, 30_000)
+        try {
+          await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 600_000)
+        } finally { await this.git(input.repository, ['update-ref', '-d', ref], undefined, 30_000).catch(() => undefined) }
+      })
       const { size } = await stat(path)
-      if (size > this.maxBytes) { await this.discard(input.moveId); return branchMoveRefusal('too-large', branchMoveWords.tooLarge(size, this.maxBytes)) }
+      if (size > this.maxBytes) { await unlink(path).catch(() => undefined); return branchMoveRefusal('too-large', branchMoveWords.tooLarge(size, this.maxBytes)) }
       return { type: 'sending', path, size, sha256: await fileDigest(path) }
     } catch {
-      await this.discard(input.moveId)
+      await unlink(path).catch(() => undefined)
       return branchMoveRefusal('failed', branchMoveWords.failed)
     }
+  }
+
+  /** Runs `use` with the move's outgoing ref to itself, once any other attempt at the same move has finished with it. */
+  private withOutgoingRef<T>(moveId: string, use: (ref: string) => Promise<T>): Promise<T> {
+    const mine = (this.outgoing.get(moveId) ?? Promise.resolve()).then(() => use(outgoingRef(moveId)))
+    const settled = mine.catch(() => undefined)
+    this.outgoing.set(moveId, settled)
+    void settled.then(() => { if (this.outgoing.get(moveId) === settled) this.outgoing.delete(moveId) })
+    return mine
   }
 
   /** Of the commits a receiver named, the ones this repository has, so `git bundle create` is not handed one it lacks. */
@@ -260,9 +294,9 @@ export class BranchBundles {
     } finally { await handle.close() }
   }
 
-  /** Removes whatever a move staged, either way. */
-  async discard(moveId: string): Promise<void> {
-    for (const way of ['in', 'out'] as const) await unlink(this.stagedPath(moveId, way)).catch(() => undefined)
+  /** Removes a bundle staged for sending: that attempt's file only, so another attempt at the same move keeps its own. */
+  async discard(prepared: PreparedBundle): Promise<void> {
+    await unlink(prepared.path).catch(() => undefined)
   }
 
   // The receiving side.
@@ -273,11 +307,8 @@ export class BranchBundles {
    */
   async receive(input: { readonly repository: string; readonly moveId: string; readonly branch: string; readonly commit: string; readonly size: number; readonly sha256: string }): Promise<IncomingBundle | BranchMoved | BranchMoveRefusal> {
     await this.start()
-    if (!await this.isRepository(input.repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
-    const ref = incomingRef(input.moveId, input.branch)
-    try { await this.git(input.repository, ['check-ref-format', ref], undefined, 30_000) } catch { return branchMoveRefusal('unsupported', branchMoveWords.branchName) }
-    const landed = await this.landed(input.repository, input.moveId, ref, input.commit)
-    if (landed) return landed
+    const admitted = await this.admit(input.repository, input.moveId, input.branch, input.commit)
+    if (admitted !== null) return admitted
     if (input.size > this.maxBytes) return branchMoveRefusal('too-large', branchMoveWords.tooLarge(input.size, this.maxBytes))
     const path = this.stagedPath(input.moveId, 'in')
     try {
@@ -286,10 +317,48 @@ export class BranchBundles {
     } catch { return branchMoveRefusal('busy', branchMoveWords.busy) }
   }
 
+  /**
+   * Lands a move whose commit this repository already has, as the sender found from the tips it was given: no bundle, only
+   * the incoming ref. The commit must be reachable from one of this repository's refs, so every object it needs is here;
+   * otherwise the move is refused and a retry, with fresh tips, sends a bundle.
+   */
+  async receiveRef(input: { readonly repository: string; readonly moveId: string; readonly branch: string; readonly commit: string }): Promise<BranchMoved | BranchMoveRefusal> {
+    const { repository, moveId, branch, commit } = input
+    const admitted = await this.admit(repository, moveId, branch, commit)
+    if (admitted !== null) return admitted
+    try {
+      let missing: string
+      try { missing = (await this.git(repository, ['rev-list', '--count', commit, '--not', '--all'], undefined, 60_000)).trim() } catch { missing = '' }
+      if (missing !== '0') return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
+      const ref = incomingRef(moveId, branch)
+      await this.record(moveId, commit, ref)
+      return await this.createRef(repository, moveId, branch, commit)
+    } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+  }
+
+  /** What every receive checks first: a repository, a ref Git takes, and whether this move already landed or conflicts. */
+  private async admit(repository: string, moveId: string, branch: string, commit: string): Promise<BranchMoved | BranchMoveRefusal | null> {
+    if (!await this.isRepository(repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
+    const ref = incomingRef(moveId, branch)
+    try { await this.git(repository, ['check-ref-format', ref], undefined, 30_000) } catch { return branchMoveRefusal('unsupported', branchMoveWords.branchName) }
+    return this.landed(repository, moveId, ref, commit)
+  }
+
+  /** Creates the move's incoming ref only if it does not exist, and reads it back. */
+  private async createRef(repository: string, moveId: string, branch: string, commit: string): Promise<BranchMoved | BranchMoveRefusal> {
+    const ref = incomingRef(moveId, branch)
+    if (await this.symbolic(repository, ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+    // `--no-deref`: the ref itself is written, never a branch a symbolic ref put in its place points at.
+    try { await this.git(repository, ['update-ref', '--no-deref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
+    return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+  }
+
   /** Done for a retry of a move that landed; refused for one that conflicts with what is here; null when it may go ahead. */
   private async landed(repository: string, moveId: string, ref: string, commit: string): Promise<BranchMoved | BranchMoveRefusal | null> {
     const record = (await this.records.read()).moves[moveId]
     if (record && (record.commit !== commit || record.ref !== ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+    // A symbolic ref where the incoming ref goes, even one pointing nowhere, is never written through or counted as landed.
+    if (await this.symbolic(repository, ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
     const existing = await this.refCommit(repository, ref)
     if (existing === null) return null
     if (record && existing === commit) return { type: 'moved', moveId, branch: ref.slice(`refs/sotto/incoming/${moveId}/`.length), commit, ref }
@@ -313,31 +382,43 @@ export class BranchBundles {
       if (heads.length !== 1 || heads[0] !== `${commit} ${outgoingRef(moveId)}`) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
       const landed = await this.landed(repository, moveId, ref, commit)
       if (landed) return landed
+      if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
       await this.record(moveId, commit, ref)
       await this.git(repository, ['bundle', 'unbundle', path], undefined, 600_000)
-      try { await this.git(repository, ['update-ref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
-      return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+      // The fence: a move ended while it was checked or imported creates no ref. Its objects stay, unreferenced, for Git
+      // to collect, and its record lets a retry go ahead.
+      const landing = incoming.land(() => this.createRef(repository, moveId, branch, commit))
+      return landing ? await landing : branchMoveRefusal('cut-off', branchMoveWords.cutOff)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally { await unlink(path).catch(() => undefined) }
   }
 
-  /** Discards a bundle that will not be finished: the transfer was cut off or ended. */
+  /**
+   * Discards a bundle that will not be finished: the transfer was cut off or ended. A finish under way creates no ref
+   * after this resolves.
+   */
   async abandon(incoming: IncomingBundle): Promise<void> {
+    await incoming.cancel()
     await incoming.close()
     await unlink(incoming.path).catch(() => undefined)
   }
 
-  private async record(moveId: string, commit: string, ref: string): Promise<void> {
-    const records = await this.records.read()
-    records.moves[moveId] = { commit, ref, at: (this.options.now?.() ?? new Date()).toISOString() }
-    const ids = Object.keys(records.moves)
-    if (ids.length > RECORDS_MAX) {
-      for (const old of ids.sort((a, b) => records.moves[a]!.at.localeCompare(records.moves[b]!.at)).slice(0, ids.length - RECORDS_MAX)) delete records.moves[old]
-    }
-    await this.records.write(records)
+  private record(moveId: string, commit: string, ref: string): Promise<void> {
+    const recorded = this.recording.then(async () => {
+      const records = await this.records.read()
+      records.moves[moveId] = { commit, ref, at: (this.options.now?.() ?? new Date()).toISOString() }
+      const ids = Object.keys(records.moves)
+      if (ids.length > RECORDS_MAX) {
+        for (const old of ids.sort((a, b) => records.moves[a]!.at.localeCompare(records.moves[b]!.at)).slice(0, ids.length - RECORDS_MAX)) delete records.moves[old]
+      }
+      await this.records.write(records)
+    })
+    this.recording = recorded.catch(() => undefined)
+    return recorded
   }
 
-  private stagedPath(moveId: string, way: 'in' | 'out'): string { return join(this.options.stagingDirectory, `${moveId}.${way}.bundle`) }
+  /** A new attempt's staged file for a move. */
+  private stagedPath(moveId: string, way: 'in' | 'out'): string { return join(this.options.stagingDirectory, `${moveId}.${randomUUID()}.${way}.bundle`) }
 }
 
 function fileDigest(path: string): Promise<string> {

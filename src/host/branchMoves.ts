@@ -36,9 +36,15 @@ export class HostBranchMoves {
         const folder = this.folders.projectFolder(request.projectId)
         if (!folder) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
         if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
-        const begun = await this.bundles.receive({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, size: request.size, sha256: request.sha256 })
-        if (!(begun instanceof IncomingBundle)) return begun
-        if (gone.aborted || this.transfers.has(request.moveId)) { await this.bundles.abandon(begun); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
+        // Held before anything is awaited, so begins that arrive together count against the limit as they are taken.
+        const holding: Transfer = { owner }
+        this.transfers.set(request.moveId, holding)
+        let begun: Awaited<ReturnType<BranchBundles['receive']>>
+        try {
+          begun = await this.bundles.receive({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, size: request.size, sha256: request.sha256 })
+        } catch (error) { this.release(request.moveId, holding); throw error }
+        if (!(begun instanceof IncomingBundle)) { this.release(request.moveId, holding); return begun }
+        if (gone.aborted || this.transfers.get(request.moveId) !== holding) { this.release(request.moveId, holding); await this.bundles.abandon(begun); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
         this.transfers.set(request.moveId, { owner, incoming: begun })
         return { type: 'receiving' }
       }
@@ -52,7 +58,18 @@ export class HostBranchMoves {
       case 'receive-finish': {
         const incoming = this.own(request.moveId, owner)?.incoming
         if (!incoming) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
-        try { return await this.bundles.finish(incoming) } finally { this.transfers.delete(request.moveId) }
+        const transfer = this.transfers.get(request.moveId)!
+        try { return await this.bundles.finish(incoming) } finally { this.release(request.moveId, transfer) }
+      }
+      case 'receive-ref': {
+        const folder = this.folders.projectFolder(request.projectId)
+        if (!folder) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
+        if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
+        // Nothing is staged, but the move still holds its place while its ref is created.
+        const holding: Transfer = { owner }
+        this.transfers.set(request.moveId, holding)
+        try { return await this.bundles.receiveRef({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit }) }
+        finally { this.release(request.moveId, holding) }
       }
       case 'send-begin': {
         const folder = this.folders.threadFolder(request.threadId)
@@ -63,13 +80,15 @@ export class HostBranchMoves {
         this.transfers.set(request.moveId, holding)
         try {
           const source = await this.bundles.sourceOf(folder, request.snapshot === true)
-          if ('type' in source) { this.transfers.delete(request.moveId); return source }
+          if ('type' in source) { this.release(request.moveId, holding); return source }
           const prepared = await this.bundles.prepare({ repository: folder, moveId: request.moveId, commit: source.commit, bases: request.bases })
-          if (prepared.type !== 'sending') { this.transfers.delete(request.moveId); return prepared }
-          if (gone.aborted || this.transfers.get(request.moveId) !== holding) { await this.bundles.discard(request.moveId); this.transfers.delete(request.moveId); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
+          if (prepared.type === 'present') { this.release(request.moveId, holding); return { type: 'present', branch: source.branch, commit: source.commit } }
+          if (prepared.type !== 'sending') { this.release(request.moveId, holding); return prepared }
+          // Ended while it was written: this attempt removes its own bundle and hold, never a later attempt's.
+          if (gone.aborted || this.transfers.get(request.moveId) !== holding) { this.release(request.moveId, holding); await this.bundles.discard(prepared); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
           this.transfers.set(request.moveId, { owner, outgoing: prepared })
           return { type: 'sending', branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256, ...source.snapshot ? { snapshot: source.snapshot } : {} }
-        } catch (error) { this.transfers.delete(request.moveId); await this.bundles.discard(request.moveId); throw error }
+        } catch (error) { this.release(request.moveId, holding); throw error }
       }
       case 'copy': {
         // A thread's branch into a project on this same machine, for a worker the desktop starts here from it: nothing
@@ -79,11 +98,12 @@ export class HostBranchMoves {
         const repository = this.folders.projectFolder(request.projectId)
         if (!repository) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
         if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
-        this.transfers.set(request.moveId, { owner })
+        const holding: Transfer = { owner }
+        this.transfers.set(request.moveId, holding)
         try {
           const source = await this.bundles.sourceOf(from, request.snapshot === true)
           return 'type' in source ? source : await this.bundles.copy({ from, source, repository, moveId: request.moveId })
-        } finally { this.transfers.delete(request.moveId) }
+        } finally { this.release(request.moveId, holding) }
       }
       case 'send-chunk': {
         const outgoing = this.own(request.moveId, owner)?.outgoing
@@ -101,11 +121,15 @@ export class HostBranchMoves {
     const transfer = this.transfers.get(moveId)
     return transfer?.owner === owner ? transfer : undefined
   }
+  /** Lets go of `moveId` only while `transfer` still holds it, so a later attempt's entry is never removed. */
+  private release(moveId: string, transfer: Transfer): void {
+    if (this.transfers.get(moveId) === transfer) this.transfers.delete(moveId)
+  }
   private async drop(moveId: string): Promise<void> {
     const transfer = this.transfers.get(moveId)
     this.transfers.delete(moveId)
     if (transfer?.incoming) await this.bundles.abandon(transfer.incoming)
-    if (transfer?.outgoing) await this.bundles.discard(moveId)
+    if (transfer?.outgoing) await this.bundles.discard(transfer.outgoing)
   }
   private async dropAll(owner: object): Promise<void> {
     for (const [moveId, transfer] of [...this.transfers]) if (transfer.owner === owner) await this.drop(moveId)

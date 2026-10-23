@@ -708,7 +708,7 @@ export class ThreadWorktrees {
   private async withoutIncomingRef(record: AgentWorktree): Promise<AgentWorktree> {
     const { incomingRef: ref, ...rest } = record
     if (!ref) return record
-    if (INCOMING_REF.test(ref) && record.repositoryRoot) await this.git(record.repositoryRoot, ['update-ref', '-d', ref]).catch(() => undefined)
+    if (INCOMING_REF.test(ref) && record.repositoryRoot) await this.git(record.repositoryRoot, ['update-ref', '-d', '--no-deref', ref]).catch(() => undefined)
     return rest
   }
 
