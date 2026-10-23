@@ -38,7 +38,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Needs-you line.** The one line under Watcher's header naming each thread that needs the user and why: a question, a permission, a failed turn or a prototype to review. Each name goes to that thread's **watched request card** when Watcher's conversation on screen holds it, and otherwise opens the thread in the beside pane at what it waits on. It is gone when nothing waits. Avoid: "inbox", "alerts".
 
-**Beside pane.** A thread opened in Watcher's room: its real thread pane, to the right of Watcher's, with its own request cards, draft and reading position. There is one at a time; opening another replaces it, and closing it stops nothing. Open in Threads takes the thread to the Threads page, selected. Distinct from a thread pane on the Threads page, which is part of that page's own arrangement.
+**Beside pane.** A thread opened in Watcher's room: its real thread pane, to the right of Watcher's, with its own request cards, draft and reading position. There is one at a time; opening another replaces it, a **Fork from here** made in it opens there in its source's place, and closing it stops nothing. Open in Threads takes the thread to the Threads page, selected. Distinct from a thread pane on the Threads page, which is part of that page's own arrangement.
 
 **Floating switch.** Watcher's room's way off the page, since it has no sidebar: Usage, Settings and Help, the switch and the update control in a bar centred at the bottom of the room. The room keeps a band clear for it. Every other page keeps the sidebar foot.
 

@@ -1,8 +1,9 @@
-import React, { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
 import { PullRequestOpenerContext, type PullRequestOpener } from '../agents/BranchToolbar'
+import { ForkLandingContext } from '../agents/ForkFromHere'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
 import { BrowserPageRouteContext, type BrowserPageRoute } from '../tools/webLinks'
 import { DIVIDER_WIDTH, MIN_PANE_WIDTH, RESIZE_STEP } from '../agents/splitLayout'
@@ -180,7 +181,8 @@ export function BesidePane({ row, state, command, store, focused, underControls,
     where: 'in Tools on the Threads page',
   }), [onOpenInThreads])
   const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
-  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
+  const landFork = useCallback((forkId: string): void => landForkBeside(threadId, forkId), [threadId])
+  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><ForkLandingContext.Provider value={landFork}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {
@@ -197,5 +199,13 @@ export function BesidePane({ row, state, command, store, focused, underControls,
       </button>}
       notice={<ThreadWorkingCopyNotice key={`working-copy-${threadId}`} thread={row.thread} project={row.project} command={command}
         onRecovered={() => document.getElementById(BESIDE_PROMPT_ID)?.focus()} />} />
-  </section></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
+  </section></ForkLandingContext.Provider></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
+}
+
+/** A fork made in the pane beside Watcher opens there in place of its source, as it does in a pane on the Threads page:
+ * the room's view never follows main's selection, so the thread it shows is the one the next message goes to (#1136).
+ * Only while its source is still there: another thread opened or the pane closed while the fork was made wins, as a
+ * newer selection does on the Threads page. */
+function landForkBeside(sourceId: string, forkId: string): void {
+  if (roomView.get().besideId === sourceId) roomView.set({ besideId: forkId })
 }
