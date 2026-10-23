@@ -23,6 +23,8 @@ import {
 export interface BranchSource { readonly branch: string; readonly commit: string }
 /** A bundle staged for sending, with what the receiver checks it against. */
 export interface PreparedBundle { readonly type: 'sending'; readonly path: string; readonly size: number; readonly sha256: string }
+/** The receiver already has the commit, from the tips it named: no bundle is needed, only its incoming ref. */
+export interface AlreadyPresent { readonly type: 'present' }
 
 /**
  * Each move a receiver took, by its ID, with the commit and ref it was for. Written before anything is imported, so a
@@ -153,15 +155,16 @@ export class BranchBundles {
   /**
    * Stages a bundle of `commit` for a move, against the bases the receiver named that this repository also has. Git bundles
    * only a named ref, so the commit is pointed at by `refs/sotto/outgoing/<move>` while the bundle is written, and the ref
-   * is removed straight after. When the receiver already has the commit, the bundle carries it alone against its parents.
+   * is removed straight after. When the receiver already has the commit, nothing is staged and the answer says so: the
+   * receiver only needs its incoming ref (`receiveRef`), and no object it has travels again.
    */
-  async prepare(input: { readonly repository: string; readonly moveId: string; readonly commit: string; readonly bases: readonly string[] }): Promise<PreparedBundle | BranchMoveRefusal> {
+  async prepare(input: { readonly repository: string; readonly moveId: string; readonly commit: string; readonly bases: readonly string[] }): Promise<PreparedBundle | AlreadyPresent | BranchMoveRefusal> {
     await this.start()
     const path = this.stagedPath(input.moveId, 'out')
     try {
-      let bases = await this.present(input.repository, input.bases)
+      const bases = await this.present(input.repository, input.bases)
       if (bases.length > 0 && (await this.git(input.repository, ['rev-list', '--count', input.commit, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n')).trim() === '0') {
-        bases = (await this.git(input.repository, ['rev-list', '--parents', '-n', '1', input.commit])).trim().split(/\s+/u).slice(1)
+        return { type: 'present' }
       }
       await this.withOutgoingRef(input.moveId, async ref => {
         await this.git(input.repository, ['update-ref', ref, input.commit], undefined, 30_000)
@@ -218,17 +221,48 @@ export class BranchBundles {
    */
   async receive(input: { readonly repository: string; readonly moveId: string; readonly branch: string; readonly commit: string; readonly size: number; readonly sha256: string }): Promise<IncomingBundle | BranchMoved | BranchMoveRefusal> {
     await this.start()
-    if (!await this.isRepository(input.repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
-    const ref = incomingRef(input.moveId, input.branch)
-    try { await this.git(input.repository, ['check-ref-format', ref], undefined, 30_000) } catch { return branchMoveRefusal('unsupported', branchMoveWords.branchName) }
-    const landed = await this.landed(input.repository, input.moveId, ref, input.commit)
-    if (landed) return landed
+    const admitted = await this.admit(input.repository, input.moveId, input.branch, input.commit)
+    if (admitted !== null) return admitted
     if (input.size > this.maxBytes) return branchMoveRefusal('too-large', branchMoveWords.tooLarge(input.size, this.maxBytes))
     const path = this.stagedPath(input.moveId, 'in')
     try {
       const handle = await open(path, 'wx')
       return new IncomingBundle(input.moveId, input.repository, input.branch, input.commit, input.size, input.sha256, path, handle)
     } catch { return branchMoveRefusal('busy', branchMoveWords.busy) }
+  }
+
+  /**
+   * Lands a move whose commit this repository already has, as the sender found from the tips it was given: no bundle, only
+   * the incoming ref. The commit must be reachable from one of this repository's refs, so every object it needs is here;
+   * otherwise the move is refused and a retry, with fresh tips, sends a bundle.
+   */
+  async receiveRef(input: { readonly repository: string; readonly moveId: string; readonly branch: string; readonly commit: string }): Promise<BranchMoved | BranchMoveRefusal> {
+    const { repository, moveId, branch, commit } = input
+    const admitted = await this.admit(repository, moveId, branch, commit)
+    if (admitted !== null) return admitted
+    try {
+      let missing: string
+      try { missing = (await this.git(repository, ['rev-list', '--count', commit, '--not', '--all'], undefined, 60_000)).trim() } catch { missing = '' }
+      if (missing !== '0') return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
+      const ref = incomingRef(moveId, branch)
+      await this.record(moveId, commit, ref)
+      return await this.createRef(repository, moveId, branch, commit)
+    } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+  }
+
+  /** What every receive checks first: a repository, a ref Git takes, and whether this move already landed or conflicts. */
+  private async admit(repository: string, moveId: string, branch: string, commit: string): Promise<BranchMoved | BranchMoveRefusal | null> {
+    if (!await this.isRepository(repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
+    const ref = incomingRef(moveId, branch)
+    try { await this.git(repository, ['check-ref-format', ref], undefined, 30_000) } catch { return branchMoveRefusal('unsupported', branchMoveWords.branchName) }
+    return this.landed(repository, moveId, ref, commit)
+  }
+
+  /** Creates the move's incoming ref only if it does not exist, and reads it back. */
+  private async createRef(repository: string, moveId: string, branch: string, commit: string): Promise<BranchMoved | BranchMoveRefusal> {
+    const ref = incomingRef(moveId, branch)
+    try { await this.git(repository, ['update-ref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
+    return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
   }
 
   /** Done for a retry of a move that landed; refused for one that conflicts with what is here; null when it may go ahead. */
@@ -263,10 +297,7 @@ export class BranchBundles {
       await this.git(repository, ['bundle', 'unbundle', path], undefined, 600_000)
       // The fence: a move ended while it was checked or imported creates no ref. Its objects stay, unreferenced, for Git
       // to collect, and its record lets a retry go ahead.
-      const landing = incoming.land(async (): Promise<BranchMoved | BranchMoveRefusal> => {
-        try { await this.git(repository, ['update-ref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
-        return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
-      })
+      const landing = incoming.land(() => this.createRef(repository, moveId, branch, commit))
       return landing ? await landing : branchMoveRefusal('cut-off', branchMoveWords.cutOff)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally { await unlink(path).catch(() => undefined) }

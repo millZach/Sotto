@@ -77,13 +77,21 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(await move(second)).toContain(first)
   })
 
-  it('moves the commit it checked even when the receiver already has it', async () => {
+  it('sends nothing when the receiver already has the commit, and only makes its incoming ref', async () => {
     const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
     const commit = git(machines.laptop, 'rev-parse', 'main'), moveId = randomUUID()
-    const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] }))
-    const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'main', commit, size: prepared.size, sha256: prepared.sha256 }))
-    await carry(laptop, prepared, receiving)
-    expect(await forge.finish(receiving)).toMatchObject({ type: 'moved', commit })
+    expect(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] })).toEqual({ type: 'present' })
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+    expect(git(machines.laptop, 'for-each-ref', 'refs/sotto')).toBe('')
+    expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'main', commit }))
+      .toEqual({ type: 'moved', moveId, branch: 'main', commit, ref: incomingRef(moveId, 'main') })
+    expect(git(machines.forge, 'rev-parse', incomingRef(moveId, 'main'))).toBe(commit)
+    // A retry is done from the record; a receiver that turns out not to have the commit refuses, and nothing lands.
+    expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'main', commit })).toMatchObject({ type: 'moved', commit })
+    const missing = await featureBranch(), other = randomUUID()
+    expect(await forge.receiveRef({ repository: machines.forge, moveId: other, branch: 'feature/login', commit: missing }))
+      .toEqual({ type: 'refused', reason: 'not-whole', message: branchMoveWords.notWhole })
+    expect(git(machines.forge, 'for-each-ref', '--format=%(refname)', 'refs/sotto')).toBe(incomingRef(moveId, 'main'))
   })
 
   it('refuses uncommitted work and a working copy on no branch, and moves nothing', async () => {

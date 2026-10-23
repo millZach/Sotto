@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import type { AgentState } from '../../shared/agents'
 import {
-  branchMoveRefusal, branchMoveWords, branchReceiveBeginAnswerSchema, branchReceiveChunkAnswerSchema, branchReceiveFinishAnswerSchema,
+  branchMoveRefusal, branchMoveWords, branchReceiveBeginAnswerSchema, branchReceiveChunkAnswerSchema, branchReceiveFinishAnswerSchema, branchReceiveRefAnswerSchema,
   branchSendBeginAnswerSchema, branchSendChunkAnswerSchema, branchTipsAnswerSchema, type BranchMoveReceipt, type BranchMoveRefusal, type HostBranchMoveRequest,
 } from '../../shared/branchMoves'
 import { BranchBundles, IncomingBundle, type PreparedBundle } from './branchBundles'
@@ -89,6 +89,10 @@ export class DesktopBranchMoves {
       const tips = answer(branchTipsAnswerSchema, await host.branchMove({ action: 'tips', projectId: input.projectId }))
       if (refused(tips)) return tips
       const prepared = await this.options.bundles.prepare({ repository: folder, moveId, commit: source.commit, bases: tips.tips })
+      // The host already has the commit: only its incoming ref is made, and nothing travels.
+      if (prepared.type === 'present') {
+        return answer(branchReceiveRefAnswerSchema, await host.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: source.branch, commit: source.commit }))
+      }
       if (prepared.type !== 'sending') return prepared
       staged = prepared
       const begun = answer(branchReceiveBeginAnswerSchema, await host.branchMove({ action: 'receive-begin', moveId, projectId: input.projectId,
@@ -126,6 +130,7 @@ export class DesktopBranchMoves {
     try {
       const sending = answer(branchSendBeginAnswerSchema, await host.branchMove({ action: 'send-begin', moveId, threadId: input.threadId, bases: tips }))
       if (refused(sending)) return sending
+      if (sending.type === 'present') return await this.options.bundles.receiveRef({ repository: folder, moveId, branch: sending.branch, commit: sending.commit })
       const begun = await this.options.bundles.receive({ repository: folder, moveId, branch: sending.branch, commit: sending.commit, size: sending.size, sha256: sending.sha256 })
       if (!(begun instanceof IncomingBundle)) return begun
       incoming = begun

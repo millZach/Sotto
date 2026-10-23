@@ -61,6 +61,16 @@ export class HostBranchMoves {
         const transfer = this.transfers.get(request.moveId)!
         try { return await this.bundles.finish(incoming) } finally { this.release(request.moveId, transfer) }
       }
+      case 'receive-ref': {
+        const folder = this.folders.projectFolder(request.projectId)
+        if (!folder) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
+        if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
+        // Nothing is staged, but the move still holds its place while its ref is created.
+        const holding: Transfer = { owner }
+        this.transfers.set(request.moveId, holding)
+        try { return await this.bundles.receiveRef({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit }) }
+        finally { this.release(request.moveId, holding) }
+      }
       case 'send-begin': {
         const folder = this.folders.threadFolder(request.threadId)
         if (!folder) return branchMoveRefusal('unknown-thread', branchMoveWords.unknownThread)
@@ -72,6 +82,7 @@ export class HostBranchMoves {
           const source = await this.bundles.branchOf(folder)
           if ('type' in source) { this.release(request.moveId, holding); return source }
           const prepared = await this.bundles.prepare({ repository: folder, moveId: request.moveId, commit: source.commit, bases: request.bases })
+          if (prepared.type === 'present') { this.release(request.moveId, holding); return { type: 'present', branch: source.branch, commit: source.commit } }
           if (prepared.type !== 'sending') { this.release(request.moveId, holding); return prepared }
           // Ended while it was written: this attempt removes its own bundle and hold, never a later attempt's.
           if (gone.aborted || this.transfers.get(request.moveId) !== holding) { this.release(request.moveId, holding); await this.bundles.discard(prepared); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
