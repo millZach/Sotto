@@ -33,7 +33,10 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
       const url = new URL(input.url)
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('The remote host test requires a loopback listener.')
       if (sockets.has(input.hostId)) throw new Error('The remote host test is already connected.')
-      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, crossMachineEnabled, ...(heldProviders ? { heldProviders } : {}) })
+      // Whether the socket is up, as the real launcher tells the router (`available`), so a dropped host reads as away.
+      let up = false
+      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, crossMachineEnabled, ...(heldProviders ? { heldProviders } : {}),
+        onConnectionChange: value => { up = value } })
       try {
         const hello = await socket.connect()
         let release = (): void => {}
@@ -50,7 +53,9 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
             if (idle) gate.completedIdle++
           },
           detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request),
-          observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener),
+          observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => up,
+          // A thread's Agents, read on the host as the real launcher's connection reads them.
+          subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
           activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
         })
         sockets.set(hello.hostId, socket)
