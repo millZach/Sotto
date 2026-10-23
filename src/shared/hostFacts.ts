@@ -47,11 +47,75 @@ export const HOST_FACTS_REFRESH_MS = 5_000
 export const HOST_RUNNING_THREADS_MAX = 100_000
 
 /**
- * What the optional `host-facts` feature answers (#1031): the machine's facts and how many of the host's threads are
- * running a turn now. Read leniently, as the facts are, so a later host's additions still read on an older desktop.
+ * Live load (#1311): how busy a machine is now, as numbers over one window ending at one observation time. A host reads
+ * it when facts are asked for, from two samples at least `HOST_LOAD_SAMPLE_MS` apart, and keeps the last reading; nothing
+ * reads on a timer. A number the machine cannot give honestly is null, never guessed:
+ * - `cpuBusyPercent`: the share of all CPU time over the window not spent idle, from the CPUs' own counters.
+ * - `loadAverage`: the one-minute load average. Windows has none.
+ * - `availableMemoryBytes`: memory a new process could have now, the cache and standby the system gives back counted in.
+ *   On macOS the counters Node reads count only free pages and understate it, so it reads unknown there.
+ * - `windowStartAvailableMemoryBytes`: the same at the window's start, so "short on two readings" needs no history.
+ * - `memoryPressurePercent`: Linux's own memory pressure, the share of the last ten seconds some task waited on memory.
+ */
+export const HOST_LOAD_SAMPLE_MS = 2_000
+/** A starting sample older than this is too old to say how busy the machine is now; the host samples twice instead. */
+export const HOST_LOAD_WINDOW_MAX_MS = 60_000
+const percent = z.number().min(0).max(100)
+
+export const hostLoadSchema = z.object({
+  observedAt: z.string().datetime(),
+  windowMs: z.number().int().positive().max(24 * 60 * 60_000),
+  cpuBusyPercent: percent.nullable(),
+  loadAverage: z.number().nonnegative().max(HOST_FACTS_CPU_COUNT_MAX * 1_000).nullable(),
+  availableMemoryBytes: bytes.nullable(),
+  windowStartAvailableMemoryBytes: bytes.nullable(),
+  memoryPressurePercent: percent.nullable(),
+})
+export type HostLoad = z.infer<typeof hostLoadSchema>
+
+/**
+ * Where a machine's live load starts to count against placing work there (#1311), in one place so they can be tuned on
+ * the laptop and forge. Short on memory: available memory under `shortMemoryBytes` or under `shortMemoryShare` of the
+ * total, on both readings of the window. Busy: CPU busy above `busyCpuPercent` over the window. A reading older than
+ * `staleAfterMs` is unknown, not idle.
+ */
+export const MACHINE_LOAD_THRESHOLDS = {
+  shortMemoryBytes: 2 * 1024 ** 3,
+  shortMemoryShare: 0.1,
+  busyCpuPercent: 85,
+  staleAfterMs: 60_000,
+} as const
+
+export type MachineMemoryState = 'short' | 'enough' | 'unknown'
+export type MachineCpuState = 'busy' | 'not-busy' | 'unknown'
+
+/**
+ * What a machine's live load says for placing work, at `now`. An absent or stale reading is unknown on both counts. A
+ * reading from more than `staleAfterMs` ahead of `now` is unknown too, since the two clocks cannot both be right.
+ */
+export function machineLoadStates(load: HostLoad | null, totalMemoryBytes: number | null, now: number, thresholds = MACHINE_LOAD_THRESHOLDS): { memory: MachineMemoryState; cpu: MachineCpuState } {
+  const observed = load ? Date.parse(load.observedAt) : Number.NaN
+  if (!load || !Number.isFinite(observed) || Math.abs(now - observed) > thresholds.staleAfterMs) return { memory: 'unknown', cpu: 'unknown' }
+  const short = (bytes: number) => bytes < thresholds.shortMemoryBytes || totalMemoryBytes !== null && bytes < totalMemoryBytes * thresholds.shortMemoryShare
+  const end = load.availableMemoryBytes, start = load.windowStartAvailableMemoryBytes
+  // One short reading is not enough to call a machine short, and a missing reading cannot second it.
+  const memory: MachineMemoryState = end === null ? 'unknown' : !short(end) ? 'enough' : start === null ? 'unknown' : short(start) ? 'short' : 'enough'
+  const cpu: MachineCpuState = load.cpuBusyPercent === null ? 'unknown' : load.cpuBusyPercent > thresholds.busyCpuPercent ? 'busy' : 'not-busy'
+  return { memory, cpu }
+}
+
+const threadCount = z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable().catch(null)
+
+/**
+ * What the optional `host-facts` feature answers (#1031): the machine's facts, how many of the host's threads are running a
+ * turn now, its live load and its work placed but not started (#1311): threads sent work on this host whose turn has not
+ * begun, so two starts seconds apart do not both count the same free memory. Read leniently, as the facts are, so a later
+ * host's additions still read on an older desktop; an older host sends no load and no placed work, and both read unknown.
  */
 export const hostMachineReportSchema = z.object({
   facts: hostFactsSchema,
-  runningThreads: z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable().catch(null),
+  runningThreads: threadCount,
+  load: hostLoadSchema.nullable().catch(null),
+  placedNotStarted: threadCount,
 })
 export type HostMachineReport = z.infer<typeof hostMachineReportSchema>

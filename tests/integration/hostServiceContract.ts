@@ -61,6 +61,9 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect(idle.facts.os.family).toBe(family)
       expect(idle.facts.totalMemoryBytes).toBeGreaterThan(0)
       expect(idle.runningThreads).toBe(0)
+      // Its live load is read with the facts, and nothing is placed on it yet (#1311).
+      expect(idle.load?.windowMs).toBeGreaterThan(0)
+      expect(idle.placedNotStarted).toBe(0)
       expect((await send()).error).toBeNull()
       // The client reads running only once the host does, so the count read after it is the host's running one.
       await sentRunning()

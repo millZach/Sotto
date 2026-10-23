@@ -138,8 +138,9 @@ export interface AgentRuntimeOptions {
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
+  // The first live load sample is taken now too, so the first ask reads over a window without waiting (#1311).
   const facts = new HostFactsSource()
-  void facts.read().catch(() => undefined)
+  void facts.read().then(() => facts.primeLoad()).catch(() => undefined)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
@@ -247,7 +248,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.shell().host.projects) } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell()),
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {

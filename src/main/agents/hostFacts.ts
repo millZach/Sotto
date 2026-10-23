@@ -1,6 +1,7 @@
 import * as nodeOs from 'node:os'
 import { readFile as nodeReadFile } from 'node:fs/promises'
-import { HOST_FACTS_CPU_COUNT_MAX, HOST_FACTS_REFRESH_MS, HOST_FACTS_TEXT_MAX, HOST_RUNNING_THREADS_MAX, hostFactsSchema, type HostFacts, type HostMachineReport, type HostOs } from '../../shared/hostFacts'
+import type { AgentState } from '../../shared/agents'
+import { HOST_FACTS_CPU_COUNT_MAX, HOST_FACTS_REFRESH_MS, HOST_FACTS_TEXT_MAX, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS, HOST_RUNNING_THREADS_MAX, hostFactsSchema, hostLoadSchema, type HostFacts, type HostLoad, type HostMachineReport, type HostOs, type HostOsFamily } from '../../shared/hostFacts'
 
 /**
  * Reads this machine's host facts (#1031). It lives beside `hostIdentity.ts` because the headless host
@@ -17,12 +18,16 @@ export interface HostFactsSystem {
   totalmem(): number
   freemem(): number
   cpus(): readonly unknown[]
+  /** Absent where a stand-in machine has no load average; Node's own answers zeros on Windows, which never counts. */
+  loadavg?(): readonly number[]
 }
 
 export interface HostFactsSources {
   readonly os?: HostFactsSystem
   readonly readFile?: (path: string) => Promise<string>
   readonly now?: () => Date
+  /** Waits between a load reading's two samples; a test stands in for the clock. */
+  readonly sleep?: (ms: number) => Promise<void>
 }
 
 /** Windows 11 reports itself as Windows NT 10.0; its builds start at 22000. */
@@ -30,6 +35,8 @@ const WINDOWS_11_FIRST_BUILD = 22_000
 const MAC_SYSTEM_VERSION = '/System/Library/CoreServices/SystemVersion.plist'
 /** The os-release specification's order: the administrator's file first, then the vendor's. */
 const OS_RELEASE_FILES = ['/etc/os-release', '/usr/lib/os-release'] as const
+const MEMINFO = '/proc/meminfo'
+const MEMORY_PRESSURE = '/proc/pressure/memory'
 const ARCHITECTURES: Readonly<Record<string, string>> = { x86_64: 'x64', amd64: 'x64', aarch64: 'arm64', arm64: 'arm64' }
 
 function attempt<T>(read: () => T): T | null {
@@ -128,35 +135,175 @@ export async function readHostFacts(sources: HostFactsSources = {}): Promise<Hos
   })
 }
 
+/** One sample of what live load is worked out from: when, the CPUs' summed counters and the memory available then. */
+interface LoadSample {
+  readonly at: number
+  readonly cpu: { readonly idle: number; readonly total: number } | null
+  readonly availableMemoryBytes: number | null
+}
+
+const CPU_TIMES = ['user', 'nice', 'sys', 'idle', 'irq'] as const
+type CpuTimes = Partial<Record<(typeof CPU_TIMES)[number], unknown>>
+
+/** Every CPU's counters summed; null when any CPU gives none, since a partial sum would read as a quieter machine. */
+function cpuCounters(system: HostFactsSystem): LoadSample['cpu'] {
+  const cpus = attempt(() => system.cpus())
+  if (!cpus?.length) return null
+  let idle = 0, total = 0
+  for (const cpu of cpus) {
+    const times = (cpu as { times?: CpuTimes } | null)?.times
+    if (!times) return null
+    for (const name of CPU_TIMES) {
+      const value = times[name] ?? 0
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+      total += value
+      if (name === 'idle') idle += value
+    }
+  }
+  return { idle, total }
+}
+
+/** `MemAvailable` from /proc/meminfo, in bytes; null when the line is missing. */
+export function parseMemAvailable(content: string): number | null {
+  const kib = /^MemAvailable:\s+(\d+)\s+kB\s*$/mu.exec(content)?.[1]
+  return kib === undefined ? null : count(Number(kib) * 1024)
+}
+
+/** The `some avg10` share from /proc/pressure/memory; null when it is not there. */
+export function parseMemoryPressure(content: string): number | null {
+  const value = /^some\b.*\bavg10=(\d+(?:\.\d+)?)/mu.exec(content)?.[1]
+  const share = value === undefined ? Number.NaN : Number(value)
+  return Number.isFinite(share) && share >= 0 && share <= 100 ? share : null
+}
+
+async function availableMemory(system: HostFactsSystem, family: HostOsFamily | null, readFile: (path: string) => Promise<string>): Promise<number | null> {
+  // Windows' free memory counts standby pages as available, which is what a new process could have.
+  if (family === 'windows') return count(attempt(() => system.freemem()))
+  if (family === 'linux') {
+    const meminfo = await readText(readFile, MEMINFO)
+    return (meminfo === null ? null : parseMemAvailable(meminfo)) ?? count(attempt(() => system.freemem()))
+  }
+  // macOS's free memory leaves out what the system would give back, so it understates; another system is not known.
+  return null
+}
+
+function loadAverage(system: HostFactsSystem, family: HostOsFamily | null): number | null {
+  if (family !== 'linux' && family !== 'macos') return null
+  const oneMinute = attempt(() => system.loadavg?.()[0])
+  return typeof oneMinute === 'number' && Number.isFinite(oneMinute) && oneMinute >= 0 ? Math.round(oneMinute * 100) / 100 : null
+}
+
+/** The share of CPU time not idle between two samples, to a tenth of a percent; null when the counters did not move forward. */
+function cpuBusy(start: LoadSample['cpu'], end: LoadSample['cpu']): number | null {
+  if (!start || !end || end.total <= start.total || end.idle < start.idle) return null
+  const busy = 1 - (end.idle - start.idle) / (end.total - start.total)
+  return Math.min(100, Math.max(0, Math.round(busy * 1_000) / 10))
+}
+
 /**
  * One machine's facts as a host keeps them (#1031). The operating system, architecture and CPU count are read once, when
  * the host starts; memory is read again when facts are asked for and the last reading is at least `HOST_FACTS_REFRESH_MS` old.
- * Nothing reads on a timer, so a host nobody asks spends nothing.
+ * Live load (#1311) is read the same way: over the window since the sample the last reading ended on, or over two fresh
+ * samples `HOST_LOAD_SAMPLE_MS` apart when that sample is older than `HOST_LOAD_WINDOW_MAX_MS`. Nothing reads on a timer,
+ * so a host nobody asks spends nothing.
  */
 export class HostFactsSource {
   private first: Promise<HostFacts> | undefined
   private latest: HostFacts | undefined
+  private sample: LoadSample | undefined
+  private lastLoad: HostLoad | undefined
+  private loading: Promise<HostLoad> | undefined
   private readonly system: HostFactsSystem
+  private readonly readFile: (path: string) => Promise<string>
+  private readonly sleep: (ms: number) => Promise<void>
 
   constructor(private readonly sources: HostFactsSources = {}) {
     this.system = sources.os ?? nodeOs
+    this.readFile = sources.readFile ?? ((path: string) => nodeReadFile(path, 'utf8'))
+    this.sleep = sources.sleep ?? (ms => new Promise(resolve => { setTimeout(resolve, ms).unref() }))
+  }
+
+  private now(): number { return (this.sources.now?.() ?? new Date()).getTime() }
+
+  private readFirst(): Promise<HostFacts> {
+    // A first reading that failed is tried again on the next ask rather than kept.
+    return this.first ??= readHostFacts(this.sources).catch((error: unknown) => { this.first = undefined; throw error })
   }
 
   /** Reads everything the first time; later calls answer the latest facts, with memory read again when that reading is old. */
   async read(): Promise<HostFacts> {
-    // A first reading that failed is tried again on the next ask rather than kept.
-    const first = await (this.first ??= readHostFacts(this.sources).catch((error: unknown) => { this.first = undefined; throw error }))
+    const first = await this.readFirst()
     const latest = this.latest ?? first
-    const now = this.sources.now?.() ?? new Date()
-    const age = now.getTime() - Date.parse(latest.observedAt)
+    const now = this.now()
+    const age = now - Date.parse(latest.observedAt)
     // A clock that went backwards reads again rather than trusting a reading from the future.
-    this.latest = age >= HOST_FACTS_REFRESH_MS || age < 0 ? hostFactsSchema.parse({ ...latest, observedAt: now.toISOString(), ...memory(this.system) }) : latest
+    this.latest = age >= HOST_FACTS_REFRESH_MS || age < 0 ? hostFactsSchema.parse({ ...latest, observedAt: new Date(now).toISOString(), ...memory(this.system) }) : latest
     return this.latest
+  }
+
+  /**
+   * Takes the first load sample without waiting, so the first ask has a window to read over. The host calls it once as it
+   * starts, beside its first facts reading; it starts no timer.
+   */
+  async primeLoad(): Promise<void> {
+    if (this.sample) return
+    const sample = await this.takeSample((await this.readFirst()).os.family)
+    this.sample ??= sample
+  }
+
+  /** The live load, read again when the last reading is at least `HOST_FACTS_REFRESH_MS` old. Asks at once share one reading. */
+  load(): Promise<HostLoad> {
+    return this.loading ??= this.readLoad().finally(() => { this.loading = undefined })
+  }
+
+  private async readLoad(): Promise<HostLoad> {
+    const family = (await this.readFirst()).os.family
+    const now = this.now()
+    const age = this.lastLoad ? now - Date.parse(this.lastLoad.observedAt) : Number.NaN
+    if (this.lastLoad && age >= 0 && age < HOST_FACTS_REFRESH_MS) return this.lastLoad
+    // A starting sample too old to say how busy the machine is now, or from a clock that went backwards, is sampled again.
+    const kept = this.sample, keptAge = kept ? now - kept.at : Number.NaN
+    const start = kept && keptAge >= 0 && keptAge <= HOST_LOAD_WINDOW_MAX_MS ? kept : await this.takeSample(family)
+    const wait = HOST_LOAD_SAMPLE_MS - (this.now() - start.at)
+    if (wait > 0) await this.sleep(wait)
+    const end = await this.takeSample(family)
+    const pressure = family === 'linux' ? await readText(this.readFile, MEMORY_PRESSURE) : null
+    this.sample = end
+    this.lastLoad = hostLoadSchema.parse({
+      observedAt: new Date(end.at).toISOString(),
+      windowMs: Math.max(1, Math.round(end.at - start.at)),
+      cpuBusyPercent: cpuBusy(start.cpu, end.cpu),
+      loadAverage: loadAverage(this.system, family),
+      availableMemoryBytes: end.availableMemoryBytes,
+      windowStartAvailableMemoryBytes: start.availableMemoryBytes,
+      memoryPressurePercent: pressure === null ? null : parseMemoryPressure(pressure),
+    })
+    return this.lastLoad
+  }
+
+  private async takeSample(family: HostOsFamily | null): Promise<LoadSample> {
+    const availableMemoryBytes = await availableMemory(this.system, family, this.readFile)
+    return { at: this.now(), cpu: cpuCounters(this.system), availableMemoryBytes }
   }
 }
 
-/** A machine's facts and how many of its threads are running a turn now, as the `host-facts` feature answers them. */
-export async function hostMachineReport(facts: HostFactsSource, threads: readonly { readonly status: string }[]): Promise<HostMachineReport> {
+/** A send this host has taken and not yet begun. */
+const PLACED_DELIVERIES: ReadonlySet<string> = new Set(['queued', 'submitting'])
+
+/**
+ * A machine's facts, how many of its threads are running a turn now, its live load, and its work placed but not started
+ * (#1311): threads not running a turn that hold a send not yet begun, such as a thread Watcher has just started there.
+ */
+export async function hostMachineReport(facts: HostFactsSource, shell: Pick<AgentState, 'host' | 'deliveries' | 'followups'>): Promise<HostMachineReport> {
+  const threads = shell.host.threads
   const running = threads.filter(thread => thread.status === 'running').length
-  return { facts: await facts.read(), runningThreads: running <= HOST_RUNNING_THREADS_MAX ? running : null }
+  const notRunning = new Set(threads.filter(thread => thread.status !== 'running').map(thread => thread.id))
+  const placed = new Set([
+    ...(shell.deliveries ?? []).filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
+    ...(shell.followups ?? []).filter(item => item.status === 'dispatching').map(item => item.threadId),
+  ].filter(threadId => notRunning.has(threadId))).size
+  const within = (value: number) => value <= HOST_RUNNING_THREADS_MAX ? value : null
+  // A load that cannot be read leaves the facts standing and reads unknown.
+  const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
+  return { facts: machine, runningThreads: within(running), load, placedNotStarted: within(placed) }
 }

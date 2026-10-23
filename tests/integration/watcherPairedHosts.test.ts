@@ -68,9 +68,9 @@ async function master(native?: CodexAppServerHost, usage = false, machines?: { s
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
-  const facts = new HostFactsSource()
+  const facts = new HostFactsSource({ sleep: async () => undefined })
   const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
-    machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads),
+    machineFacts: () => hostMachineReport(facts, f.control.shell()),
     ...machines ? { workerMachine: machines.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {} })
   const tools = new WatcherToolServer(watcher, { machines: machines !== undefined }); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
@@ -156,7 +156,9 @@ it('lists This computer and each paired machine with its facts and running threa
     expect.objectContaining({ hostId: f.control.hostId(), name: 'This computer', thisComputer: true, connected: true, factsState: 'reported',
       facts: expect.objectContaining({ os: expect.objectContaining({ family }) }) }),
     expect.objectContaining({ hostId: f.pairing.hostId, name: 'Synthetic remote', thisComputer: false, connected: true, factsState: 'reported',
-      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0 })])
+      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0,
+      // Its live load and work placed but not started come with its facts (#1311).
+      load: expect.objectContaining({ windowMs: expect.any(Number) }), placedNotStarted: 0 })])
   // A start on the paired machine is in flight there, and its thread runs there.
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
@@ -185,7 +187,7 @@ it('lists This computer and each paired machine with its facts and running threa
   socket.features = features.filter(feature => feature !== 'host-facts')
   const asked = vi.spyOn(f.socket, 'hostFacts')
   expect((await machines())[1]).toMatchObject({ connected: true, factsState: 'unknown', facts: null, runningThreads: null,
-    note: expect.stringContaining('Update Sotto on it') })
+    load: null, placedNotStarted: null, memoryState: 'unknown', cpuState: 'unknown', note: expect.stringContaining('Update Sotto on it') })
   expect(asked).not.toHaveBeenCalled()
   socket.features = features
   // A connection that drops while its facts are read reads not connected, not as the facts it sent before dropping.
