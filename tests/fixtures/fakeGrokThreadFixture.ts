@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { GrokAcpHost, type GrokAcpOptions } from '../../src/main/agents/grok'
+import type { GrokRpc } from '../../src/main/agents/grokRpc'
 import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export const grokFixtureSkips: AdapterContractSkips = {
@@ -30,11 +31,12 @@ async function sideCalls(root: string): Promise<{ cwd: string; model: string | u
  * the fake is already holding back.
  */
 export const LOST_REPLY_DEADLINE_MS = 2000
-/** What `delayNextAck` scripts for each request whose reply it can lose, given the deadline that reply must miss. */
-const lostReplies: Record<string, (deadline: number) => Record<string, unknown>> = {
- 'session/prompt': deadline => ({ delayPrompt: deadline + 1000, suppressNotifications: true }),
- 'session/new': deadline => ({ delayCreate: deadline + 1000 }),
- authenticate: () => ({ ignoreAuthenticate: true }),
+/** What `delayNextAck` scripts for each request whose reply it can lose. Every reply it delays misses the short deadline by a second. */
+const lostReplies: Record<string, Record<string, unknown>> = {
+ 'session/prompt': { delayPrompt: LOST_REPLY_DEADLINE_MS + 1000, suppressNotifications: true },
+ 'session/new': { delayCreate: LOST_REPLY_DEADLINE_MS + 1000 },
+ authenticate: { ignoreAuthenticate: true },
+ '_x.ai/session/updates': { ignoreHistory: true },
 }
 // The request deadline covers the fake agent's process start and every round trip on it. Grok starts a process for each
 // thread, and on a loaded run `session/new` there took longer than two seconds, so the create came back uncertain and
@@ -47,34 +49,47 @@ const lostReplies: Record<string, (deadline: number) => Record<string, unknown>>
 export async function grokFixture(root?: string, requestTimeoutMs = 15_000, pollIntervalMs?: number, session: AdapterSessionOptions = {}, options: GrokAcpOptions = {}) {
  pollIntervalMs ??= session.reaperSweepMs === undefined ? 20 : session.reaperSweepMs * 5
  root ??= await mkdtemp(join(tmpdir(),'sotto-grok-thread-'))
- const adapterOptions: GrokAcpOptions = {executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],requestTimeoutMs,pollIntervalMs,...session,...options}
+ // Only a request scripted lost waits the short deadline; every other one, on every process, keeps the generous one.
+ // A send reads its acknowledgement deadline from these options as it writes its prompt, and a process reads its own
+ // when it starts, so the short one goes to the one send whose prompt was scripted lost and to each request of a method
+ // whose reply was.
+ let promptLost = false, spawning = false
+ const lostRequests = new Set<string>()
+ const adapterOptions: GrokAcpOptions = {executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],pollIntervalMs,...session,...options}
+ Object.defineProperty(adapterOptions,'requestTimeoutMs',{enumerable:true,get:()=>{
+  if (spawning || !promptLost) return requestTimeoutMs
+  promptLost = false; return LOST_REPLY_DEADLINE_MS
+ }})
  const adapter = new GrokAcpHost(root,adapterOptions)
+ const spawner = adapter as unknown as { spawn(...args: unknown[]): GrokRpc }
+ const spawn = spawner.spawn.bind(adapter)
+ spawner.spawn = (...args) => {
+  spawning = true
+  let rpc: GrokRpc
+  try { rpc = spawn(...args) } finally { spawning = false }
+  const deadline = rpc as unknown as { timeoutMs: number }, request = rpc.request.bind(rpc)
+  rpc.request = (method, ...rest) => {
+   if (!lostRequests.has(method)) return request(method, ...rest)
+   deadline.timeoutMs = LOST_REPLY_DEADLINE_MS
+   try { return request(method, ...rest) } finally { deadline.timeoutMs = requestTimeoutMs }
+  }
+  return rpc
+ }
  const checkViolations = async () => { const text = await readLog(join(root,'violations.jsonl')); if (text) throw new Error(`Invalid Grok reply: ${text}`) }
- let live = true
- // How many of a method's requests the fake has received; a record still being written counts once it is whole.
- const received = (method: string): Promise<number> => readLog(join(root,'requests.jsonl')).then(text => parseProviderRecords<RecordedRpc>(text).filter(record => record.method === method).length, () => -1)
+ const writeScript = (value: unknown) => writeFile(join(root,'script.json'),JSON.stringify(value))
+ // A lost prompt is lost for the next send; any other method's replies stay lost until the script changes.
  const delayNextAck = async (method: string): Promise<void> => {
   const lost = lostReplies[method]
   if (!lost) throw new Error(`The Grok fixture cannot lose the reply to ${method}`)
-  let before = await received(method)
-  while (before < 0) before = await received(method)
-  // The adapter reads its deadline when a send sets its acknowledgement timer and when it starts a process. The short
-  // one lasts until the fake receives the request, by which time the operation waiting for the reply holds it, so
-  // everything started after keeps the generous one. A process started before the request keeps the short one for
-  // its life, which is why a create or a connect is scripted lost before it starts its process.
-  adapterOptions.requestTimeoutMs = Math.min(requestTimeoutMs, LOST_REPLY_DEADLINE_MS)
-  await script(lost(adapterOptions.requestTimeoutMs))
-  void (async () => {
-   while (live && (await received(method)) <= before) await new Promise(resolve => setTimeout(resolve, 20))
-   adapterOptions.requestTimeoutMs = requestTimeoutMs
-  })()
+  await writeScript(lost)
+  if (method === 'session/prompt') promptLost = true; else lostRequests.add(method)
  }
  const requests = async (): Promise<RecordedRpc[]> => {
   await checkViolations()
   const text = await readLog(join(root,'requests.jsonl'))
   return parseProviderRecords<RecordedRpc>(text)
  }
- const script = (value: unknown) => writeFile(join(root,'script.json'),JSON.stringify(value))
+ const script = (value: unknown) => { promptLost = false; lostRequests.clear(); return writeScript(value) }
  const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root,'grok-threads.json'),'utf8'))[id].grokSessionId
  // Each thread session has its own fake process (one ACP process per session). The one holding the session
  // takes the command; `at` lets another take it once nobody has. The wall clock, because tests mock Date.now.
@@ -97,7 +112,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 15_000, poll
    stopped:async(id:string)=>{const native=await realId(id);return (await requests()).findLast(record=>record.method==='fixture/session-resident'&&record.params?.sessionId===native)?.params?.resident===false},
   },
   driver:{typeInProvider:(id:string,text:string)=>action(id,{type:'takeover',text}),completeTurn:(id:string,text:string)=>action(id,{type:'complete',text}),raiseQuestion:(id:string,text:string)=>action(id,{type:'question',text}),raisePermission:(id:string,text:string)=>action(id,{type:'permission',text}),delayNextAck,requests,
-   restart:async()=>{live=false;adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session,options)}},
-  cleanup:async()=>{live=false;adapter.disconnect();await adapter.closed();if(dirname(resolve(root))!==resolve(tmpdir())||!root.includes('sotto-grok-thread-'))throw new Error('Unexpected temporary directory');try{await checkViolations()}finally{await rm(root,{recursive:true,force:true})}}
+   restart:async()=>{adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session,options)}},
+  cleanup:async()=>{adapter.disconnect();await adapter.closed();if(dirname(resolve(root))!==resolve(tmpdir())||!root.includes('sotto-grok-thread-'))throw new Error('Unexpected temporary directory');try{await checkViolations()}finally{await rm(root,{recursive:true,force:true})}}
  }
 }

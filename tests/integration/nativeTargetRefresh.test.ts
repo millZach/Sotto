@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
-import { grokFixture, LOST_REPLY_DEADLINE_MS } from '../fixtures/fakeGrokThreadFixture'
+import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AgentHost, AgentHostResult } from '../../src/main/agents/host'
 
 // Gate only the unrelated native history I/O; prompt transport and persistence stay real.
@@ -132,17 +132,14 @@ it('Codex rejects a stale history completion after live text and turn completion
   }
 })
 
-// Grok never answers the history read, so the send waits out its thread process's deadline. The process reads that
-// deadline when the create starts it, and the read can only be lost after the create, so this fixture takes the short
-// deadline throughout.
 it.each(['codex', 'grok'] as const)('%s treats a failed pre-dispatch authority read as an unsent prompt', async provider => {
-  const f = provider === 'codex' ? await codexFixture() : await grokFixture(undefined, LOST_REPLY_DEADLINE_MS)
+  const f = provider === 'codex' ? await codexFixture() : await grokFixture()
   const id = randomUUID()
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
-    await f.script(provider === 'codex' ? { delay: { method: 'thread/read', ms: 3000 } } : { ignoreHistory: true })
+    if (provider === 'codex') await f.script({ delay: { method: 'thread/read', ms: 3000 } }); else await f.driver.delayNextAck('_x.ai/session/updates')
     await expect(f.host.execute({ type: 'send', commandId: 'unsent-command', threadId: id, messageId: 'unsent-message', text: 'Must remain a draft', expectedLastUserMessageId: null })).rejects.toThrow(/verif|read|history/i)
     expect((await f.driver.requests()).filter(request => request.method === (provider === 'codex' ? 'turn/start' : 'session/prompt'))).toHaveLength(0)
   } finally { await f.script({}); await f.cleanup() }

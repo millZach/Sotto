@@ -414,15 +414,12 @@ for every thread, and on a loaded run `session/new` on that new process took lon
 came back uncertain and the next send was refused for want of a confirmed provider session. The client-update
 contract now checks that its create was accepted, so a create that comes back uncertain fails there rather than at the
 send. Grok does acknowledge a prompt, but Sotto finds an acknowledgement lost only when its deadline passes, so a test
-of that still waits one out. `driver.delayNextAck()` takes `session/prompt`, `session/new` or `authenticate`, lowers
-that fixture's deadline to 2000 ms and scripts the reply lost, and puts 15 s back once the fake receives the request.
-The operation that expects to come back uncertain holds the short deadline and everything started after it keeps the
-long one. A Grok process reads its deadline when it starts and keeps it, which is why a create or a connect is scripted
-lost before it starts its process. A lost answer is lost on Sotto's side: `grokAnswerReoffers.test.ts` holds the
-answer's write to the thread's process open and gives that process the short deadline only until the answer comes back
-uncertain. One test passes 2000 ms itself: the Grok half of "treats a failed pre-dispatch authority read as an unsent
-prompt" in `nativeTargetRefresh.test.ts` loses a history read on a thread process that started at create, before the
-read could be scripted lost.
+of that still waits one out, and only that wait is short. `driver.delayNextAck()` takes `session/prompt`,
+`session/new`, `authenticate` or `_x.ai/session/updates` and scripts the reply lost. A lost prompt gives the next send
+an acknowledgement deadline of 2000 ms; any other method gives each of its requests 2000 ms until the script changes.
+Every other request on every process keeps 15 s, so a slow start or a slow create before the lost reply still has the
+long deadline. A lost answer is lost on Sotto's side: `grokAnswerReoffers.test.ts` holds the answer's write to the
+thread's process open and gives that process the short deadline only until the answer comes back uncertain.
 
 `tests/setup.ts` holds the two things every test run needs on Windows: web storage is emptied after each
 test, so no test paints the cached agent shell a previous test left behind, and a recursive `fs.rm`
