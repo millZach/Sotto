@@ -110,8 +110,12 @@ describe('machineLoadStates', () => {
     // On 8 GiB a tenth, 0.8 GiB, is the smaller: 1.5 GiB is enough there and 0.7 GiB is short.
     expect(memory(1.5 * GIB, 1.5 * GIB, 8 * GIB)).toBe('enough')
     expect(memory(0.7 * GIB, 0.7 * GIB, 8 * GIB)).toBe('short')
-    // Without a total, only the fixed 2 GiB applies.
-    expect(memory(1.5 * GIB, 1.5 * GIB, null)).toBe('short')
-    expect(memory(3 * GIB, 3 * GIB, null)).toBe('enough')
+    // Without a total the line cannot be drawn, so short is never guessed: under 2 GiB reads unknown however low it is.
+    expect(memory(1.5 * GIB, 1.5 * GIB, null)).toBe('unknown')
+    expect(memory(0.1 * GIB, 0.1 * GIB, null)).toBe('unknown')
+    expect(memory(null, null, null)).toBe('unknown')
+    // The line is never above 2 GiB on any total, so 2 GiB or more at the window's end is enough without one.
+    expect(memory(3 * GIB, 0.5 * GIB, null)).toBe('enough')
+    expect(memory(2 * GIB, null, null)).toBe('enough')
   })
 })
