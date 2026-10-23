@@ -35,6 +35,8 @@ import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
+import { MessageScrubber } from './MessageScrubber'
+import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -83,6 +85,16 @@ const seekWithoutTranscript = (message: HTMLElement): void => {
   message.scrollIntoView?.({ block: 'center' })
   message.focus({ preventScroll: true })
 }
+/** Marks a message the reader was taken to, for a moment, so the eye finds where it landed. */
+function markSought(message: HTMLElement): void {
+  message.dataset.sought = ''
+  window.clearTimeout(soughtTimers.get(message))
+  soughtTimers.set(message, window.setTimeout(() => { delete message.dataset.sought; soughtTimers.delete(message) }, SOUGHT_MS))
+}
+/** The room left above a message the scrubber lands on, so its header is not against the transcript's top. */
+const LANDING_GAP_PX = 16
+/** Frames spent putting a landed message back at the top while the messages around it are laid out for real. */
+const LANDING_FRAMES = 3
 
 /** A lifted question's words, with the code it quoted between backticks drawn as code. */
 function QuestionWords({ text }: { readonly text: string }): ReactNode {
@@ -111,10 +123,8 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
     const message = [...body.current?.querySelectorAll<HTMLElement>('.thread-message[data-message-id]') ?? []].find(element => element.dataset.messageId === messageId)
     if (!message) return
     message.tabIndex = -1
-    message.dataset.sought = ''
+    markSought(message)
     ;(onSeek ?? seekWithoutTranscript)(message)
-    window.clearTimeout(soughtTimers.get(message))
-    soughtTimers.set(message, window.setTimeout(() => { delete message.dataset.sought; soughtTimers.delete(message) }, SOUGHT_MS))
   }
   return <>
     <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-label={headline}
@@ -578,6 +588,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
   const [requestUnderJump, setRequestUnderJump] = useState(false)
+  // A press on the scrubber that needs an earlier page drawn first: where it goes, and whether focus goes with it.
+  const landing = useRef<{ readonly messageId: string; readonly focus: boolean } | null>(null)
+  const [landingSeq, setLandingSeq] = useState(0)
   const submissions = useSubmissions(store)
   const pending = submissions.filter(item => item.threadId === thread.id)
     .map(item => ({ item, ...submissionStatus(item, state) })).filter(item => item.visible)
@@ -620,6 +633,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
   }, [delegations.received, delegatingTitle])
+  // The message scrubber (ADR-0109; Owl only): a tick for each message the user sent, wherever it is in the window.
+  const scrubberOn = useOwlFeature('message-scrubber')
+  const marks = useMemo(() => scrubberOn ? scrubberMarks(thread.messages, briefs?.ids) : [], [scrubberOn, thread.messages, briefs])
   // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
   // Its view changes only when where it began does, so the messages that read it are not redrawn on every update.
   const startsOn = useThreadStarts()
@@ -679,6 +695,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   useLayoutEffect(() => {
     anchor.current = null
     seen.current = undefined
+    landing.current = null
     setLimit(TRANSCRIPT_PAGE)
     toEnd()
   }, [thread.id, toEnd])
@@ -739,6 +756,40 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     following.current = false
     seekWithoutTranscript(message)
   }, [])
+  /** Puts a drawn message at the top of the transcript and marks it. Messages laid out late around it can move it, so it
+   * is put back for a few frames. */
+  const land = useCallback((messageId: string, focus: boolean): void => {
+    const element = scroller.current
+    const message = [...content.current?.querySelectorAll<HTMLElement>('.thread-message[data-message-id]') ?? []].find(item => item.dataset.messageId === messageId)
+    if (element === null || message === undefined) return
+    following.current = false
+    const place = (): void => { element.scrollTop += message.getBoundingClientRect().top - element.getBoundingClientRect().top - LANDING_GAP_PX }
+    place()
+    let frames = LANDING_FRAMES
+    const again = (): void => { if (!message.isConnected || frames-- <= 0) return; place(); requestAnimationFrame(again) }
+    requestAnimationFrame(again)
+    markSought(message)
+    if (focus) { message.tabIndex = -1; message.focus({ preventScroll: true }) }
+  }, [])
+  /** The scrubber's press: a message above the first one drawn widens the window to it first, then lands there. */
+  const jumpTo = useCallback((messageId: string, focus: boolean): void => {
+    const index = thread.messages.findIndex(message => message.id === messageId)
+    if (index < 0) return
+    following.current = false
+    if (index >= start) { land(messageId, focus); return }
+    anchor.current = null
+    firstRendered.current = { threadId: thread.id, messageId }
+    landing.current = { messageId, focus }
+    setLimit(current => Math.max(current, thread.messages.length - index))
+    setLandingSeq(current => current + 1)
+  }, [thread.messages, thread.id, start, land])
+  // Once the wider window is drawn, the press lands where it asked to go.
+  useLayoutEffect(() => {
+    const target = landing.current
+    if (target === null) return
+    landing.current = null
+    land(target.messageId, target.focus)
+  }, [landingSeq, messages, land])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
@@ -777,6 +828,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
   return <div className="thread-transcript">
+    {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
+      who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" ref={content}>

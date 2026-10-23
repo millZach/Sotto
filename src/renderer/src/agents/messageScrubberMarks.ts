@@ -1,0 +1,152 @@
+import { isVisualMessage, type AgentMessage, type AgentRequest } from '../../../shared/agents'
+import { isWakeUpMessage } from './babysitting'
+import { questionsIn } from './liftedQuestions'
+
+/**
+ * The message scrubber (ADR-0109; Owl only): a column of ticks at the transcript's left edge, one for each message the
+ * user sent, with a card that shows the message and the start of what came back. Everything here is read from the
+ * messages the window already holds; nothing is fetched to fill a card.
+ */
+
+/** One tick: a message the user sent, where it sits in the thread's messages, and the turn's last written reply. */
+export interface ScrubberMark {
+  readonly messageId: string
+  readonly index: number
+  readonly message: AgentMessage
+  /** The turn's last reply with words, so far. A turn still being written may have none yet. */
+  readonly reply: AgentMessage | undefined
+}
+
+/** What the card shows under the message: the start of the reply, the question it asked, or nothing yet. */
+export type ScrubberAfter =
+  | { readonly kind: 'reply'; readonly text: string }
+  | { readonly kind: 'asked'; readonly question: string; readonly choices: readonly string[]; readonly more: number }
+  | { readonly kind: 'none' }
+
+/** The conversation is long once it is this many screens tall. */
+export const SCRUBBER_SCREENS = 2
+/** Fewer sent messages than this is a conversation the eye takes in without help. */
+export const SCRUBBER_FEWEST = 3
+/**
+ * The widest the scrubber's lane gets, beside the column's left edge. Watcher's night scene keeps the same strip of its
+ * left margin clear (Zach's pick, October 22, 2026), so the owls and the ticks never meet.
+ */
+export const SCRUBBER_LANE_PX = 44
+/** A margin narrower than this has no room for ticks a pointer can reach. */
+export const SCRUBBER_NARROWEST_LANE_PX = 14
+/** The most choices a card lists; the rest are counted. */
+export const SCRUBBER_CHOICES = 3
+
+const OPENING = 220
+
+/**
+ * The ticks, in order. A wake-up is Sotto's and a brief another thread delegated is that thread's (ADR-0061, ADR-0081),
+ * so neither is a message the user sent. Each mark carries the last reply with words before the next message the user
+ * sent, which is the reply a finished turn shows unfolded. What answers a wake-up or a brief belongs to neither tick.
+ */
+export function scrubberMarks(messages: readonly AgentMessage[], notTheUsers: ReadonlySet<string> = new Set()): ScrubberMark[] {
+  const marks: ScrubberMark[] = []
+  let current: { messageId: string; index: number; message: AgentMessage; reply: AgentMessage | undefined } | undefined
+  for (const [index, message] of messages.entries()) {
+    if (message.role === 'user') {
+      current = isWakeUpMessage(message) || notTheUsers.has(message.id) ? undefined : { messageId: message.id, index, message, reply: undefined }
+      if (current) marks.push(current)
+    } else if (current && message.role === 'assistant' && !isVisualMessage(message) && message.text.trim().length > 0) current.reply = message
+  }
+  return marks
+}
+
+/** Whether the scrubber shows: enough messages sent, and a conversation taller than a screen or two, or with more above. */
+export function scrubberShown(marks: number, contentHeight: number, viewHeight: number, moreAbove: boolean): boolean {
+  if (marks < SCRUBBER_FEWEST || viewHeight <= 0) return false
+  return moreAbove || contentHeight >= SCRUBBER_SCREENS * viewHeight
+}
+
+/** Markdown read as the words it shows, on one line: code, links, emphasis, headings and list marks set aside. */
+export function plainOpening(text: string, most = OPENING): string {
+  const words = text
+    .replace(/```[\s\S]*?(?:```|$)/gu, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
+    .replace(/`([^`]*)`/gu, '$1')
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gmu, '')
+    .replace(/(\*\*|__|\*|_|~~)(?=\S)([^\n]*?\S)\1/gu, '$2')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return words.length > most ? `${words.slice(0, most - 1).trimEnd()}…` : words
+}
+
+/** A reply's questions are found once; replies are shared across updates. */
+const asked = new WeakMap<AgentMessage, readonly string[]>()
+function questionsOf(message: AgentMessage): readonly string[] {
+  let found = asked.get(message)
+  if (!found) asked.set(message, found = questionsIn(message.text))
+  return found
+}
+
+/**
+ * What came back for a mark. The newest message's open question is the card it led to, with its choices; an earlier
+ * turn whose reply ends on a question shows that question; anything else shows the start of the reply.
+ */
+export function scrubberAfter(mark: ScrubberMark, newest: boolean, requests: readonly AgentRequest[]): ScrubberAfter {
+  const open = newest ? requests.find(request => request.kind === 'question') : undefined
+  if (open) {
+    const first = open.questions?.[0]
+    const question = plainOpening(first?.question ?? open.text)
+    const labels = (first?.options ?? open.options).map(option => option.label.replace(/\s*\(recommended\)\s*$/iu, ''))
+    return { kind: 'asked', question, choices: labels.slice(0, SCRUBBER_CHOICES), more: Math.max(0, labels.length - SCRUBBER_CHOICES) }
+  }
+  if (!mark.reply) return { kind: 'none' }
+  const questions = questionsOf(mark.reply)
+  const last = questions.at(-1)
+  // A reply that closes on a question is asking the user; one that asked on the way and went on is a reply.
+  if (last !== undefined && plainOpening(mark.reply.text, 100_000).endsWith(plainOpening(last, 100_000))) {
+    return { kind: 'asked', question: plainOpening(last), choices: [], more: 0 }
+  }
+  return { kind: 'reply', text: plainOpening(mark.reply.text) }
+}
+
+/** The most room between two ticks, and the least. */
+const PITCH_MOST = 9
+const PITCH_LEAST = 2
+/** The share of the transcript's height the column may take. */
+const COLUMN_SHARE = 0.8
+
+/**
+ * Where each tick sits, from the top of the transcript: evenly spaced in one column centred on its height (Zach's pick A).
+ * A long conversation packs the ticks closer, down to two pixels apart.
+ */
+export function tickPlaces(count: number, height: number): { readonly pitch: number; readonly places: readonly number[] } {
+  if (count <= 0 || height <= 0) return { pitch: 0, places: [] }
+  const pitch = count === 1 ? PITCH_MOST : Math.max(PITCH_LEAST, Math.min(PITCH_MOST, height * COLUMN_SHARE / (count - 1)))
+  const first = height / 2 - pitch * (count - 1) / 2
+  return { pitch, places: Array.from({ length: count }, (_, index) => first + index * pitch) }
+}
+
+/** The tick nearest a point in the lane, if one is within reach. */
+export function nearestTick(places: readonly number[], y: number, reach: number): number {
+  let best = -1
+  let distance = Number.POSITIVE_INFINITY
+  for (const [index, place] of places.entries()) {
+    const gap = Math.abs(place - y)
+    if (gap < distance) { distance = gap; best = index }
+  }
+  return distance <= reach ? best : -1
+}
+
+/** How far the swell reaches either side of the pointer. */
+export const SWELL_SIGMA_PX = 16
+
+/**
+ * How much each tick rises, from 0 at rest to 1 under the pointer, on a normal curve around it (Zach's pick, October 22,
+ * 2026): the tick under the pointer is longest and brightest, and its neighbours rise less the further they are.
+ */
+export function swell(places: readonly number[], y: number | null, sigma = SWELL_SIGMA_PX): number[] {
+  if (y === null) return places.map(() => 0)
+  return places.map(place => Math.exp(-((place - y) ** 2) / (2 * sigma * sigma)))
+}
+
+/** The lane the ticks use: the column's margin, up to the widest lane, or none when the margin is too narrow to reach. */
+export function scrubberLane(margin: number): number {
+  return margin < SCRUBBER_NARROWEST_LANE_PX ? 0 : Math.min(SCRUBBER_LANE_PX, margin)
+}
