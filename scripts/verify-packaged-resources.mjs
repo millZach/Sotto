@@ -12,6 +12,7 @@ import { pathToFileURL, URL } from 'node:url'
 import { _electron as electron } from '@playwright/test'
 
 import { DOCK_COVERAGE_BYTES } from '../src/main/dock/coverage.mjs'
+import { OWL_HEIGHT, OWL_WIDTH, allOwlPoses, poseKey } from '../src/main/tray/owl/poses.mjs'
 import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
@@ -258,6 +259,25 @@ export async function verifyPackagedResources(input, options = {}) {
     let coverageBytes = -1
     try { coverageBytes = inflateSync(readFileSync(coveragePath)).length } catch { /* reported below */ }
     if (coverageBytes !== DOCK_COVERAGE_BYTES) fail('dock/mark-coverage.bin is missing or is not the Dock icon coverage')
+  }
+  // The menu bar owl's frames (scripts/generate-tray-owl.mjs): a manifest for today's poses, and nine different palette
+  // files, each at the length for those poses.
+  if (profile.key === 'darwin') {
+    const owlFolder = join(resources, 'tray', 'owl')
+    const owlKeys = allOwlPoses().map(poseKey)
+    let owlFiles = 0
+    try {
+      const manifest = JSON.parse(readFileSync(join(owlFolder, 'manifest.json'), 'utf8'))
+      if (manifest.frames !== owlKeys.length || JSON.stringify(manifest.poseKeys) !== JSON.stringify(owlKeys)) throw new Error('poses')
+      const files = new Set()
+      for (const palette of manifest.palettes) {
+        if (palette.bytes !== owlKeys.length * OWL_WIDTH * OWL_HEIGHT * 4) throw new Error('length')
+        if (inflateSync(readFileSync(join(owlFolder, palette.file))).length !== palette.bytes) throw new Error('length')
+        files.add(palette.file)
+      }
+      owlFiles = files.size
+    } catch { /* reported below */ }
+    if (owlFiles !== 9) fail('tray/owl is missing or is not the menu bar owl frames')
   }
   if (existsSync(join(resources, 'runtime'))) fail('retired voice runtime must not be bundled')
   for (const required of [

@@ -7,6 +7,8 @@ import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/th
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
+import { useOwlFeature } from '../../state/owlFeature'
+import { MenuBarOwlSettings } from './MenuBarOwlSettings'
 import { CreatureChoice } from './themes/CreatureChoice'
 import { EffortColorChoice } from './themes/EffortColor'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
@@ -34,6 +36,7 @@ const SLIDER_SAVE_DELAY_MS = 250
 export function AppearanceSettings({ settings, platform, onSave, getSettings }: AppearanceSettingsProps): ReactNode {
   useAppearancePreviewVersion()
   const systemDark = useSystemPrefersDark()
+  const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
   const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
   const shown = appearancePreview.effective(settings)
   const resolved = resolveAppearance(shown.appearance, systemDark, shown)
@@ -97,8 +100,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
           <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
 
           <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, 'Effort color saved.')} />
-
           <CreatureChoice value={settings.creature} onChoose={creature => void onSave({ creature }, 'Creature saved.').catch(() => false)} />
+          {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
 
           <div className="settings-rows">
             <AppearanceSlider

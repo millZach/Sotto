@@ -160,6 +160,8 @@ import {
   createTrayResource,
   NativeTrayCreationError,
 } from './tray/trayIcon'
+import { menuBarOwlWanted, startMenuBarOwl, type MenuBarOwl } from './tray/menuBarOwl'
+import { electronOwlEnvironment } from './tray/menuBarOwlElectron'
 import {
   parseDevelopmentRendererSources,
   WindowManager,
@@ -329,6 +331,8 @@ type NativeDiagnostic =
   | DictationShortcutEvent
   | 'dock-icon-unavailable'
   | 'dock-icon-failed'
+  | 'owl-frames-unavailable'
+  | 'owl-failed'
   | 'desktop-notification-failed'
 
 function logOperational(code: NativeDiagnostic): void {
@@ -1480,6 +1484,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         tooltip: buildName,
       })
     : { setContextMenu: () => undefined, destroy: () => undefined }
+  // The menu bar owl (ADR-0114): on a Mac in an Owl build the tray's picture is swapped on a schedule. When its frames cannot
+  // be read the one-tint template stays and the user loses only the animation.
+  const menuBarOwl: MenuBarOwl | null = menuBarOwlWanted(platform, owlFeatures, e2eConfiguration !== null) && 'setImage' in nativeTray
+    ? startMenuBarOwl(nativeTray, startupSettings, electronOwlEnvironment({ nativeImage, systemPreferences, powerMonitor }, resourceRoot, event => { if (event === 'owl-frames-unavailable' || event === 'owl-failed') logOperational(event) }))
+    : null
   try {
   const trayAdapter: TrayAdapter = {
     setMenu(items): void {
@@ -1510,6 +1519,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
+      menuBarOwl?.applySettings(settings)
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
@@ -1597,6 +1607,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(state)
     },
     dispose(): void {
+      menuBarOwl?.dispose()
       trayController.dispose()
     },
   }
@@ -2084,6 +2095,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   } catch {
     try {
+      menuBarOwl?.dispose()
       nativeTray.destroy()
     } catch {
       // Startup will report one finite failure even if native tray cleanup also fails.

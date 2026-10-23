@@ -1,5 +1,5 @@
 /* T3's branch toolbar under the composer: where the thread runs, its workspace, the pull request badge and the branch, as
-   one muted line of text buttons with their icons, a faint dot between them and no boxes (ADR-0112, Zach's pick A of
+   one muted line of text buttons with their icons, a faint dot between them and no boxes (ADR-0113, Zach's pick A of
    docs/prototypes/quiet-composer-prototype.html; the row itself is #325's). Each control is 26px tall with the hover wash
    and the focus ring; the two labels (Run on, a locked Workspace) are not pressable, so they have no chevron and no wash.
    The picker's popover rises above the line like the composer's lists. */
