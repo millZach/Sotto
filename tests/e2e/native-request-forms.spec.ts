@@ -125,12 +125,13 @@ async function expectRoomy(page: Page, minimumLog: number): Promise<void> {
     const prompt = document.querySelector('.thread-prompt .prompt-editor')?.getBoundingClientRect()
     return { logHeight: log.clientHeight, composeBottom: compose.bottom, composeTop: compose.top, height: window.innerHeight,
       pageOverflow: document.documentElement.scrollWidth - window.innerWidth, cardOverflow: request.scrollWidth - request.clientWidth,
-      logBottom: log.getBoundingClientRect().bottom,
+      logBottom: log.getBoundingClientRect().bottom, logPaddingBottom: parseFloat(getComputedStyle(log).paddingBottom),
       questionsHeight: questions?.clientHeight ?? null, questionsBottom: questions?.getBoundingClientRect().bottom ?? null,
       promptTop: prompt?.top ?? null }
   })
   expect(layout.composeBottom).toBeLessThanOrEqual(layout.height + 1)
-  expect(layout.logBottom).toBeLessThanOrEqual(layout.composeTop + 1)
+  // A floating composer covers the transcript's foot only as far as the transcript's padding, so its last line stays clear.
+  expect(layout.logBottom - layout.logPaddingBottom).toBeLessThanOrEqual(layout.composeTop + 1)
   expect(layout.logHeight).toBeGreaterThanOrEqual(layout.questionsHeight === null ? minimumLog : 60)
   if (layout.questionsHeight !== null) {
     expect(layout.questionsHeight).toBeGreaterThan(0)
