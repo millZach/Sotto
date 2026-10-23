@@ -102,6 +102,41 @@ describe('thread-bound Files service', () => {
     expect(revealed).toHaveBeenCalledWith(await realpath(root))
   })
 
+  it('shows a file a message links to, anywhere on this computer or relative to the thread folder, and refuses one that is missing', async () => {
+    await mkdir(join(root, 'guides')); await writeFile(join(root, 'guides', 'a.pdf'), 'a'); await writeFile(join(other, 'b.pdf'), 'b')
+    // The window learns only that the file was shown, never where it resolved to.
+    expect(value(await service.revealLink({ threadId: 'thread', path: join(other, 'b.pdf') }))).toEqual({})
+    value(await service.revealLink({ threadId: 'thread', path: 'guides/a.pdf' }))
+    value(await service.revealLink({ threadId: 'thread', path: 'guides/' }))
+    expect(revealed.mock.calls).toEqual([[await realpath(join(other, 'b.pdf'))], [await realpath(join(root, 'guides', 'a.pdf'))], [await realpath(join(root, 'guides'))]])
+    revealed.mockClear()
+    error(await service.revealLink({ threadId: 'thread', path: join(other, 'missing.pdf') }), 'path-unavailable')
+    error(await service.revealLink({ threadId: 'unknown', path: 'guides/a.pdf' }), 'thread-unavailable')
+    error(await service.revealLink({ threadId: 'unknown', path: join(other, 'b.pdf') }), 'thread-unavailable')
+    for (const path of ['\\\\evil.example\\share\\a.pdf', '//evil.example/share/a.pdf', '\\\\?\\C:\\a.pdf', 'C:a.pdf']) error(await service.revealLink({ threadId: 'thread', path }), 'invalid-request')
+    error(await service.revealLink({ threadId: 'thread', path: 'a\u0000b' }), 'invalid-request')
+    error(await service.revealLink({ threadId: 'thread', path: join(other, 'b.pdf'), command: 'open' }), 'invalid-request')
+    expect(revealed).not.toHaveBeenCalled()
+  })
+
+  it.skipIf(process.platform === 'win32')('shows a file whose own name ends in a number before one without it', async () => {
+    await writeFile(join(root, 'notes'), 'n'); await writeFile(join(root, 'notes:2024'), 'y')
+    value(await service.revealLink({ threadId: 'thread', path: 'notes:2024' }))
+    expect(revealed).toHaveBeenCalledWith(await realpath(join(root, 'notes:2024')))
+  })
+
+  it('keeps a relative file link inside the thread folder, as Files does, and tries the name as written before dropping a line number', async () => {
+    await writeFile(join(other, 'secret.txt'), 's')
+    await symlink(other, join(root, 'docs'), process.platform === 'win32' ? 'junction' : 'dir')
+    error(await service.revealLink({ threadId: 'thread', path: 'docs/secret.txt' }), 'path-outside-workspace')
+    error(await service.revealLink({ threadId: 'thread', path: '../outside/secret.txt' }), 'path-outside-workspace')
+    expect(revealed).not.toHaveBeenCalled()
+    await writeFile(join(root, 'notes'), 'n'); await writeFile(join(root, 'guide.pdf'), 'g')
+    value(await service.revealLink({ threadId: 'thread', path: 'guide.pdf#page=2' }))
+    value(await service.revealLink({ threadId: 'thread', path: 'notes:12' }))
+    expect(revealed.mock.calls).toEqual([[await realpath(join(root, 'guide.pdf'))], [await realpath(join(root, 'notes'))]])
+  })
+
   it.each(['../outside/private.txt', '/etc/passwd', 'C:/Windows/win.ini', 'C:relative', '\\server\\share', '..\\outside', 'a/../b', 'a//b', 'a/./b', 'file:stream', 'NUL', 'aux.txt', 'COM1', 'trailing.', 'trailing ', 'a\u0000b'])('rejects noncanonical/escaping path %j for every operation', async path => {
     const input = await request(path)
     for (const method of ['list', 'preview', 'copyPath', 'reveal'] as const) error(await service[method](input), 'invalid-request')

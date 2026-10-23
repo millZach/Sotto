@@ -4,6 +4,7 @@ export const FILES_LIST = 'sotto:files:list'
 export const FILES_PREVIEW = 'sotto:files:preview'
 export const FILES_COPY_PATH = 'sotto:files:copy-path'
 export const FILES_REVEAL = 'sotto:files:reveal'
+export const FILES_REVEAL_LINK = 'sotto:files:reveal-link'
 export const FILES_MAX_ENTRIES = 1_000
 export const FILES_MAX_TEXT_BYTES = 512 * 1024
 export const FILES_MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -24,6 +25,17 @@ export const fileListRequestSchema = z.object({ ...requestShape, workspaceId: wo
 export const fileRequestSchema = z.object({ ...requestShape, workspaceId: workspaceIdSchema }).strict()
 export type FileListRequest = z.infer<typeof fileListRequestSchema>
 export type FileRequest = z.infer<typeof fileRequestSchema>
+/** A file a thread's message links to: absolute on this computer, under the home folder (`~/`), or relative to the thread's working folder. */
+export const fileLinkRequestSchema = z.object({
+  threadId: z.string().min(1).max(512),
+  // Never a network share or device path (\\host\share, //host, \\?\): resolving one reaches the network. Nor drive-relative C:file.
+  // eslint-disable-next-line no-control-regex -- File paths must reject NUL and control bytes.
+  path: z.string().min(1).max(4096).refine(path => !/[\x00-\x1f\x7f]/.test(path) && !/^[\\/]{2}/.test(path) && !/^[a-z]:(?![\\/])/i.test(path)),
+}).strict()
+export type FileLinkRequest = z.infer<typeof fileLinkRequestSchema>
+// Empty on purpose: the window learns only whether the file was shown, never where a path resolved to.
+export const fileLinkSchema = z.object({}).strict()
+export type FileLink = z.infer<typeof fileLinkSchema>
 
 export const fileWorkspaceSchema = z.object({
   threadId: z.string(), projectId: z.string(), workingDirectory: z.string(), workspaceId: workspaceIdSchema,
@@ -66,4 +78,6 @@ export interface FilesBridge {
   preview(request: FileRequest): Promise<FilesResult<FilePreview>>
   copyPath(request: FileRequest): Promise<FilesResult<FilePath>>
   reveal?(request: FileRequest): Promise<FilesResult<FilePath>>
+  /** Shows a file a message links to in Finder or File Explorer. */
+  revealLink?(request: FileLinkRequest): Promise<FilesResult<FileLink>>
 }
