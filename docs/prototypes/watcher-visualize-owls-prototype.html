@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: Watcher's Visualize with the owl scene</title>
+<!--
+  PROTOTYPE, throwaway. Three ways to put the Conversation page's owl scene on Watcher's Visualize tab, switchable with
+  ?variant=A|B|C and the bar at the bottom. Each variant is drawn at 1600x1000, 1280x800 and the 820x560 minimum, with
+  3 projects on 2 computers and 5 watched threads. The ASCII drawing is a stand-in for nightScenePainter.ts, not the
+  real painter.
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #1d1d20; color: #e7e7ea; font-family: Figtree, system-ui, sans-serif; }
+body { padding: 16px 12px 96px; }
+.proto-head { max-width: 1100px; margin: 0 auto 14px; }
+.proto-head h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.proto-head p { margin: 4px 0; color: #b4b4bb; font-size: 14px; line-height: 1.45; }
+.proto-head .tag { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 5px; background: #f59e0b; color: #1d1d20; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
+.proto-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+.proto-tools button { padding: 7px 12px; border: 1px solid #3a3a40; border-radius: 8px; background: #26262b; color: #e7e7ea; font: inherit; font-size: 13.5px; cursor: pointer; }
+.proto-tools button[aria-pressed='true'] { border-color: #5eead4; background: #12332d; color: #fff; }
+.variant-note { max-width: 1100px; margin: 0 auto 16px; padding: 12px 14px; border: 1px solid #34343a; border-radius: 10px; background: #232327; }
+.variant-note h2 { margin: 0 0 6px; font-size: 16px; }
+.variant-note ul { margin: 6px 0 0; padding-left: 18px; color: #c4c4cb; font-size: 13.5px; line-height: 1.5; }
+.size { max-width: 1600px; margin: 0 auto 22px; }
+.size h3 { margin: 0 0 6px; color: #b4b4bb; font-size: 13px; font-weight: 500; }
+.scaler { position: relative; overflow: hidden; border-radius: 10px; box-shadow: 0 0 0 1px #3a3a40; }
+.frame { position: absolute; top: 0; left: 0; transform-origin: 0 0; overflow: hidden; background: var(--canvas); color: var(--text); font-family: Figtree, system-ui, sans-serif; font-size: 13px; }
+.switcher { position: fixed; left: 50%; bottom: 14px; z-index: 50; display: flex; align-items: center; gap: 4px; padding: 5px; border-radius: 999px; background: #fafafa; box-shadow: 0 8px 30px rgba(0,0,0,.5); color: #111; transform: translateX(-50%); }
+.switcher button { width: 38px; height: 38px; border: 0; border-radius: 50%; background: #e7e7ea; color: #111; font-size: 18px; cursor: pointer; }
+.switcher span { min-width: 200px; padding: 0 8px; font-size: 14px; font-weight: 600; text-align: center; }
+.toast { position: fixed; left: 50%; bottom: 70px; z-index: 60; padding: 9px 14px; border-radius: 8px; background: #fafafa; color: #111; font-size: 13.5px; opacity: 0; transform: translateX(-50%); transition: opacity .2s; pointer-events: none; }
+.toast[data-on] { opacity: 1; }
+
+/* ---------- The app's chrome, roughly ---------- */
+.f-abs { position: absolute; }
+.f-top { position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 18px; padding: 0 18px; }
+.f-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.f-brand i { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); }
+.f-all { color: var(--text2); font-size: 13px; }
+.f-tabs { display: flex; padding: 3px; border: 1px solid var(--hair); border-radius: 8px; }
+.f-tabs span { padding: 4px 10px; border-radius: 6px; color: var(--text2); font-size: 13px; }
+.f-tabs span[data-on] { background: var(--hover); color: var(--text); }
+.f-stop { margin-left: auto; padding: 4px 10px; border: 1px solid var(--hair); border-radius: 8px; color: var(--text); font-size: 13px; }
+.f-win { display: flex; gap: 22px; color: var(--text2); }
+.f-needs { position: absolute; top: 48px; height: 38px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--hair); font-size: 13px; white-space: nowrap; overflow: hidden; }
+.f-needs b { color: var(--attn); }
+.f-needs u { text-decoration-color: color-mix(in srgb, var(--text) 35%, transparent); text-underline-offset: 3px; font-weight: 500; }
+.f-needs em { color: var(--text2); font-style: normal; }
+.f-bar { position: absolute; top: 92px; height: 40px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--hair); color: var(--text2); font-size: 12.5px; }
+.f-turn { padding: 3px 9px; border: 1px solid var(--hair); border-radius: 6px; color: var(--ready); font-size: 12px; }
+.f-turn b { font-weight: 600; }
+.f-compose { position: absolute; height: 38px; display: flex; align-items: center; padding: 0 16px; border: 1px solid var(--hair); border-radius: 12px; background: var(--elev); color: var(--muted); font-size: 14px; }
+.f-dock { position: absolute; height: 40px; display: flex; align-items: center; gap: 26px; padding: 0 22px; border: 1px solid var(--hair); border-radius: 14px; background: var(--elev); color: var(--text2); font-size: 13px; transform: translateX(-50%); }
+
+canvas.scene { position: absolute; top: 0; left: 0; pointer-events: none; }
+.ring { display: inline-block; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--hair); border-radius: 50%; }
+.ring[data-tone='needs'] { border: 2px solid var(--attn); }
+.ring[data-tone='failed'] { border: 2px solid var(--error); }
+.ring[data-tone='ready'] { border: 0; background: var(--success); }
+.ring[data-tone='working'] { border: 0; background: conic-gradient(var(--accent) 0 32%, color-mix(in srgb, var(--accent) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); animation: spin 1.5s linear infinite; }
+.ring[data-tone='idle'] { border: 1.5px dashed var(--muted); }
+@keyframes spin { to { transform: rotate(1turn); } }
+.word[data-tone='needs'], .word[data-tone='failed'] { color: var(--needsInk); }
+.word[data-tone='working'] { color: var(--accentText); }
+.word[data-tone='ready'] { color: var(--ready); }
+.word[data-tone='idle'] { color: var(--muted); }
+.pr { display: inline-flex; flex: none; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border: 1px solid var(--hair); border-radius: 4px; color: var(--text2); font-size: 11px; }
+.pr i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.pr[data-checks='passed'] i { background: var(--success); }
+.pr[data-checks='pending'] i { border: 1.5px solid var(--text2); background: transparent; }
+.pr[data-step] { border-color: color-mix(in srgb, var(--success) 55%, transparent); color: var(--ready); }
+.pr b { font-weight: 600; }
+.pill { position: absolute; display: flex; align-items: center; height: 24px; padding: 0 10px; border: 1px solid var(--hair); border-radius: 6px; background: var(--elev); color: var(--text); font-size: 12px; white-space: nowrap; }
+.pill span { color: var(--text2); }
+.pill b { color: var(--needsInk); font-weight: 600; white-space: pre; }
+.name { position: absolute; padding: 1px 6px; border-radius: 5px; background: var(--canvas); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.name span { color: var(--text2); font-weight: 400; }
+.owlhit { position: absolute; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.owlhit:hover, .owlhit.hot { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent); }
+
+/* A: the constellation in the column */
+.a-hull { fill: color-mix(in srgb, var(--elev) 45%, transparent); stroke: var(--hair); }
+.a-edge { fill: none; stroke: color-mix(in srgb, var(--muted) 45%, transparent); stroke-width: 1.1; }
+.a-edge[data-tone='needs'] { stroke: color-mix(in srgb, var(--attn) 60%, transparent); stroke-dasharray: 3 4; }
+.a-node { position: absolute; display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px 0 4px; border: 1px solid transparent; border-radius: 7px; background: color-mix(in srgb, var(--elev) 45%, var(--canvas)); color: var(--text); font-size: 12.5px; white-space: nowrap; cursor: pointer; transform: translate(-9px, -11px); }
+.a-node[data-mirror] { flex-direction: row-reverse; padding: 0 4px 0 6px; transform: translate(calc(-100% + 9px), -11px); }
+.a-node:hover, .a-node.hot { border-color: var(--hair); background: var(--elev); }
+.a-node .t { overflow: hidden; text-overflow: ellipsis; }
+.a-cname { position: absolute; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.a-cname b { color: var(--text); font-weight: 600; }
+.a-mark { position: absolute; display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--hair); border-radius: 50%; background: var(--elev); box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 12%, transparent); transform: translate(-50%, -50%); }
+.a-mark i { width: 20px; height: 16px; border-radius: 5px; background: var(--accentText); }
+
+/* B: owls are the picture */
+.b-label { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 2px 6px; border-radius: 6px; background: color-mix(in srgb, var(--canvas) 88%, transparent); font-size: 12px; line-height: 1.25; text-align: center; transform: translateX(-50%); cursor: pointer; }
+.b-label .t { max-width: 100%; overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.b-label .w { display: flex; align-items: center; gap: 5px; font-size: 11.5px; white-space: nowrap; }
+.b-label.hot { background: color-mix(in srgb, var(--accent) 14%, var(--canvas)); }
+.b-sign { position: absolute; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--canvas) 85%, transparent); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-sign span { color: var(--muted); font-weight: 400; }
+.b-machine { position: absolute; padding: 2px 8px; border: 1px solid var(--hair); border-radius: 999px; background: var(--elev); color: var(--text2); font-size: 11.5px; white-space: nowrap; transform: translateX(-50%); }
+.b-caption { position: absolute; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.b-caption .name, .b-caption .pill { position: static; }
+
+/* C: a night strip over a ledger */
+.c-ledger { position: absolute; overflow-y: auto; scrollbar-width: thin; }
+.c-head { display: flex; align-items: baseline; gap: 6px; margin: 10px 0 2px; padding: 0 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.c-head b { color: var(--text); font-weight: 600; }
+.c-row { display: grid; grid-template-columns: 44px 14px minmax(0, 1fr) auto auto 56px; align-items: center; gap: 8px; height: 30px; padding: 0 4px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+.c-row:hover, .c-row.hot { background: var(--hover); }
+.c-face { color: var(--text2); font-family: 'Spline Sans Mono', ui-monospace, monospace; font-size: 11px; }
+.c-face[data-mood='waiting'] { color: var(--accentText); font-weight: 700; }
+.c-face[data-mood='asleep'] { color: var(--muted); }
+.c-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-row .word { font-size: 12.5px; white-space: nowrap; }
+.c-open { justify-self: end; padding: 2px 9px; border: 1px solid var(--hair); border-radius: 6px; color: var(--text2); font-size: 12px; }
+.c-caption { position: absolute; display: flex; align-items: center; justify-content: space-between; }
+.c-caption .name, .c-caption .pill { position: static; }
+</style>
+</head>
+<body>
+<div class="proto-head">
+  <h1><span class="tag">PROTOTYPE</span>Watcher's Visualize tab, with the Conversation page's owls</h1>
+  <p>Same five threads in every option: <b>This computer</b> runs Talk to Text Application (3 threads) and Memory Cleanup (1), <b>forge</b> runs wizard-game (1). Two threads need you, two are working, one is idle with a pull request ready to merge.</p>
+  <p>Each option is drawn at three window sizes. Hover a thread or an owl to see its partner light up; press one to see where it would go.</p>
+  <div class="proto-tools" role="group" aria-label="Option">
+    <button type="button" data-variant="A">A · Owls in the margins</button>
+    <button type="button" data-variant="B">B · Owls are the picture</button>
+    <button type="button" data-variant="C">C · Night strip over a list</button>
+    <button type="button" id="theme">Light mode</button>
+  </div>
+</div>
+<div class="variant-note" id="note"></div>
+<main id="frames"></main>
+<div class="switcher"><button type="button" id="prev" aria-label="Previous option">‹</button><span id="label"></span><button type="button" id="next" aria-label="Next option">›</button></div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict'
+// ---------- Data ----------
+const MACHINES = [
+  { name: 'This computer', projects: [
+    { name: 'Talk to Text Application', threads: [
+      { id: 'wav', title: 'Streaming WAV stall', word: 'last turn failed', tone: 'failed', mood: 'waiting' },
+      { id: 'gate', title: 'Visual gate flake', word: 'permission', tone: 'needs', mood: 'waiting' },
+      { id: 'bench', title: 'Benchmark rerun', word: 'working', tone: 'working', mood: 'awake', pr: { n: 1299, checks: 'pending' } },
+    ] },
+    { name: 'Memory Cleanup', threads: [
+      { id: 'prune', title: 'Prune old facts', word: 'ready to merge', tone: 'ready', mood: 'asleep', pr: { n: 1295, checks: 'passed', step: 'READY' } },
+    ] },
+  ] },
+  { name: 'forge', projects: [
+    { name: 'wizard-game', threads: [
+      { id: 'spell', title: 'Spell cooldown UI', word: 'working', tone: 'working', mood: 'awake' },
+    ] },
+  ] },
+]
+const THREADS = MACHINES.flatMap(m => m.projects.flatMap(p => p.threads.map(t => ({ ...t, project: p.name, machine: m.name }))))
+const WORKING = THREADS.filter(t => t.tone === 'working').length
+const WAITING = THREADS.filter(t => t.tone === 'needs' || t.tone === 'failed').length
+
+const THEMES = {
+  dark: { canvas: '#0b0b0c', elev: '#17171a', text: '#ececef', text2: '#a3a3ab', muted: '#7a7a83', hair: 'rgba(255,255,255,.10)', hover: 'rgba(255,255,255,.06)',
+    accent: '#3fc9a9', accentText: '#5eead4', attn: '#f5b544', needsInk: '#f7c063', error: '#f87171', success: '#4ade80', ready: '#6ee7a8', ink: [236, 236, 239], acc: [63, 201, 169], boost: 1 },
+  light: { canvas: '#fbfbfa', elev: '#ffffff', text: '#1c1c1f', text2: '#52525b', muted: '#6b6b73', hair: 'rgba(0,0,0,.12)', hover: 'rgba(0,0,0,.05)',
+    accent: '#0f9f86', accentText: '#0b7a67', attn: '#c26a06', needsInk: '#9a5300', error: '#dc2626', success: '#16a34a', ready: '#11713b', ink: [28, 28, 31], acc: [15, 159, 134], boost: 1.5 },
+}
+const SIZES = [[1600, 1000, 'Wide window, 1600 × 1000'], [1280, 800, 'Laptop window, 1280 × 800'], [820, 560, 'Smallest window, 820 × 560']]
+const NOTES = {
+  A: { title: 'A · Owls in the margins, the picture in the column',
+    points: ['The night scene stays on Visualize exactly as on Conversation: Watcher in its tree on the left, a thread owl for each watched thread on the right-hand limb, the moon above.',
+      'The column keeps today\'s picture (projects by computer, each thread\'s state, its pull request). Hover a thread and its owl lights; hover an owl and its thread lights.',
+      'The overlap fix: the gap around Watcher is sized from the widest of its two labels, so the boxes start past "You · nothing waiting". The lines run under both labels instead of through them.',
+      'At the smallest window the margins are 16 pixels, so the owls become the same rail of eyes Conversation shows there.'] },
+  B: { title: 'B · Owls are the picture',
+    points: ['The whole room is the night scene. Each computer is a tree, each project a limb on it, and each thread an owl on its project\'s limb with its name and state under it.',
+      'Watcher sits on its own perch in the middle, under the moon. You stands at the foot of it on the ground, so nothing sits between the trees.',
+      'No connecting lines: what Watcher sends would fly as a small mark from its owl to the thread\'s owl.',
+      'At the smallest window Watcher and You move to one line at the top, and the two trees sit side by side.'] },
+  C: { title: 'C · A night strip over a list',
+    points: ['A band of night across the top: Watcher in its tree, every thread owl on one long limb, grouped by project in the same order as the list under it.',
+      'Under the band, one line holds Watcher on the left and You on the right, so they can never meet.',
+      'Under that, the list: each project with its computer, each thread with its owl face, state, pull request and an Open button.',
+      'At the smallest window the band shrinks to a row of owls and the list scrolls.'] },
+}
+
+// ---------- Text measuring ----------
+const meter = document.createElement('canvas').getContext('2d')
+const textW = (text, font = '500 12px Figtree') => { meter.font = font; return Math.ceil(meter.measureText(text).width) }
+
+// ---------- The ASCII scene, a stand-in for nightScenePainter.ts ----------
+const CW = 7, CH = 12, RAMP = ' .·:-=+*#%@'
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+function seeded(seed) { let s = seed | 0; return () => { s = s + 0x6d2b79f5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+const ell = (c, x, y, rx, ry) => { c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); c.fill() }
+const poly = (c, pts) => { c.beginPath(); c.moveTo(...pts[0]); for (const p of pts.slice(1)) c.lineTo(...p); c.closePath(); c.fill() }
+const limbY = (l, x) => { const t = clamp((x - l.x0) / (l.x1 - l.x0), 0, 1); return l.y0 + (l.y1 - l.y0) * t + 2 * t * (1 - t) * l.sag }
+function strokeLimb(c, l) { c.beginPath(); c.moveTo(l.x0, l.y0); c.quadraticCurveTo((l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2 + l.sag, l.x1, l.y1); c.stroke() }
+
+class Scene {
+  constructor(W, H) {
+    this.W = W; this.H = H; this.cols = Math.ceil(W / CW); this.rows = Math.ceil(H / CH)
+    const make = () => { const c = document.createElement('canvas'); c.width = this.cols * 2; c.height = this.rows * 2; const x = c.getContext('2d', { willReadFrequently: true }); x.scale(2 / CW, 2 / CH); x.fillStyle = x.strokeStyle = '#000'; x.lineCap = 'round'; return x }
+    this.fx = make(); this.ax = make(); this.sprites = []; this.clears = []; this.keep = null; this.stars = null
+  }
+  clear(x, y, w, h) { this.clears.push({ x: x - 4, y: y - 4, w: w + 8, h: h + 8 }) }
+  hills(top, ground, x0 = 0, x1 = this.W) {
+    const fx = this.fx, sky = ground - top
+    const hill = (base, amp, seed, alpha, ridge) => {
+      const r = seeded(seed), ph = [r() * 6, r() * 6, r() * 6]
+      fx.globalAlpha = alpha; fx.beginPath(); fx.moveTo(x0, ground + 2)
+      for (let x = x0; x <= x1; x += 6) { const k = x / this.W; fx.lineTo(x, base - amp * (0.55 + 0.25 * Math.sin(k * 7 + ph[0]) + 0.15 * Math.sin(k * 17 + ph[1]) + 0.05 * Math.sin(k * 41 + ph[2]))) }
+      fx.lineTo(x1, ground + 2); fx.closePath(); fx.fill(); fx.globalAlpha = ridge; fx.lineWidth = 5; fx.stroke()
+    }
+    hill(top + sky * 0.55, sky * 0.2, 11, 0.04, 0.4); hill(top + sky * 0.68, sky * 0.14, 23, 0.05, 0.5); hill(ground - sky * 0.05, sky * 0.1, 37, 0.06, 0.6)
+    const R = seeded(5)
+    fx.globalAlpha = 0.6; fx.lineWidth = 5; fx.beginPath(); fx.moveTo(x0, ground); for (let x = x0; x <= x1; x += 10) fx.lineTo(x, ground + Math.sin(x * 0.013) * 3); fx.stroke()
+    fx.lineWidth = 3; fx.globalAlpha = 0.45
+    for (let x = x0 + 4; x < x1; x += 5 + R() * 9) { const h = 4 + R() * 9, y = ground + Math.sin(x * 0.013) * 3; fx.beginPath(); fx.moveTo(x, y + 2); fx.lineTo(x + (R() - 0.5) * 5, y - h); fx.stroke() }
+    this.stars = { top, bottom: top + sky * 0.5, x0, x1 }
+  }
+  moon(x, y, r) {
+    const { fx, ax } = this
+    fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) ell(fx, x, y, r * k, r * k)
+    fx.globalAlpha = 0.3; ell(fx, x, y, r, r); fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(x, y, r - 1.5, 0, 7); fx.stroke()
+    fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
+    for (const [dx, dy, k] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12]]) ell(fx, x + dx * r, y + dy * r, k * r, k * r)
+    fx.globalCompositeOperation = 'source-over'
+    const g = ax.createRadialGradient(x, y, r * 0.9, x, y, r * 2.6); g.addColorStop(0, 'rgba(0,0,0,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)')
+    ax.globalAlpha = 1; ax.fillStyle = g; ell(ax, x, y, r * 2.6, r * 2.6); ax.fillStyle = '#000'
+    ax.globalCompositeOperation = 'destination-out'; ell(ax, x, y, r * 1.02, r * 1.02); ax.globalCompositeOperation = 'source-over'
+  }
+  tree({ x, y, h, dir, limbs = [], seed = 1, leaves = true, crown = true }) {
+    const fx = this.fx, r = seeded(seed), w0 = h * 0.05, topX = x - dir * h * 0.03, topY = y - h * 0.6
+    fx.globalAlpha = 0.72; fx.beginPath()
+    fx.moveTo(x - w0 * 2.2, y); fx.quadraticCurveTo(x - w0 * 0.9, y - w0 * 0.6, x - w0 * 0.8, y - h * 0.12); fx.quadraticCurveTo(x - w0 * 0.7, topY + h * 0.15, topX - w0 * 0.4, topY)
+    fx.lineTo(topX + w0 * 0.4, topY); fx.quadraticCurveTo(x + w0 * 0.7, topY + h * 0.15, x + w0 * 0.8, y - h * 0.12); fx.quadraticCurveTo(x + w0 * 0.9, y - w0 * 0.6, x + w0 * 2.2, y); fx.closePath(); fx.fill()
+    const tips = []
+    const branch = (bx, by, len, ang, w, depth, max) => {
+      const x1 = bx + Math.cos(ang) * len, y1 = by + Math.sin(ang) * len, bend = (r() - 0.5) * len * 0.35
+      fx.globalAlpha = 0.7; fx.lineWidth = Math.max(2.6, w); fx.beginPath(); fx.moveTo(bx, by); fx.quadraticCurveTo((bx + x1) / 2 - Math.sin(ang) * bend, (by + y1) / 2 + Math.cos(ang) * bend, x1, y1); fx.stroke()
+      if (depth >= max) { tips.push([x1, y1, len]); return }
+      const n = r() > 0.6 ? 3 : 2
+      for (let k = 0; k < n; k++) branch(x1, y1, len * (0.68 + r() * 0.12), ang + (k - (n - 1) / 2) * (0.55 + r() * 0.25) + (r() - 0.5) * 0.2, w * 0.64, depth + 1, max)
+    }
+    if (crown) {
+      const max = leaves ? 4 : 5
+      branch(topX, topY, h * 0.17, -Math.PI / 2 - dir * 0.18, w0 * 0.8, 0, max)
+      branch(topX, topY + h * 0.03, h * 0.13, -Math.PI / 2 + dir * 0.7, w0 * 0.55, 1, max)
+      branch(topX, topY + h * 0.06, h * 0.14, -Math.PI / 2 - dir * 1.0, w0 * 0.55, 1, max)
+    }
+    for (const l of limbs) {
+      fx.globalAlpha = 0.75; fx.lineWidth = Math.max(4, w0 * 0.42); strokeLimb(fx, l)
+      const d = Math.sign(l.x1 - l.x0); fx.lineWidth = Math.max(1.5, w0 * 0.16)
+      fx.beginPath(); fx.moveTo(l.x1 - d * 14, limbY(l, l.x1 - d * 14)); fx.lineTo(l.x1 - d * 2, limbY(l, l.x1) - 16); fx.stroke()
+    }
+    if (leaves) for (const [lx, ly, len] of tips) { if (r() < 0.45) continue; for (let k = 0; k < 2; k++) { fx.globalAlpha = 0.1; ell(fx, lx + (r() - 0.5) * len, ly + (r() - 0.5) * len * 0.7, len * (0.45 + r() * 0.4), len * (0.45 + r() * 0.4)) } }
+  }
+  post(x, top, ground) { const fx = this.fx; fx.globalAlpha = 0.7; fx.lineWidth = 9; fx.beginPath(); fx.moveTo(x, ground); fx.lineTo(x + 2, top); fx.stroke(); fx.lineWidth = 5; fx.beginPath(); fx.moveTo(x - 26, top + 4); fx.quadraticCurveTo(x, top - 2, x + 28, top + 3); fx.stroke() }
+  /** Watcher's owl, feet at x, y; s 1 is about 64 pixels tall. */
+  watcher(x, y, s) {
+    const { fx, ax } = this
+    fx.globalAlpha = 0.95; ell(fx, x, y - 24 * s, 14 * s, 19 * s); ell(fx, x, y - 46 * s, 15 * s, 12 * s)
+    poly(fx, [[x - 14 * s, y - 50 * s], [x - 10 * s, y - 64 * s], [x - 4 * s, y - 55 * s]]); poly(fx, [[x + 14 * s, y - 50 * s], [x + 10 * s, y - 64 * s], [x + 4 * s, y - 55 * s]])
+    fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.5; ell(fx, x - 6.5 * s, y - 46 * s, 6 * s, 6 * s); ell(fx, x + 6.5 * s, y - 46 * s, 6 * s, 6 * s)
+    fx.globalAlpha = 0.35; ell(fx, x, y - 21 * s, 8 * s, 12 * s); fx.globalCompositeOperation = 'source-over'
+    fx.globalAlpha = 0.8; fx.lineWidth = 3; fx.beginPath(); fx.moveTo(x - 6 * s, y - 4 * s); fx.lineTo(x - 6 * s, y + 2); fx.moveTo(x + 6 * s, y - 4 * s); fx.lineTo(x + 6 * s, y + 2); fx.stroke()
+    ax.globalAlpha = 1; ell(ax, x - 6.5 * s, y - 46 * s, 3.2 * s, 3.2 * s); ell(ax, x + 6.5 * s, y - 46 * s, 3.2 * s, 3.2 * s)
+  }
+  /** A thread owl's glyphs, feet at x, y. */
+  owl(x, y, mood) {
+    const eyes = mood === 'asleep' ? '-' : mood === 'waiting' ? 'O' : 'o'
+    this.sprites.push({ lines: ['{o,o}'.replace(/o/g, eyes), '/)__)', ' " " '], x, y, accent: mood === 'waiting' })
+    return { x: x - 20, y: y - 38, w: 40, h: 40 }
+  }
+  rail(x, y, mood) {
+    const eyes = mood === 'asleep' ? '-' : mood === 'waiting' ? 'O' : 'o'
+    this.sprites.push({ lines: [eyes + eyes], x, y, accent: mood === 'waiting' })
+    return { x: x - 10, y: y - 16, w: 20, h: 18 }
+  }
+  draw(host, theme) {
+    const t = THEMES[theme], dpr = Math.min(2, window.devicePixelRatio || 1)
+    const canvas = document.createElement('canvas'); canvas.className = 'scene'; canvas.width = this.W * dpr; canvas.height = this.H * dpr; canvas.style.width = this.W + 'px'; canvas.style.height = this.H + 'px'
+    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr); ctx.font = `10.5px 'Spline Sans Mono', ui-monospace, monospace`; ctx.textBaseline = 'top'
+    const F = this.fx.getImageData(0, 0, this.cols * 2, this.rows * 2).data, A = this.ax.getImageData(0, 0, this.cols * 2, this.rows * 2).data
+    const at = (data, c, r) => { const w = this.cols * 2; let s = 0; for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) s += data[((r * 2 + dy) * w + c * 2 + dx) * 4 + 3]; return s / 4 / 255 }
+    const ink = (rgb, a) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${clamp(a * t.boost, 0, 1).toFixed(2)})`
+    const cleared = (c, r) => { const x = c * CW + CW / 2, y = r * CH + CH / 2; if (this.keep && !(x >= this.keep.x && x <= this.keep.x + this.keep.w && y >= this.keep.y && y <= this.keep.y + this.keep.h)) return true; return this.clears.some(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) }
+    // Sprite cells, which the landscape leaves to them.
+    const spriteCells = new Map()
+    for (const s of this.sprites) {
+      const w = Math.max(...s.lines.map(l => l.length)), c0 = Math.round(s.x / CW - w / 2), r0 = Math.floor((s.y - 1) / CH) - s.lines.length + 1
+      s.lines.forEach((line, j) => [...line].forEach((g, i) => spriteCells.set(`${c0 + i},${r0 + j}`, { g, s, eye: /[oO-]/.test(g) && j === 0 })))
+    }
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      if (spriteCells.has(`${c},${r}`) || cleared(c, r)) continue
+      const d = at(F, c, r), a = at(A, c, r)
+      if (a > 0.6 || (a > 0.1 && d < 0.1)) { ctx.fillStyle = ink(t.acc, 0.3 + 0.6 * a); ctx.fillText(a > 0.6 ? '@' : RAMP[Math.max(1, Math.round(a * 6))], c * CW, r * CH); continue }
+      const hash = ((c * 73856093 ^ r * 19349663) >>> 0) % 1000 / 1000
+      if (d < 0.03 || (d < 0.14 && hash > d * 3.2)) continue
+      ctx.fillStyle = ink(t.ink, 0.22 + 0.62 * d); ctx.fillText(RAMP[Math.max(1, Math.round(clamp(d, 0, 1) * 10))], c * CW, r * CH)
+    }
+    if (this.stars) {
+      const R = seeded(42), { top, bottom, x0, x1 } = this.stars, n = Math.round((x1 - x0) * (bottom - top) / 9000)
+      for (let k = 0; k < n; k++) {
+        const c = Math.floor((x0 + R() * (x1 - x0)) / CW), r = Math.floor((top + R() * (bottom - top)) / CH), b = R()
+        if (spriteCells.has(`${c},${r}`) || cleared(c, r) || at(F, c, r) > 0.04) continue
+        ctx.fillStyle = R() < 0.15 ? ink(t.acc, 0.7) : ink(t.ink, 0.25 + b * 0.5); ctx.fillText(b > 0.8 ? '+' : b > 0.5 ? '*' : '·', c * CW, r * CH)
+      }
+    }
+    for (const [key, { g, s, eye }] of spriteCells) {
+      if (g === ' ') continue
+      const [c, r] = key.split(',').map(Number)
+      if (s.accent) { ctx.fillStyle = ink(t.acc, 0.14); ctx.fillRect(c * CW - 1, r * CH, CW + 2, CH) }
+      ctx.fillStyle = s.accent ? ink(t.acc, 1) : ink(t.ink, eye ? 0.95 : 0.8); ctx.fillText(g, c * CW, r * CH)
+    }
+    host.prepend(canvas)
+  }
+}
+
+// ---------- The frame: the app's chrome, roughly ----------
+const el = (tag, cls, html, style) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; if (style) Object.assign(e.style, style); return e }
+const px = v => Math.round(v) + 'px'
+const ringOf = t => `<i class="ring" data-tone="${t.tone}"></i>`
+const prOf = (pr) => pr ? `<span class="pr" data-checks="${pr.checks}"${pr.step ? ' data-step' : ''}><i></i>#${pr.n}${pr.step ? ` <b>${pr.step}</b>` : ''}</span>` : ''
+const youHtml = () => `You${WAITING ? `<b> · ${WAITING} waiting</b>` : '<span> · nothing waiting</span>'}`
+const watcherHtml = () => `Watcher<span> · ${WORKING} working</span>`
+
+function chrome(f, W, H, col) {
+  const top = el('div', 'f-top', `<span class="f-brand"><i></i>Watcher</span><span class="f-all">☰ All threads 9</span><span class="f-tabs"><span>Conversation</span><span>Watched 5</span><span data-on>Visualize</span></span><span class="f-stop">▢ Stop all</span><span class="f-win">— ▢ ✕</span>`)
+  f.append(top)
+  f.append(el('div', 'f-needs', `<b>2 need you</b><span><span class="ring" data-tone="needs" style="width:8px;height:8px;display:inline-block"></span> <u>Visual gate flake</u> <em>permission</em></span><span><span class="ring" data-tone="failed" style="width:8px;height:8px;display:inline-block"></span> <u>Streaming WAV stall</u> <em>last turn failed</em></span>`, { left: px(col.x), width: px(col.w) }))
+  f.append(el('div', 'f-bar', `<span style="padding-left:14px">Merge turns</span><span class="f-turn">#1295 <b>READY TO MERGE</b></span>`, { left: px(col.x), width: px(col.w) }))
+  f.append(el('div', 'f-compose', 'Ask about your threads, or say what to start or send', { left: px(col.x), width: px(col.w), top: px(H - 104) }))
+  f.append(el('div', 'f-dock', '<span>▥ ⚙ ?</span><span>Dictate</span><span style="color:var(--accentText)">●</span><span>Threads</span><span>↻</span>', { left: px(W / 2), top: px(H - 54) }))
+  return [{ x: 0, y: 0, w: W, h: 44 }, { x: col.x, y: 44, w: col.w, h: 92 }, { x: col.x, y: H - 106, w: col.w, h: 42 }, { x: W / 2 - 220, y: H - 56, w: 440, h: 44 }]
+}
+
+function link(f, id) {
+  f.querySelectorAll(`[data-id="${id}"]`).forEach(e => {
+    e.addEventListener('mouseenter', () => f.querySelectorAll(`[data-id="${id}"]`).forEach(x => x.classList.add('hot')))
+    e.addEventListener('mouseleave', () => f.querySelectorAll(`[data-id="${id}"]`).forEach(x => x.classList.remove('hot')))
+    e.addEventListener('click', () => toast(`Would open “${THREADS.find(t => t.id === id).title}” beside Watcher`))
+  })
+}
+function owlButton(f, box, t) {
+  const b = el('button', 'owlhit', null, { left: px(box.x), top: px(box.y), width: px(box.w), height: px(box.h) })
+  b.type = 'button'; b.dataset.id = t.id; b.title = `${t.title} · ${t.word}`; f.append(b)
+}
+
+// ---------- A: owls in the margins, the picture in the column ----------
+function variantA(f, W, H, col, scene, chromeBoxes) {
+  const m = col.x, ground = H - 85
+  // The column is the room's: nothing of the scene is drawn in it.
+  scene.clear(col.x - 8, 0, col.w + 16, H); scene.clear(0, 0, W, 44)
+  if (m >= 160) {
+    const sky = ground - 90
+    scene.hills(90, ground)
+    const lt = { x: m * 0.3, y: ground, h: sky * 0.95, dir: 1, seed: 101 }
+    const homeLimb = { x0: lt.x + 6, y0: ground - sky * 0.4, x1: m - 26, y1: ground - sky * 0.42, sag: 5 }
+    scene.tree({ ...lt, limbs: [homeLimb] })
+    scene.watcher(homeLimb.x1 - 26, limbY(homeLimb, homeLimb.x1 - 26), clamp(m / 225, 0.8, 1.9))
+    const right = col.x + col.w
+    const rt = { x: right + m * 0.82, y: ground, h: sky * 0.8, dir: -1, seed: 202 }
+    const limb = { x0: rt.x - 6, y0: ground - sky * 0.36, x1: right + 14, y1: ground - sky * 0.35, sag: 6 }
+    scene.tree({ ...rt, limbs: [limb], leaves: false })
+    scene.moon(right + m * 0.5, 90 + sky * 0.16, clamp(m * 0.11, 16, 40))
+    THREADS.forEach((t, i) => { const x = right + 34 + i * 44; owlButton(f, scene.owl(x, limbY(limb, x) - 7, t.mood), t) })
+  } else if (m >= 16) {
+    const right = col.x + col.w
+    THREADS.forEach((t, i) => owlButton(f, scene.rail(right + m / 2, 196 + i * 26, t.mood), t))
+  }
+  // The picture, in the column, as today but with Watcher's gap sized from its labels.
+  const area = { x: col.x, y: 140, w: col.w, h: H - 112 - 140 }
+  const cx = area.x + area.w / 2, cy = area.y + area.h / 2
+  const nameW = textW(`Watcher · ${WORKING} working`) + 12, youW = textW(`You · ${WAITING} waiting`, '600 12px Figtree') + 22
+  const half = Math.max(23, nameW / 2, youW / 2) + 14
+  const MARGIN = 14, ROW = 26, HEAD = 26, PAD = 8, GAPC = 14
+  const sideW = cx - half - area.x - MARGIN
+  const projects = MACHINES.flatMap(mc => mc.projects.map(p => ({ ...p, machine: mc.name })))
+  const sides = [[projects[0]], projects.slice(1)]
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  Object.assign(svg.style, { position: 'absolute', left: 0, top: 0, overflow: 'visible' }); svg.setAttribute('width', W); svg.setAttribute('height', H)
+  f.append(svg)
+  const mark = { x: cx, y: cy - 26 }
+  sides.forEach((list, si) => {
+    const mirror = si === 0, x = mirror ? area.x + MARGIN : cx + half
+    const total = list.reduce((s, p) => s + HEAD + p.threads.length * ROW + PAD, 0) + GAPC * (list.length - 1)
+    let y = cy - total / 2
+    for (const p of list) {
+      const h = HEAD + p.threads.length * ROW + PAD
+      const r = document.createElementNS(svg.namespaceURI, 'rect'); Object.entries({ class: 'a-hull', x: x - 4, y, width: sideW + 8, height: h, rx: 12 }).forEach(([k, v]) => r.setAttribute(k, v)); svg.append(r)
+      f.append(el('div', 'a-cname', `<b>${p.name}</b> · ${p.machine}`, { top: px(y + 6), maxWidth: px(sideW - 8), ...(mirror ? { right: px(W - x - sideW) } : { left: px(x + 4) }) }))
+      p.threads.forEach((t, k) => {
+        const dot = { x: mirror ? x + sideW - 12 : x + 12, y: y + HEAD + k * ROW + ROW / 2 }
+        const path = document.createElementNS(svg.namespaceURI, 'path')
+        const c1 = mark.x + (dot.x - mark.x) * 0.45, c2 = dot.x - (dot.x - mark.x) * 0.25
+        path.setAttribute('d', `M${mark.x},${mark.y} C${c1},${mark.y} ${c2},${dot.y} ${dot.x},${dot.y}`); path.setAttribute('class', 'a-edge'); path.dataset.tone = t.tone === 'failed' ? 'needs' : t.tone; svg.append(path)
+        const n = el('button', 'a-node', `${ringOf(t)}<span class="t">${t.title}</span>${sideW - 22 >= 190 ? prOf(t.pr) : ''}`, { left: px(dot.x), top: px(dot.y), maxWidth: px(sideW - 22) })
+        n.type = 'button'; n.dataset.id = t.id; if (mirror) n.dataset.mirror = ''; f.append(n)
+      })
+      y += h + GAPC
+    }
+  })
+  // Watcher's mark, its name and You: the lines run under the labels, which carry the room's surface.
+  f.append(el('div', 'a-mark', '<i></i>', { left: px(mark.x), top: px(mark.y) }))
+  const name = el('div', 'name', watcherHtml(), { left: px(cx), top: px(mark.y + 30), transform: 'translateX(-50%)', zIndex: 3 }); f.append(name)
+  f.append(el('div', 'pill', youHtml(), { left: px(cx), top: px(mark.y + 56), transform: 'translateX(-50%)', zIndex: 3 }))
+}
+
+// ---------- B: owls are the picture ----------
+function variantB(f, W, H, col, scene, chromeBoxes) {
+  for (const b of chromeBoxes) scene.clear(b.x, b.y, b.w, b.h)
+  const ground = H - 118, top = 140, wide = W >= 1100
+  scene.hills(top, ground)
+  const labels = []
+  const placeLimb = (limb, threads, spacing, from, dir, labelW) => {
+    threads.forEach((t, k) => {
+      const x = from + dir * k * spacing, y = limbY(limb, x) - 7
+      owlButton(f, scene.owl(x, y, t.mood), t)
+      const lab = el('div', 'b-label', `<span class="t">${t.title}</span><span class="w">${ringOf(t)}<span class="word" data-tone="${t.tone}">${t.word}</span>${labelW >= 130 ? prOf(t.pr) : ''}</span>`, { left: px(x), top: px(y + 12), maxWidth: px(labelW) })
+      lab.dataset.id = t.id; f.append(lab); labels.push(lab)
+      scene.clear(x - labelW / 2, y + 8, labelW, 34)
+    })
+  }
+  const tree = (machine, trunkX, dir, limbTops, spacing, labelW, seed) => {
+    const limbs = machine.projects.map((p, i) => {
+      const y0 = limbTops[i], len = 70 + (p.threads.length - 1) * spacing + 50
+      return { x0: trunkX + dir * 4, y0, x1: trunkX + dir * len, y1: y0 - 4, sag: 6 }
+    })
+    scene.tree({ x: trunkX, y: ground, h: (ground - top) * 0.98, dir, limbs, seed, leaves: true, crown: wide })
+    machine.projects.forEach((p, i) => {
+      const l = limbs[i], from = trunkX + dir * 70
+      placeLimb(l, p.threads, spacing, from, dir, labelW)
+      const signW = Math.min(textW(wide ? p.name : `${p.name} · ${machine.name}`, '600 12px Figtree') + 14, Math.max(Math.abs(l.x1 - l.x0), W / 2 - 40))
+      const sx = dir > 0 ? trunkX + 12 : trunkX - 12 - signW, sy = l.y0 - 66
+      f.append(el('div', 'b-sign', wide ? p.name : `${p.name} <span>· ${machine.name}</span>`, { left: px(sx), top: px(sy), maxWidth: px(signW) })); scene.clear(sx, sy, signW, 18)
+    })
+    if (!wide) return
+    const mw = textW(machine.name, '11.5px Figtree') + 18
+    const mx = clamp(trunkX, mw / 2 + 6, W - mw / 2 - 6)
+    f.append(el('div', 'b-machine', machine.name, { left: px(mx), top: px(ground + 8) })); scene.clear(mx - mw / 2, ground + 8, mw, 20)
+  }
+  if (wide) {
+    const trunkL = Math.max(70, W * 0.07), trunkR = W - trunkL, avail = ground - top
+    tree(MACHINES[0], trunkL, 1, [top + avail * 0.3, top + avail * 0.68], 150, 136, 101)
+    tree(MACHINES[1], trunkR, -1, [top + avail * 0.48], 150, 136, 202)
+    // Watcher on its own perch in the middle, under the moon; You at its foot on the ground.
+    const perch = top + avail * 0.42
+    scene.moon(W / 2 + 90, top + 60, 34); scene.post(W / 2, perch, ground); scene.watcher(W / 2, perch, 1.6)
+    const nw = textW(`Watcher · ${WORKING} working`) + 12
+    f.append(el('div', 'name', watcherHtml(), { left: px(W / 2), top: px(perch + 10), transform: 'translateX(-50%)' })); scene.clear(W / 2 - nw / 2, perch + 10, nw, 20)
+    const yw = textW(`You · ${WAITING} waiting`, '600 12px Figtree') + 22
+    f.append(el('div', 'pill', youHtml(), { left: px(W / 2), top: px(ground - 34), transform: 'translateX(-50%)' })); scene.clear(W / 2 - yw / 2, ground - 34, yw, 24)
+  } else {
+    // Narrow: Watcher and You on one line at the top, the two trees side by side.
+    const capY = top + 4
+    const cap = el('div', 'b-caption', `<span class="name">${watcherHtml()}</span><span class="pill">${youHtml()}</span>`, { left: px(col.x + 4), width: px(col.w - 8), top: px(capY) })
+    f.append(cap); scene.clear(col.x, capY, col.w, 26)
+    const half = W / 2, spacing = Math.min(150, (half - 140) / 2), lw = spacing - 6
+    const l1 = capY + 26 + 8 + 62
+    tree(MACHINES[0], 26, 1, [l1, l1 + 108], spacing, lw, 101)
+    tree(MACHINES[1], W - 26, -1, [l1], spacing, lw, 202)
+    scene.moon(W / 2 + 40, capY + 60, 18)
+  }
+}
+
+// ---------- C: a night strip over a list ----------
+function variantC(f, W, H, col, scene, chromeBoxes) {
+  const y0 = 140, wide = W >= 1100, stripH = wide ? 210 : 92, ground = y0 + stripH - 16
+  scene.keep = { x: 0, y: y0, w: W, h: stripH }
+  const order = THREADS
+  if (wide) {
+    scene.hills(y0 + 4, ground)
+    const lt = { x: W * 0.12, y: ground, h: stripH * 0.95, dir: 1, seed: 101 }
+    const home = { x0: lt.x + 6, y0: ground - stripH * 0.38, x1: lt.x + 120, y1: ground - stripH * 0.4, sag: 5 }
+    scene.tree({ ...lt, limbs: [home] }); scene.watcher(home.x1 - 24, limbY(home, home.x1 - 24), 1.25)
+    scene.moon(W * 0.74, y0 + 46, 24)
+    const rt = { x: W * 0.88, y: ground, h: stripH * 0.9, dir: -1, seed: 202 }
+    const start = W * 0.36, limb = { x0: rt.x - 6, y0: ground - stripH * 0.32, x1: start - 30, y1: ground - stripH * 0.31, sag: 7 }
+    scene.tree({ ...rt, limbs: [limb], leaves: false })
+    let x = start, last = null
+    for (const t of order) { if (last && last !== t.project) x += 26; owlButton(f, scene.owl(x, limbY(limb, x) - 7, t.mood), t); x += 46; last = t.project }
+  } else {
+    scene.hills(y0 + 4, ground)
+    scene.moon(W - 60, y0 + 24, 12); scene.watcher(52, ground, 0.95)
+    let x = col.x + 140, last = null
+    for (const t of order) { if (last && last !== t.project) x += 22; owlButton(f, scene.owl(x, ground, t.mood), t); x += 46; last = t.project }
+  }
+  const capY = y0 + stripH + 8
+  f.append(el('div', 'c-caption', `<span class="name">${watcherHtml()}</span><span class="pill">${youHtml()}</span>`, { left: px(col.x + 4), width: px(col.w - 8), top: px(capY) }))
+  const ledger = el('div', 'c-ledger', null, { left: px(col.x), width: px(col.w), top: px(capY + 30), height: px(H - 112 - capY - 30) })
+  for (const mc of MACHINES) for (const p of mc.projects) {
+    ledger.append(el('div', 'c-head', `<b>${p.name}</b> · ${mc.name} · ${p.threads.length} ${p.threads.length === 1 ? 'thread' : 'threads'}`))
+    for (const t of p.threads) {
+      const eyes = t.mood === 'asleep' ? '-' : t.mood === 'waiting' ? 'O' : 'o'
+      const row = el('div', 'c-row', `<span class="c-face" data-mood="${t.mood}">{${eyes},${eyes}}</span>${ringOf(t)}<span class="t">${t.title}</span><span class="word" data-tone="${t.tone}">${t.word}</span><span>${prOf(t.pr)}</span><span class="c-open">Open</span>`)
+      row.dataset.id = t.id; ledger.append(row)
+    }
+  }
+  f.append(ledger)
+}
+
+// ---------- Putting it together ----------
+let variant = new URLSearchParams(location.search).get('variant') ?? 'A'
+if (!'ABC'.includes(variant)) variant = 'A'
+let theme = 'dark'
+function render() {
+  const t = THEMES[theme], note = NOTES[variant]
+  document.getElementById('note').innerHTML = `<h2>${note.title}</h2><ul>${note.points.map(p => `<li>${p}</li>`).join('')}</ul>`
+  document.getElementById('label').textContent = note.title.split(',')[0]
+  document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light mode' : 'Dark mode'
+  const frames = document.getElementById('frames'); frames.replaceChildren()
+  for (const [W, H, title] of SIZES) {
+    const section = el('section', 'size', `<h3>${title}</h3>`), scaler = el('div', 'scaler'), f = el('div', 'frame', null, { width: px(W), height: px(H) })
+    for (const [k, v] of Object.entries(t)) if (typeof v === 'string') f.style.setProperty(`--${k}`, v)
+    const colW = W < 900 ? W - 32 : 760, col = { x: (W - colW) / 2, w: colW }
+    const boxes = chrome(f, W, H, col)
+    const scene = new Scene(W, H)
+    ;({ A: variantA, B: variantB, C: variantC })[variant](f, W, H, col, scene, boxes)
+    scene.draw(f, theme)
+    for (const th of THREADS) link(f, th.id)
+    scaler.append(f); section.append(scaler); frames.append(section)
+    const fit = () => { const s = Math.min(1, section.clientWidth / W); f.style.transform = `scale(${s})`; scaler.style.height = px(H * s) }
+    fit(); new ResizeObserver(fit).observe(section)
+  }
+}
+function go(v) { variant = v; const u = new URL(location.href); u.searchParams.set('variant', v); history.replaceState(null, '', u); render() }
+const ORDER = ['A', 'B', 'C']
+document.getElementById('prev').onclick = () => go(ORDER[(ORDER.indexOf(variant) + 2) % 3])
+document.getElementById('next').onclick = () => go(ORDER[(ORDER.indexOf(variant) + 1) % 3])
+document.querySelectorAll('[data-variant]').forEach(b => b.onclick = () => go(b.dataset.variant))
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; render() }
+addEventListener('keydown', e => { if (e.key === 'ArrowLeft') document.getElementById('prev').click(); if (e.key === 'ArrowRight') document.getElementById('next').click() })
+let toastTimer
+function toast(text) { const t = document.getElementById('toast'); t.textContent = text; t.dataset.on = ''; clearTimeout(toastTimer); toastTimer = setTimeout(() => delete t.dataset.on, 1800) }
+document.fonts.ready.then(render)
+</script>
+</body>
+</html>
