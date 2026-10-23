@@ -166,4 +166,20 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
     await laptop.discard(prepared)
     await laptop.discard(retry)
   })
+
+  it('creates no ref for a move of a commit the host already has once it is ended or its connection drops', async () => {
+    for (const ending of ['end', 'drop'] as const) {
+      const moveId = randomUUID(), commit = git(machines.forge, 'rev-parse', 'main')
+      const checking = gate(args => args[0] === 'rev-list' && args.includes(commit))
+      const host = forge(gated(checking)), peer = connection()
+      const landed = host.handle({ action: 'receive-ref', moveId, projectId: 'forge-project', branch: 'main', commit }, peer.owner, peer.gone)
+      await checking.reached
+      if (ending === 'end') expect(await host.handle({ action: 'end', moveId }, peer.owner, peer.gone)).toBeNull()
+      else peer.close()
+      checking.release()
+      expect(await landed).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+      expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+      await expect.poll(() => host.staged).toBe(0)
+    }
+  })
 })

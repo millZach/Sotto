@@ -1,4 +1,4 @@
-import { BranchBundles, IncomingBundle, type PreparedBundle } from '../main/agents/branchBundles'
+import { BranchBundles, IncomingBundle, MoveFence, type PreparedBundle } from '../main/agents/branchBundles'
 import type { BranchMoveFolders } from '../main/agents/branchMoves'
 import { BRANCH_TRANSFERS_MAX, branchMoveRefusal, branchMoveWords, type HostBranchMoveRequest } from '../shared/branchMoves'
 
@@ -8,7 +8,7 @@ import { BRANCH_TRANSFERS_MAX, branchMoveRefusal, branchMoveWords, type HostBran
  * the connection that began it: another connection cannot touch it, and when that connection closes, whatever it staged
  * is discarded, so a transfer cut off lands nothing.
  */
-interface Transfer { readonly owner: object; readonly incoming?: IncomingBundle; readonly outgoing?: PreparedBundle }
+interface Transfer { readonly owner: object; readonly incoming?: IncomingBundle; readonly outgoing?: PreparedBundle; readonly fence?: MoveFence }
 
 export class HostBranchMoves {
   private readonly transfers = new Map<string, Transfer>()
@@ -65,10 +65,11 @@ export class HostBranchMoves {
         const folder = this.folders.projectFolder(request.projectId)
         if (!folder) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
         if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
-        // Nothing is staged, but the move still holds its place while its ref is created.
-        const holding: Transfer = { owner }
+        // Nothing is staged, but the move still holds its place while its ref is created, and is fenced like a bundle's:
+        // once `end` answers or the connection's discard has run, no ref of it is created.
+        const holding: Transfer = { owner, fence: new MoveFence() }
         this.transfers.set(request.moveId, holding)
-        try { return await this.bundles.receiveRef({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit }) }
+        try { return await this.bundles.receiveRef({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, fence: holding.fence }) }
         finally { this.release(request.moveId, holding) }
       }
       case 'send-begin': {
@@ -119,6 +120,7 @@ export class HostBranchMoves {
   private async drop(moveId: string, transfer: Transfer): Promise<void> {
     this.release(moveId, transfer)
     if (transfer.incoming) await this.bundles.abandon(transfer.incoming)
+    if (transfer.fence) await transfer.fence.cancel()
     if (transfer.outgoing) await this.bundles.discard(transfer.outgoing)
   }
   /** Drops every attempt `owner` holds as its connection closes: all let go at once, so none waits on another's cleanup. */

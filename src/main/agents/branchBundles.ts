@@ -52,15 +52,34 @@ export interface BranchBundlesOptions {
   readonly now?: () => Date
 }
 
-/** A bundle arriving in order, staged until it is whole. */
-export class IncomingBundle {
+/**
+ * The fence between a move and its incoming ref: once the move is ended, by `end` or by its connection closing, no ref is
+ * created for it. The check and the start of the write happen in one turn, so an end either comes first and stops the
+ * ref, or comes after and waits for the write in `cancel`.
+ */
+export class MoveFence {
+  private ended = false
+  private landing: Promise<void> | undefined
+  /** Whether the move was ended, so nothing more of it may land. */
+  get cancelled(): boolean { return this.ended }
+  /** Runs `write`, which creates the incoming ref, unless the move was ended first: null when it was. */
+  land<T>(write: () => Promise<T>): Promise<T> | null {
+    if (this.ended) return null
+    const landing = write()
+    this.landing = landing.then(() => undefined, () => undefined)
+    return landing
+  }
+  /** Ends the move. Once this resolves no ref is created for it: a landing already under way has finished. */
+  async cancel(): Promise<void> { this.ended = true; await this.landing }
+}
+
+/** A bundle arriving in order, staged until it is whole, and fenced like every move. */
+export class IncomingBundle extends MoveFence {
   received = 0
   private readonly hash: Hash = createHash('sha256')
   private closed = false
-  private ended = false
-  private landing: Promise<void> | undefined
   constructor(readonly moveId: string, readonly repository: string, readonly branch: string, readonly commit: string, readonly size: number,
-    readonly sha256: string, readonly path: string, private readonly handle: FileHandle) {}
+    readonly sha256: string, readonly path: string, private readonly handle: FileHandle) { super() }
   /** Takes the next chunk. A chunk out of order, or past the size the sender named, is refused and nothing is written. */
   async write(offset: number, bytes: Uint8Array): Promise<boolean> {
     if (this.closed || offset !== this.received || bytes.byteLength === 0 || this.received + bytes.byteLength > this.size) return false
@@ -72,20 +91,6 @@ export class IncomingBundle {
   /** The digest of what arrived, once all of it has. */
   digest(): string | null { return this.received === this.size ? this.hash.copy().digest('hex') : null }
   async close(): Promise<void> { if (this.closed) return; this.closed = true; await this.handle.close().catch(() => undefined) }
-  /** Whether the move was ended, by `end` or by its connection closing, so nothing more of it may land. */
-  get cancelled(): boolean { return this.ended }
-  /**
-   * Runs `write`, which creates the incoming ref, unless the move was ended first: null when it was. Checked and begun in
-   * one turn, so an end either comes first and stops the ref, or comes after and waits for `write` in `cancel`.
-   */
-  land<T>(write: () => Promise<T>): Promise<T> | null {
-    if (this.ended) return null
-    const landing = write()
-    this.landing = landing.then(() => undefined, () => undefined)
-    return landing
-  }
-  /** Ends the move. Once this resolves no ref is created for it: a landing already under way has finished. */
-  async cancel(): Promise<void> { this.ended = true; await this.landing }
 }
 
 export class BranchBundles {
@@ -239,19 +244,24 @@ export class BranchBundles {
   /**
    * Lands a move whose commit this repository already has, as the sender found from the tips it was given: no bundle, only
    * the incoming ref. The commit must be reachable from one of this repository's refs, so every object it needs is here;
-   * otherwise the move is refused and a retry, with fresh tips, sends a bundle.
+   * otherwise the move is refused and a retry, with fresh tips, sends a bundle. A move ended through `fence` while it is
+   * checked creates no ref.
    */
-  async receiveRef(input: { readonly repository: string; readonly moveId: string; readonly branch: string; readonly commit: string }): Promise<BranchMoved | BranchMoveRefusal> {
+  async receiveRef(input: { readonly repository: string; readonly moveId: string; readonly branch: string; readonly commit: string; readonly fence?: MoveFence }): Promise<BranchMoved | BranchMoveRefusal> {
     const { repository, moveId, branch, commit } = input
+    const fence = input.fence ?? new MoveFence()
     const admitted = await this.admit(repository, moveId, branch, commit)
     if (admitted !== null) return admitted
     try {
       let missing: string
       try { missing = (await this.git(repository, ['rev-list', '--count', commit, '--not', '--all'], undefined, 60_000)).trim() } catch { missing = '' }
       if (missing !== '0') return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
+      if (fence.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
       const ref = incomingRef(moveId, branch)
       await this.record(moveId, commit, ref)
-      return await this.createRef(repository, moveId, branch, commit)
+      // The same fence as a bundle's: a move ended while it was checked or recorded creates no ref.
+      const landing = fence.land(() => this.createRef(repository, moveId, branch, commit))
+      return landing ? await landing : branchMoveRefusal('cut-off', branchMoveWords.cutOff)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
   }
 
