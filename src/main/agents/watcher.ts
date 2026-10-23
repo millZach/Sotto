@@ -861,7 +861,9 @@ export class WatcherService implements WatcherControlHooks {
   private readonly reservedPositions = new Map<string, number>()
   /**
    * Remote starts made uncertain because their request timed out, not because their connection closed: the host may
-   * still carry them out, so they count as placed until their receipt is read. In memory only, as the merge turns are.
+   * still carry them out, so they count as placed until the host's own receipt is read, whatever it says. One the host
+   * holds as uncertain is then the host's to count, and it counts none it holds uncertain (#1311). In memory only, as the
+   * merge turns are.
    */
   private readonly timedOutStarts = new Set<string>()
   /** The working threads warning (#1183) after a start on this computer, counting the new thread as working: only above ten. */
@@ -3038,6 +3040,9 @@ ${operation.draftId}`)
     record.reservations = record.reservations.filter(item => item.operationId !== operationId)
   }
   private copyRemoteReceipt(record: WatcherRecord, own: WatcherOperation, receipt: Pick<WatcherOperation, 'deliveryState' | 'refusalCode' | 'commandId' | 'itemId' | 'messageId' | 'updatedAt' | 'creationUncertain'>): void {
+    // The host's own receipt shows it holds the operation, so a start that timed out is the host's to count from here,
+    // uncertain or not; the index worked out while it was the desktop's goes with the mark.
+    if (this.timedOutStarts.delete(own.id)) this.reservedStartIndex.delete(this.view())
     // A read started before the control reply can arrive afterward. Definitive outcomes cannot become pending again.
     if ((own.deliveryState === 'accepted' || own.deliveryState === 'failed') && receipt.deliveryState !== own.deliveryState) return
     const wasFailed = own.deliveryState === 'failed'

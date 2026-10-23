@@ -300,6 +300,38 @@ it.each([
   expect((await machines())[1]).toMatchObject({ placedNotStarted: 0 })
 })
 
+it('leaves a timed-out paired start to the host once the host’s own receipt shows it holds it, even as uncertain (#1311)', async () => {
+  const f = await master(undefined, false, true)
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  let operationId: string | undefined
+  // Until the host answers, nothing of the start can be read back.
+  let readable = false
+  const read = f.socket.watcherRead.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async (request, ...rest) => {
+    if (!readable) throw new Error('lost-projection')
+    // The host holds the start, and its own receipt says the start's delivery is uncertain there.
+    const answer = await read(request, ...rest) as { operations?: { id: string; deliveryState: string }[]; receipt?: { operationId: string; deliveryState: string } }
+    return { ...answer, ...answer.operations ? { operations: answer.operations.map(item => item.id === operationId ? { ...item, deliveryState: 'uncertain' } : item) } : {},
+      ...answer.receipt?.operationId === operationId ? { receipt: { ...answer.receipt, deliveryState: 'uncertain' } } : {} }
+  })
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => {
+    await control(...args)
+    throw new HostRequestTimeoutError('The host did not answer in time. Try refreshing.', 'disconnected')
+  })
+  const started = await f.call('start_thread', f.start())
+  expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  if (!('receipt' in started) || !started.receipt) throw new Error('no-receipt')
+  operationId = started.receipt.operationId
+  expect((await machines())[1]).toMatchObject({ placedNotStarted: 1 })
+  readable = true
+  await expect.poll(async () => {
+    await (f.watcher as unknown as { reconcileRemote: (hostId: string) => Promise<void> }).reconcileRemote(f.pairing.hostId).catch(() => undefined)
+    return (await machines())[1]!.placedNotStarted
+  }).toBe(0)
+  expect(f.control.watcherRecordView().operations.find(item => item.id === operationId)?.deliveryState).toBe('uncertain')
+})
+
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {
   const f = await master(), selected = f.router.shell().activeThreadId, input = f.start()
   expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, workSettled: true })])
