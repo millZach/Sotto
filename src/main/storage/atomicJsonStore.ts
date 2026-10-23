@@ -6,6 +6,7 @@ import { retryWindowsFileOperation } from './windowsFileRetry'
 
 const MAX_CORRUPT_BACKUP_ATTEMPTS = 100
 const MAX_TEMPORARY_FILE_ATTEMPTS = 100
+const NEWLINE = Buffer.from('\n')
 
 export function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
@@ -69,8 +70,13 @@ export class AtomicJsonStore<T> {
   /**
    * Writes JSON the caller already serialized from a `T`, as it is. A caller that compares serialized states to
    * decide whether to write at all hands that same text here rather than serializing it twice.
+   *
+   * The JSON may also come already encoded as UTF-8, in pieces: the file then holds the pieces one after another. A
+   * caller that rewrites a large store whole keeps the encoded text of the parts that did not change and hands those
+   * over again, so its thread encodes only what changed and the bytes go to the disk off that thread (#1451). The
+   * pieces must not change until the returned promise settles.
    */
-  writeSerialized(serialized: string): Promise<void> {
+  writeSerialized(serialized: string | readonly Uint8Array[]): Promise<void> {
     // A `writeLatest` call after this one must not share a write queued in front of it, or the file would end here.
     this.queuedLatest = undefined
     return this.enqueueOperation(() => this.writeImmediately(serialized))
@@ -138,7 +144,7 @@ export class AtomicJsonStore<T> {
     return this.format === 'compact' ? JSON.stringify(value) : JSON.stringify(value, null, 2)
   }
 
-  private async writeImmediately(serialized: string): Promise<void> {
+  private async writeImmediately(serialized: string | readonly Uint8Array[]): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true })
 
     let temporaryPath: string | undefined
@@ -148,7 +154,13 @@ export class AtomicJsonStore<T> {
       const temporaryFile = await this.openUniqueTemporaryFile()
       temporaryPath = temporaryFile.path
       handle = temporaryFile.handle
-      await handle.writeFile(`${serialized}\n`, 'utf8')
+      if (typeof serialized === 'string') await handle.writeFile(`${serialized}\n`, 'utf8')
+      else {
+        const chunks = [...serialized, NEWLINE]
+        const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+        const { bytesWritten } = await handle.writev(chunks)
+        if (bytesWritten !== length) throw new Error('The JSON file was written short')
+      }
       await handle.sync()
       await handle.close()
       handle = undefined
