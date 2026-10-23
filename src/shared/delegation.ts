@@ -144,8 +144,13 @@ export const DELEGATION_RENDERER_ARGUMENT = '--sotto-delegation-enabled'
  * one still open, and the newest briefs it was sent: enough for every card and brief a busy thread's history shows.
  */
 export const DELEGATION_VIEWS_MAX = 200
-/** Why a headless host held a delegated start to Ask for approval (#1310); `HostCeilingHold` in `desktopDefaults.ts`. */
-export const delegationHostHoldSchema = z.enum(['not-told', 'no-answer-grant'])
+/**
+ * Why a headless host held a delegated start to Ask for approval (#1310); `HostCeilingHold` in `desktopDefaults.ts`. The
+ * desktop that sent the defaults that would apply was never let answer there, or was and is no longer.
+ */
+export const delegationHostHoldSchema = z.enum(['not-told', 'no-answer-grant', 'answers-revoked'])
+/** The machine, by host ID, or the system a start asked for, which a refusal for it records (#1310, Work across machines). */
+export const delegationAskedSchema = z.object({ machine: z.uuid().optional(), os: workerSystemSchema.optional() }).strict()
 /** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
 export const delegationNotSentSchema = z.enum(['target-changed', 'paused', 'stopped', 'provider', 'restarted'])
 /** A delegation main accepted: a thread was started or sent a brief, and it has one of Watcher's outcomes. */
@@ -198,6 +203,8 @@ export const refusedViewSchema = z.object({
   work: delegationWorkSchema,
   outcome: z.literal('refused'),
   refusal: delegationRefusalCodeSchema,
+  /** For a start refused as `MACHINE_UNAVAILABLE`: the machine, by host ID, or the system it asked for (#1310). */
+  asked: delegationAskedSchema.optional(),
   /** The user's message the call answered, and the turn it was made in, when Sotto could find them. */
   rootUserMessageId: id.optional(),
   anchorMessageId: id.optional(),

@@ -92,10 +92,13 @@ export class DesktopDefaultsStore {
    * now, asked afresh each time so a desktop forgotten or a grant taken away holds the next start at once. Ask for approval
    * when none apply, and `held` says why: no desktop has told this host, or none that told it still counts.
    */
-  ceiling(counts: DesktopCounts): { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold } {
+  ceiling(counts: DesktopCounts, revoked: DesktopCounts = () => false): { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold } {
     if (!this.kept.length) return { mode: 'approval-required', held: 'not-told' }
     const applies = this.current(counts)
-    return applies ? { mode: applies.newThreadRuntimeMode ?? 'approval-required' } : { mode: 'approval-required', held: 'no-answer-grant' }
+    if (applies) return { mode: applies.newThreadRuntimeMode ?? 'approval-required' }
+    // Said as revoked when the desktop that sent the newest defaults had its answers grant taken away (#1310), so the window
+    // offers no fix that cannot work: setting it up again never grants what was revoked.
+    return { mode: 'approval-required', held: revoked(this.kept[0]!.clientId) ? 'answers-revoked' : 'no-answer-grant' }
   }
   /** The worker roles of the defaults that apply now, or the roles' own defaults when they carry none or none apply. */
   roles(counts: DesktopCounts): WorkerRoleChoices { return this.current(counts)?.workerRoles ?? {} }

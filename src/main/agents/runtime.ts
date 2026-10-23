@@ -91,7 +91,7 @@ export interface AgentRuntimeOptions {
    * pairing and policy records at every start. `roles` is the host's own Owl answer for worker roles: with it, a
    * delegation's kind of work starts on the desktop's roles.
    */
-  hostDelegation?: { counts(clientId: string): boolean; roles: boolean }
+  hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean }
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -279,7 +279,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
     const defaults = desktopDefaults
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId)),
+      newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId), clientId => hostDelegation.revoked?.(clientId) === true),
       ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
       machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })

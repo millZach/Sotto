@@ -369,8 +369,21 @@ it('answers a recorded desktop\'s read of its threads\' delegations, names those
   expect((await router.delegationViews(key(child))).received).toEqual([expect.objectContaining({ id: started.delegation.id, thread: key(child) })])
   expect(await router.delegationBrief(key(child))).toEqual({ threadId: key(child), text: 'Synthetic brief for the roster' })
   // Another machine is refused before #1316, and the refusal is read as recorded.
-  await f.start(parent.threadId, 'approval-required', { machine: randomUUID() })
-  await expect.poll(async () => (await router.delegationViews(key(parent.threadId))).delegations.some(view => view.outcome === 'refused' && view.refusal === 'MACHINE_UNAVAILABLE')).toBe(true)
+  const elsewhere = randomUUID()
+  await f.start(parent.threadId, 'approval-required', { machine: elsewhere })
+  await expect.poll(async () => (await router.delegationViews(key(parent.threadId))).delegations.find(view => view.outcome === 'refused' && view.refusal === 'MACHINE_UNAVAILABLE'))
+    .toMatchObject({ asked: { machine: elsewhere } })
+
+  // Told by a desktop that may not answer there, the next start says so; once a grant is given and taken away, it says that.
+  const building = async () => ((await f.call(parent.threadId, 'delegate', { work: 'building', brief: 'Synthetic brief', provider: 'codex', model: f.model.id, effort: 'low', wait_seconds: 0 })) as
+    { delegation: { id: string } }).delegation.id
+  await socket.desktopDefaults({ newThreadRuntimeMode: 'auto' })
+  const ungranted = await building()
+  await f.answers(pairing.clientId, true)
+  await f.answers(pairing.clientId, false)
+  const revoked = await building()
+  await expect.poll(async () => (await router.delegationViews(key(parent.threadId))).delegations.filter(view => view.id === ungranted || view.id === revoked).map(view => 'held' in view ? view.held : undefined))
+    .toEqual(['no-answer-grant', 'answers-revoked'])
 
   // The child answers: the host names the parent again, and its outcome reads answered, never with the child's words.
   changed.length = 0

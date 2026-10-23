@@ -143,7 +143,9 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
     expect(list.status, JSON.stringify(list)).toBe('ok')
     await reply(list.delegation!.thread, 'Synthetic list of fields')
     await reply(research.delegation!.thread, 'Synthetic research finding')
-    expect(await delegate(parentId, 'building', 'Build the Windows installer', 'Run npm run package:win.', { machine: randomUUID() })).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE' })
+    // Asked for a system the host is not: the start is refused, and its record keeps what was asked for.
+    const otherSystem = process.platform === 'darwin' ? 'windows' : 'macos'
+    expect(await delegate(parentId, 'building', 'Sign the Mac build', 'Notarize the Mac build.', { os: otherSystem })).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE' })
 
     // The desktop pairs, and the launch script's record makes it a desktop there. It gets no answers grant.
     const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic laptop')
@@ -174,9 +176,9 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(cards.getByRole('group', { name: 'Delegated to Run the host contract tests' }).locator('.delegation-card__held'))
         .toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
       await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__held'))
-        .toHaveText('Held to Ask for approval: Forge does not take your answers from this computer.')
+        .toHaveText('Held at Ask for approval: this computer can\'t answer on Forge. To let it, open Settings › Hosts & phones and choose SSH only under Edit connection for Forge.')
       await expect(cards.getByRole('note', { name: 'Not delegated: Building' }).locator('.delegation-card__wait'))
-        .toHaveText('This thread runs on Forge, and a thread on Forge can start threads only on Forge. Nothing was started. Ask again without naming a machine to start it on Forge.')
+        .toHaveText(`Asked for ${process.platform === 'darwin' ? 'a Windows machine' : 'a Mac'}. Forge can start threads only on Forge for now. Nothing was started.`)
       await capture(launched, 'cards-dark-1280x800')
 
       // Tools › Agents: a heading for Forge with its count, and its threads under it, both levels.
@@ -189,14 +191,14 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(row('List the agents-view fields')).toHaveAttribute('data-nested', 'true')
       await expect(row('Find what the iPhone reads for agents').locator('.delegated-row__status')).toHaveText('Answered')
       await expect(row('Run the host contract tests').locator('.delegated-row__held')).toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
-      await expect(row('Review the delegation socket changes').locator('.delegated-row__held')).toHaveText('Held to Ask for approval: Forge does not take your answers from this computer.')
+      await expect(row('Review the delegation socket changes').locator('.delegated-row__held')).toHaveText(/^Held at Ask for approval: this computer can't answer on Forge\./u)
       await expect(row('Review the delegation socket changes').locator('.subagent-meta')).toContainText('Codex · Building')
       // The keyboard opens a row to its whole brief, read from the host, and the held reason; Escape closes it.
       const head = row('Review the delegation socket changes').locator('.subagent-head')
       await head.focus()
       await page.keyboard.press('Enter')
       await expect(row('Review the delegation socket changes').locator('.subagent-details')).toContainText('Report findings with the file and line.')
-      await expect(row('Review the delegation socket changes').locator('.subagent-result')).toContainText('It started at Ask for approval, because Forge does not take your answers from this computer')
+      await expect(row('Review the delegation socket changes').locator('.subagent-result')).toContainText('It started at Ask for approval, because this computer can\'t answer permission requests on Forge')
       await capture(launched, 'roster-opened-dark-1280x800')
       await page.keyboard.press('Escape')
       await expect(head).toHaveAttribute('aria-expanded', 'false')

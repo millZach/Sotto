@@ -7,7 +7,7 @@ import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { EMPTY_SUBAGENT_SUMMARY, type SubagentsBridge } from '../../../../src/shared/subagents'
 import { delegatedRoster, machineCount, rosterByMachine, rosterMachine, THIS_COMPUTER, type DelegationReadOf } from '../../../../src/renderer/src/tools/delegatedRoster'
 import { delegatedStatusWord } from '../../../../src/renderer/src/tools/DelegatedThreads'
-import { delegationRefusalLine, heldLine, lastReadOutcome } from '../../../../src/renderer/src/agents/delegationWords'
+import { askedFor, delegationRefusalLine, heldLine, heldOutcome, lastReadOutcome } from '../../../../src/renderer/src/agents/delegationWords'
 import { clockLabel } from '../../../../src/renderer/src/agents/threadFacts'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
@@ -32,7 +32,7 @@ function owl(crossMachine: boolean): void {
 
 const NOW = E2E_THREADS_NOW
 const at = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOString()
-const FORGE = '33333333-3333-4333-8333-333333333333'
+const FORGE = '33333333-3333-4333-8333-333333333333', LOCAL = '44444444-4444-4444-8444-444444444444'
 const PARENT = 'visual-gate', REVIEW = 'forge-review', TESTS = 'forge-tests', LIST = 'forge-list'
 const LOST = Date.parse(at(2))
 
@@ -58,7 +58,7 @@ function remoteState(connected = true): AgentState {
 function answers(): Record<string, DelegationView[]> {
   return {
     [PARENT]: [view(TESTS, 20, { outcome: 'failed', outcomeAt: at(18) }), view(REVIEW, 12, { work: 'code-review', held: 'not-told' }),
-      { id: crypto.randomUUID(), action: 'start', work: 'building', outcome: 'refused', refusal: 'MACHINE_UNAVAILABLE', provider: 'codex', createdAt: at(11), anchorMessageId: 'visual-gate-1' }],
+      { id: crypto.randomUUID(), action: 'start', work: 'building', outcome: 'refused', refusal: 'MACHINE_UNAVAILABLE', provider: 'codex', asked: { machine: LOCAL }, createdAt: at(11), anchorMessageId: 'visual-gate-1' }],
     [REVIEW]: [view(LIST, 10, { work: 'research', outcome: 'answered', outcomeAt: at(8) })],
   }
 }
@@ -104,7 +104,17 @@ describe('a remote parent\'s roster', () => {
 
   it('says why a start there began at Ask for approval, and why another machine was refused, in the prototype\'s words', () => {
     expect(heldLine('not-told', 'forge')).toBe('Started at Ask for approval: forge had no new-thread default from this computer yet.')
-    expect(heldLine('no-answer-grant', 'forge')).toBe('Held to Ask for approval: forge does not take your answers from this computer.')
+    expect(heldLine('no-answer-grant', 'forge')).toBe("Held at Ask for approval: this computer can't answer on forge. To let it, open Settings › Hosts & phones and choose SSH only under Edit connection for forge.")
+    // A grant taken away is said as such, with no fix that cannot work.
+    expect(heldLine('answers-revoked', 'forge')).toBe('Held at Ask for approval: forge no longer lets this computer answer there.')
+    expect(heldOutcome('answers-revoked', 'forge')).not.toMatch(/Settings/u)
+    // The machine or system it asked for, by the window's names (Zach, October 23, 2026).
+    const names = (hostId: string) => hostId === FORGE ? 'forge' : hostId === LOCAL ? 'this computer' : undefined
+    expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' }, 'forge', askedFor({ machine: LOCAL }, names)))
+      .toBe('Asked for this computer. forge can start threads only on forge for now. Nothing was started.')
+    expect(askedFor({ os: 'macos' }, names)).toBe('a Mac')
+    expect(askedFor({ machine: '55555555-5555-4555-8555-555555555555' }, names)).toBe('another machine')
+    // A record from before it kept what was asked for keeps the prototype's words.
     expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' }, 'forge'))
       .toBe('This thread runs on forge, and a thread on forge can start threads only on forge. Nothing was started. Ask again without naming a machine to start it on forge.')
     // A thread on this computer keeps its own words.
@@ -116,7 +126,8 @@ describe('the cards under a remote parent\'s reply', () => {
   const context: ActivityContext = { liveTurn: null, running: false, connected: true, provider: 'claude', onDisclosure: () => undefined }
   const messages: AgentMessage[] = [{ id: 'visual-gate-1', role: 'user', text: 'Tidy the docs.', createdAt: at(14) }, { id: 'reply', role: 'assistant', text: 'Started them on forge.', createdAt: at(13) }]
   const review = { id: REVIEW, title: 'Review the socket changes', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex', status: 'running', messages: [], requests: [], remoteHost: true, hostId: FORGE } as AgentThread
-  const world = (away?: DelegationCardWorld['away']): DelegationCardWorld => ({ thread: id => id === REVIEW ? review : undefined, hostName: () => 'forge', open: vi.fn(), liveClock: false, now: NOW, away })
+  const world = (away?: DelegationCardWorld['away']): DelegationCardWorld => ({ thread: id => id === REVIEW ? review : undefined, hostName: () => 'forge', open: vi.fn(), liveClock: false, now: NOW, away,
+    machineName: hostId => hostId === LOCAL ? 'this computer' : undefined })
   const cards = (): ReturnType<typeof delegationsByTurn> => delegationsByTurn(answers()[PARENT]!, messages)
 
   it('names forge, says why a start began at Ask for approval, and words the refusal for another machine', () => {
@@ -126,7 +137,7 @@ describe('the cards under a remote parent\'s reply', () => {
     expect(card.querySelector('.delegation-card__outcome')).toHaveTextContent('Working')
     expect(card.querySelector('.delegation-card__held')).toHaveTextContent('Started at Ask for approval: forge had no new-thread default from this computer yet.')
     const refused = screen.getByRole('note', { name: 'Not delegated: Building' })
-    expect(refused).toHaveTextContent('This thread runs on forge, and a thread on forge can start threads only on forge. Nothing was started. Ask again without naming a machine to start it on forge.')
+    expect(refused).toHaveTextContent('Asked for this computer. forge can start threads only on forge for now. Nothing was started.')
     // It names no machine it could have started on: none was.
     expect(refused.querySelector('.delegation-card__machine')).toBeNull()
   })

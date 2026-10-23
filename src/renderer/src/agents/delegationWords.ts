@@ -2,6 +2,7 @@ import { lastUserMessageIdOf, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, type DelegatedView, type DelegationOutcome, type RefusedView } from '../../../shared/delegation'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import { clockLabel } from './threadFacts'
+import { WORKER_SYSTEM_WORDS } from '../../../shared/workerMachine'
 
 /**
  * The words delegation shows in the window (#1029, design A): a card's outcome and its wait line, "Delegated by", and
@@ -80,12 +81,14 @@ export function delegationWaitLine(view: DelegatedView, now: number, delegator?:
  * what turned it down, that nothing was started or sent, and what would let it through where the user can change that.
  * Main's own words for a refusal were written for the agent that asked, so the card words the rule itself.
  */
-export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'>, parentMachine?: string): string {
+export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'>, parentMachine?: string, asked?: string): string {
   const start = view.action === 'start'
   const nothing = start ? 'Nothing was started.' : 'Nothing was sent.'
-  // A thread on another machine delegates only on its own machine until #1316 (#1310, the remote roster prototype's words).
+  // A thread on another machine delegates only on its own machine until #1316 (#1310). With what it asked for recorded,
+  // Zach's words (October 23, 2026); without, as the remote roster prototype words it.
   if (view.refusal === 'MACHINE_UNAVAILABLE' && parentMachine !== undefined) {
-    return `This thread runs on ${parentMachine}, and a thread on ${parentMachine} can start threads only on ${parentMachine}. ${nothing} Ask again without naming a machine to start it on ${parentMachine}.`
+    return asked !== undefined ? `Asked for ${asked}. ${parentMachine} can start threads only on ${parentMachine} for now. ${nothing}`
+      : `This thread runs on ${parentMachine}, and a thread on ${parentMachine} can start threads only on ${parentMachine}. ${nothing} Ask again without naming a machine to start it on ${parentMachine}.`
   }
   switch (view.refusal) {
     case 'NOT_ADMITTED': return `This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. ${nothing}`
@@ -131,16 +134,32 @@ export function lastReadOutcome(machine: string, outcome: DelegationOutcome | 'n
   return `${was}${machine} is not connected, so Sotto cannot read how it went since. It reads it again when ${machine} reconnects.`
 }
 
-/** Why a delegated thread on another machine started at Ask for approval, on its row and card (#1310, the prototype's words). */
-export function heldLine(held: 'not-told' | 'no-answer-grant', machine: string): string {
-  return held === 'not-told' ? `Started at Ask for approval: ${machine} had no new-thread default from this computer yet.`
-    : `Held to Ask for approval: ${machine} does not take your answers from this computer.`
+/**
+ * The control in Settings › Hosts & phones that lets this computer answer on a host: under Edit connection, SSH only, whose
+ * next connection signs in over SSH and writes this desktop's answers grant where none was ever written (ADR-0053).
+ */
+export const ANSWERS_GRANT_CONTROL = 'SSH only'
+type HostHold = NonNullable<DelegatedView['held']>
+/**
+ * Why a delegated thread on another machine started at Ask for approval, on its row and card (#1310): the prototype's
+ * words for a host never told, Zach's (October 23, 2026) for one this computer cannot answer on, and no fix for a grant
+ * taken away, since setting the host up again does not restore it.
+ */
+export function heldLine(held: HostHold, machine: string): string {
+  if (held === 'not-told') return `Started at Ask for approval: ${machine} had no new-thread default from this computer yet.`
+  if (held === 'answers-revoked') return `Held at Ask for approval: ${machine} no longer lets this computer answer there.`
+  return `Held at Ask for approval: this computer can't answer on ${machine}. To let it, open Settings › Hosts & phones and choose ${ANSWERS_GRANT_CONTROL} under Edit connection for ${machine}.`
 }
-/** The same, in full, with what to do, where a row's details say its latest outcome. */
-export function heldOutcome(held: 'not-told' | 'no-answer-grant', machine: string): string {
-  return held === 'not-told'
-    ? `It started at Ask for approval, because ${machine} had not been sent your new-thread default from this computer when it started. Threads started on ${machine} from now on use your default.`
-    : `It started at Ask for approval, because ${machine} does not take your answers from this computer, so a thread there cannot be given more. To let it, set ${machine} up again in Settings › Hosts & phones.`
+/** The same, in full, where a row's details say its latest outcome. */
+export function heldOutcome(held: HostHold, machine: string): string {
+  if (held === 'not-told') return `It started at Ask for approval, because ${machine} had not been sent your new-thread default from this computer when it started. Threads started on ${machine} from now on use your default.`
+  if (held === 'answers-revoked') return `It started at Ask for approval, because ${machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more.`
+  return `It started at Ask for approval, because this computer can't answer permission requests on ${machine}, so a thread there cannot be given more. To let it, open Settings › Hosts & phones and choose ${ANSWERS_GRANT_CONTROL} under Edit connection for ${machine}.`
+}
+/** What a refused start asked for, by the window's names for its machines (#1310): "this computer", "forge", "a Mac". */
+export function askedFor(asked: NonNullable<RefusedView['asked']>, machineName: (hostId: string) => string | undefined): string | undefined {
+  if (asked.machine !== undefined) return machineName(asked.machine) ?? 'another machine'
+  return asked.os !== undefined ? WORKER_SYSTEM_WORDS[asked.os].a : undefined
 }
 
 /** The delegated threads below this one, at both levels, whose turn is running now: what Stop on it also stops. */

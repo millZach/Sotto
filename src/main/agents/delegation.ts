@@ -15,7 +15,7 @@ import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  delegationHostHoldSchema, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
+  delegationAskedSchema, delegationHostHoldSchema, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
@@ -204,6 +204,11 @@ const refusedSchema = z.object({ id: z.uuid(), delegatingThreadId: id, action: z
   /** The provider a refused start named. */
   provider: providerIdSchema.optional(),
   code: delegationRefusalCodeSchema, message: z.string().min(1).max(REFUSAL_MESSAGE_MAX),
+  /**
+   * The machine or system a start refused as `MACHINE_UNAVAILABLE` asked for (#1310), which its card names. Only a call
+   * Work across machines offers a machine or system to can carry one; a record from before it has none.
+   */
+  asked: delegationAskedSchema.optional(),
   /** The user's message to the delegating thread the call answered, when Sotto can find one (decision 3). */
   rootUserMessageId: id.optional(),
   /** The delegating thread's newest message when it called, a wake-up's included: the turn the call was made in. */
@@ -527,7 +532,7 @@ export class DelegationService {
   private refusedView(refused: RefusedDelegation): RefusedView {
     const anchor = refused.callerMessageId ?? refused.rootUserMessageId
     return { id: refused.id, ...(refused.delegatedThreadId ? { thread: refused.delegatedThreadId } : {}), ...(refused.provider ? { provider: refused.provider } : {}),
-      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code,
+      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code, ...(refused.asked ? { asked: refused.asked } : {}),
       ...(refused.rootUserMessageId ? { rootUserMessageId: refused.rootUserMessageId } : {}), ...(anchor ? { anchorMessageId: anchor } : {}), createdAt: refused.createdAt }
   }
   /**
@@ -637,6 +642,8 @@ export class DelegationService {
     const record = refusedSchema.parse({ id: randomUUID(), delegatingThreadId: caller.id, action: target === undefined ? 'start' : 'send', work: input.work,
       ...(target !== undefined && this.links.get(target)?.delegatingThreadId === caller.id ? { delegatedThreadId: target } : {}),
       ...(target === undefined && input.provider ? { provider: input.provider } : {}),
+      ...(refusal.code === 'MACHINE_UNAVAILABLE' && (input.machine !== undefined || input.os !== undefined)
+        ? { asked: { ...(input.machine !== undefined ? { machine: input.machine } : {}), ...(input.os !== undefined ? { os: input.os } : {}) } } : {}),
       code: refusal.code, message: refusal.message.slice(0, REFUSAL_MESSAGE_MAX), ...(root ? { rootUserMessageId: root } : {}), ...(head ? { callerMessageId: head } : {}),
       createdAt: now() })
     this.refusalEntries.push(record)
@@ -879,7 +886,8 @@ export class DelegationService {
     const fromRole = byRole?.runtimeMode && input.permission === undefined ? this.heldToCeiling(byRole.runtimeMode, model, caller, snapshot.models) : undefined
     const permission = this.permission(model, caller, snapshot.models, input.permission ?? fromRole?.mode)
     const delegatedThreadId = randomUUID()
-    const hostHeld = fromRole?.held?.by === 'not-told' || fromRole?.held?.by === 'no-answer-grant' ? fromRole.held.by : undefined
+    const by = fromRole?.held?.by
+    const hostHeld = by === 'not-told' || by === 'no-answer-grant' || by === 'answers-revoked' ? by : undefined
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}) })
     this.add(record)
     this.creating.add(record.id)

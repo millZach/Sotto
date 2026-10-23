@@ -35,6 +35,8 @@ describe('the desktop defaults a host keeps', () => {
     await store.record('desktop-a', { newThreadRuntimeMode: 'full-access', workerRoles: { 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' }, retired: { modelId: 'x' } } })
     expect(store.ceiling(clientId => clientId === 'desktop-a')).toEqual({ mode: 'full-access' })
     expect(store.ceiling(() => false)).toEqual({ mode: 'approval-required', held: 'no-answer-grant' })
+    // The newest sender's grant taken away is said as such (#1310), so the window offers no fix that cannot work.
+    expect(store.ceiling(() => false, clientId => clientId === 'desktop-a')).toEqual({ mode: 'approval-required', held: 'answers-revoked' })
     // A newer desktop's role an older host does not know costs only that row.
     expect(store.roles(() => true)).toEqual({ 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' } })
     // Roles from a desktop that does not count do not apply either.

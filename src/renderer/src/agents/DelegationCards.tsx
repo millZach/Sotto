@@ -6,7 +6,7 @@ import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActiv
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, heldLine, lastReadOutcome, lastReadWord, stopLine, userTurnRunning, workingDelegatedThreads } from './delegationWords'
+import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, heldLine, lastReadOutcome, lastReadWord, stopLine, userTurnRunning, workingDelegatedThreads } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
@@ -25,6 +25,8 @@ export interface DelegationCardWorld {
    * Sotto is connected to it now, and when what the cards show stood, while it is not.
    */
   readonly away?: { readonly name: string; readonly connected: boolean; readonly lastReadAt: number } | undefined
+  /** A machine by its host ID, as a refused start's card names what it asked for: "this computer", or a host's name. */
+  readonly machineName?: ((hostId: string) => string | undefined) | undefined
 }
 const DelegationCardContext = createContext<DelegationCardWorld | null>(null)
 
@@ -47,6 +49,7 @@ export function useDelegationCardWorld(state: AgentState, command: AgentConnecti
         if (from === undefined) void command({ type: 'select-thread', threadId: id })
         else openDelegatedThread(command, id, from)
       }, liveClock: now === undefined, now,
+      machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? 'this computer' : listed.name },
       ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}) }
   }, [threads, connections, command, now, awayName, awayConnected, lastReadAt])
 }
@@ -107,7 +110,7 @@ function RefusedDelegationCard({ view, world }: { readonly view: RefusedView; re
       <span className="delegation-card__name" title={title}>{title}</span>
     </div>
     <Where id={`delegation-${view.id}-details`} provider={view.provider ?? thread?.providerId} thread={thread} world={world} machine={thread !== undefined || world.away === undefined} />
-    <p className="delegation-card__wait">{delegationRefusalLine(view, world.away?.name)}</p>
+    <p className="delegation-card__wait">{delegationRefusalLine(view, world.away?.name, view.asked && world.away ? askedFor(view.asked, hostId => world.machineName?.(hostId)) : undefined)}</p>
   </div>
 }
 
