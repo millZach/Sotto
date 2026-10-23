@@ -79,9 +79,39 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
       expect(await finished).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
       expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
       await expect.poll(() => host.staged).toBe(0)
-      await laptop.discard(moveId)
+      await laptop.discard(prepared)
       git(machines.laptop, 'switch', '-q', 'main')
       git(machines.laptop, 'branch', '-q', '-D', 'feature/login')
     }
+  })
+
+  it('lets an attempt left by a dropped connection clean up only its own, not the retry on the new connection', async () => {
+    let bundled = 0
+    // The first attempt's bundle is written, then held there while its connection drops and the retry takes the move.
+    const first = held(args => args[0] === 'bundle' && args[1] === 'create' && ++bundled === 1)
+    const host = forge(first.run), old = connection(), fresh = connection()
+    const moveId = randomUUID(), commit = git(machines.forge, 'rev-parse', 'main')
+    const stale = host.handle({ action: 'send-begin', moveId, threadId: 'forge-thread', bases: [] }, old.owner, old.gone)
+    await first.reached
+    old.close()
+    await expect.poll(() => host.staged).toBe(0)
+    const retry = host.handle({ action: 'send-begin', moveId, threadId: 'forge-thread', bases: [] }, fresh.owner, fresh.gone)
+    first.release()
+    expect(await stale).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+    const sending = await retry as { type: string; commit: string; size: number }
+    expect(sending).toMatchObject({ type: 'sending', branch: 'main', commit })
+    expect(host.staged).toBe(1)
+    // The retry's bundle is still there to read, whole.
+    let bytes = 0
+    while (bytes < sending.size) {
+      const chunk = await host.handle({ action: 'send-chunk', moveId, offset: bytes }, fresh.owner, fresh.gone) as { type: string; data: string }
+      expect(chunk.type).toBe('chunk')
+      bytes += Buffer.from(chunk.data, 'base64').byteLength
+    }
+    expect(bytes).toBe(sending.size)
+    expect(await readdir(machines.data('forge').stagingDirectory)).toHaveLength(1)
+    expect(await host.handle({ action: 'end', moveId }, fresh.owner, fresh.gone)).toBeNull()
+    expect(await readdir(machines.data('forge').stagingDirectory)).toEqual([])
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
   })
 })

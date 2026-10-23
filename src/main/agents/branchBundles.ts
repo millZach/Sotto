@@ -1,4 +1,4 @@
-import { createHash, type Hash } from 'node:crypto'
+import { createHash, randomUUID, type Hash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, open, readdir, stat, unlink, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -33,8 +33,11 @@ type Records = z.infer<typeof recordsSchema>
 /** Records kept, newest by time; one a later move pushes out only stops an old retry being recognised. */
 const RECORDS_MAX = 1000
 
-/** The bundle file names this module stages, so a start clears what a crash left and nothing else. */
-const STAGED = /^[0-9a-f-]{36}\.(?:in|out)\.bundle$/u
+/**
+ * The bundle file names this module stages, so a start clears what a crash left and nothing else: the move, then the
+ * attempt, so an attempt that outlives its connection can only ever remove its own file.
+ */
+const STAGED = /^[0-9a-f-]{36}\.[0-9a-f-]{36}\.(?:in|out)\.bundle$/u
 
 export interface BranchBundlesOptions {
   /** A folder of Sotto's own, in its data folder, where bundles wait while they cross. Emptied of them at start. */
@@ -90,6 +93,8 @@ export class BranchBundles {
   private started: Promise<void> | undefined
   /** The records' last read-modify-write, which the next one waits for, so moves finishing together each keep theirs. */
   private recording: Promise<void> = Promise.resolve()
+  /** Each move's outgoing ref in use, so two attempts at one move never point, bundle or remove it at the same time. */
+  private readonly outgoing = new Map<string, Promise<unknown>>()
   constructor(private readonly options: BranchBundlesOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.maxBytes = Math.min(options.maxBytes ?? BRANCH_BUNDLE_MAX_BYTES, BRANCH_BUNDLE_MAX_BYTES)
@@ -149,23 +154,34 @@ export class BranchBundles {
    */
   async prepare(input: { readonly repository: string; readonly moveId: string; readonly commit: string; readonly bases: readonly string[] }): Promise<PreparedBundle | BranchMoveRefusal> {
     await this.start()
-    const path = this.stagedPath(input.moveId, 'out'), ref = outgoingRef(input.moveId)
+    const path = this.stagedPath(input.moveId, 'out')
     try {
       let bases = await this.present(input.repository, input.bases)
       if (bases.length > 0 && (await this.git(input.repository, ['rev-list', '--count', input.commit, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n')).trim() === '0') {
         bases = (await this.git(input.repository, ['rev-list', '--parents', '-n', '1', input.commit])).trim().split(/\s+/u).slice(1)
       }
-      await this.git(input.repository, ['update-ref', ref, input.commit], undefined, 30_000)
-      try {
-        await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 600_000)
-      } finally { await this.git(input.repository, ['update-ref', '-d', ref], undefined, 30_000).catch(() => undefined) }
+      await this.withOutgoingRef(input.moveId, async ref => {
+        await this.git(input.repository, ['update-ref', ref, input.commit], undefined, 30_000)
+        try {
+          await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 600_000)
+        } finally { await this.git(input.repository, ['update-ref', '-d', ref], undefined, 30_000).catch(() => undefined) }
+      })
       const { size } = await stat(path)
-      if (size > this.maxBytes) { await this.discard(input.moveId); return branchMoveRefusal('too-large', branchMoveWords.tooLarge(size, this.maxBytes)) }
+      if (size > this.maxBytes) { await unlink(path).catch(() => undefined); return branchMoveRefusal('too-large', branchMoveWords.tooLarge(size, this.maxBytes)) }
       return { type: 'sending', path, size, sha256: await fileDigest(path) }
     } catch {
-      await this.discard(input.moveId)
+      await unlink(path).catch(() => undefined)
       return branchMoveRefusal('failed', branchMoveWords.failed)
     }
+  }
+
+  /** Runs `use` with the move's outgoing ref to itself, once any other attempt at the same move has finished with it. */
+  private withOutgoingRef<T>(moveId: string, use: (ref: string) => Promise<T>): Promise<T> {
+    const mine = (this.outgoing.get(moveId) ?? Promise.resolve()).then(() => use(outgoingRef(moveId)))
+    const settled = mine.catch(() => undefined)
+    this.outgoing.set(moveId, settled)
+    void settled.then(() => { if (this.outgoing.get(moveId) === settled) this.outgoing.delete(moveId) })
+    return mine
   }
 
   /** Of the commits a receiver named, the ones this repository has, so `git bundle create` is not handed one it lacks. */
@@ -186,9 +202,9 @@ export class BranchBundles {
     } finally { await handle.close() }
   }
 
-  /** Removes whatever a move staged, either way. */
-  async discard(moveId: string): Promise<void> {
-    for (const way of ['in', 'out'] as const) await unlink(this.stagedPath(moveId, way)).catch(() => undefined)
+  /** Removes a bundle staged for sending: that attempt's file only, so another attempt at the same move keeps its own. */
+  async discard(prepared: PreparedBundle): Promise<void> {
+    await unlink(prepared.path).catch(() => undefined)
   }
 
   // The receiving side.
@@ -277,7 +293,8 @@ export class BranchBundles {
     return recorded
   }
 
-  private stagedPath(moveId: string, way: 'in' | 'out'): string { return join(this.options.stagingDirectory, `${moveId}.${way}.bundle`) }
+  /** A new attempt's staged file for a move. */
+  private stagedPath(moveId: string, way: 'in' | 'out'): string { return join(this.options.stagingDirectory, `${moveId}.${randomUUID()}.${way}.bundle`) }
 }
 
 function fileDigest(path: string): Promise<string> {

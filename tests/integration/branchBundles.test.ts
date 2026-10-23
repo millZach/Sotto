@@ -139,7 +139,7 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     // A bundle a crash left behind is cleared when the next run starts; other files stay.
     const staging = machines.data('forge').stagingDirectory
     await mkdir(staging, { recursive: true })
-    await writeFile(join(staging, `${randomUUID()}.in.bundle`), 'partial')
+    await writeFile(join(staging, `${randomUUID()}.${randomUUID()}.in.bundle`), 'partial')
     await writeFile(join(staging, 'keep.txt'), 'not ours')
     await new BranchBundles(machines.data('forge')).start()
     expect(await readdir(staging)).toEqual(['keep.txt'])

@@ -5,7 +5,7 @@ import {
   branchMoveRefusal, branchMoveWords, branchReceiveBeginAnswerSchema, branchReceiveChunkAnswerSchema, branchReceiveFinishAnswerSchema,
   branchSendBeginAnswerSchema, branchSendChunkAnswerSchema, branchTipsAnswerSchema, type BranchMoveReceipt, type BranchMoveRefusal, type HostBranchMoveRequest,
 } from '../../shared/branchMoves'
-import { BranchBundles, IncomingBundle } from './branchBundles'
+import { BranchBundles, IncomingBundle, type PreparedBundle } from './branchBundles'
 
 /**
  * Branch moves between this desktop and a host it is connected to (ADR-0082, amended by ADR-0105 decision 8), with the
@@ -84,11 +84,13 @@ export class DesktopBranchMoves {
     const source = await this.options.bundles.branchOf(folder)
     if ('type' in source) return source
     const moveId = input.moveId ?? this.options.newMoveId?.() ?? randomUUID()
+    let staged: PreparedBundle | undefined
     try {
       const tips = answer(branchTipsAnswerSchema, await host.branchMove({ action: 'tips', projectId: input.projectId }))
       if (refused(tips)) return tips
       const prepared = await this.options.bundles.prepare({ repository: folder, moveId, commit: source.commit, bases: tips.tips })
       if (prepared.type !== 'sending') return prepared
+      staged = prepared
       const begun = answer(branchReceiveBeginAnswerSchema, await host.branchMove({ action: 'receive-begin', moveId, projectId: input.projectId,
         branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 }))
       if (begun.type !== 'receiving') return begun
@@ -104,7 +106,7 @@ export class DesktopBranchMoves {
       // The connection dropped or the host did not answer: the host discards what it staged when the connection goes, and
       // is asked to now in case it has not gone.
       return await this.ended(host, moveId, branchMoveRefusal('cut-off', branchMoveWords.cutOff))
-    } finally { await this.options.bundles.discard(moveId) }
+    } finally { if (staged) await this.options.bundles.discard(staged) }
   }
 
   /**

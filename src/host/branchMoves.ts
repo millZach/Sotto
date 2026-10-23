@@ -58,7 +58,8 @@ export class HostBranchMoves {
       case 'receive-finish': {
         const incoming = this.own(request.moveId, owner)?.incoming
         if (!incoming) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
-        try { return await this.bundles.finish(incoming) } finally { this.transfers.delete(request.moveId) }
+        const transfer = this.transfers.get(request.moveId)!
+        try { return await this.bundles.finish(incoming) } finally { this.release(request.moveId, transfer) }
       }
       case 'send-begin': {
         const folder = this.folders.threadFolder(request.threadId)
@@ -69,13 +70,14 @@ export class HostBranchMoves {
         this.transfers.set(request.moveId, holding)
         try {
           const source = await this.bundles.branchOf(folder)
-          if ('type' in source) { this.transfers.delete(request.moveId); return source }
+          if ('type' in source) { this.release(request.moveId, holding); return source }
           const prepared = await this.bundles.prepare({ repository: folder, moveId: request.moveId, commit: source.commit, bases: request.bases })
-          if (prepared.type !== 'sending') { this.transfers.delete(request.moveId); return prepared }
-          if (gone.aborted || this.transfers.get(request.moveId) !== holding) { await this.bundles.discard(request.moveId); this.transfers.delete(request.moveId); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
+          if (prepared.type !== 'sending') { this.release(request.moveId, holding); return prepared }
+          // Ended while it was written: this attempt removes its own bundle and hold, never a later attempt's.
+          if (gone.aborted || this.transfers.get(request.moveId) !== holding) { this.release(request.moveId, holding); await this.bundles.discard(prepared); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
           this.transfers.set(request.moveId, { owner, outgoing: prepared })
           return { type: 'sending', branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 }
-        } catch (error) { this.transfers.delete(request.moveId); await this.bundles.discard(request.moveId); throw error }
+        } catch (error) { this.release(request.moveId, holding); throw error }
       }
       case 'send-chunk': {
         const outgoing = this.own(request.moveId, owner)?.outgoing
@@ -101,7 +103,7 @@ export class HostBranchMoves {
     const transfer = this.transfers.get(moveId)
     this.transfers.delete(moveId)
     if (transfer?.incoming) await this.bundles.abandon(transfer.incoming)
-    if (transfer?.outgoing) await this.bundles.discard(moveId)
+    if (transfer?.outgoing) await this.bundles.discard(transfer.outgoing)
   }
   private async dropAll(owner: object): Promise<void> {
     for (const [moveId, transfer] of [...this.transfers]) if (transfer.owner === owner) await this.drop(moveId)
