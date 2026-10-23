@@ -9,3 +9,8 @@ export function useCreature(): Creature {
   const chosen = useOptionalApp()?.settings?.creature
   return chosen !== undefined && (CREATURES as readonly string[]).includes(chosen) ? chosen : DEFAULT_SETTINGS.creature
 }
+
+/** Whether the creature shows at all: Settings → Appearance → Creature. On until turned off, and before settings are read. */
+export function useCreatureShown(): boolean {
+  return useOptionalApp()?.settings?.showCreature !== false
+}

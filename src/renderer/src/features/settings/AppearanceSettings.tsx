@@ -102,7 +102,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
           <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
 
           <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, 'Effort color saved.')} />
-          <CreatureChoice value={settings.creature} onChoose={creature => void onSave({ creature }, 'Creature saved.').catch(() => false)} />
+          <CreatureChoice value={settings.creature} shown={settings.showCreature} onShow={showCreature => void onSave({ showCreature }, showCreature ? 'Creature shown.' : 'Creature hidden.').catch(() => false)} onChoose={creature => void onSave({ creature }, 'Creature saved.').catch(() => false)} />
           {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
 
           <div className="settings-rows">

@@ -34,6 +34,7 @@ const customSettings = {
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
   creature: 'claude',
+  showCreature: false,
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -241,10 +242,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'showCreature', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', showCreature: true, customThemes: [] })
     }
   })
 
@@ -345,6 +346,7 @@ describe('settings', () => {
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
       creature: 'sotto',
+      showCreature: true,
       customThemes: [],
       reducedMotion: 'system',
       microphoneId: null,

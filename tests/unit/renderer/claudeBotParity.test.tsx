@@ -10,7 +10,7 @@ import type { Creature } from '../../../src/shared/settings'
  * in the same place, face the same way, send their small agents along the same path and run the same sand.
  */
 const setting = vi.hoisted(() => ({ creature: 'sotto' as Creature }))
-vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreature: () => setting.creature }))
+vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreatureShown: () => true, useCreature: () => setting.creature }))
 
 let width = 600, systemReduce = false
 beforeEach(() => {
