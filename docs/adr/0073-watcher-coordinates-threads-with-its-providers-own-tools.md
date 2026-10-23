@@ -279,6 +279,8 @@ Watcher gains a read-only tool, `list_machines`. It lists This computer and ever
 
 Copy says **machine** (Zach, October 14): the host is the process, and This computer is the local one. Numbers and the system's own operating system name only, on the connection Sotto already keeps; nothing in a log.
 
+Amended October 22, 2026 (#1311): the facts said nothing of how busy a machine is, so Watcher could not tell a busy machine from an idle one with the same CPUs. The `host-facts` answer now also carries the machine's **live load** and its **work placed but not started** (CONTEXT.md), both optional, both read when facts are asked for and never on a timer, and an older host's read unknown. `list_machines` shows them, with whether the machine is short on memory or busy against one tunable set of starting thresholds. Nothing places work by them yet; that comes with choosing where workers start.
+
 ## October 16, 2026: Watcher on Muse
 
 Watcher may now run on Muse as well as Codex, Claude Code and Grok Build, wherever the Muse client takes tools for one session (#1039, [ADR-0079](0079-muse-is-a-thread-provider.md)'s **Amendment: Watcher runs on Muse**). Muse is offered in Watcher's model picker, its first-entry composer and a provider change's handover while Muse itself is shown. Devin stays unavailable.

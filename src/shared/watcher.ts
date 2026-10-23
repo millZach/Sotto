@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
-import { hostFactsSchema, hostOsSchema } from './hostFacts'
+import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
@@ -177,7 +177,9 @@ export function watcherResultFromHostV1(value: unknown): unknown {
 /**
  * One machine as list_machines shows it (#1031): This computer or a connected host, its host facts when it reported them,
  * and how many of its threads are running a turn. `factsState` says why there are none: `unknown` for a host that does not
- * report them or could not be read, `not-connected` for one that is not connected now. Never guessed.
+ * report them or could not be read, `not-connected` for one that is not connected now. Never guessed. Its live load and work
+ * placed but not started (#1311) are null where the host does not report them, and `memoryState` and `cpuState` are what
+ * that load says against `MACHINE_LOAD_THRESHOLDS`, unknown when it is missing or over a minute old.
  */
 export const WATCHER_MACHINES_MAX = 100
 
@@ -219,7 +221,8 @@ export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
 const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
   factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
-  runningThreads: counter.nullable() }).strict()
+  runningThreads: counter.nullable(), load: hostLoadSchema.strict().nullable(), placedNotStarted: counter.nullable(),
+  memoryState: z.enum(['short', 'enough', 'unknown']), cpuState: z.enum(['busy', 'not-busy', 'unknown']) }).strict()
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {

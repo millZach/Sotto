@@ -15,7 +15,7 @@ import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_P
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
-import type { HostMachineReport } from '../../shared/hostFacts'
+import { machineLoadStates, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherMergeTurn, type WatcherMergeTurnsRead,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -3439,16 +3439,21 @@ ${operation.draftId}`)
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
   private async listMachines() {
-    const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null })
+    // Live load and work placed but not started (#1311) read unknown wherever the facts do.
+    const noLoad = { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const }
+    const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
       try {
         const report = await facts()
-        return report ? { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads } : unknown(older)
+        if (!report) return unknown(older)
+        const states = machineLoadStates(report.load, report.facts.totalMemoryBytes, Date.now())
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, load: report.load,
+          placedNotStarted: report.placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
       ...(this.options.machineFacts ? await read(this.options.machineFacts, MACHINE_FACTS_UNREAD) : unknown(MACHINE_FACTS_UNREAD)) }
-    const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null }
+    const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null, ...noLoad }
     const stillConnected = (hostId: string) => this.remote?.hosts().some(item => item.hostId === hostId && item.connected) === true
     const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => {
       const facts = !host.connected ? notConnected

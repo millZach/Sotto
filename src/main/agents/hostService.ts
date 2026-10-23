@@ -308,7 +308,7 @@ export class LocalHostService implements HostService {
   }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
-    return hostMachineReport(this.options.facts, this.control.shell().host.threads)
+    return hostMachineReport(this.options.facts, this.control.shell())
   }
 
   usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
