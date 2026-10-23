@@ -1,7 +1,7 @@
 import React, { useId, useMemo, type ReactNode } from 'react'
 import { Laptop, MapPin, Server } from 'lucide-react'
 import type { HostsBridge } from '../../../../shared/hosts'
-import { useHostsState } from '../../state/hostsState'
+import { savedMachines, useHostsState } from '../../state/hostsState'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import type { WatcherMachine } from '../../../../shared/watcherRoom'
 import { workerMachineHostId, type WorkerMachineSetting } from '../../../../shared/workerMachine'
@@ -83,12 +83,14 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
   const listed = machines?.machines ?? []
   const local = listed.find(machine => machine.thisComputer) ?? null
   const localId = hostsState?.localHostId ?? local?.hostId
-  // Every machine this computer has paired with, by the name the user saved, then any other the read lists.
-  const saved = (hostsState?.hosts ?? []).filter(host => host.hostId !== undefined && host.hostId !== localId)
-  const remotes: Choice[] = saved.map(host => {
+  // Every machine this computer has paired with, by the name the user saved, then any other the read lists. Whether a saved
+  // machine is connected is the saved hosts' answer now, which main keeps current, not the last read's, as on the
+  // machines line; the read only gives its facts, and none while it is not connected.
+  const saved = savedMachines(hostsState) ?? []
+  const remotes: Choice[] = saved.filter(host => host.hostId !== localId).map(host => {
     const machine = listed.find(item => item.hostId === host.hostId) ?? null
-    return { value: host.hostId!, title: host.name, kind: 'remote', connected: machine?.connected === true && machine.factsState !== 'not-connected' || machine === null && host.phase === 'connected',
-      machine, working: working.get(host.hostId!) ?? 0 }
+    const read = machine !== null && machine.connected && machine.factsState !== 'not-connected' ? machine : null
+    return { value: host.hostId, title: host.name, kind: 'remote', connected: host.connected, machine: host.connected ? read : null, working: working.get(host.hostId) ?? 0 }
   })
   for (const machine of listed) {
     if (machine.thisComputer || remotes.some(choice => choice.value === machine.hostId)) continue

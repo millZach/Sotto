@@ -81,6 +81,29 @@ describe('Settings, under Watcher: Where new workers start (#1032)', () => {
     expect(radio.closest('label')).toHaveTextContent('Not connected')
   })
 
+  it('takes whether a machine is connected from the saved hosts now, not from the last read, as the machines line does', async () => {
+    // The last read found forge connected; it has since dropped.
+    show({ machines: [local, forge], chosen: FORGE, saved: [{ hostId: FORGE, name: 'forge', phase: 'disconnected' }] })
+    await act(async () => undefined)
+    const card = group().getByRole('radio', { name: 'forge' }).closest('label')!
+    expect(card).toHaveTextContent('Not connected')
+    expect(card).not.toHaveTextContent('CPU 93%')
+    expect(group().getByRole('radio', { name: 'forge' })).toHaveAccessibleDescription(/forge is not connected\./u)
+    cleanup()
+    // The last read found forge not connected; it is connected now.
+    show({ machines: [local, { ...forge, connected: false, factsState: 'not-connected', facts: null, load: null, memoryState: 'unknown', cpuState: 'unknown' }],
+      saved: [{ hostId: FORGE, name: 'forge', phase: 'connected' }] })
+    await act(async () => undefined)
+    const now = group().getByRole('radio', { name: 'forge' }).closest('label')!
+    expect(now).not.toHaveTextContent('Not connected')
+    expect(now).toHaveTextContent('0 working')
+    cleanup()
+    // A machine reconnecting is not connected yet.
+    show({ machines: [local, forge], saved: [{ hostId: FORGE, name: 'forge', phase: 'connected', reconnecting: true }] })
+    await act(async () => undefined)
+    expect(group().getByRole('radio', { name: 'forge' }).closest('label')).toHaveTextContent('Not connected')
+  })
+
   it('says only this computer is connected when no machine is paired, and offers Hosts & phones', async () => {
     const { openHosts } = show({ machines: [local], saved: [] })
     await act(async () => undefined)
