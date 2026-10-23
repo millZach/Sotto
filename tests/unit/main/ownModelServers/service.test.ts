@@ -175,7 +175,7 @@ describe('removing a server', () => {
     openCode.signOut = async id => { calls.push(`sign-out ${id} ${credentials}`); credentials = 0; return true }
     // A folder where the record goes makes the next write fail.
     await rm(join(directory, OWN_SERVERS_FILE)); await mkdir(join(directory, OWN_SERVERS_FILE))
-    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'refused', reason: 'failed', message: OWN_SERVER_WORDS.removePartly('Spark') })
+    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'refused', reason: 'removed-partly', message: OWN_SERVER_WORDS.removePartly('Spark') })
     expect((await service.list()).map(server => server.id)).toEqual(['own-test0'])
     await rm(join(directory, OWN_SERVERS_FILE), { recursive: true })
     expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })

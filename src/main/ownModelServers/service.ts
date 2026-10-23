@@ -198,7 +198,7 @@ export class OwnServers {
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))
       }
       try { await this.save(servers.filter(item => item.id !== id)) } catch {
-        return refusal('failed', OWN_SERVER_WORDS.removePartly(server.name))
+        return refusal('removed-partly', OWN_SERVER_WORDS.removePartly(server.name))
       }
     } else await this.save(servers.filter(item => item.id !== id))
     if (running) {

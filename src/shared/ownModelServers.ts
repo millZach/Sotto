@@ -68,6 +68,8 @@ export const ownServerRefusalSchema = z.enum([
   'not-found', 'full',
   /** Something in Sotto went wrong before the request was done, such as the record not being written. */
   'failed',
+  /** Remove signed OpenCode out of the server's key but could not take the server off the list; a second Remove finishes it. */
+  'removed-partly',
 ])
 export type OwnServerRefusal = z.infer<typeof ownServerRefusalSchema>
 const refused = z.object({ status: z.literal('refused'), reason: ownServerRefusalSchema, message: z.string().min(1).max(600) }).strict()
@@ -149,6 +151,7 @@ export function ownServerRefusalWords(reason: OwnServerRefusal, host: string, se
     case 'not-found': return OWN_SERVER_WORDS.notFound
     case 'full': return OWN_SERVER_WORDS.full
     case 'failed': return OWN_SERVER_WORDS.failed
+    case 'removed-partly': return OWN_SERVER_WORDS.removePartly(serverName)
   }
 }
 
