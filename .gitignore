@@ -184,8 +184,6 @@ artifacts/devin-local-provider/
 artifacts/thread-sidebar/
 
 artifacts/terminal-loading/
-artifacts/terminal-agent-states/
-artifacts/phone-terminals/
 
 artifacts/activity-performance/
 artifacts/process-creature/
@@ -526,19 +524,6 @@ artifacts/linux-shutdown-drain/*
 !artifacts/linux-shutdown-drain/result.json
 !artifacts/linux-shutdown-drain/before-quit.png
 
-# Codex terminal state proof; retain only the cited captures and metadata.
-artifacts/codex-terminal-state/*
-!artifacts/codex-terminal-state/built-working.png
-!artifacts/codex-terminal-state/built-idle-1600x1000-dark.png
-!artifacts/codex-terminal-state/built-idle-1280x800-dark.png
-!artifacts/codex-terminal-state/built-idle-820x560-light.png
-!artifacts/codex-terminal-state/built-result.json
-!artifacts/codex-terminal-state/packaged-working.png
-!artifacts/codex-terminal-state/packaged-idle-1600x1000-dark.png
-!artifacts/codex-terminal-state/packaged-idle-1280x800-dark.png
-!artifacts/codex-terminal-state/packaged-idle-820x560-light.png
-!artifacts/codex-terminal-state/packaged-result.json
-
 # New-thread defaults on every host (ADR-0074); retain only the captures its verification note cites.
 artifacts/new-thread-defaults-every-host/*
 !artifacts/new-thread-defaults-every-host/dark-1600.png
@@ -782,3 +767,7 @@ artifacts/message-scrubber/*
 !artifacts/message-scrubber/watcher-owls-light-1280x800.png
 !artifacts/message-scrubber/watcher-owls-light-1600x1000.png
 !artifacts/message-scrubber/watcher-owls-light-820x560.png
+
+# Terminal mode removed (ADR-0111); retain only the capture its verification note cites.
+artifacts/remove-terminal-mode/*
+!artifacts/remove-terminal-mode/threads-populated-after.png

@@ -8,7 +8,7 @@ interface ShellDependencies {
 }
 interface ResolvedShell { readonly path: string; readonly discovered: boolean }
 
-/** One shell rule for Terminal mode, Tools and drawers; only a discovered shell needs revalidation. */
+/** One shell rule for Tools and drawers; only a discovered shell needs revalidation. */
 export class TerminalShell {
   private cached: ResolvedShell | null = null
   private lookup: Promise<ResolvedShell> | null = null

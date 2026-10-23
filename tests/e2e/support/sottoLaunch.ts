@@ -98,9 +98,9 @@ export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   if (launched.ownsUserData) await removeOwnedE2EProfile(launched.userData)
 }
 
-/** The Threads page landmark, whichever sidebar mode the window last remembered. */
+/** The Threads page landmark: its sidebar. */
 function threadSidebar(page: Page): Locator {
-  return page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })
+  return page.getByRole('complementary', { name: 'Thread sidebar' })
 }
 
 /** First-run setup's nine steps, in the order the footer walks them. */

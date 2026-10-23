@@ -211,6 +211,27 @@ it('offers a phone on a listener that tells desktops apart everything but the de
   expect(desktopHello.phoneAccess).toEqual({ status: 'on', phones: 1 })
 })
 
+it('offers terminals to nobody, and sends a phone that still accepts them an empty list so a waiting terminal answer settles', async () => {
+  const { pairing, paired } = await pairedClient('Zach’s iPhone')
+  const newer = await pairing.redeem(pairing.issuePairingCode().code, 'Newer iPhone')
+  const { service } = recordingService()
+  listener = await startSocketServer({ service, pairing })
+  const health = await (await fetch(`http://127.0.0.1:${listener.descriptor.port}/v1/health`)).json() as { features: string[] }
+  expect(health.features).not.toContain('terminals')
+
+  // An iPhone from before ADR-0111 still lists `terminals`; an empty list is how it learns its terminal left.
+  const older = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = (await older.call('hello', { op: 'hello', accepts: ['terminals'] })).result as { features: string[]; shell: { terminals?: unknown } }
+  expect(hello.features).not.toContain('terminals')
+  expect(hello.shell.terminals).toEqual([])
+  expect(((await older.call('shell', { op: 'shell' })).result as { terminals?: unknown }).terminals).toEqual([])
+  expect(await older.call('observe-terminals', { op: 'observe-terminals', terminalIds: [] })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  const current = await connected(listener.descriptor.port, pairing.signSession(newer.clientId))
+  const currentHello = (await current.call('hello', { op: 'hello' })).result as { shell: Record<string, unknown> }
+  expect(currentHello.shell).not.toHaveProperty('terminals')
+})
+
 it('opens nothing for a phone while phones are not admitted, closes one already connected, and keeps the desktop', async () => {
   const { pairing, paired } = await pairedClient('Zach’s iPhone')
   const desktop = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')

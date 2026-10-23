@@ -11,7 +11,6 @@ import type { FilesService } from '../files/service'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { TerminalShell } from '../terminals/shell'
-import { checkoutIdentity } from '../agents/threadWorktrees'
 import { CheckoutSendRefusal } from '../agents/checkoutMutations'
 
 export interface TerminalDependencies {
@@ -59,19 +58,6 @@ export class TerminalService extends ToolOperations {
   /** Whether a shell of this thread's is still running in its working copy, so the folder is not reclaimed under it. Counts a Tools shell and a pane drawer's shell alike: a drawer's shell starts in the project folder, but it can be changed into the working copy. */
   hasRunningTerminal(threadId: string): boolean {
     return [...this.sessions.values()].some(record => record.session.workspace.threadId === threadId && record.pty !== undefined)
-  }
-  /** Includes a shell left in an older binding, even when its thread no longer names that checkout. */
-  async hasRunningTerminalInCheckout(folder: string): Promise<boolean> {
-    const identity = await checkoutIdentity(folder)
-    for (const record of this.sessions.values()) {
-      if (!record.pty) continue
-      try {
-        if (await checkoutIdentity(record.session.workspace.workingDirectory) === identity) return true
-        if (record.cwd && await checkoutIdentity(record.cwd) === identity) return true
-      }
-      catch { return true } // An unavailable live shell's folder cannot safely be ruled out.
-    }
-    return false
   }
   private snapshot(record: LiveTerminal): TerminalSnapshot { return { session: { ...record.session }, output: record.output, sequence: record.sequence } }
   private async owned(request: z.infer<typeof terminalRequestSchema>, validateDirectory = true): Promise<LiveTerminal> {

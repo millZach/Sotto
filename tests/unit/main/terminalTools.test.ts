@@ -103,14 +103,6 @@ describe('persistent terminal service', () => {
     expect(acquireStart).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'a' }))
     expect(release).toHaveBeenCalledOnce()
   })
-  it('protects a running shell in its original checkout after the thread binding changes', async () => {
-    const f = await fixture()
-    const { session } = unwrap(await f.service.create(f.target))
-    f.change()
-    expect(await f.service.hasRunningTerminalInCheckout(session.workspace.workingDirectory)).toBe(true)
-    unwrap(await f.service.close({ ...f.target, sessionId: session.id }))
-    expect(await f.service.hasRunningTerminalInCheckout(session.workspace.workingDirectory)).toBe(false)
-  })
   it('reports the total across both places and all threads, including ended shells', async () => {
     const f = await fixture()
     const other = unwrap(await f.service.list({ threadId: 'b', place: 'drawer' })).workspace
@@ -290,17 +282,10 @@ describe('persistent terminal service', () => {
     await initializeGitRepository(project)
     await initializeGitRepository(f.directory)
     const tools = unwrap(await f.service.create(f.target))
-    const drawer = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
     expect(f.spawn).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: tools.session.workspace.workingDirectory }))
     expect(f.spawn).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: project }))
     expect(projectFolder).toHaveBeenCalledWith('project')
-    unwrap(await f.service.close({ ...f.target, sessionId: tools.session.id }))
-    f.change()
-    expect(await f.service.hasRunningTerminalInCheckout(project)).toBe(true)
-    expect(await f.service.hasRunningTerminalInCheckout(drawer.session.workspace.workingDirectory)).toBe(true)
-    unwrap(await f.service.close({ ...f.target, sessionId: drawer.session.id }))
-    expect(await f.service.hasRunningTerminalInCheckout(project)).toBe(false)
-    expect(await f.service.hasRunningTerminalInCheckout(drawer.session.workspace.workingDirectory)).toBe(false)
   })
   it.each(['project', 'working-copy'] as const)('refuses a drawer start while its %s folder is reserved and releases every start reservation', async folder => {
     const project = await mkdtemp(join(tmpdir(), 'sotto-terminal-project-'))

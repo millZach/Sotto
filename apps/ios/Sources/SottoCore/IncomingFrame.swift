@@ -62,7 +62,7 @@ public extension Wire {
     /// `activity-summaries` asks for activity as its rows read it, without command output, text or diffs (#701).
     /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
-        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("terminals"), .string("provider-opencode")])]
+        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode")])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.

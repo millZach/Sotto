@@ -38,7 +38,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
     })
     await page.reload()
-    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     await openThreads(page)
     await page.evaluate(() => document.fonts.ready)
     await page.getByRole('button', { name: 'Tools', exact: true }).click()

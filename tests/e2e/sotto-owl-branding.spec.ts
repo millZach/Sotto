@@ -97,7 +97,7 @@ async function checkBrand(row: Locator, track: ReleaseTrack): Promise<Record<str
   expect(Math.abs(box.y + box.height / 2 - (rowBox.y + rowBox.height / 2))).toBeLessThanOrEqual(1)
   expect(box.x).toBeGreaterThanOrEqual(rowBox.x)
   // The Settings column's row carries the brand alone; the Threads sidebar's carries its toolbar after it.
-  const controls = row.locator('[role="radio"], button')
+  const controls = row.locator('button')
   if (await controls.count() > 0) expect(box.x + box.width).toBeLessThan((await controls.first().boundingBox())!.x)
   // The tile is a picture in the drag region, never a stop in the Tab order.
   expect(await tile.evaluate(node => (node as HTMLElement).tabIndex)).toBe(-1)

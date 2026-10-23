@@ -3,7 +3,6 @@ import { FileText, FolderOpen, Paperclip } from 'lucide-react'
 
 import { blockedPercent, freezeLength, type ActivityRecordingState, type MainLoopReading } from '../../../../shared/mainActivity'
 import { useOptionalAgents } from '../../agents/AgentContext'
-import { useSidebarMode } from '../../agents/SidebarFrame'
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
 import './mainActivity.css'
@@ -60,18 +59,14 @@ export function useRecordingSecondsLeft(recording: ActivityRecordingState): numb
 function useAttach(recording: Extract<ActivityRecordingState, { phase: 'saved' }>, after?: () => void): () => void {
   const agents = useOptionalAgents()
   const navigate = useOptionalApp()?.actions.navigate
-  const [, setMode] = useSidebarMode()
   return useCallback(() => {
     const state = agents?.state ?? null
     const active = state?.host.projects.find(project => project.id === state.activeProjectId)
     // A project with no host, or on the connection that is this computer, can read the files where they are.
     const local = active !== undefined && (active.hostId === undefined || state?.connections?.find(connection => connection.hostId === active.hostId)?.kind === 'local')
-    attachRecordingToNewThread(recording, local ? active.id : undefined, () => {
-      setMode('threads')
-      navigate?.('threads')
-    })
+    attachRecordingToNewThread(recording, local ? active.id : undefined, () => navigate?.('threads'))
     after?.()
-  }, [agents, navigate, setMode, recording, after])
+  }, [agents, navigate, recording, after])
 }
 
 /** A saved recording: its name and size, and what to do with it. `extra` is the surface's own last action. */

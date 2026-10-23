@@ -420,7 +420,7 @@ test('keeps the real main window frameless, with a strip while onboarding and th
     // Onboarding hands over to Threads, which owns the whole window: no strip, and the window controls it carries
     // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours, and
     // Linux draws none, because Hyprland closes windows itself (#849).
-    await expect(launched.page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
+    await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     await expect(launched.page.locator('header.app-strip')).toHaveCount(0)
     await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'win32' ? 1 : 0)
   } finally {
