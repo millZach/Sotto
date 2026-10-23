@@ -1,12 +1,12 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
 import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
-import { AddOwnServerDialog } from './OwnModelServers'
+import { AddOwnServerDialog, OwnServerMenuEntry } from './OwnModelServers'
 import './threadChips.css'
 import './modelPicker.css'
 
@@ -322,10 +322,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
                 <span><b>{source.name}</b><small>{about}</small></span><ChevronRight size={14} aria-hidden="true" />
               </button>
             })}
-            {ownServers && selectedProvider?.providerId === 'opencode' ? <button type="button" className="model-picker__own" tabIndex={-1} aria-haspopup="dialog"
-              aria-label="Your own server: add a model server you run" onClick={() => { setOpen(false); setAddingServer(true) }}>
-              <Plus size={14} aria-hidden="true" /><span><b>Your own server…</b><small>SGLang, vLLM, Ollama, LM Studio, llama.cpp</small></span>
-            </button> : null}
+            {ownServers && selectedProvider?.providerId === 'opencode' ? <OwnServerMenuEntry onPress={() => { setOpen(false); setAddingServer(true) }} /> : null}
           </div>}
         {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note ? <p className="model-picker__note">{note}</p> : null}
       </div>

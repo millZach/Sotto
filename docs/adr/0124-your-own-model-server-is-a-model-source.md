@@ -32,6 +32,8 @@ A new kind of host appears in the README's privacy section: an address the user 
 
 Sotto does not vouch for a server's model. Tool calls, long prompts and reasoning replay depend on the server and the model, and a model that cannot call tools well will fail threads in ways Sotto can only report.
 
+Every word the group, the dialog and the model menu entry say is a message in the interface language ([ADR-0123](0123-sottos-interface-speaks-the-computers-language.md)). Main still answers a refusal in English beside its reason, because `src/shared` is built into the headless host without the macro transform, and the window words each reason itself; main's English shows only for a reason a window does not know.
+
 OpenCode keeps a server's key in its database in Sotto's OpenCode folder, in the clear, as it keeps every model source's key. Remove signs the source out there.
 
 Checking OpenCode for this found that it reads `opencode.json`, `.opencode`, `.claude` and `.agents` from every folder above a thread's project, and lists `~/.opencode` as a config source, so ADR-0087's "the user's own OpenCode folders are never read" holds only for its XDG folders. That is #1425; this decision neither causes nor fixes it.

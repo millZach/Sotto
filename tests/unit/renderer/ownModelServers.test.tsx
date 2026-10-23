@@ -1,5 +1,7 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { i18n } from '@lingui/core'
+import { generateMessageId } from '@lingui/message-utils/generateMessageId'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCommand, type AgentModel, type AgentState } from '../../../src/shared/agents'
@@ -236,6 +238,29 @@ describe('the group', () => {
     const expected = fixAt === 'Address' ? field('Address') : fixAt === 'Key' ? field(/^Key/u) : screen.getByRole('button', { name: 'Check this server' })
     await waitFor(() => expect(expected).toHaveFocus())
     if (fixAt) expect(expected).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('says a refusal in the interface language, from its reason, rather than in main\'s English (ADR-0123)', async () => {
+    const user = userEvent.setup()
+    // A stand-in translation of the words this needs; every other message shows in English.
+    const translated = {
+      'Add a server': 'Server hinzufügen', 'Add your own model server': 'Eigenen Modellserver hinzufügen', Address: 'Adresse',
+      'Check this server': 'Diesen Server prüfen',
+      'Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again.':
+        'Unter {host} hat nichts geantwortet. Nichts wurde gespeichert.',
+    }
+    i18n.loadAndActivate({ locale: 'de', messages: Object.fromEntries(Object.entries(translated).map(([english, german]) => [generateMessageId(english), german])) })
+    try {
+      render(<OwnModelServers bridge={fake({ check: vi.fn(async () => refused('unreachable')) })} />)
+      await user.click(await screen.findByRole('button', { name: 'Server hinzufügen' }))
+      const shown = screen.getByRole('dialog', { name: 'Eigenen Modellserver hinzufügen' })
+      await user.type(within(shown).getByLabelText('Adresse'), 'spark-head:8888')
+      await user.click(within(shown).getByRole('button', { name: 'Diesen Server prüfen' }))
+      expect(await within(shown).findByRole('alert')).toHaveTextContent('Unter spark-head:8888 hat nichts geantwortet. Nichts wurde gespeichert.')
+      expect(within(shown).getByRole('alert')).not.toHaveTextContent(OWN_SERVER_WORDS.unreachable('spark-head:8888'))
+    } finally {
+      act(() => i18n.activate('en'))
+    }
   })
 
   it.each<OwnServerRefusal>(['opencode-not-running', 'sign-in-failed', 'full'])('says a %s refusal from Add in the dialog and keeps what was checked', async reason => {
