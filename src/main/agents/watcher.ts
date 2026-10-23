@@ -832,12 +832,16 @@ export class WatcherService implements WatcherControlHooks {
     const name = this.remote?.hosts().find(host => host.hostId === target.hostId)?.name?.trim() || 'that machine'
     const threads = this.owningSnapshot(target.hostId)?.threads ?? [], starting = new Set([target.threadId]), record = this.view()
     const reserved = new Set(record.reservations.flatMap(item => item.target.hostId === target.hostId && item.target.threadId !== target.threadId ? [item.operationId] : []))
-    if (reserved.size) for (const operation of record.operations) {
-      if (operation.action !== 'start' || !reserved.has(operation.id) || operation.outcome && WATCHER_FINAL_OUTCOMES.has(operation.outcome)) continue
-      // Made on the machine: its first prompt accepted, or answered with its thread while that prompt is confirmed.
-      if (operation.deliveryState !== 'accepted' && !(operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id))) continue
-      const listed = threads.find(thread => thread.id === operation.target.threadId)
-      if (!listed || !listed.lastTurn && (listed.summary?.messageCount ?? listed.messages.length) === 0) starting.add(operation.target.threadId)
+    if (reserved.size) {
+      // One lookup for every start, rather than a search of the machine's list for each.
+      const listed = new Map(threads.map(thread => [thread.id, thread]))
+      for (const operation of record.operations) {
+        if (operation.action !== 'start' || !reserved.has(operation.id) || operation.outcome && WATCHER_FINAL_OUTCOMES.has(operation.outcome)) continue
+        // Made on the machine: its first prompt accepted, or answered with its thread while that prompt is confirmed.
+        if (operation.deliveryState !== 'accepted' && !(operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id))) continue
+        const thread = listed.get(operation.target.threadId)
+        if (!thread || !thread.lastTurn && (thread.summary?.messageCount ?? thread.messages.length) === 0) starting.add(operation.target.threadId)
+      }
     }
     const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(threads, starting), name)
     return warning ? { warning } : {}

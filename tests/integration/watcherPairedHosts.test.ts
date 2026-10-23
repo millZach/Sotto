@@ -20,7 +20,7 @@ import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
-import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
+import { watcherToolSchemas, type WatcherThreadTarget, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import { watcherHostControlSchema, type WatcherHostControl, type WatcherHostProjection } from '../../src/shared/watcherHost'
 import type { HostOperation } from '../../src/shared/hostProtocol'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
@@ -1606,6 +1606,31 @@ it('does not count a start that never reached the paired machine among its worki
   expect(next).toMatchObject({ status: 'ok', target: { hostId } })
   expect(next).not.toHaveProperty('warning')
   expect(f.control.watcherRecord().operations.find(item => item.id === operationId)?.deliveryState).toBe('uncertain')
+})
+
+it('reads the paired machine’s list once for every start it counts, rather than once per start (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const held = () => ({ ...f.start(), machine: hostId, title: 'Synthetic held worker' })
+  const targets: WatcherThreadTarget[] = []
+  for (let index = 0; index < 4; index++) {
+    const started = await f.call('start_thread', held())
+    if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
+    targets.push(started.target)
+  }
+  // Five hundred idle threads, and none of the starts yet, every element read counted.
+  const idle = Array.from({ length: 500 }, (_, index) => ({ ...shape, id: `synthetic-idle-${index}`, kind: undefined, status: 'idle' as const, title: 'Synthetic idle thread' }))
+  let reads = 0
+  const counted = new Proxy(idle, { get(target, property, receiver) {
+    if (typeof property === 'string' && /^\d+$/u.test(property)) reads += 1
+    return Reflect.get(target, property, receiver) as unknown
+  } })
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => { const snapshot = real(id); return snapshot && id === hostId ? { ...snapshot, threads: counted } : snapshot })
+  const warning = (f.watcher as unknown as { machineWorkingWarning(target: WatcherThreadTarget): object }).machineWorkingWarning(targets.at(-1)!)
+  expect(warning).toEqual({})
+  // One read to look the starts up and one to count: three earlier starts do not read it three more times.
+  expect(reads).toBeLessThanOrEqual(2 * idle.length)
 })
 
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
