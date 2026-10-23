@@ -26,6 +26,13 @@ export type ReducedMotion = 'system' | 'on'
 export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma' | 'accent'
 export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
 export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
+/**
+ * The little pixel character that stands above a thread's composer while it watches, works or waits: Sotto's own, or
+ * Claude bot. It is the same character in every pose, and a choice about how Sotto looks, never about what it claims.
+ */
+export type Creature = 'sotto' | 'claude'
+export const CREATURES = ['sotto', 'claude'] as const satisfies readonly Creature[]
+export const CREATURE_LABELS: Record<Creature, string> = { sotto: 'Sotto', claude: 'Claude bot' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 
 /**
@@ -113,6 +120,8 @@ export interface AppSettings {
   appearanceContrast: number
   /** The colour the effort control turns at a model's highest level. */
   effortColor: EffortColor
+  /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
+  creature: Creature
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -317,6 +326,7 @@ const fieldSchemas = {
   darkTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
+  creature: z.enum(CREATURES),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -407,6 +417,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearanceContrast: APPEARANCE_CONTRAST.default,
   // Ember is the warning role's gold: the colour the effort control turned before it became a choice.
   effortColor: 'ember',
+  creature: 'sotto',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -556,6 +567,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     darkTheme: half('darkTheme'),
     appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
     effortColor: parseField(persisted, 'effortColor', defaults),
+    creature: parseField(persisted, 'creature', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),

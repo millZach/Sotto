@@ -11,7 +11,7 @@ import { ModelPicker } from './ModelPicker'
 import { usesProviderModes } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
 import { clockLabel } from './threadFacts'
-import { ChoiceChip, effortChoices, modeChoices, RUNTIME_LABELS, startingProviderMode } from './ThreadOptions'
+import { ChoiceChip, effortChoices, modeChoices, PERMISSIONS_ICON, RUNTIME_LABELS, startingProviderMode } from './ThreadOptions'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
   sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
 import './continueThread.css'
@@ -190,7 +190,7 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
       {efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
       {modes.length > 0 ? <ChoiceChip label="Permissions the new thread starts on" placeholder="Provider default" value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
-        options={modes} disabled={choice.sending} pending={false}
+        options={modes} disabled={choice.sending} pending={false} icon={PERMISSIONS_ICON}
         onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null}
     </div>
   </div>

@@ -7,6 +7,7 @@ import { parseThemeFile } from '../../../src/shared/themes/library'
 import {
   dictationOn,
   APPEARANCES,
+  CREATURES,
   DEFAULT_SETTINGS,
   EFFORT_COLORS,
   GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS,
@@ -29,6 +30,7 @@ const customSettings = {
   darkTheme: aurora.id,
   appearanceContrast: 135,
   effortColor: 'aurora',
+  creature: 'claude',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -236,10 +238,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', customThemes: [] })
     }
   })
 
@@ -276,6 +278,14 @@ describe('settings', () => {
     for (const effortColor of EFFORT_COLORS) expect(parseSettings({ effortColor }).effortColor).toBe(effortColor)
     expect(parseSettings({ effortColor: 'neon' }).effortColor).toBe('ember')
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, effortColor: 'neon' }).success).toBe(false)
+  })
+
+  it('keeps either creature and recovers an unknown one as Sotto\'s own', () => {
+    expect(DEFAULT_SETTINGS.creature).toBe('sotto')
+    for (const creature of CREATURES) expect(parseSettings({ creature }).creature).toBe(creature)
+    expect(parseSettings({ creature: 'dragon' }).creature).toBe('sotto')
+    expect(parseSettings({}).creature).toBe('sotto')
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, creature: 'dragon' }).success).toBe(false)
   })
 
   it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
@@ -320,6 +330,7 @@ describe('settings', () => {
       darkTheme: 't3-code',
       appearanceContrast: 100,
       effortColor: 'ember',
+      creature: 'sotto',
       customThemes: [],
       reducedMotion: 'system',
       microphoneId: null,

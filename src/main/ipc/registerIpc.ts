@@ -109,6 +109,7 @@ const settingKeys = [
   'darkTheme',
   'appearanceContrast',
   'effortColor',
+  'creature',
   'customThemes',
   'reducedMotion',
   'terminalFontSize',

@@ -237,7 +237,7 @@ describe('Watcher’s permissions chip', () => {
     const { bridge } = renderRoom(roomState(), { state })
     const chip = within(await watcherPane()).getByRole('combobox', { name: 'Watcher’s permissions' })
     expect(chip).toBeDisabled()
-    expect(chip).toHaveAttribute('title', 'Watcher’s permissions. Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.')
+    expect(chip).toHaveAttribute('title', 'Watcher’s permissions: Ask for approval. Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.')
     fireEvent.click(chip)
     expect(screen.queryByRole('listbox', { name: 'Watcher’s permissions' })).toBeNull()
     expect(bridge.setPermission).not.toHaveBeenCalled()
