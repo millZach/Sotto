@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BranchBundles, IncomingBundle, type AlreadyPresent, type PreparedBundle } from '../../src/main/agents/branchBundles'
 import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
@@ -250,5 +250,22 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     for (const receipt of await Promise.all(moves.map(({ receiving }) => forge.finish(receiving)))) expect(receipt).toMatchObject({ type: 'moved', commit })
     const records = JSON.parse(await readFile(machines.data('forge').recordsPath, 'utf8')) as { moves: Record<string, unknown> }
     expect(Object.keys(records.moves).sort()).toEqual(moves.map(({ moveId }) => moveId).sort())
+  })
+
+  it('abandons what a same-machine copy staged when reading or writing it fails, and lands nothing', async () => {
+    await writeFile(join(machines.laptop, 'notes.txt'), 'draft\n')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const source = await laptop.snapshotOf(machines.laptop)
+    if ('type' in source) throw new Error('The laptop could not snapshot its work.')
+    for (const failing of ['read', 'write'] as const) {
+      const spy = failing === 'read'
+        ? vi.spyOn(laptop, 'readChunk').mockRejectedValueOnce(new Error('read failed'))
+        : vi.spyOn(IncomingBundle.prototype, 'write').mockRejectedValueOnce(new Error('write failed'))
+      expect(await laptop.copy({ from: machines.laptop, source, repository: machines.forge, moveId: randomUUID() }))
+        .toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.failed })
+      spy.mockRestore()
+      expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+    }
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
   })
 })

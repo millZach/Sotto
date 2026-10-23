@@ -217,17 +217,26 @@ export class BranchBundles {
     const prepared = await this.prepare({ repository: input.from, moveId, commit: source.commit, bases: tips })
     if (prepared.type === 'refused') return prepared
     if (prepared.type === 'present') return carried(await this.receiveRef({ repository, moveId, branch: source.branch, commit: source.commit }))
+    // Whatever stops the copy before its finish, a read or write that fails included, abandons what it staged here
+    // (ADR-0105 decision 8): its handle is closed and its file removed, never left for the next start to clear.
+    let incoming: IncomingBundle | undefined
+    let finishing = false
     try {
-      const incoming = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
-      if (!(incoming instanceof IncomingBundle)) return carried(incoming)
+      const begun = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
+      if (!(begun instanceof IncomingBundle)) return carried(begun)
+      incoming = begun
       for (let offset = 0; offset < prepared.size;) {
         const chunk = await this.readChunk(prepared.path, offset)
-        if (chunk.byteLength === 0 || !await incoming.write(offset, chunk)) { await this.abandon(incoming); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
+        if (chunk.byteLength === 0 || !await incoming.write(offset, chunk)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
         offset += chunk.byteLength
       }
+      finishing = true
       return carried(await this.finish(incoming))
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
-    finally { await this.discard(prepared) }
+    finally {
+      if (incoming && !finishing) await this.abandon(incoming)
+      await this.discard(prepared)
+    }
   }
 
   /** Removes the incoming ref a move landed in `repository`, for a start that never made its worktree. Best effort. */
