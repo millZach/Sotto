@@ -289,6 +289,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const recovery: PaneMenuItem[] = [
     ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
+  // In Watcher's room the creature's band lies over the conversation (a thread's pane floats its whole composer instead, threads.css).
+  const creatureOverlay = ownPane && Boolean(ornament)
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   return <>
     {ownPane ? watcherHeader : <header className="thread-workspace__head">
@@ -323,7 +325,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}>
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} creatureOverlay={creatureOverlay} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
@@ -335,7 +337,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></ThreadWebLinks>}
     <div className="thread-greeting-slot" ref={setGreetingSlot} />
-    <div className="thread-workspace__compose" ref={compose}>
+    <div className="thread-workspace__compose" ref={compose} data-creature-overlay={creatureOverlay || undefined}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}
