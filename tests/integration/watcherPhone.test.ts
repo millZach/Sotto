@@ -908,6 +908,17 @@ it('knows the threads Watcher started from an index of its record, for the phone
   expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
   expect(f.watcher.startedByWatcher(f.target.hostId, f.target.threadId)).toBe(false)
   expect(f.watcher.startedByWatcher(worker.hostId, 'another-thread')).toBe(false)
+  // A change to something attribution does not read keeps the index: no walk of Watcher's history.
+  const walks = vi.spyOn(f.watcher as unknown as { indexWatcherStarts: (record: unknown) => unknown }, 'indexWatcherStarts')
+  const before = f.control.watcherRecordView()
+  await f.control.updateWatcher(next => { next.lastRuntimeMode = next.lastRuntimeMode === 'auto' ? 'approval-required' : 'auto' })
+  expect(f.control.watcherRecordView()).not.toBe(before)
+  expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
+  // Another start is read on its own, from where the index left off.
+  await f.finish(worker.threadId); await f.finish(f.target.threadId)
+  await peer.call('second', f.send(peer.paired.clientId)); const second = await f.start()
+  expect(f.watcher.startedByWatcher(second.hostId, second.threadId)).toBe(true)
+  expect(walks).not.toHaveBeenCalled()
 })
 
 it('keeps the machines line on the page Stop all answers with, which the iPhone takes whole (#1032)', async () => {

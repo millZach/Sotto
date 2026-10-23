@@ -329,8 +329,12 @@ export class WatcherService implements WatcherControlHooks {
   private roomKeyed: RoomKeys | undefined
   /** Every recorded operation's request and retry key, for the record they were read from (`recorded`). */
   private retryKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
-  /** The threads Watcher started, by target key, for the record it was worked out from (`startedByWatcher`). */
-  private startedKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
+  /**
+   * The threads Watcher started, by target key (`startedByWatcher`), and how far into the operations it has read: their
+   * count and the last one's ID, so a record whose operations only grew is read from where it left off, and one with the
+   * same operations, whatever else changed, is not read at all.
+   */
+  private startedKeyed: { keys: Set<string>; operations: number; lastOperationId: string | undefined } | undefined
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
@@ -1011,17 +1015,30 @@ export class WatcherService implements WatcherControlHooks {
       .map(host => ({ hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', connected: host.connected }))
   }
   /**
-   * Whether Watcher started this thread, from an index of its record built once per record, so asking for each thread an
-   * iPhone's machines line shows costs the same however long Watcher's history is (#1032).
+   * Whether Watcher started this thread (#1032), for an iPhone's machines line, at a cost that does not grow with Watcher's
+   * history. A participant is marked started by Watcher only by a start operation on its target, or by copying that mark
+   * from another participant on the same target, so the set changes only when a start is recorded. The record is replaced
+   * on every change, so the index is kept across records: one with the same operations, whatever else changed, reads
+   * nothing; one whose operations only grew reads the new ones; any other is read whole again (`indexWatcherStarts`).
    */
   startedByWatcher(hostId: string, threadId: string): boolean {
-    const record = this.view()
-    if (this.startedKeyed?.record !== record) {
-      const keys = new Set<string>()
-      for (const request of record.requests) for (const participant of request.participants) if (participant.startedBy === 'watcher') keys.add(key(participant.target))
-      this.startedKeyed = { record, keys }
+    const record = this.view(), operations = record.operations, known = this.startedKeyed
+    const lastOperationId = operations.at(-1)?.id
+    if (known === undefined || operations.length < known.operations || known.operations > 0 && operations[known.operations - 1]?.id !== known.lastOperationId) {
+      this.startedKeyed = this.indexWatcherStarts(record)
+    } else if (operations.length > known.operations) {
+      for (let index = known.operations; index < operations.length; index++) if (operations[index]!.action === 'start') known.keys.add(key(operations[index]!.target))
+      known.operations = operations.length
+      known.lastOperationId = lastOperationId
     }
-    return this.startedKeyed.keys.has(key({ hostId, threadId }))
+    return this.startedKeyed!.keys.has(key({ hostId, threadId }))
+  }
+  /** Every thread Watcher started, read from the whole record: once, and again only when its operations were rewritten. */
+  private indexWatcherStarts(record: Readonly<WatcherRecord>): { keys: Set<string>; operations: number; lastOperationId: string | undefined } {
+    const keys = new Set<string>()
+    for (const request of record.requests) for (const participant of request.participants) if (participant.startedBy === 'watcher') keys.add(key(participant.target))
+    for (const operation of record.operations) if (operation.action === 'start') keys.add(key(operation.target))
+    return { keys, operations: record.operations.length, lastOperationId: record.operations.at(-1)?.id }
   }
   /** A machine's own thread list, read in place: This computer's, or a paired machine's as it last sent it. */
   machineThreads(hostId: string): readonly AgentThread[] { return this.owningSnapshot(hostId)?.threads ?? [] }
