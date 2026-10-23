@@ -218,9 +218,10 @@ it('holds starts to Ask for approval without the desktop\'s answers grant, and f
   push.update('full-access', undefined)
   await push.settled()
   expect(await f.start(parent.threadId, 'full-access')).toMatchObject({ status: 'ok' })
+  // A grant taken away is said as such (#1310): setting the desktop up again would not restore it.
   await f.answers(pairing.clientId, false)
   expect(await f.start(parent.threadId, 'auto')).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE',
-    message: expect.stringContaining(HOST_CEILING_HOLD_WORDS['no-answer-grant']) })
+    message: expect.stringContaining(HOST_CEILING_HOLD_WORDS['answers-revoked']) })
   // A reconnect tells the host again, so a host that missed a change catches up.
   router.replace({ hostId: pairing.hostId, name: 'Synthetic host', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
   await push.settled()
