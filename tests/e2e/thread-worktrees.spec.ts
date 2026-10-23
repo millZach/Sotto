@@ -422,9 +422,9 @@ test('a worktree can be reclaimed from the pane or on settle, keeps its branch, 
     await mkdir(RECLAIM_SHOTS, { recursive: true })
     const details = page.getByRole('group', { name: 'Working copy details' })
 
-    // Settings: the four rules, every one off, under Application at each size and in both appearances.
+    // Settings: the four rules, every one off, on Git & worktrees at each size and in both appearances.
     await openPage(page, 'Settings')
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Git & worktrees', exact: true }).click()
     const idleRule = page.getByRole('combobox', { name: 'Remove idle worktrees after' })
     await expect(idleRule).toHaveValue('never')
     for (const rule of ['Remove a worktree when its thread is settled', 'Remove a worktree once its commits are in the default branch', 'Remove a worktree when its pull request is merged']) {
@@ -612,7 +612,7 @@ test('a worktree the cleanup rules could only half remove on Windows comes back 
 
     // Turning a rule on sweeps at once. Nothing was committed, so the worktree's commits are all in main.
     await openPage(page, 'Settings')
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Git & worktrees', exact: true }).click()
     await page.getByRole('switch', { name: 'Remove a worktree once its commits are in the default branch' }).click()
     await expect.poll(async () => (await activeThread(page)).worktree?.reclaimedAt, { timeout: 60_000 }).toBeTruthy()
     // Windows kept the folder, empty; Git removed its files and its registration and kept the branch.

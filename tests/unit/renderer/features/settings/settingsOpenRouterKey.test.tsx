@@ -18,13 +18,13 @@ describe('SettingsView', () => {
     const draft = crypto.randomUUID()
     await user.type(screen.getByLabelText('OpenRouter API key'), draft)
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
-    await selectCategory('Output')
+    await selectCategory('Dictation')
     await selectCategory('Cleanup')
     expect(screen.getByLabelText('OpenRouter API key')).toHaveValue(draft)
     expect(screen.getByRole('button', { name: 'Verifying...' })).toBeDisabled()
     expect(update).toHaveBeenCalledOnce()
     expect(check).not.toHaveBeenCalled()
-    await selectCategory('Output')
+    await selectCategory('Dictation')
     pending.resolve(true)
     await waitFor(() => expect(check).toHaveBeenCalledOnce())
     await selectCategory('Cleanup')
@@ -47,7 +47,7 @@ describe('SettingsView', () => {
 
   it('shows the Parakeet model statement in Transcription without a key field', async () => {
     const { container } = render(<SettingsView {...baseProps()} />)
-    await selectCategory('Transcription')
+    await selectCategory('Dictation')
     const section = container.querySelector('#settings-transcription') as HTMLElement
     expect(within(section).getByRole('heading', { name: 'Parakeet v3' })).toBeVisible()
     expect(within(section).getByText(TRANSCRIPTION_PRIVACY_NOTICE)).toBeVisible()

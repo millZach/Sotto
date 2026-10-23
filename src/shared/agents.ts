@@ -81,7 +81,7 @@ export const NO_PROVIDER_ON_HOST = 'No provider is connected on this host.'
 const NO_PROVIDER_HERE = 'No provider is connected on this computer.'
 const DRAFT_KEPT = ' Your draft is saved.'
 export function noProviderRefusal(where: 'host' | 'desktop', draftKept: boolean): string {
-  return (where === 'host' ? `${NO_PROVIDER_ON_HOST} Connect one in Settings > Hosts.` : `${NO_PROVIDER_HERE} Connect one in Settings > Providers.`) + (draftKept ? DRAFT_KEPT : '')
+  return (where === 'host' ? `${NO_PROVIDER_ON_HOST} Connect one in Settings > Hosts & phones.` : `${NO_PROVIDER_HERE} Connect one in Settings > Providers.`) + (draftKept ? DRAFT_KEPT : '')
 }
 /**
  * A host's refusal as the desktop shows it: "this host" and "this machine" become the name the user saved the host
@@ -651,7 +651,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
-  /** Where a new project goes on this host, in its own format, for Settings → Agents' row per computer (ADR-0074). */
+  /** Where a new project goes on this host, in its own format, for Settings → Threads' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
   /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
   mayAnswer: z.boolean().optional(),
@@ -776,7 +776,7 @@ export const agentConfigurationSchema = z.object({
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
    * is empty the same way, meaning the chosen model's own default; `newThreadRuntimeMode` is absent the same
-   * way, meaning the provider's own starting mode. Settings → Agents' "New threads start with" row is the
+   * way, meaning the provider's own starting mode. Settings → Threads' "New threads start with" row is the
    * only place that sets them; a provider that does not offer the chosen mode or effort starts on the
    * nearest one it does (`src/shared/newThreadDefaults.ts`).
    */
@@ -1382,7 +1382,7 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
   return (ready.find(model => model.providerId === configuration.provider) ?? ready[0])?.id ?? ''
 }
 /**
- * The model a new thread in a project starts on (issue #347): the model chosen in Settings → Agents' "New
+ * The model a new thread in a project starts on (issue #347): the model chosen in Settings → Threads' "New
  * threads start with" row, or, unset, the coordinator's reasoning-based default
  * (`defaultThreadModelId`), which is today's behaviour for an install made before the setting existed.
  */

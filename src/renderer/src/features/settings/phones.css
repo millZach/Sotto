@@ -1,4 +1,4 @@
-/* Settings > Phones: the switch, the setup checklist, Pair a phone and the paired phones (ADR-0033). */
+/* Settings > Hosts & phones: the switch, the setup checklist, Pair a phone and the paired phones (ADR-0033). */
 .phones-settings { gap: 22px; }
 .phones-mono { font-family: var(--tt-font-mono); font-size: 13px; font-weight: 500; color: var(--tt-text); overflow-wrap: anywhere; }
 .phones-how b.phones-mono { font-size: 13.5px; font-weight: 500; }

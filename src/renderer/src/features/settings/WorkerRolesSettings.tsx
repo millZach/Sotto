@@ -302,7 +302,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
     </div> : <p className="worker-role__none">No connected provider can do this work.</p>}
     {notes.map(note => <p key={note} className="worker-role__note" data-kind="moved">{note}</p>)}
     {fit ? <p className="worker-role__note">{fit}</p> : null}
-    {held ? <p className="worker-role__note">Workers never start wider than your new-thread default, so these start on {quoted(held)}. <button type="button" className="worker-role__link tt-focusable" onClick={onOpenAgents}>Change it in Agents</button></p> : null}
+    {held ? <p className="worker-role__note">Workers never start wider than your new-thread default, so these start on {quoted(held)}. <button type="button" className="worker-role__link tt-focusable" onClick={onOpenAgents}>Change it in Threads</button></p> : null}
     {computerUse ? <p className="worker-role__note">On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so.</p> : null}
     <Defaults read={read} catalog={catalog} providerOf={providerOf} />
     {read.choice ? <footer className="worker-role__foot"><button type="button" className="worker-role__link tt-focusable" onClick={onReset}

@@ -39,8 +39,8 @@ describe('the refusal with no provider connected', () => {
   })
 
   it('from a host says "this host", which the desktop replaces with the name it saved the host under', () => {
-    expect(noProviderRefusal('host', true)).toBe('No provider is connected on this host. Connect one in Settings > Hosts. Your draft is saved.')
-    expect(nameHostInRefusal(noProviderRefusal('host', false), ' forge ')).toBe('No provider is connected on forge. Connect one in Settings > Hosts.')
+    expect(noProviderRefusal('host', true)).toBe('No provider is connected on this host. Connect one in Settings > Hosts & phones. Your draft is saved.')
+    expect(nameHostInRefusal(noProviderRefusal('host', false), ' forge ')).toBe('No provider is connected on forge. Connect one in Settings > Hosts & phones.')
     // Anything else, and a host saved without a name, passes through as it is.
     expect(nameHostInRefusal('Codex did not confirm the connection.', 'forge')).toBe('Codex did not confirm the connection.')
     expect(nameHostInRefusal(noProviderRefusal('host', false), '  ')).toBe(noProviderRefusal('host', false))

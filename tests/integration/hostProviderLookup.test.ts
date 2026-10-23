@@ -114,7 +114,7 @@ describe('a headless host and its providers', () => {
     // With nothing connected, a create names the machine and the page that connects one, and claims no draft.
     const project = join(await folder('sotto-host-providers-'), 'site')
     expect((await host.service.command({ type: 'create-project', provider: 'codex', title: 'site', path: project }, client)).error)
-      .toBe('No provider is connected on this host. Connect one in Settings > Hosts.')
+      .toBe('No provider is connected on this host. Connect one in Settings > Hosts & phones.')
   })
 })
 

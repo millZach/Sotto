@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { FileDiff, GitCommitHorizontal, GitPullRequest, RefreshCw } from 'lucide-react'
+import { FileDiff, FolderMinus, GitCommitHorizontal, GitPullRequest, RefreshCw } from 'lucide-react'
 import {
-  DEFAULT_MERGE_METHODS, GIT_FETCH_INTERVAL_SECONDS, GIT_MERGE_METHOD_LABELS, GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, GIT_WRITING_STYLES,
-  type AppSettings, type DefaultMergeMethod, type DiffFileState, type DiffLayout, type GitFetchIntervalSeconds, type GitWritingStyle, type SettingsPatch,
+  DEFAULT_MERGE_METHODS, GIT_FETCH_INTERVAL_SECONDS, GIT_MERGE_METHOD_LABELS, GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, GIT_WRITING_STYLES, WORKTREE_CLEANUP_DAYS,
+  type AppSettings, type DefaultMergeMethod, type DiffFileState, type DiffLayout, type GitFetchIntervalSeconds, type GitWritingStyle, type SettingsPatch, type WorktreeCleanupDays,
 } from '../../../../shared/settings'
 import { Field } from '../../components/Field'
 import { SegmentedControl } from '../../components/SegmentedControl'
@@ -39,7 +39,7 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
   const drafting = settings.commitMessages || settings.pullRequestText
   const every = settings.gitFetchIntervalSeconds === 60 ? 'minute' : fetchIntervalLabel(settings.gitFetchIntervalSeconds)
   return {
-    style: drafting ? style : `${style} Drafting is off under Cleanup.`,
+    style: drafting ? style : `${style} Nothing is drafted while Generated commit messages and Generated pull request text are off.`,
     templates: settings.followPullRequestTemplates
       ? 'Drafted pull requests follow the repository\'s template when Sotto finds one.'
       : 'Drafted pull requests use Sotto\'s own sections.',
@@ -163,16 +163,25 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
 }
 
 /**
- * Settings → Git: every Git setting in one section, grouped under the moment it acts (the owner's pick B,
- * September 23, 2026), each description saying what Sotto will do with the value shown.
+ * Settings → Git & worktrees: every Git setting in one section, grouped under the moment it acts (the owner's pick B,
+ * September 23, 2026), each description saying what Sotto will do with the value shown. Worktree removal and the
+ * thread's own model writing commits and pull requests joined it when Settings was regrouped (October 22, 2026).
  */
 export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   const says = gitSettingDescriptions(settings)
   return <div className="git-settings">
+    <SettingsGroup id="settings-worktrees" title="Removing worktrees" icon={FolderMinus}>
+      <Field label="Remove idle worktrees after" description="Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void onSave({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>
+      <Toggle label="Remove a worktree when its thread is settled" checked={settings.worktreeCleanup.onSettle} onCheckedChange={checked => void onSave({ worktreeCleanup: { onSettle: checked } })} description="Settling removes a clean worktree without asking. One with uncommitted changes still asks." />
+      <Toggle label="Remove a worktree once its commits are in the default branch" checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void onSave({ worktreeCleanup: { unchanged: checked } })} description="Checked hourly against your local copy of the default branch." />
+      <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void onSave({ worktreeCleanup: { merged: checked } })} description="Checked hourly with GitHub through gh, using your own sign-in." />
+    </SettingsGroup>
     <SettingsGroup title="When a thread commits" icon={GitCommitHorizontal}>
       <WritingStyle settings={settings} onSave={onSave} description={says.style} />
+      <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void onSave({ commitMessages: checked })} description="Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”." />
     </SettingsGroup>
     <SettingsGroup title="When a pull request is made or merged" icon={GitPullRequest}>
+      <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void onSave({ pullRequestText: checked })} description="The thread's own model writes a new pull request's title and body from the branch's commits and diff." />
       <Toggle label="Follow pull request templates" checked={settings.followPullRequestTemplates} onCheckedChange={checked => void onSave({ followPullRequestTemplates: checked })} description={says.templates} />
       <Field label="Default merge method" description={says.merge}>
         <Select value={settings.defaultMergeMethod} onChange={event => void onSave({ defaultMergeMethod: event.currentTarget.value as DefaultMergeMethod })}>
@@ -180,6 +189,11 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
         </Select>
       </Field>
       <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
+      {/* ADR-0061 decision 12: the switch governs the agent's tool alone; the user's own Babysit pull request stays either way. */}
+      <Toggle label="Let agents babysit pull requests" checked={settings.babysitPullRequests} onCheckedChange={checked => void onSave({ babysitPullRequests: checked })}
+        description={settings.babysitPullRequests
+          ? 'An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.'
+          : 'Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.'} />
     </SettingsGroup>
     <SettingsGroup title="When you read Changes" icon={FileDiff} note="How Changes first opens. A choice made in Changes lasts until you change one of these or restart Sotto.">
       <Field label="Diff layout" description={says.layout}>

@@ -57,7 +57,7 @@ test('a thread on a paired host shows its files, changes and agents in Tools', a
     page.on('pageerror', error => errors.push(error.message))
     await resize(app, 1280, 800)
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -75,7 +75,7 @@ test('a thread on a paired host shows its files, changes and agents in Tools', a
     const refusal = await page.evaluate(async path => (await window.sotto!.agents!.command({ type: 'create-project', provider: 'claude', title: 'Space Race', path, useExisting: true }))?.error ?? null, folder)
     expect(refusal).toBeNull()
     await page.evaluate(async hostId => { await window.sotto!.hosts!.command({ type: 'select', hostId }) }, hosts.local)
-    await page.getByRole('tab', { name: 'Threads', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Page', exact: true }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'New thread in Space Race' }).click()
     await expect.poll(() => page.evaluate(async () => {
       const state = await window.sotto!.agents!.get()

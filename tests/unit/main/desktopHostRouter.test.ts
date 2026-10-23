@@ -201,10 +201,10 @@ describe('desktop host routing', () => {
     remote.state.error = noProviderRefusal('host', false)
     remote.command.mockImplementationOnce(async () => ({ ...remote.state, error: noProviderRefusal('host', true) }))
     expect((await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Reply' }, desktopWindowClient())).error)
-      .toBe('No provider is connected on forge. Connect one in Settings > Hosts. Your draft is saved.')
+      .toBe('No provider is connected on forge. Connect one in Settings > Hosts & phones. Your draft is saved.')
     remote.command.mockImplementationOnce(async () => remote.state)
     await router.command({ type: 'create-project', title: 'Site', path: '/srv/site', useExisting: true }, desktopWindowClient())
-    expect(router.shell().error).toBe('No provider is connected on forge. Connect one in Settings > Hosts.')
+    expect(router.shell().error).toBe('No provider is connected on forge. Connect one in Settings > Hosts & phones.')
     // This computer's own refusal names this computer already and is passed on as it is.
     const own = new DesktopHostRouter(emptyDesktopState)
     own.add(local.connection)
@@ -503,7 +503,7 @@ describe('desktop host routing', () => {
     await expect(router.subagentPage({ threadId: key })).rejects.toThrow(older.message)
     // Anything else it could not read is named by the host, never shown raw.
     await expect(router.gitChanges({ threadId: key })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Forge could not read this thread\'s changes. Nothing was changed. Try again.' } })
-    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.' } })
+    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.' } })
     await expect(router.subagentAssignments({ threadId: key, agentId: 'agent' })).rejects.toThrow('Agents is unavailable on this host.')
     router.remove(REMOTE)
     router.add({ ...remote.connection, threadFiles: vi.fn(), available: () => false })
@@ -630,7 +630,7 @@ describe('desktop host routing', () => {
       // A host that predates the seen record is not sent it, and the window is told its threads still need attention.
       const older = await router.command({ type: 'dismiss-failures', failures: [{ threadId: hostEntityKey(third.connection.hostId, 'thread'), failure: '' }] }, desktopWindowClient())
       expect(third.command).not.toHaveBeenCalled()
-      expect(older.error).toBe('Studio runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts, then press Dismiss all again.')
+      expect(older.error).toBe('Studio runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts & phones, then press Dismiss all again.')
       // One that is out of reach is not sent it either.
       Object.assign(third.connection.service, { supportsFailureSeen: true })
       third.connection.available = () => false
@@ -1022,7 +1022,7 @@ describe('settings on several computers (ADR-0074)', () => {
     await router.command({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' } }, desktopWindowClient())
     expect(local.command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' } }, desktopWindowClient())
     await expect(router.command({ type: 'configure', patch: { projectsDirectory: '/x' }, hostId: randomUUID() }, desktopWindowClient()))
-      .rejects.toThrow('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+      .rejects.toThrow('This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.')
     router.dispose()
   })
   it('answers a save with its own outcome, not the selected host’s last error', async () => {

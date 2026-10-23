@@ -72,13 +72,14 @@ test('Linux Settings says what applies, with and without the shell pill', async 
     // Linux has no in-app updater, so the sidebar foot offers nothing to press.
     await expect(page.locator('.update-control')).toHaveCount(0)
 
-    // Application: pacman updates, and the widget row working as before without the plugin.
+    // Application: pacman updates. Dictation: the widget row working as before without the plugin.
     await tab('Application').click()
     await expect(updates.getByText('Sotto never updates itself on Linux. New versions come through pacman.')).toBeVisible()
     await expect(updates.getByText('Install the next sotto-bin package with sudo pacman -U. Once sotto-bin is in a package repository, omarchy update brings it.')).toBeVisible()
     await expect(updates.getByRole('button')).toHaveCount(0)
     await expect(updates.getByRole('switch')).toHaveCount(0)
     await expect(updates).not.toContainText('GitHub')
+    await tab('Dictation').click()
     await expect(widgetSwitch).toBeEnabled()
     await expect(widgetSwitch).toHaveAccessibleDescription(WIDGET)
     await expect(widgetSwitch).toBeChecked()
@@ -125,16 +126,16 @@ test('Linux Settings says what applies, with and without the shell pill', async 
       await tab('Dictation').click()
       await expect(files).toBeVisible()
       await capture(files, `setup-${suffix}.png`)
-      await tab('Application').click()
       await expect(widgetSwitch).toBeEnabled()
       await capture(widgetSwitch, `widget-without-plugin-${suffix}.png`)
+      await tab('Application').click()
       await capture(updates, `updates-${suffix}.png`)
     })
 
     // A fake plugin folder plus the live state file: the shell pill stands in, and the row says so live.
     await mkdir(plugin, { recursive: true })
     await expect.poll(widgetVisible).toBe(false)
-    await tab('Application').click()
+    await tab('Dictation').click()
     await expect(widgetSwitch).toBeDisabled()
     await expect(widgetSwitch).toHaveAccessibleDescription(SHELL_PILL)
     await expect(widgetSwitch).toBeChecked()
@@ -142,7 +143,7 @@ test('Linux Settings says what applies, with and without the shell pill', async 
     expect((await page.evaluate(() => window.sotto!.getSettings())).showWidgetWhenIdle).toBe(true)
     await expect(page.getByText(WIDGET)).toHaveCount(0)
     await eachLook(async suffix => {
-      await tab('Application').click()
+      await tab('Dictation').click()
       await expect(widgetSwitch).toBeDisabled()
       await capture(widgetSwitch, `widget-with-plugin-${suffix}.png`)
     })
@@ -150,7 +151,7 @@ test('Linux Settings says what applies, with and without the shell pill', async 
     // Removing the plugin brings the widget, and the switch, back.
     await rm(plugin, { recursive: true })
     await expect.poll(widgetVisible).toBe(true)
-    await tab('Application').click()
+    await tab('Dictation').click()
     await expect(widgetSwitch).toBeEnabled()
     await expect(widgetSwitch).toHaveAccessibleDescription(WIDGET)
   } finally {

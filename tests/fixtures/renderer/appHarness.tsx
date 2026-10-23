@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { App } from '../../../src/renderer/src/App'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import type { MicrophoneTestController } from '../../../src/renderer/src/features/onboarding/microphoneTest'
-import { AppProvider, useApp, type AppControllerFactory, type AppNavigation } from '../../../src/renderer/src/state/AppContext'
+import { AppProvider, useApp, type AppActions, type AppControllerFactory, type AppNavigation } from '../../../src/renderer/src/state/AppContext'
 import { type SottoBridge } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -81,7 +81,7 @@ const createController: AppControllerFactory = () => ({
  */
 const shell = {
   navigation: null as AppNavigation | null,
-  navigate: ((): void => undefined) as (destination: AppNavigation) => void,
+  navigate: ((): void => undefined) as AppActions['navigate'],
 }
 
 function NavigationProbe(): null {

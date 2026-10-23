@@ -109,7 +109,7 @@ test('an older host shows a pill on the Threads page, fails an update with its o
 
     // Add forge, which answers with its old version.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()

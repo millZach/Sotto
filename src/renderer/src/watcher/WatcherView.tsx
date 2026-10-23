@@ -178,7 +178,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
           <p>It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</p>
           {model === undefined ? <>
             <p className="watcher-first__missing">Connect {providers} in Settings, under Providers, to start Watcher.</p>
-            {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings')}>Open Settings</Button></div> : null}
+            {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings', 'settings-providers')}>Open Settings</Button></div> : null}
           </> : <p>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</p>}
         </div>
       </div>

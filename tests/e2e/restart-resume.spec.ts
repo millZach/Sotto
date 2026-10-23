@@ -77,9 +77,9 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
       // The window names threads by host; the record keeps the local host's own thread ID.
       const recordId = threadId.slice(threadId.lastIndexOf(':') + 1)
 
-      // The setting is there, on, in Settings → Application.
+      // The setting is there, on, in Settings → Threads.
       await openPage(page, 'Settings')
-      await page.getByRole('tab', { name: 'Application', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
       await expect(page.getByRole('switch', { name: 'Resume threads after a restart' })).toBeChecked()
 
       // A turn starts and is still running: the fake CLI holds it open.

@@ -57,7 +57,7 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('tablist', { name: 'Settings sections' })).toBeVisible()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'New threads', exact: true })).toBeVisible()
     await expect(page.getByRole('group', { name: 'New threads start with', exact: true })).toBeVisible()
     await expect(page.getByText('Reasoning', { exact: true })).toHaveCount(0)

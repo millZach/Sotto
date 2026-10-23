@@ -32,7 +32,7 @@ function draftHost(state: AgentState, project: AgentProject): Pick<AgentThread, 
 }
 
 /** What creation says when Settings would not say which working copy a thread starts in. */
-export const WORKING_COPY_READ_ERROR = 'Could not read your working-copy default from Settings → Agents. Check your connection and try again.'
+export const WORKING_COPY_READ_ERROR = 'Could not read your working-copy default from Settings → Threads. Check your connection and try again.'
 
 /**
  * A project's saved working-copy default, read fresh for each creation; rejects when Settings cannot say,
@@ -123,14 +123,14 @@ export function newThreadOptionsOn(state: AgentState, hostId: string | undefined
 function newThreadOptions(state: AgentState, project: AgentProject) { return newThreadOptionsOn(state, projectHostId(state, project)) }
 
 /**
- * Open a new thread in `project` at once, on the defaults from Settings → Agents: the pen on a project row,
+ * Open a new thread in `project` at once, on the defaults from Settings → Threads: the pen on a project row,
  * the empty Threads page's button and the project chooser all create the thread this way (issue #347). It
  * mints the thread's ID here so the caller can show it before main answers; a refusal resolves `created`
  * with the reason. The draft uses the same option helpers as main, so its chips show the defaults immediately.
  */
 export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: string }> {
   const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
-  if (!modelId) return { error: 'No model is ready to start this thread. Connect a provider or choose one in Settings → Agents.' }
+  if (!modelId) return { error: 'No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.' }
   let workingCopy: 'independent' | 'shared'
   try { workingCopy = await projectWorkingCopy(state, project) }
   catch { return { error: WORKING_COPY_READ_ERROR } }

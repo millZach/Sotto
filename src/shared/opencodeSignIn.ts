@@ -11,7 +11,7 @@ import { z } from 'zod'
 export const OPENCODE_RENDERER_ARGUMENT = '--sotto-opencode-enabled'
 /**
  * Passed to the main window's preload while OpenCode's Owl feature is on, whether or not this computer runs its local host:
- * a host's OpenCode is signed in from Settings > Hosts through its own bridge (#1107).
+ * a host's OpenCode is signed in from Settings > Hosts & phones through its own bridge (#1107).
  */
 export const OPENCODE_HOSTS_RENDERER_ARGUMENT = '--sotto-opencode-hosts'
 export const OPENCODE_SOURCES_READ = 'sotto:opencode:sources'

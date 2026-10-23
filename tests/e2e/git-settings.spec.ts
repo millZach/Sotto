@@ -6,7 +6,7 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 import { evidenceDirectory } from '../fixtures/evidence'
 import { settingsLayoutProblems, settingsTextContrast } from './support/settingsChecks'
 
-// Settings → Git, the owner's pick B (grouped by moment), in the built app: every size and both rooms, the
+// Settings → Git & worktrees, the owner's pick B (grouped by moment), in the built app: every size and both rooms, the
 // keyboard path through the section, the example under the style, and saves that read back.
 const evidence = evidenceDirectory('artifacts/git-settings')
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
@@ -23,7 +23,7 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(evidence, `${name}.png`), animations: 'disabled', caret: 'hide' })
 }
 
-test('Settings → Git groups every Git setting by moment, fits every size in both rooms, and saves from the keyboard', async () => {
+test('Settings → Git & worktrees groups every Git setting by moment, fits every size in both rooms, and saves from the keyboard', async () => {
   test.skip(process.platform !== 'win32', 'Windows desktop acceptance')
   test.setTimeout(180_000)
   await mkdir(evidence, { recursive: true })
@@ -38,9 +38,9 @@ test('Settings → Git groups every Git setting by moment, fits every size in bo
     await resize(launched, 1280, 800)
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     const sections = page.getByRole('tablist', { name: 'Settings sections' })
-    await sections.getByRole('tab', { name: 'Git', exact: true }).click()
-    const panel = page.getByRole('tabpanel', { name: 'Git', exact: true })
-    await expect(panel.getByRole('heading', { level: 3 })).toHaveText(['When a thread commits', 'When a pull request is made or merged', 'When you read Changes', 'In the background'])
+    await sections.getByRole('tab', { name: 'Git & worktrees', exact: true }).click()
+    const panel = page.getByRole('tabpanel', { name: 'Git & worktrees', exact: true })
+    await expect(panel.getByRole('heading', { level: 3 })).toHaveText(['Removing worktrees', 'When a thread commits', 'When a pull request is made or merged', 'When you read Changes', 'In the background'])
 
     for (const [width, height] of sizes) {
       await resize(launched, width, height)
@@ -61,11 +61,11 @@ test('Settings → Git groups every Git setting by moment, fits every size in bo
     await resize(launched, 1280, 800)
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
     await page.locator('.settings-scroll').evaluate(element => { element.scrollTop = 0 })
-    await sections.getByRole('tab', { name: 'Git', exact: true }).focus()
-    await expect(sections.getByRole('tab', { name: 'Git', exact: true })).toBeFocused()
+    await sections.getByRole('tab', { name: 'Git & worktrees', exact: true }).focus()
+    await expect(sections.getByRole('tab', { name: 'Git & worktrees', exact: true })).toBeFocused()
     const order: string[] = []
     await panel.focus()
-    for (let step = 0; step < 10; step += 1) {
+    for (let step = 0; step < 17; step += 1) {
       await page.keyboard.press('Tab')
       order.push(await page.evaluate(() => {
         const active = document.activeElement as HTMLElement
@@ -73,7 +73,10 @@ test('Settings → Git groups every Git setting by moment, fits every size in bo
       }))
     }
     expect(order).toEqual([
-      'Commit and pull request style', 'Follow pull request templates', 'Default merge method', 'Auto-settle merged threads',
+      'Remove idle worktrees after', 'Remove a worktree when its thread is settled', 'Remove a worktree once its commits are in the default branch',
+      'Remove a worktree when its pull request is merged',
+      'Commit and pull request style', 'Generated commit messages',
+      'Generated pull request text', 'Follow pull request templates', 'Default merge method', 'Auto-settle merged threads', 'Let agents babysit pull requests',
       'Diff layout', 'Hide whitespace changes', 'Default diff file state', 'Proactive panels', 'Git fetch interval', 'Automatically pull',
     ])
 
@@ -133,7 +136,7 @@ test('Settings → Git groups every Git setting by moment, fits every size in bo
     // What was typed survives a reload; the style goes back to the default.
     await page.reload()
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await sections.getByRole('tab', { name: 'Git', exact: true }).click()
+    await sections.getByRole('tab', { name: 'Git & worktrees', exact: true }).click()
     await expect(instructions).toHaveValue('Start the subject with the area in square brackets, like [threads].')
     await style.selectOption('repository')
     await expect(instructions).toBeHidden()

@@ -84,7 +84,7 @@ test('forge’s OpenCode shows on its tile and signs in to model sources from th
 
     // Add forge.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()

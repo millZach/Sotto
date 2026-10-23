@@ -8,7 +8,7 @@ test('keeps new-thread defaults and projects available while dormant reasoning c
     await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))
     await page.reload()
     await openPage(page, 'Settings')
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const settings = page.locator('#settings-agents')
     await expect(settings.getByRole('combobox', { name: 'Thread model', exact: true })).toBeVisible()
     await expect(settings.getByLabel('Default projects directory')).toBeVisible()

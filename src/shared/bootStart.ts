@@ -62,7 +62,7 @@ export function bootChangeRestarts(change: 'install' | 'remove', host: { readonl
 }
 
 /**
- * The presses of a start at boot change in Settings > Hosts (ADR-0054): `install` is Start at boot, `remove` is Stop
+ * The presses of a start at boot change in Settings > Hosts & phones (ADR-0054): `install` is Start at boot, `remove` is Stop
  * starting at boot, and the busy-host question's answers follow ADR-0040's: `when-idle` waits for the host's working
  * threads, `stop-threads` stops them and goes on at once, `cancel` changes nothing. `dismiss` puts a result away.
  */

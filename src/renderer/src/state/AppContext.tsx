@@ -38,12 +38,16 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
+import type { SettingsSectionId } from '../features/settings/settingsPages'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 /** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
 export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+
+/** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
+export interface SettingsRequest { readonly section: SettingsSectionId; readonly key: number }
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'
@@ -141,7 +145,8 @@ export interface AppActions {
   cancel(): Promise<void>
   retry(): Promise<void>
   dismiss(): Promise<void>
-  navigate(destination: AppNavigation): void
+  /** Opens a page; Settings can be opened at one of its pages or groups (settingsPages.ts). */
+  navigate(destination: AppNavigation, settingsSection?: SettingsSectionId): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
@@ -187,6 +192,8 @@ export interface AppContextValue {
   readonly dictationRecovery: readonly HistoryEntry[]
   readonly dictation: DictationState
   readonly navigation: AppNavigation
+  /** The Settings page or group last asked for with `navigate('settings', section)`; Settings opens there. */
+  readonly settingsRequest?: SettingsRequest | null
   readonly recoveryNotices: readonly RecoveryNotice[]
   /** Where the speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
@@ -239,6 +246,7 @@ export function AppProvider({
   const [dictationRecovery, setDictationRecovery] = useState<readonly HistoryEntry[]>([])
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
+  const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
@@ -665,7 +673,11 @@ export function AppProvider({
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
-    navigate: setNavigation,
+    navigate: (destination, settingsSection) => {
+      setNavigation(destination)
+      // A request is for one visit: Settings opened any other way starts on its first page again.
+      setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
+    },
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)
       : enqueueSettings(() => bridge.updateSettings(patch), 'SETTINGS_UPDATE_FAILED'),
@@ -839,6 +851,7 @@ export function AppProvider({
     dictationRecovery,
     dictation,
     navigation,
+    settingsRequest,
     recoveryNotices,
     speechModel,
     speechModels,
@@ -846,7 +859,7 @@ export function AppProvider({
     update,
     updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
+  }), [windowMaximized, actions, copy, dictation, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, settingsRequest, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }

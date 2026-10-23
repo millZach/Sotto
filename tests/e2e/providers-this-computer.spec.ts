@@ -62,7 +62,7 @@ test('Settings > Providers shows and acts on this computer’s clients while for
 
     // Add forge, then select it for new work, as opening one of its threads does.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -99,8 +99,8 @@ test('Settings > Providers shows and acts on this computer’s clients while for
     expect(await codex(page)).toMatchObject({ selected: 'remote', remote: { connection: 'error' } })
     await expect(detail.getByRole('alert')).toHaveCount(0)
 
-    // Forge's own Codex is on its tile in Settings > Hosts.
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    // Forge's own Codex is on its tile in Settings > Hosts & phones.
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     const row = page.getByRole('region', { name: 'forge', exact: true })
     await row.getByRole('button', { name: 'Show providers on forge' }).click()
     const tile = row.getByRole('list', { name: 'Providers on forge' }).getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Codex', exact: true }) })

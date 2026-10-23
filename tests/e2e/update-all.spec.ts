@@ -72,7 +72,7 @@ test('Update all lists what is behind on every machine and updates it with one p
 
       // Add forge.
       await openPage(page, 'Settings')
-      await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+      await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
       await page.getByRole('button', { name: 'Add host', exact: true }).click()
       const form = page.getByRole('dialog', { name: 'Add host' })
       await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -199,7 +199,7 @@ async function withForgeBehindTheUpdate(prefix: string, run: (forge: AheadRun) =
       const { page } = launched
       page.on('pageerror', error => errors.push(error.message))
       await openPage(page, 'Settings')
-      await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+      await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
       await page.getByRole('button', { name: 'Add host', exact: true }).click()
       const form = page.getByRole('dialog', { name: 'Add host' })
       await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()

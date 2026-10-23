@@ -329,7 +329,7 @@ struct NewThreadSheet: View {
             FieldNote(text: "\(computerName) hasn’t let this iPhone answer, so this thread starts by asking.", warm: true)
                 .accessibilityIdentifier("new-thread-permission-held-back")
         } else if !mayAnswer {
-            FieldNote(text: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Phones.")
+            FieldNote(text: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones.")
         }
     }
 

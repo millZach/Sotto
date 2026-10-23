@@ -50,7 +50,7 @@ test('a host’s client updates show on its tiles and run there, one at a time, 
 
     // Add forge.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()

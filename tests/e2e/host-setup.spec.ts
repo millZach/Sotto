@@ -113,7 +113,7 @@ test('Add host shows each step, waits for Tailscale approval, shows a failure on
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
 
     // Failed: forge's Node is too new. The failure shows on its own step, with what to do.
     await writeFile(modeFile, 'node-new')

@@ -112,7 +112,7 @@ test('an agent installs a host’s provider from its tile, with Show thread and 
 
     // Add forge yourself: Add it, since the agent is chosen where it is offered.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -181,7 +181,7 @@ test('an agent installs a host’s provider from its tile, with Show thread and 
 
     // Back on the tile, Stop stops the thread and leaves what it installed; the tool goes with it.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     grid = await showProviders()
     await tile('Devin').getByRole('button', { name: 'Stop the agent working on Devin on forge' }).click()
     await expect(tile('Devin')).toContainText('Not installed')

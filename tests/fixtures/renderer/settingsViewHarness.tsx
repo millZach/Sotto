@@ -1,4 +1,4 @@
-import { cleanup, screen } from '@testing-library/react'
+import { cleanup, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, vi } from 'vitest'
 
@@ -62,10 +62,15 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
 
 const copy = platformCopy('win32')
 
+/** Opens a Settings page by its name in the rail; the rail's foot has a Threads tab of its own, so only the pages count. */
 async function selectCategory(name: string): Promise<void> {
-  await userEvent.click(screen.getByRole('tab', { name }))
+  await userEvent.click(settingsTab(name))
 }
 
-export { createMediaDevices, device, baseProps, copy, selectCategory, SOTTO_MODEL, ULTRA_MODEL }
+function settingsTab(name: string): HTMLElement {
+  return within(screen.getByRole('tablist', { name: 'Settings sections' })).getByRole('tab', { name })
+}
+
+export { createMediaDevices, device, baseProps, copy, selectCategory, settingsTab, SOTTO_MODEL, ULTRA_MODEL }
 
 export { deferred } from '../deferred'

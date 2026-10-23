@@ -35,7 +35,7 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
     expect(await readFile(join(profile, 'workspace.json'), 'utf8')).toBe(saved)
     expect((await readdir(profile)).filter(file => file.startsWith('threads.sqlite'))).toEqual([])
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await expect(page.getByRole('switch', { name: 'Run the local host' })).toHaveAttribute('aria-checked', 'false')
     // The saved host was switched off, so nothing connects; it still reads as a row.
     const row = page.getByRole('region', { name: 'Spark', exact: true })
@@ -155,7 +155,7 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
 
     await page.getByRole('tab', { name: 'Dictation', exact: true }).click()
     await expect(page.getByRole('group', { name: 'Press to start and stop' })).toBeVisible()
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('switch', { name: 'Run the local host' }).click()
     await expect(page.getByRole('button', { name: 'Restart Sotto' })).toBeVisible()
     expect((await page.evaluate(() => window.sotto!.getSettings())).localHostEnabled).toBe(true)

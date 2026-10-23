@@ -16,7 +16,7 @@ export interface ComputersStepProps {
 }
 
 /**
- * Setup's other computers: the hosts this computer reaches, and Add a computer, which opens Settings › Hosts' own Add
+ * Setup's other computers: the hosts this computer reaches, and Add a computer, which opens Settings › Hosts & phones' own Add
  * host dialog with its device list, Tailscale prompt and host setup checklist. It offers Add it only: a host setup
  * thread asks its questions in Threads, which setup does not show yet. The dialog follows main's hosts state live, so
  * this step keeps that state as the Hosts page does.
@@ -33,7 +33,7 @@ export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsCh
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setFailure('Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts.') })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setFailure('Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones.') })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -69,7 +69,7 @@ export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsCh
         {hosts.length > 0 ? 'Add another computer' : 'Add a computer'}
       </Button>
       {failure ? <p className="onboarding-recovery" role="alert">{failure}</p> : null}
-      <p className="onboarding-aside">Only using this computer? Skip this. Settings › Hosts adds one any time.</p>
+      <p className="onboarding-aside">Only using this computer? Skip this. Settings › Hosts & phones adds one any time.</p>
       {adding && bridge ? createPortal(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={state} tailscale={tailscale} agentSetup={false} onClose={close} />, document.body) : null}
     </section>
   )

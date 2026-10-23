@@ -206,7 +206,7 @@ export interface HostForgotten {
   readonly bootCommand?: string | undefined
 }
 /**
- * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts shows it on
+ * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts & phones shows it on
  * the host's row and in its Phones dialog. Absent `state` means the host has not answered yet on any connection.
  */
 export interface HostPhonesView {

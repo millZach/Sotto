@@ -22,6 +22,8 @@ export interface AppearanceSettingsProps {
   readonly platform: SottoPlatform
   readonly onSave: (patch: SettingsPatch, successText?: string) => Promise<boolean>
   readonly getSettings: () => AppSettings
+  /** Rows that follow Contrast: Reduced motion, which Settings keeps the save of. */
+  readonly children?: ReactNode
 }
 
 /** How long a slider waits after the last movement before it saves. */
@@ -33,7 +35,7 @@ const SLIDER_SAVE_DELAY_MS = 250
  * the preview is immediate and overlapping edits combine; a failed save leaves
  * the saved look in force. The floating widget keeps following the system.
  */
-export function AppearanceSettings({ settings, platform, onSave, getSettings }: AppearanceSettingsProps): ReactNode {
+export function AppearanceSettings({ settings, platform, onSave, getSettings, children }: AppearanceSettingsProps): ReactNode {
   useAppearancePreviewVersion()
   const systemDark = useSystemPrefersDark()
   const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
@@ -82,7 +84,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
     <Card className="settings-section theme-settings" id="settings-appearance">
       <div className="settings-section__heading">
         <h2>Appearance</h2>
-        <p>Themes &amp; interface</p>
+        <p>Themes, contrast &amp; motion</p>
       </div>
 
       <div className="theme-settings__layout">
@@ -112,6 +114,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
               onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
               onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, 'Contrast saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
             />
+            {children}
           </div>
         </div>
         <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'} />

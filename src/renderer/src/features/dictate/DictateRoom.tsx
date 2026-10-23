@@ -23,6 +23,7 @@ import type { HistoryStatus } from '../../state/AppContext'
 import { Journal } from './Journal'
 import { JournalStats } from './JournalStats'
 import { journalStats, startOfDay } from './journalFacts'
+import type { SettingsSectionId } from '../settings/settingsPages'
 
 export { countWords } from '../../../../shared/dictationRecord'
 
@@ -47,7 +48,8 @@ export interface DictateRoomProps {
   readonly onRetry?: () => Promise<void>
   /** Clears an error, letting go of a kept recording. */
   readonly onDismiss?: () => Promise<void>
-  readonly onOpenSettings: () => void
+  /** Opens Settings, at the page or group named when there is one. */
+  readonly onOpenSettings: (section?: SettingsSectionId) => void
   readonly onCopy: (text: string) => Promise<boolean>
   /** Deletes a transcript and its record. */
   readonly onDelete?: (id: string) => Promise<boolean>
@@ -110,7 +112,7 @@ export function dictateSentence(
   // and the line beside it say which (ADR-0071).
   // Nothing downloads by itself, so with no model chosen the room says where to choose one.
   if (!speechModelChosen && state.status === 'idle') {
-    return { sentence: 'No speech model is chosen.', detail: 'Choose one in Settings → Transcription.', tone: 'normal' }
+    return { sentence: 'No speech model is chosen.', detail: 'Choose one in Settings → Dictation, under Speech model.', tone: 'normal' }
   }
   if (!speechModelReady && state.status === 'idle') {
     return { sentence: 'The speech model is not ready yet.', tone: 'normal' }
@@ -206,7 +208,7 @@ export function DictateRoom({
     onDelete: (id: string) => latest.current.onDelete?.(id) ?? Promise.resolve(false),
     onClear: () => latest.current.onClear?.() ?? Promise.resolve(false),
     onQueryChange: (value: string) => latest.current.onQueryChange?.(value),
-    onOpenSettings: () => latest.current.onOpenSettings(),
+    onOpenSettings: (section?: SettingsSectionId) => latest.current.onOpenSettings(section),
   }), [])
 
   const invoke = async (operation: () => Promise<void>): Promise<void> => {
@@ -277,11 +279,12 @@ export function DictateRoom({
   // as another way to press Try again; a kept recording that failed because the speech model was not ready still
   // points at Settings.
   let hint: ReactNode = null
-  let settingsButton = false
+  /** Where Open Settings goes, when the room offers it: the microphone, or the speech model. */
+  let settingsButton: SettingsSectionId | null = null
   if (dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE') {
     hint = null
   } else if (kept) {
-    settingsButton = modelProblem
+    settingsButton = modelProblem ? 'settings-transcription' : null
   } else if (configured && !microphoneSkipped) {
     if (platform === 'linux') {
       hint = listening
@@ -294,7 +297,7 @@ export function DictateRoom({
     }
   } else {
     hint = microphoneSkipped ? null : speechModelSummary(speechModel, speechModelName)
-    settingsButton = true
+    settingsButton = microphoneSkipped ? 'settings-capture' : 'settings-transcription'
   }
 
   return (
@@ -328,7 +331,7 @@ export function DictateRoom({
                 {kept ? 'Discard recording' : 'Dismiss'}
               </Button>
             )}
-            {settingsButton ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null}
+            {settingsButton ? <Button variant="secondary" onClick={() => onOpenSettings(settingsButton)}>Open Settings</Button> : null}
           </div>
         </div>
         {recovery.length > 0 ? (

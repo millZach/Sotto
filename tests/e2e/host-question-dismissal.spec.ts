@@ -17,7 +17,7 @@ test('Escape dismisses saved host questions and only Switch it off disables the 
   try {
     const { page } = launched
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     // Script just the host transport, retaining the real preload and app-shell dialog.
     // No SSH process, sign-in, network connection or permission answer is involved.
     await launched.app.evaluate(({ ipcMain }, { channel, changedChannel }) => {
@@ -119,7 +119,7 @@ test('Escape dismisses saved host questions and only Switch it off disables the 
       await page.keyboard.press('Escape')
       await expect(dialog).toHaveCount(0)
     }
-    // Off the Hosts page, queued questions restore the page's control without adding a notice.
+    // Off the Hosts & phones page, queued questions restore the page's control without adding a notice.
     const previous = page.getByRole('tab', { name: 'Dictation', exact: true })
     await previous.click()
     await previous.focus()

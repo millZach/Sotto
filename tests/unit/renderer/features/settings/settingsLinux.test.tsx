@@ -42,7 +42,7 @@ describe('Settings on Linux', () => {
   it('explains the idle widget row while the shell pill stands in for the widget, and saves nothing', async () => {
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ platform: 'linux', settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, shellPillInUse: true }, onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Dictation')
 
     const toggle = screen.getByRole('switch', { name: 'Show floating widget when idle' })
     expect(toggle).toBeDisabled()
@@ -56,7 +56,7 @@ describe('Settings on Linux', () => {
   it('keeps the idle widget row working on Linux without the shell pill', async () => {
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ platform: 'linux', settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, shellPillInUse: false }, onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Dictation')
 
     const toggle = screen.getByRole('switch', { name: 'Show floating widget when idle' })
     expect(toggle).toBeEnabled()
@@ -67,7 +67,7 @@ describe('Settings on Linux', () => {
 
   it.each(['win32', 'darwin'] as const)('never reads the shell pill on %s', async (platform) => {
     render(<SettingsView {...baseProps({ platform, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, shellPillInUse: true } })} />)
-    await selectCategory('Application')
+    await selectCategory('Dictation')
 
     const toggle = screen.getByRole('switch', { name: 'Show floating widget when idle' })
     expect(toggle).toBeEnabled()

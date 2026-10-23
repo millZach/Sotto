@@ -92,9 +92,9 @@ const droppedConnection = (error: unknown): boolean => error instanceof HostConn
 function dismissLeft(left: readonly { readonly name: string; readonly older: boolean }[]): string {
   const [first] = left
   if (left.length === 1 && first) return first.older
-    ? `${first.name} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts, then press Dismiss all again.`
+    ? `${first.name} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts & phones, then press Dismiss all again.`
     : `${first.name} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.`
-  return `${left.map(item => item.name).join(', ')} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts, then press Dismiss all again.`
+  return `${left.map(item => item.name).join(', ')} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts & phones, then press Dismiss all again.`
 }
 function withoutClientUpdates(state: AgentState): AgentState {
   const { clientUpdates: _updates, clientUpdateRun: _run, clientUpdatesDismissedAt: _dismissed, ...rest } = state
@@ -631,7 +631,7 @@ export class DesktopHostRouter {
     const local = entries.find(item => item.connection.kind === 'local')
     const named = selected ? this.withNewThreadDefaults(this.named(selected.connection, selected.state), selected === local ? undefined : local?.state) : this.empty()
     // The corner card and Settings > Providers are this computer's own clients. A remote host's client updates reach the
-    // window only through its `clientHosts` entry, for its tiles in Settings > Hosts (#480). This computer's are on its own
+    // window only through its `clientHosts` entry, for its tiles in Settings > Hosts & phones (#480). This computer's are on its own
     // entry too, so Update all lists them whichever host is selected (ADR-0077).
     const base = selected?.connection.kind === 'remote' ? withoutClientUpdates(named) : named
     const threads = entries.flatMap(entry => entry.threads)
@@ -695,7 +695,7 @@ export class DesktopHostRouter {
     const key = id ? parseHostEntityKey(id) : null
     const hostId = key?.hostId ?? this.selectedHostId
     const entry = hostId ? this.hosts.get(hostId) : undefined
-    if (!entry) throw new Error('Connect a host in Settings > Hosts to continue.')
+    if (!entry) throw new Error('Connect a host in Settings > Hosts & phones to continue.')
     const localId = key?.id ?? id
     if (!this.watcherAvailable(entry.connection, localId)) throw new Error(WATCHER_DISABLED)
     return { connection: entry.connection, id: localId }
@@ -969,7 +969,7 @@ export class DesktopHostRouter {
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {
     const entry = this.hosts.get(request.hostId)
-    if (!entry) throw new Error('That computer is not connected. Nothing was changed. Connect it in Settings > Hosts, then try again.')
+    if (!entry) throw new Error('That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again.')
     const { connection } = entry
     if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing was changed. Connect again to see its folders.')
     if (!connection.hostFolders) throw new Error('This host cannot list its folders yet. Update Sotto on it, then try again.')
@@ -985,7 +985,7 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     const { surface, what } = TOOL_SURFACES[read]
     const method = connection[read] as ((request: Parameters<HostThreadToolReads[K]>[0]) => ReturnType<HostThreadToolReads[K]>) | undefined
-    if (!method) throw new Error(`${surface} is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.`)
+    if (!method) throw new Error(`${surface} is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.`)
     if (connection.available?.() === false) throw new Error(`This host is disconnected. Nothing was changed. Connect again to read its ${what}.`)
     let answer: Awaited<ReturnType<HostThreadToolReads[K]>>
     try { answer = await method({ ...request, threadId: id! }) }
@@ -1186,7 +1186,7 @@ export class DesktopHostRouter {
     if (HOST_NAMED_COMMANDS.has(command.type) && 'hostId' in command && command.hostId !== undefined) {
       const { hostId, ...forwarded } = command
       const named = this.hosts.get(hostId)?.connection
-      if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+      if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.')
       this.refuseHeld(forwarded, named)
       return { connection: named, command: forwarded, hostNamed: true }
     }
@@ -1210,7 +1210,7 @@ export class DesktopHostRouter {
     if (local && keys.length > 0 && keys.every(key => (NEW_THREAD_DEFAULT_FIELDS as readonly string[]).includes(key))) return { connection: local, command: forwarded }
     if (hostId === undefined) return { connection: this.target().connection, command: forwarded }
     const named = this.hosts.get(hostId)?.connection
-    if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+    if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.')
     return { connection: named, command: forwarded }
   }
   /**

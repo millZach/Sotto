@@ -361,9 +361,9 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expect(panel.locator('.pr-surface__finished[data-state="merged"]')).toBeVisible()
     await expect(ended).toHaveCount(0)
 
-    // Settings → Application: the switch beside the other agent switches, saying what each value does.
+    // Settings → Git & worktrees: the switch with the other pull request settings, saying what each value does.
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Git & worktrees', exact: true }).click()
     const toggle = page.getByRole('switch', { name: 'Let agents babysit pull requests' })
     await toggle.scrollIntoViewIfNeeded()
     await expect(toggle).toHaveAttribute('aria-checked', 'true')

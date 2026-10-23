@@ -53,7 +53,7 @@ const errors: Record<HostErrorCode, string> = {
  */
 export const phonesOff = (name: string | undefined): string => {
   const host = name?.trim() || 'this computer'
-  return `Phone access is off on ${host}. Your pairing is kept. In Sotto on your main computer, open Settings > Hosts, press Phones… on ${host}'s row and turn on Let phones reach ${host}, then try again.`
+  return `Phone access is off on ${host}. Your pairing is kept. In Sotto on your main computer, open Settings > Hosts & phones, press Phones… on ${host}'s row and turn on Let phones reach ${host}, then try again.`
 }
 /**
  * An oversize message is named by what it carried: one thread's detail, an attachment preview, one of a thread's

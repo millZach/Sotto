@@ -115,7 +115,7 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     const run = this.current
     if (!run?.request || !run.threadId) return new Map()
     const request: AgentRequest = { id: run.request.id, kind: 'permission',
-      text: `Add ${run.name} as a host?\nSotto connects to ${run.connection.target}, starts the host there if it is not running and pairs this computer. ${run.name} is saved in Settings > Hosts once it answers.`,
+      text: `Add ${run.name} as a host?\nSotto connects to ${run.connection.target}, starts the host there if it is not running and pairs this computer. ${run.name} is saved in Settings > Hosts & phones once it answers.`,
       options: [], permissionChoices: [{ id: 'add', label: `Add ${run.name}`, kind: 'allow-once' }, { id: 'decline', label: 'Don’t add', kind: 'deny' }],
       context: { toolName: 'Add host' } }
     return new Map([[run.threadId, [request]]])
@@ -256,13 +256,13 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     if (status?.phase === 'connected') {
       run.phase = 'connected'
       this.end(run); this.emit()
-      return { result: { added: true, message: `${run.name} is added and connected. It is in Settings > Hosts, and its threads show in the Threads sidebar. There is nothing more to set up.` } }
+      return { result: { added: true, message: `${run.name} is added and connected. It is in Settings > Hosts & phones, and its threads show in the Threads sidebar. There is nothing more to set up.` } }
     }
     // A host that answered with another Sotto version is saved, as Add host saves it, so the setup ends there: its
     // row says what to update, and the dialog must not go on saying nothing was saved.
     if (status && this.options.hosts.savedAs(run.connection.target, run.connection.sshPort)) {
       run.phase = 'failed'
-      run.error = `${run.name} was saved as a host but is not connected. ${status.error ?? 'Its row in Settings > Hosts says what to do.'}`
+      run.error = `${run.name} was saved as a host but is not connected. ${status.error ?? 'Its row in Settings > Hosts & phones says what to do.'}`
       this.end(run); this.emit()
       return { isError: true, result: { added: true, connected: false, message: run.error } }
     }
@@ -278,9 +278,9 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     const stopped = { isError: true, result: { added: false, message: 'The setup was stopped. Nothing was saved.' } }
     try { if (!(await this.options.hosts.forget(run.connection.id))) return stopped }
     catch {
-      run.error = `${run.name} was saved as a host just as the setup stopped, and Sotto could not forget it again. Forget it in Settings > Hosts if you do not want it.`
+      run.error = `${run.name} was saved as a host just as the setup stopped, and Sotto could not forget it again. Forget it in Settings > Hosts & phones if you do not want it.`
       this.emit()
-      return { isError: true, result: { added: true, message: 'The setup was stopped after the host was saved, and Sotto could not forget it again. The user can forget it in Settings > Hosts.' } }
+      return { isError: true, result: { added: true, message: 'The setup was stopped after the host was saved, and Sotto could not forget it again. The user can forget it in Settings > Hosts & phones.' } }
     }
     return { isError: true, result: { added: false, message: 'The setup was stopped as the host was added, so Sotto forgot it again. Nothing is saved.' } }
   }

@@ -17,7 +17,7 @@ export interface ProviderJobHosts {
   /** A host's providers or connection changed. */
   subscribe(listener: () => void): () => void
 }
-/** What Settings > Hosts asks of the provider job, which runs beside the saved hosts and reports into them. */
+/** What Settings > Hosts & phones asks of the provider job, which runs beside the saved hosts and reports into them. */
 export interface HostProviderJobSource {
   state(): HostProviderJobState | undefined
   command(command: Extract<HostsCommand, { type: 'start-provider-job' | 'stop-provider-job' }>): Promise<void>
@@ -62,7 +62,7 @@ export class HostProviderJobs implements HostProviderJobSource {
   /** Why a host setup may not start now, when a provider job runs: one agent job at a time. */
   busySentence(): string | undefined {
     const job = this.current
-    return running(job) ? `${workingOn(job)} Stop it on its tile in Settings > Hosts first. Nothing was started.` : undefined
+    return running(job) ? `${workingOn(job)} Stop it on its tile in Settings > Hosts & phones first. Nothing was started.` : undefined
   }
   /** How a job that ends takes its thread's tool away: the tool server's revoke. */
   useTools(revoke: (threadId: string) => void): void { this.revokeTool = revoke }
@@ -175,7 +175,7 @@ export class HostProviderJobs implements HostProviderJobSource {
     if (this.current !== job || job.phase === 'stopped' || job.phase === 'failed') return { isError: true, result: { found: false, message: 'This job was stopped. Nothing more was checked.' } }
     if (hostProviderFound(status)) {
       this.found(job)
-      return { result: { found: true, message: `${job.host}'s host found ${name} and started it${status?.connection === 'connected' ? ', and it is connected' : '; it is not signed in yet'}. The job is over: stop here and tell the user they can sign in from Settings > Hosts. Do not sign in yourself.` } }
+      return { result: { found: true, message: `${job.host}'s host found ${name} and started it${status?.connection === 'connected' ? ', and it is connected' : '; it is not signed in yet'}. The job is over: stop here and tell the user they can sign in from Settings > Hosts & phones. Do not sign in yourself.` } }
     }
     if (!running(job)) return { isError: true, result: { found: false, message: 'This job is over. Nothing more was checked.' } }
     return { isError: true, result: { found: false, ...this.reported(status), ...(answer.error ? { message: answer.error } : {}) } }

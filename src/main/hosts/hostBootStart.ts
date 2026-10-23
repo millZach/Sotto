@@ -81,7 +81,7 @@ const unitEscaped = (value: string): string => value.replace(/\\/gu, '\\\\').rep
 
 /**
  * Start at boot changes (ADR-0054): Start at boot and Stop starting at boot for each saved host, from the press in
- * Settings > Hosts to the result the dialog or Add host's connected card shows. A change that would restart a host with
+ * Settings > Hosts & phones to the result the dialog or Add host's connected card shows. A change that would restart a host with
  * working threads asks ADR-0040's busy-host question first. It lives in memory: a result lasts until it is put away or
  * Sotto quits.
  */

@@ -168,9 +168,9 @@ it('Serve not turned on for the tailnet: offers the page that turns it on', asyn
 
 it('local host off: says phone access needs it, disables the switch and offers Hosts', async () => {
   const { openHosts } = show({ ...OFF, enabled: true, localHostRunning: false })
-  await userEvent.setup().click(await screen.findByRole('button', { name: 'Go to Hosts' }))
+  await userEvent.setup().click(await screen.findByRole('button', { name: 'Show Run the local host' }))
   expect(openHosts).toHaveBeenCalled()
-  expect(screen.getByText(/Phone access needs the local host\. Turn on Run the local host under Hosts/u)).toBeTruthy()
+  expect(screen.getByText(/Phone access needs the local host\. Turn on Run the local host above/u)).toBeTruthy()
   // Still on from before, so it can be turned off; it cannot be turned on until the local host runs.
   expect((screen.getByRole('switch', { name: 'Let phones connect' }) as HTMLButtonElement).disabled).toBe(false)
   cleanup()

@@ -91,7 +91,7 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
       research: { modelId: publicProviderEntityId('codex', 'model', 'gpt-6-luna'), reasoningEffort: 'low', runtimeMode: 'approval-required' } })
     fireEvent.click(screen.getByRole('button', { name: 'Reset all roles to their defaults. 2 roles are your choice' }))
     expect(update).toHaveBeenLastCalledWith({ workerRoles: {} })
-    fireEvent.click(within(card('Building')).getByRole('button', { name: 'Change it in Agents' }))
+    fireEvent.click(within(card('Building')).getByRole('button', { name: 'Change it in Threads' }))
     expect(open).toHaveBeenCalledWith('settings-agents')
   })
 

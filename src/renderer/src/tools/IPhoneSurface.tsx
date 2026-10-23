@@ -31,7 +31,7 @@ function CloudIphoneCard({ threadId, bridge, store }: { readonly threadId: strin
   if (!session || session.status === 'denied' || session.status === 'refused') {
     if (!status?.keySaved) return <section className="iphone-surface__card iphone-surface__cloud-pointer">
       <p>Native builds can run on a cloud iPhone. Add a run.cloud key in Settings &gt; Cloud iPhone.</p>
-      <button type="button" className="tt-button tt-button--secondary tt-focusable" onClick={() => app?.actions.navigate('settings')}><SettingsIcon size={14} aria-hidden="true" />Open Settings</button>
+      <button type="button" className="tt-button tt-button--secondary tt-focusable" onClick={() => app?.actions.navigate('settings', 'settings-cloud-iphone')}><SettingsIcon size={14} aria-hidden="true" />Open Settings</button>
     </section>
     return null
   }

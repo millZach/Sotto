@@ -561,7 +561,7 @@ class AppModel(
         Confirmed, Unreachable, Unconfirmed;
 
         fun words(name: String, clientID: String): String {
-            val there = "Remove it there too: in Settings › Phones on $name. For a computer without a screen, use Phones on its row in Settings › Hosts on your main computer, or its --revoke-client $clientID command."
+            val there = "Remove it there too: in Settings › Hosts & phones on $name. For a computer without a screen, use Phones on its row in Settings › Hosts & phones on your main computer, or its --revoke-client $clientID command."
             return when (this) {
                 Confirmed -> "Removed $name."
                 Unreachable -> "Removed $name from this phone. It couldn’t be reached, so it still lists this phone. $there"
