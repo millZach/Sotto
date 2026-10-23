@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, Laptop, Server } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { AGENT_THREAD_EXCERPT_MAX, type AgentRequest, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
@@ -70,13 +73,11 @@ export function placeAsks(placements: readonly WatcherAskPlacement[] | undefined
  */
 export function receiptWords(named: string, words: string | null | undefined): string {
   const title = named.replace(/\.+$/u, '')
-  if (words === undefined) return `${title} no longer waits on you.`
-  if (words === null) return `You answered ${title}.`
-  if (words === OWN_WORDS) return `You answered ${title} ${OWN_WORDS}.`
-  return `You answered ${title}: ${words}.`
+  if (words === undefined) return i18n._(msg`${title} no longer waits on you.`)
+  if (words === null) return i18n._(msg`You answered ${title}.`)
+  if (words === OWN_WORDS) return i18n._(msg`You answered ${title} in your own words.`)
+  return i18n._(msg`You answered ${title}: ${words}.`)
 }
-
-const KIND_WORD = { question: 'question', permission: 'permission' } as const
 
 /**
  * The asks under one message of Watcher's conversation (Zach's pick on October 19, 2026, variant B): for each request a
@@ -100,9 +101,10 @@ function WatcherAskEntry({ ask, facts, answering, press }: {
   readonly ask: WatcherAskPlacement; readonly facts: ConversationThread; readonly answering: WatcherAskAnswering
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
 }): ReactNode {
+  const { t } = useLingui()
   const row = answering.rowFor(ask.target)
   const request = row === undefined || isThreadClosed(row.thread) ? undefined : row.thread.requests.find(item => item.id === ask.requestCardId)
-  const title = row?.thread.title ?? facts.title ?? 'A thread'
+  const title = row?.thread.title ?? facts.title ?? t`A thread`
   // Read whatever happens below, so the line follows an answer whose reply came after its request had already left.
   const sent = useSyncExternalStore(answeredChoices.subscribe, () => row === undefined ? undefined : answeredChoices.sent(row.thread.id, ask.requestCardId))
   if (row !== undefined && request !== undefined) return <WatcherAskCard row={row} request={request} facts={facts} answering={answering} press={press} />
@@ -111,8 +113,8 @@ function WatcherAskEntry({ ask, facts, answering, press }: {
   if (row === undefined) return null
   return <p className="watcher-ask-receipt" data-ask-request={ask.requestCardId}>
     <span className="watcher-ask-receipt__words">{receiptWords(title, sent)}</span>
-    <button type="button" className="watcher-ask__open tt-focusable" aria-label={`Open ${title} beside Watcher`} title={`Open ${title} beside Watcher`}
-      {...press(row.thread.id)}>Open</button>
+    <button type="button" className="watcher-ask__open tt-focusable" aria-label={t`Open ${title} beside Watcher`} title={t`Open ${title} beside Watcher`}
+      {...press(row.thread.id)}>{t({ message: 'Open', context: 'Open a thread' })}</button>
   </p>
 }
 
@@ -126,8 +128,10 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
   readonly row: ThreadRow; readonly request: AgentRequest; readonly facts: ConversationThread; readonly answering: WatcherAskAnswering
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
 }): ReactNode {
+  const { t } = useLingui()
   const { state, command } = answering
   const thread = row.thread
+  const title = thread.title
   const owner = threadRequestOwner(row, state)
   const ownerKey = requestAnswerOwnerKey(thread.id, request, owner)
   const entry = useSyncExternalStore(requestAnswerStore.subscribe, () => requestAnswerStore.get(ownerKey, request.id))
@@ -137,10 +141,11 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
   useEffect(() => {
     if (entry.phase === 'sending') answeredChoices.note(thread.id, request.id, chosenWords(request, entry), false)
   }, [entry, request, thread.id])
-  const kind = KIND_WORD[request.kind]
-  const computer = facts.computer ?? (thread.remoteHost ? thread.hostLabel ?? 'Paired computer' : 'This computer')
+  const kind = request.kind === 'permission' ? t({ message: 'permission', comment: 'The kind of request a card in Watcher’s conversation holds' })
+    : t({ message: 'question', comment: 'The kind of request a card in Watcher’s conversation holds' })
+  const computer = facts.computer ?? (thread.remoteHost ? thread.hostLabel ?? t`Paired computer` : t`This computer`)
   const remote = facts.remote || thread.remoteHost === true
-  return <section className="watcher-ask" tabIndex={-1} aria-label={`${kind === 'permission' ? 'Permission request' : 'Question'} from ${thread.title}`}
+  return <section className="watcher-ask" tabIndex={-1} aria-label={request.kind === 'permission' ? t`Permission request from ${title}` : t`Question from ${title}`}
     data-ask-thread={thread.id} data-ask-request={request.id} data-kind={request.kind}>
     <div className="watcher-ask__top">
       <span className="watcher-row__ring" data-tone="needs" aria-hidden="true" />
@@ -153,8 +158,8 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
           {remote ? <Server size={12} aria-hidden="true" /> : <Laptop size={12} aria-hidden="true" />}{computer}</span>
         <span className="watcher-ask__kind" aria-hidden="true">{kind}</span>
       </span>
-      <button type="button" className="watcher-ask__open tt-focusable" aria-label={`Open ${thread.title} beside Watcher`} title={`Open ${thread.title} beside Watcher`}
-        {...press(thread.id)}>Open</button>
+      <button type="button" className="watcher-ask__open tt-focusable" aria-label={t`Open ${title} beside Watcher`} title={t`Open ${title} beside Watcher`}
+        {...press(thread.id)}>{t({ message: 'Open', context: 'Open a thread' })}</button>
     </div>
     <WhatItSaid row={row} />
     <AgentRequestCard ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={threadRequestBlocked(row, state)} draftOwner={owner}
@@ -175,10 +180,12 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
  * whose name says whose reply it unfolds, since several cards may wait at once. Nothing when there is no reply.
  */
 function WhatItSaid({ row }: { readonly row: ThreadRow }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
   const bodyId = useId()
   const thread = row.thread
+  const title = thread.title
   const held = thread.messages.findLast(message => message.role === 'assistant' && message.text.trim() !== '' && message.visual === undefined)?.text
   const text = held ?? thread.summary?.lastAssistant?.text
   if (text === undefined || text.trim() === '') return null
@@ -188,10 +195,10 @@ function WhatItSaid({ row }: { readonly row: ThreadRow }): ReactNode {
     event.preventDefault(); event.stopPropagation(); setOpen(false); toggle.current?.focus()
   }}>
     <button ref={toggle} type="button" className="watcher-ask__toggle tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
-      aria-label={`${open ? 'Hide' : 'Show'} what it said, ${thread.title}`} onClick={() => setOpen(value => !value)}>
-      {open ? 'Hide what it said' : 'Show what it said'}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+      aria-label={open ? t`Hide what it said, ${title}` : t`Show what it said, ${title}`} onClick={() => setOpen(value => !value)}>
+      {open ? t`Hide what it said` : t`Show what it said`}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
     </button>
-    {open ? <div id={bodyId} className="watcher-ask__said-body" role="group" aria-label={`What ${thread.title} said last`}><MessageContent text={text} />
-      {shortened ? <p className="watcher-ask__said-cut">Shortened here. Open the thread for the rest.</p> : null}</div> : null}
+    {open ? <div id={bodyId} className="watcher-ask__said-body" role="group" aria-label={t`What ${title} said last`}><MessageContent text={text} />
+      {shortened ? <p className="watcher-ask__said-cut"><Trans>Shortened here. Open the thread for the rest.</Trans></p> : null}</div> : null}
   </div>
 }

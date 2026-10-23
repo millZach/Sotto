@@ -1,12 +1,16 @@
 import React, { useId, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
 import { ChoiceChip, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
 
-/** The chip's name, which says which setting a press changes. */
-export const WATCHER_PERMISSIONS = 'Watcher’s permissions'
-/** What stays true in every mode, under the list (the approved mock-up, control A). */
+/**
+ * What stays true in every mode, under the list (the approved mock-up, control A). The English, for the tests that find
+ * it; the chip shows it in the interface language.
+ */
 export const WATCHER_PERMISSIONS_FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 /** What a new Watcher starts on the first time ever; after that, the mode the user last chose. */
 const FIRST_MODE: AgentRuntimeMode = 'approval-required'
@@ -14,10 +18,10 @@ const FIRST_MODE: AgentRuntimeMode = 'approval-required'
 /** Each mode in one line, as what Watcher does under it; Auto is the provider's own judgement, so it names the provider. */
 export function watcherModeDescriptions(provider: string): Record<AgentRuntimeMode, string> {
   return {
-    'approval-required': 'Asks you before it edits a file or runs a command that changes something.',
-    'auto-accept-edits': 'Edits files without asking. Asks before a command that changes something.',
-    auto: `${provider} decides what to ask you about.`,
-    'full-access': 'Edits files and runs any command without asking, anywhere on this computer.',
+    'approval-required': i18n._(msg`Asks you before it edits a file or runs a command that changes something.`),
+    'auto-accept-edits': i18n._(msg`Edits files without asking. Asks before a command that changes something.`),
+    auto: i18n._(msg`${provider} decides what to ask you about.`),
+    'full-access': i18n._(msg`Edits files and runs any command without asking, anywhere on this computer.`),
   }
 }
 
@@ -54,6 +58,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
   /** Opens below the chip when there is no room above it, as on the Orchestrating card in Settings. */
   readonly flip?: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const room = useWatcherRoom()
   const captionId = useId()
   const [pressed, setPressed] = useState<AgentRuntimeMode | null>(null)
@@ -73,15 +78,16 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
     try {
       setRefusal(room.settle(await setPermission({ runtimeMode: mode })))
     } catch {
-      setRefusal(`Sotto could not reach Watcher to change its permissions. It stays on ${RUNTIME_LABELS[remembered]}.`)
+      const permissions = RUNTIME_LABELS[remembered]
+      setRefusal(t`Sotto could not reach Watcher to change its permissions. It stays on ${permissions}.`)
     } finally {
       setPressed(null)
     }
   }
   const notice = refusal === null ? null : <p className="thread-options__notice" role="alert"><span>{refusal}</span></p>
   return <>
-    <ChoiceChip label={WATCHER_PERMISSIONS} placeholder={RUNTIME_LABELS[FIRST_MODE]} value={chosen} options={choices(model, chosen, provider)}
-      disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={WATCHER_PERMISSIONS_FOOT} flip={flip} icon={PERMISSIONS_ICON}
+    <ChoiceChip label={t`Watcher’s permissions`} placeholder={RUNTIME_LABELS[FIRST_MODE]} value={chosen} options={choices(model, chosen, provider)}
+      disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={t`When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.`} flip={flip} icon={PERMISSIONS_ICON}
       onChange={mode => void choose(mode as AgentRuntimeMode)} />
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{pending ? permissionInForceCaption(provider, { runtimeMode: current }) : ''}</span>

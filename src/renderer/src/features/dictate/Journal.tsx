@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { DictationRecord } from '../../../../shared/dictationRecord'
 import type { HistoryEntry } from '../../../../shared/history'
@@ -39,6 +40,7 @@ export interface JournalProps {
 }
 
 const COPIED_MS = 1_600
+/** The chip that shows every app; named in the interface language where it is drawn. */
 const ALL = 'All'
 
 /**
@@ -61,6 +63,7 @@ export const Journal = memo(function Journal({
   onClear,
   onOpenSettings,
 }: JournalProps): ReactNode {
+  const { t, i18n } = useLingui()
   const [ownQuery, setOwnQuery] = useState('')
   const [app, setApp] = useState(ALL)
   const [daysShown, setDaysShown] = useState(JOURNAL_DAYS_STEP)
@@ -108,7 +111,9 @@ export const Journal = memo(function Journal({
   }, [entries, recordsById])
   const matching = useMemo(() => rows.filter((row) => (chosenApp === ALL || row.app === chosenApp)
     && (!searching || row.entry.text.toLocaleLowerCase().includes(normalizedQuery))), [rows, chosenApp, searching, normalizedQuery])
-  const { days, more } = useMemo(() => journalDays(matching, now, daysShown), [matching, now, daysShown])
+  // Day labels are words, so a new interface language labels the days again.
+  const locale = i18n.locale
+  const { days, more } = useMemo(() => journalDays(matching, now, daysShown), [matching, now, daysShown, locale])
 
   useEffect(() => {
     if (copying === null || !copying.done) return
@@ -124,7 +129,7 @@ export const Journal = memo(function Journal({
     if (copied) setCopying({ id: entry.id, done: true })
     else {
       setCopying(null)
-      setCopyProblem('Transcript could not be copied. Try again.')
+      setCopyProblem(t`Transcript could not be copied. Try again.`)
     }
   }
 
@@ -140,74 +145,78 @@ export const Journal = memo(function Journal({
   // which removes every record as well as every transcript, is offered while either is kept.
 
   let empty: { title: string; detail?: string; busy?: boolean } | null = null
-  if (status === 'loading') empty = { title: 'Loading transcripts.', detail: 'Your transcripts on this computer are being read.', busy: true }
-  else if (status === 'degraded') empty = { title: 'Transcripts could not be loaded.', detail: 'Dictation still works. Reopen Sotto to try reading them again.' }
-  else if (entries.length === 0 && historyEnabled) empty = { title: 'Nothing here yet.', detail: 'Dictate something and it will be kept here, on this computer.' }
+  if (status === 'loading') empty = { title: t`Loading transcripts.`, detail: t`Your transcripts on this computer are being read.`, busy: true }
+  else if (status === 'degraded') empty = { title: t`Transcripts could not be loaded.`, detail: t`Dictation still works. Reopen Sotto to try reading them again.` }
+  else if (entries.length === 0 && historyEnabled) empty = { title: t`Nothing here yet.`, detail: t`Dictate something and it will be kept here, on this computer.` }
+  const allLabel = t({ message: 'All', comment: 'The Journal chip that shows transcripts from every app' })
+  const searched = query.trim()
 
   return (
     <div className="journal">
-      <h2 ref={headingRef} tabIndex={-1} className="tt-visually-hidden">Transcripts</h2>
+      <h2 ref={headingRef} tabIndex={-1} className="tt-visually-hidden"><Trans>Transcripts</Trans></h2>
       {historyEnabled ? null : (
         <p className="journal-note">
           <span>{entries.length > 0
-            ? 'History is off. New dictations keep their numbers only; older transcripts stay here until you delete them.'
-            : 'History is off. New dictations keep their numbers only.'}</span>
-          <Button variant="ghost" onClick={() => onOpenSettings('settings-history')}>Open Settings</Button>
+            ? t`History is off. New dictations keep their numbers only; older transcripts stay here until you delete them.`
+            : t`History is off. New dictations keep their numbers only.`}</span>
+          <Button variant="ghost" onClick={() => onOpenSettings('settings-history')}><Trans>Open Settings</Trans></Button>
         </p>
       )}
       {ready ? (
         <div className="journal-tools">
           <label className="journal-search" data-filled={searching ? '1' : '0'}>
-            <span className="tt-visually-hidden">Search transcripts</span>
+            <span className="tt-visually-hidden"><Trans>Search transcripts</Trans></span>
             <Search size={15} aria-hidden="true" />
             <input
               ref={searchRef}
               className="journal-search__input tt-focusable"
               type="search"
               value={query}
-              placeholder="Search transcripts"
+              placeholder={t`Search transcripts`}
               onChange={(event) => setQuery(event.currentTarget.value)}
               onKeyDown={(event) => { if (event.key === 'Escape' && query !== '') { event.preventDefault(); setQuery('') } }}
             />
             {searching ? (
-              <button type="button" className="journal-search__clear tt-focusable" aria-label="Clear search" title="Clear search"
+              <button type="button" className="journal-search__clear tt-focusable" aria-label={t`Clear search`} title={t`Clear search`}
                 onClick={() => { setQuery(''); searchRef.current?.focus() }}>
                 <X size={14} aria-hidden="true" />
               </button>
             ) : null}
           </label>
-          {records.length === 0 && entries.length === 0 ? null : <PaneMenu className="journal-more" label="More transcript actions"
-            groups={[[{ id: 'clear', label: 'Clear history', tone: 'danger', run: () => setClearOpen(true) }]]} />}
+          {records.length === 0 && entries.length === 0 ? null : <PaneMenu className="journal-more" label={t`More transcript actions`}
+            groups={[[{ id: 'clear', label: t`Clear history`, tone: 'danger', run: () => setClearOpen(true) }]]} />}
           {chips.length > 0 && entries.length > 0 ? (
-            <div className="journal-chips" role="group" aria-label="Show transcripts from">
+            <div className="journal-chips" role="group" aria-label={t`Show transcripts from`}>
               {[ALL, ...chips].map((name) => (
                 <button key={name} type="button" className="journal-chip tt-focusable" aria-pressed={chosenApp === name}
-                  onClick={() => setApp(name)}>{name}</button>
+                  onClick={() => setApp(name)}>{name === ALL ? allLabel : name}</button>
               ))}
             </div>
           ) : null}
         </div>
       ) : null}
-      {copyProblem === null ? null : <p className="journal-alert" role="alert">{copyProblem}</p>}
-      {copying?.done ? <p className="tt-visually-hidden" role="status">Transcript copied.</p> : null}
+      {copyProblem === null ? null : <p className="journal-alert tt-paragraph" role="alert">{copyProblem}</p>}
+      {copying?.done ? <p className="tt-visually-hidden" role="status"><Trans>Transcript copied.</Trans></p> : null}
 
       {empty !== null ? (
         <div className="journal-empty" aria-busy={empty.busy ? 'true' : undefined}>
           <h2>{empty.title}</h2>
-          {empty.detail === undefined ? null : <p>{empty.detail}</p>}
+          {empty.detail === undefined ? null : <p className="tt-paragraph">{empty.detail}</p>}
         </div>
       ) : entries.length === 0 ? null : days.length === 0 ? (
         <div className="journal-empty">
-          <h2>{searching ? <>Nothing matches &ldquo;{query.trim()}&rdquo;.</> : `No transcripts from ${chosenApp}.`}</h2>
-          <p>{!searching ? 'Choose All to see every transcript.' : chosenApp === ALL ? 'Try another word, or clear the search.' : 'Try another word, or choose All.'}</p>
+          <h2>{searching ? t`Nothing matches “${searched}”.` : t`No transcripts from ${chosenApp}.`}</h2>
+          <p className="tt-paragraph">{!searching ? t`Choose All to see every transcript.` : chosenApp === ALL ? t`Try another word, or clear the search.` : t`Try another word, or choose All.`}</p>
         </div>
       ) : (
         <>
-          {days.map((day) => (
-            <section key={day.day} className="journal-day" aria-label={day.label}>
+          {days.map((day) => {
+            const words = wordsLabel(day.words)
+            const wpm = day.wpm
+            return <section key={day.day} className="journal-day" aria-label={day.label}>
               <div className="journal-day__head">
                 <h2>{day.label}</h2>
-                <span>{wordsLabel(day.words)}{day.wpm === null ? '' : ` · ${day.wpm} wpm`}</span>
+                <span>{wpm === null ? words : t`${words} · ${wpm} wpm`}</span>
               </div>
               <ol className="journal-list">
                 {day.rows.map((row) => (
@@ -226,18 +235,18 @@ export const Journal = memo(function Journal({
                 ))}
               </ol>
             </section>
-          ))}
-          {more ? <Button variant="secondary" className="journal-more-days" onClick={() => setDaysShown((shown) => shown + JOURNAL_DAYS_STEP)}>Show the 7 days before</Button> : null}
+          })}
+          {more ? <Button variant="secondary" className="journal-more-days" onClick={() => setDaysShown((shown) => shown + JOURNAL_DAYS_STEP)}><Trans>Show the 7 days before</Trans></Button> : null}
         </>
       )}
 
       {deleteEntry === null ? null : (
         <ConfirmationDialog
-          title="Delete transcript?"
-          description="This removes the transcript and its numbers from this computer. It cannot be undone."
-          cancelLabel="Keep transcript"
-          confirmLabel="Delete transcript"
-          failureMessage="Transcript could not be deleted. Try again or keep the transcript."
+          title={t`Delete transcript?`}
+          description={t`This removes the transcript and its numbers from this computer. It cannot be undone.`}
+          cancelLabel={t`Keep transcript`}
+          confirmLabel={t`Delete transcript`}
+          failureMessage={t`Transcript could not be deleted. Try again or keep the transcript.`}
           fallbackFocusRef={headingRef}
           onCancel={() => setDeleteEntry(null)}
           onConfirm={async () => {
@@ -249,11 +258,11 @@ export const Journal = memo(function Journal({
       )}
       {!clearOpen ? null : (
         <ConfirmationDialog
-          title="Clear history?"
-          description="This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged."
-          cancelLabel="Keep history"
-          confirmLabel="Clear all transcripts"
-          failureMessage="History could not be cleared. Your saved transcripts are unchanged."
+          title={t`Clear history?`}
+          description={t`This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged.`}
+          cancelLabel={t`Keep history`}
+          confirmLabel={t`Clear all transcripts`}
+          failureMessage={t`History could not be cleared. Your saved transcripts are unchanged.`}
           fallbackFocusRef={headingRef}
           onCancel={() => setClearOpen(false)}
           onConfirm={async () => {
@@ -278,8 +287,11 @@ const JournalEntry = memo(function JournalEntry({ row, open, factsId, copyState,
   readonly onCopy: () => void
   readonly onDelete: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const stamp = clockLabel(row.entry.createdAt)
   const facts = open ? transcriptFacts(row) : null
+  const when = stamp.full
+  const words = wordsLabel(row.words)
   return (
     <li>
       <article className="journal-entry" aria-current={open ? 'true' : undefined} onKeyDown={onKeyDown}>
@@ -289,7 +301,7 @@ const JournalEntry = memo(function JournalEntry({ row, open, factsId, copyState,
           className="journal-entry__toggle tt-focusable"
           aria-expanded={open}
           aria-controls={open ? factsId : undefined}
-          aria-label={`Transcript from ${stamp.full}, ${wordsLabel(row.words)}`}
+          aria-label={t`Transcript from ${when}, ${words}`}
           onClick={onToggle}
         />
         <span className="journal-entry__time" aria-hidden="true">
@@ -300,17 +312,17 @@ const JournalEntry = memo(function JournalEntry({ row, open, factsId, copyState,
         <Button
           variant="secondary"
           className="journal-entry__copy"
-          aria-label="Copy transcript"
+          aria-label={t`Copy transcript`}
           disabled={copyState !== null && !copyState.done}
           onClick={onCopy}
         >
-          {copyState?.done ? 'Copied' : 'Copy'}
+          {copyState?.done ? t({ message: 'Copied', comment: 'A transcript copy button, after it copied' }) : t({ message: 'Copy', comment: 'Copies a transcript' })}
         </Button>
         {facts === null ? null : (
           <>
-            <p className="journal-entry__facts" id={factsId}><b>{facts.lead}</b> {facts.rest}</p>
+            <p className="journal-entry__facts tt-paragraph" id={factsId}><b>{facts.lead}</b> {facts.rest}</p>
             <div className="journal-entry__delete">
-              <Button variant="danger" aria-label="Delete saved transcript" onClick={onDelete}>Delete</Button>
+              <Button variant="danger" aria-label={t`Delete saved transcript`} onClick={onDelete}><Trans>Delete</Trans></Button>
             </div>
           </>
         )}

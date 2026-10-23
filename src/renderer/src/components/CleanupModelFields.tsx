@@ -1,5 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { CircleAlert, RefreshCw } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { OpenRouterModelList } from '../../../shared/contracts'
 import type { AppSettings, LlmMode, SettingsPatch } from '../../../shared/settings'
@@ -7,20 +10,21 @@ import { Field } from './Field'
 import { SegmentedControl } from './SegmentedControl'
 
 type Model = { readonly id: string; readonly name: string }
-const DEFAULT: Model = { id: '', name: 'Default' }
+/** Sotto's own choice, named in the interface language. */
+const defaultModel = (): Model => ({ id: '', name: i18n._(msg({ message: 'Default', comment: 'The cleanup model or mode Sotto chooses itself' })) })
 /** Enough rows to find a model by scrolling; typing narrows the rest. */
 const MAX_ROWS = 200
 
 function failureCopy(reason: 'http' | 'network' | 'timeout'): string {
   return reason === 'http'
-    ? 'OpenRouter did not send its models. The saved choice still works. Try Refresh.'
-    : 'Could not reach OpenRouter. The saved choice still works. Try Refresh.'
+    ? i18n._(msg`OpenRouter did not send its models. The saved choice still works. Try Refresh.`)
+    : i18n._(msg`Could not reach OpenRouter. The saved choice still works. Try Refresh.`)
 }
 
 /** The models whose name or slug holds every word typed, Default first while nothing is typed. */
 export function matchModels(models: readonly Model[], query: string): Model[] {
   const words = query.toLowerCase().split(/\s+/u).filter(Boolean)
-  if (words.length === 0) return [DEFAULT, ...models].slice(0, MAX_ROWS)
+  if (words.length === 0) return [defaultModel(), ...models].slice(0, MAX_ROWS)
   return models.filter(model => {
     const text = `${model.name} ${model.id}`.toLowerCase()
     return words.every(word => text.includes(word))
@@ -36,6 +40,7 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
   readonly onSave: (patch: SettingsPatch) => Promise<boolean> | void
   readonly onListModels: () => Promise<OpenRouterModelList>
 }): ReactNode {
+  const { t } = useLingui()
   const id = useId()
   const [models, setModels] = useState<readonly Model[] | null>(null)
   const [complete, setComplete] = useState(false)
@@ -48,7 +53,7 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
   const input = useRef<HTMLInputElement>(null)
   const request = useRef(0)
 
-  const chosen = settings.llmModel === null ? DEFAULT
+  const chosen = settings.llmModel === null ? defaultModel()
     : models?.find(model => model.id === settings.llmModel) ?? { id: settings.llmModel, name: settings.llmModel }
   // Only a whole list can say a model is gone; one cut short may hold it on a page not read.
   const gone = settings.llmModel !== null && models !== null && complete && !models.some(model => model.id === settings.llmModel)
@@ -110,37 +115,37 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
 
   return <>
     <div className="tt-field cleanup-model">
-      <label className="tt-field__label" htmlFor={`${id}-input`}>Cleanup model</label>
-      <p className="tt-field__description" id={descriptionId}>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen.</p>
+      <label className="tt-field__label" htmlFor={`${id}-input`}><Trans>Cleanup model</Trans></label>
+      <p className="tt-field__description tt-paragraph" id={descriptionId}><Trans>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen.</Trans></p>
       <div className="cleanup-model__control">
         <input ref={input} id={`${id}-input`} className="tt-input tt-focusable" type="text" role="combobox" autoComplete="off" spellCheck={false}
           aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-describedby={descriptionId}
           {...(open && matches[active] ? { 'aria-activedescendant': optionId(active) } : {})}
           value={open ? query : chosen.name}
-          placeholder={open ? 'Search models' : undefined}
+          placeholder={open ? t`Search models` : undefined}
           onClick={() => { if (!open) show() }} onBlur={close}
           onChange={event => show(event.currentTarget.value)}
           onKeyDown={onKeyDown} />
-        <button type="button" className="cleanup-model__refresh tt-focusable" aria-label="Refresh models" title="Refresh models" disabled={loading} onClick={() => void load()}>
+        <button type="button" className="cleanup-model__refresh tt-focusable" aria-label={t`Refresh models`} title={t`Refresh models`} disabled={loading} onClick={() => void load()}>
           <RefreshCw size={15} aria-hidden="true" />
         </button>
-        {open ? <ul className="cleanup-model__list" data-above={above || undefined} id={listId} role="listbox" aria-label="Cleanup models">
+        {open ? <ul className="cleanup-model__list" data-above={above || undefined} id={listId} role="listbox" aria-label={t`Cleanup models`}>
           {matches.map((model, index) => <li key={model.id || 'default'} id={optionId(index)} role="option"
             aria-selected={model.id === chosen.id} data-active={index === active || undefined}
             onMouseDown={event => { event.preventDefault(); pick(model) }} onMouseMove={() => setActive(index)}>
             <span className="cleanup-model__name">{model.name}</span>
-            {model.id ? <span className="cleanup-model__slug">{model.id}</span> : <span className="cleanup-model__slug">Sotto’s choice</span>}
+            {model.id ? <span className="cleanup-model__slug">{model.id}</span> : <span className="cleanup-model__slug"><Trans>Sotto’s choice</Trans></span>}
           </li>)}
-          {matches.length === 0 ? <li className="cleanup-model__empty" role="presentation">{loading ? 'Loading models…' : models === null ? 'No models yet.' : 'No model matches.'}</li> : null}
+          {matches.length === 0 ? <li className="cleanup-model__empty" role="presentation">{loading ? t`Loading models…` : models === null ? t`No models yet.` : t`No model matches.`}</li> : null}
         </ul> : null}
       </div>
     </div>
     {failure === null && !gone ? null : <p className="settings-remote-status settings-remote-status--error" role="status">
-      <CircleAlert size={16} aria-hidden="true" />{failure ?? 'OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.'}
+      <CircleAlert size={16} aria-hidden="true" />{failure ?? t`OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.`}
     </p>}
-    <Field label="Mode" description="How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.">
-      <SegmentedControl label="Mode" value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
-        options={[{ value: 'default', label: 'Default' }, { value: 'nitro', label: 'Nitro' }, { value: 'floor', label: 'Floor' }]} />
+    <Field label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} description={t`How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.`}>
+      <SegmentedControl label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
+        options={[{ value: 'default', label: t({ message: 'Default', comment: 'The cleanup model or mode Sotto chooses itself' }) }, { value: 'nitro', label: 'Nitro' }, { value: 'floor', label: 'Floor' }]} />
     </Field>
   </>
 }

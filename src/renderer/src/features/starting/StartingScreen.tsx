@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 
 import type { HostsBridge, HostsState } from '../../../../shared/hosts'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -52,8 +55,11 @@ function startingScreenAvailable(): boolean {
 }
 
 /** What a screen reader hears after each name in the row of dots. */
-const DOT_WORDS: Record<DotState, string> = {
-  ready: 'ready', connecting: 'connecting', late: 'not answering', 'not-connected': 'not connected',
+const DOT_WORDS: Record<DotState, MessageDescriptor> = {
+  ready: msg({ message: 'ready', comment: 'Read after a provider or host name on the starting screen' }),
+  connecting: msg`connecting`,
+  late: msg`not answering`,
+  'not-connected': msg`not connected`,
 }
 
 interface HostsReading { readonly state: HostsState | null; readonly known: boolean }
@@ -125,6 +131,7 @@ interface StartingScreenProps {
  * Sotto has not loaded your threads, with the button that opens Sotto anyway.
  */
 function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactNode {
+  const { t, i18n } = useLingui()
   const agents = useOptionalAgents()
   const hostsReading = useHostsReading(hosts)
   // The ten seconds run from when this window first showed the screen; the words are kept back afresh after a reload.
@@ -171,12 +178,12 @@ function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactN
         <SottoMark className="starting-screen__mark" />
         <p className="starting-screen__line" role="status">{revealed ? view.line : ''}</p>
         {revealed && view.dots.length > 0 ? (
-          <ul className="starting-screen__items" aria-label="Providers and hosts">
+          <ul className="starting-screen__items" aria-label={t`Providers and hosts`}>
             {view.dots.map(dot => (
               <li key={dot.key} className="starting-screen__item">
                 <span className="starting-screen__dot" data-state={dot.state} aria-hidden="true" />
                 <span className="starting-screen__name">{dot.name}</span>
-                <span className="tt-visually-hidden">, {DOT_WORDS[dot.state]}</span>
+                <span className="tt-visually-hidden">, {i18n._(DOT_WORDS[dot.state])}</span>
               </li>
             ))}
           </ul>

@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
   addRipple, CELL, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
@@ -147,7 +150,11 @@ const TIP_HALF = 126
 const TIP_HEIGHT = 44
 
 /** What a thread owl's tooltip says of its thread. */
-const MOOD_WORDS: Record<OwlMood, string> = { awake: 'Working', waiting: 'Waiting on you. Press to answer.', asleep: 'Not working now' }
+const MOOD_WORDS = {
+  awake: msg({ message: 'Working', comment: 'A thread’s status' }),
+  waiting: msg`Waiting on you. Press to answer.`,
+  asleep: msg`Not working now`,
+} as const satisfies Record<OwlMood, unknown>
 
 /** A perched thread owl's button, or the "+N" pile's. */
 interface Target {
@@ -188,6 +195,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   /** The "+N" pile's press: the Watched view, where every watched thread is. */
   readonly onShowWatched: () => void
 }): ReactNode {
+  // Named `say` here, since `t` is the scene's clock.
+  const { t: say } = useLingui()
   const reduced = useReducedMotion()
   const still = reduced || held
   const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>(shown ? 'shown' : 'gone')
@@ -293,12 +302,13 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       for (const box of painter.targets(poses, t, stillRef.current)) {
         const item = byKey.get(box.key)
         if (item === undefined || item.threadId === null) continue
-        next.push({ key: item.key, box, title: item.title, words: MOOD_WORDS[item.mood], open: { threadId: item.threadId, atRequest: item.mood === 'waiting' }, below: tipBelow(box.y) })
+        next.push({ key: item.key, box, title: item.title, words: i18n._(MOOD_WORDS[item.mood]), open: { threadId: item.threadId, atRequest: item.mood === 'waiting' }, below: tipBelow(box.y) })
       }
       if (pile !== null) {
         const w = pileLabel(pile.count, layout?.mode === 'rail').length * 7 + 10
         const x = Math.max(0, Math.min((layout?.width ?? w) - w, pile.spot.x - w / 2))
-        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: `${pile.count} more`, words: 'Press to see every watched thread on Watched.', open: null, below: tipBelow(pile.spot.y - 16) })
+        const more = pile.count
+        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: i18n._(msg`${more} more`), words: i18n._(msg`Press to see every watched thread on Watched.`), open: null, below: tipBelow(pile.spot.y - 16) })
       }
       const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
       if (key !== targetKey) { targetKey = key; setTargets(next) }
@@ -521,15 +531,15 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     <canvas ref={front} className="watcher-scene watcher-scene--owl" data-leaving={fading} aria-hidden="true" />
     {/* The owls' buttons answer the pointer only; Watched is the keyboard's way to the same threads. */}
     <div className="watcher-scene watcher-scene--owls" data-leaving={fading} aria-hidden="true">
-      {targets.map(target => <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
-        aria-label={target.open === null ? 'Show every watched thread' : `Open ${target.title} beside Watcher`}
+      {targets.map(target => { const title = target.title; return <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
+        aria-label={target.open === null ? say`Show every watched thread` : say`Open ${title} beside Watcher`}
         style={{ left: target.box.x, top: target.box.y, width: target.box.w, height: target.box.h }}
         onPointerEnter={() => setTip(target)} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
         onClick={event => {
           setTip(null)
           if (target.open === null) { onShowWatched(); return }
           onOpen(target.open.threadId, { atRequest: target.open.atRequest, inThreads: event.shiftKey, from: event.currentTarget })
-        }} />)}
+        }} /> })}
     </div>
     {tip !== null ? <div className="watcher-scene__tip" data-below={tip.below || undefined} style={tipStyle} aria-hidden="true"><b>{tip.title}</b><span>{tip.words}</span></div> : null}
     <i ref={probe} className="watcher-scene__ink" aria-hidden="true" />

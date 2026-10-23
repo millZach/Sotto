@@ -1,5 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, Clock, Square, TriangleAlert } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { stopAllRunning, type WatcherStopAllResult } from '../../../shared/watcherRoom'
 import { Button } from '../components/Button'
@@ -17,43 +20,43 @@ type Phase =
   /** The stop went to main and its answer was lost: it may or may not have reached the threads. */
   | { readonly kind: 'unknown'; readonly targets: readonly WatcherThreadTarget[] }
 
-const NOTE = 'Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.'
-/** What an unknown outcome says: the stop may have gone through, and how to find out. */
-export const STOP_UNKNOWN = 'Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running.'
-const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
-const named = (facts: ConversationThread): string => facts.title ?? 'A thread no longer here'
+const named = (facts: ConversationThread): string => facts.title ?? i18n._(msg`A thread no longer here`)
 
 /** Stop all's question, with how many it stops. */
 export function stopQuestion(count: number): string {
-  return count === 1 ? 'Stop the thread Watcher started?' : `Stop the ${count} threads Watcher started?`
+  return plural(count, { 1: 'Stop the thread Watcher started?', other: 'Stop the # threads Watcher started?' })
 }
 /** The press that stops them. */
-export function stopButton(count: number): string { return count === 1 ? 'Stop 1 thread' : `Stop ${count} threads` }
+export function stopButton(count: number): string { return plural(count, { one: 'Stop # thread', other: 'Stop # threads' }) }
 
 /** What came of one thread's stop: stopped, asked of its computer and waiting on it, or main's words for what went wrong. */
 export function stopResultWords(result: StopResult, facts: ConversationThread): string {
-  if (result.status === 'stopped') return 'Stopped.'
-  if (result.status === 'requested') return facts.remote && facts.computer ? `Stop requested. Waiting on ${facts.computer} to confirm.` : 'Stop requested. Waiting for it to confirm.'
+  if (result.status === 'stopped') return i18n._(msg`Stopped.`)
+  const computer = facts.computer
+  if (result.status === 'requested') return facts.remote && computer ? i18n._(msg`Stop requested. Waiting on ${computer} to confirm.`) : i18n._(msg`Stop requested. Waiting for it to confirm.`)
   return result.message
 }
 
 /** The line over the results: everything stopped, or how many did and what the rest wait on. */
 export function stopSummary(results: readonly StopResult[], describe: (target: WatcherThreadTarget) => ConversationThread): string {
   const count = results.length
-  if (count === 0) return 'Watcher had no threads to stop. Nothing was stopped.'
+  if (count === 0) return i18n._(msg`Watcher had no threads to stop. Nothing was stopped.`)
   const waiting = results.filter(result => result.status === 'requested')
   const unsure = results.filter(result => result.status !== 'stopped' && result.status !== 'requested')
-  const hosts = [...new Set(waiting.map(result => describe(result.target)).filter(facts => facts.remote && facts.computer).map(facts => facts.computer!))].join(' and ')
-  const on = hosts === '' ? '' : ` on ${hosts}`
+  const computers = [...new Set(waiting.map(result => describe(result.target)).filter(facts => facts.remote && facts.computer).map(facts => facts.computer!))]
+  const hosts = computers.length === 0 ? null : computers.reduce((first, next) => i18n._(msg({ message: `${first} and ${next}`, comment: 'Two or more computers a stop waits on' })))
   if (count === 1) {
     const title = named(describe(results[0]!.target))
-    return waiting.length ? `Stop requested for ${title}. Waiting${on} to confirm.` : unsure.length ? `${title} may still be running.` : `Stopped ${title}.`
+    if (waiting.length) return hosts === null ? i18n._(msg`Stop requested for ${title}. Waiting to confirm.`) : i18n._(msg`Stop requested for ${title}. Waiting on ${hosts} to confirm.`)
+    return unsure.length ? i18n._(msg`${title} may still be running.`) : i18n._(msg`Stopped ${title}.`)
   }
-  if (waiting.length === 0 && unsure.length === 0) return `Stopped ${count} threads.`
-  const one = (value: number): string => value === 1 ? 'One' : String(value)
-  return [`Stopped ${count - waiting.length - unsure.length} of ${count}.`,
-    waiting.length ? `${one(waiting.length)} ${waiting.length === 1 ? 'is' : 'are'} waiting${on} to confirm.` : '',
-    unsure.length ? `${one(unsure.length)} may still be running.` : ''].filter(Boolean).join(' ')
+  if (waiting.length === 0 && unsure.length === 0) return plural(count, { one: 'Stopped # thread.', other: 'Stopped # threads.' })
+  const stopped = count - waiting.length - unsure.length
+  const waitingCount = waiting.length, unsureCount = unsure.length
+  return [i18n._(msg`Stopped ${stopped} of ${count}.`),
+    waiting.length === 0 ? '' : hosts === null ? plural(waitingCount, { 1: 'One is waiting to confirm.', other: '# are waiting to confirm.' })
+      : plural(waitingCount, { 1: `One is waiting on ${hosts} to confirm.`, other: `# are waiting on ${hosts} to confirm.` }),
+    unsure.length ? plural(unsureCount, { 1: 'One may still be running.', other: '# may still be running.' }) : ''].filter(Boolean).join(' ')
 }
 
 /**
@@ -69,6 +72,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   /** Where focus goes when Stop all itself is gone by the time the popover closes. */
   readonly fallbackFocus: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const running = useMemo(() => room.state === null ? [] : stopAllRunning(room.state), [room.state])
   const [phase, setPhase] = useState<Phase | null>(null)
   /** Whether the popover shows its phase: put away mid-stop, the phase goes on unseen until the button is pressed. */
@@ -106,7 +110,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
       const preview = await stopAll.prepare()
       setPhase(current => current?.kind !== 'preparing' ? current : preview.status === 'ok'
         ? { kind: 'confirm', confirmationId: preview.confirmationId, targets: preview.targets } : { kind: 'refused', message: preview.message })
-    } catch { setPhase(current => current === null ? null : { kind: 'refused', message: 'Sotto could not reach Watcher. Nothing was stopped. Try again.' }) }
+    } catch { setPhase(current => current === null ? null : { kind: 'refused', message: t`Sotto could not reach Watcher. Nothing was stopped. Try again.` }) }
   }
   const confirm = async (confirmationId: string, targets: readonly WatcherThreadTarget[]): Promise<void> => {
     setPhase({ kind: 'stopping', targets })
@@ -117,28 +121,30 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     } catch { setPhase(current => current === null ? null : { kind: 'unknown', targets }) }
   }
   // Put away mid-stop: the button's press shows the stop as it stands, its progress or what came of it.
-  const waiting = phase === null || shown ? null : phase.kind === 'stopping' ? 'Stop all, show its progress' : 'Stop all, show what it did'
+  const waiting = phase === null || shown ? null : phase.kind === 'stopping' ? t`Stop all, show its progress` : t`Stop all, show what it did`
   const count = phase?.kind === 'confirm' || phase?.kind === 'stopping' ? phase.targets.length : running.length
   const name = (target: WatcherThreadTarget): ReactNode => {
     const facts = conversation.describe(target)
+    const title = named(facts)
     return facts.threadId === null ? <span className="watcher-stop__name">{named(facts)}</span>
-      : <button type="button" className="receipt-link tt-focusable" aria-label={`Open ${named(facts)} beside Watcher`} title={named(facts)}
+      : <button type="button" className="receipt-link tt-focusable" aria-label={t`Open ${title} beside Watcher`} title={named(facts)}
         {...conversation.press(facts.threadId)} onClickCapture={() => setPhase(null)}>{named(facts)}</button>
   }
   let body: ReactNode
   if (phase === null) body = null
-  else if (phase.kind === 'preparing') body = <><h2 id={titleId}>Stop the threads Watcher started?</h2><p className="watcher-stop__note" role="status">Checking which threads are Watcher’s…</p></>
+  else if (phase.kind === 'preparing') body = <><h2 id={titleId}><Trans>Stop the threads Watcher started?</Trans></h2><p className="watcher-stop__note" role="status"><Trans>Checking which threads are Watcher’s…</Trans></p></>
   else if (phase.kind === 'refused') body = <>
-    <h2 id={titleId}>Nothing was stopped</h2>
+    <h2 id={titleId}><Trans>Nothing was stopped</Trans></h2>
     <p className="watcher-stop__note watcher-stop__refused" role="alert">{phase.message}</p>
-    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}>Close</Button></div>
+    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}><Trans>Close</Trans></Button></div>
   </>
   else if (phase.kind === 'unknown') body = <>
-    <h2 id={titleId}>Sotto can’t tell what stopped</h2>
-    <p className="watcher-stop__note watcher-stop__unknown" role="alert">{STOP_UNKNOWN}</p>
+    <h2 id={titleId}><Trans>Sotto can’t tell what stopped</Trans></h2>
+    {/* The stop may have gone through, and how to find out. */}
+    <p className="watcher-stop__note watcher-stop__unknown" role="alert"><Trans>Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running.</Trans></p>
     {phase.targets.length ? <ul className="watcher-stop__results">{phase.targets.map(target => <li key={`${target.hostId}:${target.threadId}`} className="watcher-stop__result" data-result="uncertain">
       <TriangleAlert size={15} aria-hidden="true" /><span>{name(target)}</span></li>)}</ul> : null}
-    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}>Close</Button></div>
+    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}><Trans>Close</Trans></Button></div>
   </>
   else if (phase.kind === 'done') body = <>
     <div role="status"><h2 id={titleId}>{stopSummary(phase.results, conversation.describe)}</h2></div>
@@ -150,26 +156,27 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
         <Icon size={15} aria-hidden="true" /><span>{name(result.target)}<span className="watcher-stop__said">{stopResultWords(result, facts)}</span></span>
       </li>
     })}</ul> : null}
-    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}>Close</Button></div>
+    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}><Trans>Close</Trans></Button></div>
   </>
   else {
     const { targets } = phase
     const stopping = phase.kind === 'stopping'
     body = <>
-      <h2 id={titleId} tabIndex={stopping ? -1 : undefined}>{targets.length === 0 ? 'Watcher has no running threads to stop.' : stopQuestion(targets.length)}</h2>
+      <h2 id={titleId} tabIndex={stopping ? -1 : undefined}>{targets.length === 0 ? t`Watcher has no running threads to stop.` : stopQuestion(targets.length)}</h2>
       {targets.length ? <ul className="watcher-stop__list">{targets.map(target => {
         const facts = conversation.describe(target)
+        const computer = facts.computer
         return <li key={`${target.hostId}:${target.threadId}`} className="watcher-stop__row">
           {facts.providerId === undefined ? <span aria-hidden="true" /> : <span className="thread-nav__mark" data-provider={facts.providerId} aria-hidden="true"><ProviderMark provider={facts.providerId} name={facts.provider ?? facts.providerId} /></span>}
-          <span className="watcher-stop__name">{named(facts)}{facts.remote && facts.computer ? <span className="watcher-stop__where"> on {facts.computer}</span> : null}</span>
+          <span className="watcher-stop__name">{named(facts)}{facts.remote && computer ? <span className="watcher-stop__where"> {t({ message: `on ${computer}`, comment: 'Follows a thread’s name: the computer it runs on' })}</span> : null}</span>
           {facts.status === null ? null : <span className="watcher-stop__state" data-tone={facts.tone}>{facts.status}</span>}
         </li>
       })}</ul> : null}
-      {targets.length ? <p className="watcher-stop__note" id={noteId}>{NOTE}</p> : null}
+      {targets.length ? <p className="watcher-stop__note" id={noteId}><Trans>Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.</Trans></p> : null}
       <div className="watcher-stop__actions">
-        <Button variant="secondary" data-autofocus disabled={stopping} onClick={close}>{targets.length ? 'Cancel' : 'Close'}</Button>
+        <Button variant="secondary" data-autofocus disabled={stopping} onClick={close}>{targets.length ? t`Cancel` : t`Close`}</Button>
         {targets.length && phase.kind === 'confirm' ? <Button variant="danger" onClick={() => void confirm(phase.confirmationId, targets)}>{stopButton(targets.length)}</Button> : null}
-        {stopping ? <Button variant="danger" disabled>Stopping…</Button> : null}
+        {stopping ? <Button variant="danger" disabled><Trans>Stopping…</Trans></Button> : null}
       </div>
     </>
   }
@@ -179,9 +186,9 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     close()
   }}>
     <button ref={button} type="button" className="watcher-stop-all__button tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
-      aria-label={waiting === null ? `Stop all threads Watcher started, ${plural(count, 'thread')}` : waiting} title={waiting ?? 'Stop all threads Watcher started'}
+      aria-label={waiting === null ? plural(count, { one: 'Stop all threads Watcher started, # thread', other: 'Stop all threads Watcher started, # threads' }) : waiting} title={waiting ?? t`Stop all threads Watcher started`}
       onClick={() => { if (waiting !== null) setShown(true); else if (open) close(); else void prepare() }}>
-      <Square size={13} aria-hidden="true" /><span className="watcher-stop-all__text">Stop all</span>
+      <Square size={13} aria-hidden="true" /><span className="watcher-stop-all__text"><Trans>Stop all</Trans></span>
     </button>
     {open ? <div ref={panel} id={panelId} className="watcher-stop" role="dialog" aria-labelledby={titleId}
       aria-describedby={phase.kind === 'confirm' && phase.targets.length ? noteId : undefined}>{body}</div> : null}

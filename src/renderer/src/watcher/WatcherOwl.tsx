@@ -1,4 +1,7 @@
 import React, { type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import './watcher.css'
 
 /** The owl alone, simplified for 16 pixels as build/tray-template.svg draws it: no beak, larger pupils, eyes cut through. */
@@ -7,7 +10,10 @@ const OWL =
   + 'M1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95Z'
   + 'M9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z'
 
+/** The English of `watchedByWatcher()`, for the Threads sidebar until its words move to the interface catalogs. */
 export const WATCHED_BY_WATCHER = 'Watched by Watcher'
+/** What Watcher's owl beside a thread means, in the interface language. */
+export const watchedByWatcher = (): string => i18n._(msg`Watched by Watcher`)
 
 /** Watcher's owl in the colour of whatever holds it. It names nothing; its holder says what it stands for. */
 export function WatcherOwl({ size = 16, className }: { readonly size?: number; readonly className?: string | undefined }): ReactNode {
@@ -23,5 +29,7 @@ export function WatcherOwl({ size = 16, className }: { readonly size?: number; r
  * colour. An image, never a control: hovering it says what it means, and so does a screen reader.
  */
 export function WatchedBadge({ size = 14 }: { readonly size?: number }): ReactNode {
-  return <span className="watched-badge" role="img" aria-label={WATCHED_BY_WATCHER} title={WATCHED_BY_WATCHER}><WatcherOwl size={size} /></span>
+  const { t } = useLingui()
+  const watched = t`Watched by Watcher`
+  return <span className="watched-badge" role="img" aria-label={watched} title={watched}><WatcherOwl size={size} /></span>
 }

@@ -1,3 +1,6 @@
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, plural, t } from '@lingui/core/macro'
+
 import { publicProviderEntityId } from '../../../../shared/agents'
 import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
@@ -14,7 +17,9 @@ export const USAGE_PROVIDERS: readonly UsageProviderId[] = usageProviderIdSchema
 export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode' }
 export const PROVIDER_ORDER = Object.keys(PROVIDER_NAMES) as UsageProviderId[]
 /** What a provider's limits belong to, when its client does not name the plan. OpenCode has none to show. */
-export const PROVIDER_ACCOUNTS: Record<UsageLimitProviderId, string> = { codex: 'ChatGPT through Codex', claude: 'Claude Code subscription', grok: 'Grok subscription', devin: 'Devin account', muse: 'Muse subscription' }
+export const PROVIDER_ACCOUNTS: Record<UsageLimitProviderId, MessageDescriptor> = {
+  codex: msg`ChatGPT through Codex`, claude: msg`Claude Code subscription`, grok: msg`Grok subscription`, devin: msg`Devin account`, muse: msg`Muse subscription`,
+}
 /** The short name a sentence about the provider's own report uses. */
 const PROVIDER_SHORT: Record<UsageLimitProviderId, string> = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin', muse: 'Muse' }
 /** Providers whose own records Usage reads outside Sotto (ADR-0083). The others are counted in Sotto only. */
@@ -22,9 +27,19 @@ export const READ_OUTSIDE_SOTTO: ReadonlySet<UsageProviderId> = new Set(['codex'
 /** Devin reports no token counts at all; its prompts still count. */
 export const NO_TOKENS: ReadonlySet<UsageProviderId> = new Set(['devin'])
 
-export const CLIENT_NAMES: Record<UsageClient, string> = {
-  sotto: 'Sotto', 'claude-code': 'Claude Code', 'codex-app': 'Codex app', 'codex-cli': 'Codex CLI', 'codex-exec': 'codex exec',
-  'codex-ide': 'Codex in VS Code', 't3-code': 'T3 Code', 'codex-in-claude-code': 'Codex plugin in Claude Code', other: 'Other apps',
+/** Each app's name, in the interface language where it is more than a product's name. */
+export function clientName(client: UsageClient): string {
+  switch (client) {
+    case 'sotto': return 'Sotto'
+    case 'claude-code': return 'Claude Code'
+    case 'codex-app': return t`Codex app`
+    case 'codex-cli': return 'Codex CLI'
+    case 'codex-exec': return 'codex exec'
+    case 'codex-ide': return t`Codex in VS Code`
+    case 't3-code': return 'T3 Code'
+    case 'codex-in-claude-code': return t`Codex plugin in Claude Code`
+    case 'other': return t`Other apps`
+  }
 }
 /** The provider whose client each app outside Sotto drives, as its own records name it. */
 export const CLIENT_PROVIDER: Partial<Record<UsageClient, UsageProviderId>> = {
@@ -45,7 +60,7 @@ export function fmtTok(value: number): string {
   if (value >= 1e4) return `${Math.round(value / 1e3)}K`
   return fmtInt(value)
 }
-export const pct = (fraction: number): string => fraction > 0 && fraction < 0.005 ? 'under 1%' : `${Math.round(fraction * 100)}%`
+export const pct = (fraction: number): string => fraction > 0 && fraction < 0.005 ? t`under 1%` : `${Math.round(fraction * 100)}%`
 export const share = (part: number, whole: number): string => whole > 0 ? pct(part / whole) : '0%'
 /** A token field in words: a dash when nothing reported it, "≥" when some rows did not. */
 export function fieldTokens(field: UsageFieldTotal): string {
@@ -73,10 +88,16 @@ export function cacheShare(tokens: UsageTokenTotals): string | undefined {
 export function fieldShare(part: UsageFieldTotal, whole: UsageFieldTotal): string | undefined {
   if (part.value === undefined || whole.value === undefined || whole.value <= 0) return undefined
   // Incomplete figures can't support "under 1%" either, so their share is only rounded.
-  return part.partial || whole.partial ? `about ${Math.round(part.value / whole.value * 100)}%` : share(part.value, whole.value)
+  const percent = Math.round(part.value / whole.value * 100)
+  return part.partial || whole.partial ? t`about ${percent}%` : share(part.value, whole.value)
 }
 /** Names in a sentence: "forge", "forge and mac", "forge, mac and studio". */
-export const joinNames = (names: readonly string[]): string => names.length <= 1 ? names[0] ?? '' : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+export function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  const first = names.slice(0, -1).join(', ')
+  const last = names.at(-1)!
+  return t`${first} and ${last}`
+}
 export function formatField(field: UsageFieldTotal): string {
   if (field.value === undefined) return '—'
   return `${field.partial ? '≥ ' : ''}${fmtInt(field.value)}`
@@ -121,7 +142,7 @@ export function emptyActivity(): UsageActivityAggregate {
   return { tokens: Object.fromEntries(USAGE_TOKEN_FIELDS.map(field => [field, emptyField()])) as UsageTokenTotals,
     prompts: { user: 0, watcher: 0, wakeUp: 0, total: 0, steered: 0 }, tokenRecords: 0, partialTokenRecords: 0, undatedTokenRecords: 0, activeThreads: 0, activeDays: 0 }
 }
-/** A noun for a count: 1 prompt, 2 prompts. */
+/** A noun for a count: 1 prompt, 2 prompts. English only: what Usage shows counts with `plural`. */
 export const nounFor = (count: number, noun: string): string => count === 1 ? noun : `${noun}s`
 export const isEmptyActivity = (row: UsageActivityAggregate): boolean => row.prompts.total === 0 && row.tokenRecords === 0
 
@@ -255,7 +276,7 @@ export function usagePlaces(clients: readonly UsageClientAggregate[]): UsagePlac
   for (const row of clients) {
     const inSotto = row.source === 'sotto'
     const key = inSotto ? (row.subAgent ? 'sotto-sub' : 'sotto') : row.clientId
-    const place = places.get(key) ?? { key, name: inSotto ? (row.subAgent ? "Sotto's subagents" : 'Sotto threads') : CLIENT_NAMES[row.clientId],
+    const place = places.get(key) ?? { key, name: inSotto ? (row.subAgent ? t`Sotto's subagents` : t`Sotto threads`) : clientName(row.clientId),
       inSotto, subAgent: inSotto && row.subAgent, prompts: 0, wakeUps: 0, tokens: 0, subAgentTokens: 0, fields: [] as UsageFieldTotal[], subAgentFields: [] as UsageFieldTotal[], provider: inSotto ? undefined : CLIENT_PROVIDER[row.clientId], providers: [] as UsageProviderId[] }
     for (const provider of row.providerIds ?? []) if (!place.providers.includes(provider)) place.providers.push(provider)
     const tokens = fieldValue(row.tokens.total)
@@ -307,18 +328,28 @@ export function shortDay(day: string): string { const { month, date } = dayParts
 /** "Wednesday, October 14", with ", so far" for today. */
 export function longDay(day: string, today: string): string {
   const { month, date } = dayParts(day)
-  return `${WEEKDAYS_LONG[weekdayOf(day)]}, ${MONTHS_LONG[month]} ${date}${day === today ? ', so far' : ''}`
+  const long = `${WEEKDAYS_LONG[weekdayOf(day)]}, ${MONTHS_LONG[month]} ${date}`
+  return day === today ? t`${long}, so far` : long
 }
 /** "Today", "Yesterday" or "Oct 9". */
 export function relativeDay(day: string, today: string): string {
-  if (day === today) return 'Today'
-  if (day === addDays(today, -1)) return 'Yesterday'
+  if (day === today) return t`Today`
+  if (day === addDays(today, -1)) return t`Yesterday`
   return shortDay(day)
 }
 export function rangeLabel(from: string | undefined, to: string | undefined, firstDay: string | undefined): string {
-  if (from === undefined && to === undefined) return firstDay === undefined ? 'All time' : `Since ${shortDay(firstDay)}`
+  if (from === undefined && to === undefined) {
+    if (firstDay === undefined) return t`All time`
+    const since = shortDay(firstDay)
+    return t`Since ${since}`
+  }
   if (from !== undefined && to !== undefined) return from === to ? shortDay(from) : `${shortDay(from)} – ${shortDay(to)}`
-  return from !== undefined ? `Since ${shortDay(from)}` : `Through ${shortDay(to!)}`
+  if (from !== undefined) {
+    const since = shortDay(from)
+    return t`Since ${since}`
+  }
+  const through = shortDay(to!)
+  return t`Through ${through}`
 }
 export function hourLabel(hour: number): string { const h = hour % 24; return h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM` }
 
@@ -347,19 +378,25 @@ export function resetShort(at: number, now: number, timeZone: string): string {
 /** "today 1:00 PM, in 2 h 20 min" or "Monday, Oct 19, 9:58 PM, in 5 days". */
 export function resetLong(at: number, now: number, timeZone: string): string {
   const target = zoned(at, timeZone), today = calendarDay(new Date(now), timeZone), ms = at - now
-  if (target.day === today) return `today ${clockTime(at, timeZone)}, in ${spanText(ms)}`
-  const away = ms < 864e5 ? spanText(ms) : (() => { const days = Math.round(ms / 864e5); return `${days} day${days === 1 ? '' : 's'}` })()
-  return `${WEEKDAYS_LONG[target.weekday]}, ${shortDay(target.day)}, ${clockTime(at, timeZone)}, in ${away}`
+  const clock = clockTime(at, timeZone)
+  if (target.day === today) {
+    const span = spanText(ms)
+    return t`today ${clock}, in ${span}`
+  }
+  const days = Math.round(ms / 864e5)
+  const away = ms < 864e5 ? spanText(ms) : plural(days, { one: '# day', other: '# days' })
+  const when = `${WEEKDAYS_LONG[target.weekday]}, ${shortDay(target.day)}, ${clock}`
+  return t`${when}, in ${away}`
 }
 export function readAge(at: number | undefined, now: number): string {
-  if (at === undefined) return 'Not read yet'
+  if (at === undefined) return t`Not read yet`
   const minutes = Math.max(0, Math.floor((now - at) / 6e4))
-  if (minutes < 1) return 'Read just now'
-  if (minutes < 60) return `Read ${minutes} min ago`
+  if (minutes < 1) return t`Read just now`
+  if (minutes < 60) return t`Read ${minutes} min ago`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `Read ${hours} h ago`
+  if (hours < 24) return t`Read ${hours} h ago`
   const days = Math.floor(hours / 24)
-  return `Read ${days} day${days === 1 ? '' : 's'} ago`
+  return plural(days, { one: 'Read # day ago', other: 'Read # days ago' })
 }
 
 /* ---------- Subscription limits ---------- */
@@ -381,16 +418,22 @@ export interface UsageWindowView {
   readonly timeLeft: number | undefined
   readonly startedAt: number | undefined
 }
+/** A window's name or noun narrowed to one model: "5 hours for Opus". */
+function forModel(text: string, model: string): string {
+  return t`${text} for ${model}`
+}
 function windowName(window: UsageQuotaWindow, providerId: UsageProviderId): { label: string; noun: string } {
   const length = usageWindowLength(window.durationMinutes)
-  let { label, noun } = length ?? (window.kind === 'weekly' ? { label: 'Week', noun: 'weekly window' } : { label: window.label, noun: `${window.label.toLowerCase()} window` })
+  const lower = window.label.toLowerCase()
+  let { label, noun } = length ?? (window.kind === 'weekly' ? { label: t`Week`, noun: t`weekly window` } : { label: window.label, noun: t`${lower} window` })
   // A host that already qualifies its window ("Opus, week", "Week, with extra usage", "Other limit, week") says more than its length.
   if (window.modelId === undefined && (window.kind === 'model' || window.kind === 'other' || window.label.includes(','))) {
-    return { label: window.label, noun: `${window.label.charAt(0).toLowerCase()}${window.label.slice(1)} window` }
+    const named = `${window.label.charAt(0).toLowerCase()}${window.label.slice(1)}`
+    return { label: window.label, noun: t`${named} window` }
   }
   if (window.modelId !== undefined) {
     const model = servedModelName(providerId, window.modelId)
-    label = `${label} for ${model}`; noun = `${noun} for ${model}`
+    label = forModel(label, model); noun = forModel(noun, model)
   }
   return { label, noun }
 }
@@ -454,27 +497,36 @@ export function providerLimits(read: UsageDashboardRead, now: number): UsageProv
   })
 }
 /** A computer's name where it falls mid-sentence, where this computer reads in lower case. */
-export const midSentence = (name: string): string => name === 'This computer' ? 'this computer' : name
+export const midSentence = (name: string): string => name === t`This computer` ? t({ message: 'this computer', comment: 'This computer, in the middle of a sentence' }) : name
 /** Why a provider has no current window to show, in words. */
 export function limitsMissing(limits: UsageProviderLimits, hostOf: (hostId: string) => string, now: number, timeZone: string): string {
   const { primary, providerId } = limits
-  const hostName = (hostId: string): string => midSentence(hostOf(hostId))
+  const host = midSentence(hostOf(primary.hostId))
   const name = PROVIDER_NAMES[providerId]
   const quota = primary.quota
-  if (quota.reason === 'unsupported' || providerId === 'devin') return `Sotto can't read ${name}'s limits yet.${providerId === 'devin' ? ' Devin shows them in its own usage settings.' : ''}`
+  if (quota.reason === 'unsupported' || providerId === 'devin') {
+    return providerId === 'devin' ? t`Sotto can't read ${name}'s limits yet. Devin shows them in its own usage settings.` : t`Sotto can't read ${name}'s limits yet.`
+  }
   if (quota.status === 'available' && primary.expired > 0) {
     const last = Math.max(...quota.windows.map(window => window.resetsAt === undefined ? 0 : Date.parse(window.resetsAt)))
-    const when = calendarDay(new Date(last), timeZone) === calendarDay(new Date(now), timeZone) ? `at ${clockTime(last, timeZone)}` : `on ${shortDay(calendarDay(new Date(last), timeZone))}`
-    return `The window ${hostName(primary.hostId)} last read ended ${when}. Read again for the new one.`
+    if (calendarDay(new Date(last), timeZone) === calendarDay(new Date(now), timeZone)) {
+      const clock = clockTime(last, timeZone)
+      return t`The window ${host} last read ended at ${clock}. Read again for the new one.`
+    }
+    const day = shortDay(calendarDay(new Date(last), timeZone))
+    return t`The window ${host} last read ended on ${day}. Read again for the new one.`
   }
   // Muse keeps its window in each running Muse process and tells it after a model call, so before one there is nothing to read.
-  if (providerId === 'muse' && (quota.reason === 'not-reported' || quota.reason === 'not-read')) return `No reading yet. Muse reports its limits after a Muse turn runs on ${hostName(primary.hostId)}.`
-  if (quota.status === 'error' || quota.reason === 'read-failed') return `${name}'s limits couldn't be read on ${hostName(primary.hostId)}. Nothing was changed. Read again to try once more.`
+  if (providerId === 'muse' && (quota.reason === 'not-reported' || quota.reason === 'not-read')) return t`No reading yet. Muse reports its limits after a Muse turn runs on ${host}.`
+  if (quota.status === 'error' || quota.reason === 'read-failed') return t`${name}'s limits couldn't be read on ${host}. Nothing was changed. Read again to try once more.`
   switch (quota.reason) {
-    case 'not-connected': return `${name} isn't connected on ${hostName(primary.hostId)}.`
-    case 'not-read': return `${name}'s limits haven't been read on ${hostName(primary.hostId)} yet.`
-    case 'refresh-unavailable': return `${name} hasn't reported its limits on ${hostName(primary.hostId)} yet.`
-    default: return `${name} didn't report any limits.`
+    case 'not-connected': return t`${name} isn't connected on ${host}.`
+    case 'not-read': return t`${name}'s limits haven't been read on ${host} yet.`
+    case 'refresh-unavailable': return t`${name} hasn't reported its limits on ${host} yet.`
+    default: return t`${name} didn't report any limits.`
   }
 }
-export const unknownUseNote = (providerId: UsageLimitProviderId): string => `${PROVIDER_SHORT[providerId]} reports when this resets, not how much is used.`
+export function unknownUseNote(providerId: UsageLimitProviderId): string {
+  const name = PROVIDER_SHORT[providerId]
+  return t`${name} reports when this resets, not how much is used.`
+}

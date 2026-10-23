@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { t } from '@lingui/core/macro'
 import type { MemoryBridge, MemoryCommand, MemorySnapshot } from '../../../../shared/memory'
 
 export function useMemory(bridge: MemoryBridge | undefined) {
@@ -13,7 +14,7 @@ export function useMemory(bridge: MemoryBridge | undefined) {
     try {
       const value = await bridge?.get() ?? { available: false, questionnaireCompletedAt: null, memories: [], policies: [] }
       if (mounted.current && current === generation.current) { setSnapshot(value); setError('') }
-    } catch { if (mounted.current && current === generation.current) setError('Could not read memory. Try again.') }
+    } catch { if (mounted.current && current === generation.current) setError(t`Could not read memory. Try again.`) }
   }, [bridge])
   useEffect(() => {
     mounted.current = true
@@ -33,7 +34,7 @@ export function useMemory(bridge: MemoryBridge | undefined) {
     } catch (failure) {
       // Refresh stale IDs while keeping the user's unsaved text in the editor.
       await refresh()
-      if (mounted.current) setError(failure instanceof Error ? failure.message : 'Could not save memory. Try again.')
+      if (mounted.current) setError(failure instanceof Error ? failure.message : t`Could not save memory. Try again.`)
       return false
     } finally { pending.current = false; if (mounted.current) setBusy(false) }
   }

@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, FilePen, FileText } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentMessage } from '../../../shared/agents'
 import { watcherOwnChangeSchema, type WatcherOwnChange } from '../../../shared/watcher'
 
 /** Watcher's changes to files, by the reply they belong to; only Watcher's own pane provides it. */
 export const WatcherOwnChangesContext = createContext<ReadonlyMap<string, WatcherOwnChange> | null>(null)
 
-const files = (count: number): string => `${count} ${count === 1 ? 'file' : 'files'}`
 /** The line's first words, which say what Sotto saw whether or not Watcher said so. */
-export const ownChangeHeadline = (count: number): string => `Watcher changed ${files(count)} itself.`
+export const ownChangeHeadline = (count: number): string => plural(count, { one: 'Watcher changed # file itself.', other: 'Watcher changed # files itself.' })
 
 /**
  * The mark for one reply: the room's projection of it, or the one its history kept when the projection has moved on.
@@ -29,12 +30,13 @@ export function WatcherOwnChangeFor({ message }: { readonly message: AgentMessag
  * the line is there whatever the reply says. The file names show on request, and Escape folds them again.
  */
 export function WatcherOwnChangeLine({ change }: { readonly change: WatcherOwnChange }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
   const listId = useId()
   const count = Math.max(change.fileCount, change.files.length)
   const unnamed = count - change.files.length
-  const what = count === 1 ? 'the file' : `the ${files(count)}`
+  const reason = change.reason
   return <div className="watcher-own" data-reply-id={change.replyMessageId}
     onKeyDown={event => {
       if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing) return
@@ -43,16 +45,16 @@ export function WatcherOwnChangeLine({ change }: { readonly change: WatcherOwnCh
     <p className="watcher-own__line">
       <FilePen size={14} aria-hidden="true" className="watcher-own__icon" />
       <span className="watcher-own__words"><strong>{ownChangeHeadline(count)}</strong>{' '}
-        {change.reason === null ? <span className="watcher-own__none">It gave no reason.</span>
-          : <><span className="watcher-own__said">Its reason:</span> “{change.reason}”</>}</span>
+        {reason === null ? <span className="watcher-own__none"><Trans>It gave no reason.</Trans></span>
+          : <><span className="watcher-own__said"><Trans>Its reason:</Trans></span> <Trans comment="Watcher's own reason, in its words, between the quotation marks">“{reason}”</Trans></>}</span>
       {change.files.length > 0 ? <button ref={toggle} type="button" className="watcher-own__toggle tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
         onClick={() => setOpen(value => !value)}>
-        {open ? `Hide ${what}` : `Show ${what}`}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+        {open ? plural(count, { 1: 'Hide the file', other: 'Hide the # files' }) : plural(count, { 1: 'Show the file', other: 'Show the # files' })}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
       </button> : null}
     </p>
-    {open ? <ul id={listId} className="watcher-own__files" aria-label="Files Watcher changed">
+    {open ? <ul id={listId} className="watcher-own__files" aria-label={t`Files Watcher changed`}>
       {change.files.map(file => <li key={file}><FileText size={13} aria-hidden="true" /><code title={file}>{file}</code></li>)}
-      {unnamed > 0 ? <li className="watcher-own__more">and {files(unnamed)} more</li> : null}
+      {unnamed > 0 ? <li className="watcher-own__more">{plural(unnamed, { one: 'and # file more', other: 'and # files more' })}</li> : null}
     </ul> : null}
   </div>
 }

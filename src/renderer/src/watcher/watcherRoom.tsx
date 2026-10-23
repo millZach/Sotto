@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
@@ -69,7 +71,7 @@ const NONE: ReadonlySet<string> = new Set()
 /** Apart from the room, so a memoised sidebar row re-renders only when who is watched changes. */
 const WatchedThreadsContext = createContext<ReadonlySet<string>>(NONE)
 const WatchActionsContext = createContext<WatchActions | null>(null)
-const UNREADABLE = 'Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again.'
+const UNREADABLE = msg`Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again.`
 
 /** The window's row for a host's thread, whether this window keys threads by host or by their own IDs. */
 export function threadForTarget(state: AgentState | null, target: WatcherThreadTarget): AgentThread | undefined {
@@ -157,7 +159,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
       if (!active) return
       setAnswered(true)
       if (result.status === 'ok') { setState(current => newer(current, result.state)); setError(null) } else setError(result.message)
-    }, () => { if (active) { setAnswered(true); setError(UNREADABLE) } })
+    }, () => { if (active) { setAnswered(true); setError(i18n._(UNREADABLE)) } })
     return () => { active = false; unsubscribe() }
   }, [live, bridge])
   const settle = useCallback((result: WatcherRoomResult): string | null => {
@@ -211,7 +213,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
       try {
         refusal = settle(await (watched ? watch.watchThread({ target }) : watch.unwatchThread({ target })))
       } catch {
-        refusal = watched ? `Sotto could not reach Watcher, so ${title} is not watched. Try again.` : `Sotto could not reach Watcher, so ${title} is still watched. Try again.`
+        refusal = watched ? i18n._(msg`Sotto could not reach Watcher, so ${title} is not watched. Try again.`) : i18n._(msg`Sotto could not reach Watcher, so ${title} is still watched. Try again.`)
       }
       watchNotices.show({ target, title, watched, refusal })
     }
