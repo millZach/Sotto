@@ -236,18 +236,29 @@ const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Re
 /** A start Watcher holds a reservation for, and whether its first prompt is still to go (`queued` or `dispatching`). */
 interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
 /**
- * The record's reserved starts. The file holds at most eight reservations (#1183), and a reservation's start is usually among
- * the newest operations, so the walk goes back from the newest and stops once every reservation is found.
+ * The record's reserved starts. Operations are only ever appended, so where a reservation's operation sits holds for as
+ * long as the reservation does: `positions` keeps it from one record to the next, and each record checks a known
+ * reservation with one read. Only a reservation not seen before is looked for, walking back from the newest, where a
+ * reservation just made has its operation, so the cost does not grow with Watcher's history. `positions` lets go of
+ * what the record no longer reserves.
  */
-function reservedStarts(record: Readonly<WatcherRecord>): ReservedStart[] {
-  if (record.reservations.length === 0) return []
-  const waiting = new Map(record.reservations.map(item => [item.operationId, item.target]))
+function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, number>): ReservedStart[] {
+  const operations = record.operations, reserved = new Map(record.reservations.map(item => [item.operationId, item.target]))
+  for (const id of positions.keys()) if (!reserved.has(id)) positions.delete(id)
+  const found = new Map<string, Readonly<WatcherOperation>>(), unseen = new Set<string>()
+  for (const id of reserved.keys()) {
+    const at = positions.get(id), operation = at === undefined ? undefined : operations[at]
+    if (operation?.id === id) found.set(id, operation); else unseen.add(id)
+  }
+  for (let index = operations.length - 1; index >= 0 && unseen.size > 0; index--) {
+    const operation = operations[index]!
+    if (unseen.delete(operation.id)) { positions.set(operation.id, index); found.set(operation.id, operation) }
+  }
   const starts: ReservedStart[] = []
-  for (let index = record.operations.length - 1; index >= 0 && waiting.size > 0; index--) {
-    const operation = record.operations[index]!, target = waiting.get(operation.id)
-    if (target === undefined) continue
-    waiting.delete(operation.id)
-    if (operation.action === 'start') starts.push({ target, operationId: operation.id,
+  for (const [operationId, target] of reserved) {
+    const operation = found.get(operationId)
+    if (!operation) { positions.delete(operationId); continue }
+    if (operation.action === 'start') starts.push({ target, operationId,
       notYetSent: operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' })
   }
   return starts
@@ -822,15 +833,18 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * Watcher's reserved starts, worked out once per record. The record is replaced on every change and never edited
    * (`watcherRecordView`), so the index stands until the next change, and every read between changes, such as a machine
-   * report or the phone's page, reads it without walking the operations.
+   * report or the phone's page, reads it without walking the operations. A change finds each reservation it already
+   * knows where it was before (`reservedPositions`), so working the index out again costs one read per reservation.
    */
   private reservedStarts(): readonly ReservedStart[] {
     const record = this.view()
     let starts = this.reservedStartIndex.get(record)
-    if (!starts) { starts = reservedStarts(record); this.reservedStartIndex.set(record, starts) }
+    if (!starts) { starts = reservedStarts(record, this.reservedPositions); this.reservedStartIndex.set(record, starts) }
     return starts
   }
   private readonly reservedStartIndex = new WeakMap<Readonly<WatcherRecord>, readonly ReservedStart[]>()
+  /** Where each reservation's operation sits in the record, kept across records (`reservedStarts`). */
+  private readonly reservedPositions = new Map<string, number>()
   /** The working threads warning (#1183) after a start on this computer, counting the new thread as working: only above ten. */
   private workingWarning(threadId: string): { warning: string } | Record<string, never> {
     const warning = workingThreadsWarning(countWorkingThreads(this.options.control.watcherSnapshot().threads, threadId))
