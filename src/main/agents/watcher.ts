@@ -171,6 +171,7 @@ type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; reado
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
+const UNSETTLES_KEPT = 500
 /**
  * How long before a client's own limit on one tool call Watcher's tools answer, when the client declares that limit
  * (`Sotto-Tool-Wait`, Muse's 300 seconds, ADR-0079). A call still under way then carries on, and its answer says how
@@ -323,6 +324,11 @@ export class WatcherService implements WatcherControlHooks {
    * tried again until it has worked again; the wait before the next look; and whether a look is under way.
    */
   private readonly settleTried = new Map<string, string>()
+  /**
+   * unsettle_thread's answered calls, by request and retry key, to the target each restored: a retry answers as the first
+   * did and restores nothing again, even after the thread was settled once more. Kept in memory, the newest UNSETTLES_KEPT.
+   */
+  private readonly unsettles = new Map<string, string>()
   private settleTimer: ReturnType<typeof setTimeout> | undefined
   private settlingFinished = false
   private readonly unsubscribe: () => void
@@ -473,6 +479,46 @@ export class WatcherService implements WatcherControlHooks {
     this.remoteOff?.(); this.remote = remote
     this.remoteOff = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
     void this.reconcileRemote().catch(() => undefined)
+  }
+  /**
+   * unsettle_thread (October 23, 2026): a settled thread on this computer back to active, as Restore does, a settled project
+   * returning with it alone, under the user's own active request, never a standing watch's. Its watch stays as it is. It
+   * keeps no operation: a retry answers from memory and restores nothing more, and the record, the phone and paired hosts
+   * see no new action. A paired host's thread is refused: the only way there now is
+   * the user's own Restore, which that host would read as a takeover.
+   */
+  private async unsettleThread(callerThreadId: string, input: WatcherToolInput<'unsettle_thread'>): Promise<WatcherToolOutput<'unsettle_thread'>> {
+    const target = input.target, retry = `${input.requestId}\0${input.retryKey}`, earlier = this.unsettles.get(retry)
+    if (earlier) {
+      if (earlier !== key(target)) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Nothing was changed.')
+      return { status: 'ok', target, settled: false }
+    }
+    // Read in place: an admission that only reads copies nothing, whatever the size of Watcher's history.
+    const allowed = (): void => {
+      const record = this.view(), request = record.requests.find(item => item.id === input.requestId)
+      // The user's own request, still active: a standing watch's continuation is never one, nor is a stopped request.
+      if (!request || request.standingWatchId || request.state !== 'active' || request.watcher.threadId !== callerThreadId || request.watcher.hostId !== this.hostId()) {
+        refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
+      }
+      if (record.userUnwatches?.some(item => key(item.target) === key(target))) refuse('REQUEST_NOT_ACTIVE', 'The user stopped Watcher watching this thread. Nothing was changed.')
+      const participant = request.participants.find(item => key(item.target) === key(target))
+      if (participant?.state === 'taken-over') refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+      if (participant?.automationStopped || participant?.state === 'relinquished') refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped working with this thread for this request. Nothing was changed.')
+    }
+    allowed()
+    if (target.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Watcher restores only this computer’s threads. Ask the user to restore it from Settled. Nothing was changed.')
+    const thread = this.thread(target)
+    // A thread with a special job, or an archived one, is not Watcher's to restore, as it is not Watcher's to settle.
+    this.protect(thread)
+    if (isWorkspaceThreadSettled(thread, this.options.control.watcherSnapshot().projects.find(project => project.id === thread.projectId))) {
+      if (!this.options.host.reopenThreadForWork) refuse('PROVIDER_UNAVAILABLE', 'Sotto cannot restore threads here. Nothing was changed.')
+      // Asked again inside the workspace's lane, so a Stop or a takeover while the restore waited for it holds it back.
+      try { await this.options.host.reopenThreadForWork(target.threadId, allowed) }
+      catch (error) { if (error instanceof Refusal) throw error; refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save the thread as restored. It is still settled. Try again.', true) }
+    }
+    this.unsettles.set(retry, key(target))
+    if (this.unsettles.size > UNSETTLES_KEPT) this.unsettles.delete(this.unsettles.keys().next().value!)
+    return { status: 'ok', target, settled: false }
   }
   private thread(target: WatcherThreadTarget): AgentThread {
     const snapshot = this.owningSnapshot(target.hostId)
@@ -783,8 +829,16 @@ export class WatcherService implements WatcherControlHooks {
   }
   private checkSettlement(thread: AgentThread): void {
     this.pending(thread)
-    if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
-    if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
+    // A provider may report the thread idle before its turn's completion arrives.
+    if (isThreadTurnRunning(thread)) refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
+    // Sub-agents still working, or not yet known to have ended, count as Settle finished threads counts them.
+    if (watcherBackgroundWorkCount(thread) > 0) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
+    // The threads it delegated to settle with it (ADR-0081), so their work holds it too.
+    const threads = this.owningSnapshot(thread.hostId ?? this.hostId())?.threads ?? []
+    if (threads.some(item => item.delegatedBy) && delegatedThreadsBelow(threads, thread.id).some(id => {
+      const below = threads.find(item => item.id === id)
+      return below !== undefined && (isThreadTurnRunning(below) || below.requests.length > 0 || watcherBackgroundWorkCount(below) > 0)
+    })) refuse('BACKGROUND_WORK_RUNNING', 'A thread this one delegated to is still working or waits on the user. Wait for it before settling.')
   }
   /**
    * Watcher's starts still working, on every machine: the count the phone's page and sends carry where host protocol
@@ -2392,7 +2446,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
   private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {
-    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' ? STILL_WATCHING : STILL_READING, true)
+    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' || name === 'unsettle_thread' ? STILL_WATCHING : STILL_READING, true)
     const operation = progress.operationId ? this.record().operations.find(item => item.id === progress.operationId) : undefined
     return operation ? { ...watcherRefusal('DELIVERY_UNCERTAIN', STILL_DELIVERING, true), receipt: this.receipt(operation) }
       : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
@@ -2413,6 +2467,7 @@ export class WatcherService implements WatcherControlHooks {
         const result = await this.unwatchThread(parsed.data as WatcherToolInput<'unwatch_thread'>, undefined, 'watcher')
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
+      if (name === 'unsettle_thread') return await this.unsettleThread(threadId, parsed.data as WatcherToolInput<'unsettle_thread'>)
       if (name === 'list_machines') return await this.listMachines()
       if (name === 'keep_state') {
         const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
