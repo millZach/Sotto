@@ -73,11 +73,13 @@ function headlessHostBuild(): Plugin {
       await buildVite({
         configFile: false,
         build: {
-          // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`).
+          // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`), and
+          // checkpoints its thread store on another (`walCheckpointer.ts`).
           ssr: true, target: 'node24',
           outDir: resolve(__dirname, 'out/host'), emptyOutDir: true, minify: false,
           rollupOptions: {
-            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts') },
+            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
+              walCheckpointWorker: resolve(__dirname, 'src/main/storage/walCheckpointWorker.ts') },
             external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
             output: { format: 'cjs', entryFileNames: '[name].js' },
           },
@@ -96,6 +98,8 @@ export default defineConfig({
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
       // Git and gh launch on this worker thread, not on main's, which in Electron is the window's (`gitLauncher.ts`).
       gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
+      // The thread store's log is checkpointed on this worker thread, so no save on main runs a checkpoint (`walCheckpointer.ts`).
+      walCheckpointWorker: resolve(__dirname, 'src/main/storage/walCheckpointWorker.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production
