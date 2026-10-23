@@ -41,7 +41,7 @@ async function host() {
   await new SettingsRepository(join(data, 'settings.json')).update({ worktreeCleanup: { ...DEFAULT_WORKTREE_CLEANUP, onSettle: true } })
   // A host connects every provider not turned off when it starts (ADR-0036). The scripted ones here hold stand-in
   // sessions in a folder that does not exist, which would make sole ownership unprovable, so only Codex is left on.
-  await writeFile(join(data, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex'], disconnectedProviders: ['claude', 'grok', 'devin'] },
+  await writeFile(join(data, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex'], disconnectedProviders: ['claude', 'grok', 'devin', 'muse', 'opencode'] },
     activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [] }))
   // The fake's stand-in sessions name a folder that does not exist, which would make sole ownership unprovable.
   const codex = new FakeProviderHost()
