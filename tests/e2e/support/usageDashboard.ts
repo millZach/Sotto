@@ -87,6 +87,9 @@ export async function usageDashboardHarness() {
     // Windows' minimum content size can round by two pixels at the current display scale.
     await expect.poll(() => currentPage().evaluate(size => Math.max(Math.abs(innerWidth - size.width), Math.abs(innerHeight - size.height)), { width, height }))
       .toBeLessThanOrEqual(2)
+    // innerHeight moves a frame before 100vh does; measure once the shell has followed the window.
+    await expect.poll(() => currentPage().evaluate(() => Math.abs(document.querySelector('.app-shell')!.getBoundingClientRect().height - innerHeight)))
+      .toBeLessThanOrEqual(1)
   }
   const appearance = async (value: 'light' | 'dark'): Promise<void> => {
     await currentPage().evaluate(async value => { await window.sotto!.updateSettings({ appearance: value, reducedMotion: 'on' }) }, value)
