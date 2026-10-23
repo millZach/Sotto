@@ -1,5 +1,5 @@
 /**
- * The menu bar owl's two choices in Settings → Appearance (ADR-0112), in the built app on a Mac with the `menu-bar-owl`
+ * The menu bar owl's two choices in Settings → Appearance (ADR-0113), in the built app on a Mac with the `menu-bar-owl`
  * Owl feature on: Body and Eyes show their saved colours, pressing one saves it and moves the pressed state, a restart
  * keeps it, and with the feature off nothing of it shows. An end-to-end run makes no tray, so the animation itself is
  * covered by the unit tests and the verification note.

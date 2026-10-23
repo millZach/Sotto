@@ -1,4 +1,4 @@
-// What the menu bar owl does, frame by frame (ADR-0112). Plain JavaScript, so scripts/generate-tray-owl.mjs reads it as the
+// What the menu bar owl does, frame by frame (ADR-0113). Plain JavaScript, so scripts/generate-tray-owl.mjs reads it as the
 // app does: the generator draws one image for every pose `allOwlPoses()` lists, and the schedule in schedule.ts only ever
 // shows poses from that list, so the app never needs a frame the generator did not draw. The numbers are the approved
 // prototype's (docs/prototypes/menubar-owl-prototype.html, variant A).

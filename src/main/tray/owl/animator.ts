@@ -1,5 +1,5 @@
 /*
- * Plays the menu bar owl (ADR-0112): asks the schedule when the picture next changes, sets one timer for that
+ * Plays the menu bar owl (ADR-0113): asks the schedule when the picture next changes, sets one timer for that
  * moment and swaps the tray image only when the frame changes. No Electron here: the caller passes in a
  * `setImage` and the frames as images.
  */

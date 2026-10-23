@@ -1,6 +1,6 @@
 # The menu bar owl is alive
 
-Accepted by Drake on October 22, 2026, from the prototype `docs/prototypes/menubar-owl-prototype.html` (variant A, drawn at 1x and shown pixel-doubled). **Number provisional until merge:** 0111 is the newest on `origin/main` at the time of writing; recheck before merging (docs/agents/domain.md). It amends [ADR-0064](0064-sottos-mark-is-the-owl.md) for the macOS menu bar icon only, and is an Owl feature (ADR-0072).
+Accepted by Drake on October 22, 2026, from the prototype `docs/prototypes/menubar-owl-prototype.html` (variant A, drawn at 1x and shown pixel-doubled). It amends [ADR-0064](0064-sottos-mark-is-the-owl.md) for the macOS menu bar icon only, and is an Owl feature (ADR-0072).
 
 ## Context
 

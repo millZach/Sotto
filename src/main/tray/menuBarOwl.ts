@@ -6,7 +6,7 @@ import { TrayOwlAnimator, type OwlEvent, type OwlTimers } from './owl/animator'
 import { owlFramePngs, owlPaletteFile, parseOwlManifest, type OwlManifest } from './owl/frames'
 
 /**
- * The menu bar owl on a Mac running an Owl build (ADR-0112): the glue between the settings, the system and the animator.
+ * The menu bar owl on a Mac running an Owl build (ADR-0113): the glue between the settings, the system and the animator.
  * Nothing here imports Electron, so it is tested with plain stand-ins; `menuBarOwlElectron.ts` supplies the real ones.
  */
 

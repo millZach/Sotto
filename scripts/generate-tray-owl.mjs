@@ -1,4 +1,4 @@
-// Draws the menu bar owl's frames (ADR-0112) into resources/tray/owl: one deflated file of raw 27x22 RGBA frames per
+// Draws the menu bar owl's frames (ADR-0113) into resources/tray/owl: one deflated file of raw 27x22 RGBA frames per
 // body x eyes palette, in allOwlPoses() order, and manifest.json. The drawing runs in a hidden window of the repo's own
 // Electron (scripts/lib/trayOwlElectron.mjs), offline. Each run also draws the same poses through the approved prototype's
 // own code and fails if any channel differs by more than 2.

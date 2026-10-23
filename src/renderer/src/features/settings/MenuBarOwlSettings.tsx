@@ -13,7 +13,7 @@ import {
 import './menuBarOwl.css'
 
 /**
- * Settings → Appearance → Menu bar owl (ADR-0112): the colour of the owl's body and of its eyes. Each swatch is the
+ * Settings → Appearance → Menu bar owl (ADR-0113): the colour of the owl's body and of its eyes. Each swatch is the
  * colour the frames are drawn in, so what the user presses is what the bar shows.
  */
 export function MenuBarOwlSettings({ body, eyes, onChoose }: {

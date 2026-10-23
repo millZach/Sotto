@@ -10,7 +10,7 @@ Amended October 11, 2026: the Omarchy shell plugin, which came after this decisi
 
 Amended October 19, 2026: while Sotto runs on macOS, the Dock icon is painted by the theme like `SottoMark`: the tile is the accent and the owl a foreground that reads on it, in the half the main window shows (its `appearance`, not the widget's `theme`), from saved settings only, so an unsaved theme draft shows only inside the window; the default theme wears the icon's own colours. The bundle's icon on disk, which Finder and the Dock show while Sotto is not running, stays the teal of decision 3. Main cannot draw SVG, so the generator writes the icon's tile and owl as coverage (`resources/dock/mark-coverage.bin`) and main paints it (`src/main/dock/dockIcon.ts`).
 
-Amended October 22, 2026: on a Mac running a Sotto Owl build, the menu bar icon is the menu bar owl of [ADR-0112](0112-the-menu-bar-owl-is-alive.md): the owl in colour, perched on a branch, animated, with a beak. For the menu bar icon alone that amends decisions 1, 3 and 5. Stable, a Mac whose frames cannot be loaded and the Omarchy bar keep the template.
+Amended October 22, 2026: on a Mac running a Sotto Owl build, the menu bar icon is the menu bar owl of [ADR-0113](0113-the-menu-bar-owl-is-alive.md): the owl in colour, perched on a branch, animated, with a beak. For the menu bar icon alone that amends decisions 1, 3 and 5. Stable, a Mac whose frames cannot be loaded and the Omarchy bar keep the template.
 
 ## Context
 
