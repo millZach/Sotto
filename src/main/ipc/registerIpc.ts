@@ -115,6 +115,8 @@ const settingKeys = [
   'showCreature',
   'customThemes',
   'reducedMotion',
+  'roomTransition',
+  'roomTransitionSpeed',
   'terminalFontSize',
   'microphoneId',
   'maxRecordingSeconds',

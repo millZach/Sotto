@@ -152,6 +152,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     ...platform === 'darwin' ? [{ label: 'Menu bar owl', section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
     { label: 'Contrast', section: 'settings-appearance' },
     { label: 'Reduced motion', section: 'settings-appearance', words: 'animation' },
+    { label: 'Night falls between Threads and Watcher', section: 'settings-appearance', words: 'transition animation watcher room', gate: 'watcher' },
+    { label: 'Night falls speed', section: 'settings-appearance', words: 'transition animation slower faster', gate: 'watcher' },
     { label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },
     { label: 'Start minimized', section: 'settings-privacy', words: 'startup tray' },
     { label: 'Keep local history', section: 'settings-history', words: 'transcripts privacy' },
