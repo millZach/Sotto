@@ -290,6 +290,12 @@ export class HostFactsSource {
 
 /** A send this host has taken and not yet begun. */
 const PLACED_DELIVERIES: ReadonlySet<string> = new Set(['queued', 'submitting'])
+/**
+ * A follow-up that will start without anyone touching it: queued until it goes, or going. Once the follow-up queue owns a
+ * send, its delivery record is gone, so the queue's item is what counts until it starts or the user withdraws it. One
+ * paused for the user's review, failed or uncertain waits on the user, not on the machine.
+ */
+const PLACED_FOLLOWUPS: ReadonlySet<string> = new Set(['queued', 'dispatching'])
 
 /**
  * What a machine report counts beside its facts, as the host holds it now: its threads, and the sends it has taken. Read
@@ -319,7 +325,7 @@ export async function hostMachineReport(facts: HostFactsSource, work: () => Mach
   const running = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
   const placed = new Set([
     ...deliveries.filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
-    ...followups.filter(item => item.status === 'dispatching').map(item => item.threadId),
+    ...followups.filter(item => PLACED_FOLLOWUPS.has(item.status)).map(item => item.threadId),
     // A start whose thread is not created yet has no thread to be running, so it counts.
     ...startsNotYetSent,
   ].filter(threadId => !running.has(threadId))).size

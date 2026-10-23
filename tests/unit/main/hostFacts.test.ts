@@ -322,6 +322,15 @@ describe('the machine report', () => {
     expect(report.load).toMatchObject({ availableMemoryBytes: 11 * GIB })
   })
 
+  it('counts queued follow-ups until they start or are withdrawn, and not one held, failed or uncertain', async () => {
+    // Once the follow-up queue owns a send its delivery record goes, so the queue's own item is what is left to count.
+    const threads = ['queued', 'dispatching', 'paused', 'failed', 'uncertain', 'withdrawn'].map(id => ({ id, status: 'idle' }))
+    const followups = ['queued', 'dispatching', 'paused', 'failed', 'uncertain'].map(status => ({ threadId: status, status }))
+    expect(await hostMachineReport(quiet(), shell(threads, { followups }))).toMatchObject({ placedNotStarted: 2 })
+    // Withdrawn: the item is gone from the queue, and so is the count.
+    expect(await hostMachineReport(quiet(), shell(threads, { followups: followups.filter(item => item.status !== 'queued') }))).toMatchObject({ placedNotStarted: 1 })
+  })
+
   it('counts Watcher’s starts not yet sent, created or not, once each, and not once their thread is running', async () => {
     const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }, { id: 'began', status: 'running' }],
       deliveries: [{ threadId: 'created', status: 'queued' }], startsNotYetSent: ['pending', 'created', 'began'] }) as unknown as MachineWork)
