@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Network } from 'lucide-react'
-import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { HostsBridge } from '../../../../shared/hosts'
 import type { TailscaleSummary } from '../../../../shared/hostDevices'
 import { Button } from '../../components/Button'
+import { shownWords, type LaterWords } from './laterWords'
 import './hostDevices.css'
 
 /** How often Sotto looks at Tailscale again while a sign-in finishes in the browser, and for how long. */
@@ -32,7 +32,7 @@ export function useTailscale(bridge: HostsBridge | undefined): TailscaleControl 
   const { t } = useLingui()
   const [summary, setSummary] = useState<TailscaleSummary | null>(null)
   const [phase, setPhase] = useState<TailscaleControl['phase']>('idle')
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<LaterWords | null>(null)
   const [unread, setUnread] = useState(false)
   const alive = useRef(true)
   const refresh = useCallback(async (): Promise<TailscaleSummary | null> => {
@@ -60,7 +60,7 @@ export function useTailscale(bridge: HostsBridge | undefined): TailscaleControl 
       void refresh().then(next => {
         if (!alive.current) return
         if (next?.state === 'running') { setPhase('idle'); setNotice(null) }
-        else if (Date.now() - started > SIGN_IN_WAIT_MS) { setPhase('idle'); setNotice(i18n._(msg`Tailscale is still not signed in. Press Connect to Tailscale to try again.`)) }
+        else if (Date.now() - started > SIGN_IN_WAIT_MS) { setPhase('idle'); setNotice(msg`Tailscale is still not signed in. Press Connect to Tailscale to try again.`) }
       })
     }, SIGN_IN_POLL_MS)
     return () => window.clearInterval(timer)
@@ -72,22 +72,22 @@ export function useTailscale(bridge: HostsBridge | undefined): TailscaleControl 
     if (!reopening) { setPhase('connecting'); setNotice(null) }
     void bridge.connectTailscale().catch(() => 'failed' as const).then(async outcome => {
       if (!alive.current) return
-      if (outcome === 'sign-in-opened') { setPhase('signing-in'); setNotice(i18n._(msg`Sign in to Tailscale in your browser. Sotto lists your devices once you have.`)); return }
+      if (outcome === 'sign-in-opened') { setPhase('signing-in'); setNotice(msg`Sign in to Tailscale in your browser. Sotto lists your devices once you have.`); return }
       setPhase('idle')
       await refresh()
       if (!alive.current) return
-      if (outcome === 'sign-in-needed') setNotice(reopening ? i18n._(msg`Your browser did not open. Open the Tailscale app on this computer and sign in there.`) : i18n._(msg`Tailscale needs you to sign in. Open the Tailscale app on this computer and sign in there.`))
-      else if (outcome === 'failed') setNotice(i18n._(msg`Tailscale did not connect. Open the Tailscale app on this computer and connect from there.`))
+      if (outcome === 'sign-in-needed') setNotice(reopening ? msg`Your browser did not open. Open the Tailscale app on this computer and sign in there.` : msg`Tailscale needs you to sign in. Open the Tailscale app on this computer and sign in there.`)
+      else if (outcome === 'failed') setNotice(msg`Tailscale did not connect. Open the Tailscale app on this computer and connect from there.`)
     })
   }, [bridge, phase, refresh])
   const getTailscale = useCallback((): void => {
     if (!bridge) return
     setNotice(null)
-    void bridge.openTailscaleDownload().catch(() => { if (alive.current) setNotice(i18n._(msg`Your browser did not open. Go to tailscale.com/download to get Tailscale.`)) })
+    void bridge.openTailscaleDownload().catch(() => { if (alive.current) setNotice(msg`Your browser did not open. Go to tailscale.com/download to get Tailscale.`) })
   }, [bridge])
   // A first read that fails leaves the row saying so, rather than checking for ever.
   const unreadNotice = unread && summary === null ? t`Sotto could not check Tailscale on this computer. Nothing was changed. Come back to this window to check again.` : null
-  return { summary, phase, notice: notice ?? unreadNotice, connect, getTailscale }
+  return { summary, phase, notice: shownWords(notice) ?? unreadNotice, connect, getTailscale }
 }
 
 /**
@@ -115,11 +115,11 @@ export function TailscaleRow({ control }: { readonly control: TailscaleControl }
     <span className="hosts-row__icon hosts-row__icon--local" aria-hidden="true"><Network size={18} /></span>
     <div className="hosts-tailscale__copy">
       <h4>Tailscale</h4>
-      {summary === null ? <p>{t`Checking Tailscale on this computer…`}</p>
-        : summary.state === 'running' ? <p><span className="hosts-dot" data-online="true" aria-hidden="true" />{connectedAs(summary.user, summary.deviceCount)}</p>
-        : summary.state === 'off' ? <p>{t`Off on this computer. Connect to reach your other machines.`}</p>
-        : <p>{t`Not installed. Hosts still work over SSH without it.`}</p>}
-      {control.notice ? <p className="hosts-tailscale__notice" role="status">{control.notice}</p> : null}
+      {summary === null ? <p className="tt-paragraph">{t`Checking Tailscale on this computer…`}</p>
+        : summary.state === 'running' ? <p className="tt-paragraph"><span className="hosts-dot" data-online="true" aria-hidden="true" />{connectedAs(summary.user, summary.deviceCount)}</p>
+        : summary.state === 'off' ? <p className="tt-paragraph">{t`Off on this computer. Connect to reach your other machines.`}</p>
+        : <p className="tt-paragraph">{t`Not installed. Hosts still work over SSH without it.`}</p>}
+      {control.notice ? <p className="hosts-tailscale__notice tt-paragraph" role="status">{control.notice}</p> : null}
     </div>
     {summary ? <div className="hosts-tailscale__action"><TailscaleAction control={control} summary={summary} /></div> : null}
   </section>
@@ -128,12 +128,12 @@ export function TailscaleRow({ control }: { readonly control: TailscaleControl }
 /** Add host's prompt when Tailscale on this computer is off or missing. */
 export function TailscalePrompt({ control }: { readonly control: TailscaleControl }): ReactNode {
   const { summary } = control
-  if (summary === null || summary.state === 'running') return control.notice ? <p className="hosts-tailscale-prompt__notice" role="status">{control.notice}</p> : null
+  if (summary === null || summary.state === 'running') return control.notice ? <p className="hosts-tailscale-prompt__notice tt-paragraph" role="status">{control.notice}</p> : null
   return <div className="hosts-tailscale-prompt">
-    <p>{summary.state === 'off'
+    <p className="tt-paragraph">{summary.state === 'off'
       ? <Trans><b>Tailscale is off on this computer.</b> Connect to see the machines on your tailnet.</Trans>
       : <Trans><b>Tailscale is not installed.</b> Any machine you reach over SSH works; Tailscale makes your other machines easy to reach.</Trans>}</p>
     <TailscaleAction control={control} summary={summary} primary />
-    {control.notice ? <p className="hosts-tailscale-prompt__notice" role="status">{control.notice}</p> : null}
+    {control.notice ? <p className="hosts-tailscale-prompt__notice tt-paragraph" role="status">{control.notice}</p> : null}
   </div>
 }

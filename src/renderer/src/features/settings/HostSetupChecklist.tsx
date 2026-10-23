@@ -7,6 +7,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { HOST_SETUP_STEPS, type HostSetupStep, type HostStatus } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
 import { tailnetStepNote, type TailnetStepView } from './hostTailnetWords'
+import { shownWords, type LaterWords } from './laterWords'
 import './hostSetup.css'
 
 /** Where Add host stands once pressed: still connecting, stopped at a failed step, or connected and saved. */
@@ -28,7 +29,7 @@ export function hostSetupTitle(name: string, outcome: HostSetupOutcome, tailnet?
  * host to the tailnet while the dialog is open shows here too; a host still on SSH keeps the reason main gave, or the
  * row's reason after a press. A press that failed says why, and one still running is under way.
  */
-export function tailnetStepView(added: HostStatus | undefined, adding: HostStatus | undefined, press: { readonly running: boolean; readonly error?: string } | null): TailnetStepView {
+export function tailnetStepView(added: HostStatus | undefined, adding: HostStatus | undefined, press: { readonly running: boolean; readonly error?: LaterWords } | null): TailnetStepView {
   if (press?.running) return { state: 'active' }
   if (!added) return adding?.addTailnet ?? { state: 'todo' }
   // A press that failed says why, until a 5-minute check moves the host to the tailnet after all.
@@ -82,7 +83,11 @@ function StepMark({ state }: { readonly state: StepState }): ReactNode {
 }
 
 /** A command the user runs to fix a failure, with Copy, under the sentence that introduces it when there is one. Sotto never runs it. */
-export function FixCommand({ fix }: { readonly fix: { readonly text?: string | undefined; readonly command: string } }): ReactNode {
+export function FixCommand({ fix, ours = false }: {
+  readonly fix: { readonly text?: string | undefined; readonly command: string }
+  /** The sentence is Sotto's own message, rather than main's or a host's. */
+  readonly ours?: boolean
+}): ReactNode {
   const { t } = useLingui()
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
@@ -90,14 +95,14 @@ export function FixCommand({ fix }: { readonly fix: { readonly text?: string | u
     try { await writeClipboard(fix.command); setCopied('copied') } catch { setCopied('failed') }
   }
   return <>
-    {fix.text ? <p>{fix.text}</p> : null}
+    {fix.text ? <p className={ours ? 'tt-paragraph' : undefined}>{fix.text}</p> : null}
     <div className="host-setup__command">
       <code>{fix.command}</code>
       <Button variant="secondary" aria-label={t`Copy the command`} onClick={() => void copy()}>
         {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy`}
       </Button>
     </div>
-    {copied === 'failed' ? <p className="host-setup__quiet"><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
+    {copied === 'failed' ? <p className="host-setup__quiet tt-paragraph"><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
     {/* The button keeps saying what a press does; this says that it worked. */}
     <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the command` : ''}</span>
   </>
@@ -134,9 +139,9 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
   readonly host: HostStatus | undefined
   readonly outcome: HostSetupOutcome
   /** Main's failure sentence, or one from the dialog itself. */
-  readonly error: string | null
+  readonly error: LaterWords | null
   /** Why Open approval page did not open, shown on the Tailscale card while Tailscale still waits. */
-  readonly approvalError?: string | null | undefined
+  readonly approvalError?: LaterWords | null | undefined
   /** SSH's question (a host key, a password or a passphrase), shown on the step that is asking. */
   readonly question?: ReactNode
   /** Back to the form; the attempt is dropped first. Absent once the host is added. */
@@ -202,21 +207,21 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
         return <li key={step} data-state={state} aria-current={state === 'waiting' || (state === 'active' && !waiting) || (reached && agent.waiting) ? 'step' : undefined}>
           <StepMark state={state} />
           <span className="host-setup__title">{stepTitle(step, state, name)}{state === 'done' && agent?.byAgent.includes(step) ? <span className="host-setup__by"> {t({ message: 'by the agent', comment: 'After a step that is done, as in "Signed in by the agent".' })}</span> : null}</span>
-          {reached && host?.phase === 'error' && error ? <div className="host-setup__detail"><p className="host-setup__note">{t`The last check stopped here.`} {error}</p></div> : null}
+          {reached && host?.phase === 'error' && error ? <div className="host-setup__detail"><p className="host-setup__note tt-paragraph">{t`The last check stopped here.`} {shownWords(error)}</p></div> : null}
           {reached && agent.waiting ? <div className="host-setup__detail">{agent.waiting}</div> : null}
           {state === 'waiting' ? <div className="host-setup__detail"><div className="hosts-notice host-setup__card" role="status">
-            <p>{forwardHeld
+            <p className="tt-paragraph">{forwardHeld
               ? t`${name} uses Tailscale SSH, which asks you to approve the port forward as well. Approve it in your browser within 30 seconds and Sotto carries on.`
               : t`${name} uses Tailscale SSH, which asks you to approve new connections in your browser. Sotto waits up to 5 minutes and carries on when you approve.`}</p>
             <div className="host-setup__actions">
               {approvalUrl ? <Button ref={approval} onClick={onOpenApproval}>{t`Open approval page`}</Button> : null}
               <button type="button" className="host-setup__link tt-focusable" onClick={onOpenGuide}>{t`Why Tailscale asks`}</button>
             </div>
-            {approvalError ? <p className="host-setup__problem" role="alert">{approvalError}</p> : null}
+            {approvalError ? <p className={typeof approvalError === 'string' ? 'host-setup__problem' : 'host-setup__problem tt-paragraph'} role="alert">{shownWords(approvalError)}</p> : null}
           </div></div> : null}
           {state === 'active' && question ? <div className="host-setup__detail">{question}</div> : null}
           {state === 'failed' && error ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card" role="alert">
-            <p>{error}</p>
+            <p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p>
             {host?.fix ? <FixCommand fix={host.fix} /> : null}
             {offer}
           </div></div> : null}
@@ -224,9 +229,9 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
       })}
       {tailnet ? <TailnetStep view={tailnet} name={name} address={host?.tailnetAddress} /> : null}
     </ol>
-    {outcome === 'connecting' && error && !agent ? <div className="hosts-notice hosts-notice--error host-setup__card" role="alert"><p>{error}</p></div> : null}
+    {outcome === 'connecting' && error && !agent ? <div className="hosts-notice hosts-notice--error host-setup__card" role="alert"><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}
     {outcome === 'connected' && !agent ? <div className="hosts-notice host-setup__card host-setup__card--done" role="status">
-      <p>{connected}</p>
+      <p className="tt-paragraph">{connected}</p>
       {boot}
     </div> : null}
   </div>
@@ -248,10 +253,10 @@ function TailnetStep({ view, name, address }: { readonly view: TailnetStepView; 
   return <li data-state={state} aria-current={state === 'active' ? 'step' : undefined}>
     <StepMark state={state} />
     <span className="host-setup__title">{tailnetStepTitle(view.state, name)}</span>
-    {view.state === 'active' ? <div className="host-setup__detail"><p className="host-setup__note"><Trans>{name} is added. Sotto turns on Tailscale Serve on {name}, on your tailnet only, and tries the address {name} reports. If it doesn’t answer, {name} stays connected over SSH.</Trans></p></div> : null}
+    {view.state === 'active' ? <div className="host-setup__detail"><p className="host-setup__note tt-paragraph"><Trans>{name} is added. Sotto turns on Tailscale Serve on {name}, on your tailnet only, and tries the address {name} reports. If it doesn’t answer, {name} stays connected over SSH.</Trans></p></div> : null}
     {view.state === 'done' && address ? <div className="host-setup__detail"><p className="host-setup__note host-setup__address">{address}</p></div> : null}
     {/* The command wraps here rather than scrolling under Copy, so the whole of it shows at the window's smallest size. */}
-    {note?.command ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card host-setup__card--wrap"><FixCommand fix={{ text: note.text, command: note.command }} /></div></div>
-      : note ? <div className="host-setup__detail"><p className="host-setup__note">{note.text}</p></div> : null}
+    {note?.command ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card host-setup__card--wrap"><FixCommand fix={{ text: note.text, command: note.command }} ours /></div></div>
+      : note ? <div className="host-setup__detail"><p className={view.state === 'ssh' && view.why === 'error' && typeof view.error === 'string' ? 'host-setup__note' : 'host-setup__note tt-paragraph'}>{note.text}</p></div> : null}
   </li>
 }

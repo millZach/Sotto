@@ -12,6 +12,7 @@ import { Field } from '../../components/Field'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
 import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
+import { shownWords, type LaterWords } from './laterWords'
 import './hosts.css'
 import './phones.css'
 
@@ -50,7 +51,7 @@ function NameField({ name, defaultName, onSave }: { readonly name: string; reado
     if (next !== name) void onSave(next).then(saved => setFailed(!saved))
     else { setDraft(name); setFailed(false) }
   }
-  return <Field label={t`Name on phones`} {...(failed ? { error: t`The name could not be saved. Phones still use the previous name. Try again.` } : {})} description={t`How this computer appears on phones. Leave it empty to use ${defaultName}.`}>
+  return <Field setting="phone-name" label={t`Name on phones`} {...(failed ? { error: t`The name could not be saved. Phones still use the previous name. Try again.` } : {})} description={t`How this computer appears on phones. Leave it empty to use ${defaultName}.`}>
     <input className="tt-input" value={draft} placeholder={defaultName} maxLength={63} spellCheck={false}
       onChange={event => setDraft(event.target.value)} onBlur={save}
       onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); save() } else if (event.key === 'Escape' && draft !== name) { event.preventDefault(); event.stopPropagation(); setDraft(name) } }} />
@@ -67,11 +68,11 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
 }): ReactNode {
   const { t } = useLingui()
   const [state, setState] = useState<PhonesState | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [accessSaveFailed, setAccessSaveFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [removeId, setRemoveId] = useState<string | null>(null)
-  const [announcement, setAnnouncement] = useState('')
+  const [announcement, setAnnouncement] = useState<LaterWords>('')
   const [now, setNow] = useState(() => Date.now())
   const showButton = useRef<HTMLButtonElement>(null)
   const codeBox = useRef<HTMLDivElement>(null)
@@ -80,7 +81,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(i18n._(msg`Phone access could not be read. Reopen Settings and try again.`)) })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(msg`Phone access could not be read. Reopen Settings and try again.`) })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -99,7 +100,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     if (!before?.code || state?.code) return
     const added = state?.phones.find(phone => !before.phones.some(known => known.clientId === phone.clientId))
     const phone = added?.name ?? ''
-    if (added) setAnnouncement(i18n._(msg`${phone} is paired.`))
+    if (added) setAnnouncement(msg`${phone} is paired.`)
     // Focus that was inside the code went with it to the page's body; anywhere else, it stays where it is.
     const focused = document.activeElement
     if (focused === null || focused === document.body || !focused.isConnected) queueMicrotask(() => showButton.current?.focus())
@@ -109,11 +110,11 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     if (!bridge) return false
     setError(null)
     try { setState(await bridge.command(command)); return true }
-    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`Phone access could not be changed. Nothing was changed. Try again.`); return false }
+    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`Phone access could not be changed. Nothing was changed. Try again.`); return false }
   }
   const copyAddress = async (address: string): Promise<void> => {
     try { await writeClipboard(address); setCopied(true); setTimeout(() => setCopied(false), 1500) }
-    catch { setError(t`The address could not be copied. Select it and copy it instead.`) }
+    catch { setError(msg`The address could not be copied. Select it and copy it instead.`) }
   }
 
   const localHostRunning = state?.localHostRunning ?? true
@@ -132,7 +133,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
 
   const codeCard = !on
     ? <div key="off" className="phones-code" data-off="">
-      <p>{phoneAccess && localHostRunning ? t`Finish the steps above first.` : t`Turn on Let phones connect first.`}</p>
+      <p className="tt-paragraph">{phoneAccess && localHostRunning ? t`Finish the steps above first.` : t`Turn on Let phones connect first.`}</p>
       <Button ref={showButton} variant="secondary" disabled>{t`Show a pairing code`}</Button>
     </div>
     : code
@@ -155,34 +156,34 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
         </div>
       })()
       : <div key="ready" className="phones-code">
-        <p><Trans>A code works once, for five minutes.</Trans></p>
+        <p className="tt-paragraph"><Trans>A code works once, for five minutes.</Trans></p>
         <Button ref={showButton} variant="primary" onClick={() => void run({ type: 'show-code' })}>{t`Show a pairing code`}</Button>
       </div>
 
   return <div className="hosts-settings phones-settings">
     {!localHostRunning ? <div className="hosts-notice phones-needs-host">
       <Info size={16} aria-hidden="true" />
-      <p><Trans>Phone access needs the local host. Turn on Run the local host above, then restart Sotto.</Trans></p>
+      <p className="tt-paragraph"><Trans>Phone access needs the local host. Turn on Run the local host above, then restart Sotto.</Trans></p>
       <Button variant="secondary" onClick={onOpenHosts}>{t`Show Run the local host`}</Button>
     </div> : null}
     <div className="phones-switch">
-      <Toggle label={t`Let phones connect`} checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
+      <Toggle setting="phone-access" label={t`Let phones connect`} checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
         onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
         description={t`Adds this computer to Tailscale Serve, on port 8443 or 10000, while this is on and Sotto is open. Only phones you pair can connect.`} />
-      {accessSaveFailed ? <p className="tt-field__error" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+      {accessSaveFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></p> : null}
     </div>
     <ol className="phones-steps" aria-label={t({ message: 'Setup', comment: 'The steps that set up phone access.' })} aria-busy={starting || undefined}>
       <li data-step={tailscaleStep}>
         <StepMark step={tailscaleStep} />
         <div className="phones-step__copy"><b>{t`Tailscale is running`}</b>
-          <p>{tailscaleStep === 'ok' ? <Trans>Signed in. This computer is <span className="phones-mono">{machine}</span> on your tailnet.</Trans> : tailscaleStep === 'failed' ? failure : starting ? t`Checking…` : notYet}</p>
+          <p className="tt-paragraph">{tailscaleStep === 'ok' ? <Trans>Signed in. This computer is <span className="phones-mono">{machine}</span> on your tailnet.</Trans> : tailscaleStep === 'failed' ? failure : starting ? t`Checking…` : notYet}</p>
         </div>
         {tailscaleStep === 'failed' ? retry : null}
       </li>
       <li data-step={serveStep}>
         <StepMark step={serveStep} />
         <div className="phones-step__copy"><b>{t`Tailscale Serve on port ${servePort}`}</b>
-          <p>{serveStep === 'ok' ? (state?.servePort === 10000 ? t`Sotto added it on 10000, because another app had 8443. Port 443 stays free for other apps.` : t`Sotto added it. Port 443 stays free for other apps.`) : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? t`Waits for Tailscale.` : starting ? t`Setting it up…` : notYet}</p>
+          <p className="tt-paragraph">{serveStep === 'ok' ? (state?.servePort === 10000 ? t`Sotto added it on 10000, because another app had 8443. Port 443 stays free for other apps.` : t`Sotto added it. Port 443 stays free for other apps.`) : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? t`Waits for Tailscale.` : starting ? t`Setting it up…` : notYet}</p>
         </div>
         {serveStep === 'failed' ? <span className="phones-step__actions">
           {state?.serve.status === 'failed' && state.serve.canOpenSetup ? <Button variant="secondary" onClick={() => void run({ type: 'open-serve-setup' })}>{t`Turn on Serve in Tailscale`}</Button> : null}
@@ -192,7 +193,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
       <li data-step={addressStep}>
         <StepMark step={addressStep} />
         <div className="phones-step__copy"><b>{t`Address phones use`}</b>
-          <p>{state?.address ? <span className="phones-mono phones-address">{state.address}</span> : state?.phase === 'failed' || starting ? t`Waits for the steps above.` : notYet}</p>
+          <p className="tt-paragraph">{state?.address ? <span className="phones-mono phones-address">{state.address}</span> : state?.phase === 'failed' || starting ? t`Waits for the steps above.` : notYet}</p>
         </div>
         {state?.address ? <Button variant="ghost" onClick={() => void copyAddress(state.address!)}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? t`Copied` : t`Copy address`}</Button> : null}
       </li>
@@ -205,11 +206,11 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
           <li><Trans>Enter <b className="phones-mono">{machine}</b>.</Trans></li>
           <li><Trans>Enter the code shown here.</Trans></li>
         </ol>
-        <p className="phones-note"><Trans>A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it.</Trans></p>
+        <p className="phones-note tt-paragraph"><Trans>A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it.</Trans></p>
       </div>
       {codeCard}
     </section>
-    <p className="phones-live" role="status" aria-live="polite">{announcement}</p>
+    <p className="phones-live tt-paragraph" role="status" aria-live="polite">{shownWords(announcement)}</p>
     {state?.phones.length ? <section aria-labelledby={`${pairHeading}-phones`}>
       <h3 id={`${pairHeading}-phones`}>{t`Paired phones`}</h3>
       <div className="hosts-list phones-list">
@@ -220,10 +221,10 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     {state ? <div className="phones-name">
       <NameField name={phoneAccessName} defaultName={state.defaultName} onSave={name => onUpdateSettings({ phoneAccessName: name })} />
     </div> : null}
-    {error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{error}</p></div> : null}
+    {error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}
     {removing ? <ConfirmationDialog title={t`Remove ${removingName}?`} confirmLabel={t`Remove phone`} cancelLabel={t`Keep phone`}
       description={t`${removingName} can no longer reach this computer, and its connection closes now. Threads stay here. To use it again, pair it with a new code.`}
       onCancel={() => setRemoveId(null)} onConfirm={() => run({ type: 'remove', clientId: removing.clientId })}
-      failureMessage={error} fallbackFocusRef={showButton} /> : null}
+      failureMessage={shownWords(error)} fallbackFocusRef={showButton} /> : null}
   </div>
 }

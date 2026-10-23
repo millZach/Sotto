@@ -12,11 +12,12 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
 import { SettingsGroup } from './SettingsGroup'
+import type { LaterWords } from './laterWords'
 import './gitSettings.css'
 
 interface GitSettingsProps {
   readonly settings: AppSettings
-  readonly onSave: (patch: SettingsPatch, successText?: string) => Promise<boolean>
+  readonly onSave: (patch: SettingsPatch, successText?: LaterWords) => Promise<boolean>
 }
 
 const WRITING_STYLE_LABELS: Record<GitWritingStyle, MessageDescriptor> = {
@@ -126,7 +127,7 @@ function Example({ example }: { readonly example: WritingExample }): ReactNode {
       <dt><Trans>Commit subject</Trans></dt><dd>{example.commit}</dd>
       <dt><Trans>Pull request title</Trans></dt><dd>{example.pullRequest}</dd>
     </dl>
-    <p>{example.note}</p>
+    <p className="tt-paragraph">{example.note}</p>
   </div>
 }
 
@@ -153,10 +154,10 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
     const sequence = ++sent.current
     // A failed save puts the text back as waiting, so the next pause, blur or change of style tries again, but
     // only while it is still the latest text sent and nothing newer is waiting: a later save supersedes it.
-    void latest.current.onSave({ gitWritingInstructions: value }, i18n._(msg`Instructions saved.`)).then(saved => {
+    void latest.current.onSave({ gitWritingInstructions: value }, msg`Instructions saved.`).then(saved => {
       if (!saved && sequence === sent.current && pending.current === null) pending.current = value
     })
-  }, [i18n])
+  }, [])
   // A saved value from elsewhere shows only while nothing typed here is waiting to be saved.
   useEffect(() => { if (pending.current === null) setText(saved) }, [saved])
   const custom = settings.gitWritingStyle === 'custom'
@@ -165,14 +166,14 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
   const fieldId = useId()
   const limitId = useId()
   return <div className="git-settings__style">
-    <Field label={t`Commit and pull request style`} description={description}>
+    <Field setting="git-writing-style" label={t`Commit and pull request style`} description={description}>
       <Select value={settings.gitWritingStyle} onChange={event => void onSave({ gitWritingStyle: event.currentTarget.value as GitWritingStyle })}>
         {GIT_WRITING_STYLES.map(style => <option key={style} value={style}>{i18n._(WRITING_STYLE_LABELS[style])}</option>)}
       </Select>
     </Field>
     {!custom ? null : <div className="git-settings__custom">
       <p className="git-settings__custom-label"><label htmlFor={fieldId}><Trans>Custom instructions</Trans></label> · <span id={limitId}>{plural(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, { one: 'up to # character', other: 'up to # characters' })}</span></p>
-      <textarea id={fieldId} className="tt-input tt-focusable" rows={4} maxLength={GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS} value={text} aria-describedby={limitId}
+      <textarea id={fieldId} data-setting="git-writing-instructions" className="tt-input tt-focusable" rows={4} maxLength={GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS} value={text} aria-describedby={limitId}
         placeholder={t`Start the subject with the area in square brackets...`}
         onChange={event => {
           const value = event.currentTarget.value
@@ -198,47 +199,47 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   const says = gitSettingDescriptions(settings)
   return <div className="git-settings">
     <SettingsGroup id="settings-worktrees" title={t`Removing worktrees`} icon={FolderMinus}>
-      <Field label={t`Remove idle worktrees after`} description={t`Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed.`}><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void onSave({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">{t({ message: 'Never', comment: 'Remove idle worktrees after: never' })}</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{plural(days, { one: '# day', other: '# days' })}</option>)}</Select></Field>
-      <Toggle label={t`Remove a worktree when its thread is settled`} checked={settings.worktreeCleanup.onSettle} onCheckedChange={checked => void onSave({ worktreeCleanup: { onSettle: checked } })} description={t`Settling removes a clean worktree without asking. One with uncommitted changes still asks.`} />
-      <Toggle label={t`Remove a worktree once its commits are in the default branch`} checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void onSave({ worktreeCleanup: { unchanged: checked } })} description={t`Checked hourly against your local copy of the default branch.`} />
-      <Toggle label={t`Remove a worktree when its pull request is merged`} checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void onSave({ worktreeCleanup: { merged: checked } })} description={t`Checked hourly with GitHub through gh, using your own sign-in.`} />
+      <Field setting="worktree-idle-cleanup" label={t`Remove idle worktrees after`} description={t`Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed.`}><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void onSave({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">{t({ message: 'Never', comment: 'Remove idle worktrees after: never' })}</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{plural(days, { one: '# day', other: '# days' })}</option>)}</Select></Field>
+      <Toggle setting="worktree-cleanup-settled" label={t`Remove a worktree when its thread is settled`} checked={settings.worktreeCleanup.onSettle} onCheckedChange={checked => void onSave({ worktreeCleanup: { onSettle: checked } })} description={t`Settling removes a clean worktree without asking. One with uncommitted changes still asks.`} />
+      <Toggle setting="worktree-cleanup-landed" label={t`Remove a worktree once its commits are in the default branch`} checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void onSave({ worktreeCleanup: { unchanged: checked } })} description={t`Checked hourly against your local copy of the default branch.`} />
+      <Toggle setting="worktree-cleanup-merged" label={t`Remove a worktree when its pull request is merged`} checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void onSave({ worktreeCleanup: { merged: checked } })} description={t`Checked hourly with GitHub through gh, using your own sign-in.`} />
     </SettingsGroup>
     <SettingsGroup title={t`When a thread commits`} icon={GitCommitHorizontal}>
       <WritingStyle settings={settings} onSave={onSave} description={says.style} />
-      <Toggle label={t`Generated commit messages`} checked={settings.commitMessages} onCheckedChange={(checked) => void onSave({ commitMessages: checked })} description={t`Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”.`} />
+      <Toggle setting="generated-commit-messages" label={t`Generated commit messages`} checked={settings.commitMessages} onCheckedChange={(checked) => void onSave({ commitMessages: checked })} description={t`Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”.`} />
     </SettingsGroup>
     <SettingsGroup title={t`When a pull request is made or merged`} icon={GitPullRequest}>
-      <Toggle label={t`Generated pull request text`} checked={settings.pullRequestText} onCheckedChange={(checked) => void onSave({ pullRequestText: checked })} description={t`The thread's own model writes a new pull request's title and body from the branch's commits and diff.`} />
-      <Toggle label={t`Follow pull request templates`} checked={settings.followPullRequestTemplates} onCheckedChange={checked => void onSave({ followPullRequestTemplates: checked })} description={says.templates} />
-      <Field label={t`Default merge method`} description={says.merge}>
+      <Toggle setting="generated-pull-request-text" label={t`Generated pull request text`} checked={settings.pullRequestText} onCheckedChange={(checked) => void onSave({ pullRequestText: checked })} description={t`The thread's own model writes a new pull request's title and body from the branch's commits and diff.`} />
+      <Toggle setting="pull-request-templates" label={t`Follow pull request templates`} checked={settings.followPullRequestTemplates} onCheckedChange={checked => void onSave({ followPullRequestTemplates: checked })} description={says.templates} />
+      <Field setting="merge-method" label={t`Default merge method`} description={says.merge}>
         <Select value={settings.defaultMergeMethod} onChange={event => void onSave({ defaultMergeMethod: event.currentTarget.value as DefaultMergeMethod })}>
           {DEFAULT_MERGE_METHODS.map(method => <option key={method} value={method}>{mergeMethodLabel(method)}</option>)}
         </Select>
       </Field>
-      <Toggle label={t`Auto-settle merged threads`} checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
+      <Toggle setting="auto-settle-merged" label={t`Auto-settle merged threads`} checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
       {/* ADR-0061 decision 12: the switch governs the agent's tool alone; the user's own Babysit pull request stays either way. */}
-      <Toggle label={t`Let agents babysit pull requests`} checked={settings.babysitPullRequests} onCheckedChange={checked => void onSave({ babysitPullRequests: checked })}
+      <Toggle setting="babysit-pull-requests" label={t`Let agents babysit pull requests`} checked={settings.babysitPullRequests} onCheckedChange={checked => void onSave({ babysitPullRequests: checked })}
         description={settings.babysitPullRequests
           ? t`An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.`
           : t`Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.`} />
     </SettingsGroup>
     <SettingsGroup title={t`When you read Changes`} icon={FileDiff} note={t`How Changes first opens. A choice made in Changes lasts until you change one of these or restart Sotto.`}>
       <Field label={t`Diff layout`} description={says.layout}>
-        <SegmentedControl label={t`Diff layout`} value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: t({ message: 'Stacked', comment: 'A diff layout: removed lines above added ones' }) }, { value: 'split', label: t({ message: 'Split', comment: 'A diff layout: old and new side by side' }) }]} />
+        <SegmentedControl setting="diff-layout" label={t`Diff layout`} value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: t({ message: 'Stacked', comment: 'A diff layout: removed lines above added ones' }) }, { value: 'split', label: t({ message: 'Split', comment: 'A diff layout: old and new side by side' }) }]} />
       </Field>
-      <Toggle label={t`Hide whitespace changes`} checked={settings.diffHideWhitespace} onCheckedChange={checked => void onSave({ diffHideWhitespace: checked })} description={says.whitespace} />
+      <Toggle setting="diff-hide-whitespace" label={t`Hide whitespace changes`} checked={settings.diffHideWhitespace} onCheckedChange={checked => void onSave({ diffHideWhitespace: checked })} description={says.whitespace} />
       <Field label={t`Default diff file state`} description={says.fileState}>
-        <SegmentedControl label={t`Default diff file state`} value={settings.diffFileState} onChange={value => void onSave({ diffFileState: value as DiffFileState })} options={[{ value: 'expanded', label: t({ message: 'Expanded', comment: 'How a file in Changes first shows: open' }) }, { value: 'collapsed', label: t({ message: 'Collapsed', comment: 'How a file in Changes first shows: only its header' }) }]} />
+        <SegmentedControl setting="diff-file-state" label={t`Default diff file state`} value={settings.diffFileState} onChange={value => void onSave({ diffFileState: value as DiffFileState })} options={[{ value: 'expanded', label: t({ message: 'Expanded', comment: 'How a file in Changes first shows: open' }) }, { value: 'collapsed', label: t({ message: 'Collapsed', comment: 'How a file in Changes first shows: only its header' }) }]} />
       </Field>
-      <Toggle label={t`Proactive panels`} checked={settings.proactivePanels} onCheckedChange={checked => void onSave({ proactivePanels: checked })} description={says.proactive} />
+      <Toggle setting="proactive-panels" label={t`Proactive panels`} checked={settings.proactivePanels} onCheckedChange={checked => void onSave({ proactivePanels: checked })} description={says.proactive} />
     </SettingsGroup>
     <SettingsGroup title={t`In the background`} icon={RefreshCw}>
-      <Field label={t`Git fetch interval`} description={says.fetch}>
+      <Field setting="git-fetch-interval" label={t`Git fetch interval`} description={says.fetch}>
         <Select value={String(settings.gitFetchIntervalSeconds)} onChange={event => void onSave({ gitFetchIntervalSeconds: Number(event.currentTarget.value) as GitFetchIntervalSeconds })}>
           {GIT_FETCH_INTERVAL_SECONDS.map(seconds => <option key={seconds} value={String(seconds)}>{fetchIntervalLabel(seconds)}</option>)}
         </Select>
       </Field>
-      <Toggle label={t`Automatically pull`} checked={settings.gitAutoPull} onCheckedChange={checked => void onSave({ gitAutoPull: checked })} description={says.autoPull} />
+      <Toggle setting="git-auto-pull" label={t`Automatically pull`} checked={settings.gitAutoPull} onCheckedChange={checked => void onSave({ gitAutoPull: checked })} description={says.autoPull} />
     </SettingsGroup>
   </div>
 }

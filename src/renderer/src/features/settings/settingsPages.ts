@@ -62,22 +62,28 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
 export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model'
 
+/**
+ * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
+ * it, never by the words on the page, so it finds the control whichever language that part of the page is shown in.
+ */
+export const SETTING_ATTRIBUTE = 'data-setting'
+
 export interface SettingEntry {
+  /** The id its control carries in `data-setting`. */
+  readonly id: string
   /** The name Find a setting shows and matches, in the interface language. */
   readonly label: string
   /** Its name in English, which Find a setting matches in every language (ADR-0123). */
   readonly english: string
   /** Where it opens. */
   readonly section: SettingsSectionId
-  /** The control's own name, where it differs from `label`. */
-  readonly target?: string
   /**
    * More words that should find it, in English in every language. Its description on the page counts too
    * (`describeSetting`), in the language the page shows.
    */
   readonly words?: string
   /**
-   * Where to land while the setting itself is not on the page, for a control that shows only in some states:
+   * The id of the setting to land on while this one is not on the page, for a control that shows only in some states:
    * Custom instructions shows only while that style is chosen, Shell sandbox only while Muse is selected.
    */
   readonly fallback?: string
@@ -88,126 +94,120 @@ export interface SettingEntry {
 type SettingName = MessageDescriptor | string
 
 interface SettingSpec {
+  readonly id: string
   readonly label: SettingName
   readonly section: SettingsSectionId
-  readonly target?: SettingName
   readonly words?: string
-  readonly fallback?: SettingName
+  readonly fallback?: string
   readonly gate?: SettingGate
 }
 
 const shown = (name: SettingName): string => typeof name === 'string' ? name : i18n._(name)
 
 /**
- * Every setting Find a setting can reach, and where each lives, named in the interface language: the names are the
- * page's own messages, so each still finds its control on a translated page. settingsReachable.test.tsx holds this
- * list to the page: each entry names a control on its page, and each control on a page has an entry.
+ * Every setting Find a setting can reach, and where each lives, named in the interface language and in English.
+ * settingsReachable.test.tsx holds this list to the page: each entry's id marks a control on its page, and each control
+ * on a page is reached by an entry.
  */
 export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] {
   const copy = platformCopy(platform)
   const specs: readonly SettingSpec[] = [
-    { label: msg`Dictate with Sotto`, section: 'settings-capture', words: 'turn dictation off', gate: 'dictation-off' },
-    { label: msg`Microphone`, section: 'settings-capture', words: 'input device', gate: 'dictation' },
-    { label: msg`Microphone test`, section: 'settings-capture', words: 'level hear', gate: 'dictation' },
+    { id: 'dictation-enabled', label: msg`Dictate with Sotto`, section: 'settings-capture', words: 'turn dictation off', gate: 'dictation-off' },
+    { id: 'microphone', label: msg`Microphone`, section: 'settings-capture', words: 'input device', gate: 'dictation' },
+    { id: 'microphone-test', label: msg`Microphone test`, section: 'settings-capture', words: 'level hear', gate: 'dictation' },
     ...platform === 'linux'
-      ? [{ label: msg`Omarchy setup`, section: 'settings-capture', words: 'shortcut keys bar theme', gate: 'dictation' } as const]
-      : [{ label: msg`Dictation shortcuts`, section: 'settings-capture', target: msg`Press to start and stop`, words: 'hotkey keyboard hold', gate: 'dictation' } as const],
-    { label: msg`Recording limit`, section: 'settings-capture', target: msg`Maximum recording time`, words: 'length seconds minutes', gate: 'dictation' },
-    { label: msg`Sound cues`, section: 'settings-capture', words: 'audio beep', gate: 'dictation' },
-    { label: msg`Typing speed`, section: 'settings-capture', words: 'words per minute time saved', gate: 'dictation' },
-    { label: msg`Show floating widget when idle`, section: 'settings-capture', words: 'sliver', gate: 'dictation' },
-    { label: msg`Speech model`, section: 'settings-transcription', words: 'transcription parakeet language', gate: 'dictation' },
-    { label: msg`Whitespace formatting`, section: 'settings-transcription', words: 'spaces trim', gate: 'dictation' },
-    { label: msg`Automatic clipboard copy`, section: 'settings-output', words: 'output', gate: 'dictation' },
-    { label: msg`Automatic paste`, section: 'settings-output', words: 'output', gate: 'dictation' },
-    { label: msg`Paste delay`, section: 'settings-output', words: 'milliseconds', gate: 'dictation' },
-    { label: msg`Success message duration`, section: 'settings-output', words: 'milliseconds', gate: 'dictation' },
-    { label: msg`AI formatting`, section: 'settings-formatting', words: 'cleanup openrouter', gate: 'dictation' },
-    { label: msg`OpenRouter key`, section: 'settings-formatting', target: msg`OpenRouter API key`, words: 'api key cleanup', gate: 'dictation' },
-    { label: msg`Cleanup model`, section: 'settings-formatting', words: 'openrouter ai formatting llm', gate: 'cleanup-model' },
-    { label: msg`Cleanup mode`, section: 'settings-formatting', target: msg({ message: 'Mode', comment: 'The label of the cleanup mode choice on Settings > Cleanup: which OpenRouter host serves the cleanup model.' }), words: 'openrouter nitro floor fastest cheapest host', gate: 'cleanup-model' },
-    { label: msg`Personal dictionary`, section: 'settings-formatting', words: 'vocabulary words names spelling', gate: 'dictation' },
+      ? [{ id: 'omarchy-setup', label: msg`Omarchy setup`, section: 'settings-capture', words: 'shortcut keys bar theme', gate: 'dictation' } as const]
+      : [{ id: 'dictation-shortcuts', label: msg`Dictation shortcuts`, section: 'settings-capture', words: 'hotkey keyboard hold', gate: 'dictation' } as const],
+    { id: 'recording-limit', label: msg`Recording limit`, section: 'settings-capture', words: 'length seconds minutes', gate: 'dictation' },
+    { id: 'sound-cues', label: msg`Sound cues`, section: 'settings-capture', words: 'audio beep', gate: 'dictation' },
+    { id: 'typing-speed', label: msg`Typing speed`, section: 'settings-capture', words: 'words per minute time saved', gate: 'dictation' },
+    { id: 'widget-when-idle', label: msg`Show floating widget when idle`, section: 'settings-capture', words: 'sliver', gate: 'dictation' },
+    { id: 'speech-model', label: msg`Speech model`, section: 'settings-transcription', words: 'transcription parakeet language', gate: 'dictation' },
+    { id: 'whitespace-formatting', label: msg`Whitespace formatting`, section: 'settings-transcription', words: 'spaces trim', gate: 'dictation' },
+    { id: 'clipboard-copy', label: msg`Automatic clipboard copy`, section: 'settings-output', words: 'output', gate: 'dictation' },
+    { id: 'auto-paste', label: msg`Automatic paste`, section: 'settings-output', words: 'output', gate: 'dictation' },
+    { id: 'paste-delay', label: msg`Paste delay`, section: 'settings-output', words: 'milliseconds', gate: 'dictation' },
+    { id: 'success-duration', label: msg`Success message duration`, section: 'settings-output', words: 'milliseconds', gate: 'dictation' },
+    { id: 'ai-formatting', label: msg`AI formatting`, section: 'settings-formatting', words: 'cleanup openrouter', gate: 'dictation' },
+    { id: 'openrouter-key', label: msg`OpenRouter key`, section: 'settings-formatting', words: 'api key cleanup', gate: 'dictation' },
+    { id: 'cleanup-model', label: msg`Cleanup model`, section: 'settings-formatting', words: 'openrouter ai formatting llm', gate: 'cleanup-model' },
+    { id: 'cleanup-mode', label: msg`Cleanup mode`, section: 'settings-formatting', words: 'openrouter nitro floor fastest cheapest host', gate: 'cleanup-model' },
+    { id: 'personal-dictionary', label: msg`Personal dictionary`, section: 'settings-formatting', words: 'vocabulary words names spelling', gate: 'dictation' },
 
-    { label: msg`New threads start with`, section: 'settings-agents', words: 'model reasoning effort permissions defaults' },
-    { label: msg`Default projects directory`, section: 'settings-agents', words: 'folder' },
-    { label: msg`New threads work in`, section: 'settings-agents', words: 'working copy worktree project folder' },
-    { label: msg`Project defaults`, section: 'settings-agents', words: 'working copy worktree' },
-    { label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
-    { label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
-    { label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
-    { label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },
-    { label: msg`Show the browser when an agent opens a page`, section: 'settings-browser', words: 'test iphone' },
-    { label: msg`Let agents use the browser without asking`, section: 'settings-browser', words: 'permission' },
-    { label: msg`Let agents draw visuals in threads`, section: 'settings-browser', words: 'diagrams' },
+    { id: 'thread-defaults', label: msg`New threads start with`, section: 'settings-agents', words: 'model reasoning effort permissions defaults' },
+    { id: 'projects-directory', label: msg`Default projects directory`, section: 'settings-agents', words: 'folder' },
+    { id: 'thread-working-copy', label: msg`New threads work in`, section: 'settings-agents', words: 'working copy worktree project folder' },
+    { id: 'project-defaults', label: msg`Project defaults`, section: 'settings-agents', words: 'working copy worktree' },
+    { id: 'reply-streaming', label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
+    { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
+    { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
+    { id: 'web-links', label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },
+    { id: 'browser-previews', label: msg`Show the browser when an agent opens a page`, section: 'settings-browser', words: 'test iphone' },
+    { id: 'browser-without-asking', label: msg`Let agents use the browser without asking`, section: 'settings-browser', words: 'permission' },
+    { id: 'visuals-in-threads', label: msg`Let agents draw visuals in threads`, section: 'settings-browser', words: 'diagrams' },
 
-    { label: msg`Remove idle worktrees after`, section: 'settings-worktrees', words: 'cleanup days' },
-    { label: msg`Remove a worktree when its thread is settled`, section: 'settings-worktrees', words: 'cleanup' },
-    { label: msg`Remove a worktree once its commits are in the default branch`, section: 'settings-worktrees', words: 'cleanup' },
-    { label: msg`Remove a worktree when its pull request is merged`, section: 'settings-worktrees', words: 'cleanup' },
-    { label: msg`Commit and pull request style`, section: 'settings-git', words: 'writing conventional' },
-    { label: msg`Custom instructions`, section: 'settings-git', words: 'commit pull request writing style', fallback: msg`Commit and pull request style` },
-    { label: msg`Generated commit messages`, section: 'settings-git' },
-    { label: msg`Generated pull request text`, section: 'settings-git', words: 'title body' },
-    { label: msg`Follow pull request templates`, section: 'settings-git' },
-    { label: msg`Default merge method`, section: 'settings-git', words: 'squash rebase' },
-    { label: msg`Auto-settle merged threads`, section: 'settings-git' },
-    { label: msg`Let agents babysit pull requests`, section: 'settings-git', words: 'checks wake' },
-    { label: msg`Diff layout`, section: 'settings-git', words: 'changes stacked split' },
-    { label: msg`Hide whitespace changes`, section: 'settings-git', words: 'diff' },
-    { label: msg`Default diff file state`, section: 'settings-git', words: 'expanded collapsed' },
-    { label: msg`Proactive panels`, section: 'settings-git', words: 'changes' },
-    { label: msg`Git fetch interval`, section: 'settings-git', words: 'background' },
-    { label: msg`Automatically pull`, section: 'settings-git', words: 'fetch' },
+    { id: 'worktree-idle-cleanup', label: msg`Remove idle worktrees after`, section: 'settings-worktrees', words: 'cleanup days' },
+    { id: 'worktree-cleanup-settled', label: msg`Remove a worktree when its thread is settled`, section: 'settings-worktrees', words: 'cleanup' },
+    { id: 'worktree-cleanup-landed', label: msg`Remove a worktree once its commits are in the default branch`, section: 'settings-worktrees', words: 'cleanup' },
+    { id: 'worktree-cleanup-merged', label: msg`Remove a worktree when its pull request is merged`, section: 'settings-worktrees', words: 'cleanup' },
+    { id: 'git-writing-style', label: msg`Commit and pull request style`, section: 'settings-git', words: 'writing conventional' },
+    { id: 'git-writing-instructions', label: msg`Custom instructions`, section: 'settings-git', words: 'commit pull request writing style', fallback: 'git-writing-style' },
+    { id: 'generated-commit-messages', label: msg`Generated commit messages`, section: 'settings-git' },
+    { id: 'generated-pull-request-text', label: msg`Generated pull request text`, section: 'settings-git', words: 'title body' },
+    { id: 'pull-request-templates', label: msg`Follow pull request templates`, section: 'settings-git' },
+    { id: 'merge-method', label: msg`Default merge method`, section: 'settings-git', words: 'squash rebase' },
+    { id: 'auto-settle-merged', label: msg`Auto-settle merged threads`, section: 'settings-git' },
+    { id: 'babysit-pull-requests', label: msg`Let agents babysit pull requests`, section: 'settings-git', words: 'checks wake' },
+    { id: 'diff-layout', label: msg`Diff layout`, section: 'settings-git', words: 'changes stacked split' },
+    { id: 'diff-hide-whitespace', label: msg`Hide whitespace changes`, section: 'settings-git', words: 'diff' },
+    { id: 'diff-file-state', label: msg`Default diff file state`, section: 'settings-git', words: 'expanded collapsed' },
+    { id: 'proactive-panels', label: msg`Proactive panels`, section: 'settings-git', words: 'changes' },
+    { id: 'git-fetch-interval', label: msg`Git fetch interval`, section: 'settings-git', words: 'background' },
+    { id: 'git-auto-pull', label: msg`Automatically pull`, section: 'settings-git', words: 'fetch' },
 
-    { label: msg`Settle finished threads`, section: 'settings-watcher', gate: 'watcher' },
-    { label: msg`Worker roles`, section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },
+    { id: 'watcher-settles', label: msg`Settle finished threads`, section: 'settings-watcher', gate: 'watcher' },
+    { id: 'worker-roles', label: msg`Worker roles`, section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },
 
-    { label: msg`Thread providers`, section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
-    { label: msg`Check for client updates`, section: 'settings-providers', words: 'agent clients' },
-    { label: msg`Shell sandbox`, section: 'settings-providers', words: 'muse', fallback: msg`Thread providers`, gate: 'muse' },
-    { label: msg`Run the local host`, section: 'settings-hosts', words: 'this computer' },
-    { label: msg`Remote hosts`, section: 'settings-hosts', words: 'ssh tailscale add host computers' },
-    { label: msg`Let phones connect`, section: 'settings-phones', words: 'iphone' },
-    { label: msg`Name on phones`, section: 'settings-phones', words: 'iphone' },
-    { label: msg`Pairing code`, section: 'settings-phones', target: msg`Phones`, words: 'pair iphone' },
-    { label: msg`run.cloud key`, section: 'settings-cloud-iphone', target: msg({ message: 'Key', comment: 'The label of the run.cloud API key field on Settings > Cloud iPhone.' }), words: 'cloud iphone' },
-    { label: msg`Monthly cap`, section: 'settings-cloud-iphone', words: 'minutes spending cloud iphone' },
-    { label: msg`Idle sessions end after`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
+    { id: 'thread-providers', label: msg`Thread providers`, section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
+    { id: 'client-updates', label: msg`Check for client updates`, section: 'settings-providers', words: 'agent clients' },
+    { id: 'shell-sandbox', label: msg`Shell sandbox`, section: 'settings-providers', words: 'muse', fallback: 'thread-providers', gate: 'muse' },
+    { id: 'local-host', label: msg`Run the local host`, section: 'settings-hosts', words: 'this computer' },
+    { id: 'remote-hosts', label: msg`Remote hosts`, section: 'settings-hosts', words: 'ssh tailscale add host computers' },
+    { id: 'phone-access', label: msg`Let phones connect`, section: 'settings-phones', words: 'iphone' },
+    { id: 'phone-name', label: msg`Name on phones`, section: 'settings-phones', words: 'iphone' },
+    { id: 'phone-pairing', label: msg`Pairing code`, section: 'settings-phones', words: 'pair iphone' },
+    { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
+    { id: 'cloud-iphone-cap', label: msg`Monthly cap`, section: 'settings-cloud-iphone', words: 'minutes spending cloud iphone' },
+    { id: 'cloud-iphone-idle', label: msg`Idle sessions end after`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
 
-    { label: msg`Themes`, section: 'settings-appearance', words: 'color colour look' },
-    { label: msg`Color scheme`, section: 'settings-appearance', words: 'dark light' },
-    { label: msg`Effort color`, section: 'settings-appearance' },
-    { label: msg`Show the creature`, section: 'settings-appearance', words: 'hide off composer', gate: 'creature-toggle' },
-    { label: msg`Creature`, section: 'settings-appearance', words: 'claude bot sotto composer' },
+    { id: 'themes', label: msg`Themes`, section: 'settings-appearance', words: 'color colour look' },
+    { id: 'color-scheme', label: msg`Color scheme`, section: 'settings-appearance', words: 'dark light' },
+    { id: 'effort-color', label: msg`Effort color`, section: 'settings-appearance' },
+    { id: 'show-creature', label: msg`Show the creature`, section: 'settings-appearance', words: 'hide off composer', gate: 'creature-toggle' },
+    { id: 'creature', label: msg`Creature`, section: 'settings-appearance', words: 'claude bot sotto composer' },
     // The menu bar owl is a Mac's alone (ADR-0114).
-    ...platform === 'darwin' ? [{ label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
-    { label: msg`Contrast`, section: 'settings-appearance' },
-    { label: msg`Reduced motion`, section: 'settings-appearance', words: 'animation' },
-    { label: msg`Night falls between Threads and Watcher`, section: 'settings-appearance', words: 'transition animation watcher room', gate: 'night-falls' },
-    { label: msg`Night falls speed`, section: 'settings-appearance', words: 'transition animation slower faster', gate: 'night-falls' },
-    { label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },
-    { label: msg`Start minimized`, section: 'settings-privacy', words: 'startup tray' },
-    { label: msg`Keep local history`, section: 'settings-history', words: 'transcripts privacy' },
-    { label: msg`History retention`, section: 'settings-history', words: 'transcripts' },
-    { label: msg`Clear transcript history`, section: 'settings-history', words: 'delete' },
+    ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
+    { id: 'contrast', label: msg`Contrast`, section: 'settings-appearance' },
+    { id: 'reduced-motion', label: msg`Reduced motion`, section: 'settings-appearance', words: 'animation' },
+    { id: 'night-falls', label: msg`Night falls between Threads and Watcher`, section: 'settings-appearance', words: 'transition animation watcher room', gate: 'night-falls' },
+    { id: 'night-falls-speed', label: msg`Night falls speed`, section: 'settings-appearance', words: 'transition animation slower faster', gate: 'night-falls' },
+    { id: 'launch-at-startup', label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },
+    { id: 'start-minimized', label: msg`Start minimized`, section: 'settings-privacy', words: 'startup tray' },
+    { id: 'history-enabled', label: msg`Keep local history`, section: 'settings-history', words: 'transcripts privacy' },
+    { id: 'history-retention', label: msg`History retention`, section: 'settings-history', words: 'transcripts' },
+    { id: 'clear-history', label: msg`Clear transcript history`, section: 'settings-history', words: 'delete' },
     // Only where the window can show notifications: on a Mac (ADR-0117).
-    { label: msg`When a thread needs you`, section: 'settings-privacy', words: 'notifications notify question permission', gate: 'notifications' },
-    { label: msg`When a thread has finished everything`, section: 'settings-privacy', words: 'notifications notify done', gate: 'notifications' },
-    { label: msg`Send a test notification`, section: 'settings-privacy', words: 'notifications', gate: 'notifications' },
-    { label: msg`Updates`, section: 'settings-updates', words: 'version check now download' },
+    { id: 'notify-needs-you', label: msg`When a thread needs you`, section: 'settings-privacy', words: 'notifications notify question permission', gate: 'notifications' },
+    { id: 'notify-finished', label: msg`When a thread has finished everything`, section: 'settings-privacy', words: 'notifications notify done', gate: 'notifications' },
+    { id: 'test-notification', label: msg`Send a test notification`, section: 'settings-privacy', words: 'notifications', gate: 'notifications' },
+    { id: 'updates', label: msg`Updates`, section: 'settings-updates', words: 'version check now download' },
     // Where Sotto never updates itself (Linux), the Updates group says how to update by hand and has no switch.
-    ...copy.settingsUpdatesByHand === null ? [{ label: msg`Check for updates automatically`, section: 'settings-updates' } as const] : [],
-    { label: msg`Reset settings`, section: 'settings-privacy', words: 'defaults setup' },
+    ...copy.settingsUpdatesByHand === null ? [{ id: 'auto-update-check', label: msg`Check for updates automatically`, section: 'settings-updates' } as const] : [],
+    { id: 'reset-settings', label: msg`Reset settings`, section: 'settings-privacy', words: 'defaults setup' },
 
-    { label: msg`Tell me when main freezes`, section: 'settings-performance', gate: 'main-freeze' },
+    { id: 'main-freeze-notice', label: msg`Tell me when main freezes`, section: 'settings-performance', gate: 'main-freeze' },
   ]
-  return specs.map(({ label, target, fallback, ...spec }) => ({
-    ...spec,
-    label: shown(label),
-    english: typeof label === 'string' ? label : inEnglish(label),
-    ...target === undefined ? {} : { target: shown(target) },
-    ...fallback === undefined ? {} : { fallback: shown(fallback) },
-  }))
+  return specs.map(({ label, ...spec }) => ({ ...spec, label: shown(label), english: typeof label === 'string' ? label : inEnglish(label) }))
 }
 
 /**
@@ -227,38 +227,12 @@ export function findSettings(index: readonly SettingEntry[], query: string): rea
 }
 
 /**
- * The control a setting's name points at inside `root`: a control named by `aria-label`, a field's `<label>`, a group
- * named by its heading or legend, or the heading itself. Null when the page does not show it.
+ * The control a setting's id marks inside `root` (`data-setting`): the control itself, or the group or row that holds
+ * it. Where several carry it, such as Default projects directory on each computer, the first. Null when the page does
+ * not show it.
  */
-export function findSettingControl(root: HTMLElement, name: string): HTMLElement | null {
-  const same = (text: string | null | undefined): boolean => (text ?? '').replace(/\s+/gu, ' ').trim() === name
-  const labelled = [...root.querySelectorAll<HTMLElement>('[aria-label]')].find(element => same(element.getAttribute('aria-label')))
-  if (labelled) return labelled
-  for (const label of root.querySelectorAll<HTMLLabelElement>('label')) {
-    if (!same(label.textContent) && !same(label.firstChild?.textContent)) continue
-    const control = label.htmlFor ? root.ownerDocument.getElementById(label.htmlFor) : label.querySelector<HTMLElement>('input, select, textarea')
-    if (control) return control
-  }
-  for (const legend of root.querySelectorAll<HTMLElement>('legend')) if (same(legend.textContent) && legend.parentElement) return legend.parentElement
-  // A group named by another element, such as a run of dictation shortcuts under its own label.
-  for (const group of root.querySelectorAll<HTMLElement>('[role="group"][aria-labelledby], [role="radiogroup"][aria-labelledby]')) {
-    const ids = group.getAttribute('aria-labelledby')!.split(/\s+/u)
-    if (same(ids.map(id => root.ownerDocument.getElementById(id)?.textContent ?? '').join(' '))) return group
-  }
-  for (const button of root.querySelectorAll<HTMLElement>('button')) if (same(button.textContent)) return button
-  for (const heading of root.querySelectorAll<HTMLElement>('h2, h3, h4')) {
-    if (!same(heading.textContent)) continue
-    const group = heading.id ? root.querySelector<HTMLElement>(`[aria-labelledby~="${CSS.escape(heading.id)}"]`) : null
-    if (group) return group
-    // A heading that names a row, such as Clear transcript history or Remote hosts: the row's own button.
-    for (let row = heading.parentElement, step = 0; row && row !== root && step < 2; row = row.parentElement, step++) {
-      const control = row.querySelector<HTMLElement>(FOCUSABLE)
-      if (control) return control
-    }
-    return heading
-  }
-  // A control named for one of several computers, such as Default projects directory on forge: the first of them.
-  return [...root.querySelectorAll<HTMLElement>('[aria-label]')].find(element => (element.getAttribute('aria-label') ?? '').startsWith(`${name} on `)) ?? null
+export function findSettingControl(root: HTMLElement, id: string): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`[${SETTING_ATTRIBUTE}="${CSS.escape(id)}"]`)
 }
 
 /**

@@ -58,9 +58,9 @@ export function SettingsFindResults({ query, index, pageOf, onOpen, onLeave, lis
     buttons.current[next]?.focus()
   }
   return <div className="settings-find__results">
-    <p className="tt-visually-hidden" id={statusId} role="status">{found.length === 0 ? '' : plural(count, { one: '# setting found', other: '# settings found' })}</p>
+    <p className="tt-visually-hidden tt-paragraph" id={statusId} role="status">{found.length === 0 ? '' : plural(count, { one: '# setting found', other: '# settings found' })}</p>
     {found.length === 0
-      ? <p className="settings-find__empty">{t`No setting matches “${search}”.`}</p>
+      ? <p className="settings-find__empty tt-paragraph">{t`No setting matches “${search}”.`}</p>
       : <ul ref={listRef} aria-label={t`Settings found`}>{found.map((entry, at) => <li key={`${entry.section}:${entry.label}`}>
         <button type="button" className="tt-focusable" ref={element => { if (element) buttons.current[at] = element }}
           onClick={() => onOpen(entry)} onKeyDown={event => move(event, at)}>

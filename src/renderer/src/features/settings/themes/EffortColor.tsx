@@ -19,8 +19,8 @@ export function EffortColorChoice({ value, onChoose }: {
   return (
     <div className="effort-colors">
       <h3 className="theme-settings__subheading" id={headingId}><Trans>Effort color</Trans></h3>
-      <p className="theme-settings__assignment-hint"><Trans>The color a thread’s effort control turns at its highest level.</Trans></p>
-      <div className="effort-colors__grid" role="group" aria-labelledby={headingId}>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The color a thread’s effort control turns at its highest level.</Trans></p>
+      <div className="effort-colors__grid" role="group" data-setting="effort-color" aria-labelledby={headingId}>
         {EFFORT_COLORS.map(id => {
           const active = id === value
           const color = EFFORT_COLOR_LABELS[id]
@@ -91,7 +91,7 @@ export function EffortColorSample({ effortColor, still }: {
       <div className="effort-sample__scene" key={run} aria-hidden="true">
         <div className="effort-sample__card">
           <div className="effort-sample__card-head"><p className="effort-sample__word">{letters}</p><span>{t({ message: 'Default', comment: 'Marks the model\'s default effort level on the effort card' })}</span></div>
-          <p className="effort-sample__line"><Trans>Everything the model has. Slowest, costliest.</Trans></p>
+          <p className="effort-sample__line tt-paragraph"><Trans>Everything the model has. Slowest, costliest.</Trans></p>
           <div className="effort-sample__track">
             <div className="effort-sample__pill"><div className="effort-sample__fill" />{STOPS.map(stop => <i key={stop} style={{ '--effort-stop': stop } as CSSProperties} />)}</div>
             <b className="effort-sample__thumb" />

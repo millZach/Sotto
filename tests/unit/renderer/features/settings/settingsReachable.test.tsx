@@ -66,7 +66,7 @@ describe.each<SottoPlatform>(['win32', 'darwin', 'linux'])('Every setting is rea
     for (const entry of index) {
       const page = settingsSectionHome(entry.section).page
       // A setting that shows only in some states lands on its fallback until then.
-      const control = findSettingControl(panelOf(page), entry.target ?? entry.label) ?? (entry.fallback ? findSettingControl(panelOf(page), entry.fallback) : null)
+      const control = findSettingControl(panelOf(page), entry.id) ?? (entry.fallback ? findSettingControl(panelOf(page), entry.fallback) : null)
       if (control) resolved.set(entry, control)
       else missing.push(`${entry.label} (${pageLabel(page)})`)
     }
@@ -159,8 +159,8 @@ describe('Find a setting', () => {
   })
 
   it('lands on the first computer’s projects folder when each computer has its own', () => {
-    document.body.innerHTML = '<section id="root"><label>Default projects directory on this computer<input aria-label="Default projects directory on this computer"></label><input aria-label="Default projects directory on forge"></section>'
-    const control = findSettingControl(document.getElementById('root')!, 'Default projects directory')
+    document.body.innerHTML = '<section id="root"><label>Default projects directory on this computer<input data-setting="projects-directory" aria-label="Default projects directory on this computer"></label><input data-setting="projects-directory" aria-label="Default projects directory on forge"></section>'
+    const control = findSettingControl(document.getElementById('root')!, 'projects-directory')
     expect(control).toHaveAttribute('aria-label', 'Default projects directory on this computer')
     document.body.innerHTML = ''
   })
@@ -205,6 +205,29 @@ describe('Find a setting', () => {
       }
       await user.keyboard('{Enter}')
       expect(screen.getByRole('combobox', { name: 'Mikrofon' })).toHaveFocus()
+    } finally {
+      act(() => i18n.activate('en'))
+    }
+  })
+
+  it('lands on a control its page still shows in English while the index shows a translated name', async () => {
+    const user = userEvent.setup()
+    withMain()
+    // Only the index's name and its page are translated here; the switch keeps its English name, as a part of the page
+    // another change has not translated yet would.
+    const translated = { 'Tell me when main freezes': 'Melden, wenn main hängt', Performance: 'Leistung', 'Find a setting': 'Einstellung suchen', 'Settings found': 'Gefundene Einstellungen' }
+    i18n.loadAndActivate({ locale: 'de', messages: Object.fromEntries(Object.entries(translated).map(([english, german]) => [generateMessageId(english), german])) })
+    try {
+      render(<SettingsView {...baseProps()} />)
+      const control = await waitFor(() => { const found = document.querySelector<HTMLElement>('[data-setting="main-freeze-notice"]'); expect(found).not.toBeNull(); return found! })
+      const field = screen.getByRole('searchbox', { name: 'Einstellung suchen' })
+      for (const typed of ['hängt', 'main freezes']) {
+        await user.clear(field)
+        await user.type(field, typed)
+        expect(within(screen.getByRole('list', { name: 'Gefundene Einstellungen' })).getAllByRole('button').map(button => button.textContent)).toEqual(['Melden, wenn main hängtLeistung'])
+      }
+      await user.keyboard('{Enter}')
+      expect(control).toHaveFocus()
     } finally {
       act(() => i18n.activate('en'))
     }

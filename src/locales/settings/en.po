@@ -72,8 +72,8 @@ msgid "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandN
 msgstr "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandNames} are behind on {host}.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{capMinutes, plural, other {{monthMinutes} of # minutes}}"
-msgstr "{capMinutes, plural, other {{monthMinutes} of # minutes}}"
+msgid "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
+msgstr "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{chosen, plural, one {Reset all roles to their defaults. # role is your choice} other {Reset all roles to their defaults. # roles are your choice}}"
@@ -114,6 +114,10 @@ msgstr "{count, plural, other {# themes updated from {extensionName}.}}"
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{count, plural, other {# themes updated.}}"
 msgstr "{count, plural, other {# themes updated.}}"
+
+#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
+msgid "{count, plural, other {Remove selected (#)}}"
+msgstr "{count, plural, other {Remove selected (#)}}"
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "{days, plural, one {# day ago} other {# days ago}}"
@@ -272,11 +276,6 @@ msgstr "{name} added. It’s now your dark theme."
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{name} added. It’s now your light theme."
 msgstr "{name} added. It’s now your light theme."
-
-#. The name a duplicated theme starts with
-#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
-msgid "{name} copy"
-msgstr "{name} copy"
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "{name} could not be added"
@@ -2381,10 +2380,6 @@ msgstr "Installing…"
 msgid "Instructions saved."
 msgstr "Instructions saved."
 
-#: src/renderer/src/features/settings/HostsSettings.tsx
-msgid "It also stops the host Sotto started there."
-msgstr "It also stops the host Sotto started there."
-
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "It could not be copied. Select it and copy it instead."
 msgstr "It could not be copied. Select it and copy it instead."
@@ -2392,10 +2387,6 @@ msgstr "It could not be copied. Select it and copy it instead."
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "It is waiting for your answer there."
 msgstr "It is waiting for your answer there."
-
-#: src/renderer/src/features/settings/HostsSettings.tsx
-msgid "It removes start at boot from {name}, so its host does not start again when {name} restarts."
-msgstr "It removes start at boot from {name}, so its host does not start again when {name} restarts."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "It restarted once outside the unit and is connected again."
@@ -2472,10 +2463,8 @@ msgstr "Keep starting at boot"
 msgid "Keep the small dictation sliver on screen between sessions. Click it to dictate."
 msgstr "Keep the small dictation sliver on screen between sessions. Click it to dictate."
 
-#. The label of the run.cloud API key field on Settings > Cloud iPhone.
 #. The run.cloud key, a secret that lets Sotto use the service.
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Key"
 msgstr "Key"
 
@@ -2612,7 +2601,6 @@ msgstr "Match {system}"
 msgid "Max"
 msgstr "Max"
 
-#: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Maximum recording time"
 msgstr "Maximum recording time"
@@ -2684,11 +2672,6 @@ msgstr "mise installed {to}, but {name}'s install step did not finish, so {host}
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "mise stopped with an error. {installed} is still installed."
 msgstr "mise stopped with an error. {installed} is still installed."
-
-#. The label of the cleanup mode choice on Settings > Cleanup: which OpenRouter host serves the cleanup model.
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Mode"
-msgstr "Mode"
 
 #. A composer chip standing for the model
 #. A worker role field: the model it runs on
@@ -3087,10 +3070,6 @@ msgid "Opened {page} in your browser."
 msgstr "Opened {page} in your browser."
 
 #: src/renderer/src/features/settings/settingsPages.ts
-msgid "OpenRouter API key"
-msgstr "OpenRouter API key"
-
-#: src/renderer/src/features/settings/settingsPages.ts
 msgid "OpenRouter key"
 msgstr "OpenRouter key"
 
@@ -3245,7 +3224,6 @@ msgstr "Phone access on {name}"
 msgid "Phone access on {name} could not be changed. Nothing was changed. Try again."
 msgstr "Phone access on {name} could not be changed. Nothing was changed. Try again."
 
-#: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Phones"
 msgstr "Phones"
@@ -3348,7 +3326,6 @@ msgid "Press the new keys…"
 msgstr "Press the new keys…"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
-#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Press to start and stop"
 msgstr "Press to start and stop"
 
@@ -3550,10 +3527,6 @@ msgstr "Remove saved text without changing settings or models."
 msgid "Remove selected"
 msgstr "Remove selected"
 
-#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
-msgid "Remove selected ({count})"
-msgstr "Remove selected ({count})"
-
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Remove shortcut, {words}"
 msgstr "Remove shortcut, {words}"
@@ -3696,7 +3669,6 @@ msgstr "Run a quick input-level test."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Run the local host"
 msgstr "Run the local host"
 
@@ -3717,8 +3689,8 @@ msgid "Same as this computer ({computerLanguage})"
 msgstr "Same as this computer ({computerLanguage})"
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
-msgid "saturation {saturation}%, brightness {brightness}%"
-msgstr "saturation {saturation}%, brightness {brightness}%"
+msgid "saturation {saturation}, brightness {brightness}"
+msgstr "saturation {saturation}, brightness {brightness}"
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Save changes"
@@ -5032,8 +5004,20 @@ msgid "This replaces its installed variants, including any local edits. Variants
 msgstr "This replaces its installed variants, including any local edits. Variants no longer in the extension will be removed."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
-msgid "This revokes this computer's access on the host and removes the saved connection."
-msgstr "This revokes this computer's access on the host and removes the saved connection."
+msgid "This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. It removes start at boot from {name}, so its host does not start again when {name} restarts. Threads stay on the host."
+msgstr "This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. It removes start at boot from {name}, so its host does not start again when {name} restarts. Threads stay on the host."
+
+#: src/renderer/src/features/settings/HostsSettings.tsx
+msgid "This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. Threads stay on the host."
+msgstr "This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. Threads stay on the host."
+
+#: src/renderer/src/features/settings/HostsSettings.tsx
+msgid "This revokes this computer's access on the host and removes the saved connection. It removes start at boot from {name}, so its host does not start again when {name} restarts. Threads stay on the host."
+msgstr "This revokes this computer's access on the host and removes the saved connection. It removes start at boot from {name}, so its host does not start again when {name} restarts. Threads stay on the host."
+
+#: src/renderer/src/features/settings/HostsSettings.tsx
+msgid "This revokes this computer's access on the host and removes the saved connection. Threads stay on the host."
+msgstr "This revokes this computer's access on the host and removes the saved connection. Threads stay on the host."
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This SSH host and username are too long together. Nothing was saved. Use a shorter alias from your SSH configuration."
@@ -5060,10 +5044,6 @@ msgstr "Thread providers"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Threads"
 msgstr "Threads"
-
-#: src/renderer/src/features/settings/HostsSettings.tsx
-msgid "Threads stay on the host."
-msgstr "Threads stay on the host."
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."

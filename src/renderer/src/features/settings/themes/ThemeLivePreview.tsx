@@ -59,7 +59,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
         </div>
       </div>
       <EffortColorSample effortColor={shown.effortColor} still={still || systemStill} />
-      <p>{followsOmarchy ? t`The widget follows the Omarchy theme’s mode.` : t`The widget follows ${system} light or dark mode.`}</p>
+      <p className="tt-paragraph">{followsOmarchy ? t`The widget follows the Omarchy theme’s mode.` : t`The widget follows ${system} light or dark mode.`}</p>
     </aside>
   )
 }

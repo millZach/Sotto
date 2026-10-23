@@ -11,8 +11,8 @@
 
 import React, { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { Download, ExternalLink, PackagePlus, Plus, RefreshCw, Search, X } from 'lucide-react'
-import type { MessageDescriptor } from '@lingui/core'
-import { msg, plural, t } from '@lingui/core/macro'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import { MAX_THEME_FILE_BYTES, OPEN_VSX_SORTS, type OpenVsxThemeExtension, type OpenVsxThemeSort } from '../../../../../shared/themes/bridge'
@@ -20,12 +20,14 @@ import { parseJsonc } from '../../../../../shared/themes/jsonc'
 import { parseThemeFile, type ThemeDefinition } from '../../../../../shared/themes/library'
 import { isVsCodeThemeFile, humanizeThemeName, pairVsCodeThemes, parseVsCodeThemeFile, resolveThemeLabelCollisions } from '../../../../../shared/themes/vscodeImport'
 import { Button } from '../../../components/Button'
+import { shownWords, type LaterWords } from '../laterWords'
 import {
   installThemesPatch,
   replaceCollectionPatch,
   updateThemesPatch,
   useThemePatch,
   versionedCopy,
+  ThemeLibraryError,
   type ThemeLibraryWriter,
 } from './themeLibrary'
 
@@ -36,34 +38,46 @@ const SORT_LABELS: Readonly<Record<OpenVsxThemeSort, MessageDescriptor>> = {
   relevance: msg`Most relevant`,
 }
 // Theme names people search for, not words.
-
 const SUGGESTED_SEARCHES = ['Dracula', 'Catppuccin', 'Nord', 'Tokyo Night']
 const SEARCH_DEBOUNCE_MS = 350
-const DOWNLOADS = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
+/** A download count the way the interface language writes a short number: 1.2K, 3M. */
+const downloadsIn = (count: number): string => new Intl.NumberFormat(i18n.locale, { notation: 'compact', maximumFractionDigits: 1 }).format(count)
 
+/** A file size with its number written in the interface language. The units stay as written. */
 function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${bytes} bytes`
+  const number = (value: number, digits: number): string => new Intl.NumberFormat(i18n.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
+  if (bytes >= 1024 * 1024) return `${number(bytes / (1024 * 1024), 1)} MB`
+  if (bytes >= 1024) return `${number(Math.round(bytes / 1024), 0)} KB`
+  return `${number(bytes, 0)} bytes`
 }
 
 /** The message for a file too large to be a theme, else null. The size is checked before any byte is read. */
-export function describeOversizedThemeFile(bytes: number): string | null {
+function oversizedThemeFile(bytes: number): MessageDescriptor | null {
   if (bytes <= MAX_THEME_FILE_BYTES) return null
   const size = formatBytes(bytes)
   const limit = formatBytes(MAX_THEME_FILE_BYTES)
-  return t`That file is ${size}. Theme files are only a few KB, so this one was not read (limit ${limit}).`
+  return msg`That file is ${size}. Theme files are only a few KB, so this one was not read (limit ${limit}).`
+}
+
+/** The same message, as it reads now. */
+export function describeOversizedThemeFile(bytes: number): string | null {
+  return shownWords(oversizedThemeFile(bytes))
+}
+
+/** What to show for a failure: a refusal Sotto wrote, read when shown; another error's own words; or the fallback. */
+function wordsOf(cause: unknown, fallback: MessageDescriptor): LaterWords {
+  return cause instanceof ThemeLibraryError ? cause.words : cause instanceof Error ? cause.message : fallback
 }
 
 /** Parse pasted or file text as a T3 Code theme file or a VS Code colour theme. Throws a message fit to show. */
 export function parseImportedThemeText(text: string): ThemeDefinition {
-  const oversized = describeOversizedThemeFile(new TextEncoder().encode(text).byteLength)
-  if (oversized) throw new Error(oversized)
+  const oversized = oversizedThemeFile(new TextEncoder().encode(text).byteLength)
+  if (oversized) throw new ThemeLibraryError(oversized)
   let value: unknown
   try {
     value = parseJsonc(text)
   } catch {
-    throw new Error(t`That is not valid JSON. Check for a missing comma or quote.`)
+    throw new ThemeLibraryError(msg`That is not valid JSON. Check for a missing comma or quote.`)
   }
   return isVsCodeThemeFile(value) ? parseVsCodeThemeFile(value) : parseThemeFile(value)
 }
@@ -73,8 +87,11 @@ interface ImportableFile { readonly name: string; readonly size: number; readonl
 export interface ThemeImportDialogProps {
   readonly writer: ThemeLibraryWriter
   readonly onClose: () => void
-  readonly onNotice: (message: string) => void
+  readonly onNotice: (message: LaterWords) => void
 }
+
+/** One failed file in a batch, its name beside why; or a failure of the whole batch. */
+type BatchFailure = LaterWords | { readonly file: string; readonly reason: LaterWords }
 
 export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDialogProps): ReactNode {
   const { t } = useLingui()
@@ -84,7 +101,8 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
   const jsonId = useId()
   const [json, setJson] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // A batch keeps each failure apart and joins them as they are shown.
+  const [error, setError] = useState<LaterWords | readonly BatchFailure[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [dropTarget, setDropTarget] = useState(false)
   // Imports whose id is already saved wait here for an update-or-copy decision.
@@ -104,7 +122,7 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
   }, [])
 
   const readSingle = async (file: ImportableFile): Promise<void> => {
-    const oversized = describeOversizedThemeFile(file.size)
+    const oversized = oversizedThemeFile(file.size)
     if (oversized) {
       setError(oversized)
       return
@@ -118,7 +136,7 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
       setFileName(file.name)
       setError(null)
     } catch {
-      if (id === request.current) setError(t`Could not read that file. Paste the JSON below instead.`)
+      if (id === request.current) setError(msg`Could not read that file. Paste the JSON below instead.`)
     } finally {
       if (id === request.current) setBusy(false)
     }
@@ -129,24 +147,23 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
   const readBatch = async (files: readonly ImportableFile[]): Promise<void> => {
     const id = ++request.current
     setBusy(true)
-    const failures: string[] = []
+    const failures: BatchFailure[] = []
     const parsed: Array<{ theme: ThemeDefinition; sourceName: string }> = []
     try {
       for (const file of files.slice(0, 40)) {
         const fileName = file.name
-        const oversized = describeOversizedThemeFile(file.size)
-        if (oversized) {
-          failures.push(t`${fileName}: too large`)
+        if (oversizedThemeFile(file.size)) {
+          failures.push(msg`${fileName}: too large`)
           continue
         }
         try {
           parsed.push({ sourceName: file.name, theme: parseImportedThemeText(await file.text()) })
         } catch (cause) {
-          failures.push(`${fileName}: ${cause instanceof Error ? cause.message : t`not a theme file`}`)
+          failures.push({ file: fileName, reason: wordsOf(cause, msg`not a theme file`) })
         }
       }
       const fileCount = files.length
-      if (fileCount > 40) failures.push(plural(fileCount, { other: 'Only the first 40 of # files were read.' }))
+      if (fileCount > 40) failures.push(msg`${plural(fileCount, { other: 'Only the first 40 of # files were read.' })}`)
       if (id !== request.current) return
       const themes = pairVsCodeThemes(resolveThemeLabelCollisions(parsed))
       let conflicting: ThemeDefinition[] = []
@@ -160,15 +177,15 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
         const names = result.fresh.map(theme => theme.label).join(', ')
         const name = result.fresh[0]?.label ?? ''
         const added = result.fresh.length
-        if (!result.saved) failures.push(t`The themes could not be saved.`)
-        else if (result.fresh.length === 1) onNotice(t`${name} added: ${names}`)
-        else if (result.fresh.length > 0) onNotice(plural(added, { other: `# themes added: ${names}` }))
+        if (!result.saved) failures.push(msg`The themes could not be saved.`)
+        else if (result.fresh.length === 1) onNotice(msg`${name} added: ${names}`)
+        else if (result.fresh.length > 0) onNotice(msg`${plural(added, { other: `# themes added: ${names}` })}`)
       }
-      if (failures.length > 0) setError(failures.join(' — '))
+      if (failures.length > 0) setError(failures)
       else if (conflicting.length > 0) setConflicts(conflicting)
       else if (themes.length > 0) onClose()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`Those themes could not be added.`)
+      setError(wordsOf(cause, msg`Those themes could not be added.`))
     } finally {
       if (id === request.current) setBusy(false)
     }
@@ -185,7 +202,7 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
     try {
       theme = parseImportedThemeText(json)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`That theme file is invalid.`)
+      setError(wordsOf(cause, msg`That theme file is invalid.`))
       return
     }
     setBusy(true)
@@ -201,15 +218,15 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
         return
       }
       if (!result.saved) {
-        setError(t`The theme could not be saved. Your saved themes are unchanged.`)
+        setError(msg`The theme could not be saved. Your saved themes are unchanged.`)
         return
       }
       const name = theme.label
-      onNotice(theme.variants ? t`${name} added. It’s now active.`
-        : theme.appearance === 'light' ? t`${name} added. It’s now your light theme.` : t`${name} added. It’s now your dark theme.`)
+      onNotice(theme.variants ? msg`${name} added. It’s now active.`
+        : theme.appearance === 'light' ? msg`${name} added. It’s now your light theme.` : msg`${name} added. It’s now your dark theme.`)
       onClose()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`That theme could not be added.`)
+      setError(wordsOf(cause, msg`That theme could not be added.`))
     } finally {
       setBusy(false)
     }
@@ -238,17 +255,17 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
         return { patch: installThemesPatch(state, copies), themes: copies }
       })
       if (!result.saved) {
-        setError(t`The themes could not be saved. Your saved themes are unchanged.`)
+        setError(msg`The themes could not be saved. Your saved themes are unchanged.`)
         return
       }
       const count = result.themes.length
       const name = result.themes[0]?.label ?? ''
       onNotice(mode === 'update'
-        ? count === 1 ? t`${name} updated.` : plural(count, { other: '# themes updated.' })
-        : count === 1 ? t`${name} added.` : plural(count, { other: '# themes added.' }))
+        ? count === 1 ? msg`${name} updated.` : msg`${plural(count, { other: '# themes updated.' })}`
+        : count === 1 ? msg`${name} added.` : msg`${plural(count, { other: '# themes added.' })}`)
       onClose()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`Those themes could not be saved.`)
+      setError(wordsOf(cause, msg`Those themes could not be saved.`))
     } finally {
       setBusy(false)
     }
@@ -295,7 +312,7 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
                 <div className="theme-import__drop" data-drop-target={dropTarget || undefined} {...dropHandlers}>
                   <div>
                     <p className="theme-import__label"><Trans>Theme file</Trans></p>
-                    <p className="theme-import__hint">{fileName ?? t`Drop T3 Code or VS Code .json files`}</p>
+                    <p className={fileName === null ? 'theme-import__hint tt-paragraph' : 'theme-import__hint'}>{fileName ?? t`Drop T3 Code or VS Code .json files`}</p>
                   </div>
                   <Button variant="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>
                     <Download size={15} aria-hidden="true" />{busy ? t`Reading…` : t`Choose files`}
@@ -337,13 +354,18 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
                 </div>
               </>
             )}
-        {error === null ? null : <p className="theme-import__error" role="alert">{error}</p>}
+        {error === null ? null : <p className="theme-import__error tt-paragraph" role="alert">{Array.isArray(error) ? error.map(failureWords).join(' — ') : shownWords(error as LaterWords)}</p>}
       </div>
     </dialog>
   )
 }
 
-function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryWriter; readonly onInstalled: (message: string) => void }): ReactNode {
+/** A batch failure as it reads now: a file's name beside why it failed, or the failure itself. */
+function failureWords(failure: BatchFailure): string {
+  return typeof failure === 'object' && 'file' in failure ? `${failure.file}: ${shownWords(failure.reason)}` : shownWords(failure)
+}
+
+function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryWriter; readonly onInstalled: (message: LaterWords) => void }): ReactNode {
   const { t, i18n } = useLingui()
   const bridge = typeof window === 'undefined' ? undefined : window.sotto?.themes
   const headingId = useId()
@@ -351,7 +373,7 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
   const [sortBy, setSortBy] = useState<OpenVsxThemeSort>('downloadCount')
   const [results, setResults] = useState<OpenVsxThemeExtension[] | null>(null)
   const found = results?.length ?? 0
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [searching, setSearching] = useState(false)
   const [installing, setInstalling] = useState<string | null>(null)
   const [pendingUpdate, setPendingUpdate] = useState<OpenVsxThemeExtension | null>(null)
@@ -373,7 +395,7 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
     if (result?.ok) setResults(result.value)
     else {
       setResults(null)
-      setError(result?.error.message ?? t`Open VSX search is unavailable right now.`)
+      setError(result?.error.message ?? msg`Open VSX search is unavailable right now.`)
     }
   }
 
@@ -398,12 +420,12 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
     try {
       const result = await bridge.installOpenVsx({ namespace: extension.namespace, name: extension.name }).catch(() => null)
       if (!result?.ok) {
-        setError(result?.error.message ?? t`That theme could not be added.`)
+        setError(result?.error.message ?? msg`That theme could not be added.`)
         return
       }
       const saved = await writer.run(state => ({ patch: replaceCollectionPatch(state, result.value.extension.collectionId, result.value.themes) }))
       if (!saved.saved) {
-        setError(t`The themes could not be saved. Your saved themes are unchanged.`)
+        setError(msg`The themes could not be saved. Your saved themes are unchanged.`)
         return
       }
       const themes = result.value.themes
@@ -411,10 +433,10 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
       const extensionName = result.value.extension.displayName
       const count = themes.length
       onInstalled(installedAlready
-        ? themes.length === 1 ? t`${name} updated from ${extensionName}.` : plural(count, { other: `# themes updated from ${extensionName}.` })
-        : themes.length === 1 ? t`${name} added from ${extensionName}.` : plural(count, { other: `# themes added from ${extensionName}.` }))
+        ? themes.length === 1 ? msg`${name} updated from ${extensionName}.` : msg`${plural(count, { other: `# themes updated from ${extensionName}.` })}`
+        : themes.length === 1 ? msg`${name} added from ${extensionName}.` : msg`${plural(count, { other: `# themes added from ${extensionName}.` })}`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`That theme could not be added.`)
+      setError(wordsOf(cause, msg`That theme could not be added.`))
     } finally {
       setInstalling(null)
     }
@@ -424,9 +446,9 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
   return (
     <section className="theme-search" aria-labelledby={headingId}>
       <h3 id={headingId}><Trans>Search community themes</Trans></h3>
-      <p className="theme-import__hint"><Trans>Find open-source VS Code color themes on Open VSX. Sotto downloads the extension, checks its checksum and license, and keeps only its colors.</Trans></p>
+      <p className="theme-import__hint tt-paragraph"><Trans>Find open-source VS Code color themes on Open VSX. Sotto downloads the extension, checks its checksum and license, and keeps only its colors.</Trans></p>
       {bridge === undefined
-        ? <p className="theme-import__hint" role="status"><Trans>Open VSX search is not available in this window.</Trans></p>
+        ? <p className="theme-import__hint tt-paragraph" role="status"><Trans>Open VSX search is not available in this window.</Trans></p>
         : (
             <>
               <div className="theme-search__field">
@@ -456,13 +478,13 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
               </div>
             </>
           )}
-      <p className="tt-visually-hidden" role="status">{searching ? t`Searching themes…` : results ? plural(found, { one: '# supported theme found.', other: '# supported themes found.' }) : ''}</p>
-      {error === null ? null : <p className="theme-import__error" role="alert">{error}</p>}
+      <p className="tt-visually-hidden tt-paragraph" role="status">{searching ? t`Searching themes…` : results ? plural(found, { one: '# supported theme found.', other: '# supported themes found.' }) : ''}</p>
+      {error === null ? null : <p className="theme-import__error tt-paragraph" role="alert">{shownWords(error)}</p>}
       {pendingUpdate
         ? (
             <div className="theme-import__conflicts" role="group" aria-label={t`Update ${pendingName}`}>
               <p className="theme-import__label"><Trans>Update “{pendingName}”?</Trans></p>
-              <p className="theme-import__hint"><Trans>This replaces its installed variants, including any local edits. Variants no longer in the extension will be removed.</Trans></p>
+              <p className="theme-import__hint tt-paragraph"><Trans>This replaces its installed variants, including any local edits. Variants no longer in the extension will be removed.</Trans></p>
               <div className="theme-import__actions">
                 <Button variant="primary" onClick={() => void install(pendingUpdate, true)}><Trans>Update theme</Trans></Button>
                 <Button variant="ghost" onClick={() => setPendingUpdate(null)}><Trans>Cancel</Trans></Button>
@@ -470,10 +492,10 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
             </div>
           )
         : null}
-      {searching && results === null ? <p className="theme-import__hint"><Trans>Searching themes…</Trans></p> : null}
+      {searching && results === null ? <p className="theme-import__hint tt-paragraph"><Trans>Searching themes…</Trans></p> : null}
       {results
         ? results.length === 0
-          ? <p className="theme-search__empty"><Trans>No supported open-source themes found. Try a broader search.</Trans></p>
+          ? <p className="theme-search__empty tt-paragraph"><Trans>No supported open-source themes found. Try a broader search.</Trans></p>
           : (
               <ul className="theme-search__results">
                 {results.map(extension => {
@@ -481,7 +503,7 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
                   const busy = installing === extension.id
                   const extensionName = extension.displayName
                   const downloadCount = extension.downloadCount
-                  const downloads = DOWNLOADS.format(downloadCount)
+                  const downloads = downloadsIn(downloadCount)
                   const label = busy
                     ? installedAlready ? t`Updating ${extensionName}` : t`Installing ${extensionName}`
                     : installedAlready ? t`Update ${extensionName}` : t`Install ${extensionName}`
@@ -494,7 +516,7 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
                         <h4>{extension.displayName}</h4>
                         <p className="theme-import__hint">{extension.namespace} · {plural(downloadCount, { other: `${downloads} downloads` })} · {extension.license}</p>
                       </div>
-                      <p className="theme-search__description">{extension.description || t`A community color theme for your editor.`}</p>
+                      <p className={extension.description ? 'theme-search__description' : 'theme-search__description tt-paragraph'}>{extension.description || t`A community color theme for your editor.`}</p>
                       <div className="theme-search__result-actions">
                         {extension.sourceUrl && window.sotto?.openExternalLink
                           ? <Button variant="ghost" iconOnly aria-label={t`View source for ${extensionName}`} onClick={() => void window.sotto?.openExternalLink?.(extension.sourceUrl!)}><ExternalLink size={14} aria-hidden="true" /></Button>

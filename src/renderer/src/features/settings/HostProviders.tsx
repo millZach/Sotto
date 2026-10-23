@@ -19,6 +19,7 @@ import { hostOpenCodeBridge } from './hostOpenCode'
 import { HostProviderAgent } from './HostProviderAgent'
 import { HostClientUpdatesChip, tileUpdateParts, useHostClientUpdates, waitingForOf, type SendClientUpdate } from './HostClientUpdates'
 import type { HostClientUpdatesView } from './hostClientUpdateWords'
+import { shownWords, type LaterWords } from './laterWords'
 import './hostProviders.css'
 
 /** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037), then Muse and OpenCode (#1107). */
@@ -77,12 +78,12 @@ function SignInCommand({ host, provider }: { readonly host: string; readonly pro
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => { try { await writeClipboard(command); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
-    <p><Trans>Sign in on {host} with:</Trans></p>
+    <p className="tt-paragraph"><Trans>Sign in on {host} with:</Trans></p>
     <code>{command}</code>
     <Button variant="secondary" aria-label={t`Copy the ${name} sign-in command`} onClick={() => void copy()}>
       {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy`}
     </Button>
-    {copied === 'failed' ? <p><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
+    {copied === 'failed' ? <p className="tt-paragraph"><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
     <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the command` : ''}</span>
   </div>
 }
@@ -93,20 +94,21 @@ const running = (job: HostProviderJobState): boolean => job.phase === 'starting'
  * What an ended provider job left to say on its tile: how it ended, and the thread that did the work. Found says so only
  * while the tile waits for Sign in; once signed in, the tile says the rest.
  */
-function jobNote(job: HostProviderJobState | undefined, kind: HostProviderTileKind): string {
+function jobNote(job: HostProviderJobState | undefined, kind: HostProviderTileKind): LaterWords {
   if (!job || running(job)) return ''
   const { host, modelName: model, threadTitle: thread } = job
-  if (job.phase === 'found') return kind !== 'signed-out' ? '' : i18n._(msg`${host}'s host found it. ${model} worked in the thread ${thread}.`)
+  if (job.phase === 'found') return kind !== 'signed-out' ? '' : msg`${host}'s host found it. ${model} worked in the thread ${thread}.`
   if (kind !== 'not-installed' && kind !== 'too-old' && kind !== 'cannot-start') return ''
-  if (job.phase === 'stopped') return i18n._(msg`Stopped. Anything the agent installed on ${host} stays there, and the thread ${thread} stays in your Threads list.`)
-  if (job.phase === 'failed') return job.error ?? i18n._(msg`The thread ${thread} did not start working. Nothing was changed on ${host}.`)
+  if (job.phase === 'stopped') return msg`Stopped. Anything the agent installed on ${host} stays there, and the thread ${thread} stays in your Threads list.`
+  // The job's own sentence from main, when it failed with one.
+  if (job.phase === 'failed') return job.error ?? msg`The thread ${thread} did not start working. Nothing was changed on ${host}.`
   return ''
 }
 
 /** What a tile needs of its host's client updates (#480). */
 interface TileUpdates {
   readonly view: HostClientUpdatesView; readonly run: ClientUpdateRun | undefined; readonly send: SendClientUpdate; readonly busy: boolean
-  readonly refusal: { readonly providers: readonly ProviderId[]; readonly text: string } | undefined
+  readonly refusal: { readonly providers: readonly ProviderId[]; readonly text: LaterWords } | undefined
 }
 
 function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, updates }: {
@@ -128,7 +130,7 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
   const [pending, setPending] = useState<Pending | null>(null)
   const [stopping, setStopping] = useState(false)
   /** What the last press found, for the state it was pressed in: a tile the press changed has already said it. */
-  const [note, setNote] = useState<{ readonly text: string; readonly kind: HostProviderTileKind } | null>(null)
+  const [note, setNote] = useState<{ readonly text: LaterWords; readonly kind: HostProviderTileKind } | null>(null)
   const titleId = useId()
   const actions = useRef<HTMLDivElement>(null)
   // A connected client that is behind, waiting, updating or did not update says so under its version (#480).
@@ -182,10 +184,10 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     try {
       const result = await bridge.providerAction({ id: host.id, provider, action })
       // Check again that finds nothing new says so; its refusal is the same sentence the tile already stands for.
-      if (action === 'refresh') setNote({ text: t`Checked again. Nothing changed on ${hostName}.`, kind: before })
+      if (action === 'refresh') setNote({ text: msg`Checked again. Nothing changed on ${hostName}.`, kind: before })
       else if (result.error) setNote({ text: result.error, kind: before })
     } catch (failure) {
-      setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`${hostName} did not answer. Nothing was changed. Try again.`, kind: before })
+      setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`${hostName} did not answer. Nothing was changed. Try again.`, kind: before })
     } finally { setPending(null) }
   }
   /** Show thread: the Threads page, on the job's thread. The job carries on. */
@@ -198,10 +200,10 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     if (!working || stopping) return
     setStopping(true)
     try { await bridge.command({ type: 'stop-provider-job', id: working.id }) }
-    catch (failure) { setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`The agent could not be stopped. Try again.`, kind: 'working' }) }
+    catch (failure) { setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`The agent could not be stopped. Try again.`, kind: 'working' }) }
     finally { setStopping(false) }
   }
-  const shownNote = refused ?? (note && note.kind === tile.kind ? note.text : jobNote(job, tile.kind) || parts.note || '')
+  const shownNote: LaterWords = refused ?? (note && note.kind === tile.kind ? note.text : jobNote(job, tile.kind) || parts.note || '')
   const jobCase = hostProviderJobCase(status)
   const action = (): ReactNode => {
     // Keys keep a pressed control from turning into another one in place: Stop must not become Check again under focus.
@@ -239,11 +241,11 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
       <h5 id={titleId}>{name}</h5>
     </div>
     <p className="host-provider__state"><span className="host-provider__dot" aria-hidden="true" />{tile.state}</p>
-    {working ? <p className="host-provider__detail"><Trans>In the thread <b>{workingThread}</b> on this computer.</Trans></p>
+    {working ? <p className="host-provider__detail tt-paragraph"><Trans>In the thread <b>{workingThread}</b> on this computer.</Trans></p>
       : tile.detail ? <p className="host-provider__detail">{tile.detail}</p> : null}
     {parts.line}{parts.below ? <div className="host-client-update__below">{parts.below}</div> : null}
     <div ref={actions} className="host-provider__act" onFocus={focusIn} onBlur={focusOut}>{action()}</div>
-    <p className="host-provider__note" role="status">{shownNote}</p>
+    <p className={typeof shownNote === 'string' ? 'host-provider__note' : 'host-provider__note tt-paragraph'} role="status">{shownWords(shownNote)}</p>
   </li>
 }
 
@@ -289,11 +291,11 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
       if (result.error) setRefusal({ providers: ids, text: result.error })
       return result.error
     } catch (failure) {
-      const text = failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`${hostName} did not answer. Nothing was changed. Try again.`
+      const text = failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`${hostName} did not answer. Nothing was changed. Try again.`
       setRefusal({ providers: ids, text })
       return text
     } finally { setSending(false) }
-  }, [bridge, host.id, hostName, t])
+  }, [bridge, host.id, hostName])
   const tileUpdates: TileUpdates | undefined = updates ? { view, run, send, busy: sending, refusal } : undefined
   /**
    * The dialog closes onto its tile. Escape gives focus back to the button that opened it; Start removes that button, so
@@ -323,7 +325,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
       </ul>
       {opencodeBridge && opencodeConnected ? <OpenCodeModelSources bridge={opencodeBridge} host={host.name} /> : null}
       {heldProviders.has('opencode') || opencodeOnHost ? null : <p className="host-providers__foot">{opencodeNotOnHost(host.name)}</p>}
-      <p className="host-providers__foot"><Trans>{hostName} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</Trans></p>
+      <p className="host-providers__foot tt-paragraph"><Trans>{hostName} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</Trans></p>
     </div> : null}
     {signingIn ? <HostProviderSignIn host={host} provider={signingIn} bridge={bridge} onClose={() => setSigningIn(null)} /> : null}
     {agent ? <HostProviderAgent host={host} provider={agent.provider} jobCase={agent.jobCase} choice={choice} bridge={bridge} onClose={closeAgent} /> : null}

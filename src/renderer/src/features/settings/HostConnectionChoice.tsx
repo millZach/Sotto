@@ -31,7 +31,7 @@ export function HostConnectionChoice({ host, value, opened, disabled, onChange }
       <label className="host-setup__choice" data-checked={value === 'tailnet' || undefined} data-disabled={!paired || undefined}>
         {radio('tailnet', tailnetId, tailnetHintId)}
         <span className="host-setup__choice-name" id={tailnetId}>{t`Over your tailnet, SSH when it can’t`}</span>
-        <span className="host-setup__choice-text" id={tailnetHintId}>{address
+        <span className="host-setup__choice-text tt-paragraph" id={tailnetHintId}>{address
           ? when
             ? <Trans>At <span className="hosts-dialog__address">{address}</span>, last reached at {when}.</Trans>
             : <Trans>At <span className="hosts-dialog__address">{address}</span>.</Trans>
@@ -41,9 +41,9 @@ export function HostConnectionChoice({ host, value, opened, disabled, onChange }
       <label className="host-setup__choice" data-checked={value === 'ssh' || undefined} data-disabled={!paired || undefined}>
         {radio('ssh', sshId, sshHintId)}
         <span className="host-setup__choice-name" id={sshId}>{t`SSH only`}</span>
-        <span className="host-setup__choice-text" id={sshHintId}><Trans>Every connection signs in over SSH, and Tailscale may ask you to approve it each time.</Trans></span>
+        <span className="host-setup__choice-text tt-paragraph" id={sshHintId}><Trans>Every connection signs in over SSH, and Tailscale may ask you to approve it each time.</Trans></span>
       </label>
     </div>
-    {!paired ? <p className="tt-field__description"><Trans>Connect to {hostName} once before choosing how Sotto connects.</Trans></p> : null}
+    {!paired ? <p className="tt-field__description tt-paragraph"><Trans>Connect to {hostName} once before choosing how Sotto connects.</Trans></p> : null}
   </fieldset>
 }

@@ -1,4 +1,5 @@
 import React, { useId, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import {
@@ -11,6 +12,7 @@ import {
   type MenuBarOwlBody,
   type MenuBarOwlEyes,
 } from '../../../../shared/menuBarOwl'
+import type { LaterWords } from './laterWords'
 import './menuBarOwl.css'
 
 /**
@@ -20,13 +22,13 @@ import './menuBarOwl.css'
 export function MenuBarOwlSettings({ body, eyes, onChoose }: {
   readonly body: MenuBarOwlBody
   readonly eyes: MenuBarOwlEyes
-  readonly onChoose: (patch: { menuBarOwlBody: MenuBarOwlBody } | { menuBarOwlEyes: MenuBarOwlEyes }, successText: string) => void
+  readonly onChoose: (patch: { menuBarOwlBody: MenuBarOwlBody } | { menuBarOwlEyes: MenuBarOwlEyes }, successText: LaterWords) => void
 }): ReactNode {
   const { t } = useLingui()
   return (
-    <div className="menu-bar-owl">
+    <div className="menu-bar-owl" data-setting="menu-bar-owl">
       <h3 className="theme-settings__subheading"><Trans>Menu bar owl</Trans></h3>
-      <p className="theme-settings__assignment-hint"><Trans>The owl perched on a branch in your menu bar.</Trans></p>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The owl perched on a branch in your menu bar.</Trans></p>
       <SwatchGroup
         title={t({ message: 'Body', comment: "The menu bar owl's body, whose color the swatches below choose" })}
         choiceLabel={(label, active) => active ? t`Use ${label} as the owl's body color, currently active` : t`Use ${label} as the owl's body color`}
@@ -34,7 +36,7 @@ export function MenuBarOwlSettings({ body, eyes, onChoose }: {
         labels={MENU_BAR_OWL_BODY_LABELS}
         swatches={MENU_BAR_OWL_BODY_SWATCHES}
         value={body}
-        onChoose={id => onChoose({ menuBarOwlBody: id }, t`Owl body saved.`)}
+        onChoose={id => onChoose({ menuBarOwlBody: id }, msg`Owl body saved.`)}
       />
       <SwatchGroup
         title={t({ message: 'Eyes', comment: "The menu bar owl's eyes, whose color the swatches below choose" })}
@@ -43,7 +45,7 @@ export function MenuBarOwlSettings({ body, eyes, onChoose }: {
         labels={MENU_BAR_OWL_EYES_LABELS}
         swatches={MENU_BAR_OWL_EYES_SWATCHES}
         value={eyes}
-        onChoose={id => onChoose({ menuBarOwlEyes: id }, t`Owl eyes saved.`)}
+        onChoose={id => onChoose({ menuBarOwlEyes: id }, msg`Owl eyes saved.`)}
       />
     </div>
   )

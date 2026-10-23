@@ -2,6 +2,7 @@ import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 
 import type { HostAddTailnet, HostTailnetNote } from '../../../../shared/hosts'
+import { shownWords, type LaterWords } from './laterWords'
 import { mergedWhen } from '../../tools/pullRequestSurface.logic'
 
 /**
@@ -46,7 +47,7 @@ export const TRY_TAILNET_AGAIN = msg`Try the tailnet again`
  * Add host's tailnet step as its checklist shows it: still to come, under way, done, or the host kept on its SSH connection
  * with why. `error` is the sentence a press of Try the tailnet again came back with.
  */
-export type TailnetStepView = { readonly state: 'todo' } | HostAddTailnet | { readonly state: 'ssh'; readonly why: 'error'; readonly error: string }
+export type TailnetStepView = { readonly state: 'todo' } | HostAddTailnet | { readonly state: 'ssh'; readonly why: 'error'; readonly error: LaterWords }
 
 /** What the tailnet step says when the host stayed on SSH: why, that it is still connected, and what to do. Only the operator's has a command. */
 export function tailnetStepNote(view: Extract<TailnetStepView, { state: 'ssh' }>, name: string, address: string | undefined): { readonly text: string; readonly command?: string } {
@@ -63,7 +64,7 @@ export function tailnetStepNote(view: Extract<TailnetStepView, { state: 'ssh' }>
       const error = view.error
       return { text: error ? t`${error} ${name} is connected over SSH and nothing was lost. Press ${button}.` : t`The host on ${name} didn’t turn on its tailnet connections, so ${name} is connected over SSH and nothing was lost. Press ${button}.` }
     }
-    case 'error': return { text: view.error }
+    case 'error': return { text: shownWords(view.error) }
     case 'unreachable': return { text: address === undefined
       ? t`${name} didn’t answer at its tailnet address, so ${name} is connected over SSH and nothing was lost. Sotto tries the tailnet again every 5 minutes.`
       : t`${name} didn’t answer at ${address}, so ${name} is connected over SSH and nothing was lost. Sotto tries the tailnet again every 5 minutes.` }

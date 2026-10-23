@@ -13,6 +13,7 @@ import { HostSshQuestion } from './HostSshQuestion'
 import { HostsModal } from './HostsModal'
 import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
 import { TAILSCALE_GUIDE_URL, TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
+import { shownWords, type LaterWords } from './laterWords'
 import './hosts.css'
 import './phones.css'
 
@@ -78,10 +79,10 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
   readonly onClose: () => void
 }): ReactNode {
   const { t } = useLingui()
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [copied, setCopied] = useState<'address' | 'command' | null>(null)
   const [removeId, setRemoveId] = useState<string | null>(null)
-  const [announcement, setAnnouncement] = useState('')
+  const [announcement, setAnnouncement] = useState<LaterWords>('')
   const [now, setNow] = useState(() => Date.now())
   const pairButton = useRef<HTMLButtonElement>(null)
   const codeBox = useRef<HTMLDivElement>(null)
@@ -113,7 +114,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
     if (!before?.code || state?.code) return
     const added = state?.phones.find(phone => !before.phones.some(known => known.clientId === phone.clientId))
     const phone = added?.name ?? ''
-    if (added) setAnnouncement(i18n._(msg`${phone} is paired with ${name}.`))
+    if (added) setAnnouncement(msg`${phone} is paired with ${name}.`)
     const focused = document.activeElement
     if (focused === null || focused === document.body || !focused.isConnected) queueMicrotask(() => pairButton.current?.focus())
   }, [state, name])
@@ -121,11 +122,11 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
   const run = async (command: HostPhonesCommand): Promise<boolean> => {
     setError(null)
     try { await bridge.command({ type: 'host-phones', id, command }); return true }
-    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`Phone access on ${name} could not be changed. Nothing was changed. Try again.`); return false }
+    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`Phone access on ${name} could not be changed. Nothing was changed. Try again.`); return false }
   }
   const copy = async (text: string, what: 'address' | 'command'): Promise<void> => {
     try { await writeClipboard(text); setCopied(what); setTimeout(() => setCopied(null), 1500) }
-    catch { setError(t`It could not be copied. Select it and copy it instead.`) }
+    catch { setError(msg`It could not be copied. Select it and copy it instead.`) }
   }
 
   const live = connected && state !== undefined
@@ -137,7 +138,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
   const busy = view?.busy === true || approving || asking !== undefined
   const answer = async (prompt: NonNullable<HostStatus['prompt']>, value: string): Promise<void> => {
     try { await bridge.command({ type: 'ssh-answer', id, promptId: prompt.id, answer: value }) }
-    catch { setError(t`SSH did not take the answer. Close Phones on ${name} and open it again to sign in again.`) }
+    catch { setError(msg`SSH did not take the answer. Close Phones on ${name} and open it again to sign in again.`) }
   }
   const on = state?.phase === 'on' && state.enabled
   const starting = state?.phase === 'starting'
@@ -163,7 +164,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
         <span className="phones-code__value" aria-hidden="true">{code.code.slice(0, 4)}<i />{code.code.slice(4)}</span>
         <span className="tt-visually-hidden"><Trans>Pairing code {spelled}</Trans></span>
         <div className="host-phones-code__copy">
-          <p><Trans>On your iPhone, tap <b>Add computer</b>, enter <b className="phones-mono">{machine}</b>, then this code.</Trans></p>
+          <p className="tt-paragraph"><Trans>On your iPhone, tap <b>Add computer</b>, enter <b className="phones-mono">{machine}</b>, then this code.</Trans></p>
           <span className="phones-count">
             <span className="phones-count__bar" aria-hidden="true"><i style={{ width: `${left.fraction * 100}%` }} /></span>
             <span><Trans>Works once. Expires in <b>{expires}</b></Trans></span>
@@ -177,18 +178,18 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
     })()
     : <div className="host-phones-pair">
       <Button ref={pairButton} variant="secondary" disabled={busy} onClick={() => void run({ type: 'show-code' })}><Plus size={16} aria-hidden="true" />{t`Pair a phone`}</Button>
-      <p><Trans>Shows a code from {name} to type on your iPhone. It works once, for five minutes. A paired phone reads threads and replies; answering is its own switch.</Trans></p>
+      <p className="tt-paragraph"><Trans>Shows a code from {name} to type on your iPhone. It works once, for five minutes. A paired phone reads threads and replies; answering is its own switch.</Trans></p>
     </div>
 
   return <HostsModal title={t`Phones on ${name}`} onClose={onClose} busy={busy || starting} className="host-phones-dialog"
     footer={<Button onClick={onClose}>{t({ message: 'Done', comment: 'Closes a dialog.' })}</Button>}>
     <div className="hosts-settings phones-settings host-phones">
-      <p className="host-phones__intro"><Trans>Reach {name}’s threads from Sotto on your iPhone, over Tailscale.</Trans></p>
+      <p className="host-phones__intro tt-paragraph"><Trans>Reach {name}’s threads from Sotto on your iPhone, over Tailscale.</Trans></p>
       {/* On a tailnet connection the dialog reads and changes phone access over an admin connection, whose sign-in Tailscale may hold (ADR-0053). */}
       {approving ? <div className="hosts-notice host-phones-approval" role="status">
         <Info size={16} aria-hidden="true" />
         <div className="host-phones-approval__copy">
-          <p><Trans>Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.</Trans></p>
+          <p className="tt-paragraph"><Trans>Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.</Trans></p>
           <span className="host-phones-approval__actions">
             {host.tailscale?.url ? <Button aria-label={t`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>{t`Open approval page`}</Button> : null}
             <button type="button" className="host-setup__link tt-focusable" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>{t`Why Tailscale asks`}</button>
@@ -200,9 +201,9 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
       {/* Until the host is read, nothing here is known: the switch shows once it is, rather than reading off. */}
       {connected && !state ? <ol className="phones-steps host-phones-steps host-phones-unread" aria-label={t`Phone access on ${name}`} aria-busy={!view?.error || undefined}>
         <li data-step="waiting"><StepMark step="waiting" /><div className="phones-step__copy"><b>{t`Let phones reach ${name}`}</b>
-          <p role="status">{view?.error ? t`Not read.` : approving || asking ? t`Not read yet. The switch shows once Sotto reaches ${name} over SSH.` : t`Reading phone access on ${name}…`}</p></div></li>
+          <p className="tt-paragraph" role="status">{view?.error ? t`Not read.` : approving || asking ? t`Not read yet. The switch shows once Sotto reaches ${name} over SSH.` : t`Reading phone access on ${name}…`}</p></div></li>
         {[t`Tailscale on ${name}`, t`Tailscale Serve on port 8443`, t`Paired phones`].map(title => <li key={title} data-step="waiting"><StepMark step="waiting" />
-          <div className="phones-step__copy"><b>{title}</b><p>{t`Waits for the step above.`}</p></div></li>)}
+          <div className="phones-step__copy"><b>{title}</b><p className="tt-paragraph">{t`Waits for the step above.`}</p></div></li>)}
       </ol> : <div className="phones-switch">
         <Toggle label={t`Let phones reach ${name}`} checked={state?.enabled ?? false} disabled={!live || busy}
           onCheckedChange={enabled => void run({ type: 'set-enabled', enabled })}
@@ -210,21 +211,21 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
       </div>}
       {!connected ? <div className="hosts-notice">
         <Info size={16} aria-hidden="true" />
-        <p><Trans>Connect to {name} to change phone access or pair a phone. Phones already paired keep reaching it while its host runs.</Trans></p>
+        <p className="tt-paragraph"><Trans>Connect to {name} to change phone access or pair a phone. Phones already paired keep reaching it while its host runs.</Trans></p>
       </div> : null}
       {view?.error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{view.error}</p></div> : null}
       {live && state.enabled ? <ol className="phones-steps host-phones-steps" aria-label={t`Phone access on ${name}`} aria-busy={starting || undefined}>
         <li data-step={tailscaleStep}>
           <StepMark step={tailscaleStep} />
           <div className="phones-step__copy"><b>{t`Tailscale on ${name}`}</b>
-            <p>{tailscaleStep === 'ok' ? <Trans>Signed in. {name} is <span className="phones-mono">{dnsName}</span> on your tailnet.</Trans> : tailscaleStep === 'failed' ? failure : starting ? t`Checking…` : notYet}</p>
+            <p className="tt-paragraph">{tailscaleStep === 'ok' ? <Trans>Signed in. {name} is <span className="phones-mono">{dnsName}</span> on your tailnet.</Trans> : tailscaleStep === 'failed' ? failure : starting ? t`Checking…` : notYet}</p>
           </div>
           {tailscaleStep === 'failed' ? retry : null}
         </li>
         <li data-step={serveStep}>
           <StepMark step={serveStep} />
           <div className="phones-step__copy"><b>{t`Tailscale Serve on port ${servePort}`}</b>
-            <p>{serveStep === 'ok' ? state.servePort === 10000
+            <p className="tt-paragraph">{serveStep === 'ok' ? state.servePort === 10000
               ? t`Sotto added it on ${name}, on 10000 because another app had 8443. It stays on your tailnet; Funnel is never used.`
               : t`Sotto added it on ${name}. It stays on your tailnet; Funnel is never used.`
               : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? t`Waits for Tailscale.` : starting ? t`Setting it up…` : notYet}</p>
@@ -241,13 +242,13 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
         <li data-step={addressStep}>
           <StepMark step={addressStep} />
           <div className="phones-step__copy"><b>{t`Address phones use`}</b>
-            <p>{state.address ? <span className="phones-mono phones-address">{state.address}</span> : state.phase === 'failed' || starting ? t`Waits for the steps above.` : notYet}</p>
+            <p className="tt-paragraph">{state.address ? <span className="phones-mono phones-address">{state.address}</span> : state.phase === 'failed' || starting ? t`Waits for the steps above.` : notYet}</p>
           </div>
           {state.address ? <Button variant="ghost" onClick={() => void copy(state.address!, 'address')}>{copied === 'address' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied === 'address' ? t`Copied` : t`Copy address`}</Button> : null}
         </li>
       </ol> : null}
       {pairing}
-      <p className="phones-live" role="status" aria-live="polite">{announcement}</p>
+      <p className="phones-live tt-paragraph" role="status" aria-live="polite">{shownWords(announcement)}</p>
       {state && (state.enabled || state.phones.length) ? <section className="host-phones-list" aria-label={t`Phones paired with ${name}`}>
         <h3>{connected || !view?.readAt ? t`Paired phones` : t`Paired phones, as of ${readAt}`}</h3>
         {state.phones.length ? <div className="hosts-list phones-list">
@@ -256,14 +257,14 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
               onCanAnswer={allowed => void run({ type: 'set-can-answer', clientId: phone.clientId, allowed })} onRemove={() => setRemoveId(phone.clientId)} />
             {removing?.clientId === phone.clientId ? <div className="hosts-notice host-phones-remove" role="group" aria-label={t`Remove ${phoneName}?`}
               onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRemoveId(null) } }}>
-              <p className="grow"><Trans>Remove {phoneName}? It can no longer reach {name}, and its connection closes now. Threads stay on {name}. To use it again, pair it with a new code.</Trans></p>
+              <p className="grow tt-paragraph"><Trans>Remove {phoneName}? It can no longer reach {name}, and its connection closes now. Threads stay on {name}. To use it again, pair it with a new code.</Trans></p>
               <Button ref={keepButton} variant="secondary" onClick={() => setRemoveId(null)}>{t`Keep phone`}</Button>
               <Button variant="danger" disabled={busy} onClick={() => void run({ type: 'remove', clientId: phone.clientId }).then(done => { if (done) { setRemoveId(null); queueMicrotask(() => pairButton.current?.focus()) } })}>{t`Remove phone`}</Button>
             </div> : null}
           </React.Fragment> })}
-        </div> : <p><Trans>No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here.</Trans></p>}
+        </div> : <p className="tt-paragraph"><Trans>No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here.</Trans></p>}
       </section> : null}
-      {error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{error}</p></div> : null}
+      {error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}
     </div>
   </HostsModal>
 }

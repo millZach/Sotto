@@ -10,6 +10,7 @@ import {
   byHandLines, byHandReason, chipText, namesOf, failedLong, failedShort, hostClientUpdatesView, popoverStatus, printedHeading, rowState,
   targetVersion, tileLine, type ClientUpdatePhase, type HostClientUpdatesView,
 } from './hostClientUpdateWords'
+import { shownWords, type LaterWords } from './laterWords'
 
 /**
  * A host's client updates in Settings > Hosts & phones (#480, variant D of `prototype/host-client-updates`): the line and the
@@ -41,7 +42,7 @@ export function resetAcknowledgedClientUpdates(): void { acknowledged.clear(); r
 export function useAcknowledgedRevision(): number { return useSyncExternalStore(subscribe, () => revision) }
 
 /** What asks the host: `update` puts clients in its line, `cancel` takes a waiting one out. Answers with a refusal or nothing. */
-export type SendClientUpdate = (action: 'update' | 'cancel', providers: readonly ProviderId[]) => Promise<string | undefined>
+export type SendClientUpdate = (action: 'update' | 'cancel', providers: readonly ProviderId[]) => Promise<LaterWords | undefined>
 
 export function HostSpinner(): ReactNode { return <span className="host-client-update__spinner" aria-hidden="true" /> }
 
@@ -52,18 +53,18 @@ export function CommandLines({ lead, lines, name, host }: { readonly lead: strin
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => { try { await writeClipboard(lines.join('\n')); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
-    <p>{lead}</p>
+    <p className="tt-paragraph">{lead}</p>
     <code>{lines.map((line, index) => <React.Fragment key={index}>{index ? <br /> : null}{line}</React.Fragment>)}</code>
     <Button variant="secondary" aria-label={t`Copy the command that updates ${name} on ${host}`} onClick={() => void copy()}>
       {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy`}
     </Button>
-    {copied === 'failed' ? <p><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
+    {copied === 'failed' ? <p className="tt-paragraph"><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
     <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the command` : ''}</span>
   </div>
 }
 
 /** A connected tile's update: the line under its version, what goes below it, its press, and its note. */
-export interface TileUpdateParts { readonly line?: ReactNode; readonly below?: ReactNode; readonly action?: ReactNode; readonly note?: string; readonly phase: ClientUpdatePhase }
+export interface TileUpdateParts { readonly line?: ReactNode; readonly below?: ReactNode; readonly action?: ReactNode; readonly note?: LaterWords; readonly phase: ClientUpdatePhase }
 
 /**
  * The parts of a provider tile that say how its client's update stands, or nothing while it is current. Called while the
@@ -82,23 +83,23 @@ export function tileUpdateParts({ update, phase, host, waitingFor, busy, send }:
       action: <Button key="update" data-update-action="" variant="secondary" disabled={busy} aria-label={i18n._(msg`Update ${name} on ${host} to ${to}`)} onClick={() => void send('update', [update.id])}>{i18n._(msg({ message: 'Update', comment: 'A button that updates one agent client on a host.' }))}</Button> }
     case 'queued': return { phase, line: line('quiet'),
       action: <Button key="cancel" data-update-action="" variant="secondary" disabled={busy} aria-label={i18n._(msg`Cancel the ${name} update on ${host}`)} onClick={() => void send('cancel', [update.id])}>{i18n._(msg`Cancel update`)}</Button> }
-    case 'updating': return { phase, line: line(), note: i18n._(msg`Your threads on ${host} keep working.`) }
-    case 'updated': return { phase, note: i18n._(msg`${name} is now ${installed}.`) }
+    case 'updating': return { phase, line: line(), note: msg`Your threads on ${host} keep working.` }
+    case 'updated': return { phase, note: msg`${name} is now ${installed}.` }
     case 'by-hand': {
       const lines = byHandLines(update), reason = byHandReason(update, host)
       return { phase, line: line(), below: lines.length
         ? <CommandLines lead={i18n._(msg`${reason} Run this on ${host}:`)} lines={lines} name={name} host={host} />
-        : <p className="host-client-update__words">{i18n._(msg`${reason} Update it the way you installed it.`)}</p> }
+        : <p className="host-client-update__words tt-paragraph">{i18n._(msg`${reason} Update it the way you installed it.`)}</p> }
     }
     case 'failed': {
       const lines = byHandLines(update)
       return { phase, line: line('error'),
         below: <>
-          <p className="host-client-update__words" role="status">{failedShort(update, host)}</p>
+          <p className="host-client-update__words tt-paragraph" role="status">{failedShort(update, host)}</p>
           <details className="host-client-update__details">
             <summary><Trans>Details<span className="tt-visually-hidden"> of why {name} did not update</span></Trans></summary>
             <div className="host-client-update__details-body">
-              <p className="host-client-update__words">{failedLong(update, host)}</p>
+              <p className="host-client-update__words tt-paragraph">{failedLong(update, host)}</p>
               {lines.length ? <CommandLines lead={i18n._(msg`Or run this on ${host}:`)} lines={lines} name={name} host={host} /> : null}
               {update.printed ? <details className="host-client-update__printed">
                 <summary>{printedHeading(update)}</summary><pre>{update.printed}</pre>
@@ -130,7 +131,7 @@ export function waitingForOf(view: HostClientUpdatesView, provider: ProviderId, 
  */
 export function HostClientUpdatesChip({ host, hostId, view, run, busy, refusal, send }: {
   readonly host: string; readonly hostId: string; readonly view: HostClientUpdatesView; readonly run: ClientUpdateRun | undefined
-  readonly busy: boolean; readonly refusal: string | undefined; readonly send: SendClientUpdate
+  readonly busy: boolean; readonly refusal: LaterWords | undefined; readonly send: SendClientUpdate
 }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
@@ -206,7 +207,7 @@ export function HostClientUpdatesChip({ host, hostId, view, run, busy, refusal, 
     {open ? <div ref={panel} id={panelId} className="host-client-updates__panel" role="dialog" aria-labelledby={titleId}
       onKeyDown={onKeyDown} onBlur={onBlur}>
       <h6 id={titleId}><Trans>Client updates on {host}</Trans></h6>
-      <p className="host-client-updates__status" role="status">{status}</p>
+      <p className="host-client-updates__status tt-paragraph" role="status">{status}</p>
       <ul className="host-client-updates__list" aria-label={t`Clients on ${host}`}>
         {view.shown.map(update => {
           const phase = view.phases.get(update.id)!
@@ -215,14 +216,14 @@ export function HostClientUpdatesChip({ host, hostId, view, run, busy, refusal, 
           return <li key={update.id} data-phase={phase}>
             <div><span className="host-client-updates__name">{name}</span> <span className="host-client-updates__versions">{phase === 'updated' ? t({ message: `now ${installed}`, comment: '{installed} is the version a client was updated to.' }) : <>{installed}<span aria-hidden="true"> → </span><span className="tt-visually-hidden"> {t({ message: 'to', comment: 'Read between two version numbers: from one version to another.' })} </span>{targetVersion(update)}</>}</span></div>
             {state ? <span className="host-client-updates__state">{phase === 'updating' ? <HostSpinner /> : phase === 'updated' ? <Check size={13} aria-hidden="true" /> : null}{state}</span> : <span />}
-            {phase === 'failed' ? <div className="host-client-updates__why"><p>{failedShort(update, host)}</p>
+            {phase === 'failed' ? <div className="host-client-updates__why"><p className="tt-paragraph">{failedShort(update, host)}</p>
               {update.canInstall ? <Button variant="secondary" disabled={busy} aria-label={t`Try updating ${name} on ${host} again`} onClick={() => void send('update', [update.id])}>{t`Try again`}</Button> : null}</div>
-              : phase === 'by-hand' ? <div className="host-client-updates__why"><p>{t`${reason} Its tile has the command to run.`}</p></div> : null}
+              : phase === 'by-hand' ? <div className="host-client-updates__why"><p className="tt-paragraph">{t`${reason} Its tile has the command to run.`}</p></div> : null}
           </li>
         })}
       </ul>
-      {!settled || view.behind.length ? <p className="host-client-updates__note"><Trans>One client updates at a time. Your threads keep working, and move to the new version when they are idle.</Trans></p> : null}
-      {refusal ? <p className="host-client-updates__refusal" role="alert">{refusal}</p> : null}
+      {!settled || view.behind.length ? <p className="host-client-updates__note tt-paragraph"><Trans>One client updates at a time. Your threads keep working, and move to the new version when they are idle.</Trans></p> : null}
+      {refusal ? <p className={typeof refusal === 'string' ? 'host-client-updates__refusal' : 'host-client-updates__refusal tt-paragraph'} role="alert">{shownWords(refusal)}</p> : null}
       <div className="host-client-updates__actions">
         {settled && !view.behind.length
           ? <Button variant="primary" data-main="" onClick={done}>{t({ message: 'Done', comment: 'Puts away the finished client updates.' })}</Button>

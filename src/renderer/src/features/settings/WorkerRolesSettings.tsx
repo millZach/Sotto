@@ -11,6 +11,7 @@ import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_ROLES,
   type RoleInForce, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
+import { shownWords, type LaterWords } from './laterWords'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
@@ -40,7 +41,7 @@ type RowStatus = 'chosen' | 'away' | 'moved' | 'default' | 'none'
 /** A model and effort, as Watcher runs on them and as Orchestrating saves them. */
 interface WatcherChoice { readonly modelId: string; readonly reasoningEffort: string | null }
 /** What a line under the heading says was done, and what Undo puts back: the saved rows, and Watcher as it was. */
-interface Said { readonly text: string; readonly undo: WorkerRoleChoices; readonly watcher: WatcherChoice | null }
+interface Said { readonly text: LaterWords; readonly undo: WorkerRoleChoices; readonly watcher: WatcherChoice | null }
 const WATCHER_NOT_STARTED = msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.`
 
 /** Provider names joined the way the interface language joins a list: "Codex and Claude Code". */
@@ -81,7 +82,7 @@ export function WorkerRolesSettings({ settings, platform, onUpdateSettings, onOp
   readonly onOpenSection: (id: Section) => void
 }): ReactNode {
   const agents = useOptionalAgents()
-  if (!agents?.state) return <p className="worker-roles__lead"><Trans>Preparing worker roles…</Trans></p>
+  if (!agents?.state) return <p className="worker-roles__lead tt-paragraph"><Trans>Preparing worker roles…</Trans></p>
   return <Roles state={agents.state} command={agents.command} settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenSection={onOpenSection} />
 }
 
@@ -89,7 +90,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   readonly state: AgentState; readonly command: AgentConnection['command']; readonly settings: AppSettings; readonly platform: SottoPlatform
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>; readonly onOpenSection: (id: Section) => void
 }): ReactNode {
-  const { t, i18n } = useLingui()
+  const { t } = useLingui()
   const headingId = useId()
   // This computer's catalog: the roles, like the new-thread defaults, are this computer's own (ADR-0074).
   const catalog = useMemo(() => newThreadDefaultsCatalog(state), [state])
@@ -97,7 +98,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const [said, setSaid] = useState<Said | null>(null)
   const room = useWatcherRoom()
   const watcher: AgentThread | undefined = room?.currentThreadId ? state.host.threads.find(thread => thread.id === room.currentThreadId) : undefined
-  const [watcherRefusal, setWatcherRefusal] = useState<string | null>(null)
+  const [watcherRefusal, setWatcherRefusal] = useState<LaterWords | null>(null)
   const watcherDrawn = watcher ? settingValues(state, watcher) : null
   // What the running Watcher is on now, as its thread reports it.
   const watcherNow: WatcherChoice | null = watcherDrawn ? { modelId: watcherDrawn.model, reasoningEffort: watcherDrawn.effort || null } : null
@@ -114,7 +115,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     if (provider !== null && provider !== watcher.providerId) {
       if (!room?.open) return
       try { setWatcherRefusal(room.settle(await room.open({ provider, modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}) }))) }
-      catch { setWatcherRefusal(i18n._(WATCHER_NOT_STARTED)) }
+      catch { setWatcherRefusal(WATCHER_NOT_STARTED) }
       return
     }
     const now = settingValues(state, watcher)
@@ -131,7 +132,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     : setUp.has(id) || host.providers?.some(provider => provider.id === id && provider.connection !== 'disconnected') ? 'off' : 'absent'
   const ceiling = state.configuration.newThreadRuntimeMode ?? 'approval-required'
   const reads = WORKER_ROLES.map(role => roleInForce(role.id, choices, catalog))
-  const save = (next: WorkerRoleChoices, words?: string): void => {
+  const save = (next: WorkerRoleChoices, words?: LaterWords): void => {
     setSaid(words === undefined ? null : { text: words, undo: choices, watcher: watcherNow })
     void onUpdateSettings({ workerRoles: next })
   }
@@ -153,8 +154,8 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const roleName = read.role.name
     const modelName = fallback?.model.name ?? ''
     const effort = fallback?.reasoningEffort ? effortLabel(fallback.reasoningEffort) : ''
-    save(next, !fallback ? t`${roleName} is back on its defaults.`
-      : effort ? t`${roleName} is back on its default, ${modelName} at ${effort}.` : t`${roleName} is back on its default, ${modelName}.`)
+    save(next, !fallback ? msg`${roleName} is back on its defaults.`
+      : effort ? msg`${roleName} is back on its default, ${modelName} at ${effort}.` : msg`${roleName} is back on its default, ${modelName}.`)
     if (read.role.id === 'orchestrating' && fallback) void applyToWatcher({ modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort })
   }
   const orchestratingDefault = reads[0]?.fallback
@@ -163,7 +164,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     || watcherNow.reasoningEffort !== orchestratingDefault.reasoningEffort)
   const chosen = reads.filter(read => read.choice !== undefined || read.role.id === 'orchestrating' && watcherChosen).length
   const resetAll = (): void => {
-    save({}, plural(chosen, { one: 'The role you chose is back on its default.', other: 'The # roles you chose are back on their defaults.' }))
+    save({}, msg`${plural(chosen, { one: 'The role you chose is back on its default.', other: 'The # roles you chose are back on their defaults.' })}`)
     if (orchestratingDefault && (watcherChosen || !watcher)) void applyToWatcher({ modelId: orchestratingDefault.model.id, reasoningEffort: orchestratingDefault.reasoningEffort })
   }
   const undo = (was: Said): void => {
@@ -180,7 +181,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const [orchestrating, ...workers] = reads
   const awayCount = away.length
   const providers = list(away.map(id => PROVIDER_LABELS[id]))
-  return <section className="worker-roles" aria-labelledby={headingId}>
+  return <section className="worker-roles" data-setting="worker-roles" aria-labelledby={headingId}>
     <div className="worker-roles__head">
       <h3 id={headingId}><Users size={16} strokeWidth={1.7} aria-hidden="true" /><Trans>Worker roles</Trans></h3>
       <button type="button" className="worker-roles__reset-all tt-focusable" disabled={chosen === 0}
@@ -189,14 +190,14 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
         onClick={resetAll}>
         <RotateCcw size={14} aria-hidden="true" /><Trans>Reset all to defaults</Trans></button>
     </div>
-    <p className="worker-roles__lead"><Trans>Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</Trans></p>
-    {said ? <p className="worker-roles__said" role="status"><span>{said.text}</span>
+    <p className="worker-roles__lead tt-paragraph"><Trans>Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</Trans></p>
+    {said ? <p className="worker-roles__said tt-paragraph" role="status"><span>{shownWords(said.text)}</span>
       <button type="button" className="tt-focusable" onClick={() => undo(said)}><Trans>Undo</Trans></button></p> : null}
     {!anyConnected ? <div className="worker-roles__empty">
-      <p><Trans>No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost.</Trans></p>
+      <p className="tt-paragraph"><Trans>No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost.</Trans></p>
       <button type="button" className="worker-roles__open tt-focusable" onClick={() => onOpenSection('settings-providers')}><Trans>Open Providers</Trans></button>
     </div> : <>
-      {awayCount ? <p className="worker-roles__summary">{plural(awayCount, {
+      {awayCount ? <p className="worker-roles__summary tt-paragraph">{plural(awayCount, {
         one: `${providers} is not connected, so ${plural(movedCount, { one: '# role starts new work on its next default', other: '# roles start new work on their next default' })} until it connects. Nothing you chose has changed.`,
         other: `${providers} are not connected, so ${plural(movedCount, { one: '# role starts new work on its next default', other: '# roles start new work on their next default' })} until they connect. Nothing you chose has changed.`,
       })}</p> : null}
@@ -334,7 +335,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
   const permissionName = permission ? RUNTIME_LABELS[permission] : ''
   return <article className="worker-role" data-chosen={read.choice !== undefined} aria-labelledby={headId}>
     <header className="worker-role__head"><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><h4 id={headId}>{role.name}</h4><Tag status={status} /></header>
-    <p className="worker-role__what">{role.what}</p>
+    <p className="worker-role__what tt-paragraph">{role.what}</p>
     {shown ? <div className="worker-role__fields">
       <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">{t({ message: 'Model', comment: 'A worker role field: the model it runs on' })}</span>
         <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={false} label={status === 'away' ? t`Choose ${roleName}’s model. Now ${name}, not available` : t`Choose ${roleName}’s model. Now ${name}`}
@@ -353,11 +354,11 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
             disabled={false} pending={false} flip foot={t`A worker never starts wider than your new-thread default, “${ceilingName}”, and a delegated thread never wider than the thread that delegates.`}
             onChange={mode => onRow({ runtimeMode: mode as AgentRuntimeMode })} />}
       </div>
-    </div> : <p className="worker-role__none"><Trans>No connected provider can do this work.</Trans></p>}
-    {notes.map(note => <p key={note} className="worker-role__note" data-kind="moved">{note}</p>)}
-    {fit ? <p className="worker-role__note">{fit}</p> : null}
-    {held ? <p className="worker-role__note"><Trans>Workers never start wider than your new-thread default, so these start on “{heldName}”. <button type="button" className="worker-role__link tt-focusable" onClick={onOpenAgents}>Change it in Threads</button></Trans></p> : null}
-    {computerUse ? <p className="worker-role__note"><Trans>On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so.</Trans></p> : null}
+    </div> : <p className="worker-role__none tt-paragraph"><Trans>No connected provider can do this work.</Trans></p>}
+    {notes.map(note => <p key={note} className="worker-role__note tt-paragraph" data-kind="moved">{note}</p>)}
+    {fit ? <p className="worker-role__note tt-paragraph">{fit}</p> : null}
+    {held ? <p className="worker-role__note tt-paragraph"><Trans>Workers never start wider than your new-thread default, so these start on “{heldName}”. <button type="button" className="worker-role__link tt-focusable" onClick={onOpenAgents}>Change it in Threads</button></Trans></p> : null}
+    {computerUse ? <p className="worker-role__note tt-paragraph"><Trans>On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so.</Trans></p> : null}
     <Defaults read={read} catalog={catalog} providerOf={providerOf} />
     {read.choice ? <footer className="worker-role__foot"><button type="button" className="worker-role__link tt-focusable" onClick={onReset}
       aria-label={!read.fallback ? t`Reset ${roleName} to its defaults`
@@ -387,8 +388,8 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   readonly watcher: AgentThread | undefined
   /** The running Watcher is off Orchestrating's default. */
   readonly chosen: boolean
-  /** Why the last change could not start a new Watcher, in main's words. */
-  readonly refusal: string | null
+  /** Why the last change could not start a new Watcher: main's words, or Sotto's own when it could not ask. */
+  readonly refusal: LaterWords | null
   readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
   readonly onRow: (patch: { readonly modelId?: string; readonly reasoningEffort?: string | null }) => void; readonly onReset: () => void
 }): ReactNode {
@@ -436,7 +437,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   return <article className="worker-role worker-role--wide" data-chosen={status === 'chosen' || status === 'away'} aria-labelledby={headId}>
     <div className="worker-role__main">
       <header className="worker-role__head"><WatcherOwl size={15} /><h4 id={headId}>{role.name}</h4><Tag status={status} /></header>
-      <p className="worker-role__what">{role.what}</p>
+      <p className="worker-role__what tt-paragraph">{role.what}</p>
       {shown ? <div className="worker-role__fields">
         <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">{t({ message: 'Model', comment: 'A worker role field: the model it runs on' })}</span>
           <ModelPicker models={watcherModels} modelId={shown.modelId} disabled={fixedReason !== undefined} label={t`Choose Watcher’s model. Now ${name}`} unavailable={refused}
@@ -451,10 +452,10 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
         </div>
         <div className="worker-role__field"><span aria-hidden="true">{t`Permissions, Watcher’s own`}</span>
           <WatcherPermissionChip model={model} provider={providerName} inForce={watcher?.runtimeMode} disabled={fixedReason !== undefined} fixedReason={fixedReason} flip /></div>
-      </div> : <p className="worker-role__none"><Trans>Watcher runs on {watcherProviders}. Connect one to choose its model.</Trans></p>}
-      {fixedReason ? <p className="worker-role__note">{fixedReason}</p> : null}
-      {refusal ? <p className="worker-role__note" role="alert">{refusal}</p> : null}
-      {notes.map(note => <p key={note} className="worker-role__note" data-kind="moved">{note}</p>)}
+      </div> : <p className="worker-role__none tt-paragraph"><Trans>Watcher runs on {watcherProviders}. Connect one to choose its model.</Trans></p>}
+      {fixedReason ? <p className="worker-role__note tt-paragraph">{fixedReason}</p> : null}
+      {refusal ? <p className="worker-role__note tt-paragraph" role="alert">{shownWords(refusal)}</p> : null}
+      {notes.map(note => <p key={note} className="worker-role__note tt-paragraph" data-kind="moved">{note}</p>)}
       <Defaults read={read} catalog={catalog} providerOf={providerOf} />
       {differs ? <footer className="worker-role__foot"><button type="button" className="worker-role__link tt-focusable" disabled={fixedReason !== undefined}
         aria-label={!fallback ? t`Reset Orchestrating to its defaults`
@@ -471,7 +472,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
           <span className="worker-role__chip"><span>{RUNTIME_LABELS[mirrorMode]}</span></span>
         </span>
       </div>
-      <p className="worker-role__caption"><ArrowLeftRight size={14} aria-hidden="true" /><span><Trans>Watcher’s composer shows these three. A change in either place changes both.</Trans>{' '}
+      <p className="worker-role__caption tt-paragraph"><ArrowLeftRight size={14} aria-hidden="true" /><span><Trans>Watcher’s composer shows these three. A change in either place changes both.</Trans>{' '}
         {app ? <button type="button" className="worker-role__link tt-focusable" onClick={() => app.actions.navigate('watcher')}><Trans>Show Watcher’s room</Trans></button> : null}</span></p>
     </div>
   </article>

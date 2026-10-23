@@ -44,7 +44,7 @@ export function PhoneRow({ phone, answersAvailable, onCanAnswer, onRemove, disab
     <div className="hosts-row__info">
       <h4>{phone.name}</h4>
       <p className="hosts-row__meta"><Trans>Paired {paired}</Trans> · <span data-phase={phone.connected ? 'connected' : 'disconnected'}>{phone.connected ? t({ message: 'Connected', comment: 'A provider on a host, or a host: connected and ready.' }) : t`Not connected`}</span></p>
-      <p className="phones-grant">{phone.canAnswer ? t`Reads and replies. Can answer questions and permissions.` : t`Reads and replies. Can’t answer questions or permissions.`}</p>
+      <p className="phones-grant tt-paragraph">{phone.canAnswer ? t`Reads and replies. Can answer questions and permissions.` : t`Reads and replies. Can’t answer questions or permissions.`}</p>
     </div>
     <div className="hosts-row__actions">
       <span className="phones-answer">

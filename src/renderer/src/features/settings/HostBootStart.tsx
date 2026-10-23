@@ -8,6 +8,7 @@ import type { HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
 import { HostsModal } from './HostsModal'
 import { FixCommand } from './HostSetupChecklist'
+import { shownWords, type LaterWords } from './laterWords'
 import './hostBoot.css'
 
 /**
@@ -52,7 +53,7 @@ function Checks({ label, items }: { readonly label: string; readonly items: read
       <span className="host-boot__mark" role="img" aria-label={i18n._(MARK_LABEL[item.mark])}>
         {item.mark === 'ok' ? <Check size={16} aria-hidden="true" /> : item.mark === 'fail' ? <X size={16} aria-hidden="true" /> : item.mark === 'act' ? <Info size={16} aria-hidden="true" /> : <Circle size={12} aria-hidden="true" />}
       </span>
-      <div className="host-boot__check"><p><b>{item.title}</b> · {item.text}</p>{item.fix ? <FixCommand fix={item.fix} /> : null}</div>
+      <div className="host-boot__check"><p className="tt-paragraph"><b>{item.title}</b> · {item.text}</p>{item.fix ? <FixCommand fix={item.fix} /> : null}</div>
     </li>)}
   </ul>
 }
@@ -64,7 +65,7 @@ function InstallConsent({ host }: { readonly host: HostStatus }): ReactNode {
   const who = user ?? t({ message: 'its account', comment: 'Stands in for the name of the account on a host, as in "start the host for {who}".' })
   const status = host.bootStart
   return <>
-    <p className="host-boot__lead"><Trans>{name}’s host then starts when {name} starts, so its threads come back after a restart without this computer signing in over SSH.</Trans></p>
+    <p className="host-boot__lead tt-paragraph"><Trans>{name}’s host then starts when {name} starts, so its threads come back after a restart without this computer signing in over SSH.</Trans></p>
     <Checks label={t`What Sotto found on ${name}`} items={[
       { mark: 'ok', title: 'systemd', text: t`${name} runs it, so it can start the host for ${who}.` },
       status?.linger
@@ -86,7 +87,7 @@ function InstallConsent({ host }: { readonly host: HostStatus }): ReactNode {
 /** What Stop starting at boot's modal says before the press. */
 function RemoveConsent({ host }: { readonly host: HostStatus }): ReactNode {
   const { name } = host
-  return <p className="host-boot__lead">{restartsHost(host, 'remove')
+  return <p className="host-boot__lead tt-paragraph">{restartsHost(host, 'remove')
     ? <Trans>Sotto removes <span className="host-boot__mono">sotto-host.service</span> and its script from {name}, and, while {name} is switched on, restarts the host once outside the unit, so it keeps running. Turns running there stop; drafts and history stay. If a thread is working, Sotto asks first. After {name} restarts, its host starts again only when this computer connects over SSH.</Trans>
     : <Trans>Sotto removes <span className="host-boot__mono">sotto-host.service</span> and its script from {name}. The host running there is not the unit’s, so it keeps running as it is. After {name} restarts, its host starts again only when this computer connects over SSH.</Trans>}</p>
 }
@@ -96,15 +97,15 @@ function BusyQuestion({ view }: { readonly view: HostBootState }): ReactNode {
   const { name, working } = view
   const install = view.change === 'install'
   if (view.phase === 'waiting') {
-    return <p className="host-boot__lead">{install
+    return <p className="host-boot__lead tt-paragraph">{install
       ? plural(working, { one: `${name}’s host starts at boot once its threads finish. # still working.`, other: `${name}’s host starts at boot once its threads finish. # still working.` })
       : plural(working, { one: `${name}’s host stops starting at boot once its threads finish. # still working.`, other: `${name}’s host stops starting at boot once its threads finish. # still working.` })}</p>
   }
   return <>
-    <p className="host-boot__lead">{install
+    <p className="host-boot__lead tt-paragraph">{install
       ? plural(working, { one: `# thread on ${name} is working. Starting at boot restarts ${name}’s host, which stops it.`, other: `# threads on ${name} are working. Starting at boot restarts ${name}’s host, which stops them.` })
       : plural(working, { one: `# thread on ${name} is working. Stopping start at boot restarts ${name}’s host, which stops it.`, other: `# threads on ${name} are working. Stopping start at boot restarts ${name}’s host, which stops them.` })}</p>
-    <p className="host-boot__quiet">{plural(working, { one: 'Only the work in progress on that turn is lost. Drafts and history stay.', other: 'Only the work in progress on those turns is lost. Drafts and history stay.' })}</p>
+    <p className="host-boot__quiet tt-paragraph">{plural(working, { one: 'Only the work in progress on that turn is lost. Drafts and history stay.', other: 'Only the work in progress on those turns is lost. Drafts and history stay.' })}</p>
   </>
 }
 
@@ -134,7 +135,7 @@ function Changing({ host, view, onOpenApproval }: { readonly host: HostStatus; r
   return <div className="hosts-notice host-boot__work" role="status">
     <LoaderCircle size={16} aria-hidden="true" className="hosts-spin" />
     <div className="host-boot__work-copy">
-      <p>{approval ? waiting : words}</p>
+      <p className="tt-paragraph">{approval ? waiting : words}</p>
       {approval ? <ApprovalButton host={host} onOpenApproval={onOpenApproval} /> : null}
     </div>
   </div>
@@ -162,7 +163,7 @@ function Outcome({ host, view, onOpenApproval }: { readonly host: HostStatus; re
       ? [t`${name}’s host starts at boot.`, view.restarted ? restarted : t`The host running there keeps running, and the unit takes over the next time ${name} starts.`]
       : [t`${name}’s host no longer starts at boot.`, ...view.restarted ? [restarted] : [], t`After ${name} restarts, its host starts again only when this computer connects over SSH.`]).join(' ')
     return <>
-      <p className="host-boot__done" role="status"><Check size={16} aria-hidden="true" />{words}</p>
+      <p className="host-boot__done tt-paragraph" role="status"><Check size={16} aria-hidden="true" />{words}</p>
       {view.restarted && !connected ? <ApprovalButton host={host} onOpenApproval={onOpenApproval} /> : null}
     </>
   }
@@ -170,7 +171,7 @@ function Outcome({ host, view, onOpenApproval }: { readonly host: HostStatus; re
   if (!failure) return null
   if (failure.kind === 'linger') {
     return <>
-      <p className="host-boot__lead"><Trans>Nothing changed on {name}. Its host is still running as before, and this computer is still connected.</Trans></p>
+      <p className="host-boot__lead tt-paragraph"><Trans>Nothing changed on {name}. Its host is still running as before, and this computer is still connected.</Trans></p>
       <Checks label={t`Start at boot on ${name}`} items={[
         { mark: 'fail', title: i18n._(LINGER), text: failure.message, fix: failure.fix },
         { mark: 'wait', title: t({ message: 'Unit', comment: 'A systemd unit, the file that starts a service.' }), text: t`Not installed.` },
@@ -193,11 +194,11 @@ function failureSentence(view: HostBootState): string {
 }
 
 /** Sends one press for a host's start at boot; a refusal comes back in words. */
-function useBootPress(bridge: HostsBridge, id: string, onError: (message: string | null) => void): (action: HostBootAction) => Promise<void> {
+function useBootPress(bridge: HostsBridge, id: string, onError: (message: LaterWords | null) => void): (action: HostBootAction) => Promise<void> {
   return async action => {
     onError(null)
     try { await bridge.command({ type: 'host-boot', id, action }) }
-    catch (error) { onError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : i18n._(msg`Start at boot did not change. Nothing was changed. Try again.`)) }
+    catch (error) { onError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`Start at boot did not change. Nothing was changed. Try again.`) }
   }
 }
 /**
@@ -280,7 +281,7 @@ export function HostBootDialog({ host, view: current, change, bridge, onClose }:
   readonly bridge: HostsBridge
   readonly onClose: () => void
 }): ReactNode {
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   // A change that ended well while nothing showed it is put away as the modal opens: the menu item already says where
   // start at boot stands. A failure is not, since nobody may have read it yet: the modal opens on it. A change under
   // way, or a question it asked, is this modal's too.
@@ -305,7 +306,7 @@ export function HostBootDialog({ host, view: current, change, bridge, onClose }:
         : view.phase === 'confirm' || view.phase === 'waiting' ? <BusyQuestion view={view} />
           : view.phase === 'changing' ? <Changing host={host} view={view} onOpenApproval={openApproval} />
             : <Outcome host={host} view={view} onOpenApproval={openApproval} />}
-      {error ? <div className="hosts-notice hosts-notice--error" role="alert"><p>{error}</p></div> : null}
+      {error ? <div className="hosts-notice hosts-notice--error" role="alert"><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}
     </div>
   </HostsModal>
 }
@@ -318,7 +319,7 @@ export function HostBootDialog({ host, view: current, change, bridge, onClose }:
  */
 export function HostBootOffer({ host, view, bridge }: { readonly host: HostStatus; readonly view: HostBootState | undefined; readonly bridge: HostsBridge }): ReactNode {
   const { t } = useLingui()
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   usePutAwayOnClose(bridge, host.id, view, true)
   const press = useBootPress(bridge, host.id, setError)
   const openApproval = (): void => void bridge.command({ type: 'open-approval', id: host.id }).catch(() => undefined)
@@ -340,19 +341,19 @@ export function HostBootOffer({ host, view, bridge }: { readonly host: HostStatu
   else if (view?.phase === 'done' && view.change === 'install') body = <Outcome host={host} view={view} onOpenApproval={openApproval} />
   else if (view?.phase === 'failed' && view.failure) {
     body = <>
-      <p className="host-boot__failed" role="alert"><AlertTriangle size={16} aria-hidden="true" />{failureSentence(view)}</p>
+      <p className={view.failure.kind === 'linger' ? 'host-boot__failed tt-paragraph' : 'host-boot__failed'} role="alert"><AlertTriangle size={16} aria-hidden="true" />{failureSentence(view)}</p>
       {view.failure.fix ? <FixCommand fix={view.failure.fix} /> : null}
       {view.failure.kind === 'unsupported' ? null : <div className="host-boot__actions">{start}</div>}
     </>
   } else if (!status) return null
   else if (!status.supported) body = <p className="host-boot__quiet">{bootUnsupportedSentence(status.reason)}</p>
-  else if (bootStartOn(host)) body = <p className="host-boot__done"><Check size={16} aria-hidden="true" />{t`${name}’s host starts at boot.`}</p>
+  else if (bootStartOn(host)) body = <p className="host-boot__done tt-paragraph"><Check size={16} aria-hidden="true" />{t`${name}’s host starts at boot.`}</p>
   else {
     const who = account(host) ?? t({ message: 'your account', comment: 'Stands in for the name of the user\'s account on a host, as in "a systemd user unit for {who}".' })
     const restarts = restartsHost(host, 'install')
     body = <>
       <p><b>{startLabel}</b></p>
-      <p className="host-boot__quiet">{status.linger
+      <p className="host-boot__quiet tt-paragraph">{status.linger
         ? restarts
           ? t`Brings ${name}’s threads back after it restarts. Sotto adds a systemd user unit for ${who}; the host restarts once now, stopping turns in progress.`
           : t`Brings ${name}’s threads back after it restarts. Sotto adds a systemd user unit for ${who}. The unit takes over the next time ${name} starts.`
@@ -364,7 +365,7 @@ export function HostBootOffer({ host, view, bridge }: { readonly host: HostStatu
   }
   return <div className="host-boot-offer">
     {body}
-    {error ? <p className="host-boot__failed" role="alert"><AlertTriangle size={16} aria-hidden="true" />{error}</p> : null}
+    {error ? <p className={typeof error === 'string' ? 'host-boot__failed' : 'host-boot__failed tt-paragraph'} role="alert"><AlertTriangle size={16} aria-hidden="true" />{shownWords(error)}</p> : null}
   </div>
 }
 
@@ -380,7 +381,7 @@ export function HostBootResult({ view, onDismiss }: { readonly view: HostBootSta
   return <section className="hosts-notice hosts-notice--error host-boot-result" role="status" aria-label={t`What Sotto said about start at boot on ${name}`}>
     <AlertTriangle size={16} aria-hidden="true" />
     <div className="host-boot__work-copy">
-      <p>{failureSentence(view)}</p>
+      <p className={failure.kind === 'linger' ? 'tt-paragraph' : undefined}>{failureSentence(view)}</p>
       {failure.fix ? <FixCommand fix={failure.fix} /> : null}
       <span className="host-boot__actions"><Button variant="ghost" aria-label={t`Dismiss what Sotto said about start at boot on ${name}`} onClick={onDismiss}>{t`Dismiss`}</Button></span>
     </div>

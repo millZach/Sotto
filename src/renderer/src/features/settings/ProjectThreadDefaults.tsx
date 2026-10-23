@@ -47,7 +47,7 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
     setOpen(false)
     button.current?.focus()
   }}>
-    <Button ref={button} variant="ghost" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen(!open)}>
+    <Button ref={button} variant="ghost" data-setting="project-defaults" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen(!open)}>
       {open ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />} <Trans>Project defaults</Trans>
     </Button>
     <div id={contentId} hidden={!open}>
@@ -60,7 +60,7 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
           <option value="shared">{t`Project folder`}</option>
           <option value="independent">{t`New worktree`}</option>
         </Select></Field>
-      </div> : <p className="tt-field__description"><Trans>Add a project in Threads to set its default working copy.</Trans></p>}
+      </div> : <p className="tt-field__description tt-paragraph"><Trans>Add a project in Threads to set its default working copy.</Trans></p>}
     </div>
   </div>
 }

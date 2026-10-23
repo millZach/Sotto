@@ -37,11 +37,11 @@ export function NotificationSettings({ settings, onSave }: {
   }
 
   return <SettingsGroup title={t`Notifications`} icon={Bell} note={t`If nothing appears, allow Sotto in System Settings → Notifications.`}>
-    <Toggle label={t`When a thread needs you`} checked={settings.notifyNeedsYou} onCheckedChange={checked => void onSave({ notifyNeedsYou: checked })} description={t`A question or a permission is waiting for you.`} />
-    <Toggle label={t`When a thread has finished everything`} checked={settings.notifyFinished} onCheckedChange={checked => void onSave({ notifyFinished: checked })} description={t`Its turn has ended and nothing it started is still going.`} />
+    <Toggle setting="notify-needs-you" label={t`When a thread needs you`} checked={settings.notifyNeedsYou} onCheckedChange={checked => void onSave({ notifyNeedsYou: checked })} description={t`A question or a permission is waiting for you.`} />
+    <Toggle setting="notify-finished" label={t`When a thread has finished everything`} checked={settings.notifyFinished} onCheckedChange={checked => void onSave({ notifyFinished: checked })} description={t`Its turn has ended and nothing it started is still going.`} />
     <div className="notification-settings__test">
-      <Button variant="secondary" disabled={testing} onClick={() => void sendTest()}>{t`Send a test notification`}</Button>
-      <p role="status" aria-live="polite">{answer === null ? '' : i18n._(answer)}</p>
+      <Button variant="secondary" data-setting="test-notification" disabled={testing} onClick={() => void sendTest()}>{t`Send a test notification`}</Button>
+      <p className="tt-paragraph" role="status" aria-live="polite">{answer === null ? '' : i18n._(answer)}</p>
     </div>
   </SettingsGroup>
 }

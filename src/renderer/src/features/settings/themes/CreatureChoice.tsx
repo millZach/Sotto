@@ -21,9 +21,9 @@ export function CreatureChoice({ value, shown, onChoose, onShow }: {
   return (
     <div className="creature-choice">
       <h3 className="theme-settings__subheading" id={headingId}><Trans>Creature</Trans></h3>
-      <p className="theme-settings__assignment-hint"><Trans>The little character that stands above a thread’s composer while it watches, works or waits.</Trans></p>
-      {onShow ? <Toggle label={t`Show the creature`} checked={shown} onCheckedChange={onShow} description={t`Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting.`} /> : null}
-      {shown ? <div className="creature-choice__grid" role="group" aria-labelledby={headingId}>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The little character that stands above a thread’s composer while it watches, works or waits.</Trans></p>
+      {onShow ? <Toggle setting="show-creature" label={t`Show the creature`} checked={shown} onCheckedChange={onShow} description={t`Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting.`} /> : null}
+      {shown ? <div className="creature-choice__grid" role="group" data-setting="creature" aria-labelledby={headingId}>
         {CREATURES.map(id => {
           const active = id === value
           const creature = CREATURE_LABELS[id]

@@ -5,6 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { HostSetupChoice, HostSetupState } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
 import { HostSetupChecklist, hostSetupSummary, type HostSetupOutcome } from './HostSetupChecklist'
+import type { LaterWords } from './laterWords'
 
 /** How Add host adds the host: an agent sets the machine up first, or Sotto connects to a host already there. */
 export type HostAddChoice = 'agent' | 'self'
@@ -46,7 +47,7 @@ export function HostAddChoices({ value, onChange, choice, modelId, onModel, disa
       <input type="radio" name={name} value="agent" checked={value === 'agent'} disabled={disabled || !agentAvailable} aria-labelledby={agentName} aria-describedby={agentHint}
         className="tt-focusable" onChange={() => onChange('agent')} />
       <span className="host-setup__choice-name" id={agentName}>{t`Have my agent set this up`}</span>
-      <span className="host-setup__choice-text" id={agentHint}>{agentAvailable
+      <span className={agentAvailable || !choice?.unavailable ? 'host-setup__choice-text tt-paragraph' : 'host-setup__choice-text'} id={agentHint}>{agentAvailable
         ? t`For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run.`
         : choice?.unavailable ?? t`An agent cannot set up a host from this window.`}</span>
     </label>
@@ -55,7 +56,7 @@ export function HostAddChoices({ value, onChange, choice, modelId, onModel, disa
       <input type="radio" name={name} value="self" checked={value === 'self'} disabled={disabled} aria-labelledby={selfName} aria-describedby={selfHint}
         className="tt-focusable" onChange={() => onChange('self')} />
       <span className="host-setup__choice-name" id={selfName}>{t`Add it`}</span>
-      <span className="host-setup__choice-text" id={selfHint}><Trans>For a machine that already has the host. Sotto connects now and says what to fix if a step fails.</Trans></span>
+      <span className="host-setup__choice-text tt-paragraph" id={selfHint}><Trans>For a machine that already has the host. Sotto connects now and says what to fix if a step fails.</Trans></span>
     </label>
   </div>
 }
@@ -78,7 +79,7 @@ const ended = (setup: HostSetupState): boolean => setup.phase === 'connected' ||
 export function HostSetupProgress({ setup, question, approvalError, onOpenThread, onOpenApproval, onOpenGuide }: {
   readonly setup: HostSetupState
   readonly question: ReactNode
-  readonly approvalError: string | null
+  readonly approvalError: LaterWords | null
   readonly onOpenThread: () => void
   readonly onOpenApproval: () => void
   readonly onOpenGuide: () => void
@@ -91,12 +92,12 @@ export function HostSetupProgress({ setup, question, approvalError, onOpenThread
   const openThread = <Button variant="secondary" disabled={!setup.threadId} onClick={onOpenThread}>{t`Open thread`}</Button>
   // SSH's question and Tailscale's approval sit on their own steps; these cards are for answers the thread holds.
   const waiting = (setup.waiting === 'command' || setup.waiting === 'add') && !ended(setup) ? <div className="hosts-notice host-setup__card" role="status">
-    <p>{setup.waiting === 'add' ? t`Sotto is asking in the thread whether to add ${name} as a host. Answer it there to carry on.`
+    <p className="tt-paragraph">{setup.waiting === 'add' ? t`Sotto is asking in the thread whether to add ${name} as a host. Answer it there to carry on.`
       : t`The agent wants to run a command on ${name}. Answer it in the thread to carry on.`}</p>
     <div className="host-setup__actions">{openThread}</div>
   </div> : undefined
   const line = !ended(setup) ? <div className="host-setup__agent">
-    <p>{setup.phase === 'starting'
+    <p className="tt-paragraph">{setup.phase === 'starting'
       ? <Trans>Starting the thread <b>{thread}</b> on <b>{model}</b>.</Trans>
       : <Trans><b>{model}</b> is setting up {name} in the thread <b>{thread}</b>. You answer each command it wants to run.</Trans>}</p>
     {openThread}
@@ -107,14 +108,14 @@ export function HostSetupProgress({ setup, question, approvalError, onOpenThread
       onOpenApproval={onOpenApproval} onOpenGuide={onOpenGuide}
       agent={{ byAgent: setup.byAgent, waiting, line, idle: attempt === undefined && setup.phase !== 'connected' }} />
     {setup.phase === 'connected' ? <div className="hosts-notice host-setup__card host-setup__card--done" role="status">
-      <p><Trans>{name} is added and connected. {model} set it up in <button type="button" className="host-setup__link tt-focusable" onClick={onOpenThread}>{thread}</button>; the thread stays in your Threads list until you archive it.</Trans></p>
+      <p className="tt-paragraph"><Trans>{name} is added and connected. {model} set it up in <button type="button" className="host-setup__link tt-focusable" onClick={onOpenThread}>{thread}</button>; the thread stays in your Threads list until you archive it.</Trans></p>
     </div> : null}
     {setup.phase === 'stopped' ? <div className="hosts-notice host-setup__card" role="status">
-      <p>{t`Setup stopped.`} {setup.error ?? t`Nothing was saved as a host.`} {t`Anything the agent installed on ${name} stays there, and the thread ${thread} stays in your Threads list.`}</p>
+      <p className="tt-paragraph">{t`Setup stopped.`} {setup.error ?? t`Nothing was saved as a host.`} {t`Anything the agent installed on ${name} stays there, and the thread ${thread} stays in your Threads list.`}</p>
       {setup.threadId ? <div className="host-setup__actions">{openThread}</div> : null}
     </div> : null}
     {setup.phase === 'failed' ? <div className="hosts-notice hosts-notice--error host-setup__card" role="alert">
-      <p>{setup.error ?? t`The setup could not carry on. Nothing was saved as a host.`}</p>
+      <p className={setup.error ? undefined : 'tt-paragraph'}>{setup.error ?? t`The setup could not carry on. Nothing was saved as a host.`}</p>
       {setup.threadId ? <div className="host-setup__actions">{openThread}</div> : null}
     </div> : null}
   </>

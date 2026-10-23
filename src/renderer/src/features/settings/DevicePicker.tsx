@@ -199,8 +199,8 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
     </button>
     {/* Pressing inside the list keeps focus on the button, which owns the keyboard. */}
     <div className="hosts-devices__popup" hidden={!shown} onMouseDown={event => event.preventDefault()}>
-      {devices === null ? <p className="hosts-devices__status">{t`Looking for your devices…`}</p>
-        : failed ? <p className="hosts-devices__status" role="status">{t`Sotto could not read the devices on this computer. Nothing was changed. Choose Another SSH host to type one.`}</p> : null}
+      {devices === null ? <p className="hosts-devices__status tt-paragraph">{t`Looking for your devices…`}</p>
+        : failed ? <p className="hosts-devices__status tt-paragraph" role="status">{t`Sotto could not read the devices on this computer. Nothing was changed. Choose Another SSH host to type one.`}</p> : null}
       <ul className="hosts-devices__list" id={listId} role="listbox" aria-labelledby={labelId}>
         {usable.length ? <li role="presentation"><ul role="group" aria-label={t`Can connect`}><li role="presentation" className="hosts-devices__group" aria-hidden="true">{t`Can connect`}</li>
           {usable.map((entry, index) => option(entry, index))}</ul></li> : null}
@@ -208,7 +208,7 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
           {greyed.map((entry, index) => option(entry, usable.length + index))}</ul></li> : null}
         {option(OTHER, entries.length - 1)}
       </ul>
-      {foot ? <p className="hosts-devices__foot">{foot}</p> : null}
+      {foot ? <p className="hosts-devices__foot tt-paragraph">{foot}</p> : null}
     </div>
   </div>
 }

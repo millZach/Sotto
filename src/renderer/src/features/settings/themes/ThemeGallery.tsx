@@ -8,7 +8,7 @@
 import React, { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Check, Copy, Download, Moon, Paintbrush, PenLine, Plus, Sun, Trash2 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
-import { msg, t } from '@lingui/core/macro'
+import { msg, plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import {
@@ -80,9 +80,9 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
           </Button>
         </div>
       </div>
-      <p className="theme-settings__assignment-hint"><Trans>Choose one theme for light mode and one for dark.</Trans></p>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>Choose one theme for light mode and one for dark.</Trans></p>
 
-      <div className="theme-halves" role="group" aria-labelledby={headingId}>
+      <div className="theme-halves" role="group" data-setting="themes" aria-labelledby={headingId}>
         {(['light', 'dark'] as const).map(half => (
           <ThemeColumn
             key={half}
@@ -109,7 +109,8 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
             <YourThemes
               themes={shown.customThemes}
               onEdit={theme => openEditor({ editingThemeId: theme.id, seedThemeId: null })}
-              onDuplicate={theme => { const name = theme.label; openEditor({ seedThemeId: theme.id, seedName: t({ message: `${name} copy`, comment: 'The name a duplicated theme starts with' }).slice(0, 48) }) }}
+              // The copy's name stays English: a theme's name is its identity, and a translated suffix would read as the original's.
+              onDuplicate={theme => openEditor({ seedThemeId: theme.id, seedName: `${theme.label} copy`.slice(0, 48) })}
               onExport={onExport}
               onRemove={remove}
             />
@@ -129,7 +130,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
               description={removal.collection.length > 1
                 ? (
                     <>
-                      <p><Trans>Select the variants you want to remove. You can restore them by installing the extension again.</Trans></p>
+                      <p className="tt-paragraph"><Trans>Select the variants you want to remove. You can restore them by installing the extension again.</Trans></p>
                       <div className="theme-remove-grid">
                         {removal.collection.map(theme => (
                           <label key={theme.id} className="theme-remove-option">
@@ -149,7 +150,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
                     </>
                   )
                 : t`You can bring it back anytime by importing its JSON file.`}
-              confirmLabel={removal.collection.length > 1 ? count > 0 ? t`Remove selected (${count})` : t`Remove selected` : t`Remove theme`}
+              confirmLabel={removal.collection.length > 1 ? count > 0 ? plural(count, { other: 'Remove selected (#)' }) : t`Remove selected` : t`Remove theme`}
               cancelLabel={t`Cancel`}
               confirmDisabled={removeIds.length === 0}
               failureMessage={t`The theme could not be removed. Your themes are unchanged.`}
@@ -183,7 +184,7 @@ function SchemeTrack({ appearance, system, onChoose }: {
   return (
     <div className="theme-settings__scheme">
       <h3 className="theme-settings__subheading" id={headingId}><Trans>Color scheme</Trans></h3>
-      <div className="theme-scheme-track" role="radiogroup" aria-labelledby={headingId}>
+      <div className="theme-scheme-track" role="radiogroup" data-setting="color-scheme" aria-labelledby={headingId}>
         <span className="theme-scheme-track__rail" aria-hidden="true" />
         {stops.map(([mode, label], index) => (
           <button
@@ -236,7 +237,7 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick, omarchyTheme, o
       <header className="theme-half__head">
         <Icon size={15} aria-hidden="true" />
         <h4 id={titleId}>{i18n._(HALF_TITLES[half])}</h4>
-        <p id={noteId}>{note}</p>
+        <p className="tt-paragraph" id={noteId}>{note}</p>
       </header>
       <div className="theme-half__options" role="radiogroup" aria-label={half === 'light' ? t`Light theme` : t`Dark theme`} aria-describedby={noteId}>
         {themes.map((theme, index) => {

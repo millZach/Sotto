@@ -41,8 +41,9 @@ import {
 import { Button } from '../../../components/Button'
 import { appearancePreview, isTransientPaintMutation, useAppearancePreviewVersion } from '../../../state/appearance'
 import { isEditorColor, ThemeColorField, themeRoleLabel } from './ThemeColorField'
+import { shownWords, type LaterWords } from '../laterWords'
 import { closeThemeEditor, useThemeEditorSession, type ThemeEditorSession } from './themeEditorSession'
-import { editorMergeTarget, editorSavePatch, ThemeLibraryWriter } from './themeLibrary'
+import { editorMergeTarget, editorSavePatch, ThemeLibraryError, ThemeLibraryWriter } from './themeLibrary'
 import {
   clearThemeInspectorHighlights,
   clearThemeInspectorHover,
@@ -236,7 +237,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const [colorsByAppearance, setColorsByAppearance] = useState<ColorsByAppearance>(seeded.colors)
   const [simpleDirty, setSimpleDirty] = useState<Record<ThemeAppearance, boolean>>({ light: false, dark: false })
   const [regenerateOnSimple, setRegenerateOnSimple] = useState(seeded.advanced)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [saving, setSaving] = useState(false)
   const [minimized, setMinimized] = useState(false)
   const [roleQuery, setRoleQuery] = useState('')
@@ -329,7 +330,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const submit = async (): Promise<void> => {
     if (saving) return
     if (!name.trim()) {
-      setError(t`Name your theme first.`)
+      setError(msg`Name your theme first.`)
       return
     }
     setSaving(true)
@@ -344,7 +345,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     try {
       const result = await writer.run(state => editorSavePatch(state, { name, editingTheme: session.editingThemeId === null ? null : editingTheme ?? ({ id: session.editingThemeId } as ThemeDefinition), activeAppearance, colorsByAppearance: colors, advanced }))
       if (!result.saved) {
-        setError(t`The theme could not be saved. Your saved themes are unchanged.`)
+        setError(msg`The theme could not be saved. Your saved themes are unchanged.`)
         setSaving(false)
         return
       }
@@ -355,7 +356,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
         : activeAppearance === 'light' ? t`${saved} created. It’s now your light theme.` : t`${saved} created. It’s now your dark theme.`)
       close()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : isEditing ? t`Could not save the theme.` : t`Could not create the theme.`)
+      setError(cause instanceof ThemeLibraryError ? cause.words : cause instanceof Error ? cause.message : isEditing ? msg`Could not save the theme.` : msg`Could not create the theme.`)
       setSaving(false)
     }
   }
@@ -691,7 +692,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     >
       <div className="theme-editor__header" {...dragHandlers}>
         <h2 id={titleId}>{title}</h2>
-        {minimized ? null : <p aria-live="polite">{status}</p>}
+        {minimized ? null : <p className="tt-paragraph" aria-live="polite">{status}</p>}
         {minimized ? null : (
           <Button
             variant={inspecting ? 'secondary' : 'ghost'}
@@ -743,7 +744,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                     }}
                   />
                 </div>
-                {error === null ? null : <p className="theme-editor__error" id={errorId} role="alert">{error}</p>}
+                {error === null ? null : <p className="theme-editor__error tt-paragraph" id={errorId} role="alert">{shownWords(error)}</p>}
                 <div className="theme-editor__row">
                   <span id={`${titleId}-appearance`}>{t({ message: 'Appearance', context: 'theme editor', comment: 'Which palette of the theme is being edited: light or dark' })}</span>
                   <div className="segmented-control theme-editor__appearance" role="radiogroup" aria-labelledby={`${titleId}-appearance`}>
@@ -794,7 +795,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                             {group.families.map(family => <ThemeColorField key={family.id} role={family.role} label={family.label} value={palette[family.role]} onChange={updateColor} selected={selectedRole === family.role} onSelect={selectRole} onToggleSelected={toggleRole} />)}
                           </section>
                         ))}
-                        {groups.length === 0 ? <p className="theme-editor__empty"><Trans>No matches.</Trans></p> : null}
+                        {groups.length === 0 ? <p className="theme-editor__empty tt-paragraph"><Trans>No matches.</Trans></p> : null}
                       </div>
                     )
                   : SIMPLE_ROLES.map(role => <ThemeColorField key={role} role={role} label={role === 'canvas' ? t({ message: 'Background', comment: 'A theme color: the window background' }) : t({ message: 'Accent', comment: 'A theme color: the accent' })} value={palette[role]} onChange={updateColor} selected={selectedRole === role} onSelect={selectRole} onToggleSelected={toggleRole} />)}

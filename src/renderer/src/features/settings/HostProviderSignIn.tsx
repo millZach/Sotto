@@ -10,12 +10,13 @@ import type { HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { PASTED_CODE_MAX, type HostProviderId, type ProviderSignInView } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { HostsModal } from './HostsModal'
+import { shownWords, type LaterWords } from './laterWords'
 
 /** How often the dialog asks the host where a sign-in stands while it waits for the user or the client. */
 const READ_EVERY_MS = 1500
 /** Reads in a row a host can fail to answer before the dialog says it stopped answering. */
 const READ_MISSES = 2
-const clean = (failure: unknown, fallback: string): string =>
+const clean = (failure: unknown, fallback: LaterWords): LaterWords =>
   failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() || fallback : fallback
 const running = (view: ProviderSignInView | null): boolean => view !== null && (view.stage === 'starting' || view.stage === 'waiting' || view.stage === 'finishing')
 
@@ -37,10 +38,10 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
   const name = PROVIDER_LABELS[provider]
   const hostName = host.name
   const [view, setView] = useState<ProviderSignInView | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [opened, setOpened] = useState(false)
   const [code, setCode] = useState('')
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const [codeError, setCodeError] = useState<LaterWords | null>(null)
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -57,7 +58,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
     bridge.signIn({ type: 'start', id: host.id, provider }).then(started => {
       if (alive) { setView(started); return }
       if (started && running(started)) void bridge.signIn({ type: 'cancel', id: host.id, signInId: started.id }).catch(() => undefined)
-    }, failure => { if (alive) setError(clean(failure, i18n._(msg`${name} could not start signing in on ${hostName}. Nothing was changed. Try again.`))) })
+    }, failure => { if (alive) setError(clean(failure, msg`${name} could not start signing in on ${hostName}. Nothing was changed. Try again.`)) })
     return () => { alive = false }
   }, [attempt, bridge, host.id, hostName, name, provider])
   useEffect(() => () => { const last = current.current; if (last && running(last)) void bridge.signIn({ type: 'cancel', id: host.id, signInId: last.id }).catch(() => undefined) }, [bridge, host.id])
@@ -75,7 +76,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
         setView(next ?? { id: signInId, provider, shape: view!.shape, stage: 'ended' })
       }, () => {
         if (!alive || ++missed < READ_MISSES) return
-        setError(i18n._(msg`${hostName} stopped answering while ${name} was signing in. If its tile still says Not signed in, try again.`))
+        setError(msg`${hostName} stopped answering while ${name} was signing in. If its tile still says Not signed in, try again.`)
       })
     }, READ_EVERY_MS)
     return () => { alive = false; clearInterval(timer) }
@@ -97,14 +98,14 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
     if (!view) return
     setBusy(true)
     try { await bridge.signIn({ type: 'open', id: host.id, signInId: view.id }); setOpened(true) }
-    catch (failure) { setError(clean(failure, t`The sign-in page could not open. Nothing was changed. Try again.`)) }
+    catch (failure) { setError(clean(failure, msg`The sign-in page could not open. Nothing was changed. Try again.`)) }
     finally { setBusy(false) }
   }
   const finish = async (): Promise<void> => {
     if (!view || !code.trim() || busy) return
     setBusy(true); setCodeError(null)
     try { const next = await bridge.signIn({ type: 'code', id: host.id, signInId: view.id, code: code.trim() }); setCode(''); if (next) setView(next) }
-    catch (failure) { setCodeError(clean(failure, t`The code could not be sent. Nothing was changed. Try again.`)) }
+    catch (failure) { setCodeError(clean(failure, msg`The code could not be sent. Nothing was changed. Try again.`)) }
     finally { setBusy(false) }
   }
   const copy = async (value: string): Promise<void> => { try { await writeClipboard(value); setCopied('copied') } catch { setCopied('failed') } }
@@ -112,18 +113,18 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
   const close = (): void => { onClose() }
 
   const body = (): ReactNode => {
-    if (error) return <div className="hosts-notice hosts-notice--error" role="alert"><p>{error}</p></div>
-    if (!view || view.stage === 'starting') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p><Trans>Starting {name}'s sign-in on {hostName}…</Trans></p></div>
-    if (view.stage === 'finishing') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p><Trans>Finishing sign-in on {hostName}, then connecting {name}…</Trans></p></div>
-    if (view.stage === 'connected') return <div className="hosts-notice host-sign-in__done" role="status"><Check size={16} aria-hidden="true" /><p><Trans>{name} is signed in and connected on {hostName}.</Trans></p></div>
-    if (view.stage === 'refused') return <div className="hosts-notice hosts-notice--error" role="alert"><p><Trans>{name} did not accept that code, so {hostName} is still not signed in. Open the sign-in page again for a new code.</Trans></p></div>
+    if (error) return <div className="hosts-notice hosts-notice--error" role="alert"><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div>
+    if (!view || view.stage === 'starting') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p className="tt-paragraph"><Trans>Starting {name}'s sign-in on {hostName}…</Trans></p></div>
+    if (view.stage === 'finishing') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p className="tt-paragraph"><Trans>Finishing sign-in on {hostName}, then connecting {name}…</Trans></p></div>
+    if (view.stage === 'connected') return <div className="hosts-notice host-sign-in__done" role="status"><Check size={16} aria-hidden="true" /><p className="tt-paragraph"><Trans>{name} is signed in and connected on {hostName}.</Trans></p></div>
+    if (view.stage === 'refused') return <div className="hosts-notice hosts-notice--error" role="alert"><p className="tt-paragraph"><Trans>{name} did not accept that code, so {hostName} is still not signed in. Open the sign-in page again for a new code.</Trans></p></div>
     // The host's own sentence, when it sent one.
-    if (view.stage === 'failed') return <div className="hosts-notice hosts-notice--error" role="alert"><p>{view.message ?? t`${name} could not finish signing in on ${hostName}. Nothing was changed.`}</p></div>
-    if (view.stage === 'ended') return <div className="hosts-notice hosts-notice--error" role="alert"><p><Trans>The sign-in on {hostName} ended before it was finished. Nothing was signed in.</Trans></p></div>
+    if (view.stage === 'failed') return <div className="hosts-notice hosts-notice--error" role="alert"><p className={view.message ? undefined : 'tt-paragraph'}>{view.message ?? t`${name} could not finish signing in on ${hostName}. Nothing was changed.`}</p></div>
+    if (view.stage === 'ended') return <div className="hosts-notice hosts-notice--error" role="alert"><p className="tt-paragraph"><Trans>The sign-in on {hostName} ended before it was finished. Nothing was signed in.</Trans></p></div>
     const page = view.page ?? t({ message: 'the sign-in page', comment: 'Stands in for the address of a provider\'s sign-in page, as in "Waiting for you on {page}."' })
     const minutes = view.expiresInMinutes, spoken = spelled(view.code ?? '')
     if (view.shape === 'device-code') return <div className="host-sign-in">
-      <p><Trans>Enter this code on {name}'s sign-in page. {hostName} finishes signing in by itself once you do.</Trans></p>
+      <p className="tt-paragraph"><Trans>Enter this code on {name}'s sign-in page. {hostName} finishes signing in by itself once you do.</Trans></p>
       <div className="host-sign-in__code-row">
         <span className="host-sign-in__code" aria-hidden="true">{view.code}</span>
         <span className="tt-visually-hidden"><Trans comment="{spoken} is a sign-in code read one character at a time.">Code {spoken}</Trans></span>
@@ -134,15 +135,15 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
       <div className="host-sign-in__row">
         <Button variant="primary" data-autofocus disabled={busy} onClick={() => void open()}>{opened ? t`Open sign-in page again` : t`Open sign-in page`}</Button>
       </div>
-      <p className="host-sign-in__waiting" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />{t`Waiting for you on ${page}.`}{minutes ? <> {plural(minutes, { other: 'The code lasts # minutes.' })}</> : null}</p>
-      {copied === 'failed' ? <p className="host-sign-in__quiet"><Trans>The code could not be copied. Type it on the page instead.</Trans></p> : null}
+      <p className="host-sign-in__waiting tt-paragraph" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />{t`Waiting for you on ${page}.`}{minutes ? <> {plural(minutes, { other: 'The code lasts # minutes.' })}</> : null}</p>
+      {copied === 'failed' ? <p className="host-sign-in__quiet tt-paragraph"><Trans>The code could not be copied. Type it on the page instead.</Trans></p> : null}
       <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the code` : ''}</span>
     </div>
     return <div className="host-sign-in">
-      <p><Trans>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</Trans></p>
+      <p className="tt-paragraph"><Trans>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</Trans></p>
       <div className="host-sign-in__row">
         <Button variant={opened ? 'secondary' : 'primary'} data-autofocus disabled={busy} onClick={() => void open()}>{opened ? t`Open sign-in page again` : t`Open sign-in page`}</Button>
-        {opened ? <span className="host-sign-in__quiet"><Trans>Opened {page} in your browser.</Trans></span> : null}
+        {opened ? <span className="host-sign-in__quiet tt-paragraph"><Trans>Opened {page} in your browser.</Trans></span> : null}
       </div>
       {opened ? <div className="tt-field host-sign-in__field">
         <label className="tt-field__label" htmlFor={fieldId}>{t`Code from the page`}</label>
@@ -153,8 +154,8 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
             onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); void finish() } }} />
           <Button variant="primary" disabled={!code.trim() || busy} onClick={() => void finish()}>{t`Finish sign-in`}</Button>
         </div>
-        <p className="tt-field__description" id={hintId}><Trans>Sotto hands the code to {name} on {hostName} and keeps nothing.</Trans></p>
-        {codeError ? <p className="host-sign-in__error" role="alert">{codeError}</p> : null}
+        <p className="tt-field__description tt-paragraph" id={hintId}><Trans>Sotto hands the code to {name} on {hostName} and keeps nothing.</Trans></p>
+        {codeError ? <p className={typeof codeError === 'string' ? 'host-sign-in__error' : 'host-sign-in__error tt-paragraph'} role="alert">{shownWords(codeError)}</p> : null}
       </div> : null}
     </div>
   }

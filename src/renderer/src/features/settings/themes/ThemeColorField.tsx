@@ -98,7 +98,7 @@ function rgbTextToHex(value: string): string | null {
 }
 
 function ColorPickerPanel({ label, value, onChange }: { readonly label: string; readonly value: string; readonly onChange: (value: string) => void }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n: { locale } } = useLingui()
   const normalized = pickerHex(value)
   const suffix = alphaSuffix(value)
   const [hsv, setHsv] = useState(() => hexToHsv(normalized))
@@ -190,8 +190,9 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
 
   const textFocus = { onFocus: () => { editingText.current = true }, onBlur: () => { editingText.current = false; setHexDraft(current); setRgbDraft(rgbText(current)) } }
 
-  const saturation = Math.round(hsv.s * 100)
-  const brightness = Math.round(hsv.v * 100)
+  const percent = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 })
+  const saturation = percent.format(Math.round(hsv.s * 100) / 100)
+  const brightness = percent.format(Math.round(hsv.v * 100) / 100)
   return (
     <div className="theme-picker">
       <div
@@ -202,7 +203,7 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(hsv.v * 100)}
-        aria-valuetext={t`saturation ${saturation}%, brightness ${brightness}%`}
+        aria-valuetext={t`saturation ${saturation}, brightness ${brightness}`}
         style={{ backgroundColor: `hsl(${Math.round(hsv.h)} 100% 50%)` }}
         onKeyDown={planeKeys}
         {...dragging(fromPlane)}

@@ -3,10 +3,11 @@ import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
+import { shownWords, type LaterWords } from './laterWords'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
 import { describeSetting, findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { t as tNow } from '@lingui/core/macro'
+import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
 
@@ -246,10 +247,10 @@ export function SettingsView({
   const microphoneTestRef = useRef<MicrophoneTestController | null>(null)
   const microphoneTestGeneration = useRef(0)
   const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
-  const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
-  const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
-  const [typingSpeedError, setTypingSpeedError] = useState<string | undefined>()
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+  const [pasteDelayError, setPasteDelayError] = useState<LaterWords | undefined>()
+  const [successDurationError, setSuccessDurationError] = useState<LaterWords | undefined>()
+  const [typingSpeedError, setTypingSpeedError] = useState<LaterWords | undefined>()
+  const [notice, setNotice] = useState<{ text: LaterWords; error: boolean } | null>(null)
   const pasteDelayDraft = useRevisionDraft(settings.pasteDelayMs, String(settings.pasteDelayMs), () => setPasteDelayError(undefined))
   const successDurationDraft = useRevisionDraft(settings.successDisplayMs, String(settings.successDisplayMs), () => setSuccessDurationError(undefined))
   const typingSpeedDraft = useRevisionDraft(settings.typingSpeedWpm, String(settings.typingSpeedWpm), () => setTypingSpeedError(undefined))
@@ -258,8 +259,8 @@ export function SettingsView({
   const [updateBusy, setUpdateBusy] = useState(false)
   const resumeAfterRestart = useOwlFeature('resume-after-restart')
   const updateAll = useOwlFeature('update-all')
-  const [clearFailure, setClearFailure] = useState<string | null>(null)
-  const [resetFailure, setResetFailure] = useState<string | null>(null)
+  const [clearFailure, setClearFailure] = useState<LaterWords | null>(null)
+  const [resetFailure, setResetFailure] = useState<LaterWords | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
@@ -270,14 +271,14 @@ export function SettingsView({
 
   settingsRef.current = settings
 
-  const save = useCallback(async (patch: SettingsPatch, successText?: string): Promise<boolean> => {
+  const save = useCallback(async (patch: SettingsPatch, successText?: LaterWords): Promise<boolean> => {
     const sequence = ++saveSequenceRef.current
     const saved = await onUpdateSettings(patch).catch(() => false)
     if (sequence === saveSequenceRef.current) setNotice(saved
-      ? { text: successText ?? t`Setting saved.`, error: false }
-      : { text: t`That setting could not be saved. Your previous setting is still active.`, error: true })
+      ? { text: successText ?? msg`Setting saved.`, error: false }
+      : { text: msg`That setting could not be saved. Your previous setting is still active.`, error: true })
     return saved
-  }, [onUpdateSettings, t])
+  }, [onUpdateSettings])
 
   // A result belongs to one input. A changed selection also invalidates pending permission.
   useEffect(() => {
@@ -364,14 +365,14 @@ export function SettingsView({
   const saveDictionary = async (announce = true): Promise<void> => {
     const value = llmDictionaryDraft.read()
     if (value.length > 4000) {
-      if (announce) setNotice({ text: t`The dictionary could not be saved. Keep it within 4,000 characters.`, error: true })
+      if (announce) setNotice({ text: msg`The dictionary could not be saved. Keep it within 4,000 characters.`, error: true })
       return
     }
     const submission = llmDictionaryDraft.begin(value, true)
     if (submission === null) return
     const sequence = ++dictionarySaveSequenceRef.current
     const saved = announce
-      ? await save({ llmDictionary: value }, t`Dictionary saved.`)
+      ? await save({ llmDictionary: value }, msg`Dictionary saved.`)
       : await onUpdateSettings({ llmDictionary: value }).catch(() => false)
     llmDictionaryDraft.settle(submission, saved, false)
     if (sequence !== dictionarySaveSequenceRef.current) return
@@ -392,11 +393,11 @@ export function SettingsView({
    */
   const saveBoundedNumber = async <K extends 'pasteDelayMs' | 'successDisplayMs' | 'typingSpeedWpm'>(
     draft: typeof pasteDelayDraft, key: K, minimum: number, maximum: number,
-    setError: (error: string | undefined) => void, notice: string,
+    setError: (error: LaterWords | undefined) => void, notice: LaterWords,
   ): Promise<void> => {
     const value = parseBoundedInteger(draft.read(), minimum, maximum)
     if (value === null) {
-      setError(t`Enter a whole number between ${minimum} and ${maximum}.`)
+      setError(msg`Enter a whole number between ${minimum} and ${maximum}.`)
       return
     }
     setError(undefined)
@@ -405,9 +406,9 @@ export function SettingsView({
     const saved = await save({ [key]: value } as Pick<AppSettings, K>, notice)
     draft.settle(submission, saved, true)
   }
-  const savePasteDelay = (): Promise<void> => saveBoundedNumber(pasteDelayDraft, 'pasteDelayMs', 50, 1_000, setPasteDelayError, t`Paste delay saved.`)
-  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, t`Success duration saved.`)
-  const saveTypingSpeed = (): Promise<void> => saveBoundedNumber(typingSpeedDraft, 'typingSpeedWpm', TYPING_SPEED_MIN_WPM, TYPING_SPEED_MAX_WPM, setTypingSpeedError, t`Typing speed saved.`)
+  const savePasteDelay = (): Promise<void> => saveBoundedNumber(pasteDelayDraft, 'pasteDelayMs', 50, 1_000, setPasteDelayError, msg`Paste delay saved.`)
+  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, msg`Success duration saved.`)
+  const saveTypingSpeed = (): Promise<void> => saveBoundedNumber(typingSpeedDraft, 'typingSpeedWpm', TYPING_SPEED_MIN_WPM, TYPING_SPEED_MAX_WPM, setTypingSpeedError, msg`Typing speed saved.`)
 
   // One busy flag for all three: they are the same button row, and only one of
   // check, download, or restart can sensibly be in flight at a time.
@@ -452,7 +453,7 @@ export function SettingsView({
   const findIndex = settingsIndex(platform).filter(entry => entry.gate === undefined || gates[entry.gate]).flatMap(entry => {
     if (!searching) return [entry]
     const panel = document.getElementById(panelIdOf(settingsSectionHome(entry.section).page))
-    const control = panel && findSettingControl(panel, entry.target ?? entry.label)
+    const control = panel && findSettingControl(panel, entry.id)
     if (!control) return panel && entry.fallback && findSettingControl(panel, entry.fallback) ? [entry] : []
     return [{ ...entry, words: `${entry.words ?? ''} ${describeSetting(control)}` }]
   })
@@ -471,7 +472,7 @@ export function SettingsView({
     revealedRef.current = reveal.key
     const panel = document.getElementById(panelIdOf(activeSection))
     // The setting itself, or where it goes while the page is not showing it.
-    const control = panel ? reveal.settings.reduce<HTMLElement | null>((found, name) => found ?? findSettingControl(panel, name), null) : null
+    const control = panel ? reveal.settings.reduce<HTMLElement | null>((found, id) => found ?? findSettingControl(panel, id), null) : null
     const group = reveal.group === null ? null : document.getElementById(reveal.group)
     if (control) revealSetting(control)
     else if (group) group.scrollIntoView?.({ block: 'start' })
@@ -507,7 +508,7 @@ export function SettingsView({
   })
   const openFound = (entry: SettingEntry): void => {
     setFindQuery('')
-    openAt(entry.section, [entry.target ?? entry.label, ...entry.fallback ? [entry.fallback] : []])
+    openAt(entry.section, [entry.id, ...entry.fallback ? [entry.fallback] : []])
   }
   const pageLabel = (entry: SettingEntry): string => SETTINGS_PAGES.find(page => page.id === settingsSectionHome(entry.section).page)?.label ?? ''
 
@@ -565,16 +566,16 @@ export function SettingsView({
           <SidebarFoot />
         </aside>
         <div className="settings-detail">
-          {notice === null ? null : <div className="settings-feedback"><p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p></div>}
+          {notice === null ? null : <div className="settings-feedback"><p className="settings-notice tt-paragraph" role={notice.error ? 'alert' : 'status'}>{shownWords(notice.text)}</p></div>}
           <div className="settings-scroll" ref={scrollRef}>
             <div className="settings-form">
               <Card className="settings-section" id="settings-capture" {...panelProps('settings-capture')}>
-                <div className="settings-section__heading"><h2><Trans>Dictation</Trans></h2><p>{dictation ? t`Microphone, speech model & what happens to the text` : t`Dictation is off`}</p></div>
+                <div className="settings-section__heading"><h2><Trans>Dictation</Trans></h2><p className="tt-paragraph">{dictation ? t`Microphone, speech model & what happens to the text` : t`Dictation is off`}</p></div>
                 <SettingsGroup title={t`Microphone`} icon={Mic}>
-                  {dictationSwitch ? <Toggle label={t`Dictate with Sotto`} checked={settings.dictationEnabled} onCheckedChange={(checked) => void save({ dictationEnabled: checked })} description={t`Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model.`} /> : null}
-                  {dictation ? null : <p className="settings-disclosure"><Trans>Dictation is off. The hotkey is free for other apps and the Dictate room is hidden. Your transcripts, vocabulary and speech model are kept.</Trans></p>}
+                  {dictationSwitch ? <Toggle setting="dictation-enabled" label={t`Dictate with Sotto`} checked={settings.dictationEnabled} onCheckedChange={(checked) => void save({ dictationEnabled: checked })} description={t`Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model.`} /> : null}
+                  {dictation ? null : <p className="settings-disclosure tt-paragraph"><Trans>Dictation is off. The hotkey is free for other apps and the Dictate room is hidden. Your transcripts, vocabulary and speech model are kept.</Trans></p>}
                   {dictation ? <>
-                  <Field label={t`Microphone`} {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}>
+                  <Field setting="microphone" label={t`Microphone`} {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}>
                     <Select value={microphoneId ?? ''} onChange={(event) => {
                       const next = event.currentTarget.value || null
                       const sequence = ++microphoneSaveRef.current
@@ -592,11 +593,11 @@ export function SettingsView({
                       })}
                     </Select>
                   </Field>
-                  <Field label={t`Microphone test`} description={t`Check that Sotto can hear you. Access is asked for only while the test runs.`}>
+                  <Field setting="microphone-test" label={t`Microphone test`} description={t`Check that Sotto can hear you. Access is asked for only while the test runs.`}>
                     <div className="settings-microphone-test" data-state={microphoneState}>
                       {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
                       <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label={t`Microphone level`} size="deck" holdSpeaking={microphoneState === 'ready'} />
-                      <p role="status">
+                      <p className="tt-paragraph" role="status">
                         {microphoneState === 'ready' ? t`Listening. Say something.` : null}
                         {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_HEARD_LEVEL ? t`Sotto heard you. The microphone is closed.` : t`Sotto did not hear anything. Check that the microphone is not muted.` : null}
                         {microphoneState === 'requesting' ? t`Waiting for microphone permission...` : null}
@@ -624,16 +625,16 @@ export function SettingsView({
                     : <DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />}
                 </SettingsGroup>
                 <SettingsGroup title={t`While you dictate`} icon={Timer}>
-                  <Field label={t`Recording limit`}><SegmentedControl label={t`Maximum recording time`} value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[
+                  <Field label={t`Recording limit`}><SegmentedControl setting="recording-limit" label={t`Maximum recording time`} value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[
                     { value: '30', label: t({ message: '30 s', comment: 'Thirty seconds, the shortest recording limit.' }) },
                     { value: '60', label: t({ message: '1 min', comment: 'One minute, a recording limit.' }) },
                     { value: '120', label: t({ message: '2 min', comment: 'Two minutes, a recording limit.' }) },
                     { value: '300', label: t({ message: '5 min', comment: 'Five minutes, the longest recording limit.' }) },
                   ]} /></Field>
-                  <Toggle label={t`Sound cues`} checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description={t`A short sound when recording starts and stops.`} />
-                  <div className="settings-input-action"><Field label={t`Typing speed`} description={t`How fast you type, in words per minute (${slowest} to ${fastest}). The Dictate room counts the time dictation saves you against it.`} {...(typingSpeedError === undefined ? {} : { error: typingSpeedError })}><input className="tt-input" inputMode="numeric" value={typingSpeedDraft.value} onBlur={() => void saveTypingSpeed()} onChange={(event) => { typingSpeedDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  <Toggle setting="sound-cues" label={t`Sound cues`} checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description={t`A short sound when recording starts and stops.`} />
+                  <div className="settings-input-action"><Field setting="typing-speed" label={t`Typing speed`} description={t`How fast you type, in words per minute (${slowest} to ${fastest}). The Dictate room counts the time dictation saves you against it.`} {...(typingSpeedError === undefined ? {} : { error: shownWords(typingSpeedError) })}><input className="tt-input" inputMode="numeric" value={typingSpeedDraft.value} onBlur={() => void saveTypingSpeed()} onChange={(event) => { typingSpeedDraft.edit(event.currentTarget.value) }} /></Field></div>
                   {/* While Omarchy's shell pill stands in for the widget, the switch would change nothing anyone can see. */}
-                  <Toggle label={t`Show floating widget when idle`} checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
+                  <Toggle setting="widget-when-idle" label={t`Show floating widget when idle`} checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
                     {...(platform === 'linux' && settings.shellPillInUse === true
                       ? { disabled: true, description: t`On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.` }
                       : { description: t`Keep the small dictation sliver on screen between sessions. Click it to dictate.` })} />
@@ -648,26 +649,26 @@ export function SettingsView({
                     onRetry={onDownloadSpeechModel}
                     platform={platform}
                   />
-                  <Toggle label={t`Whitespace formatting`} checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description={t`Trims extra spaces without changing any words.`} />
-                  <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
+                  <Toggle setting="whitespace-formatting" label={t`Whitespace formatting`} checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description={t`Trims extra spaces without changing any words.`} />
+                  <p className="settings-disclosure tt-paragraph">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
                 </SettingsGroup>
                 <SettingsGroup id="settings-output" title={t`After you dictate`} icon={ClipboardPaste}>
-                  <Toggle label={t`Automatic clipboard copy`} checked disabled onCheckedChange={() => undefined} description={t`Always on. Every successful transcript is copied.`} />
-                  <Toggle label={t`Automatic paste`} checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
-                  <div className="settings-input-action"><Field label={t`Paste delay`} description={t`How long to wait before pasting, in milliseconds (50 to 1000).`} {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
-                  <div className="settings-input-action"><Field label={t`Success message duration`} description={t`How long the success message stays up, in milliseconds (500 to 5000).`} {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  <Toggle setting="clipboard-copy" label={t`Automatic clipboard copy`} checked disabled onCheckedChange={() => undefined} description={t`Always on. Every successful transcript is copied.`} />
+                  <Toggle setting="auto-paste" label={t`Automatic paste`} checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
+                  <div className="settings-input-action"><Field setting="paste-delay" label={t`Paste delay`} description={t`How long to wait before pasting, in milliseconds (50 to 1000).`} {...(pasteDelayError === undefined ? {} : { error: shownWords(pasteDelayError) })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  <div className="settings-input-action"><Field setting="success-duration" label={t`Success message duration`} description={t`How long the success message stays up, in milliseconds (500 to 5000).`} {...(successDurationError === undefined ? {} : { error: shownWords(successDurationError) })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
                 </SettingsGroup>
                 </> : null}
               </Card>
 
               {dictation ? <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
-                <div className="settings-section__heading"><h2><Trans>Cleanup</Trans></h2><p><Trans>AI cleanup through OpenRouter</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Cleanup</Trans></h2><p className="tt-paragraph"><Trans>AI cleanup through OpenRouter</Trans></p></div>
                 <div className="settings-rows">
-                  <Toggle label={t`AI formatting`} checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description={t`Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript.`} />
+                  <Toggle setting="ai-formatting" label={t`AI formatting`} checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description={t`Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript.`} />
                   <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
                   {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels} /> : null}
                   <div className="settings-input-action">
-                    <Field label={t`Personal dictionary`} description={llmDictionaryDraft.value.length >= 4000
+                    <Field setting="personal-dictionary" label={t`Personal dictionary`} description={llmDictionaryDraft.value.length >= 4000
                       ? t`One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum.`
                       : t`One word or name per line, so AI cleanup spells them your way.`}>
                       <textarea className="tt-input" rows={5} maxLength={4000} value={llmDictionaryDraft.value} onPaste={(event) => {
@@ -680,105 +681,105 @@ export function SettingsView({
                         llmDictionaryDraft.edit(value)
                       }} />
                     </Field>
-                    <p className="settings-disclosure" role="status">{dictionaryPasteCut ? t`The pasted text was cut to fit the 4,000-character limit.` : ''}</p>
+                    <p className="settings-disclosure tt-paragraph" role="status">{dictionaryPasteCut ? t`The pasted text was cut to fit the 4,000-character limit.` : ''}</p>
                   </div>
                 </div>
               </Card> : null}
 
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}>
-                <div className="settings-section__heading"><h2><Trans>Threads</Trans></h2><p><Trans>New threads, replies, the browser &amp; visuals</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Threads</Trans></h2><p className="tt-paragraph"><Trans>New threads, replies, the browser &amp; visuals</Trans></p></div>
                 <AgentSetupFields />
                 <SettingsGroup title={t`Working copy`} icon={FolderGit2}>
-                  <Field label={t`New threads work in`} description={t`Project defaults below can override this. Existing threads keep their folder.`}><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">{t`Project folder`}</option><option value="independent">{t`New worktree`}</option></Select></Field>
+                  <Field setting="thread-working-copy" label={t`New threads work in`} description={t`Project defaults below can override this. Existing threads keep their folder.`}><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">{t`Project folder`}</option><option value="independent">{t`New worktree`}</option></Select></Field>
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                 </SettingsGroup>
                 <SettingsGroup title={t`In a thread`} icon={MessageSquareText}>
-                  <Field label={t`Replies in threads`} description={t`Show replies as they are written or once finished. Commands and tool calls always show as they run.`}><SegmentedControl label={t`Replies in threads`} value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: t`As written` }, { value: 'complete', label: t`When finished` }]} /></Field>
-                  <Toggle label={t`Generated thread titles`} checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description={t`The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept.`} />
+                  <Field label={t`Replies in threads`} description={t`Show replies as they are written or once finished. Commands and tool calls always show as they run.`}><SegmentedControl setting="reply-streaming" label={t`Replies in threads`} value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: t`As written` }, { value: 'complete', label: t`When finished` }]} /></Field>
+                  <Toggle setting="thread-titles" label={t`Generated thread titles`} checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description={t`The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept.`} />
                   {/* ADR-0076: an Owl feature, read when Sotto next starts. */}
-                  {resumeAfterRestart ? <Toggle label={t`Resume threads after a restart`} checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
+                  {resumeAfterRestart ? <Toggle setting="resume-after-restart" label={t`Resume threads after a restart`} checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
                     description={settings.resumeThreadsAfterRestart
                       ? t`A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.`
                       : t`A thread working when Sotto closes waits for your next message.`} /> : null}
                 </SettingsGroup>
                 <SettingsGroup id="settings-browser" title={t`Links and Sotto’s browser`} icon={Globe}>
-                  <Field label={t`Web links in threads`} description={t`Where links in threads open. To choose for one link, right-click it or press Shift+F10.`}><SegmentedControl label={t`Web links in threads`} value={settings.webLinkDestination} onChange={value => void save({ webLinkDestination: value as AppSettings['webLinkDestination'] })} options={[{ value: 'external', label: t`System browser` }, { value: 'embedded', label: t`Sotto browser` }]} /></Field>
-                  <Toggle label={t`Show the browser when an agent opens a page`} checked={settings.showBrowserPreviews} onCheckedChange={checked => void save({ showBrowserPreviews: checked })} description={t`Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools.`} />
+                  <Field label={t`Web links in threads`} description={t`Where links in threads open. To choose for one link, right-click it or press Shift+F10.`}><SegmentedControl setting="web-links" label={t`Web links in threads`} value={settings.webLinkDestination} onChange={value => void save({ webLinkDestination: value as AppSettings['webLinkDestination'] })} options={[{ value: 'external', label: t`System browser` }, { value: 'embedded', label: t`Sotto browser` }]} /></Field>
+                  <Toggle setting="browser-previews" label={t`Show the browser when an agent opens a page`} checked={settings.showBrowserPreviews} onCheckedChange={checked => void save({ showBrowserPreviews: checked })} description={t`Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools.`} />
                 </SettingsGroup>
                 <SettingsGroup title={t`What agents can do without asking`} icon={ShieldCheck}>
-                  <Toggle label={t`Let agents use the browser without asking`} checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description={t`Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser.`} />
-                  <Toggle label={t`Let agents draw visuals in threads`} checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description={t`Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online.`} />
+                  <Toggle setting="browser-without-asking" label={t`Let agents use the browser without asking`} checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description={t`Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser.`} />
+                  <Toggle setting="visuals-in-threads" label={t`Let agents draw visuals in threads`} checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description={t`Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online.`} />
                 </SettingsGroup>
               </Card>
 
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
-                <div className="settings-section__heading"><h2><Trans>Git &amp; worktrees</Trans></h2><p><Trans>Worktrees, commits, pull requests, Changes &amp; fetching</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Git &amp; worktrees</Trans></h2><p className="tt-paragraph"><Trans>Worktrees, commits, pull requests, Changes &amp; fetching</Trans></p></div>
                 <GitSettings settings={settings} onSave={save} />
               </Card>
 
               {watcherOn ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>
-                <div className="settings-section__heading"><h2>Watcher</h2><p>{workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
+                <div className="settings-section__heading"><h2>Watcher</h2><p className="tt-paragraph">{workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
                 <SettingsGroup title={t`Watched threads`} icon={Eye}>
-                  <Toggle label={t`Settle finished threads`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
+                  <Toggle setting="watcher-settles" label={t`Settle finished threads`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
                     description={t`Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it.`} />
                 </SettingsGroup>
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
-              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2><Trans>Providers</Trans></h2><p><Trans>Accounts &amp; connections</Trans></p></div><ProvidersSettings /></Card>
+              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2><Trans>Providers</Trans></h2><p className="tt-paragraph"><Trans>Accounts &amp; connections</Trans></p></div><ProvidersSettings /></Card>
 
               <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}>
-                <div className="settings-section__heading"><h2><Trans>Hosts &amp; phones</Trans></h2><p><Trans>This computer, other computers, and your iPhone</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Hosts &amp; phones</Trans></h2><p className="tt-paragraph"><Trans>This computer, other computers, and your iPhone</Trans></p></div>
                 <HostsSettings localHostEnabled={settings.localHostEnabled} onLocalHostChange={enabled => onUpdateSettings({ localHostEnabled: enabled })} />
-                <SettingsGroup id="settings-phones" title={t`Phones`} icon={Smartphone} rows={false}>
+                <SettingsGroup id="settings-phones" setting="phone-pairing" title={t`Phones`} icon={Smartphone} rows={false}>
                   {/* Run the local host is on this page, above: the press brings it into view with focus on it. */}
                   <PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
-                    onOpenHosts={() => { const panel = document.getElementById('settings-hosts'); const control = panel && findSettingControl(panel, t`Run the local host`); if (control) revealSetting(control) }} />
+                    onOpenHosts={() => { const panel = document.getElementById('settings-hosts'); const control = panel && findSettingControl(panel, 'local-host'); if (control) revealSetting(control) }} />
                 </SettingsGroup>
               </Card>
 
-              <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2><Trans>Cloud iPhone</Trans></h2><p><Trans>Native iOS builds on a run.cloud simulator</Trans></p></div>
+              <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2><Trans>Cloud iPhone</Trans></h2><p className="tt-paragraph"><Trans>Native iOS builds on a run.cloud simulator</Trans></p></div>
                 <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
 
               <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}>
                 <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current}>
-                  <Field label={t`Reduced motion`} description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">{t`Follow system`}</option><option value="on">{t`Reduce motion`}</option></Select></Field>
+                  <Field setting="reduced-motion" label={t`Reduced motion`} description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">{t`Follow system`}</option><option value="on">{t`Reduce motion`}</option></Select></Field>
                   {nightFallsOn ? <NightFallsSettings settings={settings} onSave={save} /> : null}
                 </AppearanceSettings>
               </div>
 
               <Card className="settings-section" id="settings-privacy" {...panelProps('settings-privacy')}>
-                <div className="settings-section__heading"><h2><Trans>Application</Trans></h2><p><Trans>Startup, history, updates &amp; reset</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Application</Trans></h2><p className="tt-paragraph"><Trans>Startup, history, updates &amp; reset</Trans></p></div>
                 <SettingsGroup title={t`When your computer starts`} icon={Power}>
-                  <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
+                  <Toggle setting="launch-at-startup" label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
                     {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: t`Sotto cannot change sign-in startup here.` } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
                     if (platform === 'linux') setLinuxStartupSupported(result?.supported === true)
                     setNotice(result?.enabled !== checked
                       ? { text: copy.settingsStartupFailureNotice, error: true }
                       : result.approvalRequired === true
-                        ? { text: t`Sotto starts at login once you allow it in System Settings > General > Login Items.`, error: false }
-                        : { text: t`Startup setting saved.`, error: false })
+                        ? { text: msg`Sotto starts at login once you allow it in System Settings > General > Login Items.`, error: false }
+                        : { text: msg`Startup setting saved.`, error: false })
                   }} />
-                  <Toggle label={t`Start minimized`} checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
+                  <Toggle setting="start-minimized" label={t`Start minimized`} checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
                 </SettingsGroup>
                 <SettingsGroup id="settings-history" title={t({ message: 'History', comment: 'A group on Settings > Application: the saved transcripts of dictation.' })} icon={History}>
-                  <Toggle label={t`Keep local history`} checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description={t`Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away.`} />
-                  <Field label={t`History retention`} description={t`How many transcripts to keep.`}><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">{t`25 entries`}</option><option value="100">{t`100 entries`}</option><option value="500">{t`500 entries`}</option><option value="unlimited">{t({ message: 'Unlimited', comment: 'Keep every transcript: a choice of History retention.' })}</option></Select></Field>
+                  <Toggle setting="history-enabled" label={t`Keep local history`} checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description={t`Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away.`} />
+                  <Field setting="history-retention" label={t`History retention`} description={t`How many transcripts to keep.`}><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">{t`25 entries`}</option><option value="100">{t`100 entries`}</option><option value="500">{t`500 entries`}</option><option value="unlimited">{t({ message: 'Unlimited', comment: 'Keep every transcript: a choice of History retention.' })}</option></Select></Field>
                   <div className="settings-danger-row">
-                    <div><h3><Trans>Clear transcript history</Trans></h3><p><Trans>Remove saved text without changing settings or models.</Trans></p></div>
-                    <Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}><Trans>Clear history</Trans></Button>
+                    <div><h3><Trans>Clear transcript history</Trans></h3><p className="tt-paragraph"><Trans>Remove saved text without changing settings or models.</Trans></p></div>
+                    <Button variant="danger" data-setting="clear-history" onClick={() => { setClearFailure(null); setClearOpen(true) }}><Trans>Clear history</Trans></Button>
                   </div>
                 </SettingsGroup>
                 <NotificationSettings settings={settings} onSave={save} />
-                <SettingsGroup id="settings-updates" title={t`Updates`} icon={Download} note={copy.settingsUpdatesLead}>
+                <SettingsGroup id="settings-updates" setting="updates" title={t`Updates`} icon={Download} note={copy.settingsUpdatesLead}>
                   {/* Where Sotto never updates itself, the row says how to update by hand and offers nothing to press. */}
                   <div className="settings-update-row">
                     <div>
                       <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `${releaseTrackName(releaseTrackOf(updateStatus))} ${updateStatus.currentVersion}`}</p>
                       {copy.settingsUpdatesByHand === null
-                        ? <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
-                        : <p className="settings-update-status">{copy.settingsUpdatesByHand}</p>}
+                        ? <p className="settings-update-status tt-paragraph" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
+                        : <p className="settings-update-status tt-paragraph">{copy.settingsUpdatesByHand}</p>}
                     </div>
                     {copy.settingsUpdatesByHand === null ? <div className="settings-update-actions">
                       {/* On Owl, Update all runs the corner card's press: Sotto, its clients and its hosts (ADR-0077). */}
@@ -790,19 +791,19 @@ export function SettingsView({
                     </div> : null}
                   </div>
                   {copy.settingsUpdatesByHand === null
-                    ? <Toggle label={t`Check for updates automatically`} checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
+                    ? <Toggle setting="auto-update-check" label={t`Check for updates automatically`} checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
                     : null}
                 </SettingsGroup>
                 <SettingsGroup title={t`Start over`} icon={RotateCcw}>
                   <div className="settings-danger-row">
-                    <div><h3><Trans>Reset settings</Trans></h3><p><Trans>Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay.</Trans></p></div>
-                    <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}><Trans>Reset settings</Trans></Button>
+                    <div><h3><Trans>Reset settings</Trans></h3><p className="tt-paragraph"><Trans>Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay.</Trans></p></div>
+                    <Button variant="secondary" data-setting="reset-settings" onClick={() => { setResetFailure(null); setResetOpen(true) }}><Trans>Reset settings</Trans></Button>
                   </div>
                 </SettingsGroup>
               </Card>
 
               {performanceOn ? <Card className="settings-section" id="settings-performance" {...panelProps('settings-performance')}>
-                <div className="settings-section__heading"><h2><Trans>Performance</Trans></h2><p><Trans>How quickly Sotto's main process answers, on this computer</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Performance</Trans></h2><p className="tt-paragraph"><Trans>How quickly Sotto's main process answers, on this computer</Trans></p></div>
                 <PerformanceSettings visible={activeSection === 'settings-performance'} settings={settings} onUpdateSettings={save} />
               </Card> : null}
             </div>
@@ -812,8 +813,8 @@ export function SettingsView({
       <PageWindowControls />
       {statusText ? <p className="page-status">{statusText}</p> : null}
 
-      {!clearOpen ? null : <ConfirmationDialog title={t`Clear history?`} description={t`This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged.`} cancelLabel={t`Keep history`} confirmLabel={t`Clear all transcripts`} failureMessage={clearFailure ?? t`History could not be cleared.`} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: t`Transcript history cleared.`, error: false }); else setClearFailure(t`History could not be cleared. Your saved transcripts are unchanged.`); return cleared }} />}
-      {!resetOpen ? null : <ConfirmationDialog title={t`Reset settings?`} description={t`Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved.`} cancelLabel={t`Keep settings`} confirmLabel={t`Reset all settings`} failureMessage={resetFailure ?? t`Settings could not be reset.`} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: t`Settings reset to defaults.`, error: false }); else setResetFailure(t`Settings could not be reset. Your current settings are unchanged.`); return reset }} />}
+      {!clearOpen ? null : <ConfirmationDialog title={t`Clear history?`} description={t`This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged.`} cancelLabel={t`Keep history`} confirmLabel={t`Clear all transcripts`} failureMessage={shownWords(clearFailure) ?? t`History could not be cleared.`} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: msg`Transcript history cleared.`, error: false }); else setClearFailure(msg`History could not be cleared. Your saved transcripts are unchanged.`); return cleared }} />}
+      {!resetOpen ? null : <ConfirmationDialog title={t`Reset settings?`} description={t`Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved.`} cancelLabel={t`Keep settings`} confirmLabel={t`Reset all settings`} failureMessage={shownWords(resetFailure) ?? t`Settings could not be reset.`} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: msg`Settings reset to defaults.`, error: false }); else setResetFailure(msg`Settings could not be reset. Your current settings are unchanged.`); return reset }} />}
     </div>
   )
 }
@@ -917,7 +918,7 @@ function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry,
   const maker = chosen?.maker ?? ''
   const languages = chosen?.languages ?? ''
   return <>
-    <Field label={t`Speech model`} description={description} {...(refused ? { error: SPEECH_MODEL_REFUSED } : {})}>
+    <Field setting="speech-model" label={t`Speech model`} description={description} {...(refused ? { error: SPEECH_MODEL_REFUSED } : {})}>
       <Select
         value={moved?.id ?? chosen?.id ?? ''}
         disabled={models === null || onChoose === undefined}
@@ -934,7 +935,7 @@ function SpeechModelPicker({ models, choice, status, onChoose, refused, onRetry,
     <div className="settings-model-statement">
       {chosen === null ? null : <>
         <h3>{chosen.name}</h3>
-        <p>{t`Speech recognition by ${maker}, on this computer. ${languages}.`}</p>
+        <p className="tt-paragraph">{t`Speech recognition by ${maker}, on this computer. ${languages}.`}</p>
       </>}
       <SpeechModelStatusView status={status} model={chosen} onRetry={onRetry} />
     </div>

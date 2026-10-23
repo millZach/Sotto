@@ -16,6 +16,7 @@ import { TailscaleRow, useTailscale } from './TailscaleConnect'
 import { HostProviders, connectedProvidersLabel } from './HostProviders'
 import { HostPhonesDialog, hostPhonesLabel, phoneWords } from './HostPhonesDialog'
 import { tailnetRowNote } from './hostTailnetWords'
+import { shownWords, type LaterWords } from './laterWords'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -56,7 +57,7 @@ export function hostConnectionLine(host: HostStatus): { readonly connection: str
 /** Why a host its owner put on the tailnet is on SSH, with the operator's command set apart. */
 function TailnetRowNote({ name, note }: { readonly name: string; readonly note: NonNullable<HostStatus['tailnetNote']> }): ReactNode {
   const words = tailnetRowNote(name, note)
-  return <p className="hosts-row__note">{words.text}{words.command ? <code className="phones-mono">{words.command}</code> : null}{words.after}</p>
+  return <p className="hosts-row__note tt-paragraph">{words.text}{words.command ? <code className="phones-mono">{words.command}</code> : null}{words.after}</p>
 }
 /** A host of another version Sotto started is still reached through the SSH session kept for Stop host. */
 const reachable = (host: HostStatus): boolean => host.phase === 'connected' || host.phase === 'error' && host.owned === true
@@ -195,11 +196,11 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
   </section>
 }
 
-function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; readonly onRename: (name: string) => Promise<string | null>; readonly onClose: () => void }): ReactNode {
+function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; readonly onRename: (name: string) => Promise<LaterWords | null>; readonly onClose: () => void }): ReactNode {
   const { t } = useLingui()
   const current = host.name
   const [name, setName] = useState(host.name)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [saving, setSaving] = useState(false)
   const inputId = useId()
   const hintId = useId()
@@ -216,9 +217,9 @@ function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; 
       <label className="tt-field__label" htmlFor={inputId}>{t`Host name`}</label>
       <input id={inputId} className="tt-input tt-focusable" value={name} maxLength={80} aria-describedby={hintId} onChange={event => setName(event.target.value)}
         onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); void save() } }} />
-      <p className="tt-field__description" id={hintId}><Trans>Shown on this row and beside the host's projects and threads. How Sotto connects to it does not change.</Trans></p>
+      <p className="tt-field__description tt-paragraph" id={hintId}><Trans>Shown on this row and beside the host's projects and threads. How Sotto connects to it does not change.</Trans></p>
     </div></div>
-    {error ? <div className="hosts-notice hosts-notice--error" role="alert"><p>{error}</p></div> : null}
+    {error ? <div className="hosts-notice hosts-notice--error" role="alert"><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}
   </HostsModal>
 }
 
@@ -266,9 +267,9 @@ function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostFor
   return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={command ? t`${name} still trusts this computer` : t`${name} still starts at boot`}>
     <AlertTriangle size={16} aria-hidden="true" />
     <div className="hosts-forgotten__copy">
-      <p>{forgottenSentence(forgotten)}</p>
+      <p className="tt-paragraph">{forgottenSentence(forgotten)}</p>
       {command ? <ForgottenCommand command={command} label={t`Command to run on ${name}`} copyLabel={t`Copy the command to run on ${name}`}>{bootCommand ? null : dismiss}</ForgottenCommand> : null}
-      {command && bootCommand ? <p><Trans>{name}’s host also still starts when {name} restarts, since Sotto could not remove its start at boot unit there. To remove the unit, run this on {name} afterwards:</Trans></p> : null}
+      {command && bootCommand ? <p className="tt-paragraph"><Trans>{name}’s host also still starts when {name} restarts, since Sotto could not remove its start at boot unit there. To remove the unit, run this on {name} afterwards:</Trans></p> : null}
       {bootCommand ? <ForgottenCommand command={bootCommand} label={t`Command that removes start at boot on ${name}`} copyLabel={t`Copy the command that removes start at boot on ${name}`}>{dismiss}</ForgottenCommand> : null}
     </div>
   </section>
@@ -284,7 +285,7 @@ function HostSetupLine({ setup, onShow, onDismiss }: { readonly setup: HostSetup
     : setup.waiting ? t`It is waiting for your answer there.` : ''
   // The setup's own sentence from main, when it ended with one.
   return <div className="hosts-setup-line" role="status" data-phase={setup.phase}>
-    <p>{running ? <><Trans><b>{model}</b> is setting up {name} in the thread <b>{thread}</b>.</Trans>{waiting ? <> {waiting}</> : null}</>
+    <p className="tt-paragraph">{running ? <><Trans><b>{model}</b> is setting up {name} in the thread <b>{thread}</b>.</Trans>{waiting ? <> {waiting}</> : null}</>
       : setup.phase === 'connected' ? <Trans>{name} is set up and connected. <b>{model}</b> set it up in the thread <b>{thread}</b>.</Trans>
         : setup.phase === 'stopped' ? <><Trans>The setup of {name} stopped.</Trans> {setup.error ?? t`Nothing was saved as a host.`}</>
           : <>{setup.error ?? t`The setup of ${name} could not carry on. Nothing was saved as a host.`}</>}</p>
@@ -298,7 +299,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
 }): ReactNode {
   const { t } = useLingui()
   const [state, setState] = useState<HostsState | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [localSaveFailed, setLocalSaveFailed] = useState(false)
   const [dialog, setDialog] = useState<HostDialogMode | null>(null)
   const [renameId, setRenameId] = useState<string | null>(null)
@@ -315,7 +316,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(i18n._(msg`Hosts could not be read. Reopen Settings and try again.`)) })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(msg`Hosts could not be read. Reopen Settings and try again.`) })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -323,7 +324,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     if (!bridge) return false
     setError(null)
     try { setState(await bridge.command(command)); return true }
-    catch (failure) { setError(failure instanceof Error ? failure.message : t`The host could not be updated. Nothing was changed. Try again.`); return false }
+    catch (failure) { setError(failure instanceof Error ? failure.message : msg`The host could not be updated. Nothing was changed. Try again.`); return false }
   }
   const forget = state?.hosts.find(host => host.id === forgetId)
   const stopping = state?.hosts.find(host => host.id === stopId)
@@ -342,12 +343,13 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       return t`Sotto signs in to ${name} over SSH to revoke this computer's access there, stops the host if Sotto started it, and removes the saved connection. If its host starts at boot, Sotto removes that too, so it does not start again when ${name} restarts. If ${name} can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.`
     }
     // Forget takes a boot unit away too, so a forgotten host does not start again at the next boot (ADR-0054).
-    return [
-      t`This revokes this computer's access on the host and removes the saved connection.`,
-      ...host.owned ? [t`It also stops the host Sotto started there.`] : [],
-      ...host.bootStart?.installed ? [t`It removes start at boot from ${name}, so its host does not start again when ${name} restarts.`] : [],
-      t`Threads stay on the host.`,
-    ].join(' ')
+    const boot = host.bootStart?.installed === true
+    if (host.owned) return boot
+      ? t`This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. It removes start at boot from ${name}, so its host does not start again when ${name} restarts. Threads stay on the host.`
+      : t`This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. Threads stay on the host.`
+    return boot
+      ? t`This revokes this computer's access on the host and removes the saved connection. It removes start at boot from ${name}, so its host does not start again when ${name} restarts. Threads stay on the host.`
+      : t`This revokes this computer's access on the host and removes the saved connection. Threads stay on the host.`
   }
   /**
    * Forget's own sign-in, while it waits for the user (ADR-0053): Tailscale SSH holding it for approval, or SSH's question,
@@ -374,17 +376,17 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   return <div className="hosts-settings">
     <div className="hosts-local">
       <span className="hosts-row__icon hosts-row__icon--local" aria-hidden="true"><Laptop size={18} /></span>
-      <div className="hosts-local__copy"><h3>{t`This computer`}</h3><p><Trans>Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays.</Trans></p></div>
+      <div className="hosts-local__copy"><h3>{t`This computer`}</h3><p className="tt-paragraph"><Trans>Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays.</Trans></p></div>
       <div>
-        <Toggle label={t`Run the local host`} checked={localHostEnabled} onCheckedChange={enabled => { void onLocalHostChange(enabled).then(saved => setLocalSaveFailed(!saved)) }} />
-        {localSaveFailed ? <p className="tt-field__error" role="alert"><Trans>The local host setting could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+        <Toggle setting="local-host" label={t`Run the local host`} checked={localHostEnabled} onCheckedChange={enabled => { void onLocalHostChange(enabled).then(saved => setLocalSaveFailed(!saved)) }} />
+        {localSaveFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The local host setting could not be saved. Nothing was changed. Try again.</Trans></p> : null}
       </div>
     </div>
     {bridge ? <TailscaleRow control={tailscale} /> : null}
-    {state && state.localHostRunning !== localHostEnabled && <div className="hosts-restart"><p><Trans>Restart Sotto to apply the local host setting.</Trans></p><Button variant="secondary" onClick={() => void run({ type: 'restart' })}>{t`Restart Sotto`}</Button></div>}
-    <p><Trans>Dictation and paste always happen on this computer, never on a remote host.</Trans></p>
-    <div className="hosts-heading"><h3>{t`Remote hosts`}</h3><Button ref={addButton} variant="secondary" disabled={!bridge} onClick={() => setDialog({ kind: 'add' })}><Plus size={16} aria-hidden="true" />{t`Add host`}</Button></div>
-    <p><Trans>Run threads on other machines over your tailnet or SSH. Sotto sets each one up with your SSH access, and a host it starts keeps running until you stop it.</Trans></p>
+    {state && state.localHostRunning !== localHostEnabled && <div className="hosts-restart"><p className="tt-paragraph"><Trans>Restart Sotto to apply the local host setting.</Trans></p><Button variant="secondary" onClick={() => void run({ type: 'restart' })}>{t`Restart Sotto`}</Button></div>}
+    <p className="tt-paragraph"><Trans>Dictation and paste always happen on this computer, never on a remote host.</Trans></p>
+    <div className="hosts-heading"><h3>{t`Remote hosts`}</h3><Button ref={addButton} variant="secondary" data-setting="remote-hosts" disabled={!bridge} onClick={() => setDialog({ kind: 'add' })}><Plus size={16} aria-hidden="true" />{t`Add host`}</Button></div>
+    <p className="tt-paragraph"><Trans>Run threads on other machines over your tailnet or SSH. Sotto sets each one up with your SSH access, and a host it starts keeps running until you stop it.</Trans></p>
     {/* A setup the dialog was closed on carries on in its thread, and one that ended stays until put away: this is the way back to it. */}
     {state?.setup && !dialog ? <HostSetupLine setup={state.setup} onShow={() => setDialog({ kind: 'setup' })} onDismiss={() => void run({ type: 'dismiss-setup', id: state.setup!.id })} /> : null}
     {state?.forgotten?.map(forgotten => <ForgottenNotice key={forgotten.id} forgotten={forgotten}
@@ -396,23 +398,23 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
         bootShownElsewhere={bootId === host.id || dialog?.kind === 'add'}
         providers={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId)?.providers : undefined}
         client={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId) : undefined} />)}
-      {state && !state.hosts.length ? <p className="hosts-empty"><Trans>No remote hosts yet.</Trans></p> : null}
+      {state && !state.hosts.length ? <p className="hosts-empty tt-paragraph"><Trans>No remote hosts yet.</Trans></p> : null}
     </div>
-    {error && <p className="hosts-error" role="alert">{error}</p>}
+    {error && <p className={typeof error === 'string' ? 'hosts-error' : 'hosts-error tt-paragraph'} role="alert">{shownWords(error)}</p>}
     {dialog && bridge ? <HostDialog key={dialog.kind === 'edit' ? dialog.host.id : dialog.kind} mode={dialog} bridge={bridge} state={state} tailscale={tailscale} onClose={closeDialog} /> : null}
     {bootHost && bootBridge ? <HostBootDialog host={bootHost} view={state?.boot?.find(item => item.id === bootHost.id)} change={bootChange} bridge={bootBridge} onClose={closeBoot} /> : null}
     {phonesHost && bridge ? <HostPhonesDialog host={phonesHost} view={state?.phones?.find(item => item.id === phonesHost.id)} bridge={bridge} onClose={closePhones} /> : null}
     {renaming ? <RenameDialog host={renaming} onClose={() => setRenameId(null)} onRename={async name => {
-      if (!bridge) return t`Hosts are not available in this window.`
+      if (!bridge) return msg`Hosts are not available in this window.`
       try { setState(await bridge.command({ type: 'rename', id: renaming.id, name })); return null }
-      catch (failure) { return failure instanceof Error ? failure.message : t`The name could not be saved. Try again.` }
+      catch (failure) { return failure instanceof Error ? failure.message : msg`The name could not be saved. Try again.` }
     }} /> : null}
     {forget && <ConfirmationDialog title={t`Forget ${forgetName}?`} confirmLabel={t`Forget host`} cancelLabel={t`Keep host`} onCancel={() => setForgetId(null)} onConfirm={() => run({ type: 'forget', id: forget.id })}
-      fallbackFocusRef={addButton} failureMessage={error} description={forgetDescription(forget)} pendingStatus={forgetWaiting(forget)}
+      fallbackFocusRef={addButton} failureMessage={shownWords(error)} description={forgetDescription(forget)} pendingStatus={forgetWaiting(forget)}
       // While Forget signs in, nothing has been sent: Keep host stops the sign-in, and Forget changes nothing.
       onCancelPending={forget.adminSignIn ? () => void run({ type: 'stop-admin-sign-in', id: forget.id }) : undefined} />}
     {stopping && <ConfirmationDialog title={t`Stop the host on ${stoppingName}?`} confirmLabel={t`Stop host`} cancelLabel={t`Keep it running`} onCancel={() => setStopId(null)}
-      failureMessage={error} onConfirm={() => run({ type: 'stop-host', id: stopping.id })}
+      failureMessage={shownWords(error)} onConfirm={() => run({ type: 'stop-host', id: stopping.id })}
       description={bootStartOn(stopping)
         // A host that starts at boot comes back with its machine, whatever this computer's switch says (ADR-0054).
         ? t`${stoppingName}’s host stops now and starts again when ${stoppingName} restarts or when you switch it on. Turns running there are interrupted; threads and history stay in its data folder.`

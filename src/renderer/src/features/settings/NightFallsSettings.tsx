@@ -26,15 +26,15 @@ export function NightFallsSettings({ settings, onSave }: {
   const percent = ((speed - SPEEDS.min) / (SPEEDS.max - SPEEDS.min)) * 100
   // The wrapper only names the group (watcher-gate.spec.ts finds Watcher's mentions outside its own page by it); it adds no box.
   return <div id="settings-night-falls" style={{ display: 'contents' }}>
-    <Toggle label={t`Night falls between Threads and Watcher`} checked={settings.roomTransition} onCheckedChange={checked => void onSave({ roomTransition: checked })}
+    <Toggle setting="night-falls" label={t`Night falls between Threads and Watcher`} checked={settings.roomTransition} onCheckedChange={checked => void onSave({ roomTransition: checked })}
       description={t`A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once.`} />
     <div className="tt-field theme-slider">
       <div className="theme-slider__head">
         <label className="tt-field__label" htmlFor={id}><Trans>Night falls speed</Trans></label>
         <span className="theme-slider__value"><output htmlFor={id}>{speedLabel(speed)}</output></span>
       </div>
-      <p className="tt-field__description" id={`${id}-description`}><Trans>Slower to watch the band sweep, faster to get there sooner. 1x takes under a second.</Trans></p>
-      <input id={id} className="theme-slider__input tt-focusable" type="range" min={SPEEDS.min} max={SPEEDS.max} step={SPEEDS.step} value={speed}
+      <p className="tt-field__description tt-paragraph" id={`${id}-description`}><Trans>Slower to watch the band sweep, faster to get there sooner. 1x takes under a second.</Trans></p>
+      <input id={id} data-setting="night-falls-speed" className="theme-slider__input tt-focusable" type="range" min={SPEEDS.min} max={SPEEDS.max} step={SPEEDS.step} value={speed}
         disabled={!settings.roomTransition} aria-describedby={`${id}-description`} aria-valuetext={speedLabel(speed)}
         style={{ '--theme-slider-fill': `${percent}%` } as React.CSSProperties}
         onChange={event => { const next = Number(event.currentTarget.value); if (Number.isFinite(next)) setSpeed(next) }}

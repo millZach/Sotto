@@ -27,7 +27,7 @@ export function HostSshQuestion({ prompt, onAnswer, actions }: {
     finally { setAnswer(''); setAnswering(false) }
   }
   return <div className="hosts-notice hosts-prompt" role="group" aria-label={hostKey ? t`Trust this SSH host?` : t`SSH needs an answer`}>
-    <p className="hosts-prompt__lead">{hostKey ? t`SSH has not seen this host before. Check its key, then trust it to continue.` : prompt.kind === 'passphrase' ? t`SSH needs your key passphrase to sign in.` : t`SSH needs your password to sign in.`}</p>
+    <p className="hosts-prompt__lead tt-paragraph">{hostKey ? t`SSH has not seen this host before. Check its key, then trust it to continue.` : prompt.kind === 'passphrase' ? t`SSH needs your key passphrase to sign in.` : t`SSH needs your password to sign in.`}</p>
     <pre className="hosts-challenge">{prompt.text}</pre>
     {!hostKey ? <div className="tt-field"><label className="tt-field__label" htmlFor={answerId}>{prompt.kind === 'passphrase' ? t`Key passphrase` : t`SSH password`}</label>
       <input id={answerId} className="tt-input tt-focusable" type="password" autoComplete="off" autoFocus value={answer} onChange={event => setAnswer(event.target.value)}
