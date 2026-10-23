@@ -95,17 +95,23 @@ describe('machineLoadStates', () => {
     expect(machineLoadStates({ ...load, cpuBusyPercent: null }, total, at).cpu).toBe('unknown')
   })
 
-  it('calls a machine short on memory only on two short readings, under 2 GiB or a tenth of its memory', () => {
+  it('calls a machine short on memory only on two short readings, under the smaller of 2 GiB and a tenth of its memory', () => {
     const memory = (end: number | null, start: number | null, of: number | null = total) =>
       machineLoadStates({ ...load, availableMemoryBytes: end, windowStartAvailableMemoryBytes: start }, of, at).memory
     expect(memory(1.5 * GIB, 1.9 * GIB)).toBe('short')
     expect(memory(1.5 * GIB, 6 * GIB)).toBe('enough')
     expect(memory(1.5 * GIB, null)).toBe('unknown')
     expect(memory(null, 1 * GIB)).toBe('unknown')
-    // A tenth of 32 GiB is 3.2 GiB: 3 GiB on both readings is short there, and enough on a 16 GiB machine.
-    expect(memory(3 * GIB, 3 * GIB)).toBe('short')
-    expect(memory(3 * GIB, 3 * GIB, 16 * GIB)).toBe('enough')
-    // Without a total, only the fixed floor applies.
+    // A tenth of 32 GiB is 3.2 GiB, more than 2 GiB, so 2 GiB holds: 3 GiB on both readings is enough there.
+    expect(memory(3 * GIB, 3 * GIB)).toBe('enough')
+    expect(memory(1.99 * GIB, 1.99 * GIB)).toBe('short')
+    // On 64 GiB a tenth would be 6.4 GiB; 2 GiB still holds, so 4 GiB free is not short.
+    expect(memory(4 * GIB, 4 * GIB, 64 * GIB)).toBe('enough')
+    // On 8 GiB a tenth, 0.8 GiB, is the smaller: 1.5 GiB is enough there and 0.7 GiB is short.
+    expect(memory(1.5 * GIB, 1.5 * GIB, 8 * GIB)).toBe('enough')
+    expect(memory(0.7 * GIB, 0.7 * GIB, 8 * GIB)).toBe('short')
+    // Without a total, only the fixed 2 GiB applies.
+    expect(memory(1.5 * GIB, 1.5 * GIB, null)).toBe('short')
     expect(memory(3 * GIB, 3 * GIB, null)).toBe('enough')
   })
 })

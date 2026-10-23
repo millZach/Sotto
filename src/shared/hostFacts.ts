@@ -75,9 +75,10 @@ export type HostLoad = z.infer<typeof hostLoadSchema>
 
 /**
  * Where a machine's live load starts to count against placing work there (#1311), in one place so they can be tuned on
- * the laptop and forge. Short on memory: available memory under `shortMemoryBytes` or under `shortMemoryShare` of the
- * total, on both readings of the window. Busy: CPU busy above `busyCpuPercent` over the window. A reading older than
- * `staleAfterMs` is unknown, not idle.
+ * the laptop and forge. Short on memory: available memory under the smaller of `shortMemoryBytes` and `shortMemoryShare`
+ * of the total (Zach, October 23, 2026), on both readings of the window, so a large machine is not short with gigabytes
+ * free and a small one is not short at a tenth of very little. Without a total, `shortMemoryBytes` alone. Busy: CPU busy
+ * above `busyCpuPercent` over the window. A reading older than `staleAfterMs` is unknown, not idle.
  */
 export const MACHINE_LOAD_THRESHOLDS = {
   shortMemoryBytes: 2 * 1024 ** 3,
@@ -96,7 +97,8 @@ export type MachineCpuState = 'busy' | 'not-busy' | 'unknown'
 export function machineLoadStates(load: HostLoad | null, totalMemoryBytes: number | null, now: number, thresholds = MACHINE_LOAD_THRESHOLDS): { memory: MachineMemoryState; cpu: MachineCpuState } {
   const observed = load ? Date.parse(load.observedAt) : Number.NaN
   if (!load || !Number.isFinite(observed) || Math.abs(now - observed) > thresholds.staleAfterMs) return { memory: 'unknown', cpu: 'unknown' }
-  const short = (bytes: number) => bytes < thresholds.shortMemoryBytes || totalMemoryBytes !== null && bytes < totalMemoryBytes * thresholds.shortMemoryShare
+  const floor = totalMemoryBytes === null ? thresholds.shortMemoryBytes : Math.min(thresholds.shortMemoryBytes, totalMemoryBytes * thresholds.shortMemoryShare)
+  const short = (bytes: number) => bytes < floor
   const end = load.availableMemoryBytes, start = load.windowStartAvailableMemoryBytes
   // One short reading is not enough to call a machine short, and a missing reading cannot second it.
   const memory: MachineMemoryState = end === null ? 'unknown' : !short(end) ? 'enough' : start === null ? 'unknown' : short(start) ? 'short' : 'enough'
