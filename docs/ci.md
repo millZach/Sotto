@@ -385,6 +385,14 @@ in time" / "Claude did not acknowledge the request" on a loaded runner. That was
 *Gates (Windows)* runs on PRs #100 and #103: `claudeFixture` defaulted to 150 ms and several Codex and
 Grok tests passed 150–500 ms.
 
+Even 2000 ms is not always enough. With the runner's other worker busy, a Codex test's first app-server
+start took more than 2000 ms to answer `initialize`, and "still holds a send behind a permission change
+Codex did not confirm" failed in its setup (#1307). The Codex adapter also waits that same deadline for
+Codex to confirm a settings change, so that test could not simply raise it. It now passes the adapter's
+own 15 s, and the fake loses the confirmation on cue: `script({ stopBeforeSettingsConfirmation: true })`
+acknowledges the change and stops the app-server before confirming it, so the change is unconfirmed
+immediately instead of after a deadline.
+
 Devin is the exception to the 2000 ms default. Native ACP sends no acknowledgement, so a send waits until
 its own stream or a replay of the session shows the prompt taken, and the replay is read in a process of
 its own after the integration checks start two more. On a loaded Linux runner that took longer than five
