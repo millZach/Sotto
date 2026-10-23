@@ -129,6 +129,9 @@
 .settings-view .settings-rows .tt-field__description { margin: 0; max-width: 330px; font-size: 13px; line-height: 1.45; }
 .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font-size: 14px; }
 .settings-view .settings-rows .tt-field > :is(.tt-input, .tt-select):hover:not(:disabled) { border-color: var(--tt-border); }
+/* The fill above is a shorthand, which drops .tt-select's chevron; a filled box without it reads as a field, not a choice. */
+.settings-view .settings-rows .tt-field > .tt-select { padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--tt-text-muted) 50%), linear-gradient(135deg, var(--tt-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-repeat: no-repeat; background-size: 5px 5px; }
 .settings-view .settings-rows .tt-field > .tt-input[inputmode='numeric'] { width: 120px; justify-self: end; font-family: var(--tt-font-mono); }
 .settings-view .settings-rows textarea.tt-input { resize: vertical; min-height: 132px; line-height: 1.6; }
 .settings-view .settings-rows .tt-toggle { padding: 17px 0; gap: 22px; }
@@ -171,7 +174,8 @@
 .settings-view .providers-list__select > .provider-mark { display: block; grid-area: mark; margin: 0; }
 .settings-view .providers-list__select strong { grid-area: name; min-width: 0; overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
 .settings-view .providers-list__select small { grid-area: status; min-width: 0; }
-.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; margin: 13px 12px 0 0; padding: 0; }
+/* The toggle's words are hidden here, so it is only its 36 pixel track, the width the name's line keeps free for it. */
+.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; grid-template-columns: 36px; gap: 0; margin: 13px 12px 0 0; padding: 0; }
 /* The selected provider's detail is a card of its own under them. */
 .settings-view .provider-detail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .settings-view .provider-detail__header { padding: 18px 0 14px; }
