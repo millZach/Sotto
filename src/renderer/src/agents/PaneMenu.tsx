@@ -20,7 +20,7 @@ export interface PaneMenuItem {
 const ITEM = '[role="menuitem"]:not(:disabled)'
 
 /**
- * The pane header's "…" menu: everything that acts on this thread or terminal but does not earn a button of
+ * The pane header's "…" menu: everything that acts on this thread but does not earn a button of
  * its own. Groups are separated by a hairline, and an empty group draws nothing, so a menu missing an item
  * never shows two rules in a row.
  *

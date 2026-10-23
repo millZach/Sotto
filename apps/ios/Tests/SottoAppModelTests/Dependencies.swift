@@ -55,7 +55,6 @@ struct HostRefusal: Error, LocalizedError {
     /// The computer's answer to `stage-attachment` and `preview`, given the request's image or preview fields.
     static var stageHandler: ((JSONValue) async throws -> JSONValue)?
     static var previewHandler: ((JSONValue) async throws -> JSONValue)?
-    static var terminalHandler: ((String, [String: JSONValue], String) async throws -> JSONValue)?
     /// The photo load limit the photo tests give the model: never passing, unless a test says otherwise.
     static var photoLoadLimit: @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
     static var receipts: [String: JSONValue] = [:]
@@ -67,7 +66,6 @@ struct HostRefusal: Error, LocalizedError {
     var onDisconnect: (() -> Void)?
     var operations: [String] = []
     var commands: [JSONValue] = []
-    var terminalCalls: [[String: JSONValue]] = []
     /// Every Watcher operation this connection carried, with its request ID.
     var watcherCalls: [(operation: [String: JSONValue], id: String)] = []
     var hostID = ""
@@ -103,12 +101,6 @@ struct HostRefusal: Error, LocalizedError {
     func call(_ operation: [String: JSONValue], id: String = UUID().uuidString) async throws -> JSONValue {
         let op = operation["op"]?.string ?? ""
         operations.append(op)
-
-        if ["terminal-approval", "answer-terminal", "observe-terminals"].contains(op) {
-            terminalCalls.append(operation)
-            if let handler = Self.terminalHandler { return try await handler(op, operation, id) }
-            return .null
-        }
 
         if op.hasPrefix("watcher-phone-") {
             watcherCalls.append((operation, id))

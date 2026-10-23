@@ -79,24 +79,20 @@ async function readSky(page: Page): Promise<SkyReading> {
       }
     })
     const obstacles = [
-      ...[...row.querySelectorAll('button, [role="radio"]')].map(control => ({ name: control.getAttribute('aria-label') ?? control.getAttribute('title') ?? '', ...box(control.querySelector('svg')!) })),
+      ...[...row.querySelectorAll('button')].map(control => ({ name: control.getAttribute('aria-label') ?? control.getAttribute('title') ?? '', ...box(control.querySelector('svg')!) })),
       { name: 'Sotto Owl tile', ...box(row.querySelector('.thread-nav__tile')!) },
       { name: 'Search threads', ...box(sidebar.querySelector('.threads-search input')!) },
     ]
     const twinkles = (sky?.getAnimations({ subtree: true }) ?? []).map(animation => ({
       duration: Number(animation.effect?.getComputedTiming().duration ?? 0), running: animation.playState === 'running',
     }))
-    const seg = row.querySelector<HTMLElement>('.thread-nav__seg')!
-    const lit = seg.querySelector<HTMLElement>('[aria-checked="true"]')!
     const input = sidebar.querySelector<HTMLInputElement>('.threads-search input')!
     const band = token('--tt-owl-night')
     const painting = [
-      // The buttons on the band; the switch's two sit on the switch, measured below.
-      ...[...row.querySelectorAll<HTMLElement>('button:not([role="radio"])')].map(button => ({
+      // The buttons on the band.
+      ...[...row.querySelectorAll<HTMLElement>('button')].map(button => ({
         name: button.getAttribute('aria-label') ?? '', ink: hex(getComputedStyle(button).color), stable: token('--threads-sidebar'), owl: band,
       })),
-      { name: 'Threads | Terminal switch, unlit', ink: hex(getComputedStyle(seg.querySelector('[aria-checked="false"]')!).color), stable: token('--tt-surface-sunken'), owl: hex(getComputedStyle(seg).backgroundColor) },
-      { name: 'Threads | Terminal switch, lit', ink: hex(getComputedStyle(lit).color), stable: token('--tt-surface-elevated'), owl: hex(getComputedStyle(lit).backgroundColor) },
       { name: 'Search placeholder', ink: hex(getComputedStyle(input, '::placeholder').color), stable: token('--threads-field'), owl: hex(getComputedStyle(input).backgroundColor) },
       { name: 'Search icon', ink: hex(getComputedStyle(sidebar.querySelector('.threads-search > svg')!).color), stable: token('--threads-field'), owl: hex(getComputedStyle(input).backgroundColor) },
     ]

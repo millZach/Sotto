@@ -16,10 +16,9 @@ export const SHELL_START_TIMEOUT = 60_000
 /** What a prompt wait reads: the terminal's whole output and its status, as the terminal bridges report them. */
 export interface ShellReading { output: string; status: string }
 
-/** Statuses after which the shell will never print a prompt (both bridges' enums). */
+/** Statuses after which the shell will never print a prompt. */
 const ENDED = new Set(['exited', 'interrupted', 'unavailable'])
-/** Sotto's own first line in a Terminal-mode terminal, and terminal escape sequences: neither is the shell's output. */
-const SOTTO_BANNER = /^\s*Opened by Sotto at [^\r\n]*(?:\r?\n|$)/u
+/** Terminal escape sequences, which are not the shell's output. */
 // eslint-disable-next-line no-control-regex -- matching terminal escape sequences is the point
 const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/gu
 
@@ -66,7 +65,7 @@ function shellPrinted(output: string, after: string | undefined): boolean {
     text = text.slice(at + after.length)
   }
   if (process.platform === 'win32') return POWERSHELL_PROMPT.test(text)
-  return /\S/u.test(text.replace(ESCAPES, '').replace(SOTTO_BANNER, ''))
+  return /\S/u.test(text.replace(ESCAPES, ''))
 }
 
 /** A thread's one terminal in Tools or its drawer, in whatever state it is, or undefined while there is not exactly one. */
@@ -78,21 +77,6 @@ export async function threadTerminal(page: Page, threadId = 'workshop', place: '
     const snapshot = await terminal.read({ threadId, workspaceId: listing.value.workspace.workspaceId, sessionId: listing.value.sessions[0]!.id })
     return snapshot.ok ? { output: snapshot.value.output, status: snapshot.value.session.status } : undefined
   }, { threadId, place })
-}
-
-/** A Terminal-mode terminal by ID, or the first one listed, in whatever state it is. */
-export async function workspaceTerminal(page: Page, id?: string): Promise<ShellReading | undefined> {
-  return page.evaluate(async id => {
-    const terminals = window.sotto!.terminals!
-    let target = id
-    if (target === undefined) {
-      const list = await terminals.list()
-      target = list.ok ? list.value.terminals[0]?.id : undefined
-    }
-    if (target === undefined) return undefined
-    const result = await terminals.read({ id: target })
-    return result.ok ? { output: result.value.output, status: result.value.terminal.status } : undefined
-  }, id)
 }
 
 /** Exercise xterm's DOM fallback without disabling the 2D canvas used to resolve theme colors. */

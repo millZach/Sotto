@@ -61,7 +61,6 @@ describe.each(['stable', 'owl'] as const)('the %s build names itself', (track) =
     await screen.findByRole('complementary', { name: 'Thread sidebar' })
     await expectBrand(topRow, track)
     // The toolbar beside the brand keeps every control it has on the other track.
-    expect(within(topRow()).getByRole('radiogroup', { name: 'Sidebar mode' })).toBeVisible()
     for (const name of ['Add project', 'Collapse sidebar']) expect(within(topRow()).getByRole('button', { name })).toBeVisible()
     await waitFor(() => expect(document.title).toBe(NAMES[track]))
 

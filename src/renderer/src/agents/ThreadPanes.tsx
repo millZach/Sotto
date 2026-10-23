@@ -25,7 +25,7 @@ export interface PaneLabel {
 export interface ThreadPanesProps {
   /** The arrangement on screen; panes whose thread is missing are already left out. */
   readonly layout: SplitLayout
-  /** Pane content IDs (threads or terminals) in pane order. One ID is the single view. */
+  /** Thread IDs in pane order. One ID is the single view. */
   readonly paneIds: readonly string[]
   readonly rows: ReadonlyMap<string, PaneLabel>
   /** The group's name; "Thread panes" unless the panes hold something else. */

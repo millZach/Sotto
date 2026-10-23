@@ -8,11 +8,11 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const SHOTS = evidenceDirectory('artifacts/add-project-opens-thread-run')
 
 /**
- * Add project leaves the project open with something to work in: a new thread from the Threads sidebar, for a new
- * folder and for one that is already a project, and New terminal for the project from the Terminal sidebar. The home
- * folder is a throwaway one, so the folders are fixtures rather than the machine's own.
+ * Add project leaves the project open with something to work in: a new thread, for a new folder, for one that is
+ * already a project, and from beside another page. The home folder is a throwaway one, so the folders are fixtures
+ * rather than the machine's own.
  */
-test('Add project opens a new thread in the project, or New terminal from the Terminal sidebar', async () => {
+test('Add project opens a new thread in the project', async () => {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'sotto-add-project-')))
   for (const folder of ['code/sotto/.git', 'code/forge-ml']) await mkdir(join(home, folder), { recursive: true })
   const saved = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME }
@@ -58,31 +58,13 @@ test('Add project opens a new thread in the project, or New terminal from the Te
     await expect(newThread).toBeVisible()
     await expect.poll(() => threadsIn('voice-lab')).toBe(1)
 
-    // From the Terminal sidebar, an added folder opens New terminal with the project already chosen.
-    await page.getByRole('radiogroup', { name: 'Sidebar mode' }).getByRole('radio', { name: 'Terminal' }).click()
-    await expect(page.getByRole('complementary', { name: 'Terminal sidebar' })).toBeVisible()
-    await addProject.click()
-    await dialog.getByRole('button', { name: 'code' }).click()
-    await dialog.locator('.folder-browser__list').getByRole('button', { name: /^sotto/ }).click()
-    await dialog.getByRole('button', { name: 'Use this folder' }).click()
-    await expect(dialog).toHaveCount(0)
-    const terminal = page.getByRole('dialog', { name: 'New terminal' })
-    await expect(terminal).toBeVisible()
-    await expect(terminal.getByRole('button', { name: 'Back to projects' })).toBeVisible()
-    await expect.poll(() => threadsIn('sotto')).toBe(0)
-    await page.screenshot({ animations: 'disabled', path: `${SHOTS}/terminal-new-terminal-1280x800-dark.png` })
-    await page.keyboard.press('Escape')
-    await expect(terminal).toHaveCount(0)
-
-    // Beside Help, with Terminal still the remembered mode, the sidebar there lists threads: the new thread
-    // opens on Threads in Threads mode, rather than behind the Terminal workspace.
+    // Beside Help, the new thread opens on Threads.
     await page.getByRole('link', { name: 'Help' }).click()
     await addProject.click()
     await dialog.getByRole('button', { name: 'code' }).click()
     await dialog.locator('.folder-browser__list').getByRole('button', { name: /forge-ml/ }).click()
     await dialog.getByRole('button', { name: 'Use this folder' }).click()
     await expect(dialog).toHaveCount(0)
-    await expect(page.getByRole('radiogroup', { name: 'Sidebar mode' }).getByRole('radio', { name: 'Threads' })).toHaveAttribute('aria-checked', 'true')
     await expect(newThread).toBeVisible()
     await expect.poll(() => threadsIn('forge-ml')).toBe(1)
     await page.screenshot({ animations: 'disabled', path: `${SHOTS}/from-help-thread-1280x800-dark.png` })
