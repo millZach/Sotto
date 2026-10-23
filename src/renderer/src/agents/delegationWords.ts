@@ -102,6 +102,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'PENDING_USER_REQUEST': return `That thread was waiting for your answer on its own card. ${nothing}`
     case 'UNKNOWN_THREAD': return `That thread is gone or archived, or this thread did not delegate to it. ${nothing}`
     case 'QUEUE_HELD': return `That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. ${nothing}`
+    case 'MACHINE_UNAVAILABLE': return `The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. ${nothing}`
     default: return `Sotto turned it down. ${nothing}`
   }
 }

@@ -113,8 +113,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
   const delegation = owlFeatures['thread-delegation']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
-  // Moving branches with the desktop (ADR-0105 decision 8): only an Owl host lists `branch-moves` or takes `branch-move`.
-  const crossMachineWork = owlFeatures['cross-machine-work']
+  // Work across machines (ADR-0082) is Owl: only an Owl host names its projects' GitHub origins to a desktop placing work
+  // (#1032), lists `branch-moves` or takes `branch-move` (ADR-0105 decision 8).
+  const crossMachineEnabled = owlFeatures['cross-machine-work']
   const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -135,7 +136,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
@@ -204,7 +205,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
         const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
         // One for both listeners, so a move begun on one is the same move on the other. Bundles wait in the data folder.
-        const branchMoves = crossMachineWork ? new HostBranchMoves(new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
+        const branchMoves = crossMachineEnabled ? new HostBranchMoves(new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
           recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
         await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
         const moves = branchMoves ? { branchMoves } : {}

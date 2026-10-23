@@ -35,6 +35,7 @@ import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
+import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -1176,6 +1177,12 @@ export class SocketHostService implements HostService {
   async branchMove(request: HostBranchMoveRequest): Promise<unknown> {
     this.offers('branch-moves')
     return this.call({ op: 'branch-move', request }, undefined, undefined, 120000)
+  }
+  /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */
+  get supportsProjectOrigins(): boolean { return this.features.includes('project-origins') }
+  async projectOrigins(): Promise<ProjectOrigins> {
+    this.offers('project-origins')
+    return this.read(projectOriginsSchema, await this.call({ op: 'project-origins' }, undefined, undefined, 10000))
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

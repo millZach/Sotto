@@ -328,6 +328,16 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
     })
 
+  it('persists where new workers start through settings IPC, and refuses a value that names no machine (#1032)', async () => {
+      const { ipc, settings } = createIpcHarness()
+      const forge = '6b8f1c2d-3e4a-4b5c-8d6e-7f8091a2b3c4'
+      await expect(ipc.invoke(SETTINGS_UPDATE, { newWorkerMachine: forge })).resolves.toMatchObject({ newWorkerMachine: forge })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ newWorkerMachine: forge })
+      await expect(ipc.invoke(SETTINGS_UPDATE, { newWorkerMachine: 'watcher' })).resolves.toMatchObject({ newWorkerMachine: 'watcher' })
+      await expect(ipc.invoke(SETTINGS_UPDATE, { newWorkerMachine: 'forge' })).rejects.toThrow('Invalid IPC payload')
+      expect(settings.update).toHaveBeenCalledTimes(2)
+    })
+
   it('persists the typing speed the Dictate room counts time saved against, and refuses one out of bounds (#1293)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { typingSpeedWpm: 65 })).resolves.toMatchObject({ typingSpeedWpm: 65 })

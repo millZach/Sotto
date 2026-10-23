@@ -7,7 +7,9 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
-import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
+import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
+import { workerMachineHostId, type NewWorkersStart, type ProjectOrigins, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
+import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources, type WorkerPlacement } from './workerPlacement'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { delegatedThreadsBelow } from '../../shared/delegation'
@@ -168,6 +170,11 @@ const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, 
 const HOST_WITHOUT_OUTCOMES = 'This host does not report outcomes, so Sotto cannot say how this ended. Update Sotto on that host, or read the thread.'
 /** A start's worker role as its receipt says it (#1041). */
 type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; readonly note: string }
+/**
+ * A start placed before admission (#1032): the call as Watcher made it, which its retries are matched by, the start as it
+ * goes, and where its receipt says it went.
+ */
+type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt }
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
@@ -318,6 +325,8 @@ export class WatcherService implements WatcherControlHooks {
    * record, so the record keeps its shape; a retry after a restart reads its receipt without this block.
    */
   private readonly roleStarts = new Map<string, RoleReceipt>()
+  /** Where each recent start was placed, for its receipt (#1032). In memory only, as `roleStarts` is. */
+  private readonly placements = new Map<string, WorkerPlacementReceipt>()
   /**
    * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
    * tried again until it has worked again; the wait before the next look; and whether a look is under way.
@@ -335,6 +344,13 @@ export class WatcherService implements WatcherControlHooks {
     roles?: () => WorkerRoleChoices
     /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
     machineFacts?: () => Promise<HostMachineReport>
+    /**
+     * Where new workers start (`newWorkerMachine`), present only while the Owl feature `cross-machine-work` is on (#1032).
+     * Read when a start is placed. Without it a start names no machine or system, and goes where its project is.
+     */
+    workerMachine?: () => WorkerMachineSetting
+    /** This computer's projects' GitHub origins, read when a start is placed on another machine than its project's (#1032). */
+    projectOrigins?: () => Promise<ProjectOrigins>
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
     ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
     /**
@@ -790,6 +806,81 @@ export class WatcherService implements WatcherControlHooks {
   private workingWarning(threadId: string): { warning: string } | Record<string, never> {
     const warning = workingThreadsWarning(countWorkingThreads(this.options.control.watcherSnapshot().threads, threadId))
     return warning ? { warning } : {}
+  }
+  /**
+   * The working threads warning after a start on another machine (#1032): that machine's working threads, counted from its
+   * own list as this computer holds it, the new thread among them. Only while Work across machines is on.
+   */
+  private machineWorkingWarning(target: WatcherThreadTarget): { warning: string } | Record<string, never> {
+    if (!this.options.workerMachine) return {}
+    const name = this.remote?.hosts().find(host => host.hostId === target.hostId)?.name?.trim() || 'that machine'
+    const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(this.owningSnapshot(target.hostId)?.threads ?? [], target.threadId), name)
+    return warning ? { warning } : {}
+  }
+  /**
+   * What placing a start reads (#1032): every machine this computer knows, This computer first, and what each says of its
+   * system and its projects' origins, read only when a start is placed.
+   */
+  private placementSources(): PlacementSources {
+    const local = this.hostId(), others = () => (this.remote?.hosts() ?? []).filter(host => host.hostId !== local)
+    return {
+      machines: () => [{ hostId: local, name: 'This computer', thisComputer: true, connected: true },
+        ...others().map(host => ({ hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected: host.connected }))],
+      system: async hostId => {
+        try {
+          if (hostId === local) return (await this.options.machineFacts?.())?.facts.os.family ?? null
+          return others().find(host => host.hostId === hostId)?.facts && this.remote?.machineFacts ? (await this.remote.machineFacts(hostId))?.facts.os.family ?? null : null
+        } catch { return null }
+      },
+      projects: hostId => this.owningSnapshot(hostId)?.projects ?? [],
+      origins: async hostId => hostId === local ? this.options.projectOrigins?.()
+        : others().find(host => host.hostId === hostId)?.origins && this.remote?.projectOrigins ? this.remote.projectOrigins(hostId) : undefined,
+    }
+  }
+  /**
+   * Where a start of `project` that asks for `ask` goes (#1032), or Watcher's refusal saying why it cannot: Watcher's own
+   * starts and a delegating thread's ask the same. Reads the setting once. Starts nothing.
+   */
+  async placement(ask: PlacementAsk, project: { readonly hostId: string; readonly projectId: string }, setting?: WorkerMachineSetting): Promise<WorkerPlacement | WatcherRefusal> {
+    try { return await placeWorker(ask, setting ?? this.options.workerMachine?.() ?? 'this-computer', project, this.placementSources()) } catch (error) {
+      if (error instanceof PlacementRefusal) return watcherRefusal(error.code, error.message, error.retryable)
+      if (error instanceof Refusal) return error.result
+      throw error
+    }
+  }
+  /**
+   * A start placed before admission (#1032). With Work across machines off it names no machine or system, and goes where
+   * its project is, as before. A retry of a recorded start is placed nowhere again: it reads the first call's receipt.
+   */
+  private async placeStart(input: WatcherToolInput<'start_thread'>): Promise<PlacedStart | undefined> {
+    const { machine, os, ...start } = input
+    if (!this.options.workerMachine) {
+      if (machine !== undefined || os !== undefined) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
+      return undefined
+    }
+    if (this.record().operations.some(item => item.requestId === input.requestId && item.retryKey === input.retryKey)) return undefined
+    const placed = await this.placement({ machine, os }, input.project)
+    if ('status' in placed) throw new Refusal(placed)
+    // A working copy or base branch was read for the project where it was named, and means nothing on another machine.
+    if (placed.hostId !== input.project.hostId && (input.workingCopy.kind === 'existing-worktree' || input.baseRefChoiceId)) {
+      refuse('WORKING_COPY_CHANGED', `Those working-copy choices are for the project where it was named, not its copy on ${placed.receipt.name}. Start on the shared checkout or a new worktree there, or read that project's choices. Nothing was started.`)
+    }
+    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId } }, placement: placed.receipt }
+  }
+  /** list_machines, with where a start that names no machine goes while Work across machines is on (#1032). */
+  private withNewWorkersStart<T extends { readonly machines: readonly { readonly hostId: string; readonly name: string }[] }>(listed: T): T & { newWorkersStart?: NewWorkersStart } {
+    if (!this.options.workerMachine) return listed
+    const setting = this.options.workerMachine(), hostId = workerMachineHostId(setting)
+    if (setting === 'watcher') return { ...listed, newWorkersStart: { choice: 'watcher' } }
+    if (hostId === undefined || hostId === this.hostId()) return { ...listed, newWorkersStart: { choice: 'this-computer' } }
+    const name = listed.machines.find(machine => machine.hostId === hostId)?.name
+    return { ...listed, newWorkersStart: { choice: 'machine', hostId, ...name ? { name } : {} } }
+  }
+  /** A machine's name as this computer saved it, for a sentence that names it (#1032). */
+  machineName(hostId: string): string | undefined { return this.remote?.hosts().find(host => host.hostId === hostId)?.name?.trim() || undefined }
+  /** The machines as Watcher's list_machines gives them, for a delegating thread's own list (#1032). */
+  async machines(): Promise<unknown> {
+    try { return this.withNewWorkersStart(await this.listMachines()) } catch (error) { if (error instanceof Refusal) return error.result; throw error }
   }
   private limits(operation: WatcherOperation) {
     const record = this.record()
@@ -2378,7 +2469,7 @@ export class WatcherService implements WatcherControlHooks {
         const result = await this.unwatchThread(parsed.data as WatcherToolInput<'unwatch_thread'>, undefined, 'watcher')
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
-      if (name === 'list_machines') return await this.listMachines()
+      if (name === 'list_machines') return this.withNewWorkersStart(await this.listMachines())
       if (name === 'keep_state') {
         const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now, so nothing was kept and nothing kept was lost. Try again.', true))
@@ -2457,16 +2548,21 @@ export class WatcherService implements WatcherControlHooks {
         if (mergeTurn) progress.admitted = operation => this.noteMergeTurn(operation, mergeTurn.pullRequest)
         return await this.mutate(threadId, name, send, undefined, undefined, progress)
       }
-      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
+      if (name === 'start_thread') {
+        const asked = parsed.data as WatcherToolInput<'start_thread'>, placed = await this.placeStart(asked)
+        return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed)
+      }
+      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
   }
-  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress): Promise<unknown> {
+  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart): Promise<unknown> {
     const admitted = await this.transaction(async () => {
       if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
       if (!imported) this.checkCaller(threadId)
-      const record = this.record(), originalInputDigest = digest([name, input])
+      // A placed start is matched to its retries by the call as Watcher made it, machine and system included (#1032).
+      const record = this.record(), originalInputDigest = digest([name, placed?.original ?? input])
       let request = record.requests.find(item => item.id === input.requestId), newStandingRequest: WatcherRecord['requests'][number] | undefined
       // The Watcher turn a new call counts against. A retry of a recorded operation returns its receipt without reading one.
       let turnRead: { readonly value: PromptTurn | undefined } | undefined
@@ -2488,7 +2584,7 @@ export class WatcherService implements WatcherControlHooks {
         input = { ...input, requestId: request.id }
       }
       if (!request || request.watcher.threadId !== threadId || !imported && request.watcher.hostId !== this.hostId()) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
-      const inputDigest = digest([name, input])
+      const inputDigest = placed ? originalInputDigest : digest([name, input])
       const existing = record.operations.find(item => item.requestId === input.requestId && item.retryKey === input.retryKey)
       if (existing) {
         if ((imported ? existing.digest : existing.inputDigest ?? existing.digest) !== inputDigest) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Use the original receipt.')
@@ -2644,6 +2740,7 @@ export class WatcherService implements WatcherControlHooks {
         if (start && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: operation.id, generation: participant.generation, reason: 'creation' })
       })
       if (roleResult) this.rememberRoleStart(operation.id, roleResult)
+      if (placed && !imported) this.rememberPlacement(operation.id, placed.placement)
       return { operation, retry: false }
     })
     if (progress) { progress.operationId = admitted.operation.id; progress.admitted?.(admitted.operation) }
@@ -2845,6 +2942,14 @@ ${operation.draftId}`)
     const role = this.roleStarts.get(operationId)
     return role ? { role } : {}
   }
+  private rememberPlacement(operationId: string, placement: WorkerPlacementReceipt): void {
+    this.placements.set(operationId, placement)
+    for (const kept of this.placements.keys()) { if (this.placements.size <= ROLE_STARTS_KEPT) break; this.placements.delete(kept) }
+  }
+  private placementBlock(operationId: string): { placement: WorkerPlacementReceipt } | Record<string, never> {
+    const placement = this.placements.get(operationId)
+    return placement ? { placement } : {}
+  }
   /** `firstRun`: the answer to the call that ran the operation, not to a retry reading its receipt again. */
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, firstRun = false): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation) }
@@ -2865,7 +2970,7 @@ ${operation.draftId}`)
       return { status: 'ok', ...base, target: operation.target, creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
         effectiveChoices: { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null,
           permission: thread.providerMode ? { kind: 'provider', choiceId: thread.providerMode } : { kind: 'runtime', mode: thread.runtimeMode ?? 'approval-required' },
-          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id),
+          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id), ...this.placementBlock(operation.id),
         // Nothing is held back at any count; past ten working threads the start's own answer says so, for Watcher to tell
         // the user. A retry's does not: its thread may have finished long since, and it would count it again.
         ...firstRun && operation.target.hostId === this.hostId() ? this.workingWarning(operation.target.threadId) : {} }
@@ -2933,7 +3038,7 @@ ${operation.draftId}`)
         })
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
-        ...(name === 'start_thread' ? this.roleBlock(operation.id) : {}) } : parsed
+        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.machineWorkingWarning(operation.target) } : {}) } : parsed
     } catch (error) {
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))

@@ -34,6 +34,10 @@ import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import type { AgentState } from '../../src/shared/agents'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { readProjectOrigins } from '../../src/main/agents/projectOrigins'
+import type { WorkerMachineSetting } from '../../src/shared/workerMachine'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -54,9 +58,11 @@ async function pairedDesktop(record = true, gate = true) {
   return { socket, pairing, hello, project: socket.shell().host.projects.find(item => item.path === path)!,
     model: socket.shell().host.models.find(item => item.providerId === 'codex' && item.ready)! }
 }
-async function master(native?: CodexAppServerHost, usage = false) {
-  if (native || usage) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native ?? remote.native },
-    ...(usage ? { sottoVersion: '0.1.38-owl.20261013.1' } : {}) }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
+/** `machines` turns on Work across machines (#1032) on both sides: the host's Owl answer, and where this computer's new workers start. */
+async function master(native?: CodexAppServerHost, usage = false, machines?: { setting: () => WorkerMachineSetting }) {
+  const owl = usage || machines !== undefined
+  if (native || owl) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native ?? remote.native },
+    ...(owl ? { sottoVersion: '0.1.38-owl.20261013.1' } : {}) }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
   const paired = await pairedDesktop()
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -64,8 +70,9 @@ async function master(native?: CodexAppServerHost, usage = false) {
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource()
   const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
-    machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads) })
-  const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
+    machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads),
+    ...machines ? { workerMachine: machines.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {} })
+  const tools = new WatcherToolServer(watcher, { machines: machines !== undefined }); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
     detail: (id: string) => paired.socket.readThreadDetail(id), preview: () => null }
@@ -1434,3 +1441,108 @@ it('delivers a later request’s queued prompt to a paired thread Stop all held,
   await native.driver.completeTurn(nativeId, 'Synthetic second completion')
   await vi.waitFor(async () => expect(await starts()).toBe(3), { timeout: 10_000 })
 }, 60_000)
+
+// Work across machines (#1032): the projects on both machines are copies of one GitHub repository, by their origin remotes.
+const git = promisify(execFile)
+async function origin(path: string, url: string): Promise<void> {
+  await git('git', ['init', '-q', path])
+  await git('git', ['-C', path, 'remote', 'add', 'origin', url])
+}
+async function acrossMachines(setting: WorkerMachineSetting = 'this-computer') {
+  const choice = { setting }
+  const f = await master(undefined, false, { setting: () => choice.setting })
+  const local = f.control.shell().host.projects.find(item => item.providerId === 'codex')!
+  await origin(local.path, 'git@github.com:millZach/Sotto.git')
+  await origin(f.project.path, 'https://github.com/millZach/Sotto')
+  // A start that stays on This computer names a model ready here; one placed on the paired machine names one ready there.
+  const here = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
+  return { ...f, local, choice, onThisComputer: () => ({ ...f.start(), project: { hostId: f.control.hostId()!, projectId: local.id } }),
+    staysHere: () => ({ ...f.start(), project: { hostId: f.control.hostId()!, projectId: local.id }, modelId: here.id }),
+    // `call` waits for a started thread on the paired host; a start that stays here is read as Watcher reads it.
+    startHere: async (input: unknown) => watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', input)) }
+}
+const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, 'windows' | 'macos' | 'linux'>)[process.platform]!
+
+it('starts a worker on the paired machine new workers start on, in its copy of the project, and says where in the receipt (#1032)', async () => {
+  const f = await acrossMachines()
+  expect(f.hello.features).toContain('project-origins')
+  f.choice.setting = f.pairing.hostId
+  const listed = await f.call('list_machines', {})
+  expect(listed).toMatchObject({ status: 'ok', newWorkersStart: { choice: 'machine', hostId: f.pairing.hostId, name: 'Synthetic remote' } })
+  const raw = vi.spyOn(f.socket as unknown as { call(request: { op: string }): Promise<unknown> }, 'call')
+  const input = f.onThisComputer(), started = await f.call('start_thread', input)
+  if (started.status !== 'ok' || !('target' in started)) throw new Error(`start-refused: ${started.status === 'refused' ? started.message : ''}`)
+  expect(started.target.hostId).toBe(f.pairing.hostId)
+  expect(started.placement).toEqual({ hostId: f.pairing.hostId, name: 'Synthetic remote', awayFromDefault: false })
+  expect(f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)?.projectId).toBe(f.project.id)
+  // The owning host is sent the start as it goes: its own project, and neither the machine nor the setting.
+  const packet = raw.mock.calls.map(([request]) => request).find(request => request.op === 'watcher-control') as unknown as { request: { call: { input: Record<string, unknown> } } }
+  raw.mockRestore()
+  expect(packet.request.call.input['project']).toEqual({ hostId: f.pairing.hostId, projectId: f.project.id })
+  expect(packet.request.call.input).not.toHaveProperty('machine')
+  expect(packet.request.call.input).not.toHaveProperty('os')
+  // A retry reads the first receipt, wherever new workers start by then.
+  f.choice.setting = 'this-computer'
+  expect(await f.call('start_thread', input)).toMatchObject({ status: 'ok', receipt: { operationId: started.receipt.operationId }, target: started.target })
+  expect(f.socket.shell().host.threads.filter(thread => thread.title === input.title)).toHaveLength(1)
+  // Back on This computer, a start in the same project stays here; one that names the paired machine goes there, away from the default.
+  const here = await f.startHere({ ...f.staysHere(), title: 'Synthetic local worker' })
+  expect(here).toMatchObject({ status: 'ok', target: { hostId: f.control.hostId() }, placement: { hostId: f.control.hostId(), name: 'This computer', awayFromDefault: false } })
+  expect(await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, title: 'Synthetic named worker' })).toMatchObject({ status: 'ok',
+    target: { hostId: f.pairing.hostId }, placement: { hostId: f.pairing.hostId, awayFromDefault: true } })
+})
+
+it('starts on This computer and says why when the paired machine new workers start on is not connected (#1032)', async () => {
+  const f = await acrossMachines()
+  f.choice.setting = f.pairing.hostId
+  Object.assign(f.connection, { available: () => false })
+  const started = await f.startHere(f.staysHere())
+  expect(started).toMatchObject({ status: 'ok', target: { hostId: f.control.hostId() }, placement: { hostId: f.control.hostId(), awayFromDefault: true,
+    note: 'Synthetic remote, where new workers start, is not connected, so this one started on This computer.' } })
+})
+
+it('refuses in plain words a machine with no copy of the project, and sends it nothing (#1032)', async () => {
+  const f = await acrossMachines()
+  await git('git', ['-C', f.project.path, 'remote', 'set-url', 'origin', 'https://github.com/someone/Elsewhere.git'])
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  const refused = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId })
+  expect(refused).toMatchObject({ status: 'refused', code: 'UNKNOWN_TARGET', message: `Synthetic remote has no copy of ${f.local.title}. Add the project on Synthetic remote first. Nothing was started.` })
+  expect(writes).not.toHaveBeenCalled()
+  expect(f.control.watcherRecord().operations).toHaveLength(0)
+})
+
+it('takes explicit placement on an older host that reports no facts, and says to update it for a project it cannot match (#1032)', async () => {
+  const f = await acrossMachines()
+  const socket = f.socket as unknown as { features: readonly string[] }
+  socket.features = socket.features.filter(feature => feature !== 'host-facts' && feature !== 'project-origins')
+  expect(f.router.watcherHosts().hosts()[0]).toMatchObject({ facts: false, origins: false })
+  const started = await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })
+  expect(started).toMatchObject({ status: 'ok', target: { hostId: f.pairing.hostId }, placement: { hostId: f.pairing.hostId, name: 'Synthetic remote' } })
+  expect(await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
+    message: 'Synthetic remote cannot say which repository its projects are copies of. Update Sotto on it, or name one of its projects from list_projects. Nothing was started.' })
+  // A system named beside it cannot be checked on a host that does not say what it runs.
+  expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId, os: family })).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
+})
+
+it('starts a worker that names a system on a machine of it, and refuses one no connected machine runs without starting anything (#1032)', async () => {
+  const f = await acrossMachines()
+  f.choice.setting = f.pairing.hostId
+  // Both machines run this system here; the machine new workers start on comes first.
+  expect(await f.call('start_thread', { ...f.onThisComputer(), os: family })).toMatchObject({ status: 'ok', target: { hostId: f.pairing.hostId } })
+  const other = family === 'macos' ? 'linux' : 'macos', writes = vi.spyOn(f.socket, 'watcherControl'), before = f.control.watcherRecord().operations.length
+  expect(await f.call('start_thread', { ...f.onThisComputer(), os: other })).toMatchObject({ status: 'refused', code: 'HOST_DISCONNECTED',
+    message: other === 'macos' ? 'No Mac is connected. Connect a Mac, or run this on This computer. Nothing was started.'
+      : 'No Linux machine is connected. Connect a Linux machine, or run this on This computer. Nothing was started.' })
+  expect(writes).not.toHaveBeenCalled()
+  expect(f.control.watcherRecord().operations).toHaveLength(before)
+})
+
+it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
+  const f = await master()
+  expect(f.hello.features).not.toContain('project-origins')
+  expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(await f.call('start_thread', { ...f.start(), os: family })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  const listed = await f.call('list_machines', {})
+  expect(listed).not.toHaveProperty('newWorkersStart')
+  expect(await f.call('start_thread', f.start())).not.toHaveProperty('placement')
+})
