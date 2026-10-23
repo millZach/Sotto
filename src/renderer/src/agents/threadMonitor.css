@@ -56,3 +56,7 @@
 /* The creature setting's preview in Settings → Appearance: a short track with the creature walking it. */
 .creature-walk { position: relative; width: 100%; height: 64px; }
 .creature-walk .thread-monitor__track { height: 64px; }
+/* The ornament's band lies over the transcript, not above it, so the conversation shows behind the creature. Only the composer and the readout take clicks there. */
+.thread-workspace__compose:has(.thread-prompt[data-ornament], .agent-composer[data-ornament]) { position: relative; z-index: 1; margin-top: -68px; pointer-events: none; }
+.thread-workspace__compose:has(.thread-prompt[data-ornament], .agent-composer[data-ornament]) > * { pointer-events: auto; }
+.thread-workspace:has(.thread-workspace__compose [data-ornament]) > .thread-workspace__transcript { padding-bottom: 96px; }
