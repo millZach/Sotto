@@ -672,7 +672,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const desktopNotificationsEnabled = owlFeatures['desktop-notifications'] && profile.desktopNotifications && Notification.isSupported()
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
-  // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
+  // Sotto restarts (ADR-0077 decision 6). It stays undefined while Update all is held, when hosts follow the running version alone.
   let waitingAppVersion: string | undefined
   let waitingHostVersion: string | undefined
   let waitingPhase: string | undefined
@@ -1033,7 +1033,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
     finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }

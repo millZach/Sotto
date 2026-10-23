@@ -109,8 +109,8 @@ describe('the runtime (ADR-0072)', () => {
       ...(continueEnabled === undefined ? {} : { continueEnabled }), ...(runsAs ? { runsAs } : {}) })
   }
 
-  it('is off on stable and on in Owl', () => {
-    expect(owlFeaturesForTrack('stable')['continue-on-provider']).toBe(false)
+  it('is on in both tracks now that it is sent to stable', () => {
+    expect(owlFeaturesForTrack('stable')['continue-on-provider']).toBe(true)
     expect(owlFeaturesForTrack('owl')['continue-on-provider']).toBe(true)
   })
 

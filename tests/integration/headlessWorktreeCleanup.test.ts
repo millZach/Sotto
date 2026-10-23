@@ -11,11 +11,11 @@ import { AgentControl } from '../../src/main/agents/control'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { ThreadWorktrees, runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { SettingsRepository } from '../../src/main/storage/settingsRepository'
 import { defaultAgentConfiguration, type AgentCommand } from '../../src/shared/agents'
 import { DEFAULT_WORKTREE_CLEANUP } from '../../src/shared/settings'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
+import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 
 const roots: string[] = []
 const hosts: Awaited<ReturnType<typeof startHeadlessHost>>[] = []
@@ -47,8 +47,8 @@ async function host() {
   const codex = new FakeProviderHost()
   codex.state.threads.length = 0
   const events: string[] = []
-  const started = await startHeadlessHost({ dataDirectory: data, reasoner: e2eAgentReasoner, log: event => events.push(event),
-    providers: { codex, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
+  // Every other provider is one of the fixture's fakes, Muse and OpenCode included: like this one they send no events.
+  const started = await startFixtureHeadlessHost({ dataDirectory: data, log: event => events.push(event), providers: { codex } })
   hosts.push(started)
   const client = desktopWindowClient('host-cleanup')
   const command = async (value: AgentCommand) => { const state = await started.service.command(value, client); expect(state.error).toBeNull(); return state }

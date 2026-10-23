@@ -500,7 +500,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
-  // On by default in Owl, the only place it shows: a freeze is worth hearing about until the owner says otherwise.
+  // On by default: a freeze is worth hearing about until the owner says otherwise.
   mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
