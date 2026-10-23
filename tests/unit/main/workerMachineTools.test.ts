@@ -23,12 +23,15 @@ describe('Watcher with Work across machines', () => {
     }
     expect(WATCHER_TOOL_DEFINITIONS).toEqual(watcherToolDefinitions(false, false))
   })
-  it('advertises no placement or newWorkersStart in any result while it is off, and both while it is on', () => {
+  it('advertises no placement, startedFrom or newWorkersStart in any result while it is off, and all of them while it is on', () => {
     const offered = (roles: boolean, machines: boolean) => JSON.stringify(watcherToolDefinitions(roles, machines))
     const output = (roles: boolean, machines: boolean, name: string) => JSON.stringify(watcherToolDefinitions(roles, machines).find(item => item.name === name)!.outputSchema)
     for (const roles of [false, true]) {
-      for (const field of ['placement', 'newWorkersStart']) expect(offered(roles, false)).not.toContain(field)
+      // startedFrom carries a test run's snapshot (#1033): its untracked files and their count are Work across machines' too.
+      for (const field of ['placement', 'newWorkersStart', 'startedFrom', 'untracked', 'untrackedCount']) expect(offered(roles, false)).not.toContain(field)
       expect(output(roles, true, 'start_thread')).toContain('"placement"')
+      expect(output(roles, true, 'start_thread')).toContain('"startedFrom"')
+      expect(output(roles, true, 'start_thread')).toContain('"untrackedCount"')
       expect(output(roles, true, 'list_machines')).toContain('"newWorkersStart"')
       // The rest of each result, and the refusal, are the same either way.
       expect(output(roles, false, 'start_thread')).toContain('"firstPromptReceiptId"')

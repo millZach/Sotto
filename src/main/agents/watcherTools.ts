@@ -47,12 +47,13 @@ const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
 }
 
 /**
- * The results as offered while Work across machines is off (#1032): without the start's placement and without where new
- * workers start, so Stable advertises none of it. Only the answer carries them; the refusal is the same.
+ * The results as offered while Work across machines is off (#1032, #1033): without the start's placement, without where
+ * it started from and what a test run's snapshot carried, and without where new workers start, so Stable advertises none
+ * of it. Only the answer carries them; the refusal is the same.
  */
 const { start_thread: startOutput, list_machines: machinesOutput } = watcherToolSchemas
 const MACHINELESS_OUTPUTS: Partial<Record<WatcherToolName, z.ZodType>> = {
-  start_thread: z.union([startOutput.output.options[0].omit({ placement: true }), startOutput.output.options[1]]),
+  start_thread: z.union([startOutput.output.options[0].omit({ placement: true, startedFrom: true }), startOutput.output.options[1]]),
   list_machines: z.union([machinesOutput.output.options[0].omit({ newWorkersStart: true }), machinesOutput.output.options[1]]),
 }
 const offeredOutput = (name: WatcherToolName, machines: boolean): z.ZodType => (machines ? undefined : MACHINELESS_OUTPUTS[name]) ?? watcherToolSchemas[name].output
