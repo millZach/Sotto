@@ -1,7 +1,7 @@
 import React, { useId, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
-import { ChoiceChip, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
+import { ChoiceChip, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
 
 /** The chip's name, which says which setting a press changes. */
@@ -81,7 +81,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
   const notice = refusal === null ? null : <p className="thread-options__notice" role="alert"><span>{refusal}</span></p>
   return <>
     <ChoiceChip label={WATCHER_PERMISSIONS} placeholder={RUNTIME_LABELS[FIRST_MODE]} value={chosen} options={choices(model, chosen, provider)}
-      disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={WATCHER_PERMISSIONS_FOOT} flip={flip}
+      disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={WATCHER_PERMISSIONS_FOOT} flip={flip} icon={PERMISSIONS_ICON}
       onChange={mode => void choose(mode as AgentRuntimeMode)} />
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{pending ? permissionInForceCaption(provider, { runtimeMode: current }) : ''}</span>

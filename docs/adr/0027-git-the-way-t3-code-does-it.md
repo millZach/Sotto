@@ -1,10 +1,12 @@
 # Git the way T3 Code does it
 
+October 23, 2026 amendment: [ADR-0112](0112-the-composer-controls-are-text-buttons.md) draws the branch toolbar as one muted line of text buttons under the composer, a faint dot between them, with the pull request badge and the branch picker following the workspace rather than sitting at the right. What each part does is unchanged.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The supervision follow-up send path described below has been removed. Manual sends, queued user follow-ups and explicit babysitting wake-ups retain the read before a send and checkpoint rules.
 
 Accepted September 23, 2026. Issue #127; the plan is `docs/plans/2026-09-23-git-interface.md`. Amended September 23 and 24, 2026, once for each ticket or pair that decided something of its own (#265 to #267, #268, #269, #270, #271), in that order below. Where an amendment changes an earlier line it says so there. The whole interface is proved in the built app in `docs/verification/2026-09-24-git-interface.md`.
 
-Amended October 22, 2026 ([ADR-0112](0112-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): Settings → Git is now Settings → Git & worktrees. Decision 7's groups by moment stand, after a new first group, Removing worktrees, and with the Generated commit message and pull request switches and Let agents babysit pull requests beside the settings they act with.
+Amended October 22, 2026 ([ADR-0114](0114-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): Settings → Git is now Settings → Git & worktrees. Decision 7's groups by moment stand, after a new first group, Removing worktrees, and with the Generated commit message and pull request switches and Let agents babysit pull requests beside the settings they act with.
 
 ## Context
 

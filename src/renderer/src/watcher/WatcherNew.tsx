@@ -60,6 +60,7 @@ export function WatcherNewButton({ state, thread, noticeSlot }: {
     <button type="button" className="thread-chip watcher-new tt-focusable" title={why ?? NEW_WATCHER_TITLE}
       aria-disabled={why !== null || undefined} aria-describedby={why !== null ? reasonId : undefined} onClick={() => void press()}>
       <SquarePen size={14} aria-hidden="true" /><span>New Watcher</span></button>
+    <span className="watcher-new__separator" aria-hidden="true">·</span>
     {why !== null ? <span id={reasonId} className="tt-visually-hidden">{why}</span> : null}
     {noticeSlot !== null && notice !== null ? createPortal(notice, noticeSlot) : notice}
   </>

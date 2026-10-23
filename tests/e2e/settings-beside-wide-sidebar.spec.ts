@@ -47,7 +47,7 @@ for (const track of ['stable', 'owl'] as const) {
         await page.addStyleTag({ content: '.settings-detail { padding-right: 17px !important }' })
         const tabs = page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab')
         const names = (await tabs.allInnerTexts()).map(name => name.trim())
-        // Stable has nine pages and Owl eleven (ADR-0112); a page added later is checked without changing this list.
+        // Stable has nine pages and Owl eleven (ADR-0114); a page added later is checked without changing this list.
         expect(names.length, `${track} sections`).toBeGreaterThanOrEqual(track === 'owl' ? 11 : 9)
         for (const name of names) {
           await tabs.filter({ hasText: new RegExp(`^\\s*${name}\\s*$`) }).first().click()
