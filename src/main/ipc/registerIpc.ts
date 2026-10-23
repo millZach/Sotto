@@ -112,6 +112,7 @@ const settingKeys = [
   'menuBarOwlBody',
   'menuBarOwlEyes',
   'creature',
+  'showCreature',
   'customThemes',
   'reducedMotion',
   'terminalFontSize',
