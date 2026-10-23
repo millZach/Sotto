@@ -149,7 +149,8 @@ export function heldLine(held: HostHold, machine: string): string {
 }
 /** The same, in full, where a row's details say its latest outcome. */
 export function heldOutcome(held: HostHold, machine: string): string {
-  if (held === 'not-told') return `${machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then.`
+  // Zach's words (October 23, 2026), held to what is true: a start after that can still be held where this computer cannot answer.
+  if (held === 'not-told') return `${machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then, unless this computer can't answer there.`
   if (held === 'answers-revoked') return `It started at Ask for approval, because ${machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more.`
   return `It started at Ask for approval, because this computer can't answer permission requests on ${machine}, so a thread there cannot be given more.`
 }

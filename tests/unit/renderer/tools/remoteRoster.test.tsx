@@ -132,7 +132,8 @@ describe('a remote parent\'s roster', () => {
     // The reason only, until a control of its own lets this computer answer there (#1447).
     expect(heldLine('no-answer-grant', 'forge')).toBe("Held at Ask for approval: this computer can't answer on forge.")
     expect(heldOutcome('no-answer-grant', 'forge')).not.toMatch(/Settings|SSH/u)
-    expect(heldOutcome('not-told', 'forge')).toBe("forge hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then.")
+    // It promises no more than is true: a later start is still held where this computer cannot answer there.
+    expect(heldOutcome('not-told', 'forge')).toBe("forge hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then, unless this computer can't answer there.")
     // A grant taken away is said as such, with no fix that cannot work.
     expect(heldLine('answers-revoked', 'forge')).toBe('Held at Ask for approval: forge no longer lets this computer answer there.')
     expect(heldOutcome('answers-revoked', 'forge')).not.toMatch(/Settings/u)
