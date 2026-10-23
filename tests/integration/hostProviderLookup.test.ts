@@ -13,7 +13,12 @@ import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { resetCliLookup } from '../../src/main/agents/cliLookup'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
-import { defaultAgentConfiguration, type AgentConfiguration, type AgentHostSnapshot, type AgentState, type ProviderId } from '../../src/shared/agents'
+import { defaultAgentConfiguration, providerIdSchema, type AgentConfiguration, type AgentHostSnapshot, type AgentState, type ProviderId } from '../../src/shared/agents'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
+import { heldOnHost } from '../../src/shared/hostProviders'
+import { owlFeaturesForTrack } from '../../src/shared/owlFeatures'
+import { getReleaseTrack } from '../../src/shared/releaseTrack'
+import { version as packageVersion } from '../../package.json'
 
 type Host = Awaited<ReturnType<typeof startHeadlessHost>>
 const client = desktopWindowClient('host-provider-lookup')
@@ -50,8 +55,13 @@ class Counted extends E2EAgentHost {
   connects = 0
   override async connect(): Promise<AgentHostSnapshot> { this.connects += 1; return super.connect() }
 }
-const counted = () => ({ codex: new Counted(), claude: new Counted(), grok: new Counted(), devin: new Counted() })
-const scripted = () => ({ codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() })
+/**
+ * Every provider a host of this version runs, in the order a record names them: Muse and OpenCode too since 0.1.40. Each is
+ * scripted here, since one real adapter would have the host read every thread's history from events these send none of.
+ */
+const RUNS = providerIdSchema.options.filter(id => !heldOnHost(heldProvidersOf(owlFeaturesForTrack(getReleaseTrack(packageVersion)))).has(id))
+const counted = () => Object.fromEntries(RUNS.map(id => [id, new Counted()])) as Partial<Record<ProviderId, Counted>>
+const scripted = () => Object.fromEntries(RUNS.map(id => [id, new E2EAgentHost()])) as Partial<Record<ProviderId, E2EAgentHost>>
 async function start(data: string, providers: Partial<Record<ProviderId, E2EAgentHost>> = scripted()): Promise<Host> {
   const host = await startHeadlessHost({ dataDirectory: data, providers, reasoner: e2eAgentReasoner })
   hosts.push(host)
@@ -76,7 +86,7 @@ describe('a headless host and its providers', () => {
     host = await start(data, restarted)
     await expect.poll(() => connections(host)).toEqual({ codex: 'connected', claude: 'connected', grok: 'disconnected', devin: 'connected' })
     // A turned-off provider is not asked at start.
-    expect(restarted.grok.connects).toBe(0)
+    expect(restarted.grok!.connects).toBe(0)
 
     // Connecting it again is the user's choice too, and the record goes.
     expect((await host.service.command({ type: 'connect', provider: 'grok' }, client)).error).toBeNull()
@@ -91,8 +101,8 @@ describe('a headless host and its providers', () => {
     const providers = counted()
     const host = await start(data, providers)
     expect(host.service.shell().host.connected).toBe(false)
-    expect(Object.values(providers).map(provider => provider.connects)).toEqual([0, 0, 0, 0])
-    expect((await configuration(data)).disconnectedProviders).toEqual(['codex', 'claude', 'grok', 'devin'])
+    expect(Object.values(providers).map(provider => provider.connects)).toEqual(RUNS.map(() => 0))
+    expect((await configuration(data)).disconnectedProviders).toEqual(RUNS)
   })
 
   it('turns off every provider on Disconnect, and a changed enabled set records what it left out', async () => {
@@ -100,17 +110,17 @@ describe('a headless host and its providers', () => {
     let host = await start(data)
     await expect.poll(() => connections(host)).toEqual({ codex: 'connected', claude: 'connected', grok: 'connected', devin: 'connected' })
     await host.service.command({ type: 'configure', patch: { enabledProviders: ['codex', 'claude'] } }, client)
-    expect((await configuration(data)).disconnectedProviders).toEqual(['grok', 'devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(RUNS.filter(id => id !== 'codex' && id !== 'claude'))
     await host.service.command({ type: 'configure', patch: { enabledProviders: ['codex', 'claude', 'grok'] } }, client)
-    expect((await configuration(data)).disconnectedProviders).toEqual(['devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(RUNS.filter(id => id !== 'codex' && id !== 'claude' && id !== 'grok'))
     await host.service.command({ type: 'disconnect' }, client)
-    expect((await configuration(data)).disconnectedProviders).toEqual(['codex', 'claude', 'grok', 'devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(RUNS)
     await host.close(); hosts.splice(hosts.indexOf(host), 1)
 
     const restarted = counted()
     host = await start(data, restarted)
     expect(connections(host)).toEqual({ codex: 'disconnected', claude: 'disconnected', grok: 'disconnected', devin: 'disconnected' })
-    expect(Object.values(restarted).map(provider => provider.connects)).toEqual([0, 0, 0, 0])
+    expect(Object.values(restarted).map(provider => provider.connects)).toEqual(RUNS.map(() => 0))
     // With nothing connected, a create names the machine and the page that connects one, and claims no draft.
     const project = join(await folder('sotto-host-providers-'), 'site')
     expect((await host.service.command({ type: 'create-project', provider: 'codex', title: 'site', path: project }, client)).error)

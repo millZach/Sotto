@@ -367,7 +367,8 @@
 @container usage (max-width: 780px) {
   /* A narrow room wraps the figures into a grid, all of them in view, rather than a row that scrolls sideways. */
   .usage-focus { grid-template-columns: minmax(0, 1fr); gap: 26px; }
-  .usage-index { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  /* 168 keeps a tile wide enough for "100% in Sotto": two columns at the 820 minimum. */
+  .usage-index { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
   .usage-index__item { min-width: 0; padding: 12px 14px; }
   .usage-index__viz { display: none; }
   .usage-index__item[aria-selected='true']::before { top: auto; right: 14px; bottom: 0; left: 14px; width: auto; height: 3px; }

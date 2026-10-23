@@ -197,10 +197,11 @@ it.each([
   expect(reopened.control.shell().threadDrafts).toContainEqual(original.draft)
 })
 
-it.each([false, true])('headless startup offers and starts Muse only when its immutable Owl gate is %s', async owl => {
+it.each([false, true])('headless startup offers and starts Muse only when its immutable Owl answer is %s', async owl => {
   const root = await directory()
   const providers = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() }
-  const host = await startHeadlessHost({ dataDirectory: root, providers, reasoner: {}, sottoVersion: owl ? '0.1.37-owl.20261012.1' : '0.1.37' })
+  // This version runs Muse on both tracks; a held answer stands in for a host before 0.1.40, whose stable held it.
+  const host = await startHeadlessHost({ dataDirectory: root, providers, reasoner: {}, ...(owl ? {} : { owlFeatures: { muse: false } }) })
   cleanup.push(host.close)
   await expect.poll(() => host.service.shell().host.providers?.find(provider => provider.id === 'codex')?.connection).toBe('connected')
   if (owl) await expect.poll(() => providers.muse.connectCalls).toBe(1)

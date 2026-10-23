@@ -128,6 +128,8 @@ export interface AppSettings {
   menuBarOwlEyes: MenuBarOwlEyes
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
   creature: Creature
+  /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
+  showCreature: boolean
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -211,6 +213,10 @@ export interface AppSettings {
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
+  /** On by default. Moving between Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
+  roomTransition: boolean
+  /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
+  roomTransitionSpeed: number
   microphoneId: string | null
   hotkey: string
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
@@ -341,6 +347,7 @@ const fieldSchemas = {
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   creature: z.enum(CREATURES),
+  showCreature: z.boolean(),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -354,6 +361,8 @@ const fieldSchemas = {
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
   reducedMotion: z.enum(['system', 'on']),
+  roomTransition: z.boolean(),
+  roomTransitionSpeed: z.number().min(0.5).max(2),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
@@ -435,6 +444,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   creature: 'sotto',
+  showCreature: true,
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -447,6 +457,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
   reducedMotion: 'system',
+  roomTransition: true,
+  roomTransitionSpeed: 1,
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
@@ -509,7 +521,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
-  // On by default in Owl, the only place it shows: a freeze is worth hearing about until the owner says otherwise.
+  // On by default: a freeze is worth hearing about until the owner says otherwise.
   mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
@@ -588,6 +600,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     creature: parseField(persisted, 'creature', defaults),
+    showCreature: parseField(persisted, 'showCreature', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
@@ -601,6 +614,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
+    roomTransition: parseField(persisted, 'roomTransition', defaults),
+    roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),

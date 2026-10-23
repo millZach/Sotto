@@ -15,11 +15,14 @@ const keptSchema = z.object({
   clientId: z.string().min(1).max(512),
   newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
   workerRoles: z.unknown().optional(),
+  /** When they came, by this host's clock: returned in the receipt and never used to order them, as a clock can move back. */
   receivedAt: z.iso.datetime(),
+  /** The order they came in: one more than the newest kept when they were received. The last sent is the highest. */
+  sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 }).strict()
 const fileSchema = z.object({ version: z.literal(1), desktops: z.array(keptSchema).max(512) }).strict()
 type DesktopDefaultsFile = z.infer<typeof fileSchema>
-interface Kept extends DesktopDefaults { readonly clientId: string; readonly receivedAt: string }
+interface Kept extends DesktopDefaults { readonly clientId: string; readonly receivedAt: string; readonly sequence: number }
 /** How many desktops' defaults a host keeps; the oldest beyond it are dropped. A forgotten desktop's stop counting anyway. */
 export const KEPT_DESKTOP_DEFAULTS = 16
 /** Whether a desktop's defaults count on this host now: it is still paired here and may answer permission requests here. */
@@ -27,7 +30,7 @@ export type DesktopCounts = (clientId: string) => boolean
 
 /**
  * The desktop defaults a headless host keeps (#1310): the new-thread default and worker roles each desktop last sent, with
- * its client ID and when they came, in `desktop-defaults.json` beside the host's other records. Settings, not a key:
+ * its client ID, when they came and the order they came in, in `desktop-defaults.json` beside the host's other records. Settings, not a key:
  * nothing here is secret and nothing here grants anything. Kept across restarts, so a host a desktop has told keeps to
  * them while the desktop is away.
  *
@@ -41,24 +44,46 @@ export class DesktopDefaultsStore {
   private readonly store: AtomicJsonStore<DesktopDefaultsFile>
   /** Newest first, one per desktop. */
   private kept: readonly Kept[] = []
+  /**
+   * Every load and record in the order they were called, one at a time, so each record builds on what the one before it
+   * saved. Two desktops sending at once must not each start from the same old list: the one saved last would bring back
+   * defaults the other had just replaced, and those would apply again once the last desktop stopped counting.
+   */
+  private queue: Promise<unknown> = Promise.resolve()
   constructor(directory: string, private readonly now: () => Date = () => new Date()) {
     this.store = new AtomicJsonStore(join(directory, 'desktop-defaults.json'), input => fileSchema.parse(input), (): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
   }
   /** Reads what was kept. A record that does not read is treated as never told, which can only narrow a start. */
   async load(): Promise<void> {
-    const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
-    this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, newThreadRuntimeMode: saved.newThreadRuntimeMode,
-      ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
-      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(0, KEPT_DESKTOP_DEFAULTS)
+    return this.serialized(async () => {
+      const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
+      // Newest first by the order they came in, never by the clock, so the last sent stays the last after a restart.
+      this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, sequence: saved.sequence, newThreadRuntimeMode: saved.newThreadRuntimeMode,
+        ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
+        .sort((a, b) => b.sequence - a.sequence).slice(0, KEPT_DESKTOP_DEFAULTS)
+    })
   }
-  /** Keeps a desktop's defaults in place of the ones it sent before, saved before it answers. A save that fails keeps the old ones. */
+  /**
+   * Keeps a desktop's defaults in place of the ones it sent before, saved before it answers. A save that fails keeps the old
+   * ones. Runs after every earlier record has saved or failed, and reads the list only then.
+   */
   async record(clientId: string, input: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
-    const defaults = readDesktopDefaults(input), receivedAt = this.now().toISOString()
-    const next = [{ clientId, receivedAt, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
-    await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
-      ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt })) })
-    this.kept = next
-    return { receivedAt }
+    const defaults = readDesktopDefaults(input)
+    return this.serialized(async () => {
+      // The newest kept is first and is never dropped, so the next number is always above every number on record.
+      const receivedAt = this.now().toISOString(), sequence = (this.kept[0]?.sequence ?? 0) + 1
+      const next = [{ clientId, receivedAt, sequence, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
+      await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
+        ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt, sequence: item.sequence })) })
+      this.kept = next
+      return { receivedAt }
+    })
+  }
+  /** Runs `work` once everything queued before it has finished, whether that succeeded or not. */
+  private serialized<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(work, work)
+    this.queue = run.catch(() => undefined)
+    return run
   }
   /** The defaults that apply now: the most recent from a desktop that still counts, or none. */
   current(counts: DesktopCounts): Kept | undefined { return this.kept.find(item => counts(item.clientId)) }

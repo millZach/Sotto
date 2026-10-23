@@ -13,6 +13,8 @@ import { HostCredentialEncryption } from '../../src/host/credentials'
 import { SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import { HOST_ANSWER_LOST, opencodeHostNeedsUpdate, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../src/shared/opencodeSignIn'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { owlFeaturesForTrack, type OwlFeatureStates } from '../../src/shared/owlFeatures'
+import { getReleaseTrack } from '../../src/shared/releaseTrack'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
@@ -27,6 +29,7 @@ import { testCredentials } from '../fixtures/testCredentials'
  * to clients that know it, and signs its own OpenCode in to model sources for the desktop that asks.
  */
 const OWL = '0.1.37-owl.20261012.1'
+const STABLE = '0.1.40'
 // Made up for this test; no real key ever goes near a fixture.
 const KEY = 'sk-host-fixture-made-up-key-41c9e0'
 const cleanup: (() => Promise<void>)[] = []
@@ -38,19 +41,21 @@ async function scratch(prefix: string): Promise<string> {
 }
 const fakes = () => ({ codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() })
 
-it.each([['stable', '0.1.37'], ['Owl', OWL]])('a headless host on %s runs OpenCode only where its Owl answer does', async (track, sottoVersion) => {
+it.each([['a host whose version holds it', OWL, { opencode: false }], ['stable', STABLE, {}], ['Owl', OWL, {}]] as [string, string, Partial<OwlFeatureStates>][])('a headless host runs OpenCode only where its Owl answer does: %s', async (track, sottoVersion, owlFeatures) => {
   const root = await scratch('sotto-host-opencode-')
   const providers = fakes()
-  const host = await startHeadlessHost({ dataDirectory: root, providers, reasoner: {}, sottoVersion })
+  // A host before 0.1.40 held OpenCode on stable; the answer stands in for one, since this version runs it on both tracks.
+  const host = await startHeadlessHost({ dataDirectory: root, providers, reasoner: {}, sottoVersion, owlFeatures })
   cleanup.push(host.close)
   await expect.poll(() => host.service.shell().host.providers?.find(provider => provider.id === 'codex')?.connection).toBe('connected')
-  if (track === 'stable') {
-    // Stable holds OpenCode, as it does on this computer: nothing of it starts, and its state names none of it.
+  if (owlFeatures.opencode === false) {
+    // Held, as on this computer: nothing of it starts, and its state names none of it.
     expect(providers.opencode.connectCalls).toBe(0)
     expect(JSON.stringify(host.service.shell())).not.toContain('"opencode"')
     return
   }
-  // Owl's answer is in force on a host now that hosts take OpenCode (it was held on every host until #1107).
+  // The version's answer is in force on a host (OpenCode was held on every host until #1107), on either track.
+  expect(owlFeaturesForTrack(getReleaseTrack(sottoVersion)).opencode, track).toBe(true)
   await expect.poll(() => providers.opencode.connectCalls).toBe(1)
   await expect.poll(() => host.service.shell().host.providers?.find(provider => provider.id === 'opencode')?.connection).toBe('connected')
   expect(host.service.shell().host.threads.some(thread => thread.providerId === 'opencode')).toBe(true)
@@ -243,10 +248,10 @@ async function everything(folder: string): Promise<string> {
 }
 
 /** A desktop that reaches `forge`, a headless host in this process, over its own SSH stand-in, as Settings > Hosts & phones does. */
-async function desktopWithForge(sottoVersion: string, opencode: Awaited<ReturnType<typeof opencodeFixture>> | undefined) {
+async function desktopWithForge(sottoVersion: string, opencode: Awaited<ReturnType<typeof opencodeFixture>> | undefined, owlFeatures?: Partial<OwlFeatureStates>) {
   const root = await scratch('sotto-host-opencode-sign-in-')
   const hostLog: string[] = []
-  const remote = await startFixtureHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, reasoner: e2eAgentReasoner, sottoVersion, log: event => hostLog.push(event),
+  const remote = await startFixtureHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, reasoner: e2eAgentReasoner, sottoVersion, log: event => hostLog.push(event), ...(owlFeatures ? { owlFeatures } : {}),
     ...(opencode ? { providers: { opencode: opencode.host } } : {}) })
   cleanup.push(() => remote.close())
   const credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') })
@@ -359,7 +364,7 @@ it('lets only the client that started a host’s OpenCode sign-in read it, and s
     .toEqual({ status: 'ok', address: 'https://sign-in.fixture.invalid/xai/device?user_code=QX7M-4LRT' })
   expect(await desktop.opencodeSignIn({ action: 'cancel', request: { attemptId: started.attempt.id } })).toEqual({ status: 'ok' })
 
-  // A host where OpenCode does not run, such as a stable one, offers no OpenCode sign-in, and the tile says so in words.
-  const { hosts, forge } = await desktopWithForge('0.1.37', undefined)
+  // A host where OpenCode does not run, such as a stable one before 0.1.40, offers no OpenCode sign-in, and the tile says so in words.
+  const { hosts, forge } = await desktopWithForge(OWL, undefined, { opencode: false })
   expect(await hosts.opencodeSignIn({ id: forge, call: { action: 'sources' } })).toEqual({ status: 'refused', message: opencodeHostNeedsUpdate('forge') })
 })
