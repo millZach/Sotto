@@ -11,7 +11,7 @@ import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
-import { DesktopDefaultsPush } from '../../src/main/hosts/desktopDefaults'
+import { DesktopDefaultsPush, followDesktopDefaults } from '../../src/main/hosts/desktopDefaults'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import { HOST_CEILING_HOLD_WORDS } from '../../src/shared/desktopDefaults'
@@ -250,6 +250,27 @@ it('applies the last defaults from a desktop still paired with an answers grant,
   expect(again.status).toBe('ok')
   await expect.poll(() => f.thread(again.delegation.thread)?.runtimeMode).toBe('approval-required')
 }, 60_000)
+
+it('sends the selected host\'s new-thread default when this computer\'s own host is off, and follows Settings there', async () => {
+  const f = await hostFixture()
+  const { socket, pairing } = await f.desktop()
+  await f.answers(pairing.clientId, true)
+  // A desktop whose own host is off: the router holds the remote host alone, as main builds it, and the push follows it.
+  const router = new DesktopHostRouter(emptyDesktopState)
+  cleanups.push(async () => router.dispose())
+  const push = new DesktopDefaultsPush({ connections: () => router.remoteConnections() })
+  const follow = followDesktopDefaults(push, router, () => undefined)
+  cleanups.push(async () => follow.dispose())
+  router.add({ hostId: pairing.hostId, name: 'Synthetic host', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
+  await push.settled()
+  // Settings shows the selected host's own default here, Ask for approval until chosen, and that is what the host is told.
+  expect(JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8'))).toMatchObject({ desktops: [{ clientId: pairing.clientId, newThreadRuntimeMode: null }] })
+  // The user chooses Full access in Settings, which saves to the selected host; the host is told it.
+  await router.command({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } }, { clientId: 'desktop-window', user: 'Synthetic user', transport: 'ipc' })
+  await expect.poll(async () => { await push.settled(); return (JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8')) as { desktops: { newThreadRuntimeMode: unknown }[] }).desktops[0]?.newThreadRuntimeMode }).toBe('full-access')
+  const parent = await f.parentThread('full-access')
+  expect(await f.start(parent.threadId, 'full-access')).toMatchObject({ status: 'ok' })
+})
 
 it('starts a kind of work on the desktop\'s worker roles, held to the desktop\'s new-thread default', async () => {
   const f = await hostFixture()

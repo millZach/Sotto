@@ -11,7 +11,7 @@ import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
-import { DesktopDefaultsPush, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
+import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { desktopWindowClient } from './agents/hostService'
@@ -921,12 +921,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // each host whose own threads delegate there, when it connects and whenever either changes. Stable sends nothing.
   const desktopDefaultsPush = crossMachineEnabled ? new DesktopDefaultsPush({ connections: () => hostRouter.remoteConnections(),
     log: event => logOperational(event) }) : undefined
-  if (desktopDefaultsPush) {
-    hostRouter.subscribeConnected(connection => desktopDefaultsPush.connected(connection))
-    // Read from each published state in place: the mode by value and the roles by identity, so nothing is copied.
-    agentControl.subscribe(state => desktopDefaultsPush.update(state.configuration.newThreadRuntimeMode, workerRolesEnabled ? workingCopySettings.workerRoles : undefined))
-    desktopDefaultsPush.update(agentControl.configuration().newThreadRuntimeMode, workerRolesEnabled ? workingCopySettings.workerRoles : undefined)
-  }
+  // The new-thread default is the one Settings applies, read from each state the router publishes, in place: this
+  // computer's while its host runs, the selected host's while it is off (ADR-0074). The roles are compared by identity.
+  const desktopDefaultsFollow = desktopDefaultsPush
+    ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
@@ -1539,7 +1537,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       // Hosts whose own threads delegate are told the new worker roles (#1310).
-      if (workerRolesChanged) desktopDefaultsPush?.update(agentControl.configuration().newThreadRuntimeMode, workerRolesEnabled ? settings.workerRoles : undefined)
+      if (workerRolesChanged) desktopDefaultsFollow?.rolesChanged()
       worktreeCleanup?.settingsChanged()
       localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()

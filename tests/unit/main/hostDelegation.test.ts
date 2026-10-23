@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DesktopDefaultsStore, hostDelegationMachines, KEPT_DESKTOP_DEFAULTS, THIS_MACHINE } from '../../../src/main/agents/hostDelegation'
-import { DesktopDefaultsPush, type DesktopDefaultsTarget } from '../../../src/main/hosts/desktopDefaults'
+import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsTarget } from '../../../src/main/hosts/desktopDefaults'
 import { delegationToolDefinitions } from '../../../src/main/agents/delegationTools'
 import { HostFactsSource } from '../../../src/main/agents/hostFacts'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
@@ -183,6 +183,42 @@ describe('the desktop\'s push of its defaults', () => {
     expect(events).toEqual(['desktop-defaults-failed', 'desktop-defaults-sent'])
     push.close(); push.update('full-access', undefined); await push.settled()
     expect(sent).toHaveLength(2)
+  })
+
+  it('follows the default the router publishes, whichever host gives it, and this computer\'s roles', async () => {
+    const sent: DesktopDefaultsInput[] = []
+    const host = target('host-a', true, sent)
+    const states: ((state: { configuration: { newThreadRuntimeMode?: 'auto' | 'full-access' } }) => void)[] = []
+    const connections: ((connection: DesktopDefaultsTarget) => void)[] = []
+    const source = { subscribe: (listener: typeof states[number]) => { states.push(listener); return () => { states.splice(states.indexOf(listener), 1) } },
+      subscribeConnected: (listener: typeof connections[number]) => { connections.push(listener); return () => { connections.splice(connections.indexOf(listener), 1) } } }
+    let roles: Record<string, { modelId: string; reasoningEffort: null }> | undefined
+    const push = new DesktopDefaultsPush({ connections: () => [host] })
+    const follow = followDesktopDefaults(push, source, () => roles)
+    // Roles that change before any state go with the first one.
+    roles = { 'code-review': { modelId: 'model-a', reasoningEffort: null } }
+    follow.rolesChanged()
+    await push.settled(); expect(sent).toEqual([])
+    // The router's state carries this computer's default while its host runs, the selected host's while it is off.
+    for (const listener of states) listener({ configuration: { newThreadRuntimeMode: 'auto' } })
+    await push.settled()
+    expect(sent.at(-1)).toEqual({ newThreadRuntimeMode: 'auto', workerRoles: roles })
+    for (const listener of states) listener({ configuration: {} })
+    await push.settled()
+    expect(sent.at(-1)).toEqual({ newThreadRuntimeMode: null, workerRoles: roles })
+    // New roles keep the default last published.
+    for (const listener of states) listener({ configuration: { newThreadRuntimeMode: 'full-access' } })
+    roles = { 'code-review': { modelId: 'model-b', reasoningEffort: null } }
+    follow.rolesChanged()
+    await push.settled()
+    expect(sent.at(-1)).toEqual({ newThreadRuntimeMode: 'full-access', workerRoles: roles })
+    // A connection the router takes is told.
+    const count = sent.length
+    for (const listener of connections) listener(host)
+    await push.settled()
+    expect(sent).toHaveLength(count + 1)
+    follow.dispose()
+    expect(states).toHaveLength(0); expect(connections).toHaveLength(0)
   })
 })
 

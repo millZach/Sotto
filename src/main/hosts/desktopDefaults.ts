@@ -62,3 +62,28 @@ export class DesktopDefaultsPush {
   /** Settles once every send started so far has; for tests and for closing. */
   async settled(): Promise<void> { await Promise.allSettled([...this.sending.values()]) }
 }
+
+/** The window's host router as the push follows it: the states it publishes, and each connection it takes. */
+export interface DesktopDefaultsSource {
+  subscribe(listener: (state: { readonly configuration: { readonly newThreadRuntimeMode?: AgentRuntimeMode | undefined } }) => void): () => void
+  subscribeConnected(listener: (connection: DesktopDefaultsTarget) => void): () => void
+}
+
+/**
+ * Keeps the push on the desktop defaults that are in force, as Settings applies them (ADR-0074). The new-thread default is
+ * read from each state the window's router publishes, in place: this computer's own while its host runs, and the selected
+ * host's own while it does not, which is the one Settings shows and saves to then. The worker roles are this computer's
+ * Settings, read through `roles` when a state is published and when Main says they changed. Each host is told on every
+ * connection the router takes.
+ */
+export function followDesktopDefaults(push: DesktopDefaultsPush, source: DesktopDefaultsSource, roles: () => WorkerRoleChoices | undefined): { rolesChanged(): void; dispose(): void } {
+  let mode: AgentRuntimeMode | undefined
+  let seen = false
+  const offConnected = source.subscribeConnected(connection => push.connected(connection))
+  const offState = source.subscribe(state => { mode = state.configuration.newThreadRuntimeMode; seen = true; push.update(mode, roles()) })
+  return {
+    // Before the first state, the roles go with it.
+    rolesChanged: () => { if (seen) push.update(mode, roles()) },
+    dispose: () => { offConnected(); offState() },
+  }
+}
