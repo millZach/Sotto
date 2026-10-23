@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { spawn } from 'node:child_process'
 import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -133,9 +132,8 @@ describe('the record of each server, while Sotto writes it and a sweep reads it'
   it('keeps a record it cannot read while it may still be being written, and clears one long left', async () => {
     const ledger = await ledgerFolder()
     try {
-      const gone = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true })
-      const owner = gone.pid!
-      await new Promise(done => gone.once('close', done))
+      // A Sotto that has gone: no process ever has this PID. Windows PIDs are multiples of four, Linux's stop at 2^22 and macOS's below 100,000.
+      const owner = 2 ** 31 - 1
       await writeFile(join(ledger, '900101.json'), '{"pid":900101,"start')
       await writeFile(join(ledger, '900102.json'), '{"pid":900102,"start')
       const long = new Date(Date.now() - 60_000)
