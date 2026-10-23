@@ -23,6 +23,7 @@ import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBeforeMuse, usageReadBeforeHistory, usageReadBeforeMuse, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, type ProjectOrigins } from '../shared/workerMachine'
+import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -260,6 +261,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
     // turns on Work across machines.
     && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
+    // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
+    && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
@@ -282,6 +286,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
+    // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
+    .filter(feature => feature !== 'host-delegation' || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
@@ -1104,6 +1110,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { read = projectOriginsSchema.parse(await service.projectOrigins()) } catch { throw new Refusal('unavailable') }
         // A project of a provider this peer does not know is not named to it (#1107).
         return { projects: read.projects.filter(project => !unknownProviderProject(peer, project.projectId)) }
+      }
+      case 'desktop-defaults': {
+        // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
+        // as sent is this host's `remote-answer` policy for that desktop, read at every delegated start.
+        if (!offers(peer, 'host-delegation') || !service.desktopDefaults) throw new Refusal('invalid_request')
+        try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'host-update': {
         // A host update the host runs on itself (ADR-0088): a recorded desktop that may answer, after its hello, and only

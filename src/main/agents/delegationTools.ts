@@ -19,40 +19,47 @@ const NEW_THREAD_BY_ROLE = `For a new thread name the kind of work and leave out
 
 /** With Work across machines on (#1032), a new thread may name a machine or a system, and the thread may list the machines. */
 const WHERE = `A new thread starts on This computer. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) when the work needs one: a delegated thread starts only on This computer for now, so another machine is refused, and a system never falls back to another. The result's placement says where it started.`
+/** A thread on a headless host (#1310) delegates only on its own machine until #1316. */
+const WHERE_HOST = `A new thread starts on this machine, the one this thread runs on. A thread here delegates only to threads on this machine for now, so a machine or os (windows, macos or linux) other than this machine's own is refused. The result's placement says where it started.`
 const LIST_MACHINES_INPUT = z.object({}).strict()
+/** Where the delegating thread runs: This computer, the desktop, or a headless host's machine (#1310). */
+export type DelegationPlace = 'this-computer' | 'this-machine'
 
 /**
  * The tools a delegating thread is offered: with worker roles on, a new thread's model comes from its kind of work; with
- * Work across machines on (#1032), a new thread may name a machine or a system, and the machines can be listed.
+ * Work across machines on (#1032), a new thread may name a machine or a system, and the machines can be listed. On a
+ * headless host (`this-machine`, #1310), the words say this machine, and only this machine is listed.
  */
-export function delegationToolDefinitions(roles: boolean, machines = false): readonly ThreadToolDefinition[] {
+export function delegationToolDefinitions(roles: boolean, machines = false, place: DelegationPlace = 'this-computer'): readonly ThreadToolDefinition[] {
   const delegate = roles ? delegateByRoleSchema : delegateInputSchema
+  const here = place === 'this-machine' ? 'this machine' : 'this computer'
   return [
     { name: DELEGATE_TOOL, inputSchema: schema(machines ? delegate : delegate.omit({ machine: true, os: true })), description: [
-      'Hand work to another thread on this computer: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.',
+      `Hand work to another thread on ${here}: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.`,
       'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
       `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up, with the reply once answered, when the outcome changes: end your turn or carry on, and do not poll.`,
-      `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on this computer after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
-      ...machines ? [WHERE] : [],
+      `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on ${here} after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
+      ...machines ? [place === 'this-machine' ? WHERE_HOST : WHERE] : [],
     ].join(' ') },
     { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
       `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits. Reading charges nothing.`,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
     { name: CANCEL_DELEGATION_TOOL, inputSchema: schema(cancelDelegationInputSchema), description:
       'Cancel one of this thread\'s delegations: a brief still waiting is dropped, and a delegated thread working on it is stopped, with any thread it delegated to. Nothing is deleted.' },
-    ...machines ? [{ name: LIST_MACHINES_TOOL, inputSchema: schema(LIST_MACHINES_INPUT), description:
-      'List This computer and each connected machine: its operating system, architecture, memory and CPUs, and how many threads it is running, and newWorkersStart, where new workers start. A machine that does not report these reads unknown; one not connected says so. Reading charges nothing.',
+    ...machines ? [{ name: LIST_MACHINES_TOOL, inputSchema: schema(LIST_MACHINES_INPUT), description: place === 'this-machine'
+      ? 'List this machine, the one this thread runs on: its operating system, architecture, memory and CPUs, and how many threads it is running. A thread here delegates only on this machine for now, so no other machine is listed. Facts this machine does not report read unknown. Reading charges nothing.'
+      : 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, and how many threads it is running, and newWorkersStart, where new workers start. A machine that does not report these reads unknown; one not connected says so. Reading charges nothing.',
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [],
   ]
 }
 export const DELEGATION_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = delegationToolDefinitions(false)
 // Grok asks before a call it cannot tie to a server, and a call by the bare name is one (#800): the full names are given.
-const INSTRUCTIONS = `These tools let this thread hand work to threads it starts on this computer (ADR-0081), such as a review on another provider. Sotto starts the thread, sends your brief and tells you its outcome. A delegated thread is the user's: it asks the user, never you, and nothing you send approves anything. When ${DELEGATE_TOOL} returns working, end your turn or carry on; Sotto sends this thread a wake-up when the outcome changes, which carries the reply once answered, labelled as the delegated thread's words. The user is not shown that wake-up, so tell them what you learned. ${READ_DELEGATION_TOOL} reads a delegation again. Where tools are found by search and called through use_tool, call them by their full names, such as ${DELEGATE_MCP_SERVER}__${DELEGATE_TOOL}.`
+const instructions = (place: DelegationPlace): string => `These tools let this thread hand work to threads it starts on ${place === 'this-machine' ? 'this machine' : 'this computer'} (ADR-0081), such as a review on another provider. Sotto starts the thread, sends your brief and tells you its outcome. A delegated thread is the user's: it asks the user, never you, and nothing you send approves anything. When ${DELEGATE_TOOL} returns working, end your turn or carry on; Sotto sends this thread a wake-up when the outcome changes, which carries the reply once answered, labelled as the delegated thread's words. The user is not shown that wake-up, so tell them what you learned. ${READ_DELEGATION_TOOL} reads a delegation again. Where tools are found by search and called through use_tool, call them by their full names, such as ${DELEGATE_MCP_SERVER}__${DELEGATE_TOOL}.`
 
 /**
- * `sotto_delegate`: the loopback MCP server through which an ordinary thread on this computer delegates work to threads
- * it starts (ADR-0081). A thread is offered it only while delegation is on and the thread may delegate, asked at every
+ * `sotto_delegate`: the loopback MCP server through which an ordinary thread on this computer, or on a headless host that
+ * runs delegation for its own threads (#1310), delegates work to threads it starts (ADR-0081). A thread is offered it only while delegation is on and the thread may delegate, asked at every
  * launch and every call; a second-level delegated thread, Watcher, host setup and provider jobs are offered none.
  */
 export class DelegationToolServer implements ScopedThreadTools {
@@ -61,10 +68,10 @@ export class DelegationToolServer implements ScopedThreadTools {
   /** Above the longest wait, so the call returns working before Codex's and Claude Code's clients give up on it (decision 8). */
   readonly timeoutMs = (DELEGATION_WAIT_MAX_SECONDS + 30) * 1000
   private readonly server: ThreadToolServer
-  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean } = {}) {
-    const roles = options.roles === true, machines = options.machines === true
-    this.definitions = roles || machines ? delegationToolDefinitions(roles, machines) : DELEGATION_TOOL_DEFINITIONS
-    this.server = new ThreadToolServer({ name: DELEGATE_MCP_SERVER, serverName: 'sotto-delegate', instructions: INSTRUCTIONS,
+  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean; place?: DelegationPlace } = {}) {
+    const roles = options.roles === true, machines = options.machines === true, place = options.place ?? 'this-computer'
+    this.definitions = roles || machines || place !== 'this-computer' ? delegationToolDefinitions(roles, machines, place) : DELEGATION_TOOL_DEFINITIONS
+    this.server = new ThreadToolServer({ name: DELEGATE_MCP_SERVER, serverName: 'sotto-delegate', instructions: instructions(place),
       unavailable: 'Sotto\'s delegation tools are unavailable. Nothing was started.', failed: 'Sotto could not complete this delegation call. Call read_delegation to see where it stands before trying again.',
       maxRequestBytes: 256 * 1024 },
     this.definitions, (threadId, name, args, context) => this.invoke(threadId, name, args, context))

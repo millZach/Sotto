@@ -11,6 +11,7 @@ import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
+import { DesktopDefaultsPush, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { desktopWindowClient } from './agents/hostService'
@@ -334,6 +335,7 @@ type NativeDiagnostic =
   | 'owl-frames-unavailable'
   | 'owl-failed'
   | 'desktop-notification-failed'
+  | DesktopDefaultsEvent
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -915,6 +917,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // Desktop defaults (#1310): this computer's new-thread default and, while worker roles are on, its worker roles, sent to
+  // each host whose own threads delegate there, when it connects and whenever either changes. Stable sends nothing.
+  const desktopDefaultsPush = crossMachineEnabled ? new DesktopDefaultsPush({ connections: () => hostRouter.remoteConnections(),
+    log: event => logOperational(event) }) : undefined
+  if (desktopDefaultsPush) {
+    hostRouter.subscribeConnected(connection => desktopDefaultsPush.connected(connection))
+    // Read from each published state in place: the mode by value and the roles by identity, so nothing is copied.
+    agentControl.subscribe(state => desktopDefaultsPush.update(state.configuration.newThreadRuntimeMode, workerRolesEnabled ? workingCopySettings.workerRoles : undefined))
+    desktopDefaultsPush.update(agentControl.configuration().newThreadRuntimeMode, workerRolesEnabled ? workingCopySettings.workerRoles : undefined)
+  }
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
@@ -1526,6 +1538,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
+      // Hosts whose own threads delegate are told the new worker roles (#1310).
+      if (workerRolesChanged) desktopDefaultsPush?.update(agentControl.configuration().newThreadRuntimeMode, workerRolesEnabled ? settings.workerRoles : undefined)
       worktreeCleanup?.settingsChanged()
       localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()

@@ -23,6 +23,7 @@ import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
+import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
@@ -107,6 +108,13 @@ export interface HostService {
    */
   readonly supportsProjectOrigins?: boolean
   projectOrigins?(): Promise<ProjectOrigins>
+  /**
+   * The host runs delegation for its own threads and keeps the desktop defaults a desktop sends it (#1310), present only
+   * on a headless host whose Owl answer turns on Work across machines. On a desktop's connection to such a host,
+   * `desktopDefaults` sends them; on the host, it keeps them for the client that sent them.
+   */
+  readonly supportsHostDelegation?: boolean
+  desktopDefaults?(defaults: DesktopDefaultsInput, client?: ClientIdentity): Promise<DesktopDefaultsReceipt>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -289,7 +297,9 @@ export class LocalHostService implements HostService {
      */
     agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
     /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
-    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins> }) {
+    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
+    /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
+    desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> } }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -302,6 +312,12 @@ export class LocalHostService implements HostService {
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  get supportsHostDelegation(): boolean { return this.options.desktopDefaults !== undefined }
+  /** Keeps a desktop's defaults for the client that sent them; the socket listener admits only a recorded desktop. */
+  desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {
+    if (!this.options.desktopDefaults) return Promise.reject(new Error('This host does not keep desktop defaults.'))
+    return this.options.desktopDefaults.record(client.clientId, defaults)
+  }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))

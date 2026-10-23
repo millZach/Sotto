@@ -84,7 +84,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
   const start = view.action === 'start'
   const nothing = start ? 'Nothing was started.' : 'Nothing was sent.'
   switch (view.refusal) {
-    case 'NOT_ADMITTED': return `This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. ${nothing}`
+    case 'NOT_ADMITTED': return `This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. ${nothing}`
     case 'LEVEL_LIMIT': return `This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. ${nothing}`
     case 'NO_USER_MESSAGE': return `A delegation answers your own message to this thread, and Sotto could not find one. ${nothing}`
     case 'PROVIDER_UNAVAILABLE': return start
