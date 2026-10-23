@@ -52,7 +52,7 @@ export class HostBranchMoves {
         const incoming = this.own(request.moveId, owner)?.incoming
         if (!incoming) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
         const bytes = Buffer.from(request.data, 'base64')
-        if (!await incoming.write(request.offset, bytes)) { await this.drop(request.moveId); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
+        if (!await incoming.write(request.offset, bytes)) { await this.drop(request.moveId, this.transfers.get(request.moveId)!); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
         return { type: 'received', bytes: incoming.received }
       }
       case 'receive-finish': {
@@ -95,9 +95,11 @@ export class HostBranchMoves {
         if (!outgoing || request.offset >= outgoing.size) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
         return { type: 'chunk', data: (await this.bundles.readChunk(outgoing.path, request.offset)).toString('base64') }
       }
-      case 'end':
-        if (this.own(request.moveId, owner)) await this.drop(request.moveId)
+      case 'end': {
+        const transfer = this.own(request.moveId, owner)
+        if (transfer) await this.drop(request.moveId, transfer)
         return null
+      }
     }
   }
 
@@ -110,14 +112,19 @@ export class HostBranchMoves {
   private release(moveId: string, transfer: Transfer): void {
     if (this.transfers.get(moveId) === transfer) this.transfers.delete(moveId)
   }
-  private async drop(moveId: string): Promise<void> {
-    const transfer = this.transfers.get(moveId)
-    this.transfers.delete(moveId)
-    if (transfer?.incoming) await this.bundles.abandon(transfer.incoming)
-    if (transfer?.outgoing) await this.bundles.discard(transfer.outgoing)
+  /**
+   * Lets go of `transfer`, the attempt the caller holds, and removes what it staged. A later attempt at the same move,
+   * which may have taken the place while this one was waiting, keeps its entry and its files.
+   */
+  private async drop(moveId: string, transfer: Transfer): Promise<void> {
+    this.release(moveId, transfer)
+    if (transfer.incoming) await this.bundles.abandon(transfer.incoming)
+    if (transfer.outgoing) await this.bundles.discard(transfer.outgoing)
   }
+  /** Drops every attempt `owner` holds as its connection closes: all let go at once, so none waits on another's cleanup. */
   private async dropAll(owner: object): Promise<void> {
-    for (const [moveId, transfer] of [...this.transfers]) if (transfer.owner === owner) await this.drop(moveId)
+    const mine = [...this.transfers].filter(([, transfer]) => transfer.owner === owner)
+    await Promise.all(mine.map(([moveId, transfer]) => this.drop(moveId, transfer)))
   }
   /** Moves staged now, for tests. */
   get staged(): number { return this.transfers.size }
