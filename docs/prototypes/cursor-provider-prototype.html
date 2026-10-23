@@ -1,0 +1,1132 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE. Not shipped, not tested, not wired to anything.
+     Question: how should signing in to Cursor look on its provider tile? A = Sign in on the tile, B = a sign-in dialog,
+     C = an inline checklist. Switch with ?variant=A|B|C, the bar at the bottom, or the Left and Right arrow keys.
+     Everything else on the page (the tile's other states, New thread, the model, effort and permission menus, Cursor's
+     request cards, the reply's More menu and Watcher's provider choice) is decided and the same in all three.
+     Colours are the --tt-* tokens copied from src/renderer/src/styles/tokens.css (Sotto theme, both modes, Contrast 100%).
+     Cursor's mark is a PLACEHOLDER cube, not Cursor's logo; its colour token --tt-provider-cursor is a placeholder too.
+     No network: every timer is fake, every "opens in your browser" is a status line. Optional URL switch: theme=light. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cursor as a thread provider (prototype)</title>
+<style>
+/* ---- Tokens, copied from tokens.css (theme roles, then the --tt-* derivations at Contrast 100%). ---- */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-error: oklch(0.655108 0.221148 23.473);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-error-surface: oklch(0.29 0.04 20);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-message-foreground: oklch(0.985 0.005 280);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-code-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-terminal-scrollbar: oklch(0.315 0.008 265);
+
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-card: var(--theme-surface-raised);
+  --tt-card-inset: var(--theme-canvas);
+  --tt-card-selected: color-mix(in oklab, var(--theme-accent-surface) 65%, var(--tt-card));
+  --tt-segment-on: var(--theme-surface-overlay);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-border: color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-bubble-text: var(--theme-message-foreground);
+  --tt-warning: var(--theme-warning-foreground);
+  --tt-warning-on-tint: color-mix(in oklab, var(--tt-warning) 90%, var(--tt-text));
+  --tt-attention: var(--tt-warning);
+  --tt-error: var(--theme-error-foreground);
+  --tt-error-surface: var(--theme-error-surface);
+  --tt-code-bg: var(--theme-code-background);
+  --tt-code-text: var(--theme-code-foreground);
+  --tt-code-border: var(--tt-hairline);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-activity: var(--tt-accent-text);
+  --tt-link: var(--tt-accent-text);
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-opencode: #ece3d0;
+  --tt-provider-muse: var(--tt-text-2);
+  /* PLACEHOLDER: Cursor's mark colour, a pale sage that no other provider wears. Not in tokens.css yet. */
+  --tt-provider-cursor: #b7dcc3;
+  --tt-effort-a: var(--theme-warning);
+  --tt-effort-fill-cool: var(--tt-text-muted);
+  --tt-effort-track: color-mix(in srgb, var(--tt-text) 7%, var(--tt-surface-elevated));
+  --tt-effort-thumb: var(--tt-text);
+  --tt-effort-ink: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-text));
+  --tt-backdrop: rgb(0 0 0 / 38%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-radius-sm: 6px;
+  --tt-radius-md: 10px;
+  --tt-radius-lg: 14px;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* Hit areas: the app's sizes at a desk, 44px on a phone or a coarse pointer. */
+  --hit: 34px;
+  --hit-row: 32px;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-error: oklch(0.637823 0.237287 25.436);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-error-surface: oklch(0.94 0.02 25);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-message-foreground: oklch(0.235 0.014 75);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-code-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-terminal-scrollbar: oklch(0.84 0.01 85);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-segment-on: var(--theme-surface);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-grok: #bfaefc;
+  --tt-provider-opencode: #625843;
+  --tt-provider-cursor: #3d6a4b;
+  --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-muted) 40%, var(--tt-surface-elevated));
+  --tt-effort-thumb: var(--tt-surface);
+  --tt-backdrop: rgb(20 24 22 / 22%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+}
+@media (max-width: 640px), (pointer: coarse) { :root { --hit: 44px; --hit-row: 44px; } }
+
+/* ---- Page ---- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-width: 320px; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); -webkit-font-smoothing: antialiased; padding-bottom: 104px; overflow-x: hidden; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.mark { flex: none; fill: currentColor; }
+.mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
+.mark[data-provider='muse'] { color: var(--tt-provider-muse); }
+.mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+code { font-family: var(--tt-font-mono); font-size: .92em; }
+
+.page { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.top { position: relative; padding: 22px 0 6px; }
+.top__eyebrow { margin: 0 0 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.top h1 { margin: 0 64px 8px 0; font-size: 22px; font-weight: 600; letter-spacing: -.3px; line-height: 1.25; }
+.top p { max-width: 62em; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; }
+.top p.fine { color: var(--tt-text-muted); font-size: 13px; }
+.theme-toggle { position: absolute; top: 16px; right: 0; display: inline-flex; align-items: center; justify-content: center; width: var(--hit); height: var(--hit); min-width: 44px; min-height: 44px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); }
+.theme-toggle:hover { color: var(--tt-text); }
+
+.sec { margin-top: 34px; }
+.sec > h2 { margin: 0 0 4px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; }
+.sec > .sec__note { max-width: 62em; margin: 0 0 14px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.form { max-width: 790px; }
+
+/* Prototype-only controls: dashed, labelled, never part of the design. */
+.proto { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; padding: 6px 8px; border: 1px dashed var(--tt-border); border-radius: 6px; }
+.proto > span { margin-right: 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.proto button { min-height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; }
+.proto button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.proto button[aria-pressed='true'] { background: var(--tt-segment-on); color: var(--tt-text); border-color: var(--tt-field-border); }
+@media (max-width: 640px), (pointer: coarse) { .proto button { min-height: 44px; } }
+
+/* ---- Buttons (global.css): soft squares, the primary is the text colour's plate. ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: var(--hit); padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); font-size: 13.5px; font-weight: 500; line-height: 1.2; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.btn:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.btn:disabled { cursor: not-allowed; opacity: .45; }
+.btn--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.btn--primary:hover:not(:disabled) { border-color: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.12); }
+.btn--ghost { border-color: transparent; background: transparent; color: var(--tt-text-muted); }
+.btn--ghost:hover:not(:disabled) { border-color: transparent; color: var(--tt-text); background: var(--tt-hover); }
+.btn--icon { width: var(--hit); padding: 0; }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-muted); font-size: 12px; line-height: 18px; font-weight: 500; }
+
+/* ---- Settings > Providers (providers.css + crossing-settings.css, ADR-0110 P1). ---- */
+.plist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 440px) { .plist { grid-template-columns: minmax(0, 1fr); } }
+.prow { position: relative; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
+.prow:hover:not([data-selected='true']) { background: color-mix(in srgb, var(--theme-accent-surface) 30%, var(--tt-card)); }
+.prow[data-selected='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
+.prow__select { display: grid; grid-template-columns: auto minmax(0, 1fr) 40px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 8px; width: 100%; min-height: 70px; padding: 13px 12px; border: 0; border-radius: 11px; background: transparent; color: var(--tt-text); text-align: left; }
+.prow__select > .mark { grid-area: mark; }
+.prow__select strong { grid-area: name; min-width: 0; overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.prow__select small { grid-area: status; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.prow__select small i { flex: none; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.prow__select small[data-status='connected'], .prow__select small[data-status='signing'] { color: var(--tt-activity); }
+.prow__select small[data-status='old'] { color: var(--tt-warning-on-tint); }
+.prow__select small[data-status='signing'] i { animation: breathe 1.1s ease-in-out infinite; }
+.switch { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 6px; background: transparent; }
+.switch:disabled { cursor: not-allowed; }
+.switch:disabled .switch__track { opacity: .5; }
+.switch__track { position: relative; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: 5px; background: var(--tt-surface-sunken); transition: background-color 120ms ease, border-color 120ms ease; }
+.switch__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 3px; background: var(--tt-text-muted); transition: transform 120ms ease; }
+.switch[aria-checked='true'] .switch__track { border-color: var(--tt-accent); background: var(--tt-accent); }
+.switch[aria-checked='true'] .switch__thumb { background: var(--tt-on-accent); transform: translateX(16px); }
+
+.pdetail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+@media (max-width: 520px) { .pdetail { padding: 0 14px 4px; } }
+.pdetail__head { display: flex; align-items: center; gap: 11px; min-height: 64px; padding: 14px 0 10px; }
+.pdetail__head h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.pdetail__version { padding: 1px 7px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-muted); font-size: 12px; }
+.pdetail__head .btn { margin-left: auto; }
+.ptabs { display: flex; gap: 22px; border-bottom: 1px solid var(--tt-hairline); }
+.ptabs button { min-height: 44px; padding: 0 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--tt-text-muted); font-size: 14px; }
+.ptabs button[aria-selected='true'] { color: var(--tt-text); border-bottom-color: var(--tt-activity); }
+.pbody { padding: 20px 0 14px; }
+.pconn { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 14px 20px; }
+.pconn > div:first-child { flex: 1 1 260px; min-width: 0; }
+.pconn h4, .pclient h4 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.pconn p, .pclient p { margin: 0; max-width: 34em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.pconn p.lead { color: var(--tt-text); }
+.pactions { display: flex; flex: none; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+.live { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.5; }
+.live[data-tone='ok'] { color: var(--tt-activity); }
+.live > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+.live[data-wait] > i { animation: breathe 1.1s ease-in-out infinite; }
+.live > svg { color: var(--tt-activity); }
+.pclient { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 18px; padding-top: 16px; border-top: 2px solid var(--tt-card-inset); }
+.pclient > div:first-child { flex: 1 1 220px; min-width: 0; }
+.pnotice { margin: 14px 0 0; color: var(--tt-text); font-size: 13.5px; }
+.perror { margin: 16px 0 0; padding: 10px 12px; border-left: 2px solid var(--tt-error); border-radius: 0 6px 6px 0; background: var(--tt-card-inset); color: var(--tt-error); font-size: 14px; line-height: 1.55; }
+.psupport { margin-top: 16px; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
+.psupport summary { display: flex; align-items: center; width: fit-content; min-height: var(--hit-row); color: var(--tt-text); cursor: pointer; }
+.psupport p { margin: 8px 0 0; max-width: 40em; }
+.pmodels { margin: 0; padding: 0; list-style: none; }
+.pmodels h5 { margin: 14px 0 2px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.pmodels h5:first-child { margin-top: 0; }
+.pmodels li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; font-size: 14px; }
+.pmodels li + li { border-top: 2px solid var(--tt-card-inset); }
+.pmodels small { color: var(--tt-text-muted); font-size: 12px; }
+.pempty { margin: 0; color: var(--tt-text-muted); font-size: 14px; }
+
+/* C: the tile's own checklist. Numbers are 4px tags (ADR-0110), a step done shows its tick. */
+.steps { display: grid; gap: 14px; margin: 12px 0 0; padding: 0; list-style: none; }
+.steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start; }
+.steps__n { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.steps li[data-done] .steps__n { background: var(--tt-card-selected); color: var(--tt-activity); }
+.steps b { display: block; font-size: 14.5px; font-weight: 600; }
+.steps p { margin: 2px 0 8px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.5; }
+.steps .live { margin-top: 2px; }
+
+/* B: the sign-in dialog (tt-dialog). */
+dialog.dlg { width: min(460px, calc(100vw - 24px)); max-height: calc(100vh - 24px); margin: auto; padding: 20px 20px 16px; overflow: auto; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-lg); background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 24px 64px var(--tt-shadow-color); }
+dialog.dlg::backdrop { background: var(--tt-backdrop); }
+.dlg h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+.dlg > p { margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; }
+.dlg ol { margin: 0 0 14px; padding-left: 20px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
+.dlg__addr { margin: 0 0 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.addr { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 4px 4px 4px 10px; border-radius: 6px; background: var(--tt-card-inset); }
+.addr code { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-code-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; user-select: all; }
+.addr .btn { min-height: 32px; padding: 0 10px; }
+@media (max-width: 640px), (pointer: coarse) { .addr .btn { min-height: 44px; } }
+.dlg__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dlg__actions .btn { min-height: 44px; }
+.dlg .proto { margin: 14px 0 0; }
+
+/* ---- Composer and its text-button chips (threadChips.css, ADR-0113). ---- */
+.stage { display: grid; gap: 18px; }
+.composer { max-width: 760px; padding: 12px 14px 8px; border-radius: 16px; background: var(--tt-card); }
+.composer textarea { display: block; width: 100%; min-height: 60px; padding: 2px 0; border: 0; outline: 0; resize: vertical; background: transparent; color: var(--tt-text); font-size: 15px; line-height: 1.5; }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.composer textarea:focus-visible { outline: 0; }
+.composer:focus-within:has(textarea:focus-visible) { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
+.composer__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 5px; max-width: 320px; min-width: 0; height: 28px; min-height: var(--hit-row); padding: 0 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.chip > svg.i:last-child { width: 13px; height: 13px; opacity: .7; }
+.chip:hover, .chip[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.chip--model { color: var(--tt-text-2); }
+.chip .mark { width: 13px; height: 13px; }
+.chip__path { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.chip__src, .chip__name { overflow: hidden; text-overflow: ellipsis; }
+.chip__src { flex: 0 1 auto; min-width: 3em; color: var(--tt-text-muted); }
+.chip__sep { flex: none; color: var(--tt-text-muted); }
+.chip__name { flex: 0 .000001 auto; min-width: 0; }
+.chip:hover .chip__src, .chip[aria-expanded='true'] .chip__src { color: var(--tt-text-2); }
+.chip[data-effort-top='true'] > span { color: var(--tt-effort-ink); font-weight: 500; }
+.chip--plain { color: var(--tt-text-2); }
+.chips .dotsep { width: 3px; height: 3px; margin: 0 2px; border-radius: 50%; background: var(--tt-text-faint); }
+.send { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--tt-pill); color: var(--tt-pill-ink); }
+@media (max-width: 640px), (pointer: coarse) { .send { width: 44px; height: 44px; } }
+.slot:empty { display: none; }
+.slot { max-width: 760px; }
+
+/* ---- The model menu (modelPicker.css): a rail of marks, then the panel. ---- */
+.mm { display: grid; grid-template-columns: 52px minmax(0, 1fr); width: min(360px, 100%); height: 384px; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+@media (max-width: 640px), (pointer: coarse) { .mm { grid-template-columns: 58px minmax(0, 1fr); height: 440px; } }
+.mm__rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--tt-hairline); background: var(--tt-surface); overflow-y: auto; scrollbar-width: none; }
+.mm__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; }
+@media (max-width: 640px), (pointer: coarse) { .mm__rail > button { width: 44px; height: 44px; } }
+.mm__rail > button .mark { width: 18px; height: 18px; opacity: .75; }
+.mm__rail > button:hover { background: var(--tt-hover); }
+.mm__rail > button:hover .mark, .mm__rail > button[aria-selected='true'] .mark { opacity: 1; }
+.mm__rail > button[aria-selected='true'] { background: var(--tt-selected); }
+.mm__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--tt-activity); }
+.mm__panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: inherit; }
+.mm__search { display: flex; flex: none; align-items: center; gap: 8px; height: 42px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+.mm__search input { flex: 1; min-width: 0; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 13px; }
+.mm__search input::placeholder { color: var(--tt-text-faint); }
+.mm__search:has(input:focus-visible) { box-shadow: inset 0 -2px 0 var(--tt-focus-ring); }
+.mm__search button { display: grid; place-items: center; flex: none; width: var(--hit); height: 34px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); }
+.mm__search button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.mm__list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; background: inherit; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.mm__list--grouped { padding-top: 0; }
+.mm__list--grouped > [role='group'] { background: inherit; }
+.mm__opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: var(--hit-row); padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; scroll-margin: 34px 0 6px; }
+.mm__opt:hover, .mm__opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.mm__opt:focus-visible, .mm__maker:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.mm__opt[aria-selected='true'] { color: var(--tt-activity); }
+.mm__opt > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+.mm__opt small { color: var(--tt-text-muted); font-size: 11.5px; }
+.mm__opt > svg { color: var(--tt-activity); }
+.mm__maker { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 6px 8px 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; }
+.mm__maker:hover, .mm__maker:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.mm__maker > span { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.mm__maker b { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.mm__maker small { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.mm__maker[aria-current='true'] b { color: var(--tt-activity); }
+.mm__maker > svg { color: var(--tt-text-muted); }
+.mm__step { display: flex; flex: none; align-items: center; gap: 6px; height: 38px; padding: 0 12px 0 4px; border-bottom: 1px solid var(--tt-hairline); }
+.mm__step button { display: inline-flex; align-items: center; gap: 2px; height: 30px; min-height: var(--hit-row); padding: 0 8px 0 4px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; }
+.mm__step button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.mm__step b { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.mm__step span { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 11.5px; }
+.mm__group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: var(--tt-surface-elevated); color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.mm__group span { margin-left: auto; font-size: 11.5px; font-weight: 500; }
+.mm__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: 13px; }
+.mm__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+
+/* ---- The effort card (effortPicker.css): word, line, track, and its three stops. ---- */
+.eff { width: min(292px, 100%); padding: 12px 14px; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.eff__word { margin: 0; font-size: 15px; font-weight: 600; }
+.eff__word[data-top='true'] { color: var(--tt-effort-ink); }
+.eff__line { margin: 1px 0 0; min-height: 18px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.eff__track { position: relative; height: 26px; margin: 12px 0 10px; }
+.eff__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 2px; background: var(--tt-effort-track); overflow: hidden; }
+.eff__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: color-mix(in srgb, var(--tt-effort-a) var(--heat), var(--tt-effort-fill-cool)); transition: width 160ms ease; }
+.eff__dot { position: absolute; top: 50%; width: 4px; height: 4px; border-radius: 50%; background: color-mix(in srgb, var(--tt-text-muted) 55%, var(--tt-effort-track)); transform: translate(-50%, -50%); }
+.eff__thumb { position: absolute; top: 0; width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); border: 1px solid var(--tt-border); transform: translateX(-50%); transition: left 160ms ease; }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 6px; background: var(--tt-card-inset); }
+.seg button { min-height: var(--hit-row); border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font-size: 13px; }
+.seg button:hover { color: var(--tt-text); }
+.seg button[aria-checked='true'] { background: var(--tt-segment-on); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+
+/* ---- The permission menu. ---- */
+.pm { width: min(340px, 100%); padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.pm__opt { display: grid; grid-template-columns: minmax(0, 1fr) 16px; gap: 2px 10px; width: 100%; min-height: var(--hit-row); padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; }
+.pm__opt:hover, .pm__opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.pm__opt:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.pm__opt b { font-size: 13.5px; font-weight: 500; }
+.pm__opt small { grid-column: 1; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.pm__opt[aria-selected='true'] b { color: var(--tt-activity); }
+.pm__opt > svg { grid-column: 2; grid-row: 1; align-self: center; color: var(--tt-activity); }
+.pm__note { margin: 4px 0 0; padding: 8px 10px 4px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 18px 16px; margin-top: 8px; }
+.gallery > figure { min-width: 0; margin: 0; }
+.gallery figcaption { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* ---- A Cursor thread (threads.css, requests.css). ---- */
+.pane { max-width: 760px; }
+.pane__head { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-bottom: 8px; }
+.pane__head h3 { margin: 0; min-width: 0; overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.pane__head span { flex: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.bubble { width: fit-content; max-width: 86%; margin: 0 0 18px auto; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); color: var(--tt-bubble-text); font-size: 15px; line-height: 1.55; }
+.reply { position: relative; margin-bottom: 8px; font-size: 15px; line-height: 1.6; }
+.reply__who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.reply__who b { color: var(--tt-text-2); font-weight: 500; }
+.reply p { margin: 0 0 8px; }
+.reply__actions { display: flex; align-items: center; gap: 2px; margin-top: 4px; }
+.reply__actions .btn { min-height: var(--hit-row); color: var(--tt-text-muted); }
+.menu { position: relative; z-index: 2; width: min(300px, 100%); margin-top: 6px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.menu[hidden] { display: none; }
+.menu [role='menuitem'] { display: grid; gap: 2px; width: 100%; min-height: var(--hit-row); padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13.5px; text-align: left; }
+.menu [role='menuitem']:hover:not([aria-disabled='true']), .menu [role='menuitem']:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.menu [role='menuitem']:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.menu [role='menuitem'][aria-disabled='true'] { cursor: default; color: var(--tt-text-muted); }
+.menu [role='menuitem'] small { color: var(--tt-text-muted); font-size: 12.5px; }
+
+.req { display: grid; gap: 10px; margin-top: 16px; padding: 14px 16px; border-left: 2px solid var(--tt-attention); border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.req__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.req__head strong { font-size: 15px; font-weight: 600; }
+.req__text { margin: 0; color: var(--tt-text-2); font-size: 15px; line-height: 1.55; }
+.req__cmd { margin: 0; padding: 8px 10px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); color: var(--tt-code-text); font: 13px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.req__cwd { margin: -4px 0 0; color: var(--tt-text-muted); font-size: 13px; overflow-wrap: anywhere; }
+.req__cwd code { color: var(--tt-text-2); font-size: 12px; }
+.req__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.req__actions .btn { padding: 0 15px; font-size: 14px; }
+.req fieldset { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.req legend { float: left; width: 100%; margin-bottom: 6px; padding: 0; color: var(--tt-text); font-size: 16px; line-height: 1.5; }
+.req legend + * { clear: both; }
+.req__opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; min-height: var(--hit-row); margin: 0 -8px; padding: 7px 8px; border-radius: var(--tt-radius-md); cursor: pointer; }
+.req__opt:hover { background: var(--tt-hover); }
+.req__opt:has(input:checked) { background: var(--tt-selected); }
+.req__opt input { width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--tt-accent); }
+.req__opt > span { display: grid; gap: 2px; min-width: 0; }
+.req__opt b { font-size: 15px; font-weight: 400; color: var(--tt-text); }
+.req__opt small { color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.req textarea { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font-size: 14px; resize: vertical; }
+.req__plan { padding: 10px 12px; border-radius: 6px; background: var(--tt-card-inset); }
+.req__plan b { display: block; margin-bottom: 4px; font-size: 14.5px; font-weight: 600; }
+.req__plan ol { margin: 0; padding-left: 20px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
+.req__msg { margin: 0; color: var(--tt-error); font-size: 13px; }
+.answered { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 16px; padding: 10px 14px; border-radius: var(--tt-radius-md); background: var(--tt-card); color: var(--tt-text-2); font-size: 14px; }
+.answered > svg { color: var(--tt-activity); }
+.answered .btn { margin-left: auto; min-height: var(--hit-row); font-size: 12.5px; }
+
+/* ---- Watcher's composer. ---- */
+.wroom { max-width: 760px; }
+.wroom__head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.wroom__head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.wroom__head span { color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* ---- The variant bar: the prototype's own, inverted so it never reads as part of the design. ---- */
+.switcher { position: fixed; left: 50%; bottom: 12px; z-index: 50; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 16px); padding: 6px; border: 2px dashed var(--tt-accent); border-radius: 10px; background: var(--tt-text); color: var(--tt-canvas); box-shadow: 0 8px 28px var(--tt-shadow-color); transform: translateX(-50%); }
+.switcher button { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--tt-canvas) 12%, var(--tt-text)); color: var(--tt-canvas); font-size: 18px; }
+.switcher button:hover { background: color-mix(in srgb, var(--tt-canvas) 22%, var(--tt-text)); }
+.switcher button:focus-visible { outline: 2px solid var(--tt-canvas); outline-offset: 2px; }
+.switcher__label { min-width: 0; padding: 0 8px; line-height: 1.25; text-align: center; }
+.switcher__label b { display: block; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.switcher__label small { display: block; font-size: 11.5px; opacity: .8; }
+
+@keyframes breathe { 50% { opacity: .3; } }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.slot > * { animation: rise 140ms cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6Z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/></symbol>
+  <!-- PLACEHOLDER for Cursor's mark: a plain cube outline. Not Cursor's logo. -->
+  <symbol id="m-cursor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 2.5 20.5 7.25v9.5L12 21.5 3.5 16.75v-9.5Z"/><path d="M3.5 7.25 12 12l8.5-4.75M12 12v9.5"/></g></symbol>
+  <!-- The other marks, copied from src/renderer/src/agents/ProviderMark.tsx. -->
+  <symbol id="m-codex" viewBox="0 0 256 260"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></symbol>
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+  <symbol id="m-grok" viewBox="0 0 24 24"><path d="M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"/></symbol>
+  <symbol id="m-opencode" viewBox="0 0 32 40"><path d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z" fill-rule="evenodd"/></symbol>
+  <symbol id="m-muse" viewBox="0 0 100 100"><path d="M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z"/></symbol>
+</svg>
+
+<main class="page">
+  <header class="top">
+    <p class="top__eyebrow">Throwaway prototype</p>
+    <h1>Cursor as a thread provider</h1>
+    <p><b>The open question:</b> how should signing in to Cursor look on its tile? Switch between A, B and C with the bar at the bottom, or with the Left and Right arrow keys.</p>
+    <p class="fine">Everything else here is decided and is the same in all three. Cursor is an Owl feature at first, so all of it shows only in Sotto Owl. The cube is a placeholder for Cursor's mark.</p>
+    <button type="button" class="theme-toggle" id="theme-toggle"></button>
+  </header>
+
+  <section class="sec" aria-labelledby="h-providers">
+    <h2 id="h-providers">1. Settings › Providers</h2>
+    <p class="sec__note">The Cursor tile beside Grok Build's. Pick a state to see it, or press through the sign-in from Not signed in. Sign-in is the part that changes between A, B and C.</p>
+    <div class="form">
+      <div class="proto" role="group" aria-label="Prototype: Cursor tile state" id="state-row"></div>
+      <div id="tile"></div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="h-new">
+    <h2 id="h-new">2. New thread</h2>
+    <p class="sec__note">Cursor is a tile on the model menu's provider rail. Its models open on their makers; choose one to see its models, or type to search them all. Escape steps back one level. Each chip opens its menu above itself, as in the app.</p>
+    <div class="stage">
+      <div class="slot" id="nt-slot"></div>
+      <div class="composer" id="nt-composer"></div>
+    </div>
+    <div class="gallery" aria-label="The menus, each step at a glance">
+      <figure><figcaption>The model menu opens on Cursor's makers</figcaption><div id="g-makers"></div></figure>
+      <figure><figcaption>After choosing Anthropic</figcaption><div id="g-anthropic"></div></figure>
+      <figure><figcaption>Reasoning effort, Sotto's own control</figcaption><div id="g-effort"></div></figure>
+      <figure><figcaption>Thread permissions on Cursor</figcaption><div id="g-perm"></div></figure>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="h-thread">
+    <h2 id="h-thread">3. A Cursor thread</h2>
+    <p class="sec__note">A reply's More menu, then the three kinds of request card Cursor sends: a permission, its own question tool (<code>cursor/ask_question</code>) and its plan tool (<code>cursor/create_plan</code>). Answer each to see what replaces it.</p>
+    <div class="pane">
+      <div class="pane__head"><svg class="mark" data-provider="cursor" width="16" height="16" aria-hidden="true"><use href="#m-cursor"/></svg><h3>Make the upload test steady</h3><span>sotto</span></div>
+      <div class="bubble">The upload test fails about one run in five. Find out why and make it steady.</div>
+      <article class="reply" aria-label="Cursor's reply">
+        <div class="reply__who"><svg class="mark" data-provider="cursor" width="13" height="13" aria-hidden="true"><use href="#m-cursor"/></svg><b>Cursor</b><span>Anthropic / Claude Sonnet 5.5</span></div>
+        <p>The test waits a fixed 200 milliseconds for the upload to finish, and on a busy machine it takes longer. I'd wait for the upload's own done event instead. I'll run the suite first to see where it stands.</p>
+        <div class="reply__actions">
+          <button type="button" class="btn btn--ghost btn--icon" aria-label="Copy this reply" title="Copy this reply"><svg class="i"><use href="#i-copy"/></svg></button>
+          <button type="button" class="btn btn--ghost btn--icon" id="more-btn" aria-label="More actions for this reply" title="More actions for this reply" aria-haspopup="menu" aria-expanded="true" aria-controls="more-menu"><svg class="i"><use href="#i-more"/></svg></button>
+        </div>
+        <div class="menu" id="more-menu" role="menu" aria-label="More actions for this reply">
+          <button type="button" role="menuitem" tabindex="-1">Copy as Markdown</button>
+          <button type="button" role="menuitem" tabindex="-1" aria-disabled="true" aria-describedby="fork-why"><span>Fork from here</span><small id="fork-why">Cursor has no fork of its own.</small></button>
+          <button type="button" role="menuitem" tabindex="-1">Continue on another provider…</button>
+        </div>
+      </article>
+      <div id="req-perm"></div>
+      <div id="req-question"></div>
+      <div id="req-plan"></div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="h-watcher">
+    <h2 id="h-watcher">4. Watcher's provider choice</h2>
+    <p class="sec__note">Watcher can run on Cursor. Its model menu's rail offers Codex, Claude Code, Grok Build, Muse and Cursor; Devin and OpenCode cannot host Watcher's tools.</p>
+    <div class="wroom">
+      <div class="wroom__head"><h3>Watcher</h3><span>This computer</span></div>
+      <div class="stage">
+        <div class="slot" id="w-slot"></div>
+        <div class="composer" id="w-composer"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog class="dlg" id="signin-dialog" aria-labelledby="dlg-title"></dialog>
+
+<nav class="switcher" aria-label="Prototype: sign-in variant">
+  <button type="button" id="v-prev" aria-label="Previous sign-in variant">←</button>
+  <div class="switcher__label" aria-live="polite"><b id="v-label"></b><small>Prototype variant</small></div>
+  <button type="button" id="v-next" aria-label="Next sign-in variant">→</button>
+</nav>
+
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ic = (n, cls = 'i') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const mk = (p, size) => `<svg class="mark" data-provider="${p}" width="${size}" height="${size}" aria-hidden="true"><use href="#m-${p}"/></svg>`;
+const count = n => `${n} model${n === 1 ? '' : 's'}`;
+
+/* Re-render a region and put the focus back on the element with the same data-k, if it still exists. */
+function paint(root, html, focusKey) {
+  const active = document.activeElement;
+  const key = focusKey ?? (root.contains(active) ? active?.dataset?.k : undefined);
+  const caret = active && active.tagName === 'INPUT' ? active.selectionStart : null;
+  root.innerHTML = html;
+  if (key) {
+    const el = root.querySelector(`[data-k="${CSS.escape(key)}"]`);
+    if (el) { el.focus({ preventScroll: focusKey === undefined }); if (caret !== null && el.setSelectionRange) el.setSelectionRange(caret, caret) }
+  }
+}
+
+/* ---------------- Data ---------------- */
+const PROVIDERS = {
+  codex: { name: 'Codex', models: [{ id: 'gpt-5.5', n: 'GPT-5.5' }, { id: 'gpt-5.5-codex', n: 'GPT-5.5 Codex' }] },
+  claude: { name: 'Claude Code', models: [{ id: 'opus', n: 'Claude Opus 5.5' }, { id: 'sonnet', n: 'Claude Sonnet 5.5' }, { id: 'haiku', n: 'Claude Haiku 5.5' }] },
+  grok: { name: 'Grok Build', models: [{ id: 'grok-4.7', n: 'Grok 4.7' }] },
+  opencode: { name: 'OpenCode', models: [{ id: 'big-pickle', n: 'Big Pickle' }, { id: 'oc-sonnet', n: 'Claude Sonnet 5.5', hint: 'Anthropic' }] },
+  muse: { name: 'Muse', models: [{ id: 'muse-1', n: 'Muse 1' }] },
+  cursor: { name: 'Cursor' },
+}
+const CURSOR = [
+  { g: 'Cursor', models: [{ id: 'auto', n: 'Auto', hint: 'Cursor picks the model each turn' }, { id: 'composer-2.5', n: 'Composer 2.5' }] },
+  { g: 'Anthropic', models: [{ id: 'claude-opus-5.5', n: 'Claude Opus 5.5' }, { id: 'claude-sonnet-5.5', n: 'Claude Sonnet 5.5' }, { id: 'claude-haiku-5.5', n: 'Claude Haiku 5.5' }, { id: 'claude-fable-5.1', n: 'Claude Fable 5.1' }] },
+  { g: 'OpenAI', models: [{ id: 'gpt-5.5', n: 'GPT-5.5' }, { id: 'gpt-5.5-codex', n: 'GPT-5.5 Codex' }] },
+  { g: 'Google', models: [{ id: 'gemini-3.5-pro', n: 'Gemini 3.5 Pro' }, { id: 'gemini-3.5-flash', n: 'Gemini 3.5 Flash' }] },
+  { g: 'xAI', models: [{ id: 'grok-4.7', n: 'Grok 4.7' }] },
+  { g: 'Moonshot', models: [{ id: 'kimi-k3', n: 'Kimi K3' }] },
+  { g: 'Z.ai', models: [{ id: 'glm-5.1', n: 'GLM 5.1' }] },
+]
+const EFFORTS = [
+  { id: 'low', n: 'Low', line: 'Answers quickly and thinks little.' },
+  { id: 'medium', n: 'Medium', line: 'Thinks a while before it answers.' },
+  { id: 'high', n: 'High', line: 'Thinks longest. Slower, and uses more of your Cursor plan.' },
+]
+/* The app's own labels (ThreadOptions.tsx RUNTIME_LABELS) for Ask for approval, Auto-accept edits, Automatic and Full access. */
+const PERMS = [
+  { id: 'approval-required', n: 'Ask for approval', d: 'Cursor asks before it runs a command or changes a file. You answer each request here.' },
+  { id: 'auto-accept-edits', n: 'Allow edits', d: 'Cursor changes files in the project without asking, and asks before it runs a command.' },
+  { id: 'auto', n: 'Auto', d: "Cursor's own auto-review decides what runs without asking. Its classifier runs on Cursor's servers and sees each command first; what it holds back comes to you." },
+  { id: 'full-access', n: 'Full access', d: 'Cursor runs commands and changes files without asking, in the project and outside it.' },
+]
+
+function modelOf(c) {
+  if (c.p === 'cursor') return CURSOR.find(g => g.g === c.g).models.find(m => m.id === c.m)
+  return PROVIDERS[c.p].models.find(m => m.id === c.m)
+}
+/* What the chip shows and says. A Cursor thread on Claude reads as Cursor's, never as Claude Code. */
+function describe(c) {
+  const m = modelOf(c)
+  if (c.p !== 'cursor') return { src: null, name: m.n, tip: `${m.n}, in ${PROVIDERS[c.p].name}` }
+  if (c.g === 'Cursor') return { src: 'Cursor', name: m.n, tip: c.m === 'auto' ? 'Auto: Cursor picks the model each turn' : `${m.n}, Cursor's own model` }
+  return { src: c.g, name: m.n, tip: `${m.n} from ${c.g}, in Cursor` }
+}
+
+/* ---------------- The model menu ---------------- */
+function modelMenu(root, o) {
+  const s = { provider: o.chosen.p, step: o.step ?? null, query: o.query ?? '' }
+  const items = () => [...root.querySelectorAll('[data-item]')]
+  const opt = (p, g, m) => {
+    const sel = o.chosen.p === p && o.chosen.m === m.id && (p !== 'cursor' || o.chosen.g === g)
+    return `<button type="button" role="option" class="mm__opt" data-item data-k="m:${p}:${esc(g)}:${m.id}" data-p="${p}" data-g="${esc(g)}" data-m="${m.id}" aria-selected="${sel}" tabindex="-1"><span>${esc(m.n)}${m.hint ? `<small>${esc(m.hint)}</small>` : ''}</span>${sel ? ic('check') : ''}</button>`
+  }
+  function render(focusKey) {
+    const P = s.provider, name = PROVIDERS[P].name
+    let body = ''
+    const q = s.query.trim().toLowerCase()
+    if (P === 'cursor') {
+      if (q) {
+        const found = CURSOR.map(g => ({ g: g.g, ms: g.models.filter(m => `${m.n} ${g.g}`.toLowerCase().includes(q)) })).filter(x => x.ms.length)
+        body = found.length
+          ? `<div class="mm__list mm__list--grouped" role="listbox" aria-label="Cursor models that match">${found.map(x => `<div role="group" aria-label="${esc(x.g)}"><div class="mm__group" aria-hidden="true">${esc(x.g)}<span>${x.ms.length}</span></div>${x.ms.map(m => opt('cursor', x.g, m)).join('')}</div>`).join('')}</div>`
+          : `<p class="mm__empty" role="status">No Cursor model matches “${esc(s.query)}”.</p>`
+      } else if (s.step) {
+        const g = CURSOR.find(x => x.g === s.step)
+        body = `<div class="mm__step"><button type="button" data-back data-k="back" aria-label="Back to Cursor's model makers">${ic('left')}Makers</button><b>${esc(g.g)}</b><span>${count(g.models.length)}</span></div>
+          <div class="mm__list" role="listbox" aria-label="${esc(g.g)} models in Cursor">${g.models.map(m => opt('cursor', g.g, m)).join('')}</div>`
+      } else {
+        body = `<div class="mm__list" role="group" aria-label="Cursor's model makers">${CURSOR.map(g => {
+          const cur = o.chosen.p === 'cursor' && o.chosen.g === g.g
+          return `<button type="button" class="mm__maker" data-item data-k="g:${esc(g.g)}" data-g="${esc(g.g)}" tabindex="-1" ${cur ? 'aria-current="true"' : ''} aria-label="Show ${esc(g.g)} models, ${count(g.models.length)}${cur ? ', holds the chosen model' : ''}"><span><b>${esc(g.g)}</b><small>${count(g.models.length)}</small></span>${ic('right')}</button>`
+        }).join('')}</div>`
+      }
+    } else {
+      const ms = PROVIDERS[P].models.filter(m => m.n.toLowerCase().includes(q))
+      body = ms.length ? `<div class="mm__list" role="listbox" aria-label="${esc(name)} models">${ms.map(m => opt(P, '', m)).join('')}</div>` : `<p class="mm__empty" role="status">No ${esc(name)} model matches “${esc(s.query)}”.</p>`
+    }
+    const note = o.note ? o.note(P) : P === 'cursor' ? 'Every model here runs through Cursor, on your Cursor plan.' : ''
+    const placeholder = P === 'cursor' ? 'Search all Cursor models' : `Search ${name} models`
+    const html = `<div class="mm" role="dialog" aria-label="${esc(o.label || 'Choose model')}">
+      <div class="mm__rail" role="tablist" aria-label="Model providers" aria-orientation="vertical">${o.providers.map(p => `<button type="button" role="tab" data-tab="${p}" data-k="t:${p}" aria-selected="${p === P}" tabindex="${p === P ? 0 : -1}" aria-label="${PROVIDERS[p].name}" title="${PROVIDERS[p].name}">${mk(p, 18)}</button>`).join('')}</div>
+      <div class="mm__panel">
+        <div class="mm__search">${ic('search')}<input data-k="search" aria-label="Search models" placeholder="${placeholder}" value="${esc(s.query)}" autocomplete="off">${o.onClose ? `<button type="button" data-close data-k="close" aria-label="Close the model menu" title="Close the model menu">${ic('x')}</button>` : ''}</div>
+        ${body}
+        ${note ? `<p class="mm__note">${esc(note)}</p>` : ''}
+      </div></div>`
+    paint(root, html, focusKey)
+    const its = items()
+    const first = its.find(el => el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-current') === 'true') ?? its[0]
+    if (first) first.tabIndex = 0
+  }
+  function focusFirstItem() {
+    const its = items()
+    const el = its.find(x => x.tabIndex === 0) ?? its[0]
+    el?.focus()
+  }
+  root.addEventListener('click', e => {
+    const t = e.target.closest('button')
+    if (!t || !root.contains(t)) return
+    if (t.dataset.tab) { s.provider = t.dataset.tab; s.step = null; s.query = ''; render(`t:${s.provider}`) }
+    else if (t.hasAttribute('data-back')) { const g = s.step; s.step = null; render(`g:${g}`) }
+    else if (t.hasAttribute('data-close')) o.onClose?.()
+    else if (t.classList.contains('mm__maker')) { s.step = t.dataset.g; render(null); focusFirstItem() }
+    else if (t.getAttribute('role') === 'option') {
+      o.chosen = { p: t.dataset.p, g: t.dataset.g || undefined, m: t.dataset.m }
+      if (o.onChoose) o.onChoose(o.chosen); else render(t.dataset.k)
+    }
+  })
+  root.addEventListener('input', e => { if (e.target.dataset.k === 'search') { s.query = e.target.value; render() } })
+  root.addEventListener('keydown', e => {
+    const t = e.target
+    if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation()
+      if (s.query) { s.query = ''; render('search') }
+      else if (s.step) { const g = s.step; s.step = null; render(`g:${g}`) }
+      else if (o.onClose) o.onClose()
+      return
+    }
+    if (t.dataset.tab) {
+      const tabs = [...root.querySelectorAll('[data-tab]')]
+      let i = tabs.indexOf(t)
+      if (e.key === 'ArrowDown') i = (i + 1) % tabs.length
+      else if (e.key === 'ArrowUp') i = (i - 1 + tabs.length) % tabs.length
+      else if (e.key === 'Home') i = 0
+      else if (e.key === 'End') i = tabs.length - 1
+      else return
+      e.preventDefault(); s.provider = tabs[i].dataset.tab; s.step = null; s.query = ''; render(`t:${s.provider}`)
+      return
+    }
+    if (t.dataset.k === 'search' && e.key === 'ArrowDown') { e.preventDefault(); items()[0]?.focus(); return }
+    if (t.hasAttribute('data-item')) {
+      const its = items(); const i = its.indexOf(t)
+      let n = null
+      if (e.key === 'ArrowDown') n = Math.min(i + 1, its.length - 1)
+      else if (e.key === 'ArrowUp') { if (i === 0) { e.preventDefault(); root.querySelector('[data-k="search"]').focus(); return } n = i - 1 }
+      else if (e.key === 'Home') n = 0
+      else if (e.key === 'End') n = its.length - 1
+      else if (e.key === 'ArrowLeft' && s.step) { e.preventDefault(); const g = s.step; s.step = null; render(`g:${g}`); return }
+      if (n !== null) { e.preventDefault(); its.forEach(x => { x.tabIndex = -1 }); its[n].tabIndex = 0; its[n].focus() }
+    }
+  })
+  render(null)
+  return { focus: () => root.querySelector('[data-k="search"]')?.focus() }
+}
+
+/* ---------------- The effort card ---------------- */
+function effortCard(root, o) {
+  function render(focus) {
+    const i = EFFORTS.findIndex(x => x.id === o.value), e = EFFORTS[i], x = i / (EFFORTS.length - 1)
+    const pos = v => `calc(13px + ${v} * (100% - 26px))`
+    paint(root, `<div class="eff" role="group" aria-label="Reasoning effort">
+      <p class="eff__word" data-top="${i === EFFORTS.length - 1}">${e.n}</p>
+      <p class="eff__line">${e.line}</p>
+      <div class="eff__track" aria-hidden="true"><div class="eff__pill"><div class="eff__fill" style="width:${pos(x)};--heat:${30 + 60 * x}%"></div>${EFFORTS.map((_, j) => `<span class="eff__dot" style="left:${pos(j / (EFFORTS.length - 1))}"></span>`).join('')}</div><span class="eff__thumb" style="left:${pos(x)}"></span></div>
+      <div class="seg" role="radiogroup" aria-label="Reasoning effort">${EFFORTS.map(v => `<button type="button" role="radio" data-k="e:${v.id}" data-e="${v.id}" aria-checked="${v.id === o.value}" tabindex="${v.id === o.value ? 0 : -1}">${v.n}</button>`).join('')}</div>
+    </div>`, focus)
+  }
+  root.addEventListener('click', e => { const b = e.target.closest('[data-e]'); if (b) { o.value = b.dataset.e; o.onChange?.(o.value); render(`e:${o.value}`) } })
+  root.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && o.onClose) { e.preventDefault(); e.stopPropagation(); o.onClose(); return }
+    if (!e.target.dataset.e) return
+    let i = EFFORTS.findIndex(x => x.id === o.value)
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') i = Math.min(i + 1, EFFORTS.length - 1)
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') i = Math.max(i - 1, 0)
+    else if (e.key === 'Enter' && o.onClose) { e.preventDefault(); o.onClose(); return }
+    else return
+    e.preventDefault(); o.value = EFFORTS[i].id; o.onChange?.(o.value); render(`e:${o.value}`)
+  })
+  render(null)
+  return { focus: () => root.querySelector('[aria-checked="true"]')?.focus() }
+}
+
+/* ---------------- The permission menu ---------------- */
+function permMenu(root, o) {
+  function render(focus) {
+    paint(root, `<div class="pm" role="listbox" aria-label="Thread permissions">${PERMS.map(p => `<button type="button" role="option" class="pm__opt" data-k="p:${p.id}" data-perm="${p.id}" aria-selected="${p.id === o.value}" tabindex="${p.id === o.value ? 0 : -1}"><b>${p.n}</b><small>${esc(p.d)}</small>${p.id === o.value ? ic('check') : ''}</button>`).join('')}
+      ${o.note ? `<p class="pm__note">${esc(o.note)}</p>` : ''}</div>`, focus)
+  }
+  root.addEventListener('click', e => { const b = e.target.closest('[data-perm]'); if (b) { o.value = b.dataset.perm; if (o.onChoose) o.onChoose(o.value); else render(`p:${o.value}`) } })
+  root.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && o.onClose) { e.preventDefault(); e.stopPropagation(); o.onClose(); return }
+    const its = [...root.querySelectorAll('[data-perm]')], i = its.indexOf(e.target)
+    if (i < 0) return
+    let n = null
+    if (e.key === 'ArrowDown') n = Math.min(i + 1, its.length - 1)
+    else if (e.key === 'ArrowUp') n = Math.max(i - 1, 0)
+    else if (e.key === 'Home') n = 0
+    else if (e.key === 'End') n = its.length - 1
+    if (n !== null) { e.preventDefault(); its.forEach(x => { x.tabIndex = -1 }); its[n].tabIndex = 0; its[n].focus() }
+  })
+  render(null)
+  return { focus: () => root.querySelector('[aria-selected="true"]')?.focus() }
+}
+
+/* ---------------- A composer with its chips ---------------- */
+function composer(root, slot, cfg) {
+  const st = { choice: cfg.choice, effort: 'medium', perm: 'approval-required', open: cfg.open ?? null }
+  function chips() {
+    const d = describe(st.choice), perm = PERMS.find(p => p.id === st.perm), eff = EFFORTS.find(e => e.id === st.effort)
+    const model = `<button type="button" class="chip chip--model" data-k="c:model" data-open="model" aria-haspopup="dialog" aria-expanded="${st.open === 'model'}" aria-label="Thread model: ${esc(d.tip)}. Opens the model menu." title="${esc(d.tip)}">${mk(st.choice.p, 13)}<span class="chip__path">${d.src ? `<span class="chip__src">${esc(d.src)}</span><span class="chip__sep" aria-hidden="true">/</span>` : ''}<span class="chip__name">${esc(d.name)}</span></span>${ic('down')}</button>`
+    const effort = `<button type="button" class="chip" data-k="c:effort" data-open="effort" aria-haspopup="dialog" aria-expanded="${st.open === 'effort'}" aria-label="Thread reasoning: ${eff.n}. Opens the effort control." title="Thread reasoning: ${eff.n}" data-effort-top="${st.effort === 'high'}"><span>${eff.n}</span>${ic('down')}</button>`
+    const permission = `<button type="button" class="chip" data-k="c:perm" data-open="perm" aria-haspopup="listbox" aria-expanded="${st.open === 'perm'}" aria-label="Thread permissions: ${perm.n}. Opens the permission menu." title="Thread permissions: ${perm.n}">${ic('shield')}<span>${perm.n}</span>${ic('down')}</button>`
+    return cfg.watcher
+      ? `<button type="button" class="chip chip--plain" data-k="c:new" aria-label="Start a new Watcher">New Watcher</button><span class="dotsep" aria-hidden="true"></span>${model}${permission}`
+      : model + effort + permission
+  }
+  function render(focus) {
+    paint(root, `<textarea data-k="text" aria-label="${cfg.watcher ? 'Message to Watcher' : 'Message for the new thread'}" placeholder="${cfg.watcher ? 'Ask Watcher to start, check or steer threads' : 'Describe the work for this thread'}"></textarea>
+      <div class="composer__foot"><div class="chips">${chips()}</div><button type="button" class="send" aria-label="${cfg.watcher ? 'Send to Watcher' : 'Start the thread'}" title="${cfg.watcher ? 'Send to Watcher' : 'Start the thread'}">${ic('up')}</button></div>`, focus)
+    let menu = null
+    slot.replaceChildren()
+    if (st.open) {
+      const host = document.createElement('div'); slot.append(host)
+      const close = () => { const k = { model: 'c:model', effort: 'c:effort', perm: 'c:perm' }[st.open]; st.open = null; render(k) }
+      if (st.open === 'model') menu = modelMenu(host, { providers: cfg.providers, chosen: { ...st.choice }, label: cfg.watcher ? "Choose Watcher's model" : 'Choose model', note: cfg.note,
+        onChoose: c => { st.choice = c; st.open = null; render('c:model') }, onClose: close })
+      if (st.open === 'effort') menu = effortCard(host, { value: st.effort, onChange: v => { st.effort = v; paint(root.querySelector('.chips'), chips()) }, onClose: close })
+      if (st.open === 'perm') menu = permMenu(host, { value: st.perm, note: cfg.watcher ? "Watcher's permission is its own, separate from new threads'." : null, onChoose: v => { st.perm = v; st.open = null; render('c:perm') }, onClose: close })
+    }
+    return menu
+  }
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-open]'); if (!b) return
+    const want = b.dataset.open
+    st.open = st.open === want ? null : want
+    const m = render(b.dataset.k)
+    if (m) m.focus()
+  })
+  document.addEventListener('pointerdown', e => {
+    if (!st.open || root.contains(e.target) || slot.contains(e.target)) return
+    st.open = null; render(undefined)
+  })
+  render(null)
+}
+
+/* ---------------- Section 1: the Cursor tile ---------------- */
+const VARIANTS = [
+  { key: 'A', name: 'Sign in on the tile' },
+  { key: 'B', name: 'Sign-in dialog' },
+  { key: 'C', name: 'Inline checklist' },
+]
+let variant = (new URLSearchParams(location.search).get('variant') || 'A').toUpperCase()
+if (!VARIANTS.some(v => v.key === variant)) variant = 'A'
+
+const STATES = [
+  { id: 'missing', n: 'Not installed' }, { id: 'signedout', n: 'Not signed in' }, { id: 'signing', n: 'Signing in' },
+  { id: 'connected', n: 'Connected' }, { id: 'old', n: 'Too old' },
+]
+const T = { state: 'signedout', enabled: true, grokEnabled: true, selected: 'cursor', tab: 'configuration', error: '', notice: '', busy: '', c: { opened: false, done: false }, b: { done: false, copied: '' } }
+let timer = null
+const later = (ms, fn) => { clearTimeout(timer); timer = setTimeout(fn, ms) }
+const ADDRESS = 'https://cursor.com/loginDeepControl?challenge=Qm7fX2…&uuid=8c41…'
+
+function setState(state, extra = {}) {
+  clearTimeout(timer)
+  Object.assign(T, { state, error: '', notice: '', busy: '', c: { opened: false, done: false }, b: { done: false, copied: '' } }, extra)
+  if (state !== 'missing') T.enabled = true
+  if (state === 'missing') T.enabled = false
+  const dlg = $('#signin-dialog')
+  if (dlg.open && !(variant === 'B' && state === 'signing')) dlg.close()
+  renderTile()
+}
+function startSignIn() {
+  T.error = ''; T.notice = ''
+  if (variant === 'A') { setState('signing'); later(7000, finishSignIn); focusKey('a-again') }
+  if (variant === 'B') { setState('signing'); openDialog(); later(7000, finishSignIn) }
+  if (variant === 'C') { setState('signing'); focusKey('c-open') }
+}
+function finishSignIn() {
+  clearTimeout(timer)
+  if (variant === 'C') {
+    T.c.done = true; renderTile(); timer = setTimeout(() => { setState('connected'); focusKey('disconnect') }, 1400); return
+  }
+  if (variant === 'B') {
+    T.b.done = true; renderDialog(); timer = setTimeout(() => { $('#signin-dialog').close(); setState('connected'); focusKey('disconnect') }, 1100); return
+  }
+  setState('connected'); focusKey('disconnect')
+}
+function failSignIn() {
+  setState('signedout', { error: 'Cursor did not finish signing in, so Sotto is not connected to it. Nothing was saved. Sign in again to try once more.' })
+  focusKey('signin')
+}
+function cancelSignIn() { setState('signedout'); focusKey('signin') }
+function focusKey(k) { requestAnimationFrame(() => document.querySelector(`#tile [data-k="${k}"]`)?.focus()) }
+
+function statusOf() {
+  if (!T.enabled && T.state !== 'missing') return { id: 'off', n: 'Disabled' }
+  return { missing: { id: 'missing', n: 'Not installed' }, signedout: { id: 'signedout', n: 'Not signed in' }, signing: { id: 'signing', n: 'Signing in…' },
+    connected: { id: 'connected', n: 'Connected' }, old: { id: 'old', n: 'Needs an update' } }[T.state]
+}
+const VERSION = () => T.state === 'missing' ? '' : T.state === 'old' ? '2026.06.09' : '2026.10.22'
+
+function cursorConnection() {
+  const s = T.state
+  const wrap = (lead, rest, actions) => `<div class="pconn"><div><h4>Local connection</h4>${lead}${rest}</div>${actions ? `<div class="pactions">${actions}</div>` : ''}</div>`
+  if (!T.enabled && s !== 'missing') return wrap('<p>Cursor is turned off. Connect to use it in threads again.</p>', '', `<button type="button" class="btn btn--primary" data-k="connect" data-act="connect" aria-label="Connect Cursor">Connect</button>`)
+  if (s === 'missing') return wrap("<p>Cursor's agent is not installed on this computer. Install it with Cursor's guide, then check again.</p>", '',
+    `<button type="button" class="btn btn--primary" data-k="guide" data-act="guide" aria-label="Open Cursor's install guide in your browser">Install guide</button><button type="button" class="btn" data-k="check" data-act="check" aria-label="Check again for Cursor's agent" ${T.busy ? 'disabled' : ''}>${T.busy === 'check' ? 'Checking…' : 'Check again'}</button>`)
+  if (s === 'signedout') return wrap("<p>Sotto uses Cursor's own sign-in on this computer and keeps no Cursor key. You need a Cursor account.</p>", '',
+    `<button type="button" class="btn btn--primary" data-k="signin" data-act="signin" aria-label="Sign in to Cursor in your browser">Sign in</button>`)
+  if (s === 'connected') return wrap(`<p class="lead">Signed in as you@example.com, on Cursor's Pro plan.</p><p>Sotto uses Cursor's own sign-in on this computer and keeps no Cursor key.</p>`, '',
+    `<button type="button" class="btn" data-k="disconnect" data-act="disconnect" aria-label="Disconnect Cursor">Disconnect</button><button type="button" class="btn btn--ghost" data-k="signout" data-act="signout" aria-label="Sign out of Cursor on this computer">Sign out of Cursor</button>`)
+  if (s === 'old') return wrap("<p>Sotto works with Cursor's agent 2026.08.11 or newer, and 2026.06.09 is installed. Update it to connect. Your Cursor threads keep their history.</p>", '',
+    `<button type="button" class="btn btn--primary" data-k="update" data-act="update" ${T.busy ? 'disabled' : ''}>${T.busy === 'update' ? 'Updating to 2026.10.22…' : 'Update Cursor'}</button>`)
+  /* Signing in: the part A, B and C disagree about. */
+  if (variant === 'A') return wrap('<p class="lead">Finish signing in on cursor.com in your browser.</p>',
+    `<p class="live" data-wait role="status"><i aria-hidden="true"></i>Waiting for Cursor. This connects by itself.</p>`,
+    `<button type="button" class="btn" data-k="a-again" data-act="again" aria-label="Open Cursor's sign-in page in your browser again">Open the page again</button><button type="button" class="btn btn--ghost" data-k="cancel" data-act="cancel" aria-label="Cancel signing in to Cursor">Cancel</button>`)
+  if (variant === 'B') return wrap('<p class="lead">Signing in to Cursor in the dialog.</p>', `<p class="live" data-wait role="status"><i aria-hidden="true"></i>Waiting for Cursor.</p>`,
+    `<button type="button" class="btn" data-k="b-show" data-act="show" aria-label="Show the Cursor sign-in steps again">Show the steps</button><button type="button" class="btn btn--ghost" data-k="cancel" data-act="cancel" aria-label="Cancel signing in to Cursor">Cancel</button>`)
+  const c = T.c
+  const second = c.done ? `<p class="live" data-tone="ok" role="status">${ic('check')}Signed in as you@example.com.</p>`
+    : c.opened ? `<p class="live" data-wait role="status"><i aria-hidden="true"></i>Waiting for Cursor to say you are signed in.</p>`
+    : `<p class="live" role="status">Waiting for step 1.</p>`
+  return `<div class="pconn"><div><h4>Sign in to Cursor</h4><p>Sotto uses Cursor's own sign-in on this computer and keeps no Cursor key.</p>
+    <ol class="steps">
+      <li ${c.opened ? 'data-done' : ''}><span class="steps__n" aria-hidden="true">${c.opened ? ic('check') : '1'}</span><div><b>Open cursor.com and sign in</b><p>Use your Cursor account. The page opens in your browser.</p>
+        <button type="button" class="btn ${c.opened ? '' : 'btn--primary'}" data-k="c-open" data-act="c-open" aria-label="${c.opened ? "Open Cursor's sign-in page again" : "Open Cursor's sign-in page in your browser"}">${c.opened ? 'Open the page again' : 'Open cursor.com'}</button></div></li>
+      <li ${c.done ? 'data-done' : ''}><span class="steps__n" aria-hidden="true">${c.done ? ic('check') : '2'}</span><div><b>Come back here</b><p>Sotto finishes by itself once Cursor says you are signed in.</p>${second}</div></li>
+    </ol></div>
+    <div class="pactions"><button type="button" class="btn btn--ghost" data-k="cancel" data-act="cancel" aria-label="Cancel signing in to Cursor">Cancel</button></div></div>`
+}
+
+function cursorDetail() {
+  const v = VERSION()
+  const client = T.state === 'missing' ? '' : `<div class="pclient"><div><h4>Installed client</h4><p role="status">${T.state === 'old' ? '2026.06.09 is installed; 2026.10.22 is published.' : '2026.10.22 is installed, and that is what is published.'}</p></div>
+    <div class="pactions"><button type="button" class="btn" data-k="client-check" data-act="client-check" aria-label="Check again for a newer Cursor agent">Check again</button></div></div>`
+  const signingProto = T.state === 'signing' && variant !== 'B'
+    ? `<div class="proto" role="group" aria-label="Prototype: what Cursor does next" style="margin:14px 0 0"><span>Prototype</span><button type="button" data-act="finish">Cursor says signed in</button><button type="button" data-act="fail">Sign-in fails</button></div>` : ''
+  const body = T.tab === 'configuration'
+    ? `${cursorConnection()}${signingProto}
+       ${T.notice ? `<p class="pnotice" role="status">${esc(T.notice)}</p>` : ''}
+       ${T.error ? `<p class="perror" role="alert">${esc(T.error)}</p>` : ''}
+       ${client}
+       <details class="psupport"><summary>Threads with Cursor</summary>
+         <p>Replies, images, steering, approvals, Cursor's questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</p>
+         <p>Watcher runs on Cursor. Cursor has no fork of its own, so Fork from here is unavailable on a Cursor reply; Continue on another provider still works. Cursor keeps its own history and runs its Auto checks on its servers.</p></details>`
+    : T.state === 'connected' && T.enabled
+      ? `<div class="pmodels" aria-label="Cursor available models">${CURSOR.map(g => `<h5>${esc(g.g)}</h5><ul class="pmodels">${g.models.map(m => `<li><span>${esc(m.n)}</span><small>Available</small></li>`).join('')}</ul>`).join('')}</div>`
+      : `<p class="pempty">${T.state === 'missing' ? 'Install and sign in to Cursor to load its models.' : 'Sign in to Cursor to load its models.'}</p>`
+  return `<section class="pdetail" aria-label="Cursor configuration">
+    <header class="pdetail__head">${mk('cursor', 21)}<h3>Cursor</h3>${v ? `<span class="pdetail__version">${v}</span>` : ''}
+      ${T.state === 'connected' && T.enabled ? `<button type="button" class="btn btn--ghost btn--icon" data-k="refresh" data-act="refresh" aria-label="Refresh Cursor" title="Refresh Cursor">${ic('refresh')}</button>` : ''}</header>
+    ${tabs()}
+    <div class="pbody" role="tabpanel" id="ptab-panel" aria-labelledby="ptab-${T.tab}">${body}</div></section>`
+}
+function grokDetail() {
+  const on = T.grokEnabled
+  return `<section class="pdetail" aria-label="Grok Build configuration">
+    <header class="pdetail__head">${mk('grok', 21)}<h3>Grok Build</h3>${on ? '<span class="pdetail__version">0.9.14</span>' : ''}</header>
+    ${tabs()}
+    <div class="pbody" role="tabpanel" id="ptab-panel" aria-labelledby="ptab-${T.tab}">${T.tab === 'configuration'
+      ? `<div class="pconn"><div><h4>Local connection</h4><p>Uses your Grok Build sign-in on this computer.</p></div><div class="pactions"><button type="button" class="btn" data-k="grok-toggle" data-act="grok-toggle" aria-label="${on ? 'Disconnect' : 'Connect'} Grok Build">${on ? 'Disconnect' : 'Connect'}</button></div></div>
+         <div class="pclient"><div><h4>Installed client</h4><p>0.9.14 is installed, and that is what is published.</p></div></div>`
+      : `<ul class="pmodels"><li><span>Grok 4.7</span><small>Available</small></li></ul>`}</div></section>`
+}
+const tabs = () => `<div class="ptabs" role="tablist" aria-label="Provider details">${['configuration', 'models'].map(v => `<button type="button" role="tab" id="ptab-${v}" data-k="tab:${v}" data-tabname="${v}" aria-selected="${T.tab === v}" aria-controls="ptab-panel" tabindex="${T.tab === v ? 0 : -1}">${v === 'configuration' ? 'Configuration' : 'Models'}</button>`).join('')}</div>`
+
+function card(id, name, status, on, toggleDisabled) {
+  return `<div class="prow" data-selected="${T.selected === id}">
+    <button type="button" class="prow__select" data-k="sel:${id}" data-select="${id}" aria-label="${name}" aria-pressed="${T.selected === id}">${mk(id, 21)}<strong>${name}</strong><small data-status="${status.id}"><i aria-hidden="true"></i>${status.n}</small></button>
+    <button type="button" class="switch" role="switch" data-k="sw:${id}" data-switch="${id}" aria-checked="${on}" aria-label="Enable ${name}" ${toggleDisabled ? 'disabled' : ''}><span class="switch__track"><span class="switch__thumb"></span></span></button></div>`
+}
+function renderTile(focus) {
+  const grokStatus = T.grokEnabled ? { id: 'connected', n: 'Connected' } : { id: 'off', n: 'Disabled' }
+  paint($('#tile'), `<nav class="plist" aria-label="Thread providers">${card('grok', 'Grok Build', grokStatus, T.grokEnabled, false)}${card('cursor', 'Cursor', statusOf(), T.enabled, T.state === 'missing' || T.state === 'signing')}</nav>
+    ${T.selected === 'cursor' ? cursorDetail() : grokDetail()}`, focus)
+  paint($('#state-row'), `<span>Prototype · Cursor tile state</span>${STATES.map(s => `<button type="button" data-k="st:${s.id}" data-state="${s.id}" aria-pressed="${T.state === s.id}">${s.n}</button>`).join('')}`)
+}
+
+$('#state-row').addEventListener('click', e => {
+  const b = e.target.closest('[data-state]'); if (!b) return
+  T.selected = 'cursor'; T.tab = 'configuration'
+  if (b.dataset.state === 'signing') { setState('signing'); if (variant === 'B') openDialog() }
+  else setState(b.dataset.state)
+})
+$('#tile').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.select) { T.selected = b.dataset.select; T.tab = 'configuration'; renderTile(b.dataset.k); return }
+  if (b.dataset.switch) {
+    if (b.dataset.switch === 'grok') T.grokEnabled = !T.grokEnabled
+    else { T.enabled = !T.enabled; if (T.enabled && T.state === 'connected') T.notice = '' }
+    renderTile(b.dataset.k); return
+  }
+  if (b.dataset.tabname) { T.tab = b.dataset.tabname; renderTile(b.dataset.k); return }
+  const act = b.dataset.act
+  if (act === 'signin') startSignIn()
+  else if (act === 'cancel') cancelSignIn()
+  else if (act === 'finish') finishSignIn()
+  else if (act === 'fail') failSignIn()
+  else if (act === 'again') { T.notice = "Cursor's sign-in page is open in your browser again."; renderTile('a-again') }
+  else if (act === 'show') openDialog()
+  else if (act === 'c-open') { const first = !T.c.opened; T.c.opened = true; T.notice = ''; renderTile('c-open'); if (first) later(7000, finishSignIn) }
+  else if (act === 'guide') { T.notice = "Cursor's install guide is open in your browser, at cursor.com/docs/cli/installation."; renderTile('guide') }
+  else if (act === 'check') { T.busy = 'check'; renderTile('check'); later(900, () => { setState('signedout', { notice: "Cursor's agent 2026.10.22 is installed. Sign in to connect." }); focusKey('signin') }) }
+  else if (act === 'update') { T.busy = 'update'; renderTile('update'); later(2200, () => { setState('connected', { notice: "Cursor's agent is now 2026.10.22." }); focusKey('disconnect') }) }
+  else if (act === 'disconnect') { T.enabled = false; renderTile(); focusKey('connect') }
+  else if (act === 'connect') { T.enabled = true; renderTile(); focusKey(T.state === 'connected' ? 'disconnect' : 'signin') }
+  else if (act === 'signout') { setState('signedout', { notice: 'Signed out of Cursor on this computer. Your Cursor threads stay; sign in to send to them again.' }); focusKey('signin') }
+  else if (act === 'refresh') { T.notice = 'Cursor is connected. Its models are up to date.'; renderTile('refresh') }
+  else if (act === 'client-check') { T.notice = T.state === 'old' ? '2026.10.22 is published. Update Cursor to use it.' : 'Cursor is up to date.'; renderTile('client-check') }
+  else if (act === 'grok-toggle') { T.grokEnabled = !T.grokEnabled; renderTile('grok-toggle') }
+})
+$('#tile').addEventListener('keydown', e => {
+  const t = e.target
+  if (t.dataset.tabname && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); T.tab = T.tab === 'configuration' ? 'models' : 'configuration'; renderTile(`tab:${T.tab}`) }
+  if (e.key === 'Escape' && T.state === 'signing' && variant !== 'B') { e.preventDefault(); cancelSignIn() }
+})
+
+/* B: the sign-in dialog. */
+function renderDialog() {
+  const d = $('#signin-dialog'), b = T.b
+  paint(d, `<h2 id="dlg-title">Sign in to Cursor</h2>
+    <p>Cursor's sign-in page is open in your browser.</p>
+    <ol><li>Sign in there with your Cursor account.</li><li>Come back here. This closes by itself once Cursor says you are signed in.</li></ol>
+    <div class="dlg__addr">If the page did not open, or your browser is on another computer, open this address there:
+      <div class="addr"><code title="${esc(ADDRESS)}">${esc(ADDRESS)}</code><button type="button" class="btn btn--ghost" data-k="copy" data-dact="copy" aria-label="Copy the sign-in page's address">${b.copied === 'ok' ? 'Copied' : 'Copy'}</button></div>
+      ${b.copied === 'fail' ? '<span>The address could not be copied. Select it and copy it yourself.</span>' : ''}</div>
+    ${b.done ? `<p class="live" data-tone="ok" role="status">${ic('check')}Signed in as you@example.com.</p>` : `<p class="live" data-wait role="status"><i aria-hidden="true"></i>Waiting for Cursor.</p>`}
+    <div class="proto" role="group" aria-label="Prototype: what Cursor does next"><span>Prototype</span><button type="button" data-dact="finish">Cursor says signed in</button><button type="button" data-dact="fail">Sign-in fails</button></div>
+    <div class="dlg__actions"><button type="button" class="btn" data-k="again" data-dact="again" aria-label="Open Cursor's sign-in page in your browser again">Open the page again</button><button type="button" class="btn" data-k="cancel" data-dact="cancel" aria-label="Cancel signing in to Cursor">Cancel</button></div>`)
+}
+function openDialog() {
+  const d = $('#signin-dialog')
+  renderDialog()
+  if (!d.open) d.showModal()
+  d.querySelector('[data-k="again"]').focus()
+}
+$('#signin-dialog').addEventListener('click', async e => {
+  const b = e.target.closest('[data-dact]'); if (!b) return
+  const a = b.dataset.dact
+  if (a === 'cancel') { $('#signin-dialog').close(); cancelSignIn() }
+  else if (a === 'finish') finishSignIn()
+  else if (a === 'fail') { $('#signin-dialog').close(); failSignIn() }
+  else if (a === 'again') { T.b.copied = ''; renderDialog(); $('#signin-dialog [data-k="again"]').focus() }
+  else if (a === 'copy') {
+    try { await navigator.clipboard.writeText(ADDRESS); T.b.copied = 'ok' } catch { T.b.copied = 'fail' }
+    renderDialog(); $('#signin-dialog [data-k="copy"]').focus()
+  }
+})
+/* Escape on the dialog is Cancel. */
+$('#signin-dialog').addEventListener('cancel', e => { e.preventDefault(); $('#signin-dialog').close(); cancelSignIn() })
+
+/* ---------------- Section 3: the reply's More menu and the request cards ---------------- */
+const moreBtn = $('#more-btn'), moreMenu = $('#more-menu')
+function setMore(open, focusFirst) {
+  moreMenu.hidden = !open; moreBtn.setAttribute('aria-expanded', String(open))
+  if (open && focusFirst) moreMenu.querySelector('[role="menuitem"]').focus()
+}
+moreBtn.addEventListener('click', () => setMore(moreMenu.hidden, true))
+moreMenu.addEventListener('keydown', e => {
+  const its = [...moreMenu.querySelectorAll('[role="menuitem"]')], i = its.indexOf(e.target)
+  if (e.key === 'Escape') { e.preventDefault(); setMore(false); moreBtn.focus(); return }
+  let n = null
+  if (e.key === 'ArrowDown') n = (i + 1) % its.length
+  else if (e.key === 'ArrowUp') n = (i - 1 + its.length) % its.length
+  else if (e.key === 'Home') n = 0
+  else if (e.key === 'End') n = its.length - 1
+  else if (e.key === 'Tab') { setMore(false); return }
+  if (n !== null) { e.preventDefault(); its[n].focus() }
+})
+moreMenu.addEventListener('click', e => {
+  const it = e.target.closest('[role="menuitem"]'); if (!it || it.getAttribute('aria-disabled') === 'true') return
+  setMore(false); moreBtn.focus()
+})
+
+const answered = (id, text, k) => `<p class="answered" role="status">${ic('check')}<span>${text}</span><button type="button" class="btn btn--ghost" data-k="${k}" data-reset="${id}" aria-label="Prototype: show this request card again">Show the card again</button></p>`
+const REQ = {
+  perm: () => `<div class="req" role="group" aria-labelledby="rq-perm-h"><div class="req__head"><strong id="rq-perm-h">Run a command</strong><span class="tag">Cursor</span></div>
+    <p class="req__text">Cursor wants to run the project's tests.</p><pre class="req__cmd">npm test</pre><p class="req__cwd">In <code>C:\\dev\\sotto</code></p>
+    <div class="req__actions"><button type="button" class="btn btn--primary" data-k="perm-allow" data-ans="perm:allow" aria-label="Allow Cursor to run npm test once">Allow once</button><button type="button" class="btn" data-k="perm-reject" data-ans="perm:reject" aria-label="Reject running npm test">Reject</button></div></div>`,
+  question: () => `<form class="req" aria-labelledby="rq-q-h" data-form="question"><div class="req__head"><strong id="rq-q-h">Cursor asks</strong><span class="tag">Question</span></div>
+    <fieldset><legend>Which runner should the new upload tests use?</legend>
+      <label class="req__opt"><input type="radio" name="runner" value="Vitest"><span><b>Vitest</b><small>What the rest of the suite uses. Fast, with no window.</small></span></label>
+      <label class="req__opt"><input type="radio" name="runner" value="Playwright"><span><b>Playwright</b><small>Runs the built app. Slower, and closer to what you see.</small></span></label>
+      <label class="req__opt"><input type="radio" name="runner" value="other"><span><b>Something else</b><small>Say which below.</small></span></label>
+      <textarea name="other" rows="2" aria-label="Your own answer to: Which runner should the new upload tests use?" placeholder="Your answer" hidden></textarea>
+    </fieldset><p class="req__msg" role="alert" data-msg></p>
+    <div class="req__actions"><button type="submit" class="btn btn--primary" data-k="q-send">Send answer</button><button type="button" class="btn" data-k="q-skip" data-ans="question:skip" aria-label="Skip Cursor's question">Skip</button></div></form>`,
+  plan: () => `<div class="req" role="group" aria-labelledby="rq-plan-h"><div class="req__head"><strong id="rq-plan-h">Plan</strong><span class="tag">Cursor</span></div>
+    <p class="req__text">Cursor made a plan and waits for you before it starts.</p>
+    <div class="req__plan"><b>Make the upload test steady</b><ol><li>Replace the fixed 200 ms wait with the upload's done event.</li><li>Run the upload test 50 times to check it holds.</li><li>Run the whole suite.</li><li>Report what changed and what it found.</li></ol></div>
+    <div class="req__actions"><button type="button" class="btn btn--primary" data-k="plan-accept" data-ans="plan:accept" aria-label="Accept Cursor's plan">Accept plan</button><button type="button" class="btn" data-k="plan-reject" data-ans="plan:reject" aria-label="Reject Cursor's plan">Reject</button></div></div>`,
+}
+const ANSWERS = {
+  'perm:allow': ['perm', 'You allowed <code>npm test</code> once.'], 'perm:reject': ['perm', 'You rejected <code>npm test</code>. Cursor was told.'],
+  'question:skip': ['question', 'You skipped the question. Cursor carries on without an answer.'],
+  'plan:accept': ['plan', 'You accepted the plan. Cursor starts on it.'], 'plan:reject': ['plan', 'You rejected the plan. Cursor does not start it.'],
+}
+const reqRoot = id => $(`#req-${id}`)
+function showReq(id, focus) { paint(reqRoot(id), REQ[id](), focus) }
+for (const id of Object.keys(REQ)) {
+  const root = reqRoot(id)
+  showReq(id)
+  root.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return
+    if (b.dataset.reset) { showReq(b.dataset.reset); root.querySelector('button, input')?.focus(); return }
+    if (b.dataset.ans) { const [rid, text] = ANSWERS[b.dataset.ans]; paint(reqRoot(rid), answered(rid, text, `reset-${rid}`), `reset-${rid}`) }
+  })
+  root.addEventListener('change', e => {
+    if (e.target.name === 'runner') { const ta = root.querySelector('textarea[name="other"]'); ta.hidden = e.target.value !== 'other'; if (!ta.hidden) ta.focus() }
+  })
+  root.addEventListener('submit', e => {
+    e.preventDefault()
+    const f = e.target, pick = f.runner.value, msg = f.querySelector('[data-msg]')
+    if (!pick) { msg.textContent = 'Choose an answer first, or skip the question.'; return }
+    const ans = pick === 'other' ? f.other.value.trim() : pick
+    if (!ans) { msg.textContent = 'Write your answer first, or choose another.'; f.other.focus(); return }
+    paint(root, answered('question', `You answered: ${esc(ans)}.`, 'reset-question'), 'reset-question')
+  })
+}
+
+/* ---------------- Section 2 and 4: composers and the gallery ---------------- */
+const NT_PROVIDERS = ['codex', 'claude', 'grok', 'opencode', 'cursor']
+composer($('#nt-composer'), $('#nt-slot'), { providers: NT_PROVIDERS, choice: { p: 'cursor', g: 'Anthropic', m: 'claude-sonnet-5.5' }, open: 'model' })
+modelMenu($('#g-makers'), { providers: NT_PROVIDERS, chosen: { p: 'cursor', g: 'Anthropic', m: 'claude-sonnet-5.5' } })
+modelMenu($('#g-anthropic'), { providers: NT_PROVIDERS, chosen: { p: 'cursor', g: 'Anthropic', m: 'claude-sonnet-5.5' }, step: 'Anthropic' })
+effortCard($('#g-effort'), { value: 'medium' })
+permMenu($('#g-perm'), { value: 'auto' })
+composer($('#w-composer'), $('#w-slot'), { watcher: true, providers: ['codex', 'claude', 'grok', 'muse', 'cursor'], choice: { p: 'cursor', g: 'Anthropic', m: 'claude-opus-5.5' }, open: 'model',
+  note: p => p === 'cursor' ? "Every model here runs through Cursor, on your Cursor plan. Changing Watcher's provider starts a new Watcher; this conversation moves to Watcher history." : "Changing Watcher's provider starts a new Watcher; this conversation moves to Watcher history." })
+
+/* ---------------- Theme and variant bar ---------------- */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t
+  const b = $('#theme-toggle')
+  b.innerHTML = ic(t === 'dark' ? 'sun' : 'moon')
+  b.setAttribute('aria-label', t === 'dark' ? 'Use the light theme' : 'Use the dark theme')
+  b.title = b.getAttribute('aria-label')
+}
+$('#theme-toggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'))
+setTheme(new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark')
+
+function setVariant(k) {
+  variant = k
+  const v = VARIANTS.find(x => x.key === k)
+  $('#v-label').textContent = `${v.key} — ${v.name}`
+  const u = new URL(location.href); u.searchParams.set('variant', k); history.replaceState(null, '', u)
+  T.selected = 'cursor'; T.tab = 'configuration'
+  setState('signedout')
+}
+const step = d => { const i = VARIANTS.findIndex(x => x.key === variant); setVariant(VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length].key) }
+$('#v-prev').addEventListener('click', () => step(-1))
+$('#v-next').addEventListener('click', () => step(1))
+document.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return
+  if (e.target.closest('input, textarea, select, [contenteditable], [role="radiogroup"], [role="tablist"], [role="listbox"], [role="menu"], [role="group"].mm__list, dialog')) return
+  e.preventDefault(); step(e.key === 'ArrowLeft' ? -1 : 1)
+})
+setVariant(variant)
+</script>
+</body>
+</html>
