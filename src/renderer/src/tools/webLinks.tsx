@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { BrowserBridge, BrowserPage } from '../../../shared/browser'
+import type { FilesBridge } from '../../../shared/files'
 import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
 import './webLinks.css'
 
@@ -19,6 +20,8 @@ export interface WebLinkRouter {
   open(url: string, destination?: WebLinkDestination): Promise<WebLinkResult>
   /** Shows a page that already opened in this thread's browser, such as a question's page main opened there (ADR-0108). */
   show?(page: BrowserPage): WebLinkResult
+  /** Shows a file a message links to in Finder or File Explorer. Only a thread's transcript can: a relative path is read from its folder. */
+  revealFile?(path: string): Promise<WebLinkResult>
 }
 
 function bridgeBrowser(): BrowserBridge | undefined {
@@ -66,6 +69,14 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
   }
   return {
     show: showPage,
+    async revealFile(path) {
+      const files = (window.sotto as { files?: FilesBridge } | undefined)?.files
+      if (!files?.revealLink) return { ok: false, message: 'Sotto cannot show files from here. Nothing was opened.' }
+      try {
+        const result = await files.revealLink({ threadId, path })
+        return result.ok ? { ok: true } : { ok: false, message: result.error.message }
+      } catch { return { ok: false, message: 'Sotto could not show this file. Nothing was opened.' } }
+    },
     canEmbed: bridge !== undefined,
     async open(url, destination) {
       if (!bridge || url.startsWith('mailto:')) return destination === 'embedded' ? { ok: false, message: 'Only web pages open in Sotto’s browser.' } : openSystem(url)
