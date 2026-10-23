@@ -562,6 +562,8 @@
    dock. Only while a run plays (data-room-transition on the root). */
 :root[data-room-transition]::view-transition-old(root),
 :root[data-room-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+/* Presses go through to the page underneath while a run plays, rather than to the transition's own layer. */
+:root[data-room-transition]::view-transition { pointer-events: none; }
 :root[data-room-transition] .night-falls-band { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; view-transition-name: night-falls-band; }
 :root[data-room-transition]::view-transition-group(night-falls-band),
 :root[data-room-transition]::view-transition-new(night-falls-band) { animation: none; }
