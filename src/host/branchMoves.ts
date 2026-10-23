@@ -99,11 +99,16 @@ export class HostBranchMoves {
         const repository = this.folders.projectFolder(request.projectId)
         if (!repository) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
         if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
-        const holding: Transfer = { owner }
+        // Fenced like a `receive-ref`: once `end` answers or the connection's discard has run, no ref of it is created,
+        // however far the copy had got.
+        const fence = new MoveFence()
+        const holding: Transfer = { owner, fence }
         this.transfers.set(request.moveId, holding)
         try {
           const source = await this.bundles.sourceOf(from, request.snapshot === true)
-          return 'type' in source ? source : await this.bundles.copy({ from, source, repository, moveId: request.moveId })
+          if ('type' in source) return source
+          if (gone.aborted || fence.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+          return await this.bundles.copy({ from, source, repository, moveId: request.moveId, fence })
         } finally { this.release(request.moveId, holding) }
       }
       case 'send-chunk': {

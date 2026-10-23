@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir } from 'node:fs/promises'
+import { readdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
 import { BranchBundles, type PreparedBundle } from '../../src/main/agents/branchBundles'
@@ -180,6 +181,31 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
       expect(await landed).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
       expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
       await expect.poll(() => host.staged).toBe(0)
+    }
+  })
+
+  it('creates no ref for a copy on the same host once it is ended or its connection drops, however far it had got', async () => {
+    // Held while the thread's working copy is read, before anything is copied; and, for a test run's snapshot that has to
+    // go across as a bundle, while that bundle is imported.
+    const cases = [
+      { snapshot: false, step: (args: readonly string[]) => args[0] === 'status' },
+      { snapshot: true, step: (args: readonly string[]) => args[0] === 'bundle' && args[1] === 'unbundle' },
+    ]
+    for (const { snapshot, step } of cases) {
+      for (const ending of ['end', 'drop'] as const) {
+        if (snapshot) await writeFile(join(machines.forge, 'notes.txt'), 'draft')
+        const moveId = randomUUID(), held = gate(step)
+        const host = forge(gated(held)), peer = connection()
+        const copied = host.handle({ action: 'copy', moveId, threadId: 'forge-thread', projectId: 'forge-project', snapshot }, peer.owner, peer.gone)
+        await held.reached
+        if (ending === 'end') expect(await host.handle({ action: 'end', moveId }, peer.owner, peer.gone)).toBeNull()
+        else peer.close()
+        held.release()
+        expect(await copied).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+        expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+        await expect.poll(() => host.staged).toBe(0)
+        await expect.poll(() => readdir(machines.data('forge').stagingDirectory).catch(() => [])).toEqual([])
+      }
     }
   })
 })

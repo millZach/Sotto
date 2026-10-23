@@ -69,10 +69,16 @@ export class MoveFence {
   /** Whether the move was ended, so nothing more of it may land. */
   get cancelled(): boolean { return this.ended }
   /** Runs `write`, which creates the incoming ref, unless the move was ended first: null when it was. */
-  land<T>(write: () => Promise<T>): Promise<T> | null {
-    if (this.ended) return null
+  land<T>(write: () => Promise<T>): Promise<T> | null { return MoveFence.land([this], write) }
+  /**
+   * Runs `write` behind every fence at once, as when a move's own fence and its bundle's both guard one ref: null when any
+   * of them was ended first, and each one's `cancel` waits for the write once it has begun.
+   */
+  static land<T>(fences: readonly MoveFence[], write: () => Promise<T>): Promise<T> | null {
+    if (fences.some(fence => fence.ended)) return null
     const landing = write()
-    this.landing = landing.then(() => undefined, () => undefined)
+    const settled = landing.then(() => undefined, () => undefined)
+    for (const fence of fences) fence.landing = settled
     return landing
   }
   /** Ends the move. Once this resolves no ref is created for it: a landing already under way has finished. */
@@ -207,31 +213,36 @@ export class BranchBundles {
    * Lands a branch on the same machine, for a worker started there from a thread's branch: in `repository`'s incoming ref
    * for the move, written once, as a move lands. When `repository` already has the commit and its history, as a thread's
    * worktree and its project's checkout share one object store, only the ref is written; otherwise, as for a test-run
-   * snapshot that no ref names yet, the commit goes across from `from` as a bundle staged here and taken in at once.
+   * snapshot that no ref names yet, the commit goes across from `from` as a bundle staged here and taken in at once. A copy
+   * ended through `fence` creates no ref, as a move ended over the socket does not.
    */
-  async copy(input: { readonly from: string; readonly source: BranchSource; readonly repository: string; readonly moveId: string }): Promise<BranchMoved | BranchMoveRefusal> {
-    const { source, repository, moveId } = input
+  async copy(input: { readonly from: string; readonly source: BranchSource; readonly repository: string; readonly moveId: string; readonly fence?: MoveFence }): Promise<BranchMoved | BranchMoveRefusal> {
+    const { source, repository, moveId, fence } = input
     const carried = (moved: BranchMoved | BranchMoveRefusal): BranchMoved | BranchMoveRefusal => moved.type === 'moved' && source.snapshot ? { ...moved, snapshot: source.snapshot } : moved
+    const cutOff = (): BranchMoveRefusal => branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+    if (fence?.cancelled) return cutOff()
     const tips = await this.tips(repository)
     if (!Array.isArray(tips)) return tips
     const prepared = await this.prepare({ repository: input.from, moveId, commit: source.commit, bases: tips })
     if (prepared.type === 'refused') return prepared
-    if (prepared.type === 'present') return carried(await this.receiveRef({ repository, moveId, branch: source.branch, commit: source.commit }))
+    if (prepared.type === 'present') return carried(await this.receiveRef({ repository, moveId, branch: source.branch, commit: source.commit, ...fence ? { fence } : {} }))
     // Whatever stops the copy before its finish, a read or write that fails included, abandons what it staged here
     // (ADR-0105 decision 8): its handle is closed and its file removed, never left for the next start to clear.
     let incoming: IncomingBundle | undefined
     let finishing = false
     try {
+      if (fence?.cancelled) return cutOff()
       const begun = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
       if (!(begun instanceof IncomingBundle)) return carried(begun)
       incoming = begun
       for (let offset = 0; offset < prepared.size;) {
+        if (fence?.cancelled) return cutOff()
         const chunk = await this.readChunk(prepared.path, offset)
         if (chunk.byteLength === 0 || !await incoming.write(offset, chunk)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
         offset += chunk.byteLength
       }
       finishing = true
-      return carried(await this.finish(incoming))
+      return carried(await this.finish(incoming, fence))
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally {
       if (incoming && !finishing) await this.abandon(incoming)
@@ -405,7 +416,8 @@ export class BranchBundles {
    * imported without writing any ref, and the incoming ref created only if it does not exist, then read back. The staged
    * file is removed whatever happens.
    */
-  async finish(incoming: IncomingBundle): Promise<BranchMoved | BranchMoveRefusal> {
+  async finish(incoming: IncomingBundle, fence?: MoveFence): Promise<BranchMoved | BranchMoveRefusal> {
+    const fences = fence ? [incoming, fence] : [incoming]
     const { repository, moveId, branch, commit, path } = incoming
     const ref = incomingRef(moveId, branch)
     try {
@@ -416,12 +428,12 @@ export class BranchBundles {
       if (heads.length !== 1 || heads[0] !== `${commit} ${outgoingRef(moveId)}`) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
       const landed = await this.landed(repository, moveId, ref, commit)
       if (landed) return landed
-      if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+      if (fences.some(each => each.cancelled)) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
       await this.record(moveId, commit, ref)
       await this.git(repository, ['bundle', 'unbundle', path], undefined, 600_000)
       // The fence: a move ended while it was checked or imported creates no ref. Its objects stay, unreferenced, for Git
       // to collect, and its record lets a retry go ahead.
-      const landing = incoming.land(() => this.createRef(repository, moveId, branch, commit))
+      const landing = MoveFence.land(fences, () => this.createRef(repository, moveId, branch, commit))
       return landing ? await landing : branchMoveRefusal('cut-off', branchMoveWords.cutOff)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally { await unlink(path).catch(() => undefined) }
