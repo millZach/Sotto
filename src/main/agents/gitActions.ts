@@ -653,9 +653,34 @@ export class GitActions {
     }
     try { await this.git(checkout, ['read-tree', '-m', '-u', from, next], { timeoutMs: PULL_TIMEOUT_MS }) }
     catch (error) {
-      await this.git(checkout, ['update-ref', '-m', `Sotto: put ${target} back`, ref, from, next]).catch(() => undefined)
-      throw new BringBackRefusal('git', `Git refused to update the folder where ${target} is checked out, so ${target} was put back where it was.`, { gitSaid: gitWords(error), checkout })
+      // Git can stop part way, with some files written (a lock on Windows): the branch goes back, and so do the folder's files.
+      const restored = await this.putBack(checkout, target, from, next)
+      throw new BringBackRefusal('git', restored
+        ? `Nothing was brought to ${target}. Git stopped while updating the folder where ${target} is checked out, so Sotto put ${target} and that folder back as they were.`
+        : `Nothing was brought to ${target}. Git stopped part way through updating the folder where ${target} is checked out, and Sotto couldn’t put all of it back. ${target} may have moved and that folder may have changed: check it with git status there before you go on.`,
+      { gitSaid: gitWords(error), checkout })
     }
+  }
+  /**
+   * After Git stopped part way through moving the target from `from` to `next` in `checkout`, which was clean when it
+   * began: the branch goes back to `from`, the tracked files to `from`'s, and files `next` would add that are now there and
+   * untracked are removed, since nothing else could have made them. Answers whether the folder reads clean on `from` after.
+   */
+  private async putBack(checkout: string, target: string, from: string, next: string): Promise<boolean> {
+    const ref = `refs/heads/${target}`
+    await this.git(checkout, ['update-ref', '-m', `Sotto: put ${target} back`, ref, from, next]).catch(() => undefined)
+    try {
+      if ((await this.git(checkout, ['symbolic-ref', '--quiet', 'HEAD'])).trim() !== ref) return false
+      if ((await this.git(checkout, ['rev-parse', '--verify', `${ref}^{commit}`])).trim() !== from) return false
+      if (parseChangedRecords(await this.git(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=normal'])).length === 0) return true
+      await this.git(checkout, ['reset', '--quiet', '--hard', from])
+      const added = (await this.git(checkout, ['diff', '--name-only', '--no-renames', '--diff-filter=A', '-z', from, next])).split('\0').filter(Boolean)
+      if (added.length > 0) {
+        const strays = (await this.git(checkout, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...added])).split('\0').filter(Boolean)
+        for (const stray of strays) await rm(join(checkout, ...stray.split('/')), { force: true })
+      }
+      return parseChangedRecords(await this.git(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=normal'])).length === 0
+    } catch { return false }
   }
 
 

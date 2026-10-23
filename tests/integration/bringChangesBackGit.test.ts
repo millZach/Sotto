@@ -200,6 +200,42 @@ describe('bringing a worktree’s commits to the branch it was made from', () =>
     expect(git(project, 'status', '--porcelain')).toBe('')
   })
 
+  it('changes nothing, and says so truly, when Git cannot lock the parent’s branch', async () => {
+    const { project, child, actions, main, parentCheckout } = await repository()
+    await commitFile(child, 'test.txt', 'mid-chunk\n', 'Test')
+    const before = main()
+    // Another Git process holds main's ref, as a lock on Windows does.
+    const lock = join(git(project, 'rev-parse', '--absolute-git-dir'), 'refs', 'heads', 'main.lock')
+    await writeFile(lock, '')
+    try {
+      const refusal = await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout }))
+      expect(refusal.message).toContain('nothing changed')
+    } finally { await rm(lock, { force: true }) }
+    expect(main()).toBe(before)
+    expect(git(project, 'status', '--porcelain')).toBe('')
+    await expect(readFile(join(project, 'test.txt'), 'utf8')).rejects.toThrow()
+  })
+
+  it('puts the branch and the parent’s folder back when Git stops part way through updating the folder', async () => {
+    const { project, child, main } = await repository()
+    await commitFile(child, 'test.txt', 'mid-chunk\n', 'Test')
+    await commitFile(child, 'work.txt', 'one\nchanged\nthree\n', 'Change the work')
+    // Git writes the folder, then fails, as a file locked by another program makes it on Windows.
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      const out = await runGitStatusCommand(cwd, command, args, options)
+      if (command === 'git' && args[0] === 'read-tree' || command === 'git' && args[0] === 'merge') throw new Error('error: unable to unlink old work.txt: Permission denied')
+      return out
+    }
+    const actions = new GitActions({ run, status: new GitStatusReader({ fetchIntervalMs: () => 0 }), writeCommitMessage: async () => null, writePullRequestText: async () => null })
+    const before = main()
+    const refusal = await refused(actions.bringBack({ cwd: child, target: 'main', parentCheckout: async folder => same(folder, project) }))
+    expect(refusal.message).toBe('Nothing was brought to main. Git stopped while updating the folder where main is checked out, so Sotto put main and that folder back as they were.')
+    expect(main()).toBe(before)
+    expect(git(project, 'status', '--porcelain')).toBe('')
+    expect(await readFile(join(project, 'work.txt'), 'utf8')).toBe('one\ntwo\nthree\n')
+    await expect(readFile(join(project, 'test.txt'), 'utf8')).rejects.toThrow()
+  })
+
   it('refuses when the parent is no longer on the target, and switches no branch', async () => {
     const { project, child, actions, parentCheckout } = await repository()
     git(project, 'branch', 'feature', 'main')
