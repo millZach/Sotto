@@ -131,8 +131,8 @@ export const hostMachineReportSchema = z.object({
   placedNotStarted: threadCount.optional().catch(null),
   /**
    * The Sotto thread IDs `placedNotStarted` counts, so a desktop that has admitted a start there can tell whether the
-   * host has counted it yet (`placedNotStartedWith`). Sent with the count while it is within bounds; an answer without
-   * it is taken at its count.
+   * host has counted it yet (`placedNotStartedWith`). Sent with the count while it is within bounds; to an answer without
+   * it the desktop adds every start it has on its way there.
    */
   placedThreadIds: z.array(z.string().min(1).max(200)).max(HOST_RUNNING_THREADS_MAX).optional().catch(undefined),
 })
@@ -151,14 +151,14 @@ export type HostMachineReport = z.infer<typeof hostMachineReportSchema>
  * price is an extra count, never a lost one: a start whose turn began on the host before it answered is counted there as
  * running and here as placed, until the desktop's own record of the start catches up.
  *
- * A host's unknown count stays unknown, and an answer without the IDs is taken at its count, since which starts it holds
- * cannot be told.
+ * An answer without the IDs (a host built before them) cannot say which starts it holds, so every reservation is added
+ * to its count: a start it already counts may count twice, and none is missed. A host's unknown count stays unknown.
  */
 export function placedNotStartedWith(report: Pick<HostMachineReport, 'placedNotStarted' | 'placedThreadIds'>, reserved: readonly string[]): number | null {
   const counted = report.placedNotStarted
   if (counted === null || counted === undefined) return null
-  if (reserved.length === 0 || !report.placedThreadIds) return counted
-  const echoed = new Set(report.placedThreadIds)
+  if (reserved.length === 0) return counted
+  const echoed = new Set(report.placedThreadIds ?? [])
   const extra = new Set(reserved.filter(threadId => !echoed.has(threadId))).size
   return counted + extra <= HOST_RUNNING_THREADS_MAX ? counted + extra : null
 }
