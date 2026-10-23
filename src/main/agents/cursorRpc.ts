@@ -238,12 +238,13 @@ export class CursorRpc {
   /** The process's ID, which tells one thread's process from another's. */
   get pid(): number | undefined { return this.child.pid }
   get alive(): boolean { return !this.stopped }
-  request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false): Promise<void> {
+  /** `timeoutMs` replaces the process's deadline for this one request, as the first one after a start takes the start's. */
+  request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false, timeoutMs = this.timeoutMs): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.stopped) { reject(new CursorUncertain('Cursor stopped.')); return }
       if (this.pending.size >= 128) { reject(new CursorUncertain('Cursor has too many unanswered requests. Reconnect before continuing.')); this.fail(); return }
       const id = ++this.serial
-      const timer = completionOnly ? undefined : setTimeout(() => reject(new CursorUncertain('Cursor did not answer in time.')), this.timeoutMs)
+      const timer = completionOnly ? undefined : setTimeout(() => reject(new CursorUncertain('Cursor did not answer in time.')), timeoutMs)
       this.pending.set(JSON.stringify(id), { resolve, reject, apply, timer })
       try { this.write({ jsonrpc: '2.0', id, method, params }) }
       catch (error) { clearTimeout(timer); this.pending.delete(JSON.stringify(id)); reject(error instanceof Error ? error : new CursorUncertain('Cursor stopped.')) }

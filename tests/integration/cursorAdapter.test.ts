@@ -153,6 +153,17 @@ describe('Cursor ACP adapter', () => {
     await expect(f.host.connect()).rejects.toMatchObject({ problem: 'signed-out' })
   })
 
+  it('waits for a Cursor process that is slow to start, rather than reading its start as a lost answer', async () => {
+    f = await cursorFixture()
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    // Past the fixture's two-second acknowledgement deadline, as a process start on a loaded machine can be.
+    await f.script({ startDelayMs: 2_500 })
+    const id = randomUUID()
+    expect(await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Slow start' })).toEqual({ accepted: true })
+    expect(await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Hello' })).toEqual({ accepted: true })
+  })
+
   it('refuses a client older than the floor with the version it reported', async () => {
     f = await cursorFixture()
     await f.script({ cliVersion: '2026.10.21-0123abc' })
@@ -190,7 +201,8 @@ describe('Cursor ACP adapter', () => {
     /** A Watcher thread and an ordinary thread beside it, both made. */
     const openWatcher = async () => {
       const { id, profile } = await ready(), ordinary = randomUUID()
-      await make(id, 'Watcher'); await make(ordinary, 'Ordinary')
+      expect(await make(id, 'Watcher')).toEqual({ accepted: true })
+      expect(await make(ordinary, 'Ordinary')).toEqual({ accepted: true })
       return { id, ordinary, profile }
     }
     const prompts = async () => (await f!.requests()).filter(record => record.method === 'session/prompt').map(record => (record.params!.prompt as { text: string }[])[0]!.text)

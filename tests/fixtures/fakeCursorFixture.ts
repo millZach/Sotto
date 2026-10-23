@@ -16,6 +16,11 @@ async function readLog(path: string): Promise<string> {
   try { return await readFile(path, 'utf8') }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error }
 }
+/** Whether a process is still running; one that cannot be signalled for want of permission still is. */
+const running = (pid: number | undefined): boolean => {
+  if (!pid) return false
+  try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
+}
 /** The program the adapter starts: this Node running the fake client, with the fixture's folder as its first argument. */
 export const fakeCursorProgram = (root: string) => ({ executable: process.execPath, args: [resolve('tests/fixtures/fakeCursorAgent.mjs'), root] })
 
@@ -48,7 +53,13 @@ export async function cursorFixture(root?: string, requestTimeoutMs = 2000, sess
     } },
     sessions: {
       starts: async (id: string) => { const native = await realId(id); return (await requests()).filter(item => item.method === 'session/load' && item.params?.sessionId === native).length },
-      stopped: async (id: string) => { const native = await realId(id); return (await requests()).findLast(item => item.method === 'fixture/session-resident' && item.params?.sessionId === native)?.params?.resident === false },
+      // A session's process says it let the session go as its input closes. Sotto kills a process that has not exited half a
+      // second after that, which on a loaded machine can come first, so a process that is gone has let its session go too.
+      stopped: async (id: string) => {
+        const native = await realId(id)
+        const last = (await requests()).findLast(item => item.method === 'fixture/session-resident' && item.params?.sessionId === native) as (RecordedRpc & { process?: number }) | undefined
+        return last !== undefined && (last.params?.resident === false || !running(last.process))
+      },
     },
     driver: {
       typeInProvider: (id: string, text: string) => action(id, { type: 'takeover', text }),

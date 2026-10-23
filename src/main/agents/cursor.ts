@@ -156,6 +156,11 @@ export interface CursorAcpOptions {
   /** Sotto's Cursor folder (ADR-0123): `<userData>/cursor/config` by default, and the data directory's on a headless host. */
   configDirectory?: string
   requestTimeoutMs?: number
+  /**
+   * How long a new Cursor process has to answer `initialize`: its start, which is not an acknowledgement of anything Sotto
+   * sent, so a slow start is waited for rather than read as a lost answer. 30 seconds, as OpenCode's start.
+   */
+  startTimeoutMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
 }
@@ -350,7 +355,7 @@ export class CursorAcpHost implements AgentHost {
   private async handshake(rpc: CursorRpc): Promise<CursorClient> {
     let client: CursorClient | undefined
     await rpc.request('initialize', { protocolVersion: CURSOR_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false,
-      _meta: { parameterizedModelPicker: true } }, clientInfo: { name: 'sotto', version: appVersion } }, value => { client = initializeSchema.parse(value) })
+      _meta: { parameterizedModelPicker: true } }, clientInfo: { name: 'sotto', version: appVersion } }, value => { client = initializeSchema.parse(value) }, false, this.options.startTimeoutMs ?? 30_000)
     if (client!.protocolVersion !== CURSOR_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${CURSOR_ACP_VERSION}, and this Cursor client answered ACP ${client!.protocolVersion}.`)
     return client!
   }

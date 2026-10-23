@@ -131,9 +131,11 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (frame.method === 'initialize') {
     if (p.clientCapabilities?._meta?.parameterizedModelPicker !== true) violation('Sotto must ask for the parameterized model picker')
     if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
-    send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1, agentCapabilities: { loadSession: true, mcpCapabilities: { http: script.httpMcp !== false, sse: true },
+    // `startDelayMs` holds the answer as a slow start would, the way Cursor's own 256 MB bundle can on a busy machine.
+    const ready = () => send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1, agentCapabilities: { loadSession: true, mcpCapabilities: { http: script.httpMcp !== false, sse: true },
       promptCapabilities: { audio: false, embeddedContext: false, image: true }, sessionCapabilities: { list: {} } },
       authMethods: [{ id: 'cursor_login', name: 'Cursor Login', description: 'Run agent login first.' }] } })
+    if (script.startDelayMs) setTimeout(ready, script.startDelayMs); else ready()
   } else if (frame.method === 'cursor/list_available_models') {
     send({ id: frame.id, result: { models: script.signedOutModels ? [] : CATALOG } })
   } else if (frame.method === 'session/new') {
