@@ -299,7 +299,6 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   readonly query: string
   /** The hidden page heading the frame carries; `null` beside a page that has its own. */
   readonly title?: string | null
-  /** Which mode the sidebar's switch shows as current, and where the other one leads. */
   /** False where the page holds its clock still (a capture run); working rows then keep the time they were given. */
   readonly liveClock?: boolean | undefined
   readonly onQuery: (query: string) => void
