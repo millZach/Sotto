@@ -297,6 +297,7 @@ describe('TranscriptPolishService', () => {
         outputWords: null,
         applied: false,
         rejectedShrink: true,
+        primaryModel: CLEANUP_MODELS.primary.id,
         attempts: ['rejected-shrink', 'rejected-shrink'],
         asrSegmentWords: [25, 15],
         asrDurationMs: 42_000,
@@ -328,5 +329,48 @@ describe('polish prompt', () => {
   it('mentions dictionary words only when present', () => {
     expect(buildPolishSystemPrompt('')).not.toContain('Words the speaker may use')
     expect(buildPolishSystemPrompt('Zache')).toContain('Zache')
+  })
+
+  describe('chosen cleanup model (Owl cleanup-model, ADR-0122)', () => {
+    const chosen = { ...ENABLED, llmModel: 'google/gemini-3.1-flash-lite', llmMode: 'nitro' as const }
+    const words = 'hello there my good friend'
+
+    it('ignores the saved model and mode while the feature is off', async () => {
+      const { fetchFn, service } = createService({ settings: chosen })
+      await service.polish(words)
+      expect(requestBody(fetchFn, 0)).toMatchObject({ model: CLEANUP_MODELS.primary.id, reasoning: { effort: 'low' } })
+    })
+
+    it('sends the chosen model at low effort with the mode as its suffix', async () => {
+      const fetchFn = vi.fn(async () => okResponse('Polished text.'))
+      const service = new TranscriptPolishService({ getSettings: () => chosen, fetchFn, chosenModel: true })
+      await service.polish(words)
+      expect(requestBody(fetchFn, 0)).toMatchObject({ model: 'google/gemini-3.1-flash-lite:nitro', reasoning: { effort: 'low' } })
+    })
+
+    it('puts Floor on the default model and keeps Mercury 2 unsuffixed as the backup', async () => {
+      const fetchFn = vi.fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+        .mockResolvedValueOnce(okResponse('Polished text.'))
+      const service = new TranscriptPolishService({ getSettings: () => ({ ...ENABLED, llmMode: 'floor' }), fetchFn, chosenModel: true })
+      await expect(service.polish(words)).resolves.toEqual({ text: 'Polished text.', applied: true })
+      expect(requestBody(fetchFn, 0)).toMatchObject({ model: `${CLEANUP_MODELS.primary.id}:floor` })
+      expect(requestBody(fetchFn, 1)).toMatchObject({ model: CLEANUP_MODELS.fallback.id })
+    })
+
+    it('keeps a free variant, replaces a routing one, and records the model sent', async () => {
+      const onDiagnostic = vi.fn()
+      for (const [llmModel, llmMode, sent] of [
+        ['x/model:free', 'floor', 'x/model:free:floor'],
+        ['x/model:nitro', 'floor', 'x/model:floor'],
+        ['x/model:nitro', 'default', 'x/model'],
+      ] as const) {
+        const fetchFn = vi.fn(async () => okResponse('Polished text.'))
+        const service = new TranscriptPolishService({ getSettings: () => ({ ...ENABLED, llmModel, llmMode }), fetchFn, chosenModel: true, onDiagnostic })
+        await service.polish(words)
+        expect(requestBody(fetchFn, 0)).toMatchObject({ model: sent })
+        expect(onDiagnostic).toHaveBeenLastCalledWith(expect.objectContaining({ primaryModel: sent }))
+      }
+    })
   })
 })

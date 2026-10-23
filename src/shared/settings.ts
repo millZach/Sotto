@@ -43,6 +43,9 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
  * `merged` means GitHub reports the branch's pull request merged; `onSettle` reclaims when the
  * thread is settled. Each applies only to a clean folder with nothing in it but installed dependencies.
  */
+export type LlmMode = 'default' | 'nitro' | 'floor'
+export const LLM_MODES = ['default', 'nitro', 'floor'] as const satisfies readonly LlmMode[]
+
 export interface WorktreeCleanupRules {
   afterDays: WorktreeCleanupDays
   merged: boolean
@@ -268,6 +271,13 @@ export interface AppSettings {
   llmTimeoutMs: number
   llmMinWords: number
   /**
+   * The OpenRouter model that cleans up dictation, by its slug, or null for Sotto's own choice
+   * (ADR-0069's Claude Haiku 5.5). An Owl feature (ADR-0122): stable ignores it and keeps it.
+   */
+  llmModel: string | null
+  /** How OpenRouter picks a host for the cleanup model: its own way, the fastest host (`:nitro`) or the cheapest (`:floor`). */
+  llmMode: LlmMode
+  /**
    * Off stops thread-title and temporary-worktree-branch naming requests. Sotto's short writing is a
    * side call to the thread's own provider (ADR-0026); the OpenRouter writing model and its
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
@@ -390,6 +400,8 @@ const fieldSchemas = {
   llmDictionary: z.string().max(4_000),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
+  llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
+  llmMode: z.enum(LLM_MODES),
   threadTitles: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
@@ -479,6 +491,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmDictionary: '',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
+  llmModel: null,
+  llmMode: 'default',
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
@@ -639,6 +653,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
+    llmModel: parseField(persisted, 'llmModel', defaults),
+    llmMode: parseField(persisted, 'llmMode', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),

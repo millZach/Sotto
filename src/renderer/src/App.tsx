@@ -461,6 +461,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
           onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
+          onListOpenRouterModels={app.actions.listOpenRouterModels}
           speechModel={app.speechModel}
           onDownloadSpeechModel={downloadSpeechModel}
           speechModels={app.speechModels}

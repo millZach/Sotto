@@ -84,6 +84,8 @@ export interface PolishDiagnostic {
   readonly applied: boolean
   /** An attempt produced output rejected for excessive shrinkage. */
   readonly rejectedShrink: boolean
+  /** The first attempt's model slug as sent, so a chosen model that always fails shows here (ADR-0122). */
+  readonly primaryModel?: string
   /** Per-attempt outcome (primary first): 'ok', 'timeout', 'http-<status>', … */
   readonly attempts?: readonly string[]
   /** Per-segment ASR word counts, when the renderer supplied them. */
@@ -96,6 +98,11 @@ export interface PolishDiagnostic {
 
 export interface TranscriptPolishServiceDependencies {
   readonly getSettings: () => AppSettings | Promise<AppSettings>
+  /**
+   * Whether the user's cleanup model and mode apply (the cleanup-model Owl feature, ADR-0122). Off, the saved
+   * choice is kept but ignored, and Haiku 5.5 cleans up as ADR-0069 says.
+   */
+  readonly chosenModel?: boolean
   readonly fetchFn?: typeof fetch
   readonly now?: () => number
   /** Local observability for silent formatting failures; must never throw into polish. */
@@ -106,6 +113,7 @@ interface AttemptOutcome {
   readonly text: string | null
   readonly reason: string
   readonly rejectedShrink?: boolean
+  readonly model?: string
 }
 
 export class TranscriptPolishService {
@@ -140,7 +148,7 @@ export class TranscriptPolishService {
     )
     const deadline =
       this.now() + Math.max(settings.llmTimeoutMs, CLEANUP_MODELS.minTimeoutMs) + lengthBudget
-    const primary = await this.attempt(settings, CLEANUP_MODELS.primary, text, deadline - reserve)
+    const primary = await this.attempt(settings, this.primaryModel(settings), text, deadline - reserve)
     if (primary.text !== null) {
       return this.report(text, asr, { text: primary.text, applied: true }, primary)
     }
@@ -158,6 +166,21 @@ export class TranscriptPolishService {
     )
   }
 
+  /**
+   * The user's model, when they chose one, at low effort: OpenRouter ignores the effort on a model that does not
+   * reason, and a model that must reason accepts it where turning reasoning off would be refused. The mode is a
+   * suffix OpenRouter reads off the slug (`:nitro` the fastest host, `:floor` the cheapest); the backup keeps its own.
+   */
+  private primaryModel(settings: AppSettings): ModelSpec {
+    if (this.dependencies.chosenModel !== true) return CLEANUP_MODELS.primary
+    const model: ModelSpec = settings.llmModel === null
+      ? CLEANUP_MODELS.primary
+      : { id: settings.llmModel, reasoning: 'low' }
+    // A slug may already carry a variant (`:free`, which OpenRouter stacks with these); a routing one is replaced.
+    const slug = model.id.replace(/:(?:nitro|floor)$/u, '')
+    return settings.llmMode === 'default' ? { ...model, id: slug } : { ...model, id: `${slug}:${settings.llmMode}` }
+  }
+
   private report(
     input: string,
     asr: TranscriptPolishAsrContext | undefined,
@@ -172,6 +195,7 @@ export class TranscriptPolishService {
         outputWords: result.applied ? countWords(result.text) : null,
         applied: result.applied,
         rejectedShrink: attempts.some((attempt) => attempt.rejectedShrink === true),
+        ...(attempts[0]?.model === undefined ? {} : { primaryModel: attempts[0].model }),
         attempts: attempts.map((attempt) => attempt.reason),
         ...(asr === undefined
           ? {}
@@ -188,6 +212,15 @@ export class TranscriptPolishService {
   }
 
   private async attempt(
+    settings: AppSettings,
+    model: ModelSpec,
+    text: string,
+    deadline: number,
+  ): Promise<AttemptOutcome> {
+    return { ...await this.request(settings, model, text, deadline), model: model.id }
+  }
+
+  private async request(
     settings: AppSettings,
     model: ModelSpec,
     text: string,
