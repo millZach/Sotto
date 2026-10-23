@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
+import { BranchBundles, IncomingBundle, type AlreadyPresent, type PreparedBundle } from '../../src/main/agents/branchBundles'
 import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
 import { commitFile, git, incompressible, twoMachines } from '../fixtures/branchRepositories'
@@ -12,7 +12,7 @@ let machines: Awaited<ReturnType<typeof twoMachines>>
 beforeEach(async () => { machines = await twoMachines() })
 afterEach(async () => { await machines.close() })
 
-const sending = (value: PreparedBundle | BranchMoveRefusal): PreparedBundle => { expect(value.type).toBe('sending'); return value as PreparedBundle }
+const sending = (value: PreparedBundle | AlreadyPresent | BranchMoveRefusal): PreparedBundle => { expect(value.type).toBe('sending'); return value as PreparedBundle }
 const incoming = (value: unknown): IncomingBundle => { expect(value).toBeInstanceOf(IncomingBundle); return value as IncomingBundle }
 
 /** Carries a staged bundle into `receiver` in chunks, as the socket would. */
@@ -204,10 +204,10 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     const together = 4
     // Once armed, the read of each move's incoming ref answers only when all of them have, so every finish reaches its
     // record in the same turn.
-    let armed: Array<() => void> | undefined
+    const gate: { armed?: Array<() => void> } = {}
     const run: RunGitCommand = async (cwd, command, args, options) => {
       const output = await runGitStatusCommand(cwd, command, args, options)
-      const waiting = armed
+      const waiting = gate.armed
       if (waiting && args[0] === 'rev-parse' && args.includes('--quiet')) {
         await new Promise<void>(resolve => { waiting.push(resolve); if (waiting.length === together) for (const release of waiting) release() })
       }
@@ -221,7 +221,7 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
       await carry(laptop, prepared, receiving)
       return { moveId, receiving }
     }))
-    armed = []
+    gate.armed = []
     for (const receipt of await Promise.all(moves.map(({ receiving }) => forge.finish(receiving)))) expect(receipt).toMatchObject({ type: 'moved', commit })
     const records = JSON.parse(await readFile(machines.data('forge').recordsPath, 'utf8')) as { moves: Record<string, unknown> }
     expect(Object.keys(records.moves).sort()).toEqual(moves.map(({ moveId }) => moveId).sort())
