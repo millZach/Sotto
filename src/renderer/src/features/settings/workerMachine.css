@@ -1,15 +1,12 @@
 /* Settings, under Watcher: Where new workers start (#1032). A card per choice (ADR-0110): Let Watcher choose, This
-   computer and each paired machine, two to a row, one in a narrow window. The chosen card wears the accent surface and
-   edge; a machine not connected is a dashed outline with no fill. Status words take the warning ink only when something
-   is wrong; names and counts stay in the text colours. */
+   computer and each paired machine, two to a row, one in a narrow window. Every card is a fill with no outline; the chosen
+   one wears the selected card surface, and a machine not connected keeps its fill and says so in words. Status words take
+   the warning ink only when something is wrong; names and counts stay in the text colours. */
 .worker-machine__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; container-type: inline-size; }
 @container (width < 560px) { .worker-machine__choices > .worker-machine { grid-column: 1 / -1; } }
 .worker-machine { --worker-machine-warn: color-mix(in oklab, var(--tt-warning-text) 78%, var(--tt-text));
-  display: grid; align-content: start; gap: 6px; min-width: 0; padding: 13px 15px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); cursor: pointer; }
-.worker-machine:hover { border-color: var(--tt-hairline); }
-.worker-machine[data-checked] { border-color: var(--tt-accent-border); background: var(--tt-card-selected); }
-.worker-machine[data-off]:not([data-checked]) { border: 1px dashed var(--tt-field-border); background: transparent; }
-.worker-machine[data-off][data-checked] { border-style: dashed; }
+  display: grid; align-content: start; gap: 6px; min-width: 0; padding: 13px 15px; border: 0; border-radius: 12px; background: var(--tt-card); cursor: pointer; }
+.worker-machine[data-checked] { background: var(--tt-card-selected); }
 .worker-machine__head { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--tt-text-2); }
 .worker-machine__head > input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
 .worker-machine__head > svg { flex: none; }

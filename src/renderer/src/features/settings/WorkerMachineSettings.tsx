@@ -114,7 +114,7 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
         const facts = factsWords(choice)
         const titleId = `${name}-${choice.value}-title`, factsId = `${name}-${choice.value}-facts`, noteId = `${name}-${choice.value}-note`
         const Icon = choice.kind === 'local' ? Laptop : Server
-        return <label key={choice.value} className="worker-machine" data-checked={on || undefined} data-off={!choice.connected || undefined}>
+        return <label key={choice.value} className="worker-machine" data-checked={on || undefined}>
           <span className="worker-machine__head">
             <input type="radio" name={name} value={choice.value} checked={on} className="tt-focusable" aria-labelledby={titleId}
               aria-describedby={[facts !== null ? factsId : '', on && !choice.connected ? noteId : ''].filter(Boolean).join(' ') || undefined}
