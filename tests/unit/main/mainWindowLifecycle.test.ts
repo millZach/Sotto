@@ -151,4 +151,47 @@ describe('WindowManager lifecycle', () => {
     expect(quittingClose.preventDefault).not.toHaveBeenCalled()
     expect(main.hide).toHaveBeenCalledOnce()
   })
+
+  it('hides on close again when a quit that began is called off', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createMainWindow()
+    const main = windows[0]!
+
+    manager.beginQuit()
+    manager.cancelQuit()
+    const close = main.emit('close')
+
+    expect(close.preventDefault).toHaveBeenCalledOnce()
+    expect(main.hide).toHaveBeenCalledOnce()
+  })
+
+  it('makes the windows again after a restart closed them and the installer then refused', async () => {
+    const { createWindow, manager, windows } = createHarness()
+    await manager.createWindows()
+
+    // The restart began: Electron closes every window, and this one now closes instead of hiding.
+    manager.beginQuit()
+    for (const window of [windows[0]!, windows[1]!]) {
+      expect(window.emit('close').preventDefault).not.toHaveBeenCalled()
+      window.emit('closed')
+    }
+    await expect(manager.showMain()).rejects.toMatchObject({ code: 'WINDOW_MANAGER_STOPPED' })
+
+    manager.cancelQuit()
+    await manager.showMain()
+
+    expect(createWindow).toHaveBeenCalledTimes(3)
+    expect(windows[2]!.show).toHaveBeenCalledOnce()
+    expect(manager.getMainWebContents()).toBe(windows[2]!.webContents)
+  })
+
+  it('stays stopped once disposed, whatever calls a quit off', async () => {
+    const { manager } = createHarness()
+    await manager.createMainWindow()
+
+    manager.dispose()
+    manager.cancelQuit()
+
+    await expect(manager.showMain()).rejects.toMatchObject({ code: 'WINDOW_MANAGER_STOPPED' })
+  })
 })

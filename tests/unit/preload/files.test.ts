@@ -6,15 +6,15 @@ vi.mock('electron', async () => {
   return preloadElectron()
 })
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, type FileListRequest, type FileRequest } from '../../../src/shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, type FileListRequest, type FileRequest } from '../../../src/shared/files'
 
 const workspace = { threadId: 'thread', projectId: 'project', workingDirectory: 'C:/project', workspaceId: 'a'.repeat(64) }
 const request = { threadId: 'thread', path: 'file.md', workspaceId: workspace.workspaceId }
 describe('Files preload contract', () => {
-  it('exposes only the four typed methods on the main window, parses requests and replies', async () => {
+  it('exposes only the five typed methods on the main window, parses requests and replies', async () => {
     const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').files!
-    expect(Object.keys(bridge).sort()).toEqual(['copyPath', 'list', 'preview', 'reveal'])
+    expect(Object.keys(bridge).sort()).toEqual(['copyPath', 'list', 'preview', 'reveal', 'revealLink'])
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(createSottoWidgetBridge(ipc, 'win32')).not.toHaveProperty('files')
     const listing = { ok: true, value: { workspace, path: '', entries: [{ name: 'file.md', path: 'file.md', kind: 'file' }], truncated: false } }
@@ -31,6 +31,10 @@ describe('Files preload contract', () => {
       expect(await bridge[method]!(request)).toEqual(reply)
       expect(ipc.invoke).toHaveBeenLastCalledWith(channel, request)
     }
+    const link = { threadId: 'thread', path: 'C:/Users/me/file.pdf' }
+    ipc.invoke.mockResolvedValueOnce({ ok: true, value: {} })
+    expect(await bridge.revealLink!(link)).toEqual({ ok: true, value: {} })
+    expect(ipc.invoke).toHaveBeenLastCalledWith(FILES_REVEAL_LINK, link)
   })
   it('does not dispatch invalid paths, root overrides or tokenless stale selections', () => {
     const ipc = preloadElectron().ipcRenderer

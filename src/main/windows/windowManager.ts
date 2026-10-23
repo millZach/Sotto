@@ -259,6 +259,7 @@ export type RendererDiagnostic =
   | 'renderer-load-failed:widget:bundled'
   | 'renderer-process-gone-handler-failed:main'
   | 'renderer-process-gone-handler-failed:widget'
+  | 'renderer-cleanup-failed'
 
 export interface DevelopmentRendererSources {
   readonly main: URL
@@ -943,6 +944,15 @@ export class WindowManager {
     this.quitting = true
   }
 
+  /**
+   * Calls off a `beginQuit` whose quit did not go ahead, such as an installer that refused after Electron had closed
+   * every window for it. Windows may be made again; one already closed stays closed until something shows it. A manager
+   * that has been disposed stays stopped.
+   */
+  cancelQuit(): void {
+    this.quitting = false
+  }
+
   dispose(): void {
     if (this.disposed) {
       return
@@ -1325,7 +1335,13 @@ export class WindowManager {
       return
     }
     for (const cleanup of cleanups) {
-      cleanup()
+      // A window that has closed refuses some native calls ("Object has been destroyed"). One cleanup failing must not
+      // skip the others, and must not reach Electron as an uncaught exception from the closed event.
+      try {
+        cleanup()
+      } catch {
+        this.dependencies.log('renderer-cleanup-failed')
+      }
     }
   }
 

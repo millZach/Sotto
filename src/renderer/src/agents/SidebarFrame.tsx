@@ -78,7 +78,7 @@ export function RoomSwitch({ className }: { readonly className: string }): React
   </div>
 }
 
-/** The pages the switch does not reach, as icon links: Usage in Owl, Settings and Help, and Memory while memory is switched on. */
+/** The pages the switch does not reach, as icon links: Usage, Settings and Help, and Memory while memory is switched on. */
 export function PageLinks({ className, linkClassName }: { readonly className: string; readonly linkClassName: string }): ReactNode {
   const app = useOptionalApp()
   const memory = useMemoryEnabled()
