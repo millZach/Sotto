@@ -298,6 +298,16 @@ export class CodexAppServerHost implements AgentHost {
   /** The thread's app-server holds it with role files written for `widest` (#1042). */
   private recordLoadedRoles(id: string, widest: AgentRuntimeMode | undefined): void { if (widest) this.roleModes.set(id, widest) }
   /**
+   * A new thread's configuration and role table, once its own app-server has started for a start or a fork. Setup that
+   * fails lets that app-server go at once, rather than leaving it for the reaper (#1133).
+   */
+  private async newThreadSetup(id: string, effort: string | undefined, mode: AgentRuntimeMode): Promise<{ configuration: { config: Record<string, unknown> }; roles: LaunchRoles }> {
+    try {
+      const configuration = await this.threadConfiguration(id, effort)
+      return { configuration, roles: await this.launchRoles(id, mode, configuration.config) }
+    } catch (error) { this.creating.delete(id); this.stopSession(id); throw error }
+  }
+  /**
    * Role files keep the permission a thread was loaded with, so a thread whose confirmed permission is narrower lets its
    * app-server go: its next action loads it again with role files held to the new one (#1042).
    */
@@ -1483,13 +1493,8 @@ export class CodexAppServerHost implements AgentHost {
       server = await this.runtimeServer(request.threadId)
     } catch (error) { this.creating.delete(request.threadId); throw error }
     this.reaper.touch(request.threadId)
-    // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042). Setup that
-    // fails lets the fork's app-server go at once, as a start's does.
-    let configuration: { config: Record<string, unknown> }, roles: LaunchRoles
-    try {
-      configuration = await this.threadConfiguration(request.threadId, request.reasoningEffort)
-      roles = await this.launchRoles(request.threadId, request.runtimeMode ?? 'auto-accept-edits', configuration.config)
-    } catch (error) { this.creating.delete(request.threadId); this.stopSession(request.threadId); throw error }
+    // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
+    const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits')
     try {
       await this.rpc('thread/fork', { threadId: nativeSource, ...(lastTurnId ? { lastTurnId } : {}), cwd, model: request.modelId, modelProvider: 'openai',
         developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'), ...runtimePolicy(request.runtimeMode), ...configuration,
@@ -1589,11 +1594,7 @@ export class CodexAppServerHost implements AgentHost {
         try { server = await this.runtimeServer(command.threadId) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
-        let configuration: { config: Record<string, unknown> }, roles: LaunchRoles
-        try {
-          configuration = await this.threadConfiguration(command.threadId, command.reasoningEffort)
-          roles = await this.launchRoles(command.threadId, command.runtimeMode ?? 'auto-accept-edits', configuration.config)
-        } catch (error) { this.creating.delete(command.threadId); this.stopSession(command.threadId); throw error }
+        const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'),
           ...runtimePolicy(command.runtimeMode), ...configuration, ephemeral: false, historyMode: 'legacy' }, async value => {
