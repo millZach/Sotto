@@ -82,6 +82,13 @@ export function createE2EControllerFactory(scenario: E2EScenario): AppController
 }
 
 
+/** A fixed model list, so the cleanup model picker shows the same models in every capture. */
+const E2E_OPENROUTER_MODELS = [
+  { id: 'anthropic/claude-haiku-5.5', name: 'Anthropic: Claude Haiku 5.5' },
+  { id: 'google/gemini-3.1-flash-lite', name: 'Google: Gemini 3.1 Flash Lite' },
+  { id: 'inception/mercury-2', name: 'Inception: Mercury 2' },
+]
+
 /** A display-only saved-key fixture; never enters settings storage or an upload. */
 export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): SottoBridge {
   if (!enabled) return bridge
@@ -99,5 +106,6 @@ export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): 
     resetSettings: async () => configured(await bridge.resetSettings()),
     onSettingsChanged: (listener) => bridge.onSettingsChanged((settings) => listener(configured(settings))),
     checkOpenRouterKey: async () => ({ ok: true }),
+    listOpenRouterModels: async () => ({ ok: true, complete: true, models: E2E_OPENROUTER_MODELS }),
   }
 }

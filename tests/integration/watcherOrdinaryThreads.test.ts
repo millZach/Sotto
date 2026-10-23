@@ -20,7 +20,7 @@ import { museFixture } from '../fixtures/museFixture'
 
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
 
-const factories = { claude: claudeFixture, codex: codexFixture, grok: () => grokFixture(undefined, 2000, 60000), devin: devinFixture, muse: () => museFixture(undefined, 10_000) }
+const factories = { claude: claudeFixture, codex: codexFixture, grok: () => grokFixture(undefined, undefined, 60000), devin: devinFixture, muse: () => museFixture(undefined, 10_000) }
 const cleanups: (() => Promise<void>)[] = []
 async function nativePid(provider: keyof typeof factories, f: { root: string; realId(id: string): Promise<string> }, adapterId: string): Promise<number> {
   const sessionId = await f.realId(adapterId)
