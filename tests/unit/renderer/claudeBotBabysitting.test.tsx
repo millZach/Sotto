@@ -7,7 +7,7 @@ import type { AgentThread } from '../../../src/shared/agents'
 
 /** Claude bot's babysitting pose: at rest, muted, holding up a sign with a pull request's mark, never moving. */
 const setting = vi.hoisted(() => ({ creature: 'claude' as Creature }))
-vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreature: () => setting.creature }))
+vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreatureShown: () => true, useCreature: () => setting.creature }))
 
 afterEach(() => {
   cleanup()

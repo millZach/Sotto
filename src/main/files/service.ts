@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import { constants, type BigIntStats } from 'node:fs'
 import { open, opendir, realpath, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema,
-  type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
+import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema,
+  type FileLink, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
 import { rasterImage } from './imagePreview'
 
 export interface FilesBinding { threadId: string; projectId: string; workingDirectory: string; previewOnly?: boolean }
@@ -181,4 +182,35 @@ export class FilesService {
   }
   copyPath(payload: unknown): Promise<FilesResult<FilePath>> { return this.pathAction(payload, 'copyPath') }
   reveal(payload: unknown): Promise<FilesResult<FilePath>> { return this.pathAction(payload, 'reveal') }
+
+  /**
+   * Shows a file a thread's message links to. An absolute or `~/` path may point anywhere on this computer, since
+   * showing a file in its folder selects it and opens nothing; a relative one is read from the thread's working folder
+   * and must stay inside it, as in Files. The path as written wins; failing that, without a trailing location such as
+   * `:12`, `#L12` or `#page=2`.
+   */
+  revealLink(payload: unknown): Promise<FilesResult<FileLink>> {
+    return this.run(async () => {
+      const parsed = fileLinkRequestSchema.safeParse(payload)
+      if (!parsed.success) return fail('invalid-request', 'This link is not a file path. Nothing was opened.')
+      const { threadId, path } = parsed.data
+      // Only a live thread on this computer may show files, whatever form the path takes.
+      const workspace = await this.workspace(threadId)
+      const relativeToThread = !/^~(?:[\\/]|$)/u.test(path) && !isAbsolute(path)
+      const located = async (candidate: string): Promise<{ absolutePath: string; stats: BigIntStats } | null> => {
+        const absolute = relativeToThread ? resolve(workspace.root, candidate) : /^~/u.test(candidate) ? resolve(homedir(), candidate.slice(2)) : candidate
+        try {
+          const absolutePath = await realpath(absolute)
+          return { absolutePath, stats: await stat(absolutePath, { bigint: true }) }
+        } catch { return null }
+      }
+      const bare = path.replace(/(?:#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?|#page=\d+|:\d+(?:[:-]\d+)?)$/u, '')
+      const found = await located(path) ?? (bare && bare !== path ? await located(bare) : null)
+      if (!found) return fail('path-unavailable', 'This file is not on this computer, or it has moved. Nothing was opened.')
+      if (relativeToThread && !inside(workspace.root, found.absolutePath)) return fail('path-outside-workspace', 'This link points outside the thread’s folder. Nothing was opened.')
+      if (!found.stats.isFile() && !found.stats.isDirectory()) return fail('path-unavailable', 'This link is not a file or folder. Nothing was opened.')
+      await this.dependencies.reveal(found.absolutePath)
+      return {}
+    })
+  }
 }

@@ -43,7 +43,7 @@ const agents = (page: Page) => agentState(page)
 
 async function openBeside(page: Page, title: string): Promise<void> {
   const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-  await sidebar.getByRole('button', { name: title, exact: true }).hover()
+  await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
   await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
 }
 

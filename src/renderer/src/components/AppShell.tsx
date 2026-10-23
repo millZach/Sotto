@@ -30,7 +30,7 @@ export interface AppShellProps {
    * hands the whole window to a page that owns its own chrome (Threads,
    * Settings): its navigation, its window controls and the update
    * control live inside it. `sidebar` seats the Threads sidebar beside the
-   * page (Dictate, Usage in Owl, Help), with the window controls on the room's top
+   * page (Dictate, Usage, Help), with the window controls on the room's top
    * edge and the page's sentence at its foot.
    */
   readonly layout?: AppLayout
@@ -157,7 +157,7 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 
 /**
  * Which layout a page takes. Threads, Watcher's room and Settings own the window, their left column wearing the
- * sidebar's frame; Dictate, Usage in Owl and Help stand beside the Threads sidebar itself; the strip and footer remain
+ * sidebar's frame; Dictate, Usage and Help stand beside the Threads sidebar itself; the strip and footer remain
  * for the Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates
  * included; Watcher's room is the Threads page while its gate is off.
  */
