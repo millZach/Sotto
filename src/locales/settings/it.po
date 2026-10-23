@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: it\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr "{count, plural, one {Tema rimosso.} other {# temi rimossi.}}"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr "Impossibile esportare {name}."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr "{name} esportato."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr "Aspetto"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr "Intensità di colori e bordi."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr "Schema colori salvato."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr "Contrasto"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr "Contrasto salvato."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr "Creatura nascosta."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr "Creatura salvata."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr "Creatura mostrata."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr "Colore dello sforzo salvato."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr "L’esportazione non è disponibile in questa finestra."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr "Lingua"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr "Lingua salvata."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr "Menu, pulsanti e messaggi. Quello che detti e quello che scrivono gli agenti resta com’è."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr "Anteprima"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr "Ripristina il contrasto al {amount}"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr "Come questo computer ({computerLanguage})"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr "Impossibile salvare quel tema. Il tema precedente è ancora attivo."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr "Tema salvato."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr "Temi, contrasto e movimento"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr "Le traduzioni sono nuove e arrivano prima su Owl. Alcune parole potrebbero essere ancora in inglese."

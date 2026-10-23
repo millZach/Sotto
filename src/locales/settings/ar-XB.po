@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: ar-XB\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr ""
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr ""
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr ""
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr ""
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr ""
