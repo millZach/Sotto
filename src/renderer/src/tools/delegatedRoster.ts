@@ -1,4 +1,4 @@
-import { hostForThread, PROVIDER_LABELS, type AgentHostSnapshot, type AgentThread } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, type AgentHostSnapshot, type AgentState, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_WORK_TITLES, type DelegatedView, type DelegationOutcome, type DelegationView } from '../../../shared/delegation'
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { SubagentRow, SubagentSummary } from '../../../shared/subagents'
@@ -77,7 +77,27 @@ export interface DelegatedRosterRow {
   /** Provider · kind of work · model · effort · start time, each only where it is known. */
   readonly meta: readonly string[]
   readonly provider: string | undefined
+  /** The machine it runs on, by name, and whether Sotto is connected to it now (#1310). */
+  readonly machine: RosterMachine
+  /**
+   * Its machine is not connected, so what the row says is as Sotto last read it there (#1310): its last outcome, greyed, never
+   * guessed as Unknown. `asOf` is when that read stood, when known; NaN otherwise.
+   */
+  readonly lastRead: boolean
+  readonly asOf: number
+  /** Its start on another machine began at Ask for approval because that machine held it there (#1310). */
+  readonly held: DelegatedView['held']
 }
+
+/** A machine a delegated thread runs on, as Tools › Agents names it (#1310). */
+export interface RosterMachine {
+  readonly hostId: string | undefined
+  readonly name: string
+  readonly remote: boolean
+  readonly connected: boolean
+}
+/** Every thread on this computer, as a roster without Work across machines sees them all. */
+export const THIS_COMPUTER: RosterMachine = { hostId: undefined, name: 'This computer', remote: false, connected: true }
 
 const time = (iso: string | undefined): number => iso === undefined ? Number.NaN : Date.parse(iso)
 
@@ -92,8 +112,15 @@ function briefOf(thread: AgentThread, views: readonly DelegatedView[]): string |
   return undefined
 }
 
-/** What the window has read of a thread's delegations: the ones it made and the briefs it was sent. */
-export interface DelegationReadOf { readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[] }
+/**
+ * What the window has read of a thread's delegations: the ones it made and the briefs it was sent. For a thread on another
+ * machine (#1310), when what it holds is as Sotto last read it there, its machine not connected now (`lastReadAt`), or why
+ * Sotto could not read it at all (`unread`).
+ */
+export interface DelegationReadOf {
+  readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[]
+  readonly lastReadAt?: number | undefined; readonly unread?: 'older-host' | 'not-connected' | undefined
+}
 /** The reads the window holds, by thread ID; a thread not read yet has no entry. */
 export type DelegationReads = ReadonlyMap<string, DelegationReadOf>
 
@@ -106,7 +133,8 @@ const delegatedViewsOf = (threadId: string, made: readonly DelegationView[]): De
  * own read of the briefs it was sent. Its start is only ever the brief that started it, never a later send's. Once both
  * reads have answered and neither holds anything of it, its outcome is unknown, never guessed.
  */
-function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefined, parent: DelegationReadOf | undefined, own: DelegationReadOf | undefined, host: AgentHostSnapshot): DelegatedRosterRow {
+function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefined, parent: DelegationReadOf | undefined, own: DelegationReadOf | undefined, host: AgentHostSnapshot,
+  machine: RosterMachine): DelegatedRosterRow {
   const known = new Map(delegatedViewsOf(thread.id, parent?.made ?? []).map(view => [view.id, view] as const))
   for (const view of own?.received ?? []) if (!known.has(view.id)) known.set(view.id, view)
   const views = [...known.values()].sort((first, second) => time(first.createdAt) - time(second.createdAt))
@@ -126,9 +154,12 @@ function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefine
   const outcome = remote ? (isThreadTurnRunning(thread) ? 'working' : undefined)
     : newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
   const status = threadNeedsYou(thread) ? 'needs' : outcome
+  // A thread whose machine is not connected keeps what Sotto last read of it, greyed, as of when the connection was lost.
+  const lastRead = machine.remote && !machine.connected
+  const asOf = lastRead ? parent?.lastReadAt ?? own?.lastReadAt ?? Number.NaN : Number.NaN
   return { thread, level, delegatedBy, newest, startedAt, endedAt: working ? Number.NaN : time(newest?.outcomeAt), waitingFor,
-    status, finished: thread.finishedUnread === true && status !== 'needs' && status !== 'working' && status !== 'background',
-    brief: briefOf(thread, views), meta, provider }
+    status, finished: !lastRead && thread.finishedUnread === true && status !== 'needs' && status !== 'working' && status !== 'background',
+    brief: briefOf(thread, views), meta, provider, machine, lastRead, asOf, held: start?.held }
 }
 
 const newestFirst = (first: { readonly startedAt: number }, second: { readonly startedAt: number }): number => {
@@ -142,10 +173,69 @@ const newestFirst = (first: { readonly startedAt: number }, second: { readonly s
  * holds the window's reads by thread: the owner's and each first-level thread's that delegated, and a delegated thread's
  * own where its delegating thread's read no longer holds the brief that started it (`threadsMissingStarts`).
  */
-export function delegatedRoster(ownerId: string, threads: readonly AgentThread[], reads: DelegationReads, host: AgentHostSnapshot): DelegatedRosterRow[][] {
-  return families(ownerId, threads).map(({ thread, below }) => ({ row: rowOf(thread, 1, undefined, reads.get(ownerId), reads.get(thread.id), host), below }))
+export function delegatedRoster(ownerId: string, threads: readonly AgentThread[], reads: DelegationReads, host: AgentHostSnapshot,
+  machineOf: (thread: AgentThread) => RosterMachine = () => THIS_COMPUTER): DelegatedRosterRow[][] {
+  return families(ownerId, threads).map(({ thread, below }) => ({ row: rowOf(thread, 1, undefined, reads.get(ownerId), reads.get(thread.id), host, machineOf(thread)), below }))
     .sort((first, second) => newestFirst(first.row, second.row))
-    .map(({ row, below }) => [row, ...below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host)).sort(newestFirst)])
+    .map(({ row, below }) => [row, ...below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host, machineOf(child))).sort(newestFirst)])
+}
+
+/**
+ * The machine a thread runs on, as the window names its hosts: This computer for its own, a paired host by its name, and
+ * whether the window is connected to it now (#1310).
+ */
+export function rosterMachine(connections: AgentState['connections'], thread: Pick<AgentThread, 'hostId' | 'remoteHost' | 'hostLabel' | 'clientConnected' | 'clientReconnecting'>): RosterMachine {
+  if (thread.remoteHost !== true) return { ...THIS_COMPUTER, hostId: thread.hostId }
+  const listed = connections?.find(item => item.hostId === thread.hostId)
+  return { hostId: thread.hostId, name: listed?.name ?? thread.hostLabel ?? 'Remote host', remote: true,
+    connected: (listed?.connected ?? thread.clientConnected !== false) && thread.clientReconnecting !== true }
+}
+
+/** One machine's part of a roster grouped by machine (variant B of the remote roster prototype, #1310). */
+export interface RosterMachineGroup {
+  readonly machine: RosterMachine
+  readonly families: readonly DelegatedRosterRow[][]
+  /** Whether this is the delegating thread's own machine, whose provider's agents are listed with it. */
+  readonly own: boolean
+  /** Sotto could not read these threads' delegations there: that machine's Sotto does not offer them. */
+  readonly olderHost: boolean
+}
+
+/**
+ * The roster grouped under a heading per machine (Zach's pick, variant B, October 23, 2026, #1310), or null where it is
+ * not: only with Work across machines on, and only when the delegating thread or one of its delegated threads runs on
+ * another machine than this computer, so a roster of this computer's threads alone keeps its single list. The delegating
+ * thread's own machine comes first, then the others by name. `ownerRead` is the delegating thread's own read.
+ */
+export function rosterByMachine(owner: RosterMachine, families: readonly DelegatedRosterRow[][], reads: DelegationReads, ownerRead: DelegationReadOf | undefined,
+  crossMachine: boolean): RosterMachineGroup[] | null {
+  if (!crossMachine || !owner.remote && families.every(family => family.every(row => !row.machine.remote))) return null
+  const keyOf = (machine: RosterMachine): string => machine.remote ? machine.hostId ?? machine.name : ''
+  const ownKey = keyOf(owner)
+  const groups = new Map<string, { machine: RosterMachine; families: DelegatedRosterRow[][] }>([[ownKey, { machine: owner, families: [] }]])
+  for (const family of families) {
+    const first = family[0]
+    if (!first) continue
+    // Before #1316 a delegated thread runs where the thread that delegated to it runs, so a family stays together.
+    const key = keyOf(first.machine)
+    const group = groups.get(key) ?? { machine: first.machine, families: [] }
+    group.families.push(family)
+    groups.set(key, group)
+  }
+  const olderHost = (key: string, group: { readonly families: readonly DelegatedRosterRow[][] }): boolean => (key === ownKey && ownerRead?.unread === 'older-host')
+    || group.families.some(family => family.some(row => reads.get(row.thread.id)?.unread === 'older-host'))
+  return [...groups.entries()].sort(([first, a], [second, b]) => first === ownKey ? -1 : second === ownKey ? 1 : a.machine.name.localeCompare(b.machine.name))
+    .map(([key, group]) => ({ machine: group.machine, families: group.families, own: key === ownKey, olderHost: group.machine.remote && olderHost(key, group) }))
+}
+
+/**
+ * A machine's heading count: "5 threads · 2 agents · 1 working", without what is working while it is not connected
+ * (variant B). The agents are the delegating thread's provider's own, on its own machine.
+ */
+export function machineCount(group: Pick<RosterMachineGroup, 'machine' | 'families'>, agents: Pick<SubagentSummary, 'total' | 'working'> | undefined): string {
+  const rows = group.families.flat()
+  const working = rows.filter(row => row.status === 'working' || row.status === 'background').length + (agents?.working ?? 0)
+  return [plural(rows.length, 'thread'), ...agents?.total ? [plural(agents.total, 'agent')] : [], ...group.machine.connected && working ? [`${working} working`] : []].join(' · ')
 }
 
 function families(ownerId: string, threads: readonly AgentThread[]): { readonly thread: AgentThread; readonly below: readonly AgentThread[] }[] {

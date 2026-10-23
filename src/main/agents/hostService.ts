@@ -24,6 +24,8 @@ import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import type { DelegationViews } from './delegationIpc'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
@@ -115,6 +117,16 @@ export interface HostService {
    */
   readonly supportsHostDelegation?: boolean
   desktopDefaults?(defaults: DesktopDefaultsInput, client?: ClientIdentity): Promise<DesktopDefaultsReceipt>
+  /**
+   * The host answers the desktop window's read of its own threads' delegations (#1310), present only where it runs
+   * delegation for them: what a thread delegated and was sent, and a delegated thread's newest brief, never a reply. Thread
+   * IDs are the host's own. `subscribeDelegationViews` hears the threads whose delegations changed; on a desktop's
+   * connection to a host it also hears the connection lost and taken again, after which every read may have moved.
+   */
+  readonly supportsDelegationViews?: boolean
+  delegationViews?(threadId: string): Promise<DelegationsRead>
+  delegationBrief?(threadId: string): Promise<DelegationBrief>
+  subscribeDelegationViews?(listener: (change: DelegationViewsChange) => void): () => void
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -189,6 +201,9 @@ export interface HostService {
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
+
+/** What a host's delegation reads hear: the threads whose delegations changed, or its connection lost or taken again. */
+export type DelegationViewsChange = { readonly threadIds: readonly string[] } | { readonly connected: boolean }
 
 export interface RequestAnswerRecovery {
   uncertainRequestIds: string[]
@@ -299,7 +314,9 @@ export class LocalHostService implements HostService {
     /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
     projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
-    desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> } }) {
+    desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
+    /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
+    delegationViews?: DelegationViews }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -317,6 +334,21 @@ export class LocalHostService implements HostService {
   desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {
     if (!this.options.desktopDefaults) return Promise.reject(new Error('This host does not keep desktop defaults.'))
     return this.options.desktopDefaults.record(client.clientId, defaults)
+  }
+  get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
+  /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */
+  async delegationViews(threadId: string): Promise<DelegationsRead> {
+    if (!this.options.delegationViews) throw new Error('This host does not run delegation for its threads.')
+    const { made, received } = this.options.delegationViews.views(threadId)
+    return { threadId, delegations: [...made], received: [...received] }
+  }
+  async delegationBrief(threadId: string): Promise<DelegationBrief> {
+    if (!this.options.delegationViews) throw new Error('This host does not run delegation for its threads.')
+    const text = this.options.delegationViews.brief(threadId)
+    return text === undefined ? null : { threadId, text }
+  }
+  subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
+    return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {

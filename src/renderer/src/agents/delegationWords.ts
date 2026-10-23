@@ -80,9 +80,13 @@ export function delegationWaitLine(view: DelegatedView, now: number, delegator?:
  * what turned it down, that nothing was started or sent, and what would let it through where the user can change that.
  * Main's own words for a refusal were written for the agent that asked, so the card words the rule itself.
  */
-export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'>): string {
+export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'>, parentMachine?: string): string {
   const start = view.action === 'start'
   const nothing = start ? 'Nothing was started.' : 'Nothing was sent.'
+  // A thread on another machine delegates only on its own machine until #1316 (#1310, the remote roster prototype's words).
+  if (view.refusal === 'MACHINE_UNAVAILABLE' && parentMachine !== undefined) {
+    return `This thread runs on ${parentMachine}, and a thread on ${parentMachine} can start threads only on ${parentMachine}. ${nothing} Ask again without naming a machine to start it on ${parentMachine}.`
+  }
   switch (view.refusal) {
     case 'NOT_ADMITTED': return `This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. ${nothing}`
     case 'LEVEL_LIMIT': return `This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. ${nothing}`
@@ -105,6 +109,38 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'MACHINE_UNAVAILABLE': return `The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. ${nothing}`
     default: return `Sotto turned it down. ${nothing}`
   }
+}
+
+/**
+ * A delegated thread's outcome as Sotto last read it, its machine not connected now (#1310, Zach's word on October 23,
+ * 2026): "Working when last read", never Unknown for what was known.
+ */
+export const lastReadWord = (outcome: DelegationOutcome): string => `${DELEGATION_OUTCOME_WORDS[outcome]} when last read`
+
+const LAST_READ_WAS: Readonly<Record<DelegationOutcome | 'needs', string>> = {
+  working: 'It was working', background: 'Its background work was still running', answered: 'It had answered', failed: 'It had failed',
+  stopped: 'It had stopped', paused: 'It was paused', unknown: 'Sotto could not tell how it stood', refused: 'It was refused', needs: 'It was waiting for you',
+}
+/**
+ * How a delegated thread stood when Sotto last read it on `machine`, which is not connected now, at `asOf` when known: what
+ * a roster row's details and a card's line say (#1310). Losing the connection stops nothing there.
+ */
+export function lastReadOutcome(machine: string, outcome: DelegationOutcome | 'needs' | undefined, asOf: number): string {
+  const when = Number.isFinite(asOf) ? ` at ${clockLabel(asOf)}` : ''
+  const was = outcome === undefined ? '' : `${LAST_READ_WAS[outcome]}${when}, when Sotto last read it. `
+  return `${was}${machine} is not connected, so Sotto cannot read how it went since. It reads it again when ${machine} reconnects.`
+}
+
+/** Why a delegated thread on another machine started at Ask for approval, on its row and card (#1310, the prototype's words). */
+export function heldLine(held: 'not-told' | 'no-answer-grant', machine: string): string {
+  return held === 'not-told' ? `Started at Ask for approval: ${machine} had no new-thread default from this computer yet.`
+    : `Held to Ask for approval: ${machine} does not take your answers from this computer.`
+}
+/** The same, in full, with what to do, where a row's details say its latest outcome. */
+export function heldOutcome(held: 'not-told' | 'no-answer-grant', machine: string): string {
+  return held === 'not-told'
+    ? `It started at Ask for approval, because ${machine} had not been sent your new-thread default from this computer when it started. Threads started on ${machine} from now on use your default.`
+    : `It started at Ask for approval, because ${machine} does not take your answers from this computer, so a thread there cannot be given more. To let it, set ${machine} up again in Settings › Hosts & phones.`
 }
 
 /** The delegated threads below this one, at both levels, whose turn is running now: what Stop on it also stops. */

@@ -420,6 +420,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
     ...(desktopDefaults ? { desktopDefaults } : {}),
+    // And answers the desktop window's read of those threads' delegations, for its Tools › Agents and cards (#1310).
+    ...(desktopDefaults && delegationRecord ? { delegationViews: delegationRecord } : {}),
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only

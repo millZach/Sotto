@@ -15,7 +15,7 @@ import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
+  delegationHostHoldSchema, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
@@ -180,6 +180,11 @@ const recordSchema = z.object({
    * left running was never seen to end (#1263). Whether the delegating thread has been told so, by a wake-up or a read.
    */
   releasedAt: z.iso.datetime().optional(), releaseTold: z.literal(true).optional(),
+  /**
+   * A start on a headless host whose role asked for more than Ask for approval and got Ask for approval because the host had
+   * no desktop defaults yet, or no desktop that sent them may answer there (#1310): what the desktop's roster says.
+   */
+  held: delegationHostHoldSchema.optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -516,7 +521,7 @@ export class DelegationService {
       ...(unknownWhy ? { unknownWhy } : {}), told: record.told === outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
-      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record) }
+      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}) }
   }
   /** A refused delegation as the window shows it: the rule that turned it down, and the turn the call was made in. */
   private refusedView(refused: RefusedDelegation): RefusedView {
@@ -874,7 +879,8 @@ export class DelegationService {
     const fromRole = byRole?.runtimeMode && input.permission === undefined ? this.heldToCeiling(byRole.runtimeMode, model, caller, snapshot.models) : undefined
     const permission = this.permission(model, caller, snapshot.models, input.permission ?? fromRole?.mode)
     const delegatedThreadId = randomUUID()
-    const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
+    const hostHeld = fromRole?.held?.by === 'not-told' || fromRole?.held?.by === 'no-answer-grant' ? fromRole.held.by : undefined
+    const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}) })
     this.add(record)
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })

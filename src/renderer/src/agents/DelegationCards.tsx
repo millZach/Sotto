@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlert, GitFork, Laptop, Server } from 'lucide-react'
+import { CircleAlert, GitFork, Laptop, Server, ShieldCheck } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationView, type RefusedView } from '../../../shared/delegation'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, stopLine, userTurnRunning, workingDelegatedThreads } from './delegationWords'
+import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, heldLine, lastReadOutcome, lastReadWord, stopLine, userTurnRunning, workingDelegatedThreads } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
-import { openDelegatedThread } from '../tools/delegatedRoster'
+import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
+import { useOwlFeature } from '../state/owlFeature'
 import './delegation.css'
 
 /** What a card needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -19,6 +20,11 @@ export interface DelegationCardWorld {
   /** False where the page holds its clock still (a capture run): a wait in progress keeps the time it was drawn with. */
   readonly liveClock: boolean
   readonly now?: number | undefined
+  /**
+   * The delegating thread's machine where it is another machine and Work across machines is on (#1310): its name, whether
+   * Sotto is connected to it now, and when what the cards show stood, while it is not.
+   */
+  readonly away?: { readonly name: string; readonly connected: boolean; readonly lastReadAt: number } | undefined
 }
 const DelegationCardContext = createContext<DelegationCardWorld | null>(null)
 
@@ -26,9 +32,13 @@ const DelegationCardContext = createContext<DelegationCardWorld | null>(null)
  * The transcript's world for its cards, built once per state the transcript is given. A card's link opens its thread as
  * a delegated thread's roster row does: in the pane, with an open Tools kept on the thread that delegated it.
  */
-export function useDelegationCardWorld(state: AgentState, command: AgentConnection['command'], now?: number): DelegationCardWorld {
+export function useDelegationCardWorld(state: AgentState, command: AgentConnection['command'], now?: number,
+  from?: { readonly thread: AgentThread; readonly lastReadAt: number | undefined }): DelegationCardWorld {
   const threads = state.host.threads
   const connections = state.connections
+  const crossMachine = useOwlFeature('cross-machine-work')
+  const machine = crossMachine && from?.thread.remoteHost === true ? rosterMachine(connections, from.thread) : undefined
+  const awayName = machine?.name, awayConnected = machine?.connected, lastReadAt = from?.lastReadAt
   return useMemo(() => {
     const byId = new Map(threads.map(thread => [thread.id, thread]))
     return { thread: id => byId.get(id), hostName: thread => threadHostName({ connections }, thread),
@@ -36,23 +46,25 @@ export function useDelegationCardWorld(state: AgentState, command: AgentConnecti
         const from = byId.get(id)?.delegatedBy
         if (from === undefined) void command({ type: 'select-thread', threadId: id })
         else openDelegatedThread(command, id, from)
-      }, liveClock: now === undefined, now }
-  }, [threads, connections, command, now])
+      }, liveClock: now === undefined, now,
+      ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}) }
+  }, [threads, connections, command, now, awayName, awayConnected, lastReadAt])
 }
 export function DelegationCardProvider({ world, children }: { readonly world: DelegationCardWorld; readonly children: ReactNode }): ReactNode {
   return <DelegationCardContext.Provider value={world}>{children}</DelegationCardContext.Provider>
 }
 
 /** The outcome's ring and word, coloured by the outcome. */
-function Outcome({ view }: { readonly view: DelegatedView }): ReactNode {
-  return <span className="delegation-card__outcome" data-outcome={view.outcome}>
-    <span className="delegation-ring" data-outcome={view.outcome} aria-hidden="true" />{DELEGATION_OUTCOME_WORDS[view.outcome]}
+function Outcome({ view, lastRead = false }: { readonly view: DelegatedView; readonly lastRead?: boolean }): ReactNode {
+  return <span className="delegation-card__outcome" data-outcome={view.outcome} data-last-read={lastRead || undefined}>
+    <span className="delegation-ring" data-outcome={view.outcome} data-last-read={lastRead || undefined} aria-hidden="true" />{lastRead ? lastReadWord(view.outcome) : DELEGATION_OUTCOME_WORDS[view.outcome]}
   </span>
 }
 
 /** The wait line, counting the seconds while the delegating thread waits in the call. */
 function WaitLine({ view, id, world }: { readonly view: DelegatedView; readonly id: string; readonly world: DelegationCardWorld }): ReactNode {
-  const ticking = view.waiting && world.liveClock
+  const away = world.away?.connected === false ? world.away : undefined
+  const ticking = view.waiting && world.liveClock && !away
   const [now, setNow] = useState(() => world.now ?? Date.now())
   useEffect(() => {
     if (!ticking) return
@@ -60,17 +72,20 @@ function WaitLine({ view, id, world }: { readonly view: DelegatedView; readonly 
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [ticking])
-  return <p id={id} className="delegation-card__wait">{delegationWaitLine(view, world.now ?? now)}</p>
+  // Its machine is not connected: how it stood when Sotto last read it, never a wait still counting (#1310).
+  return <p id={id} className="delegation-card__wait">{away ? lastReadOutcome(away.name, view.outcome, away.lastReadAt) : delegationWaitLine(view, world.now ?? now)}</p>
 }
 
 /** The provider's mark and name, then the machine, under a card's first line. */
-function Where({ id, provider, thread, world, children }: { readonly id: string; readonly provider: ProviderId | undefined; readonly thread: AgentThread | undefined
-  readonly world: DelegationCardWorld; readonly children?: ReactNode }): ReactNode {
+function Where({ id, provider, thread, world, children, machine: shown = true }: { readonly id: string; readonly provider: ProviderId | undefined; readonly thread: AgentThread | undefined
+  readonly world: DelegationCardWorld; readonly children?: ReactNode
+  /** False for a refused start of a thread on another machine, which names no machine it could have started on (#1310). */
+  readonly machine?: boolean }): ReactNode {
   const machine = thread ? world.hostName(thread) : 'This computer'
   const Machine = thread?.remoteHost ? Server : Laptop
   return <p id={id} className="delegation-card__meta">
-    {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span><span aria-hidden="true">·</span></> : null}
-    <span className="delegation-card__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span>
+    {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span>{shown ? <span aria-hidden="true">·</span> : null}</> : null}
+    {shown ? <span className="delegation-card__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span> : null}
     {children}
   </p>
 }
@@ -91,8 +106,8 @@ function RefusedDelegationCard({ view, world }: { readonly view: RefusedView; re
       <span className="delegation-card__lead">{lead}</span>
       <span className="delegation-card__name" title={title}>{title}</span>
     </div>
-    <Where id={`delegation-${view.id}-details`} provider={view.provider ?? thread?.providerId} thread={thread} world={world} />
-    <p className="delegation-card__wait">{delegationRefusalLine(view)}</p>
+    <Where id={`delegation-${view.id}-details`} provider={view.provider ?? thread?.providerId} thread={thread} world={world} machine={thread !== undefined || world.away === undefined} />
+    <p className="delegation-card__wait">{delegationRefusalLine(view, world.away?.name)}</p>
   </div>
 }
 
@@ -107,6 +122,9 @@ export function DelegationCard({ view }: { readonly view: DelegationView }): Rea
   const thread = world.thread(view.thread)
   const title = thread?.title ?? DELEGATION_WORK_TITLES[view.work]
   const detailsId = `delegation-${view.id}-details`, waitId = `delegation-${view.id}-wait`
+  const lastRead = world.away?.connected === false
+  // Its start was held to Ask for approval on its machine (#1310), said as the roster says it.
+  const held = view.held && world.away ? heldLine(view.held, thread ? world.hostName(thread) : world.away.name) : undefined
   return <div className="delegation-card" role="group" aria-label={`Delegated to ${title}`} data-outcome={view.outcome}>
     <div className="delegation-card__top">
       <GitFork size={15} aria-hidden="true" className="delegation-card__glyph" />
@@ -115,12 +133,13 @@ export function DelegationCard({ view }: { readonly view: DelegationView }): Rea
         ? <button type="button" className="delegation-card__link tt-focusable" aria-label={`Open ${title}`} aria-describedby={`${detailsId} ${waitId}`} title={title}
           onClick={() => world.open(view.thread)}>{title}</button>
         : <span className="delegation-card__name">{title}</span>}
-      <Outcome view={view} />
+      <Outcome view={view} lastRead={lastRead} />
     </div>
     <Where id={detailsId} provider={thread?.providerId} thread={thread} world={world}>
-      <span className="tt-visually-hidden">, {DELEGATION_OUTCOME_WORDS[view.outcome]}.</span>
+      <span className="tt-visually-hidden">, {lastRead ? lastReadWord(view.outcome) : DELEGATION_OUTCOME_WORDS[view.outcome]}.</span>
     </Where>
     <WaitLine view={view} id={waitId} world={world} />
+    {held ? <p className="delegation-card__held"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></p> : null}
   </div>
 }
 

@@ -144,6 +144,8 @@ export const DELEGATION_RENDERER_ARGUMENT = '--sotto-delegation-enabled'
  * one still open, and the newest briefs it was sent: enough for every card and brief a busy thread's history shows.
  */
 export const DELEGATION_VIEWS_MAX = 200
+/** Why a headless host held a delegated start to Ask for approval (#1310); `HostCeilingHold` in `desktopDefaults.ts`. */
+export const delegationHostHoldSchema = z.enum(['not-told', 'no-answer-grant'])
 /** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
 export const delegationNotSentSchema = z.enum(['target-changed', 'paused', 'stopped', 'provider', 'restarted'])
 /** A delegation main accepted: a thread was started or sent a brief, and it has one of Watcher's outcomes. */
@@ -175,6 +177,11 @@ export const delegatedViewSchema = z.object({
   wait: z.object({ seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS), startedAt: z.iso.datetime(), wentOnAt: z.iso.datetime().optional() }).strict().optional(),
   /** The `delegate` call for this brief is still under way: starting the thread, sending the brief, or waiting for the outcome. */
   waiting: z.boolean(),
+  /**
+   * Why a start on a headless host began at Ask for approval when its role asked for more (#1310): the host had no new-thread
+   * default from a desktop yet (`not-told`), or no desktop that told it may answer there (`no-answer-grant`).
+   */
+  held: delegationHostHoldSchema.optional(),
 }).strict()
 export type DelegatedView = z.infer<typeof delegatedViewSchema>
 /**
@@ -207,9 +214,21 @@ export const delegationsReadSchema = z.object({ threadId: id,
   delegations: z.array(delegationViewSchema).max(DELEGATION_VIEWS_MAX * 2),
   /** The briefs the thread was sent by the thread that delegated to it, oldest first. A refused send sent nothing. */
   received: z.array(delegatedViewSchema).max(DELEGATION_VIEWS_MAX),
+  /**
+   * For a thread on another machine that is not connected now (#1310): the answer is what Sotto last read there, as it
+   * stood when the connection was lost, at this time. Absent for an answer read just now.
+   */
+  lastRead: z.iso.datetime().optional(),
+  /**
+   * For a thread on another machine whose delegations Sotto could not read at all: its Sotto does not offer them
+   * (`older-host`), or it is not connected and Sotto has read nothing there since it started (`not-connected`).
+   */
+  unread: z.enum(['older-host', 'not-connected']).optional(),
 }).strict()
 export type DelegationsRead = z.infer<typeof delegationsReadSchema>
-export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(10_000) }).strict()
+/** The most threads one word of change names. */
+export const DELEGATIONS_CHANGED_MAX = 10_000
+export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(DELEGATIONS_CHANGED_MAX) }).strict()
 /**
  * The newest brief a delegated thread was sent, in full, as Tools › Agents shows it when its row is opened (October 17,
  * 2026): the user message the delegation record names in that thread, and nothing else of it, never a reply. Read only

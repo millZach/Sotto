@@ -35,7 +35,7 @@ import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
-import { stateWithoutDelegation } from '../shared/delegation'
+import { delegationBriefSchema, delegationsReadSchema, stateWithoutDelegation, DELEGATIONS_CHANGED_MAX } from '../shared/delegation'
 import { MAX_AGENT_ACTIVITIES } from '../shared/agentActivity'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
@@ -101,7 +101,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -264,6 +264,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
     // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
     && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
+    && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
@@ -287,7 +289,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
-    .filter(feature => feature !== 'host-delegation' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
@@ -694,6 +696,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!isAgentThreadDetailDelta(update)) waiting.set(update.threadId, update)
     detailPublisher.publish(update)
   })
+  // Which threads' delegations changed (#1310), named to each desktop whose hello accepts `delegation-views`; it reads again
+  // only the ones it shows. A thread this peer is not sent is not named to it.
+  const unsubscribeDelegations = service.subscribeDelegationViews?.(change => {
+    if (!('threadIds' in change) || closing) return
+    for (const peer of peers) {
+      if (!peer.ready || !peer.delegationViews || peer.frames.isClosed) continue
+      const threadIds = change.threadIds.filter(threadId => !hiddenThread(peer, threadId)).slice(0, DELEGATIONS_CHANGED_MAX)
+      if (threadIds.length) push(peer, { v: 1, event: 'delegations-changed', threadIds })
+    }
+  })
   /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
   const askingProviderModes = (input: AgentCommand): string[] => {
     if (input.type !== 'create-thread' && input.type !== 'configure-thread') return []
@@ -987,6 +999,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
         peer.usageMuseOpenCode = (request.accepts?.includes('usage-muse-opencode') ?? false) && offers(peer, 'usage-muse-opencode')
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
+        peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
         // A provider is sent to this client only once its hello says it knows the provider (#1107).
         peer.unknownProviders = providersUnknownTo(request.accepts)
         for (const id of [...peer.observed]) if (hiddenThread(peer, id)) { peer.observed.delete(id); peer.held.delete(id); peer.opening.delete(id) }
@@ -1110,6 +1123,17 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { read = projectOriginsSchema.parse(await service.projectOrigins()) } catch { throw new Refusal('unavailable') }
         // A project of a provider this peer does not know is not named to it (#1107).
         return { projects: read.projects.filter(project => !unknownProviderProject(peer, project.projectId)) }
+      }
+      case 'delegation-views': {
+        // Delegation's own record of one of this host's threads (#1310), read for a recorded desktop's window, never a reply.
+        if (!offers(peer, 'delegation-views') || !service.delegationViews) throw new Refusal('invalid_request')
+        const read = await toolRead(() => service.delegationViews!(request.threadId))
+        try { return delegationsReadSchema.parse(read) } catch { throw new Refusal('unavailable') }
+      }
+      case 'delegation-brief': {
+        if (!offers(peer, 'delegation-views') || !service.delegationBrief) throw new Refusal('invalid_request')
+        const brief = await toolRead(() => service.delegationBrief!(request.threadId))
+        try { return delegationBriefSchema.parse(brief) } catch { throw new Refusal('unavailable') }
       }
       case 'desktop-defaults': {
         // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
@@ -1359,7 +1383,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
@@ -1396,7 +1420,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     server.removeAllListeners('request')
     server.removeAllListeners('upgrade')
     server.removeAllListeners('connection')

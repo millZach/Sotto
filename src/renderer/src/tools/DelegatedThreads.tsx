@@ -1,11 +1,13 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Eye, SquareArrowOutUpRight } from 'lucide-react'
+import { ChevronRight, Eye, ShieldCheck, SquareArrowOutUpRight } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { ProviderMark } from '../agents/ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegationWaitLine } from '../agents/delegationWords'
+import { DELEGATION_OUTCOME_WORDS, delegationWaitLine, heldLine, heldOutcome, lastReadOutcome, lastReadWord } from '../agents/delegationWords'
 import { useDelegationsOf, useFullBrief } from '../agents/delegations'
 import { useShared } from '../agents/stateSharing'
-import { delegatedRoster, delegatingBelow, openAction, threadsMissingStarts, type DelegatedRosterRow } from './delegatedRoster'
+import { delegatedRoster, delegatingBelow, openAction, rosterMachine, threadsMissingStarts, type DelegatedRosterRow, type DelegationReads } from './delegatedRoster'
+import { clockLabel } from '../agents/threadFacts'
+import { useOwlFeature } from '../state/owlFeature'
 import { elapsedLabel } from './rosterTime'
 import '../agents/delegation.css'
 
@@ -27,25 +29,32 @@ const NO_THREADS: readonly AgentThread[] = []
  * The delegated threads below `ownerId`, two levels, each family newest start first, from the snapshot and the
  * delegation reads of the owner and of each first-level thread that delegated in turn. Nothing without a source.
  */
-export function useDelegatedRoster(ownerId: string, source: DelegatedRosterSource | undefined): readonly DelegatedRosterRow[][] {
+export function useDelegatedRoster(ownerId: string, source: DelegatedRosterSource | undefined): { readonly families: readonly DelegatedRosterRow[][]; readonly reads: DelegationReads } {
   const threads = source?.state.host.threads ?? NO_THREADS
   const host = source?.state.host
+  const connections = source?.state.connections
   const delegating = useMemo(() => host === undefined ? [] : [ownerId, ...delegatingBelow(ownerId, threads)], [host, ownerId, threads])
   const made = useDelegationsOf(delegating)
   // A delegated thread whose start its delegating thread's read no longer holds is read for its own briefs.
   const missing = useMemo(() => threadsMissingStarts(ownerId, threads, made), [ownerId, threads, made])
   const own = useDelegationsOf(missing)
   const reads = useMemo(() => own.size ? new Map([...made, ...own]) : made, [made, own])
-  return useShared(useMemo(() => host === undefined ? NO_FAMILIES : delegatedRoster(ownerId, threads, reads, host), [host, ownerId, threads, reads]))
+  // Each row's machine, and what Sotto last read there while it is not connected, only where Work across machines is on (#1310).
+  const crossMachine = useOwlFeature('cross-machine-work')
+  const families = useShared(useMemo(() => host === undefined ? NO_FAMILIES
+    : delegatedRoster(ownerId, threads, reads, host, crossMachine ? thread => rosterMachine(connections, thread) : undefined), [host, ownerId, threads, reads, connections, crossMachine]))
+  return useMemo(() => ({ families, reads }), [families, reads])
 }
 
 /**
  * What a delegated thread's row says it is doing, in its sidebar row's words where it has them: what it waits on you
  * for, Needs attention for an error, Just finished until it is opened (ADR-0046), otherwise its delegation's outcome.
  */
-export function delegatedStatusWord(row: Pick<DelegatedRosterRow, 'status' | 'waitingFor' | 'finished'>): string | undefined {
+export function delegatedStatusWord(row: Pick<DelegatedRosterRow, 'status' | 'waitingFor' | 'finished'> & Partial<Pick<DelegatedRosterRow, 'lastRead'>>): string | undefined {
   if (row.status === 'needs') return row.waitingFor === 'question' ? 'Needs your answer' : row.waitingFor === 'approval' ? 'Needs your approval' : 'Needs attention'
   if (row.finished) return 'Just finished'
+  // Its machine is not connected: the outcome Sotto last read there, said as such (#1310).
+  if (row.lastRead === true && row.status !== undefined) return lastReadWord(row.status)
   return row.status === undefined ? undefined : DELEGATION_OUTCOME_WORDS[row.status]
 }
 
@@ -59,24 +68,29 @@ function DelegatedElapsed({ row, live }: { readonly row: DelegatedRosterRow; rea
     document.addEventListener('visibilitychange', visibility)
     return () => document.removeEventListener('visibilitychange', visibility)
   }, [])
-  const ticking = working && live && visible && Number.isFinite(row.startedAt)
+  // A thread whose machine is not connected is as Sotto last read it, so its clock stops too.
+  const ticking = working && live && visible && !row.lastRead && Number.isFinite(row.startedAt)
   useEffect(() => {
     if (!ticking) return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [ticking])
+  if (row.lastRead && Number.isFinite(row.asOf)) return <span title="When Sotto last read it">as of {clockLabel(row.asOf)}</span>
   const duration = (working ? now : row.endedAt) - row.startedAt
   return Number.isFinite(duration) ? <span>{elapsedLabel(duration)}</span> : null
 }
 
 /** The latest word on a delegated thread in its details: what it waits on you for, then how its delegation stands. */
 function latestOutcome(row: DelegatedRosterRow, now: number): string {
+  // Its machine is not connected: how it stood when Sotto last read it, and that Sotto reads it again on reconnecting.
+  if (row.lastRead) return lastReadOutcome(row.machine.name, row.status, row.asOf)
   const waiting = row.waitingFor === 'approval' ? 'It is waiting for your approval. Open it to answer there; nothing is answered from here.'
     : row.waitingFor === 'question' ? 'It is waiting for your answer. Open it to answer there; nothing is answered from here.'
     : row.status === 'needs' ? 'Its agent reported an error. Open it to see what happened.' : undefined
   const outcome = row.newest ? delegationWaitLine(row.newest, now, row.delegatedBy) : undefined
-  return [waiting, outcome].filter(Boolean).join(' ') || 'Open it to see where it stands.'
+  const held = row.held ? heldOutcome(row.held, row.machine.name) : undefined
+  return [waiting, held, outcome].filter(Boolean).join(' ') || 'Open it to see where it stands.'
 }
 
 /**
@@ -92,17 +106,18 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
   const status = delegatedStatusWord(row)
   const action = openAction(row, shown)
   const outcome = row.status === 'needs' ? 'needs' : row.finished ? 'finished' : row.status
+  const held = row.held && !row.lastRead ? heldLine(row.held, row.machine.name) : undefined
   // The preview is the excerpt the window holds; open, the row reads the whole brief from main.
   const brief = useFullBrief(row.thread.id, row.newest?.id, open) ?? row.brief
   const close = (event: React.KeyboardEvent): void => {
     if (!open || event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault(); setOpen(false); head.current?.focus()
   }
-  return <li className="subagent-item subagent-item--thread" data-thread-id={row.thread.id} data-nested={row.level > 1 || undefined}
+  return <li className="subagent-item subagent-item--thread" data-thread-id={row.thread.id} data-nested={row.level > 1 || undefined} data-last-read={row.lastRead || undefined}
     style={{ '--subagent-depth': row.level - 1 } as React.CSSProperties} onKeyDown={close}>
     <div className="delegated-row" data-needs={row.status === 'needs' || undefined} data-shown={shown || undefined}>
-      <button ref={head} type="button" className="subagent-head tt-focusable" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
-        aria-label={[title, `delegated thread${row.provider ? ` on ${row.provider}` : ''}`, status].filter(Boolean).join(', ')} aria-describedby={`${id}-meta`}>
+      <button ref={head} type="button" className="subagent-head tt-focusable" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} data-held={held ? '' : undefined}
+        aria-label={[title, `delegated thread${row.provider ? ` on ${row.provider}` : ''}`, status, held].filter(Boolean).join(', ')} aria-describedby={`${id}-meta`}>
         <span className="subagent-lead delegated-row__mark" data-provider={row.thread.providerId}><ProviderMark provider={row.thread.providerId} name={row.provider ?? 'Provider'} size={15} /></span>
         <span className="subagent-main">
           <span className="delegated-row__title-line"><span className="subagent-title" title={title}>{title}</span><span className="delegated-row__marker">Thread</span></span>
@@ -111,8 +126,9 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
         </span>
         <span className="subagent-right">
           <span className="subagent-time"><DelegatedElapsed row={row} live={live} /><ChevronRight size={12} aria-hidden="true" /></span>
-          {status ? <span className="delegated-row__status" data-outcome={outcome}><span className="delegation-ring" data-outcome={outcome} aria-hidden="true" />{status}</span> : null}
+          {status ? <span className="delegated-row__status" data-outcome={outcome} data-last-read={row.lastRead || undefined}><span className="delegation-ring" data-outcome={outcome} data-last-read={row.lastRead || undefined} aria-hidden="true" />{status}</span> : null}
         </span>
+        {held ? <span className="delegated-row__held"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></span> : null}
       </button>
       {action.kind === 'shown'
         ? <span className="delegated-row__shown"><Eye size={13} aria-hidden="true" />In the pane</span>
@@ -122,7 +138,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
         </button>}
     </div>
     {open ? <div className="subagent-details" id={id}>
-      {brief ? <><h3>Brief</h3><p>{brief}</p></> : null}
+      {brief ? <><h3>Brief</h3>{row.lastRead && brief === row.brief ? <p className="delegated-row__source">The start of the brief, as Sotto last read it from {row.machine.name}.</p> : null}<p>{brief}</p></> : null}
       <h3>Latest outcome</h3>
       <p className="subagent-result" data-needs={row.status === 'needs' || undefined}>{latestOutcome(row, Date.now())}</p>
     </div> : null}

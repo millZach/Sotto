@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, ChevronRight, Users } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Laptop, Server, Unplug, Users } from 'lucide-react'
 import type { WorkflowProgress } from '../../../shared/agentActivity'
 import { distinctModels, type SubagentAssignment, type SubagentRow, type SubagentsBridge } from '../../../shared/subagents'
 import { type SubagentsStore, useThreadSubagents } from './subagentsStore'
@@ -7,7 +7,8 @@ import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
 import { AgentContinue, AgentContinueContext, type AgentContinueOptions } from './AgentContinue'
 import { clockLabel } from '../agents/threadFacts'
 import { DelegatedThreadRow, useDelegatedRoster, type DelegatedRosterSource } from './DelegatedThreads'
-import { mixedRoster, rosterCounts } from './delegatedRoster'
+import { machineCount, mixedRoster, rosterByMachine, rosterCounts, rosterMachine, THIS_COMPUTER, type RosterBlock, type RosterMachineGroup } from './delegatedRoster'
+import { useOwlFeature } from '../state/owlFeature'
 import { elapsedLabel } from './rosterTime'
 import './agentsSurface.css'
 
@@ -204,6 +205,17 @@ function WorkflowPage({ threadId, row, agents, bridge }: { readonly threadId: st
 }
 
 /**
+ * A machine that is not connected, above the roster (#1310): its threads are as Sotto last read them, and losing the
+ * connection stopped nothing there.
+ */
+function MachineAway({ group }: { readonly group: RosterMachineGroup }): ReactNode {
+  const asOf = group.families.flat().map(row => row.asOf).find(Number.isFinite)
+  const name = group.machine.name
+  return <p className="roster-notice" role="status"><Unplug size={15} aria-hidden="true" />
+    <span>{name} is not connected. {group.families.length ? `These threads are as Sotto last read them${asOf === undefined ? '' : ` at ${clockLabel(asOf)}`}. ` : ''}Losing the connection stops nothing on {name}.</span></p>
+}
+
+/**
  * `rosterSignal` is for a thread on a paired host, whose host pushes no roster changes: what the thread's shell says of
  * its agents, so a change there reads the roster again.
  */
@@ -213,8 +225,14 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   /** The thread's delegated threads, listed with its agents (ADR-0081), where the Owl list turns delegation on. */
   readonly delegation?: DelegatedRosterSource | undefined }): ReactNode {
   const state = useThreadSubagents(store, threadId)
-  const families = useDelegatedRoster(threadId, delegation)
+  const { families, reads } = useDelegatedRoster(threadId, delegation)
   const delegatedRows = useMemo(() => families.flat(), [families])
+  // Grouped under a heading per machine where Work across machines is on and a machine other than this computer is in it
+  // (#1310, Zach's pick, variant B); a roster of this computer's threads alone keeps its single list.
+  const crossMachine = useOwlFeature('cross-machine-work')
+  const ownerThread = useMemo(() => delegation?.state.host.threads.find(item => item.id === threadId), [delegation?.state.host.threads, threadId])
+  const owner = useMemo(() => ownerThread ? rosterMachine(delegation?.state.connections, ownerThread) : THIS_COMPUTER, [ownerThread, delegation?.state.connections])
+  const groups = useMemo(() => families.length ? rosterByMachine(owner, families, reads, reads.get(threadId), crossMachine) : null, [families, owner, reads, threadId, crossMachine])
   useEffect(() => { store.activate(bridge, threadId); return () => store.deactivate() }, [store, bridge, threadId])
   const followed = useRef(rosterSignal)
   useEffect(() => {
@@ -249,8 +267,15 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   // Beside delegated threads, the count names both and says what needs you (variant B of the roster prototype).
   const counts = families.length ? rosterCounts(delegatedRows, state.summary) : null
   const blocks = useMemo(() => families.length ? mixedRoster(roster, families) : null, [families, roster])
+  const grouped = useMemo(() => groups?.map(group => ({ group, blocks: mixedRoster(group.own ? roster : [], group.families) })).filter(item => item.blocks.length) ?? null, [groups, roster])
+  const headingId = useId()
   const live = delegation?.liveClock !== false
   const onOpenThread = delegation?.open
+  const rosterItems = (list: readonly RosterBlock[]): ReactNode[] => list.flatMap(block => block.kind === 'threads'
+    ? block.rows.map(row => <DelegatedThreadRow key={`thread:${row.thread.id}`} row={row} shown={row.thread.id === delegation?.shownThreadId} live={live} onOpen={onOpenThread!} />)
+    : block.rows.map(({ row, depth }) => row.kind === 'workflow'
+      ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
+      : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} startMeta />))
   const loadEarlier = state.before !== undefined ? <button type="button" className="files-link tt-focusable subagents-older" disabled={state.loading} onClick={() => void store.page(threadId, true)}>{state.loading ? 'Loading agents…' : 'Load earlier agents'}</button> : null
   const error = state.error ? <p role="status">{state.error} <button type="button" className="files-link tt-focusable" onClick={() => void store.page(threadId)}>Try again</button></p> : null
   // An open agent inside the page answers Escape first; only then does Escape leave the page.
@@ -266,13 +291,23 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
     <div className="subagents-roster">
       {open ? <WorkflowPage key={`${state.resetVersion}:${open.id}`} threadId={threadId} row={open} agents={pageAgents} bridge={bridge} /> : <>
         {!roster.length && !blocks && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p>{state.loading ? 'Loading agents…' : 'No agents spawned in this thread yet.'}</p></div> : null}
-        {blocks && onOpenThread
+        {grouped && onOpenThread
+          // A heading per machine with its count, and that machine's delegated threads under it (#1310, variant B).
+          ? <>
+            {grouped.filter(({ group }) => group.machine.remote && !group.machine.connected).map(({ group }) => <MachineAway key={`away:${group.machine.hostId ?? group.machine.name}`} group={group} />)}
+            {grouped.map(({ group, blocks: machineBlocks }, index) => <section key={`machine:${group.machine.hostId ?? group.machine.name}`} className="roster-machine" aria-labelledby={`${headingId}-${index}`}>
+              <h3 className="roster-machine__head" id={`${headingId}-${index}`}>
+                <span className="roster-machine__name">{group.machine.remote ? <Server size={13} aria-hidden="true" /> : <Laptop size={13} aria-hidden="true" />}{group.machine.name}</span>
+                <span>{machineCount(group, group.own ? state.summary : undefined)}</span>
+                {group.machine.connected ? null : <span className="roster-machine__off">not connected</span>}
+              </h3>
+              {group.olderHost ? <p className="roster-machine__note">{group.machine.name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update {group.machine.name} in Settings › Hosts & phones to see them.</p> : null}
+              <ul className="subagents-list" data-mixed="" aria-label={`Delegated threads${group.own && roster.length ? ' and agents' : ''} on ${group.machine.name}, newest first`}>{rosterItems(machineBlocks)}</ul>
+            </section>)}
+          </>
+          : blocks && onOpenThread
           // Delegated threads and the provider's own agents in one list, newest start first (ADR-0081, variant B).
-          ? <ul className="subagents-list" data-mixed="" aria-label="Delegated threads and agents, newest first">{blocks.flatMap(block => block.kind === 'threads'
-            ? block.rows.map(row => <DelegatedThreadRow key={`thread:${row.thread.id}`} row={row} shown={row.thread.id === delegation?.shownThreadId} live={live} onOpen={onOpenThread} />)
-            : block.rows.map(({ row, depth }) => row.kind === 'workflow'
-              ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
-              : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} startMeta />))}</ul>
+          ? <ul className="subagents-list" data-mixed="" aria-label="Delegated threads and agents, newest first">{rosterItems(blocks)}</ul>
           : <ul className="subagents-list" aria-label="Spawned agents">{roster.map(({ row, depth }) => row.kind === 'workflow'
             ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
             : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} />)}</ul>}

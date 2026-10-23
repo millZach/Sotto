@@ -18,6 +18,7 @@ import { HOST_CEILING_HOLD_WORDS } from '../../src/shared/desktopDefaults'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { rawPeer } from '../fixtures/rawHostPeer'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 
 const OWL = '0.1.38-owl.20261013.1'
 const STABLE = '0.1.38'
@@ -56,10 +57,10 @@ async function hostFixture(version = OWL) {
   const model = host.service.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
   /** A desktop the launch script recorded, paired and connected over the host's socket. */
   const recorded: string[] = []
-  const desktop = async (record = true) => {
+  const desktop = async (record = true, crossMachineEnabled = false) => {
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
     if (record) { recorded.push(pairing.clientId); await writeFile(join(root, DESKTOP_CLIENTS_FILE), JSON.stringify(recorded)) }
-    const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId })
+    const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId, crossMachineEnabled })
     clients.push(socket)
     const hello = await socket.connect()
     return { socket, pairing, hello }
@@ -112,6 +113,13 @@ async function hostFixture(version = OWL) {
     await peer.call('hello', { op: 'hello' })
     return await peer.call('defaults', { op: 'desktop-defaults', defaults })
   }
+  /** Any request sent as it is on the wire, after hello, whatever the client was offered: the host's own answer. */
+  const rawCall = async (clientId: string, operation: Record<string, unknown>) => {
+    const peer = await rawPeer(host.descriptor!.port, host.pairing.signSession(clientId, Date.now()))
+    cleanups.push(async () => peer.frames.close())
+    await peer.call('hello', { op: 'hello' })
+    return await peer.call('request', operation)
+  }
   /** The host's own owner forgets a paired desktop, as `--revoke-client` does. Its answers grant stays on record. */
   const revoke = async (clientId: string) => {
     const response = await fetch(url + '/v1/admin/revoke-client', { method: 'POST',
@@ -126,7 +134,7 @@ async function hostFixture(version = OWL) {
     await command({ type: 'connect', provider: 'codex' })
   }
   return { root, get host() { return host }, get url() { return url }, provider, get native() { return native }, command, desktop, answers, revoke, restart,
-    session, parentThread, call, start, reply, thread, model, project, descriptor, raw }
+    session, parentThread, call, start, reply, thread, model, project, descriptor, raw, rawCall }
 }
 
 it('lets a thread on a host start a child on its own machine under the desktop defaults, and tells it the outcome there', async () => {
@@ -316,6 +324,9 @@ it('starts nothing on a stable host: no tool, no feature, and desktop defaults a
   expect(f.provider.tools.some(tools => tools.name === 'sotto_delegate')).toBe(false)
   expect(await f.call(parent.threadId, 'delegate', {})).toBeUndefined()
   await expect(stat(join(f.root, 'desktop-defaults.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  // Nor does it answer a desktop's read of its threads' delegations (#1310).
+  expect(hello.features).not.toContain('delegation-views')
+  expect(await f.rawCall(pairing.clientId, { op: 'delegation-views', threadId: parent.threadId })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
 })
 
 it('offers desktop defaults to a recorded desktop only, and a phone\'s request is refused', async () => {
@@ -326,4 +337,79 @@ it('offers desktop defaults to a recorded desktop only, and a phone\'s request i
   await expect(socket.desktopDefaults({ newThreadRuntimeMode: 'full-access' })).rejects.toMatchObject({ code: 'version_mismatch' })
   expect(await f.raw(pairing.clientId, { newThreadRuntimeMode: 'full-access' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   await expect(stat(join(f.root, 'desktop-defaults.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  // Nor its threads' delegations (#1310).
+  expect(hello.features).not.toContain('delegation-views')
+  expect(await f.rawCall(pairing.clientId, { op: 'delegation-brief', threadId: randomUUID() })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+})
+
+it('answers a recorded desktop\'s read of its threads\' delegations, names those that changed, and the desktop keeps the last read while the host is away', async () => {
+  const f = await hostFixture()
+  const { socket, pairing, hello } = await f.desktop(true, true)
+  expect(hello.features).toContain('delegation-views')
+  expect(socket.supportsDelegationViews).toBe(true)
+  const router = new DesktopHostRouter(emptyDesktopState)
+  cleanups.push(async () => router.dispose())
+  const connection = (service: SocketHostService) => ({ hostId: pairing.hostId, name: 'Synthetic host', kind: 'remote' as const, service, detail: (id: string) => service.readThreadDetail(id), preview: () => null })
+  router.add(connection(socket))
+  const changed: string[] = []
+  router.subscribeDelegationViews(threadIds => { changed.push(...threadIds) })
+  const key = (id: string): string => hostEntityKey(pairing.hostId, id)
+  const parent = await f.parentThread()
+
+  // A host never told holds a role's permission to Ask for approval, and its record says why, for the roster's line.
+  const started = await f.call(parent.threadId, 'delegate', { work: 'building', brief: 'Synthetic brief for the roster', provider: 'codex', model: f.model.id, effort: 'low', wait_seconds: 0 }) as
+    { status: string; delegation: { id: string; thread: string } }
+  expect(started.status).toBe('ok')
+  const child = started.delegation.thread
+  await expect.poll(() => changed).toEqual(expect.arrayContaining([key(parent.threadId), key(child)]))
+  const read = await router.delegationViews(key(parent.threadId))
+  expect(read).toMatchObject({ threadId: key(parent.threadId), received: [] })
+  expect(read.lastRead).toBeUndefined()
+  expect(read.delegations).toEqual([expect.objectContaining({ id: started.delegation.id, thread: key(child), work: 'building', outcome: 'working', held: 'not-told' })])
+  expect((await router.delegationViews(key(child))).received).toEqual([expect.objectContaining({ id: started.delegation.id, thread: key(child) })])
+  expect(await router.delegationBrief(key(child))).toEqual({ threadId: key(child), text: 'Synthetic brief for the roster' })
+  // Another machine is refused before #1316, and the refusal is read as recorded.
+  await f.start(parent.threadId, 'approval-required', { machine: randomUUID() })
+  await expect.poll(async () => (await router.delegationViews(key(parent.threadId))).delegations.some(view => view.outcome === 'refused' && view.refusal === 'MACHINE_UNAVAILABLE')).toBe(true)
+
+  // The child answers: the host names the parent again, and its outcome reads answered, never with the child's words.
+  changed.length = 0
+  await f.reply(child, 'Synthetic child finding')
+  await expect.poll(() => changed).toContain(key(parent.threadId))
+  await expect.poll(async () => (await router.delegationViews(key(parent.threadId))).delegations.find(view => view.id === started.delegation.id)?.outcome).toBe('answered')
+  expect(JSON.stringify(await router.delegationViews(key(parent.threadId)))).not.toContain('Synthetic child finding')
+
+  // The host goes away: the window is told, and is given what Sotto last read there, as of then; no brief is read.
+  changed.length = 0
+  router.setReconnecting(pairing.hostId, true)
+  await socket.close()
+  expect(changed).toEqual(expect.arrayContaining([key(parent.threadId), key(child)]))
+  const away = await router.delegationViews(key(parent.threadId))
+  expect(away.lastRead).toEqual(expect.any(String))
+  expect(away.delegations.find(view => view.id === started.delegation.id)).toMatchObject({ outcome: 'answered' })
+  expect(await router.delegationBrief(key(child))).toBeNull()
+
+  // It connects again: told again, and read afresh from the host's own record.
+  changed.length = 0
+  const again = new SocketHostService({ url: f.url, token: pairing.token, expectedHostId: pairing.hostId, crossMachineEnabled: true })
+  cleanups.push(async () => again.close())
+  await again.connect()
+  router.replace(connection(again))
+  expect(changed).toEqual(expect.arrayContaining([key(parent.threadId)]))
+  const back = await router.delegationViews(key(parent.threadId))
+  expect(back.lastRead).toBeUndefined()
+  expect(back.delegations.find(view => view.id === started.delegation.id)).toMatchObject({ outcome: 'answered' })
+}, 60_000)
+
+it('tells a desktop that does not accept it nothing, and its router says the host does not offer the read', async () => {
+  const f = await hostFixture()
+  const { socket, pairing, hello } = await f.desktop(true, false)
+  // The host lists it to a recorded desktop; this desktop, without Work across machines, neither reads nor hears it.
+  expect(hello.features).toContain('delegation-views')
+  expect(socket.supportsDelegationViews).toBe(false)
+  await expect(socket.delegationViews(randomUUID())).rejects.toMatchObject({ code: 'version_mismatch' })
+  const router = new DesktopHostRouter(emptyDesktopState)
+  cleanups.push(async () => router.dispose())
+  router.add({ hostId: pairing.hostId, name: 'Synthetic host', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
+  expect((await router.delegationViews(hostEntityKey(pairing.hostId, randomUUID()))).unread).toBe('older-host')
 })

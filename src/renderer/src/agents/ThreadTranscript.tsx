@@ -632,7 +632,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const delegationsOn = useDelegationsEnabled()
   const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
   const delegationCards = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
-  const cardWorld = useDelegationCardWorld(state, command)
+  const cardWorld = useDelegationCardWorld(state, command, undefined, { thread, lastReadAt: delegations.lastReadAt })
   const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? 'The thread that delegated'
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
