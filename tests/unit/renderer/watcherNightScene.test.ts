@@ -95,6 +95,42 @@ describe('the night scene in the margins', () => {
   })
 })
 
+describe('beside the message scrubber', () => {
+  /** The scrubber's lane, as the transcript draws it: the 44 pixels left of the column, down the transcript's height. */
+  const withLane = (width: number, height: number, lane = 44): SceneMeasure => {
+    const base = room(width, height)
+    return { ...base, lane: { x: base.composer.x - lane, y: base.header, w: lane, h: base.composer.y - 8 - base.header } }
+  }
+
+  it('lays the left margin out from the lane’s outer edge, so Watcher’s owl and its tree’s owls stand clear of it', () => {
+    for (const [width, height] of [[1600, 1000], [1280, 800]] as const) {
+      const measure = withLane(width, height)
+      const layout = layoutScene(measure)
+      const edge = measure.lane!.x
+      expect(layout.mode, `${width}x${height}`).toBe('trees')
+      expect(layout.home.x + 20 * layout.s, `${width}x${height}`).toBeLessThan(edge)
+      for (const spot of layout.spots.filter(item => item.x < layout.column.left)) expect(spot.x + 18, `${spot.kind} at ${spot.x}`).toBeLessThan(edge)
+      // The lane is kept like words: nothing of the landscape, a star or a ripple shows in it.
+      expect(quietAt(layout, edge + 10, measure.lane!.y + 100)).toBe(0)
+      expect(layout.words).toContainEqual(measure.lane)
+    }
+  })
+
+  it('shows the rail of eyes on the right alone when the lane leaves the left margin too narrow', () => {
+    const measure = { ...room(820, 560, { composer: { x: 16, y: 356, w: 788, h: 110 } }) }
+    const layout = layoutScene({ ...measure, lane: { x: 0, y: 48, w: 18, h: 300 } })
+    expect(layout.mode).toBe('rail')
+    expect(layout.spots.length).toBeGreaterThan(10)
+    expect(layout.spots.every(spot => spot.x > layout.column.right)).toBe(true)
+  })
+
+  it('keeps Watcher’s owl off the composer’s left branch, whose perch reaches into the lane', () => {
+    expect(nextPlace('home', 0.9)).toBe('composer')
+    expect(nextPlace('home', 0.9, false)).toBe('tree')
+    expect(nextPlace('tree', 0.1, false)).toBe('composer')
+  })
+})
+
 describe('Watcher’s owl', () => {
   const layout = layoutScene(room(1600, 1000))
 

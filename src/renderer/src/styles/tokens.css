@@ -167,6 +167,16 @@
   --tt-panel: var(--theme-surface);
   --tt-sidebar: var(--theme-sidebar);
   --tt-field: var(--theme-surface);
+  /* A card is a filled container with no outline, one step off the room: the raised surface by night, a step
+     darker than the canvas by day (set in the light block below). Rows inside it divide with a line of the inset,
+     and fields, samples and tracks inside it take the inset too. The selected card or item wears the accent
+     surface mixed into the card. */
+  --tt-card: var(--theme-surface-raised);
+  --tt-card-inset: var(--theme-canvas);
+  --tt-card-selected: color-mix(in oklab, var(--theme-accent-surface) 65%, var(--tt-card));
+  /* A segmented control is a sunken track with the chosen segment raised out of it: the overlay by night, the
+     surface by day (set in the light block below). */
+  --tt-segment-on: var(--theme-surface-overlay);
 
   --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
@@ -309,8 +319,8 @@
   --tt-chart-1: #3792fd;
   --tt-chart-2: #b85207;
   --tt-chart-3: #1dcaf7;
-  --tt-chart-4: #bf3584;
-  --tt-chart-5: #8054d6;
+  --tt-chart-4: #c33786;
+  --tt-chart-5: #8056d6;
   --tt-chart-6: #c99414;
   --tt-chart-other: #9e9e9e;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
@@ -341,7 +351,6 @@
   --tt-radius-sm: 6px;
   --tt-radius-md: 10px;
   --tt-radius-lg: 14px;
-  --tt-radius-pill: 999px;
   --tt-font-ui:
     'Figtree', ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -352,6 +361,9 @@
 
 :root[data-theme='light'] {
   --theme-contrast-target: black;
+  /* By day the raised surface is barely off the canvas, so a card is the canvas with a little of the text in it. */
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-segment-on: var(--theme-surface);
   --tt-glass-blur: 12px;
   --tt-glass-saturation: 1.14;
   --tt-success: oklch(0.445 0.11 158);
@@ -364,7 +376,7 @@
   --tt-provider-ink: #0b0d0c;
   --tt-chart-1: #0554a3;
   --tt-chart-2: #883c04;
-  --tt-chart-3: #0f91b2;
+  --tt-chart-3: #038db6;
   --tt-chart-4: #980563;
   --tt-chart-5: #885ee0;
   --tt-chart-6: #a07506;

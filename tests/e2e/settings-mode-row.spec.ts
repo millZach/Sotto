@@ -42,7 +42,7 @@ test('Settings mode row fits and keeps keyboard navigation', async () => {
         expect(bounds.rowRight).toBeLessThanOrEqual(bounds.right)
         expect(bounds.clipped).toBe(0)
         expect(bounds.labels.map(label => label.name)).toEqual(['Dictate', 'Threads'])
-        expect(bounds.labels.every(label => label.fits && label.font === '12.5px')).toBe(true)
+        expect(bounds.labels.every(label => label.fits && label.font === '14px')).toBe(true)
         expect(Math.max(...bounds.labels.map(label => label.width)) - Math.min(...bounds.labels.map(label => label.width))).toBeLessThan(1)
         await page.screenshot({ path: join(evidence, `settings-two-${width}-${appearance}.png`) })
       }

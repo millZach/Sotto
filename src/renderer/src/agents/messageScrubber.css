@@ -1,0 +1,40 @@
+/* The message scrubber (ADR-0109; Owl only; Zach's picks on October 22, 2026: ticks A, card B): a column of ticks in the
+   transcript's left margin, one for each message the user sent, faint until the pointer or the keyboard reaches it. The
+   ticks near the pointer rise on a normal curve; the card beside them is square, with a clear border. Every colour is a
+   theme role. The lane's width and place come from MessageScrubber.tsx, measured from the column. */
+
+.message-scrubber { position: absolute; z-index: 2; top: 0; bottom: 0; left: var(--scrubber-left); width: var(--scrubber-lane); opacity: .55; }
+.message-scrubber:hover, .message-scrubber:focus-within, .message-scrubber[data-active] { opacity: 1; }
+.message-scrubber__tick { position: absolute; left: 0; width: 100%; height: var(--scrubber-hit); min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer; transform: translateY(-50%);
+  --rest: 10px; --peak: 24px; }
+.message-scrubber[data-narrow] .message-scrubber__tick { --rest: 8px; --peak: 14px; }
+.message-scrubber__tick::before { content: ''; position: absolute; top: 50%; right: var(--scrubber-gap); width: calc(var(--rest) + (var(--peak) - var(--rest)) * var(--rise, 0));
+  height: 2px; margin-top: -1px; border-radius: 0; background: var(--tt-text-muted); opacity: calc(.6 + .4 * var(--rise, 0)); }
+/* The messages on screen are a step brighter, so the column says where the reader is. */
+.message-scrubber__tick[data-in-view]::before { background: var(--tt-text-2); }
+.message-scrubber__tick[data-hot]::before { height: 3px; margin-top: -1.5px; background: var(--tt-text); opacity: 1; }
+.message-scrubber__tick:focus-visible { outline: none; }
+.message-scrubber__tick:focus-visible::before { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
+
+/* What a tick leads to: the message, then the start of the reply or the question it asked. */
+.message-scrubber__card { position: absolute; z-index: 5; margin: 0; padding: 0; border: 1px solid var(--tt-border);
+  border-radius: 6px; background: var(--tt-surface-elevated); box-shadow: 0 14px 36px -14px var(--tt-shadow-color); color: var(--tt-text); font-size: 13px; line-height: 1.45; cursor: pointer; }
+.message-scrubber__head { display: flex; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--tt-border); color: var(--tt-text-muted); font-size: 12px; }
+.message-scrubber__head b { color: var(--tt-text-2); font-weight: 600; }
+.message-scrubber__head span:last-child { margin-left: auto; }
+.message-scrubber__said { display: -webkit-box; margin: 9px 12px 0; overflow: hidden; font-weight: 500; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.message-scrubber__who { margin: 9px 12px 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.message-scrubber__then { display: -webkit-box; margin: 2px 12px 0; overflow: hidden; color: var(--tt-text-2); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.message-scrubber__choices { margin: 6px 12px 0; padding: 0; list-style: none; }
+.message-scrubber__choices li { margin-top: 4px; padding: 4px 8px; overflow: hidden; border: 1px solid transparent; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-size: 12.5px;
+  text-overflow: ellipsis; white-space: nowrap; }
+.message-scrubber__more { margin: 4px 12px 0; color: var(--tt-text-muted); font-size: 12px; }
+.message-scrubber__keys { margin: 8px 12px 0; color: var(--tt-text-muted); font-size: 11.5px; }
+.message-scrubber__card > :last-child { margin-bottom: 11px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .message-scrubber { transition: opacity 200ms ease; }
+  :root:not([data-reduced-motion='on']) .message-scrubber__tick::before { transition: width 90ms ease-out, opacity 120ms ease, background-color 120ms ease; }
+  :root:not([data-reduced-motion='on']) .message-scrubber__card { animation: message-scrubber-card 120ms ease-out; }
+}
+@keyframes message-scrubber-card { from { opacity: 0; transform: translateX(-4px); } }

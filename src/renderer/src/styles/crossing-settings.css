@@ -15,8 +15,8 @@
 .settings-rows .tt-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 230px); column-gap: 20px; align-items: center; }
 .settings-rows .tt-field__label { font-size: 15px; font-weight: 500; }
 .settings-rows .tt-field__description { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
-.settings-rows .tt-field > .tt-input, .settings-rows .tt-field > .tt-select { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 100%; min-width: 0; background: transparent; border-color: var(--tt-hairline); border-radius: 999px; }
-.settings-rows textarea.tt-input { border-radius: 14px; }
+.settings-rows .tt-field > .tt-input, .settings-rows .tt-field > .tt-select { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 100%; min-width: 0; background: transparent; border-color: var(--tt-hairline); border-radius: 6px; }
+.settings-rows textarea.tt-input { border-radius: 6px; }
 .settings-rows .tt-toggle { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 24px; padding: 18px 0; }
 .settings-rows .tt-toggle__copy { flex: 1; }
 .settings-rows .tt-toggle__copy > strong { font-size: 15px; font-weight: 500; }
@@ -38,7 +38,7 @@
 /* A chip group needs its own room: the fixed-width second column sized for one select wraps three chips
    onto two lines well before the window is actually narrow. The label column gives up the space instead. */
 .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
-.account-rows input:not([type='checkbox'], [type='range']), .account-rows select { width: 100%; min-width: 0; height: 36px; padding: 6px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.account-rows input:not([type='checkbox'], [type='range']), .account-rows select { width: 100%; min-width: 0; height: 36px; padding: 6px 14px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
 .account-rows .agent-checkbox { display: flex; }
 .account-connection { display: flex; align-items: center; gap: 20px; padding: 16px 0; }
 .account-connection p { flex: 1; color: var(--tt-text-muted); }
@@ -78,21 +78,22 @@
   .account-row__control { justify-content: flex-start; }
 }
 
-.segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: 999px; gap: 2px; }
-.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 999px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
-.segmented-control button[aria-checked='true'] { color: var(--tt-pill-ink); background: var(--tt-pill); }
+/* A sunken track with the chosen segment raised out of it (ADR-0110). On a card the track sinks to the card's inset. */
+.segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 0; border-radius: 6px; gap: 2px; background: var(--tt-surface-sunken); }
+.settings-rows .segmented-control { background: var(--tt-card-inset); }
+.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
+.segmented-control button:hover { color: var(--tt-text); }
+.segmented-control button[aria-checked='true'] { color: var(--tt-text); background: var(--tt-segment-on); box-shadow: var(--tt-shadow-sm); }
 @media (max-width: 620px) { .settings-rows .tt-field { grid-template-areas: 'label' 'description' 'control' 'error'; } .segmented-control { justify-self: start; } }
 
 /* Index: a stable category rail and one focused, independently scrolling form. The rail wears the frame of the
-   Threads sidebar (its top row and its foot) at the width of that sidebar, and the page owns the window, so the
-   window controls sit at its top right and the sentence at its bottom right. */
+   Threads sidebar (its top row and its foot) at the width of that sidebar, which SettingsView hands it as
+   --app-sidebar-width, and the page owns the window, so the window controls sit at its top right and the sentence at
+   its bottom right. The rail is a container the way the sidebar is, so its top row answers the width as that one does. */
 .settings-view { position: relative; overflow: hidden; }
-.settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
-.settings-view .settings-sidebar { --thread-nav-inset: 10px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; padding-left: var(--thread-nav-inset); }
-/* Equal tracks fit both beta gate states without changing the sidebar or label size. */
-.settings-view .thread-nav__foot .thread-nav__seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 0; }
-.settings-view .thread-nav__foot .thread-nav__seg button { min-width: 0; padding-inline: 0; }
-.settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width, 280px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
+.settings-view .settings-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; container: thread-sidebar / inline-size; }
+.settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; margin-inline: var(--thread-nav-inset); padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-text); font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }
 .settings-view .settings-feedback { padding-right: 116px; }
 /* Linux draws no window controls, so its notice keeps only the gutter the left side has, at every width. */
@@ -116,12 +117,19 @@
 .settings-view .settings-section__heading { margin: 0 0 10px; padding: 0 0 20px; border-bottom: 1px solid var(--tt-hairline); }
 .settings-view .settings-section__heading h2 { margin: 0 0 10px; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
 .settings-view .settings-section__heading p { color: var(--tt-text-muted); font-size: 16px; line-height: 1.5; }
-.settings-view .settings-rows > *, .settings-view .settings-rows > * + * { min-height: 66px; padding: 17px 0; border: 0; border-bottom: 1px solid var(--tt-hairline); }
+/* Rows sit on a card (ADR-0110): no outline, each row divided from the next by a line of the inset, and the fields
+   and samples on it filled with the inset. */
+.settings-view .settings-rows { padding: 4px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.settings-view .settings-rows > *, .settings-view .settings-rows > * + * { min-height: 66px; padding: 17px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
 .settings-view .settings-rows > :last-child { border-bottom: 0; }
 .settings-view .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label control' 'description control' 'error error'; gap: 5px 22px; }
 .settings-view .settings-rows .tt-field__label, .settings-view .tt-toggle__copy > strong { font-size: 15px; font-weight: 500; line-height: 1.35; }
 .settings-view .settings-rows .tt-field__description { margin: 0; max-width: 330px; font-size: 13px; line-height: 1.45; }
-.settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font-size: 14px; }
+.settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font-size: 14px; }
+.settings-view .settings-rows .tt-field > :is(.tt-input, .tt-select):hover:not(:disabled) { border-color: var(--tt-border); }
+/* The fill above is a shorthand, which drops .tt-select's chevron; a filled box without it reads as a field, not a choice. */
+.settings-view .settings-rows .tt-field > .tt-select { padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--tt-text-muted) 50%), linear-gradient(135deg, var(--tt-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-repeat: no-repeat; background-size: 5px 5px; }
 .settings-view .settings-rows .tt-field > .tt-input[inputmode='numeric'] { width: 120px; justify-self: end; font-family: var(--tt-font-mono); }
 .settings-view .settings-rows textarea.tt-input { resize: vertical; min-height: 132px; line-height: 1.6; }
 .settings-view .settings-rows .tt-toggle { padding: 17px 0; gap: 22px; }
@@ -143,27 +151,45 @@
 /* A group of rows under a small heading with its icon (SettingsGroup), as Git and Cloud iPhone group theirs. */
 .settings-view .settings-group { margin-top: 26px; }
 .settings-view .settings-group:first-child { margin-top: 22px; }
-.settings-view .settings-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.settings-view .settings-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 2px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
 .settings-view .settings-group > h3 > svg { flex: none; color: var(--tt-text-muted); }
-.settings-view .settings-group > .settings-rows { border-top: 1px solid var(--tt-hairline); }
-.settings-view .settings-group__note { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.settings-view .settings-group__note { margin: 0 0 10px; padding: 0 2px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .settings-view .settings-danger-row { gap: 24px; }
 .settings-view .settings-danger-row h3 { font-size: 15px; }
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }
 /* Nested production account and provider controls share the focused form. */
 .settings-view .providers-workspace { grid-template-columns: minmax(0, 1fr); min-height: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
-.settings-view .providers-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 6px 0 24px; border: 0; border-bottom: 1px solid var(--tt-hairline); }
-.settings-view .providers-list__row { flex-direction: column; align-items: stretch; gap: 0; padding: 6px 12px 12px; }
-.settings-view .providers-list__select { padding: 10px 0; gap: 8px; }
-.settings-view .providers-list__select strong { font-size: 14px; }
-.settings-view .providers-list__row .tt-toggle { align-self: end; padding: 0; }
-.settings-view .provider-detail__header { padding: 22px 0 16px; }
+.settings-view .providers-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 6px 0 0; border: 0; }
+/* Each provider is its own card, with its toggle at the end of its name's line and its status under both (ADR-0110,
+   Zach's pick P1). The select button fills the card, so a press anywhere on it selects; the toggle sits over the
+   button's top right corner and follows it in the Tab order. The selected card wears the accent edge and wash. */
+.settings-view .providers-list__row { display: grid; grid-template: 'card' auto / minmax(0, 1fr); align-items: start; gap: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
+.settings-view .providers-list__row:hover:not([data-selected='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
+.settings-view .providers-list__row[data-selected='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
+/* Four cards share a form at most 790 pixels wide, so the spacing is tight enough for Claude Code's name beside its toggle. */
+.settings-view .providers-list__select { grid-area: card; display: grid; grid-template-columns: auto minmax(0, 1fr) 36px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 8px; width: 100%; padding: 13px 12px; border-radius: 11px; }
+.settings-view .providers-list__select > span { display: contents; }
+.settings-view .providers-list__select > .provider-mark { display: block; grid-area: mark; margin: 0; }
+.settings-view .providers-list__select strong { grid-area: name; min-width: 0; overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
+.settings-view .providers-list__select small { grid-area: status; min-width: 0; }
+/* The toggle's words are hidden here, so it is only its 36 pixel track, the width the name's line keeps free for it. */
+.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; grid-template-columns: 36px; gap: 0; margin: 13px 12px 0 0; padding: 0; }
+/* Four cards need about 760 pixels of form, which a window between 900 and 1100 wide does not leave beside the
+   Settings sidebar, so the list counts its columns from its own width: two below that, one below 380. */
+.settings-view .providers-settings { container: providers / inline-size; }
+@container providers (width < 760px) { .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+@container providers (width < 380px) { .settings-view .providers-list { grid-template-columns: minmax(0, 1fr); } }
+/* The selected provider's detail is a card of its own under them. */
+.settings-view .provider-detail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.settings-view .provider-detail__header { padding: 18px 0 14px; }
+.settings-view .provider-detail__version { padding: 1px 7px; border-radius: 4px; background: var(--tt-card-inset); }
 .settings-view .provider-tabs { padding: 0; }
-.settings-view .provider-detail__body { padding: 24px 0; }
+.settings-view .provider-detail__body { padding: 22px 0 16px; }
+.settings-view .provider-models li + li { border-top: 2px solid var(--tt-card-inset); }
 .settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); align-items: center; gap: 22px; padding: 20px 0; border-top: 1px solid var(--tt-hairline); }
 .settings-view .account-rows > label, .settings-view .account-rows > .account-row { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); gap: 12px 22px; padding: 18px 0; font-size: 15px; }
 .settings-view .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
-.settings-view .account-rows input:not([type='checkbox'], [type='range']), .settings-view .account-rows select { min-height: 38px; padding: 7px 12px; border-radius: 8px; font-size: 14px; }
+.settings-view .account-rows input:not([type='checkbox'], [type='range']), .settings-view .account-rows select { min-height: 38px; padding: 7px 12px; border-radius: 6px; font-size: 14px; }
 .settings-view .account-connection { flex-wrap: wrap; }
 .settings-view .account-connection p { flex: 1 1 230px; font-size: 14px; line-height: 1.5; }
 .settings-view .agent-fields label, .settings-view .agent-checkbox, .settings-view .agent-voice-license summary { font-size: 14px; }
@@ -173,16 +199,11 @@
 .settings-view .agent-voice-settings .agent-fields input, .settings-view .agent-voice-settings .agent-fields select { min-width: 0; font-size: 14px; }
 @keyframes settings-arrive { from { opacity: .6; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @media (max-width: 1100px) {
-  .settings-view .settings-layout { grid-template-columns: 205px minmax(0, 1fr); }
-  .settings-view .settings-sidebar { --thread-nav-inset: 15px; }
   .settings-view .settings-scroll { padding: 32px 35px; }
   .settings-feedback { padding-inline: 35px; }
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 35px; }
 }
 @media (max-width: 900px) {
-  .settings-view .settings-layout { grid-template-columns: 178px minmax(0, 1fr); }
-  .settings-sidebar { padding-top: 23px; padding-right: 10px; padding-bottom: 15px; }
-  .settings-view .settings-sidebar { --thread-nav-inset: 10px; }
   .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
   .settings-subnav button { padding: 8px 10px; gap: 8px; min-height: 38px; }
   .settings-subnav button > svg:last-child:not(:first-child) { display: none; }
@@ -197,12 +218,9 @@
   .settings-view .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
   .settings-view .settings-rows .tt-field:has(.segmented-control) { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field:has(.segmented-control) .segmented-control { justify-self: start; }
-  .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
-  .settings-view .providers-list__row { padding-inline: 8px; }
-  .settings-view .providers-list__select > .provider-mark { display: none; }
+  .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 }
 @media (max-height: 650px) {
-  .settings-sidebar { padding-top: 22px; }
   .settings-sidebar h1 { margin-bottom: 22px; }
   .settings-subnav button { min-height: 36px; padding-block: 8px; }
   .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 20px; }
@@ -213,7 +231,6 @@
   .settings-view .settings-rows > *, .settings-view .settings-rows > * + *, .settings-view .settings-rows .tt-toggle { min-height: 56px; padding-block: 12px; }
 }
 @media (max-width: 620px) {
-  .settings-view .settings-layout { grid-template-columns: 156px minmax(0, 1fr); }
   .settings-view .settings-scroll { padding-inline: 20px; }
   .settings-feedback { padding-inline: 20px; }
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 20px; }
@@ -229,19 +246,16 @@
 
 .settings-view .tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--theme-accent); background: var(--theme-accent); }
 .settings-view .tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--theme-accent-foreground); }
-.settings-view .segmented-control button[aria-checked='true'] { color: var(--theme-accent-foreground); background: var(--theme-accent); }
 .settings-view .agent-wake-advanced { margin-top: 24px; border-top: 1px solid var(--tt-hairline); }
 .settings-view .agent-wake-advanced > summary { padding: 18px 0; color: var(--tt-text-muted); font-size: 14px; cursor: pointer; }
 .settings-view .agent-wake-advanced > summary:hover, .settings-view .agent-wake-advanced[open] > summary { color: var(--tt-text); }
 .settings-view .agent-wake-advanced > summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
 .settings-view #settings-agents > .account-settings > .account-settings .account-rows > label:first-child { border-top: 0; }
 @media (max-height: 650px) {
-  .settings-view .providers-list { padding-top: 4px; padding-bottom: 14px; }
-  .settings-view .providers-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 8px; }
-  .settings-view .providers-list__select { padding: 4px 0; }
-  .settings-view .providers-list__select > .provider-mark { display: none; }
-  .settings-view .providers-list__select > span { gap: 5px; }
-  .settings-view .providers-list__row .tt-toggle { align-self: center; }
+  .settings-view .providers-list { padding-top: 4px; gap: 8px; }
+  .settings-view .providers-list__select { row-gap: 4px; padding: 9px 12px; }
+  .settings-view .providers-list__row .tt-toggle { margin: 9px 12px 0 0; }
+  .settings-view .provider-detail { margin-top: 12px; }
   .settings-view .provider-detail__header { min-height: 50px; padding: 12px 0 10px; }
   .settings-view .provider-detail__body { padding-top: 16px; }
   .settings-view .provider-tabs button { min-height: 38px; padding-bottom: 10px; }
@@ -258,7 +272,7 @@
 .settings-view .agent-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .settings-view .agent-fields > label { display: grid; align-content: start; gap: 7px; min-width: 0; font-size: 14px; }
 .settings-view .agent-field-wide { grid-column: 1 / -1; }
-.settings-view .agent-fields input, .settings-view .agent-fields select { width: 100%; min-width: 0; min-height: 38px; padding: 7px 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 14px; }
+.settings-view .agent-fields input, .settings-view .agent-fields select { width: 100%; min-width: 0; min-height: 38px; padding: 7px 12px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 14px; }
 .settings-view .agent-fields input::placeholder { color: var(--tt-text-muted); opacity: 1; }
 .settings-view .agent-fields input:focus-visible, .settings-view .agent-fields select:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
 .settings-view .agent-voice-actions, .settings-view .agent-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -271,7 +285,7 @@
 
 /* The speech model's download and status (ADR-0071), in Settings → Transcription and setup. */
 .speech-model-status { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
-.speech-model-status__bar { width: 100%; height: 6px; border-radius: var(--tt-radius-pill); background: var(--tt-hairline); overflow: hidden; }
+.speech-model-status__bar { width: 100%; height: 6px; border-radius: 2px; background: var(--tt-hairline); overflow: hidden; }
 .speech-model-status__bar > span { display: block; height: 100%; background: var(--tt-accent); transition: width 240ms ease-out; }
 .speech-model-status__ready { color: var(--tt-accent-text); font-weight: 600; }
 .speech-model-status__error { color: var(--tt-error-text); }

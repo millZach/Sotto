@@ -37,7 +37,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: var(--tt-radius-pill);
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
 }
@@ -45,7 +45,7 @@
   content: '';
   width: 9px;
   height: 9px;
-  border-radius: var(--tt-radius-pill);
+  border-radius: 50%;
   background: var(--tt-text-faint);
 }
 .visual-stepper__dot[data-state='done']::before { background: var(--tt-text-muted); }
