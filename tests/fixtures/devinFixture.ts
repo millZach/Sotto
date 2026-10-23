@@ -48,10 +48,14 @@ export async function devinFixture(root?: string, requestTimeoutMs = 15_000, pol
     const text = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')
     if (text) throw new Error(`Invalid Devin fixture traffic: ${text}`)
   }
+  const recorded = async (): Promise<RecordedRpc[]> => parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
   const requests = async (): Promise<RecordedRpc[]> => {
     await checkViolations()
-    return parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
+    return recorded()
   }
+  let live = true
+  // Prompts the fake has received; a record still being written counts once it is whole.
+  const promptsReceived = (): Promise<number> => recorded().then(records => records.filter(record => record.method === 'session/prompt').length, () => -1)
   const realId = async (id: string): Promise<string> => {
     const native = JSON.parse(await readFile(join(root, 'devin-threads.json'), 'utf8'))[id].devinSessionId as string
     const known = knownSessions.get(id) ?? new Set<string>()
@@ -96,16 +100,24 @@ export async function devinFixture(root?: string, requestTimeoutMs = 15_000, pol
       raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }),
       delayNextAck: async (method: string): Promise<void> => {
         if (method !== 'session/prompt') throw new Error('Only prompt acceptance can be delayed by this script')
-        // The adapter reads its deadline at each send and each process start, so only what follows the scripted loss
-        // on this fixture waits the short one; a restart goes back to the deadline the fixture was made with.
-        // The replay hides the prompt until a second after that deadline, which starts before Devin receives it.
+        // The adapter reads its deadline when a send writes its prompt, and when it starts a process. The short one
+        // lasts until the fake receives the prompt, by which time the send has taken it, so the replay reads and any
+        // process started after the prompt wait the generous one; one the send starts before its prompt waits the
+        // short one. The replay hides the prompt until a second after the short deadline, which starts before Devin
+        // receives the prompt.
+        let before = await promptsReceived()
+        while (before < 0) before = await promptsReceived()
         options.requestTimeoutMs = Math.min(requestTimeoutMs, LOST_PROMPT_DEADLINE_MS)
         await script({ delayPrompt: options.requestTimeoutMs + 1000 })
+        void (async () => {
+          while (live && (await promptsReceived()) <= before) await new Promise(resolve => setTimeout(resolve, 20))
+          options.requestTimeoutMs = requestTimeoutMs
+        })()
       }, requests,
-      restart: async () => { adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions, pace) },
+      restart: async () => { live = false; adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions, pace) },
     },
     cleanup: async (): Promise<void> => {
-      adapter.disconnect(); await adapter.closed()
+      live = false; adapter.disconnect(); await adapter.closed()
       if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-devin-thread-')) throw new Error('Unexpected temporary directory')
       try { await checkViolations() } finally { await rm(root, { recursive: true, force: true }) }
     },

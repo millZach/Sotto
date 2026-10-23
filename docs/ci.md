@@ -384,8 +384,12 @@ its own stream or a replay of the session shows the prompt taken, and the replay
 its own after the integration checks start two more. On a loaded Linux runner that took longer than five
 seconds, and sends came back uncertain (#1073, #1110). `devinFixture` therefore defaults to the adapter's
 own 15 s. A Devin prompt is uncertain only when that deadline passes with nothing showing it taken, so
-`driver.delayNextAck()` hides the prompt from the replay and lowers that fixture's deadline to 2000 ms for
-what follows. A short deadline is safe there, because a slow runner can only delay the evidence it waits for.
+`driver.delayNextAck()` hides the prompt from the replay and lowers that fixture's deadline to 2000 ms
+until the fake receives the prompt. By then the send has taken its deadline, so the replay reads and
+processes started after the prompt keep 15 s; only that send, and a process it starts before its prompt,
+wait the short one. A short deadline is safe for the send that expects to come back uncertain, because a
+slow runner can only delay the evidence it waits for. This departs from the rule above on purpose: Devin
+has no acknowledgement to lose, so its uncertain answer cannot be reached without a deadline.
 
 To reproduce runner load locally, pin the run to two cores and give it a competitor on the same cores:
 
