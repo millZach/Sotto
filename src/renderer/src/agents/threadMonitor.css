@@ -8,11 +8,12 @@
 .thread-monitor[data-ornament="working"] .thread-monitor__track { overflow: hidden; }
 .thread-monitor__mini { position: absolute; bottom: 0; left: 0; width: 24px; height: 20px; }
 .thread-monitor__mini svg { display: block; width: 24px; height: 20px; }
-.thread-monitor__color { fill: var(--tt-activity); }
+.thread-monitor__color { fill: var(--creature, var(--tt-activity)); }
 .thread-monitor__ink { fill: var(--tt-canvas); }
 .thread-monitor__shine { fill: var(--tt-text); }
 .thread-monitor__handle { fill: var(--tt-border); }
-.thread-monitor__task { pointer-events: auto; min-width: 0; padding: 8px 12px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--tt-surface); }
+/* The readout is words on the room, with no fill or outline, so it can never cover what it stands over. */
+.thread-monitor__task { pointer-events: auto; min-width: 0; padding: 8px 12px; }
 .thread-monitor__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text); font-size: 13px; line-height: 1.5; }
 .thread-monitor__status { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
 /* A readout that counts commands beside agents needs more than the usual column; one line keeps the track 64px tall. */
@@ -27,3 +28,31 @@
    ellipsis halfway through the time. The hover title and the Pull request surface still say it. */
 .thread-monitor__status--babysitting { display: flex; flex-wrap: wrap; height: 18px; overflow: hidden; }
 .thread-monitor__since { white-space: pre; }
+
+/* Claude bot (the creature setting): the provider's own colour and ink, shaded by mixing them, so it follows the theme the
+   way the provider marks do (the fill is a badge colour in both modes, so only the highlight needs to know which way is
+   light). Every pose wears it; babysitting mutes it, as it mutes Sotto's creature, and the props it carries wear the same
+   colour through `--creature`. The shading always runs toward ink, so it is darker than the body in either mode; only the
+   muted body's eyes switch to the room's colour, to read on it. */
+.thread-monitor[data-creature='claude'], .creature-walk[data-creature='claude'] {
+  --bot: var(--tt-provider-claude);
+  --bot-ink: var(--tt-provider-ink);
+  --bot-shadow: var(--tt-provider-ink);
+  --bot-hi: light-dark(color-mix(in srgb, var(--bot) 60%, var(--tt-canvas)), color-mix(in srgb, var(--bot) 58%, var(--tt-text)));
+  --bot-lo: color-mix(in srgb, var(--bot) 70%, var(--bot-shadow));
+  --bot-deep: color-mix(in srgb, var(--bot) 42%, var(--bot-shadow));
+  --creature: var(--bot);
+}
+.thread-monitor[data-creature='claude'][data-ornament='babysitting'] { --bot: var(--tt-text-muted); --bot-ink: var(--tt-canvas); }
+.bot-b { fill: var(--bot); }
+.bot-h { fill: var(--bot-hi); }
+.bot-l { fill: var(--bot-lo); }
+.bot-d { fill: var(--bot-deep); }
+.bot-k { fill: var(--bot-ink); }
+.bot-a { fill: var(--tt-activity); }
+.bot-w { fill: var(--tt-text); }
+.thread-monitor[data-ornament='babysitting'] .bot-a { fill: var(--bot-hi); }
+
+/* The creature setting's preview in Settings → Appearance: a short track with the creature walking it. */
+.creature-walk { position: relative; width: 100%; height: 64px; }
+.creature-walk .thread-monitor__track { height: 64px; }

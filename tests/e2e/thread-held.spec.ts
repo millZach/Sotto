@@ -9,6 +9,7 @@ import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { readoutContrast } from './support/readout'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
 const evidence = evidenceDirectory('artifacts/held-action')
@@ -203,30 +204,7 @@ test('the hourglass fits every supported size in light and dark and holds still 
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
       await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      const contrast = await waiting(page).locator('.thread-monitor__task').evaluate(element => {
-        const context = document.createElement('canvas').getContext('2d')!
-        const background = getComputedStyle(element).backgroundColor
-        const luminance = (color: string): number => {
-          context.clearRect(0, 0, 1, 1)
-          context.fillStyle = background
-          context.fillRect(0, 0, 1, 1)
-          context.fillStyle = color
-          context.fillRect(0, 0, 1, 1)
-          const pixel = context.getImageData(0, 0, 1, 1).data
-          if (pixel[3] !== 255) throw new Error('Contrast requires an opaque readout background.')
-          const linear = [...pixel].slice(0, 3).map(value => {
-            const channel = value / 255
-            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-          })
-          return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
-        }
-        const surface = luminance(background)
-        const ratio = (selector: string): number => {
-          const text = luminance(getComputedStyle(element.querySelector(selector)!).color)
-          return (Math.max(surface, text) + 0.05) / (Math.min(surface, text) + 0.05)
-        }
-        return { label: ratio('.thread-monitor__label'), status: ratio('.thread-monitor__status') }
-      })
+      const contrast = await readoutContrast(waiting(page).locator('.thread-monitor__task'))
       expect(contrast.label).toBeGreaterThanOrEqual(4.5)
       expect(contrast.status).toBeGreaterThanOrEqual(4.5)
 
