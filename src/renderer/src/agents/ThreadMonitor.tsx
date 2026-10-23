@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'rea
 import type { AgentBackgroundWork, AgentMonitoringTask } from '../../../shared/agentMonitoring'
 import type { AgentThread } from '../../../shared/agents'
 import type { Creature } from '../../../shared/settings'
-import { useCreature } from '../state/creature'
+import { useCreature, useCreatureShown } from '../state/creature'
 import { formatDuration, heldAction, heldLabel, heldLongEnough, HELD_AFTER_MS, type HeldAction } from './threadActivityView'
 import { babysitReadout } from './babysitting'
 import { ClaudeBotBabysitting } from './ClaudeBotBabysitting'
@@ -264,6 +264,8 @@ function ThreadOrnament({ kind, character, creature, label, title, status, wide 
    */
   readonly quiet?: string
 }): ReactNode {
+  const shown = useCreatureShown()
+  if (!shown) return null
   const named = quiet === undefined ? { role: 'status', 'aria-live': 'polite', 'aria-atomic': true } as const : { role: 'img', 'aria-label': quiet } as const
   return <div className="thread-monitor" data-ornament={kind} data-creature={character} data-readout={wide ? 'wide' : undefined} {...named}>
     <div className="thread-monitor__track">{creature}</div>
