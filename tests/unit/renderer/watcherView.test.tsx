@@ -588,25 +588,27 @@ describe("Watcher's room", () => {
 
   describe('a fork made beside Watcher (#1136)', () => {
     /** Grok voice previews as a finished Claude Code thread, with Fork from here shown (Owl), opened beside Watcher. */
-    async function forkable(answer: (request: Extract<AgentCommand, { type: 'fork-thread' }>, state: AgentState) => AgentState) {
+    async function forkable(answer: (request: Extract<AgentCommand, { type: 'fork-thread' }>, state: AgentState) => AgentState, held?: Promise<void>) {
       const state = stateWithWatcher()
       state.host.threads.find(thread => thread.id === 'grok-previews')!.providerId = 'claude'
       state.host.models = state.host.models.map(model => model.id === 'claude:sonnet' ? { ...model, providerId: 'claude' as const } : model)
       mockApp('watcher')
       const app = vi.mocked(useOptionalApp)()!
       vi.mocked(useOptionalApp).mockReturnValue({ ...app, update: { watcherEnabled: true, owlFeatures: { watcher: true, 'continue-agent-thread': true } } } as unknown as AppContextValue)
-      const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request => {
-        if (request.type !== 'fork-thread') return state
-        const next = answer(request, state)
-        // Main's reply reaches the window before the press hears it, as AgentContext commits it.
-        const connection = agentContextFixture(next, command, { threadDrafts: new ThreadDraftStore(command) })
+      const show = (shown: AgentState): void => {
+        const connection = agentContextFixture(shown, command, { threadDrafts: new ThreadDraftStore(command) })
         vi.mocked(useAgents).mockReturnValue(connection)
         vi.mocked(useOptionalAgents).mockReturnValue(connection)
+      }
+      const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request => {
+        if (request.type !== 'fork-thread') return state
+        await held
+        const next = answer(request, state)
+        // Main's reply reaches the window before the press hears it, as AgentContext commits it.
+        show(next)
         return next
       })
-      const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
-      vi.mocked(useAgents).mockReturnValue(connection)
-      vi.mocked(useOptionalAgents).mockReturnValue(connection)
+      show(state)
       const { bridge } = fakeBridge(roomState())
       render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
       await paneReady()
@@ -635,6 +637,24 @@ describe("Watcher's room", () => {
       expect(screen.queryByRole('region', { name: 'Grok voice previews' })).toBeNull()
       await waitFor(() => expect(fork.querySelector('.thread-workspace__compose .prompt-editor')).toHaveFocus())
       await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['watcher', forkId] }))
+    })
+
+    it('leaves another thread opened beside Watcher while the fork was made where it is', async () => {
+      let release = (): void => undefined
+      const held = new Promise<void>(resolve => { release = resolve })
+      const { command } = await forkable((request, state) => {
+        const next = structuredClone(state)
+        const source = next.host.threads.find(thread => thread.id === 'grok-previews')!
+        next.host.threads.push({ ...structuredClone(source), id: request.newThreadId, title: 'Fork of Grok voice previews' })
+        return next
+      }, held)
+      fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open Weekly note beside Watcher' }))
+      expect(await screen.findByRole('region', { name: 'Weekly note' })).toHaveAttribute('id', 'watcher-beside-pane')
+      await act(async () => { release(); await command.mock.results.find((_result, index) => command.mock.calls[index]![0].type === 'fork-thread')!.value })
+      expect(roomView.get().besideId).toBe('weekly-note')
+      expect(screen.getByRole('region', { name: 'Weekly note' })).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'Fork of Grok voice previews' })).toBeNull()
     })
 
     it('leaves the original beside Watcher when the fork fails, with the card saying why', async () => {

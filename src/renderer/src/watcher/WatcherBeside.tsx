@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
@@ -181,6 +181,7 @@ export function BesidePane({ row, state, command, store, focused, underControls,
     where: 'in Tools on the Threads page',
   }), [onOpenInThreads])
   const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
+  const landFork = useCallback((forkId: string): void => landForkBeside(threadId, forkId), [threadId])
   return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><ForkLandingContext.Provider value={landFork}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
@@ -202,5 +203,9 @@ export function BesidePane({ row, state, command, store, focused, underControls,
 }
 
 /** A fork made in the pane beside Watcher opens there in place of its source, as it does in a pane on the Threads page:
- * the room's view never follows main's selection, so the thread it shows is the one the next message goes to (#1136). */
-function landFork(threadId: string): void { roomView.set({ besideId: threadId }) }
+ * the room's view never follows main's selection, so the thread it shows is the one the next message goes to (#1136).
+ * Only while its source is still there: another thread opened or the pane closed while the fork was made wins, as a
+ * newer selection does on the Threads page. */
+function landForkBeside(sourceId: string, forkId: string): void {
+  if (roomView.get().besideId === sourceId) roomView.set({ besideId: forkId })
+}
