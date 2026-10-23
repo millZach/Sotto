@@ -117,8 +117,24 @@ class NewThreadsTests {
         assertTrue(NewThreads.availableModels(shell.host).isEmpty())
     }
 
+    @Test fun projectRegistrationAcceptsCursor() {
+        val command = Commands.createProject(providerID = "cursor", title = "Panel tools", path = "/home/zach/panel")
+        assertEquals(JsonPrimitive("cursor"), command["provider"])
+    }
+
+    // Cursor names each model's maker in its source (ADR-0123). A row reads the maker between Cursor and the model, so a
+    // Cursor thread on Claude never reads as Claude Code.
+    @Test fun aCursorModelReadsItsMakerAndIsAChoiceWhileCursorIsConnected() {
+        val host = decode<HostSnapshot>("""{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"cursor:claude-sonnet-5-5","name":"Claude Sonnet 5.5","provider":"Cursor","providerId":"cursor","source":"Anthropic","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"cursor","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}""")
+        val cursor = NewThreads.availableModels(host).single()
+        assertEquals("Anthropic", cursor.source)
+        assertEquals("Cursor · Anthropic · Claude Sonnet 5.5", cursor.label)
+        assertEquals("Cursor's own model reads Cursor once", "Cursor · Auto", ThreadModel.labelOf("cursor", "Cursor", "Auto"))
+    }
+
     @Test fun openCodeHasItsNameAndAProviderThePhoneDoesNotKnowReadsTheAgent() {
         assertEquals("OpenCode", AgentNames.name("opencode"))
+        assertEquals("Cursor", AgentNames.name("cursor"))
         assertEquals("Codex", AgentNames.name("codex"))
         assertEquals("The agent", AgentNames.name("future"))
         assertEquals("The agent", AgentNames.name(null))
