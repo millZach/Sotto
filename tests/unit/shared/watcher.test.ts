@@ -54,6 +54,17 @@ describe('closed watcher contracts', () => {
       expect(watcherPhoneSendSchema.safeParse({ ...input, origin: invalid }).success).toBe(false)
     }
   })
+  it('takes a phone message to Watcher with words, photos or both, and never with neither', () => {
+    const record = watcherRecordFixture(), origin = { kind: 'phone' as const, hostId: record.current!.target.hostId, clientId: 'phone' }
+    const input = { origin, target: record.current!.target, draftId: record.requests[0]!.id, text: 'Synthetic phone request' }
+    const photo = { id: 'photo-1', name: 'Photo 1.jpg', mimeType: 'image/jpeg', sizeBytes: 4, digest: 'd'.repeat(64) }
+    expect(watcherPhoneSendSchema.safeParse({ ...input, images: [photo] }).success).toBe(true)
+    expect(watcherPhoneSendSchema.safeParse({ ...input, text: '', images: [photo] }).success).toBe(true)
+    for (const invalid of [{ text: '' }, { text: '  \n' }, { text: '', images: [] }, { images: [photo, photo] },
+      { images: Array.from({ length: 9 }, (_, index) => ({ ...photo, id: `photo-${index}` })) }]) {
+      expect(watcherPhoneSendSchema.safeParse({ ...input, ...invalid }).success).toBe(false)
+    }
+  })
   it('offers exactly the fourteen bounded tools', () => {
     expect(Object.keys(watcherToolSchemas)).toEqual(['watch_thread', 'unwatch_thread', 'list_threads', 'read_thread', 'start_thread', 'send_to_thread', 'stop_thread', 'settle_thread',
       'list_projects', 'keep_state', 'read_state', 'list_machines', 'list_working_copies', 'read_operation'])

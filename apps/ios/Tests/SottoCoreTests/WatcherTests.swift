@@ -79,6 +79,20 @@ final class WatcherTests: XCTestCase {
         XCTAssertEqual(remove["request"]["itemId"], .string("item"))
         XCTAssertEqual(remove["request"]["target"]["threadId"], .string("watcher"))
     }
+    func testASendCarriesItsPhotosByHandleAndAPhotoIsReadBackThroughWatcher() throws {
+        let target = WatcherTarget(hostId: host, threadId: "watcher")
+        let photo = StagedImage(id: "staged-1", name: "Photo 1.jpg", mimeType: "image/jpeg", sizeBytes: 4, digest: String(repeating: "d", count: 64))
+        let send = JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "", images: [photo]))
+        XCTAssertEqual(send["request"]["text"], .string(""))
+        XCTAssertEqual(send["request"]["images"], .array([photo.wire]))
+        XCTAssertEqual(JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on"))["request"]["images"], .null,
+                       "Words alone say nothing of photos, for a computer from before Watcher took them")
+        let preview = JSONValue.object(WatcherWire.preview(target: target, messageID: "message", attachmentID: "staged-1"))
+        XCTAssertEqual(preview["op"], .string("watcher-phone-preview"))
+        XCTAssertEqual(preview["request"]["target"]["threadId"], .string("watcher"))
+        XCTAssertEqual(preview["request"]["messageId"], .string("message"))
+        XCTAssertEqual(preview["request"]["attachmentId"], .string("staged-1"))
+    }
     func testSendCarriesExplicitPhoneOriginAndStableDraft() throws {
         let target = WatcherTarget(hostId: host, threadId: "watcher")
         let operation = WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Start a worker")

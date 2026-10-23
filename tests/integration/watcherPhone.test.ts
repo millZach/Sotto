@@ -17,6 +17,7 @@ import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { deferred } from '../fixtures/deferred'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 
 const cleanups: (() => Promise<unknown>)[] = []
@@ -719,6 +720,45 @@ it('steers a phone message into Watcher’s running turn under the request it an
   expect(second.text).toBe(newsText + watcherRequestLine(watcherRequestNote(opened.id, f.control.hostId()!)))
   // The phone shows the words alone.
   await vi.waitFor(() => expect(f.phone.state(false).conversation.messages.find(message => message.id === second.messageId)?.text).toBe(newsText))
+})
+
+// Photos for Watcher from the phone (October 23, 2026): staged as a thread's are, sent with the words or alone.
+it('sends a phone’s photos to Watcher with or without words, now or next, and lets the phone draw them back', async () => {
+  const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  f.workspace.adapters.codex.state.models[0]!.supportsImages = true
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-photos', 'attachment-staging']) } })
+  const stage = async (name: string) => (await peer.call('stage-' + name, { op: 'stage-attachment',
+    image: { name, mimeType: 'image/png', data: PIXEL_PNG.toString('base64') } })).result as { id: string; digest: string }
+  const photo = await stage('Photo 1.png')
+  const withPhotos = (draftId: ReturnType<typeof randomUUID>, text: string, images: unknown[], delivery?: 'steer') => {
+    const packet = f.send(clientId, draftId, text, delivery)
+    return { ...packet, request: { ...packet.request, images } }
+  }
+  // Neither words nor photos is nothing to send.
+  expect(await peer.call('empty', f.send(clientId, randomUUID(), ' '))).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  // A photo alone, to Watcher at rest: it reaches Watcher's provider by its handle.
+  const draftId = randomUUID()
+  expect(await peer.call('photo', withPhotos(draftId, '', [photo]))).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
+  expect(f.workspace.adapters.codex.commands.findLast(command => command.type === 'send')).toMatchObject({
+    attachments: [expect.objectContaining({ id: photo.id, digest: photo.digest })] })
+  // The phone's page marks the photo on the user's message, and the phone reads it back through Watcher alone.
+  const message = f.phone.state(false).conversation.messages.findLast(row => row.role === 'user')!
+  expect(message.attachments).toEqual([expect.objectContaining({ id: photo.id, name: 'Photo 1.png', preview: { available: true } })])
+  const preview = { op: 'watcher-phone-preview', request: { target: f.target, messageId: message.id, attachmentId: photo.id } }
+  expect(await peer.call('preview', preview)).toMatchObject({ ok: true, result: { dataUrl: `data:image/png;base64,${PIXEL_PNG.toString('base64')}` } })
+  expect(await peer.call('hidden-preview', { op: 'preview', request: { threadId: f.target.threadId, messageId: message.id, attachmentId: photo.id } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await peer.call('other-watcher', { ...preview, request: { ...preview.request, target: { ...f.target, threadId: randomUUID() } } }))
+    .toMatchObject({ ok: true, result: null })
+
+  // While Watcher works, words and a photo go next together when its provider takes no steer.
+  const second = await stage('Photo 2.png'), nextDraft = randomUUID(), nextText = 'Synthetic phone words with a photo'
+  expect(await peer.call('next', withPhotos(nextDraft, nextText, [second], 'steer'))).toMatchObject({ ok: true, result: { status: 'ok',
+    state: { followups: [{ draftId: nextDraft, text: nextText, status: 'queued' }] } } })
+  expect(f.control.shell().followups).toContainEqual(expect.objectContaining({ draftId: nextDraft, text: nextText,
+    attachments: [expect.objectContaining({ id: second.id, digest: second.digest })] }))
 })
 
 it('queues a phone message to go next when Watcher’s provider takes no steer, shows it on the page and removes it (#1229)', async () => {
