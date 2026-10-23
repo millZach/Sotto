@@ -3,6 +3,7 @@ import { CheckCheck, Laptop, Play, Send, Server, Square, type LucideIcon } from 
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
+import type { WorkerPlacementReceipt } from '../../../shared/workerMachine'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
@@ -39,6 +40,8 @@ export interface WatcherConversation {
    * conversation). What the cards answer with comes from `WatcherAskAnsweringContext`, which changes with every update.
    */
   readonly asks?: ReadonlyMap<string, readonly WatcherAskPlacement[]> | undefined
+  /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
+  readonly placements?: ReadonlyMap<string, WorkerPlacementReceipt> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
   /** A press on a thread's name: beside Watcher, or with Shift in the Threads room, as everywhere in the room. */
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
@@ -89,6 +92,16 @@ export function receiptLead(operation: Pick<WatcherOperation, 'action' | 'delive
 }
 
 /**
+ * Why a start went where it did, under its card (#1032): Sotto's own sentence when it placed the start itself, or that it
+ * is not on the machine new workers start on; Watcher says why in its reply. Nothing when it went where it was meant to.
+ */
+export function placementLine(placement: WorkerPlacementReceipt | undefined): string | null {
+  if (placement === undefined) return null
+  if (placement.note !== undefined) return placement.note
+  return placement.awayFromDefault ? 'Not your default machine. Watcher says why in its reply.' : null
+}
+
+/**
  * One receipt card (Zach's pick on October 16, 2026, cards A): what Watcher did and to which thread, whose name opens it
  * beside Watcher; where that thread stands now; then its provider, its computer and its project. The name is a link only
  * here, from the receipt's own target, never found in anyone's words.
@@ -101,6 +114,7 @@ function ReceiptCard({ operation, conversation }: { readonly operation: WatcherO
   const lead = receiptLead(operation)
   const title = facts.title ?? (operation.action === 'start' ? 'a new thread' : 'a thread no longer here')
   const unconfirmed = operation.deliveryState === 'uncertain'
+  const placed = operation.action === 'start' ? placementLine(conversation.placements?.get(operation.id)) : null
   return <li className="receipt-card" data-receipt-id={operation.id} data-delivery={operation.deliveryState}>
     <div className="receipt-card__top">
       <Icon size={15} aria-hidden="true" className="receipt-card__glyph" />
@@ -121,6 +135,7 @@ function ReceiptCard({ operation, conversation }: { readonly operation: WatcherO
       {facts.project === undefined ? null : <span className="receipt-card__project">{facts.project}</span>}
       {unconfirmed ? <span className="receipt-card__unconfirmed">Not confirmed yet</span> : null}
     </p>
+    {placed !== null ? <p className="receipt-card__placement">{placed}</p> : null}
   </li>
 }
 

@@ -32,6 +32,7 @@ import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, show
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
+import { WatcherMachines } from './WatcherMachines'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
 import { NewWatcherNote, newWatcherNoteFacts, WatcherStartStopped } from './WatcherNew'
@@ -296,8 +297,13 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   // the cards' answering, which does, goes in a context of its own that only the cards read.
   const placements = useStablePlacements(room?.state?.asks)
   const asks = useMemo(() => placeAsks(placements), [placements])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks }),
-    [byMessage, lines, describe, press, asks])
+  // Where each start went (#1032), only while Work across machines is on, and kept in memory as main keeps it.
+  const crossMachine = useOwlFeature('cross-machine-work')
+  const receiptPlacements = room?.state?.receiptPlacements
+  const placementsById = useMemo(() => !crossMachine || receiptPlacements === undefined ? undefined
+    : new Map(receiptPlacements.map(item => [item.operationId, item.placement] as const)), [crossMachine, receiptPlacements])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById }),
+    [byMessage, lines, describe, press, asks, placementsById])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
@@ -549,6 +555,8 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   }, [placed, shownIds, view.tab, rowFor])
   const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
 
+  // The machines line (#1032) is part of the Owl feature Work across machines: Stable shows none of it.
+  const crossMachine = useOwlFeature('cross-machine-work')
   const error = state?.error ?? agents.error ?? null
   const tab = current === null ? 'conversation' : view.tab
   const stopAll = room === null ? null : <WatcherStopAll room={room} conversation={{ describe, press }}
@@ -557,6 +565,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     <WatcherHeader room={room} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
+    {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>

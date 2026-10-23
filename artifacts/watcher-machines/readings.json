@@ -1,0 +1,3622 @@
+{
+  "machines-line-dark-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    }
+  ],
+  "machines-line-dark-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    }
+  ],
+  "machines-line-dark-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    }
+  ],
+  "machines-panel-dark-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machine-panel h2 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dt 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 3",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dd 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dd 1",
+      "ratio": 12.04
+    },
+    {
+      "name": ".watcher-machine-panel dd 2",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dd 3",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel p 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-machine-panel__title 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel__who 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel__link 0",
+      "ratio": 11.41
+    }
+  ],
+  "machines-panel-dark-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machine-panel h2 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dt 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 3",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dd 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dd 1",
+      "ratio": 12.04
+    },
+    {
+      "name": ".watcher-machine-panel dd 2",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dd 3",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel p 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-machine-panel__title 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel__who 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel__link 0",
+      "ratio": 11.41
+    }
+  ],
+  "machines-panel-dark-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machine-panel h2 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dt 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dt 3",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel dd 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dd 1",
+      "ratio": 12.04
+    },
+    {
+      "name": ".watcher-machine-panel dd 2",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel dd 3",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel p 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-machine-panel__title 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-machine-panel__who 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watcher-machine-panel__link 0",
+      "ratio": 11.41
+    }
+  ],
+  "machines-narrow-dark-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.03
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 12.41
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 8.65
+    },
+    {
+      "name": ".thread-options__caption 2",
+      "ratio": 8.65
+    },
+    {
+      "name": ".watched-note 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watched-note__stop 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watch-toggle 0",
+      "ratio": 16.48
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 10.77
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-beside .thread-workspace__head h2 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 18.97
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 12.8
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 12.13
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-machines__more 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 13.19
+    }
+  ],
+  "machines-line-light-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    }
+  ],
+  "machines-line-light-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    }
+  ],
+  "machines-line-light-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    }
+  ],
+  "machines-panel-light-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-machine-panel h2 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dt 0",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 1",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 2",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 3",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dd 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dd 1",
+      "ratio": 6.28
+    },
+    {
+      "name": ".watcher-machine-panel dd 2",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dd 3",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel p 0",
+      "ratio": 9.75
+    },
+    {
+      "name": ".watcher-machine-panel__title 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel__who 0",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel__link 0",
+      "ratio": 6.75
+    }
+  ],
+  "machines-panel-light-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-machine-panel h2 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dt 0",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 1",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 2",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 3",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dd 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dd 1",
+      "ratio": 6.28
+    },
+    {
+      "name": ".watcher-machine-panel dd 2",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dd 3",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel p 0",
+      "ratio": 9.75
+    },
+    {
+      "name": ".watcher-machine-panel__title 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel__who 0",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel__link 0",
+      "ratio": 6.75
+    }
+  ],
+  "machines-panel-light-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 3",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 2",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-machine-panel h2 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dt 0",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 1",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 2",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dt 3",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel dd 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dd 1",
+      "ratio": 6.28
+    },
+    {
+      "name": ".watcher-machine-panel dd 2",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel dd 3",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel p 0",
+      "ratio": 9.75
+    },
+    {
+      "name": ".watcher-machine-panel__title 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-machine-panel__who 0",
+      "ratio": 6.27
+    },
+    {
+      "name": ".watcher-machine-panel__link 0",
+      "ratio": 6.75
+    }
+  ],
+  "machines-narrow-light-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__tab 2",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 9.41
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.56
+    },
+    {
+      "name": ".watcher-pane .thread-chip 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.15
+    },
+    {
+      "name": ".thread-options__caption 2",
+      "ratio": 6.15
+    },
+    {
+      "name": ".watched-note 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watched-note__stop 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watch-toggle 0",
+      "ratio": 12.94
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 7.48
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-beside .thread-workspace__head h2 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".receipt-card__lead 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-card__lead 1",
+      "ratio": 10.81
+    },
+    {
+      "name": ".receipt-link 0",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-link 1",
+      "ratio": 16.29
+    },
+    {
+      "name": ".receipt-outcome 0 (needs)",
+      "ratio": 6.97
+    },
+    {
+      "name": ".receipt-outcome 1 (working)",
+      "ratio": 7.48
+    },
+    {
+      "name": ".receipt-card__meta 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".receipt-card__meta 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-machines__name 2",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__count 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__words 1",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-machines__words 2",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__sep 1",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-machines__sep 2",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-machines__more 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".receipt-card__placement 0",
+      "ratio": 10.81
+    }
+  ]
+}

@@ -31,6 +31,7 @@ export const SETTINGS_GROUPS = {
   'settings-browser': 'settings-agents',
   'settings-worktrees': 'settings-git',
   'settings-phones': 'settings-hosts',
+  'settings-new-workers': 'settings-watcher',
   'settings-history': 'settings-privacy',
   'settings-updates': 'settings-privacy',
 } as const satisfies Record<string, SettingsPageId>
@@ -51,7 +52,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'notifications'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'notifications'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -129,6 +130,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Automatically pull', section: 'settings-git', words: 'fetch' },
 
     { label: 'Settle finished threads', section: 'settings-watcher', gate: 'watcher' },
+    { label: 'Where new workers start', section: 'settings-new-workers', words: 'machine computer host forge default worker placement', gate: 'cross-machine-work' },
     { label: 'Worker roles', section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },
 
     { label: 'Thread providers', section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },

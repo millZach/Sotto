@@ -6,7 +6,7 @@ import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema, watcherMergeTurnsReadSchema,
-  WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
+  WATCHER_READ_MACHINES, WATCHER_MACHINES_RENDERER_ARGUMENT, watcherMachinesReadSchema, WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
   watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge, type WatcherRoomState } from '../shared/watcherRoom'
 import { hostClientBridge } from './hostClientBridge'
@@ -359,6 +359,8 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
+  /** The machines line and Settings' Where new workers start (#1032): only while Watcher and Work across machines are on. */
+  watcherMachinesEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -443,6 +445,7 @@ export function createSottoBridge(
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
       startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
       readMergeTurns: () => invokeParsed(renderer, WATCHER_READ_MERGE_TURNS, watcherMergeTurnsReadSchema),
+      ...(watcherMachinesEnabled ? { readMachines: () => invokeParsed(renderer, WATCHER_READ_MACHINES, watcherMachinesReadSchema) } : {}),
       onChanged: listener => subscribe(renderer, WATCHER_CHANGED, trustedWatcherRoom, listener),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
@@ -661,7 +664,8 @@ export function exposeRendererBridge(
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
-      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT)))
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
+      arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

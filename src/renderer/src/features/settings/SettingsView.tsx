@@ -56,6 +56,7 @@ import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { WorkerMachineSettings } from './WorkerMachineSettings'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
@@ -130,6 +131,13 @@ const DICTATION_ONLY_PAGES: ReadonlySet<SettingsPageId> = new Set(['settings-for
 
 /** The element a page's tab controls: Appearance's card sits inside a panel of its own. */
 const panelIdOf = (id: SettingsPageId): string => id === 'settings-appearance' ? 'settings-appearance-panel' : id
+
+/** What Watcher's page holds, in its heading's words: each part shows only while its Owl feature is on. */
+function watcherPageSummary(workerMachine: boolean, workerRoles: boolean): string {
+  if (workerMachine && workerRoles) return 'How Watcher looks after threads, where new workers start, and what each kind of work runs on'
+  if (workerMachine) return 'How Watcher looks after threads, and where new workers start'
+  return workerRoles ? 'How Watcher looks after threads, and what each kind of work runs on' : 'How Watcher looks after threads'
+}
 
 /** Watcher's owl at the rail's icon size; the rail passes lucide's props, of which the owl takes only the size. */
 function WatcherNavIcon({ size }: { readonly size?: number; readonly strokeWidth?: number; readonly 'aria-hidden'?: 'true' }): ReactNode {
@@ -407,8 +415,10 @@ export function SettingsView({
   /** A group or setting to bring into view once its page shows. */
   const [reveal, setReveal] = useState<{ readonly group: string | null; readonly settings: readonly string[]; readonly key: number } | null>(null)
   // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
-  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
+  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles'), crossMachineOn = useOwlFeature('cross-machine-work')
   const workerRoles = watcherOn && workerRolesOn
+  // Where new workers start (#1032), part of the Owl feature Work across machines, inside Watcher's page.
+  const workerMachine = watcherOn && crossMachineOn
   const performanceOn = useOwlFeature('main-freeze')
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
@@ -418,7 +428,7 @@ export function SettingsView({
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, notifications: notificationsShown }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, notifications: notificationsShown }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -680,11 +690,13 @@ export function SettingsView({
               </Card>
 
               {watcherOn ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>
-                <div className="settings-section__heading"><h2>Watcher</h2><p>{workerRoles ? 'How Watcher looks after threads, and what each kind of work runs on' : 'How Watcher looks after threads'}</p></div>
+                <div className="settings-section__heading"><h2>Watcher</h2><p>{watcherPageSummary(workerMachine, workerRoles)}</p></div>
                 <SettingsGroup title="Watched threads" icon={Eye}>
                   <Toggle label="Settle finished threads" checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
                     description="Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it." />
                 </SettingsGroup>
+                {workerMachine ? <WorkerMachineSettings settings={settings} onUpdateSettings={onUpdateSettings}
+                  onOpenHosts={() => { selectSection('settings-hosts'); document.getElementById('tab-settings-hosts')?.focus() }} /> : null}
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 

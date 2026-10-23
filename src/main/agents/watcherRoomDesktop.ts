@@ -1,16 +1,19 @@
-import type { WatcherBridge, WatcherRoomState } from '../../shared/watcherRoom'
+import { watcherMachinesReadSchema, type WatcherBridge, type WatcherRoomState } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { clonePlainData } from './cloneHostSnapshot'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
-  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'>
-type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'> & Partial<Pick<WatcherService, 'machines'>>
+/** Every room call, and the machines read only while Work across machines is on (#1032). */
+export type RoomBridge = Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */
 export function createWatcherRoomDesktop(options: {
   watcherEnabled: boolean
   streamingPublishCost: boolean
+  /** Work across machines (#1032, Owl `cross-machine-work`), read once at start: offers the machines read. */
+  machinesEnabled?: boolean
   watcher?: RoomService | undefined
   send(state: WatcherRoomState): boolean
   schedule?: PublishScheduler
@@ -32,6 +35,7 @@ export function createWatcherRoomDesktop(options: {
     dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
     startNew: () => watcher?.startNew() ?? Promise.resolve(unavailable()),
     readMergeTurns: async () => watcher?.readMergeTurns() ?? unavailable(),
+    ...options.machinesEnabled === true ? { readMachines: async () => watcher?.machines ? watcherMachinesReadSchema.parse(await watcher.machines()) : unavailable() } : {},
   }
   // Keep the legacy callback/replies, without captures or a publisher, when either owner is absent.
   if (!options.streamingPublishCost || !watcher) {
@@ -61,6 +65,7 @@ export function createWatcherRoomDesktop(options: {
       startNew: () => reply(() => bridge.startNew()),
       // A read changes nothing, so it waits for no publish.
       readMergeTurns: () => bridge.readMergeTurns(),
+      ...bridge.readMachines ? { readMachines: bridge.readMachines } : {},
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }
