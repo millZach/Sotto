@@ -1,6 +1,6 @@
 /* The option chips: the model with its provider's mark, the reasoning effort and the permissions. Each opens its own list
    above itself, so the typed text and the send button stay where they were. Outside a composer (Settings, the continue
-   strip) each is one filled chip with 5px corners (ADR-0110). In a composer they are text buttons (ADR-0115, below). */
+   strip) each is one filled chip with 5px corners (ADR-0110). In a composer they are text buttons (ADR-0113, below). */
 .thread-options--chips { gap: 6px; }
 .thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: light-dark(var(--tt-surface-overlay), var(--tt-surface-sunken)); color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .thread-chip > span { overflow: hidden; text-overflow: ellipsis; }
@@ -14,7 +14,7 @@
 /* At the model's highest level the effort chip's word wears the colourway; the composer reads the same mark for its outline (ADR-0019). */
 .thread-chip[data-effort-top='true'] > span { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
 
-/* In a composer the chips are text buttons (ADR-0115, Zach's pick A of docs/prototypes/quiet-composer-prototype.html): no
+/* In a composer the chips are text buttons (ADR-0113, Zach's pick A of docs/prototypes/quiet-composer-prototype.html): no
    edge and no fill at rest, the value and a small chevron, still 28px tall so the hit area stays, with the hover wash while
    pointed at or open and the focus ring from the keyboard. The model reads in the secondary text beside its provider's
    mark; reasoning, permissions and Watch are quieter, in the muted text. */

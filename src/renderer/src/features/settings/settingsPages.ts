@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -147,6 +147,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Color scheme', section: 'settings-appearance', words: 'dark light' },
     { label: 'Effort color', section: 'settings-appearance' },
     { label: 'Creature', section: 'settings-appearance', words: 'claude bot sotto composer' },
+    // The menu bar owl is a Mac's alone (ADR-0114).
+    ...platform === 'darwin' ? [{ label: 'Menu bar owl', section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
     { label: 'Contrast', section: 'settings-appearance' },
     { label: 'Reduced motion', section: 'settings-appearance', words: 'animation' },
     { label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },

@@ -7,7 +7,7 @@ afterEach(cleanup)
 
 const settingsTab = (name: string): HTMLElement => within(screen.getByRole('tablist', { name: 'Settings sections' })).getByRole('tab', { name })
 
-it('opens Settings where an Open Settings press asked, for that visit only (ADR-0114)', async () => {
+it('opens Settings where an Open Settings press asked, for that visit only (ADR-0115)', async () => {
   renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })) }))
   await waitFor(() => expect(shell.navigation).toBe('threads'))
   act(() => shell.navigate('settings', 'settings-history'))

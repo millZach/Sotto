@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platform'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
+import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES } from '../../../src/shared/menuBarOwl'
 import {
   dictationOn,
   APPEARANCES,
@@ -30,6 +31,8 @@ const customSettings = {
   darkTheme: aurora.id,
   appearanceContrast: 135,
   effortColor: 'aurora',
+  menuBarOwlBody: 'ink',
+  menuBarOwlEyes: 'amber',
   creature: 'claude',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
@@ -278,6 +281,15 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, effortColor: 'neon' }).success).toBe(false)
   })
 
+  it('keeps every menu bar owl body and eye colour and recovers an unknown one as the shipped default', () => {
+    for (const menuBarOwlBody of MENU_BAR_OWL_BODIES) expect(parseSettings({ menuBarOwlBody }).menuBarOwlBody).toBe(menuBarOwlBody)
+    for (const menuBarOwlEyes of MENU_BAR_OWL_EYES) expect(parseSettings({ menuBarOwlEyes }).menuBarOwlEyes).toBe(menuBarOwlEyes)
+    expect(parseSettings({ menuBarOwlBody: 'chrome', menuBarOwlEyes: 'pink' })).toMatchObject({ menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal' })
+    expect(parseSettings({})).toMatchObject({ menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal' })
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlBody: 'chrome' }).success).toBe(false)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlEyes: 'pink' }).success).toBe(false)
+  })
+
   it('keeps either creature and recovers an unknown one as Sotto\'s own', () => {
     expect(DEFAULT_SETTINGS.creature).toBe('sotto')
     for (const creature of CREATURES) expect(parseSettings({ creature }).creature).toBe(creature)
@@ -328,6 +340,8 @@ describe('settings', () => {
       darkTheme: 't3-code',
       appearanceContrast: 100,
       effortColor: 'ember',
+      menuBarOwlBody: 'slate',
+      menuBarOwlEyes: 'teal',
       creature: 'sotto',
       customThemes: [],
       reducedMotion: 'system',

@@ -1,6 +1,6 @@
 # Settings pages and Find a setting
 
-October 22, 2026. ADR-0114: Settings regrouped into nine pages in four runs (Zach's pick B from `docs/prototypes/settings-structure-prototype.html`), Find a setting, and Open Settings buttons that open their own page.
+October 22, 2026. ADR-0115: Settings regrouped into nine pages in four runs (Zach's pick B from `docs/prototypes/settings-structure-prototype.html`), Find a setting, and Open Settings buttons that open their own page.
 
 ## What was run
 

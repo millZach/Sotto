@@ -2,7 +2,7 @@
 
 Checked on Windows on October 22 and 23, 2026, in the built app on branch `feat/quiet-composer-line`. The thread composer, its
 queued messages, its branch toolbar and Watcher's composer lose their boxes: their controls are text buttons. Zach picked
-direction A, the quiet line, from `docs/prototypes/quiet-composer-prototype.html`. ADR-0115 records the decision.
+direction A, the quiet line, from `docs/prototypes/quiet-composer-prototype.html`. ADR-0113 records the decision.
 
 ## What was done
 

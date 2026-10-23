@@ -2,7 +2,7 @@
 
 Accepted September 22, 2026.
 
-Amended October 22, 2026 ([ADR-0114](0114-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): the cleanup rules moved from Settings → Application to the first group of Settings → Git & worktrees, **Removing worktrees**. Where this record says Application or Git below, read that.
+Amended October 22, 2026 ([ADR-0115](0115-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): the cleanup rules moved from Settings → Application to the first group of Settings → Git & worktrees, **Removing worktrees**. Where this record says Application or Git below, read that.
 
 Amended October 21, 2026 (#1297): a removal cut off partway is finished, or repaired when Sotto did not start it, rather than left for Git to call prunable. See the correction at the end.
 
