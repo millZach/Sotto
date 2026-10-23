@@ -1,7 +1,9 @@
 /* Sidebar styling is scoped to the thread navigation. */
 /* Sidebar */
-.thread-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 16px 10px 0; background: var(--threads-sidebar); }
-.thread-nav[data-mode] { padding: 0; }
+/* The frame every column that wears the sidebar's top row and foot draws (the Threads sidebar, the Settings column, the
+   stand-in shown while agent controls load) is unpadded: the top row meets the window's corner and the foot insets itself
+   from the column's edges by --thread-nav-inset, so the same parts sit in the same boxes in all of them. */
+.thread-nav { --thread-nav-inset: 10px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 0; background: var(--threads-sidebar); }
 .thread-nav__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 12px 8px; }
 .thread-nav__head h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.35px; }
 .thread-nav__head-actions { display: flex; gap: 2px; }
@@ -11,10 +13,6 @@
    drag region: every control in it opts back out. macOS keeps room at the left for the traffic lights. */
 .thread-nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; -webkit-app-region: drag; user-select: none; }
 .thread-nav--mac .thread-nav__top { padding-left: var(--mac-lights-room); }
-/* A padded sidebar (the Settings rail, the sidebar shown while agent controls load) on macOS: its top row meets the
-   window's corner, as the Threads sidebar's does, so the mark sits level with the traffic lights at every size. */
-.thread-nav--mac:not([data-mode]) { padding-top: 0; }
-.thread-nav--mac:not([data-mode]) > .thread-nav__top { margin-left: calc(-1 * var(--thread-nav-inset, 10px)); }
 /* Near the sidebar's 260px minimum the tile gives 4px of its gap to the lights and the row's end padding gives a
    pixel, so the actions keep their width and the stars their corners. */
 @container thread-sidebar (width < 276px) {
@@ -227,7 +225,7 @@
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
-.thread-nav__rail .thread-nav__foot { width: 100%; justify-content: center; padding: 8px 0; }
+.thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 8px 0; }
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }
