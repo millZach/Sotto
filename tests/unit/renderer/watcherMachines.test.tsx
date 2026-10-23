@@ -199,6 +199,15 @@ describe('The machines line in Watcher’s room', () => {
     } finally { measured.mockRestore(); pane.remove() }
   })
 
+  it('gives a long saved name whole to the press and its title, however the line cuts it short', async () => {
+    const long = 'The build server under the stairs in the second-floor office'
+    show([local(), machine({ hostId: STUDIO, name: long, cpuState: 'busy', memoryState: 'short' })], [])
+    await act(async () => undefined)
+    const name = wide().getByRole('button', { name: `${long}, 0 working, busy, short on memory. Show ${long}’s load and what runs there.` })
+    expect(name).toHaveAttribute('title', `${long} 0 working, busy, short on memory`)
+    expect(name.querySelector('span')).toHaveTextContent(long)
+  })
+
   it('shows every machine in a narrow room once more is pressed', async () => {
     show([local(), forge({ cpuState: 'busy' }), machine({ hostId: STUDIO, name: 'studio' })], [])
     await act(async () => undefined)
