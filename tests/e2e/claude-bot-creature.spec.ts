@@ -9,6 +9,7 @@ import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { expectPaintedInside, paintedBounds } from './support/paintedBounds'
 import { expectReadoutUnfilled, paintedUnderReadout, readoutContrast, type ReadoutContrast } from './support/readout'
 
 /** Claude bot, the second creature: chosen in Settings → Appearance, worn in every pose above the composer. */
@@ -251,8 +252,47 @@ test('the readout is words on the room', async () => {
   } finally { await closeSotto(launched) }
 })
 
+/**
+ * What the bot paints stays in its box in every pose: a full 14 s monitoring cycle (out facing right, the inspection at the
+ * far end, back mirrored, the rest), working, the whole 6 s sand period with its flip, and each reduced-motion stance.
+ * Sampled in real time over whole cycles rather than with a faked clock, so the app's own timers are left alone.
+ */
+async function expectPaintedEveryPose(page: Page): Promise<void> {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await monitoring(page, [])
+  await expect(indicator(page)).toHaveCount(0)
+  await monitoring(page)
+  await expectClaude(page)
+  const cycle = await expectPaintedInside(indicator(page), 14_500)
+  expect(cycle.mirrored).toBeGreaterThan(0)
+  expect(cycle.frames - cycle.mirrored).toBeGreaterThan(0)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect.poll(() => motionPositions(page)).toBe(1)
+  await expectPaintedInside(indicator(page))
+  await monitoring(page, [])
+  await expect(indicator(page)).toHaveCount(0)
+
+  for (const [pose, raise, ms, clear] of [
+    ['working', () => working(page), 2_000, () => event(page, { type: 'background-work', threadId: 'workshop', text: '', backgroundWork: [], status: 'idle' })],
+    ['held', () => acting(page, 45_000), 6_500, () => idle(page)],
+  ] as const) {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await raise()
+    await expect(indicator(page)).toHaveAttribute('data-ornament', pose)
+    await expectClaude(page)
+    await expectPaintedInside(indicator(page), ms)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect.poll(() => motionPositions(page)).toBe(1)
+    await expectPaintedInside(indicator(page))
+    await clear()
+    await expect(indicator(page)).toHaveCount(0)
+  }
+  await monitoring(page)
+  await expect(indicator(page)).toBeVisible()
+}
+
 test('Claude bot fits every supported size in both themes and honours both reduced-motion settings', async () => {
-  test.setTimeout(180_000)
+  test.setTimeout(420_000)
   const launched = await launchSotto()
   const { page } = launched
   try {
@@ -281,6 +321,7 @@ test('Claude bot fits every supported size in both themes and honours both reduc
           return Math.abs(actor.right - track.right)
         })).toBeLessThanOrEqual(2)
         await expectWhole(page) // Inspection pose at the far end of the track.
+        if (width !== 1600) await expectPaintedEveryPose(page)
       }
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -289,6 +330,11 @@ test('Claude bot fits every supported size in both themes and honours both reduc
     await page.evaluate(async () => { await window.sotto!.updateSettings({ reducedMotion: 'on' }) })
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     expect(await motionPositions(page)).toBe(1)
+    // The painted-bounds check bites: a bot pushed inside its box, with the loop frozen, is caught.
+    const pushed = await paintedBounds(indicator(page), 0, 'translate(12 0)')
+    expect(pushed.right, JSON.stringify(pushed)).toBeGreaterThan(81)
+    expect(pushed.outermost.length).toBeGreaterThan(0)
+    await expectPaintedInside(indicator(page))
     await page.evaluate(async () => { await window.sotto!.updateSettings({ reducedMotion: 'system' }) })
 
     await chooseAppearance(page, 'dark')
