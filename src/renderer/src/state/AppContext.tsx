@@ -15,6 +15,7 @@ import type {
   DictationShortcutsChange,
   DictationShortcutsResult,
   OpenRouterKeyCheck,
+  OpenRouterModelList,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
@@ -38,6 +39,7 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
+import { cancelNightFalls, nightFallsShipped, playNightFalls } from '../watcher/nightFalls'
 import type { SettingsSectionId } from '../features/settings/settingsPages'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
@@ -159,6 +161,8 @@ export interface AppActions {
   copyHistory(text: string): Promise<boolean>
   dismissDictationRecovery(id: string): void
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
+  /** OpenRouter's text models for the cleanup model picker (ADR-0122); a failure is a reason, never a throw. */
+  listOpenRouterModels(): Promise<OpenRouterModelList>
   /** Starts the speech model download, or retries one that failed. */
   downloadSpeechModel(): Promise<void>
   /**
@@ -249,6 +253,12 @@ export function AppProvider({
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  // The navigation and the update as of the last render, for navigate(), which is made once.
+  const navigationRef = useRef(navigation)
+  navigationRef.current = navigation
+  const updateRef = useRef(update)
+  const navigationGenerationRef = useRef(0)
+  updateRef.current = update
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
   const speechModelRef = useRef<SpeechModelStatus | null>(null)
   const [speechModels, setSpeechModels] = useState<readonly SpeechModelOption[] | null>(null)
@@ -674,9 +684,19 @@ export function AppProvider({
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
     navigate: (destination, settingsSection) => {
-      setNavigation(destination)
-      // A request is for one visit: Settings opened any other way starts on its first page again.
-      setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
+      // Navigations apply in the order they were asked for: a run's deferred page change gives way to any newer one.
+      const generation = ++navigationGenerationRef.current
+      const go = (): void => {
+        if (generation !== navigationGenerationRef.current) return
+        setNavigation(destination)
+        // A request is for one visit: Settings opened any other way starts on its first page again.
+        setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
+      }
+      // Between Threads and Watcher's room the window plays night falls, unless the setting is off.
+      const from = navigationRef.current, current = settingsRef.current
+      const betweenRooms = (from === 'threads' && destination === 'watcher') || (from === 'watcher' && destination === 'threads')
+      if (betweenRooms && nightFallsShipped(updateRef.current) && current?.roomTransition !== false) playNightFalls(go, { forward: destination === 'watcher', speed: current?.roomTransitionSpeed ?? 1 })
+      else { cancelNightFalls(); go() }
     },
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)
@@ -770,6 +790,10 @@ export function AppProvider({
     checkOpenRouterKey: async () => {
       if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
       try { return await bridge.checkOpenRouterKey() } catch { return { ok: false, reason: 'network' } }
+    },
+    listOpenRouterModels: async () => {
+      if (bridge === undefined) return { ok: false, reason: 'network' }
+      try { return await bridge.listOpenRouterModels() } catch { return { ok: false, reason: 'network' } }
     },
     downloadSpeechModel: async () => {
       if (bridge === undefined) return

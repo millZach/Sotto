@@ -443,6 +443,37 @@ final class AppModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    /// The badge and the groups are kept between redraws, and every new list from the computer is grouped afresh.
+    @MainActor func testThreadsBadgeAndGroupsFollowEveryChangeToTheList() async throws {
+        let (_, ref) = try fixture()
+        let model = AppModel(keychain: TestKeychain.store)
+        model.phase(.active); await model.waitForActivation()
+        XCTAssertEqual(model.threadsBadge, 0)
+        XCTAssertTrue(model.focusThreads().questions.isEmpty)
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        try connection.push(.shell(changeShell(requests: [["id": "asked", "kind": "permission", "text": "Which branch?", "options": []]])))
+        XCTAssertEqual(model.threadsBadge, 1)
+        XCTAssertEqual(model.focusThreads().questions.map(\.ref), [ref])
+        XCTAssertEqual(model.focusThreads(query: "branch").questions.map(\.ref), [ref])
+        XCTAssertTrue(model.focusThreads(query: "nowhere").isEmpty)
+        try connection.push(.shell(changeShell()))
+        XCTAssertEqual(model.threadsBadge, 0)
+        XCTAssertTrue(model.focusThreads().questions.isEmpty)
+        XCTAssertTrue(model.focusThreads(query: "branch").isEmpty)
+        // A thread that finished unseen counts, unless it is the one open here; another computer's filter shows nothing.
+        var unseen = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(HostConnection.shell)) as? [String: Any])
+        var host = try XCTUnwrap(unseen["host"] as? [String: Any])
+        var threads = try XCTUnwrap(host["threads"] as? [[String: Any]])
+        threads[0]["finishedUnread"] = true; host["threads"] = threads; unseen["host"] = host
+        try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: unseen))))
+        XCTAssertEqual(model.threadsBadge, 1)
+        XCTAssertEqual(model.focusThreads().unreadFinishedCount, 1)
+        XCTAssertEqual(model.focusThreads(opened: ref).unreadFinishedCount, 0)
+        XCTAssertFalse(model.focusThreads(show: .only(ref.hostID)).isEmpty)
+        XCTAssertTrue(model.focusThreads(show: .only("another computer")).isEmpty)
+        model.phase(.background)
+    }
+
     @MainActor func testDamagedComputerInReadableIndexExplainsPairingAgain() throws {
         let (_, ref) = try fixture()
         TestKeychain.items[ComputerStore.account(ref.hostID)] = Data("incompatible computer".utf8)
@@ -693,7 +724,7 @@ final class AppModelTests: XCTestCase {
         let model = try modelWithMarker(answer)
         model.phase(.active); await model.waitForActivation()
         let connection = try XCTUnwrap(HostConnection.instances.last)
-        connection.push(.shell(try changeShell()))
+        try connection.push(.shell(changeShell()))
         XCTAssertTrue(model.pending.isEmpty)
         XCTAssertEqual(model.feedback, "That request is no longer waiting.")
         HostConnection.loseAcknowledgement = true

@@ -618,7 +618,9 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       const update = f.clientUpdate!
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = randomUUID()
-      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Update thread' })
+      // Both sends need a confirmed provider session, and an uncertain create leaves Grok without one (#1021).
+      expect(await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Update thread' }))
+        .toMatchObject({ accepted: true })
       f.host.observeThreads?.([sessionId])
       expect(await send('before-update', 'Synthetic prompt')).toEqual({ accepted: true })
       await expect.poll(async () => (await thread()).status).toBe('running')

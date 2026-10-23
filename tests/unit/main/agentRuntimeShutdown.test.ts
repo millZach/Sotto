@@ -56,6 +56,27 @@ describe('host runtime shutdown', () => {
     await expect(pending).resolves.toBeNull()
   })
 
+  it('stops side calls only once a title still being written has had its time, so it can be kept (#980)', async () => {
+    const host = await runtime()
+    const titleTime = deferred()
+    const titlesSettled = vi.spyOn(host.agentControl, 'titleWritesSettled').mockReturnValue(titleTime.promise)
+    let signal: AbortSignal | undefined
+    const entered = deferred()
+    vi.spyOn(host.agentHost, 'writeShortText').mockImplementation((_threadId, _prompt, received) => {
+      signal = received; entered.resolve()
+      return new Promise<string | null>((_resolve, reject) => { received!.addEventListener('abort', () => reject(new Error('Client stopped')), { once: true }) })
+    })
+    const pending = host.shortTextWriter.write('thread-a', threadTitleRequest({ prompt: 'Fix the contrast', reply: 'Done' }))
+    await entered.promise
+    const closing = host.close()
+    await vi.waitFor(() => expect(titlesSettled).toHaveBeenCalled())
+    expect(signal!.aborted).toBe(false)
+    titleTime.resolve()
+    await closing
+    expect(signal!.aborted).toBe(true)
+    await expect(pending).resolves.toBeNull()
+  })
+
   it('waits for a pending organization save before closing the event store', async () => {
     const host = await runtime()
     await host.hostService.command({ type: 'connect' }, desktopWindowClient())

@@ -87,6 +87,9 @@ export async function usageDashboardHarness() {
     // Windows' minimum content size can round by two pixels at the current display scale.
     await expect.poll(() => currentPage().evaluate(size => Math.max(Math.abs(innerWidth - size.width), Math.abs(innerHeight - size.height)), { width, height }))
       .toBeLessThanOrEqual(2)
+    // innerHeight moves a frame before 100vh does; measure once the shell has followed the window.
+    await expect.poll(() => currentPage().evaluate(() => Math.abs(document.querySelector('.app-shell')!.getBoundingClientRect().height - innerHeight)))
+      .toBeLessThanOrEqual(1)
   }
   const appearance = async (value: 'light' | 'dark'): Promise<void> => {
     await currentPage().evaluate(async value => { await window.sotto!.updateSettings({ appearance: value, reducedMotion: 'on' }) }, value)
@@ -103,7 +106,9 @@ export async function usageDashboardHarness() {
     const layout = await currentPage().evaluate(() => {
       const room = document.querySelector<HTMLElement>('.usage-view')!
       const scroll = document.querySelector<HTMLElement>('.usage-scroll')!
-      return { documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      // The document never scrolls: only the Usage page does, under a sidebar that fills the window.
+      const root = document.documentElement
+      return { documentOverflow: root.scrollWidth > root.clientWidth + 1 || root.scrollHeight > root.clientHeight + 1,
         roomOverflow: room.scrollWidth > room.clientWidth + 1, scrollOverflow: scroll.scrollWidth > scroll.clientWidth + 1,
         clippedNumbers: [...room.querySelectorAll<HTMLElement>('.usage-index__value:not([data-words]),.usage-tokens__legend dd,.usage-window__left b,.usage-row__n,.usage-split__item b')]
           .filter(element => element.scrollWidth > element.clientWidth + 1).map(element => element.className) }

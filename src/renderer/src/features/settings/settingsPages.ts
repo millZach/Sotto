@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'notifications'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -95,6 +95,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Success message duration', section: 'settings-output', words: 'milliseconds', gate: 'dictation' },
     { label: 'AI formatting', section: 'settings-formatting', words: 'cleanup openrouter', gate: 'dictation' },
     { label: 'OpenRouter key', section: 'settings-formatting', target: 'OpenRouter API key', words: 'api key cleanup', gate: 'dictation' },
+    { label: 'Cleanup model', section: 'settings-formatting', words: 'openrouter ai formatting llm', gate: 'cleanup-model' },
+    { label: 'Cleanup mode', section: 'settings-formatting', target: 'Mode', words: 'openrouter nitro floor fastest cheapest host', gate: 'cleanup-model' },
     { label: 'Personal dictionary', section: 'settings-formatting', words: 'vocabulary words names spelling', gate: 'dictation' },
 
     { label: 'New threads start with', section: 'settings-agents', words: 'model reasoning effort permissions defaults' },
@@ -146,17 +148,20 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Themes', section: 'settings-appearance', words: 'color colour look' },
     { label: 'Color scheme', section: 'settings-appearance', words: 'dark light' },
     { label: 'Effort color', section: 'settings-appearance' },
+    { label: 'Show the creature', section: 'settings-appearance', words: 'hide off composer', gate: 'creature-toggle' },
     { label: 'Creature', section: 'settings-appearance', words: 'claude bot sotto composer' },
     // The menu bar owl is a Mac's alone (ADR-0114).
     ...platform === 'darwin' ? [{ label: 'Menu bar owl', section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
     { label: 'Contrast', section: 'settings-appearance' },
     { label: 'Reduced motion', section: 'settings-appearance', words: 'animation' },
+    { label: 'Night falls between Threads and Watcher', section: 'settings-appearance', words: 'transition animation watcher room', gate: 'night-falls' },
+    { label: 'Night falls speed', section: 'settings-appearance', words: 'transition animation slower faster', gate: 'night-falls' },
     { label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },
     { label: 'Start minimized', section: 'settings-privacy', words: 'startup tray' },
     { label: 'Keep local history', section: 'settings-history', words: 'transcripts privacy' },
     { label: 'History retention', section: 'settings-history', words: 'transcripts' },
     { label: 'Clear transcript history', section: 'settings-history', words: 'delete' },
-    // Only where the window can show notifications: in Owl on a Mac (ADR-0117).
+    // Only where the window can show notifications: on a Mac (ADR-0117).
     { label: 'When a thread needs you', section: 'settings-privacy', words: 'notifications notify question permission', gate: 'notifications' },
     { label: 'When a thread has finished everything', section: 'settings-privacy', words: 'notifications notify done', gate: 'notifications' },
     { label: 'Send a test notification', section: 'settings-privacy', words: 'notifications', gate: 'notifications' },

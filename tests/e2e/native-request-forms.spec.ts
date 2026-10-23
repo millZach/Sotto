@@ -100,7 +100,7 @@ async function emit(page: Page, threadId: string, request: AgentRequest): Promis
 }
 
 async function selectThread(page: Page, title: string): Promise<void> {
-  await page.getByRole('button', { name: title, exact: true }).click()
+  await page.getByRole('button', { name: title, exact: true }).click({ position: { x: 16, y: 12 } })
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
@@ -125,12 +125,13 @@ async function expectRoomy(page: Page, minimumLog: number): Promise<void> {
     const prompt = document.querySelector('.thread-prompt .prompt-editor')?.getBoundingClientRect()
     return { logHeight: log.clientHeight, composeBottom: compose.bottom, composeTop: compose.top, height: window.innerHeight,
       pageOverflow: document.documentElement.scrollWidth - window.innerWidth, cardOverflow: request.scrollWidth - request.clientWidth,
-      logBottom: log.getBoundingClientRect().bottom,
+      logBottom: log.getBoundingClientRect().bottom, logPaddingBottom: parseFloat(getComputedStyle(log).paddingBottom),
       questionsHeight: questions?.clientHeight ?? null, questionsBottom: questions?.getBoundingClientRect().bottom ?? null,
       promptTop: prompt?.top ?? null }
   })
   expect(layout.composeBottom).toBeLessThanOrEqual(layout.height + 1)
-  expect(layout.logBottom).toBeLessThanOrEqual(layout.composeTop + 1)
+  // A floating composer covers the transcript's foot only as far as the transcript's padding, so its last line stays clear.
+  expect(layout.logBottom - layout.logPaddingBottom).toBeLessThanOrEqual(layout.composeTop + 1)
   expect(layout.logHeight).toBeGreaterThanOrEqual(layout.questionsHeight === null ? minimumLog : 60)
   if (layout.questionsHeight !== null) {
     expect(layout.questionsHeight).toBeGreaterThan(0)
@@ -446,7 +447,7 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     await selectThread(page, 'Grok voice previews')
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note']) {
-      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
     const panes = page.getByRole('group', { name: 'Thread panes' })
@@ -513,7 +514,7 @@ test('keeps simultaneous question and permission controls reachable in a short s
     await selectThread(page, 'Grok voice previews')
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note']) {
-      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
     const pane = page.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)

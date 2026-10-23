@@ -53,6 +53,7 @@ import { REQUEST_DRAFT_CHANGED } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
   app,
+  autoUpdater as nativeAutoUpdater,
   BrowserWindow,
   clipboard,
   dialog,
@@ -134,6 +135,7 @@ import { createDictationGate } from './hotkeys/dictationGate'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
+import { listOpenRouterModels } from './llm/openRouterModels'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
@@ -223,6 +225,8 @@ import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
+import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
+import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -334,6 +338,7 @@ type NativeDiagnostic =
   | 'owl-frames-unavailable'
   | 'owl-failed'
   | 'desktop-notification-failed'
+  | 'interface-language-load-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -391,9 +396,12 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     Map<NavigationEventName, () => void>
   >()
   private readonly rendererProcessGoneCleanups = new Map<() => void, () => void>()
+  /** Held apart from `window`: once a window closes, its `webContents` getter throws, and the listeners still have to come off. */
+  private readonly contents: WebContents
 
   constructor(private readonly window: BrowserWindow) {
-    this.webContents = window.webContents
+    this.contents = window.webContents
+    this.webContents = this.contents
   }
 
   on(
@@ -468,18 +476,18 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     if (event === 'will-navigate') {
       const wrapped = (details: ElectronEvent<WebContentsWillNavigateEventParams>): void =>
         listener(details, { url: details.url })
-      this.window.webContents.on('will-navigate', wrapped)
-      cleanup = () => this.window.webContents.removeListener('will-navigate', wrapped)
+      this.contents.on('will-navigate', wrapped)
+      cleanup = () => this.contents.removeListener('will-navigate', wrapped)
     } else if (event === 'will-frame-navigate') {
       const wrapped = (details: ElectronEvent<WebContentsWillFrameNavigateEventParams>): void =>
         listener(details, { url: details.url })
-      this.window.webContents.on('will-frame-navigate', wrapped)
-      cleanup = () => this.window.webContents.removeListener('will-frame-navigate', wrapped)
+      this.contents.on('will-frame-navigate', wrapped)
+      cleanup = () => this.contents.removeListener('will-frame-navigate', wrapped)
     } else {
       const wrapped = (details: ElectronEvent<WebContentsWillRedirectEventParams>): void =>
         listener(details, { url: details.url })
-      this.window.webContents.on('will-redirect', wrapped)
-      cleanup = () => this.window.webContents.removeListener('will-redirect', wrapped)
+      this.contents.on('will-redirect', wrapped)
+      cleanup = () => this.contents.removeListener('will-redirect', wrapped)
     }
 
     const cleanups = this.navigationCleanups.get(listener) ?? new Map()
@@ -501,9 +509,9 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
 
   onRenderProcessGone(listener: () => void): void {
     const wrapped = (): void => listener()
-    this.window.webContents.on('render-process-gone', wrapped)
+    this.contents.on('render-process-gone', wrapped)
     this.rendererProcessGoneCleanups.set(listener, () => {
-      this.window.webContents.removeListener('render-process-gone', wrapped)
+      this.contents.removeListener('render-process-gone', wrapped)
     })
   }
 
@@ -656,6 +664,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
+const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
@@ -675,7 +684,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const desktopNotificationsEnabled = owlFeatures['desktop-notifications'] && profile.desktopNotifications && Notification.isSupported()
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
-  // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
+  // Sotto restarts (ADR-0077 decision 6). It stays undefined while Update all is held, when hosts follow the running version alone.
   let waitingAppVersion: string | undefined
   let waitingHostVersion: string | undefined
   let waitingPhase: string | undefined
@@ -693,7 +702,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled: owlFeatures['interface-language'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -706,6 +715,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
+  // English as the computer's language, so every test and design capture reads English on any machine; the setting still
+  // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
+  const interfaceLanguageEnabled = owlFeatures['interface-language']
+  const interfaceLanguage = new MainInterfaceLanguage({
+    enabled: interfaceLanguageEnabled,
+    systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
+    override: app.isPackaged ? undefined : process.env.SOTTO_INTERFACE_LANGUAGE,
+  })
+  // A catalog that cannot be read leaves Sotto in English, which every window can show.
+  const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
+    interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
+  await applyInterfaceLanguage(startupSettings)
   const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
@@ -758,12 +780,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     title: buildName,
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-      const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
+      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
-        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
+        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -1038,7 +1060,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
     finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
@@ -1131,22 +1153,26 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       .then(() => { windows.sendToMain(UPDATE_CHECK_REQUESTED, null) })
       .catch(() => logOperational('native-main-show-failed'))
   }
-  const applicationMenuTemplate = buildApplicationMenuTemplate({
-    platform,
-    appName: APP_NAME,
-    includeDeveloperTools: !app.isPackaged,
-    onShowSettings: () => {
-      void windows.showMain().catch(() => logOperational('native-main-show-failed'))
-    },
-    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
-    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
-    onShowTurnRecords: showTurnRecords,
-  })
-  if (applicationMenuTemplate !== null) {
-    // Windows and Linux keep Electron's default menu: installing null would also drop the
-    // reload/devtools accelerators the app ships with today.
-    Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+  // Built again whenever the interface language changes, so the menu's own words follow it.
+  const installApplicationMenu = (): void => {
+    const applicationMenuTemplate = buildApplicationMenuTemplate({
+      platform,
+      appName: APP_NAME,
+      includeDeveloperTools: !app.isPackaged,
+      onShowSettings: () => {
+        void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+      },
+      // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+      ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+      onShowTurnRecords: showTurnRecords,
+    })
+    if (applicationMenuTemplate !== null) {
+      // Windows and Linux keep Electron's default menu: installing null would also drop the
+      // reload/devtools accelerators the app ships with today.
+      Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+    }
   }
+  installApplicationMenu()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const linuxClipboard = e2eState === null && platform === 'linux'
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
@@ -1263,6 +1289,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // was already short" from "polish truncated it" when users report loss.
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
+    chosenModel: cleanupModelEnabled,
     onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
@@ -1332,6 +1359,23 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const updatesSupported = app.isPackaged && e2eConfiguration === null && inAppUpdates
   // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
   const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
+  // What a Mac's installer does before it quits, for that stand-in: announce the restart, ask every window to close, and
+  // announce it again once the last one has.
+  const closeWindowsLikeInstaller = (): Promise<void> => new Promise(resolve => {
+    const announce = (): boolean => nativeAutoUpdater.emit('before-quit-for-update')
+    announce()
+    const open = BrowserWindow.getAllWindows()
+    let remaining = open.length
+    const closed = (): void => {
+      remaining -= 1
+      if (remaining <= 0) { announce(); resolve() }
+    }
+    if (remaining === 0) closed()
+    for (const window of open) {
+      window.once('closed', closed)
+      window.close()
+    }
+  })
   // A new version of Sotto has every machine check its clients afresh, so the card lists their updates beside it rather
   // than after the restart (ADR-0077). Nothing waits for the answers, and on stable the client update card and each
   // host's tiles read the same readings sooner.
@@ -1344,7 +1388,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     getSettings: () => settings.get(),
     // With Update all on, the restart waits for a host update under way, which it would otherwise cut off (ADR-0077).
     ...(owlFeatures['update-all'] ? { restartHold: () => hostUpdates.restartHold() } : {}),
-    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn) } : {}),
+    // A refused install ends the restart Electron announced (`before-quit-for-update`, below): the window comes back with
+    // the reason on its update card.
+    restartRefused: () => {
+      windows.cancelQuit()
+      void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+    },
+    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn, undefined, closeWindowsLikeInstaller) } : {}),
     onStatusChanged: (status) => {
       windows.sendToMain(UPDATE_STATUS, status)
       // Update all aims each host at the version this computer is downloading, once its archive is published (ADR-0077).
@@ -1359,6 +1409,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       newSottoVersion(status.phase)
     },
   })
+  // Electron announces a restart for an update before it closes a window. On a Mac it then closes every window itself and
+  // installs once they are all gone, so the main window, which hides to the tray when closed, has to let go or the update
+  // never comes. electron-updater announces it on this same autoUpdater on Windows too (BaseUpdater.quitAndInstall), just
+  // before it calls app.quit(). A Mac announces it a second time once the last window has closed, and again whenever the
+  // last window next closes after a refusal; only a restart that is under way begins a quit, or a refused one would leave
+  // Sotto unable to show a window.
+  nativeAutoUpdater.on('before-quit-for-update', () => { if (updates.restarting()) windows.beginQuit() })
 
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
@@ -1525,6 +1582,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
+      // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
+      if (await applyInterfaceLanguage(settings)) {
+        trayController.update(currentTrayState)
+        installApplicationMenu()
+        windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+      }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
@@ -1765,7 +1829,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers(), {
         list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request),
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
-      })
+      }, owlFeatures['reveal-linked-files'])
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
       const cleanupUsage = registerUsageIpc(ipcMain, { read: query => hostRouter.usageRead(query),
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
@@ -1875,6 +1939,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
+        ...(interfaceLanguageEnabled ? { interfaceLanguage } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -1968,6 +2033,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             getSettings: () => settings.forFormatting(),
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
+          ...(cleanupModelEnabled ? {
+            models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+          } : {}),
         },
         updates: {
           status: () => updates.status(),

@@ -23,6 +23,8 @@ import {
 } from '../shared/opencodeSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
+import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
+import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
@@ -30,7 +32,7 @@ import { createCloudIphoneBridge } from './cloudIphone'
 import { createThemesBridge } from './themes'
 import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
 import { speechModelListSchema, speechModelStatusSchema } from '../shared/speechModel'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, gitChangedFilesSchema } from '../shared/gitChangedFiles'
@@ -82,6 +84,7 @@ import {
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
+  OPENROUTER_LIST_MODELS,
   SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_GET_STATUS,
@@ -111,6 +114,7 @@ import {
 import {
   dictationCommandSchema,
   openRouterKeyCheckSchema,
+  openRouterModelListSchema,
   transcriptionResultSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
@@ -359,6 +363,8 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
+  /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
+  interfaceLanguage: InterfaceLanguageState | null = null,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -421,6 +427,7 @@ export function createSottoBridge(
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
     }) } : {}),
     // Notifications (ADR-0117): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
+    ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
       test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
       onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, z.null(), () => listener()),
@@ -480,6 +487,7 @@ export function createSottoBridge(
       preview: request => invokeParsed(renderer, FILES_PREVIEW, filesResultSchema(filePreviewSchema), fileRequestSchema.parse(request)),
       copyPath: request => invokeParsed(renderer, FILES_COPY_PATH, filesResultSchema(filePathSchema), fileRequestSchema.parse(request)),
       reveal: request => invokeParsed(renderer, FILES_REVEAL, filesResultSchema(filePathSchema), fileRequestSchema.parse(request)),
+      revealLink: request => invokeParsed(renderer, FILES_REVEAL_LINK, filesResultSchema(fileLinkSchema), fileLinkRequestSchema.parse(request)),
     }),
     memory: Object.freeze<MemoryBridge>({
       get: () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
@@ -554,6 +562,7 @@ export function createSottoBridge(
     chooseSpeechModel: (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
     onSpeechModelStatus,
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
+    listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
     ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
@@ -582,9 +591,19 @@ export function createSottoBridge(
   return hostClientBridge(bridge)
 }
 
+function createInterfaceLanguageBridge(renderer: IpcRendererAdapter, startup: InterfaceLanguageState): InterfaceLanguageBridge {
+  return Object.freeze<InterfaceLanguageBridge>({
+    startup: Object.freeze({ ...startup }),
+    current: () => invokeParsed(renderer, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema),
+    onChanged: listener => subscribe(renderer, INTERFACE_LANGUAGE_CHANGED, interfaceLanguageStateSchema, listener),
+  })
+}
+
 export function createSottoWidgetBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
+  /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
+  interfaceLanguage: InterfaceLanguageState | null = null,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -600,6 +619,7 @@ export function createSottoWidgetBridge(
   )
   return Object.freeze({
     platform,
+    ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
 
     onWidgetState,
     onWidgetVisibilityChange,
@@ -661,13 +681,14 @@ export function exposeRendererBridge(
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
-      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT)))
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
+      parseInterfaceLanguageArgument(arguments_)))
     return true
   }
   if (rendererRole === 'widget') {
     context.exposeInMainWorld(
       'sottoWidget',
-      createSottoWidgetBridge(renderer, platform),
+      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_)),
     )
     return true
   }

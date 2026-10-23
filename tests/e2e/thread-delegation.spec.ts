@@ -109,7 +109,7 @@ async function delegatedThread(page: Page, parentId: string, known: readonly str
 const sidebar = (page: Page) => page.getByRole('complementary', { name: 'Thread sidebar' })
 const pane = (page: Page) => page.locator('section.thread-pane:not([data-hidden])')
 async function openThread(page: Page, title: string): Promise<Locator> {
-  await sidebar(page).getByRole('button', { name: title, exact: true }).click()
+  await sidebar(page).getByRole('button', { name: title, exact: true }).click({ position: { x: 16, y: 12 } })
   const opened = pane(page)
   await expect(opened.locator('.thread-workspace__head h2')).toHaveText(title)
   return opened
@@ -479,7 +479,7 @@ test('stable offers no delegation bridge and no delegation tool', async () => {
         .rejects.toThrow(/Delegation is off in this build/u)
       await page.reload()
       await openThreads(page)
-      await sidebar(page).getByRole('button', { name: PARENT, exact: true }).click()
+      await sidebar(page).getByRole('button', { name: PARENT, exact: true }).click({ position: { x: 16, y: 12 } })
       await expect(pane(page).getByRole('button', { name: 'Stop agent', exact: true })).toBeVisible({ timeout: 30_000 })
       await expect(page.locator('.delegation-card, .delegated-by, .delegation-note, [data-delegation-level]')).toHaveCount(0)
     })

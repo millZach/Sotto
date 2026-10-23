@@ -362,7 +362,32 @@ const REMOVAL_RECORD = 'sotto-removal.json'
 type NestedWorktree = { path: string; commonDirectory: string }
 /** A reason a removal or repair stopped that is already in plain words for the person reading it. */
 class RemovalKept extends Error {}
-const REPAIR_FAILED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits. Check that Sotto can write to the folder, then choose Refresh to try again.'
+const REPAIR_STOPPED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits.'
+const REPAIR_FAILED = `${REPAIR_STOPPED} Check that Sotto can write to the folder, then choose Refresh to try again.`
+/** A repair that stopped, in plain words: what kept it, when Sotto knows, and what to press. */
+function unfinishedRepair(cause: unknown): Error {
+  return new Error(cause instanceof RemovalKept ? `${REPAIR_STOPPED} ${cause.message}` : REPAIR_FAILED, { cause })
+}
+/**
+ * The first entry in a checkout, as a folder-relative path, that is not a real folder where one of `files` needs its
+ * folders to be: a file, or a link or junction, which Git never writes through. None when every folder on the way is
+ * real or missing.
+ */
+async function inTheWay(root: string, files: readonly string[]): Promise<string | undefined> {
+  const checked = new Set<string>()
+  for (const file of files) {
+    const parts = file.split('/')
+    for (let depth = 1; depth < parts.length; depth++) {
+      const local = parts.slice(0, depth).join('/')
+      if (checked.has(local)) continue
+      checked.add(local)
+      const info = await lstat(join(root, ...parts.slice(0, depth))).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error })
+      if (!info) break
+      if (info.isSymbolicLink() || !info.isDirectory()) return local
+    }
+  }
+  return undefined
+}
 /** A removal that stopped again, in plain words: what kept it, when Sotto knows, and what to press. */
 function unfinishedRemoval(cause: unknown): Error {
   const kept = cause instanceof FolderRemovalStalled || cause instanceof RemovalKept ? `${cause.message} ` : ''
@@ -1311,7 +1336,7 @@ export class ThreadWorktrees {
         try {
           await this.putBackMissingFiles(path)
           await this.registry(repositoryRoot, ['worktree', 'unlock', '--', path], identity)
-        } catch (error) { throw new Error(REPAIR_FAILED, { cause: error }) }
+        } catch (error) { throw unfinishedRepair(error) }
         return metadata
       }
       try { await this.removeLocked(repositoryRoot, path, identity, settle.nested) }
@@ -1320,11 +1345,23 @@ export class ThreadWorktrees {
     })
   }
 
-  /** Puts back, from the index, the tracked files missing from a checkout, and changes nothing that is there. */
+  /**
+   * Puts back, from the index, the tracked files missing from a checkout, and changes nothing that is there (#1301).
+   * Git writes no file over one already there; where something in the folder stands where Git needs a folder, Git
+   * refuses, and the repair stops naming it, so the user's file is moved by the user rather than overwritten.
+   */
   private async putBackMissingFiles(path: string): Promise<void> {
     const missingFiles = [...new Set((await this.git(path, ['ls-files', '--deleted', '-z'])).split('\0').filter(Boolean))]
     // Bound each argument list on Windows.
-    for (let offset = 0; offset < missingFiles.length; offset += 100) await this.git(path, ['checkout-index', '--', ...missingFiles.slice(offset, offset + 100)])
+    for (let offset = 0; offset < missingFiles.length; offset += 100) {
+      const batch = missingFiles.slice(offset, offset + 100)
+      try { await this.git(path, ['checkout-index', '--', ...batch]) }
+      catch (error) {
+        const blocking = await inTheWay(path, batch)
+        if (blocking) throw new RemovalKept(`${blocking} is in the way of the files Git puts back, and Sotto left it as it is. Move it out of the folder, then choose Refresh to try again.`, { cause: error })
+        throw error
+      }
+    }
   }
 
   /** The folder Git keeps for the linked worktree at `path`: the one under `worktrees/` whose `gitdir` names its `.git`. */

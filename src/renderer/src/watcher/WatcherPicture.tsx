@@ -3,13 +3,20 @@ import { X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { clockLabel } from '../agents/threadFacts'
-import { prefersReducedMotion } from '../state/reducedMotion'
+import { prefersReducedMotion, useReducedMotion } from '../state/reducedMotion'
+import { sceneInk } from './nightScene'
+import { layoutGrove, type GroveCluster, type GroveLayout, type GroveOwl } from './pictureGrove'
+import { GrovePainter, type GroveOwlFrame } from './pictureGrovePainter'
 import { threadAddressIndex, type WatcherRoom } from './watcherRoom'
+import { surfaceOf, toRgb } from './WatcherNightScene'
 import type { OpenThread, OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { watchedLead } from './WatcherWatched'
-import { blobTag, buildPicture, edgePath, edgePoints, layoutPicture, nodeActivity, pictureMessages, PICTURE_CHIP_MIN, type BlobKind, type MergeStep,
-  type PictureLayout, type PictureMergeTurns, type PictureMessage, type PictureModel, type PictureNode, type PicturePullRequest, type PictureSeen } from './constellation'
+import { watchResolution } from './watchResolution'
+import { blobTag, buildPicture, edgePoints, nodeActivity, pictureMessages, type BlobKind, type MergeStep,
+  type PictureMergeTurns, type PictureMessage, type PictureModel, type PictureNode, type PicturePullRequest, type PictureSeen } from './constellation'
+import type { OwlMood } from './owlFamily'
+import './nightScene.css'
 import './watcherPicture.css'
 
 /** The picture takes the window's state at most this often, so a thread streaming never redraws it per update. */
@@ -26,6 +33,10 @@ const BLOB_MS = 1_100
 const LIT_MS = 1_800
 const MARK_MS = 4_000
 const CARD_WIDTH = 320
+/** A card's tallest (watcherPicture.css). */
+const CARD_TALLEST = 420
+/** While anything in the picture blinks, twinkles or glows, it checks this often and paints only what changed. */
+const SCENE_CHECK_MS = 125
 
 /** The latest value, at most once per `ms`: the picture's inputs change with every streamed update, and it need not. */
 function useSampled<T>(value: T, ms: number): T {
@@ -104,12 +115,14 @@ const STEP_WORDS: Readonly<Record<MergeStep, string>> = { ready: 'READY TO MERGE
 const STEP_SHORT: Readonly<Record<MergeStep, string>> = { ready: 'READY', go: 'GO', merged: 'merged' }
 const CHECKS_WORDS = { passed: 'checks passed', failed: 'checks failed', pending: 'checks running', unknown: 'checks unknown' } as const
 
-/** A pull request as a chip: its number, its checks as a dot, and its merge turn. */
-function PullRequestChip({ pr }: { readonly pr: PicturePullRequest }): ReactNode {
+/** A pull request as a chip: its number, its checks as a dot, and its merge turn unless `compact`. */
+function PullRequestChip({ pr, compact = false }: { readonly pr: PicturePullRequest; readonly compact?: boolean }): ReactNode {
   return <span className="watcher-picture__pr" data-checks={pr.checks} data-step={pr.step ?? undefined} data-state={pr.state} aria-hidden="true">
-    <i />#{pr.number}{pr.step === null ? null : <b>{STEP_SHORT[pr.step]}</b>}
+    <i />#{pr.number}{pr.step === null || compact ? null : <b>{STEP_SHORT[pr.step]}</b>}
   </span>
 }
+/** A label narrower than this leaves a pull request's merge turn to the merge turns along the top and its card. */
+const CHIP_STEP_MIN = 128
 
 /** A pull request in a card's words. */
 function pullRequestWords(pr: PicturePullRequest): string {
@@ -125,16 +138,27 @@ function nodeLabel(node: PictureNode): string {
   return `${node.title}: ${node.word}${prWords}${node.settled ? ', settled' : ''}. Show details`
 }
 
-/** One line for each thread: its ring, its title and its pull request, its dot facing Watcher. */
-function Node({ node, x, y, width, mirror, open, onPress }: { readonly node: PictureNode; readonly x: number; readonly y: number; readonly width: number; readonly mirror: boolean
-  readonly open: boolean; readonly onPress: (key: string, from: HTMLElement) => void }): ReactNode {
-  return <button type="button" className="watcher-picture__node tt-focusable" data-mirror={mirror || undefined} data-settled={node.settled || undefined} data-tone={node.tone}
-    style={{ left: x, top: y, '--node-width': `${Math.max(80, width)}px` } as CSSProperties} aria-label={nodeLabel(node)} aria-haspopup="dialog" aria-expanded={open}
-    title={`${node.title} · ${node.word}`} onClick={event => onPress(node.key, event.currentTarget)}>
-    <span className="watcher-row__ring" data-tone={node.ring} aria-hidden="true" />
-    <span className="watcher-picture__title">{node.title}</span>
-    {width >= PICTURE_CHIP_MIN && node.pullRequest !== null ? <PullRequestChip pr={node.pullRequest} /> : null}
+/** A thread's owl, as its button: the owl on its limb, its name and where it stands under it, and its pull request. */
+function Node({ node, at, open, onPress }: { readonly node: PictureNode; readonly at: GroveOwl; readonly open: boolean
+  readonly onPress: (key: string, from: HTMLElement) => void }): ReactNode {
+  return <button type="button" className="watcher-picture__node tt-focusable" data-settled={node.settled || undefined} data-tone={node.tone}
+    style={{ left: at.box.x, top: at.box.y, width: at.box.w, height: at.box.h, paddingTop: at.label.y - at.box.y } as CSSProperties}
+    aria-label={nodeLabel(node)} aria-haspopup="dialog" aria-expanded={open} title={`${node.title} · ${node.word}`} onClick={event => onPress(node.key, event.currentTarget)}>
+    <span className="watcher-picture__label">
+      <span className="watcher-picture__title">{node.title}</span>
+      <span className="watcher-picture__state">
+        <span className="watcher-row__ring" data-tone={node.ring} aria-hidden="true" />
+        <span className="watcher-picture__word" data-tone={node.tone}>{node.word}</span>
+        {node.pullRequest !== null ? <PullRequestChip pr={node.pullRequest} compact={at.label.w < CHIP_STEP_MIN} /> : null}
+      </span>
+    </span>
   </button>
+}
+
+/** How a thread's owl looks: glowing while a question, a permission or a prototype waits on the user, awake while it works. */
+function moodOfNode(node: PictureNode): OwlMood {
+  if (node.waits !== null && node.waits !== 'failed') return 'waiting'
+  return !node.settled && (node.tone === 'working' || node.tone === 'landing') ? 'awake' : 'asleep'
 }
 
 /**
@@ -143,7 +167,7 @@ function Node({ node, x, y, width, mirror, open, onPress }: { readonly node: Pic
  * beside Watcher shows the thread itself; Open to answer goes to its waiting card.
  */
 function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: { readonly node: PictureNode; readonly room: WatcherRoomState; readonly state: AgentState
-  readonly goes: ReadonlyMap<string, number>; readonly layout: PictureLayout; readonly onClose: (refocus: boolean) => void; readonly onOpen: OpenThread; readonly from: HTMLElement | null }): ReactNode {
+  readonly goes: ReadonlyMap<string, number>; readonly layout: GroveLayout; readonly onClose: (refocus: boolean) => void; readonly onOpen: OpenThread; readonly from: HTMLElement | null }): ReactNode {
   const card = useRef<HTMLDivElement>(null)
   useEffect(() => { card.current?.querySelector<HTMLElement>('button')?.focus() }, [node.key])
   const at = layout.at.get(node.key)
@@ -156,9 +180,12 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
   }
   const asks = node.waits === 'question' || node.waits === 'permission' ? thread?.requests[0]?.text.split('\n').find(line => line.trim() !== '')?.trim() : undefined
   if (at === undefined) return null
-  const left = layout.oneColumn ? Math.min(Math.max(8, at.x - 12), layout.width - CARD_WIDTH - 8)
-    : at.mirror ? Math.min(at.x + 16, layout.width - CARD_WIDTH - 8) : Math.max(8, at.x - 16 - CARD_WIDTH)
-  const top = layout.oneColumn ? at.y + 16 : Math.max(8, Math.min(at.y - 24, layout.height - 320))
+  // Beside the thread's owl, on the side with more room; under it when neither side has room for the card.
+  const right = at.box.x + at.box.w + 8, left0 = at.box.x - 8 - CARD_WIDTH
+  const beside = right + CARD_WIDTH <= layout.width - 8 ? right : left0 >= 8 ? left0 : null
+  const left = beside ?? Math.min(Math.max(8, at.x - CARD_WIDTH / 2), layout.width - CARD_WIDTH - 8)
+  // A card that runs past the picture's foot makes the picture scroll, so its actions are always within reach.
+  const top = beside === null ? at.box.y + at.box.h + 6 : Math.max(8, Math.min(at.box.y - 8, layout.height - CARD_TALLEST - 8))
   return <div ref={card} className="watcher-picture__card" role="dialog" aria-label={`${node.title}, details`} style={{ left, top, width: CARD_WIDTH }}
     onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}>
     <div className="watcher-picture__card-head">
@@ -191,6 +218,98 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
   </div>
 }
 
+/**
+ * The picture's night: the landscape, the trees, the moon and every owl, on two canvases under the words, drawn as the
+ * room's margins are (Zach's pick on October 22, 2026, B of `prototype/watcher-visualize-owls`). Owls perch: a working
+ * one blinks, one waiting on the user glows, and Watcher's own owl blinks on its post. It checks eight times a second
+ * while anything could change and paints only when something did; with motion reduced, or the window hidden, it holds
+ * still. The canvases are decoration: each owl's button is the thread's own, over it.
+ */
+function GroveScene({ layout, model }: { readonly layout: GroveLayout; readonly model: PictureModel }): ReactNode {
+  const back = useRef<HTMLCanvasElement>(null)
+  const front = useRef<HTMLCanvasElement>(null)
+  const probe = useRef<HTMLElement>(null)
+  const painter = useRef<GrovePainter | null>(null)
+  const wake = useRef<() => void>(() => undefined)
+  const reduced = useReducedMotion()
+  const owls = useMemo<GroveOwlFrame[]>(() => {
+    const out: GroveOwlFrame[] = []
+    for (const cluster of model.clusters) for (const node of cluster.nodes) {
+      const at = layout.at.get(node.key)
+      if (at !== undefined) out.push({ key: node.key, x: at.x, y: at.y, mood: moodOfNode(node), settled: node.settled, order: out.length })
+    }
+    return out
+  }, [layout, model])
+  const owlsRef = useRef(owls)
+  owlsRef.current = owls
+  const stillRef = useRef(reduced)
+  stillRef.current = reduced
+  const layoutRef = useRef(layout)
+  layoutRef.current = layout
+  const resizeRef = useRef<() => void>(() => undefined)
+
+  useEffect(() => {
+    const land = back.current, owl = front.current, ink = probe.current, holder = land?.parentElement
+    // Without layout (a test's DOM) there is nothing to draw on.
+    if (land == null || owl == null || ink == null || holder == null || typeof ResizeObserver === 'undefined') return
+    const pixelCanvas = document.createElement('canvas')
+    pixelCanvas.width = 1; pixelCanvas.height = 1
+    const pixel = pixelCanvas.getContext('2d', { willReadFrequently: true })
+    if (pixel === null) return
+    const scene = painter.current = new GrovePainter(land, owl)
+    const origin = performance.now()
+    let timer: number | null = null
+    let disposed = false
+    let inked = ''
+    const frame = (): void => {
+      timer = null
+      if (disposed || document.visibilityState === 'hidden' || !scene.ready) return
+      scene.draw((performance.now() - origin) / 1000, stillRef.current, owlsRef.current)
+      if (!stillRef.current) timer = window.setTimeout(frame, SCENE_CHECK_MS)
+    }
+    wake.current = () => { if (timer !== null) window.clearTimeout(timer); frame() }
+    const readInk = (): void => {
+      const style = getComputedStyle(ink)
+      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(holder, pixel)
+      if (text === null || accent === null || surface === null) return
+      const key = JSON.stringify([text, accent, surface, style.fontFamily])
+      if (key === inked) return
+      inked = key
+      scene.setInk(sceneInk(surface, text, accent), style.fontFamily)
+      wake.current()
+    }
+    const resize = (): void => { scene.resize(layoutRef.current, window.devicePixelRatio || 1); inked = ''; readInk(); wake.current() }
+    resize()
+    const theme = new MutationObserver(readInk)
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
+    const visibility = (): void => { if (document.visibilityState !== 'hidden') wake.current() }
+    document.addEventListener('visibilitychange', visibility)
+    const unwatchResolution = watchResolution(resize)
+    void document.fonts?.load(`10.5px ${getComputedStyle(ink).fontFamily}`).then(() => { if (!disposed) { inked = ''; readInk() } }, () => undefined)
+    resizeRef.current = resize
+    return () => {
+      disposed = true
+      if (timer !== null) window.clearTimeout(timer)
+      theme.disconnect()
+      document.removeEventListener('visibilitychange', visibility)
+      unwatchResolution()
+      wake.current = () => undefined
+      resizeRef.current = () => undefined
+      painter.current = null
+    }
+  }, [])
+  // Each new layout builds the landscape again; the first is built as the scene starts.
+  const first = useRef(true)
+  useEffect(() => { if (first.current) { first.current = false; return } resizeRef.current() }, [layout])
+  useEffect(() => { wake.current() }, [owls, reduced])
+
+  return <>
+    <canvas ref={back} className="watcher-picture__scene" style={{ width: layout.width, height: layout.height }} aria-hidden="true" />
+    <canvas ref={front} className="watcher-picture__scene" style={{ width: layout.width, height: layout.height }} aria-hidden="true" />
+    <i ref={probe} className="watcher-scene__ink" aria-hidden="true" />
+  </>
+}
+
 const SHAPE: Readonly<Record<BlobKind, string>> = { start: 'start', steer: 'steer', go: 'go', reply: 'reply', news: 'news', ready: 'ready', merged: 'merged', card: 'card' }
 
 /** A send held back until main says whether it gave a merge turn: when it was seen, and when it goes regardless. */
@@ -220,7 +339,20 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   const goes = useMemo<ReadonlyMap<string, number>>(() => new Map(merge?.turns.turns.map(turn => [turn.operationId, turn.pullRequest] as const) ?? []), [merge])
   const scroller = useRef<HTMLDivElement>(null)
   const size = useSize(scroller)
-  const layout = useMemo(() => size.width === 0 ? null : layoutPicture(model.clusters, size.width, size.height), [model, size.width, size.height])
+  // Watcher's name and You are laid out at their own widths, so nothing is set beside them that they would run into.
+  const nameRef = useRef<HTMLParagraphElement>(null)
+  const youRef = useRef<HTMLParagraphElement>(null)
+  const [labels, setLabels] = useState({ watcher: 150, you: 150 })
+  useLayoutEffect(() => {
+    const watcher = nameRef.current?.offsetWidth ?? 0, you = youRef.current?.offsetWidth ?? 0
+    if (watcher > 0 && you > 0 && (Math.abs(watcher - labels.watcher) > 1 || Math.abs(you - labels.you) > 1)) setLabels({ watcher, you })
+  })
+  // The layout depends only on which threads stand in which project on which computer, so a sample that changes nothing
+  // else keeps it, and the landscape is not built again. A project's threads are named in a fixed order here, as the
+  // layout stands them, so one moving up its project's list as its state changes changes nothing.
+  const shape = useMemo(() => JSON.stringify(model.clusters.map(cluster => ({ key: cluster.key, project: cluster.project, computer: cluster.computer,
+    nodes: cluster.nodes.map(node => node.key).sort().map(key => ({ key })) }))), [model])
+  const layout = useMemo(() => size.width === 0 ? null : layoutGrove(JSON.parse(shape) as GroveCluster[], size.width, size.height, labels), [shape, size.width, size.height, labels])
   const [open, setOpen] = useState<{ readonly key: string; readonly from: HTMLElement | null } | null>(null)
   const opened = open === null ? undefined : model.nodes.get(open.key)
   const shownOpen = opened !== undefined && layout?.at.has(opened.key) ? opened : undefined
@@ -228,8 +360,7 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   // The messages that moved since the picture last looked go off as blobs. A send waits to be told whether it was a merge
   // turn, since its receipt can reach the window before main's read of the merge turns does.
   const blobs = useRef<HTMLDivElement>(null)
-  const edges = useRef(new Map<string, SVGPathElement>())
-  const placed = useRef<{ layout: PictureLayout | null; model: PictureModel; goes: ReadonlyMap<string, number>; askedAt: number }>({ layout, model, goes, askedAt: merge?.askedAt ?? -Infinity })
+  const placed = useRef<{ layout: GroveLayout | null; model: PictureModel; goes: ReadonlyMap<string, number>; askedAt: number }>({ layout, model, goes, askedAt: merge?.askedAt ?? -Infinity })
   placed.current = { layout, model, goes, askedAt: merge?.askedAt ?? -Infinity }
   const seen = useRef<PictureSeen | null>(null)
   const held = useRef<HeldSend[]>([])
@@ -239,22 +370,23 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
     const { layout: where, model: picture } = placed.current
     const layer = blobs.current, at = where?.at.get(message.key)
     if (where == null || layer === null || at === undefined) return
-    const edge = edges.current.get(message.key)
+    // The thread's owl lights while its message moves, or while the still mark stands.
+    const node = [...scroller.current?.querySelectorAll<HTMLElement>('[data-node-key]') ?? []].find(slot => slot.dataset.nodeKey === message.key)?.querySelector<HTMLElement>('button')
     const reduced = prefersReducedMotion()
-    if (edge !== undefined) {
-      edge.dataset.lit = 'true'
-      window.setTimeout(() => { delete edge.dataset.lit }, reduced ? MARK_MS : LIT_MS)
+    if (node != null) {
+      node.dataset.lit = 'true'
+      window.setTimeout(() => { delete node.dataset.lit }, reduced ? MARK_MS : LIT_MS)
     }
     const shape = document.createElement('span')
     shape.className = 'watcher-picture__shape'
     shape.dataset.kind = SHAPE[message.kind]
     if (reduced) {
-      // Nothing travels: a still mark beside the dot on Watcher's side, or beside You, never over a title.
+      // Nothing travels: a still mark beside the owl on Watcher's side, or beside You, never over a word.
       const mark = document.createElement('span')
       mark.className = 'watcher-picture__mark'
       mark.append(shape)
-      const x = message.direction === 'you' ? where.you.x + 70 : at.mirror ? at.x + 10 : at.x - 22
-      const y = message.direction === 'you' ? where.you.y - 6 : at.y - 6
+      const x = message.direction === 'you' ? where.you.x + where.you.w + 6 : at.side === 'left' ? at.owl.x + at.owl.w + 2 : at.owl.x - 14
+      const y = message.direction === 'you' ? where.you.y + where.you.h / 2 - 6 : at.head.y - 6
       mark.style.transform = `translate(${x}px, ${y}px)`
       layer.append(mark)
       window.setTimeout(() => mark.remove(), MARK_MS)
@@ -271,8 +403,8 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
       label.textContent = tag
       blob.append(label)
     }
-    const points = message.direction === 'out' ? edgePoints(where.owl, at, where.oneColumn)
-      : message.direction === 'in' ? edgePoints(where.owl, at, where.oneColumn).reverse() : edgePoints(at, where.you, true)
+    const points = message.direction === 'out' ? edgePoints(where.watcherAt, at.head, !where.wide)
+      : message.direction === 'in' ? edgePoints(where.watcherAt, at.head, !where.wide).reverse() : edgePoints(at.head, where.youAt, true)
     layer.append(blob)
     if (typeof blob.animate !== 'function') { blob.remove(); return }
     const travel = blob.animate(points.map(point => ({ transform: `translate(${point.x - 6}px, ${point.y - 6}px)` })), { duration: BLOB_MS, easing: 'cubic-bezier(.45,.05,.4,1)', fill: 'forwards' })
@@ -308,7 +440,7 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   // A merge read that answers while sends wait lets go those it has spoken for.
   useEffect(() => { if (held.current.length) release() }, [merge, release])
   // A new layout moves every thread: what is moving or standing still for the old one goes.
-  useEffect(() => { blobs.current?.replaceChildren() }, [layout?.width, layout?.height, layout?.oneColumn])
+  useEffect(() => { blobs.current?.replaceChildren() }, [layout?.width, layout?.height, layout?.wide])
 
   const closeCard = useCallback((refocus: boolean) => {
     const back = open?.from ?? null
@@ -344,32 +476,28 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
     </div>
     <div ref={scroller} className="watcher-picture__canvas" onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('watcher-picture__space')) setOpen(null) }}>
       {total === 0 ? <p className="watcher-picture__empty">{watchedLead(0, 0)}</p> : layout === null ? null : <div className="watcher-picture__space" style={{ height: layout.height }}>
-        <svg className="watcher-picture__lines" width={layout.width} height={layout.height} aria-hidden="true">
-          {layout.clusters.map(cluster => <rect key={cluster.key} className="watcher-picture__hull" x={cluster.x - 4} y={cluster.y} width={cluster.width + 8} height={cluster.height} rx={12} />)}
-          {layout.clusters.flatMap(cluster => cluster.nodes.map(node => <path key={node.key} ref={element => { if (element) edges.current.set(node.key, element); else edges.current.delete(node.key) }}
-            className="watcher-picture__edge" data-tone={model.nodes.get(node.key)?.tone} d={edgePath(layout.owl, node, layout.oneColumn)} />))}
-        </svg>
-        {layout.clusters.map(cluster => {
-          const found = model.clusters.find(item => item.key === cluster.key)!
-          return <section key={cluster.key} className="watcher-picture__cluster" aria-label={`${found.project}${found.computer ? ` on ${found.computer}` : ''}, ${found.nodes.length} ${found.nodes.length === 1 ? 'thread' : 'threads'}`}>
-            <h3 className="watcher-picture__cluster-name" data-mirror={cluster.mirror || undefined} aria-hidden="true"
-              title={`${found.project}${found.computer ? ` · ${found.computer}` : ''}`}
-              style={{ ...cluster.mirror ? { right: layout.width - cluster.x - cluster.width } : { left: cluster.x + 4 }, top: cluster.y + 6, maxWidth: Math.max(40, cluster.width - 8) }}>
-              <b>{found.project}</b>{found.computer ? ` · ${found.computer}` : ''}
-            </h3>
-            {cluster.nodes.map(placedNode => {
-              const node = model.nodes.get(placedNode.key)!
-              return <div key={node.key} data-node-key={node.key} className="watcher-picture__node-slot">
-                <Node node={node} x={placedNode.x} y={placedNode.y} width={placedNode.width} mirror={placedNode.mirror} open={open?.key === node.key} onPress={press} />
+        <GroveScene layout={layout} model={model} />
+        {layout.trees.map(tree => <p key={`${tree.computer}:${tree.x}:${tree.y}`} className="watcher-picture__computer" aria-hidden="true"
+          style={{ left: tree.pill.x, top: tree.pill.y, width: tree.pill.w }}><span>{tree.computer || 'Not in this window'}</span></p>)}
+        {model.clusters.map(cluster => {
+          const sign = layout.signs.find(item => item.key === cluster.key)
+          return <section key={cluster.key} className="watcher-picture__cluster" aria-label={`${cluster.project}${cluster.computer ? ` on ${cluster.computer}` : ''}, ${cluster.nodes.length} ${cluster.nodes.length === 1 ? 'thread' : 'threads'}`}>
+            {sign !== undefined ? <h3 className="watcher-picture__cluster-name" data-align={sign.align} aria-hidden="true" title={`${cluster.project}${cluster.computer ? ` · ${cluster.computer}` : ''}`}
+              style={{ left: sign.box.x, top: sign.box.y, width: sign.box.w, maxWidth: sign.box.w }}>
+              <span>{cluster.project}</span>
+            </h3> : null}
+            {cluster.nodes.map(node => {
+              const at = layout.at.get(node.key)
+              return at === undefined ? null : <div key={node.key} data-node-key={node.key} className="watcher-picture__node-slot">
+                <Node node={node} at={at} open={open?.key === node.key} onPress={press} />
               </div>
             })}
           </section>
         })}
-        <div className="watcher-picture__owl" style={{ left: layout.owl.x, top: layout.owl.y }} aria-hidden="true"><WatcherOwl size={26} /></div>
-        <p className="watcher-picture__owl-name" style={{ left: layout.owl.x, top: layout.owl.y + 32 }}>
-          Watcher{model.working ? <span> · {model.working} working</span> : null}
+        <p ref={nameRef} className="watcher-picture__owl-name" data-wide={layout.wide || undefined} style={{ left: layout.watcherName.x, top: layout.watcherName.y }}>
+          {layout.wide ? null : <WatcherOwl size={14} />}Watcher{model.working ? <span> · {model.working} working</span> : null}
         </p>
-        <p className="watcher-picture__you" style={{ left: layout.you.x, top: layout.you.y }}>
+        <p ref={youRef} className="watcher-picture__you" style={{ left: layout.you.x, top: layout.you.y }}>
           You{model.waiting ? <b> · {model.waiting} waiting</b> : <span> · nothing waiting</span>}
         </p>
         <div ref={blobs} className="watcher-picture__blobs" aria-hidden="true" />
@@ -380,12 +508,13 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
 })
 
 /**
- * Watcher's picture (#1339, Zach's pick on October 22, 2026: A, the constellation), the Visualize tab: Watcher in the
- * middle, the threads it watches around it in clusters by project and computer, one line each with its dot facing
- * Watcher, and a line from Watcher to each. Messages move along the lines as they happen: what Watcher sends, what a
+ * Watcher's picture (#1339), the Visualize tab, drawn as the night scene (Zach's pick on October 22, 2026, B of
+ * `prototype/watcher-visualize-owls`, after A of `prototype/watcher-picture`, the constellation): a tree for each
+ * computer, a limb for each project and an owl for each thread Watcher watches, with its name and where it stands under
+ * it; Watcher's owl on its post in the middle and You at its foot. Messages fly as they happen: what Watcher sends, what a
  * thread answers or has as news, a question or permission going to You, and a pull request joining the merge queue or
- * merging. Merge turns run along the top. With reduced motion nothing travels: the line lights and a still mark appears
- * beside the thread's dot. Live only; history and replay are #1340. This part only samples what the window holds and
+ * merging. Merge turns run along the top. With reduced motion nothing travels: the thread's owl is ringed and a still
+ * mark appears beside it. Live only; history and replay are #1340. This part only samples what the window holds and
  * reads the merge turns; the picture draws from the samples alone.
  */
 export function WatcherPicture({ room, state, entries, id, labelledBy, onOpen }: {

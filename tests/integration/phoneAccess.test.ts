@@ -159,7 +159,11 @@ it('pushes Can answer changes to each connected phone without reconnecting', asy
     for (const peer of peers) peer.messages.length = 0
     await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: true })
     await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: true } } })
-    await expect.poll(() => peers[1]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
+    // The second phone's shell did not change. It is pushed one only if it was still owed its first after hello, since
+    // the host skips a shell the phone already has (#1303). Either way it is never told it may answer. The answer to a
+    // read made now comes behind anything that publish wrote to it, so what it holds then is all it was sent.
+    expect(await peers[1]!.call('after-publish', { op: 'events', afterSeq: 0, threadId: 'no-such-thread' })).toMatchObject({ id: 'after-publish' })
+    for (const message of peers[1]!.messages) if (message.event === 'shell') expect(message).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
     for (const peer of peers) peer.messages.length = 0
     await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: false })
     await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import { ArrowUp, ChevronDown, List, Waypoints } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
+import { useReleaseTrack } from '../state/useReleaseTrack'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
@@ -105,16 +106,17 @@ interface HeaderParts {
 }
 
 /**
- * Watcher's header: the Sotto Owl tile in the window's corner, as on every other Owl page, then Watcher's name and
+ * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
  * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
  * Watcher actions. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). The night sky
  * spreads behind the corner. The row is the window's drag strip.
  */
 function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
   const started = room?.state?.current != null
+  const track = useReleaseTrack()
   return <header className="thread-workspace__head watcher-head">
     {started && room !== null ? <WatcherContextTile room={room} />
-      : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>}
+      : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName(track)}><SottoMark className="thread-nav__tile" /></span>}
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
@@ -377,7 +379,7 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
 }
 
 /**
- * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto Owl tile and its night sky
+ * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto tile and its night sky
  * in the corner, Watcher's conversation centred under its header and the needs-you line, a thread opened beside it in
  * its own real pane, the Overview over the room on All threads, and the switch and page links floating at the bottom.
  * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
@@ -560,7 +562,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>
-  if (room === null || room.status === 'unavailable') watcherContent = status('This build cannot reach Watcher yet. Nothing was started. A later Sotto Owl build adds it.')
+  if (room === null || room.status === 'unavailable') watcherContent = status('This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it.')
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? 'Opening Watcher…')
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>

@@ -240,6 +240,8 @@ function freezeSaved(value: unknown): void {
 }
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
+/** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
+export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
 /** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
 class WakeUpNoLongerDue extends Error {
   constructor() { super('Babysitting ended before this wake-up went, so what it said of that pull request was taken out.') }
@@ -744,6 +746,13 @@ export class AgentControl {
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
   private readonly titleWrites = new Set<Promise<void>>()
+  /** Set once closing has stopped waiting for title writes: a title that comes back after the final save is let go. */
+  private titleWritesLetGo = false
+  private letGoOfTitleWrites!: () => void
+  /** Settles when closing lets go of the title writes still running, so nothing that waits on one waits longer. */
+  private readonly titleWritesReleased = new Promise<null>(resolve => { this.letGoOfTitleWrites = () => resolve(null) })
+  /** Closing's one wait for title writes, so the runtime and `closed()` share the same two seconds. */
+  private closingTitleWait: Promise<void> | undefined
   /** Threads seen this run with nothing said yet: their first message, when it comes, gives them a first-message title. */
   private readonly awaitingFirstMessage = new Set<string>()
   /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
@@ -2880,9 +2889,7 @@ export class AgentControl {
       const exchange = firstExchange(thread, 'automatic', this.threadHistory(thread))
       if (!exchange) continue
       this.titled.add(thread.id)
-      const pending = this.writeThreadTitle(thread.id, exchange)
-      this.titleWrites.add(pending)
-      void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
+      this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
     }
   }
   /**
@@ -2898,9 +2905,13 @@ export class AgentControl {
     const first = this.threadHistory(thread).find(message => message.role === 'user' && message.text.trim().length > 0)
     if (!first) return
     this.awaitingFirstMessage.delete(thread.id)
-    const pending = this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message')
+    this.trackTitleWrite(this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message'))
+  }
+  /** Keeps a title write where closing can wait for it (#980). */
+  private trackTitleWrite(pending: Promise<void>): Promise<void> {
     this.titleWrites.add(pending)
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
+    return pending
   }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   private threadHistory(thread: AgentThread): readonly AgentMessage[] {
@@ -2918,13 +2929,15 @@ export class AgentControl {
   private async offerTitle(threadId: string, write: () => Promise<string | null>, source: 'generated' | 'first-message'): Promise<void> {
     if (this.disposed) return
     try {
-      const title = await write()
-      if (this.disposed || title === null) return
+      const title = await Promise.race([write(), this.titleWritesReleased])
+      // A write started before Sotto began closing is still applied, and `closed()` saves it (#980).
+      if (this.titleWritesLetGo || title === null) return
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
       if (source === 'first-message' && (!carriesDefaultTitle(thread) || thread.titledFromFirstMessage)) return
       this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, source))
-      await this.persist()
+      // Once closing, the final save in `closed()` writes it.
+      if (!this.disposed) await this.persist()
     } catch {
       // A name Sotto offered to write is never worth an error banner: the thread keeps the name it has.
       this.dependencies.logFailure?.('thread-title-failed', 'failed')
@@ -2937,7 +2950,7 @@ export class AgentControl {
     const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', this.threadHistory(thread)) : null
     if (thread && exchange) {
       this.titled.add(thread.id)
-      await this.writeThreadTitle(threadId, exchange)
+      await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))
     }
     this.publish()
     return this.shell()
@@ -5184,11 +5197,26 @@ export class AgentControl {
   }
   /** Called after disconnecting providers, before the headless process releases its stores. */
   async closed(): Promise<void> {
-    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), ...this.titleWrites])
+    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), this.titleWritesSettled()])
     await this.persist(true)
     // A send's record still waiting for its reply is written now, without a first output, rather than when the wait runs out.
     this.firstOutputs.closeAll()
     await this.dependencies.turns?.drain()
+  }
+  /**
+   * Waits for the thread titles still being written, at most `TITLE_WRITE_CLOSING_WAIT_MS` (#980). Once disposed, the
+   * wait is made once, and a title that takes longer is let go: the thread keeps the name it had, nothing is written
+   * after the final save, and a regeneration waiting for it returns. The runtime stops side calls only after this.
+   */
+  titleWritesSettled(): Promise<void> {
+    if (!this.disposed) return this.waitForTitleWrites()
+    return this.closingTitleWait ??= this.waitForTitleWrites().then(() => { this.titleWritesLetGo = true; this.letGoOfTitleWrites() })
+  }
+  private async waitForTitleWrites(): Promise<void> {
+    if (this.titleWrites.size === 0) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cap = new Promise<void>(resolve => { timer = setTimeout(resolve, TITLE_WRITE_CLOSING_WAIT_MS) })
+    try { await Promise.race([Promise.allSettled([...this.titleWrites]), cap]) } finally { clearTimeout(timer) }
   }
   dispose(): void {
     this.disposed = true

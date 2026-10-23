@@ -542,6 +542,19 @@ textarea.tt-input {
   }
 }
 
+/* ---- interface language ---- */
+
+/*
+ * A translated paragraph or description (ADR-0123): in Arabic and Urdu it runs right to left from the right edge of its
+ * box, while the window keeps its English layout and short labels keep the English label's place. Every paragraph a
+ * message fills carries this class; docs/translation-glossary.md says so for the pull requests that add them.
+ */
+:root:is(:lang(ar), :lang(ur)) .tt-paragraph {
+  direction: rtl;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+
 /* ---- motion ---- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1049,9 +1062,16 @@ textarea.tt-input {
    One black room between a thin top strip and a footer line. The strip carries
    the mark, the Dictate/Agents switch and (on Windows) the window controls,
    and is the frameless window's drag region. The room is the only surface
-   that scrolls. The footer holds the page links and one sentence of status. */
+   that scrolls. The footer holds the page links and one sentence of status.
+
+   The shell anchors and clips every absolutely positioned element that has
+   no nearer anchor, such as a page's visually hidden live region. Left to the
+   document, one sitting at the foot of a long page made the document taller
+   than the window, and a wheel past the page's end scrolled the whole shell up
+   under a black band. Clip, unlike hidden, cannot be scrolled either. */
 
 .app-shell {
+  position: relative;
   display: grid;
   width: 100%;
   min-width: 0;
@@ -1060,7 +1080,7 @@ textarea.tt-input {
   grid-template-rows: 60px minmax(0, 1fr) 44px;
   background: var(--tt-canvas);
   color: var(--tt-text);
-  overflow: hidden;
+  overflow: clip;
 }
 
 /* Loading, unavailable and onboarding get the strip and the room, no footer. */
