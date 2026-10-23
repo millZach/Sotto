@@ -341,10 +341,11 @@ const REMOVAL_RECORD = 'sotto-removal.json'
 type NestedWorktree = { path: string; commonDirectory: string }
 /** A reason a removal or repair stopped that is already in plain words for the person reading it. */
 class RemovalKept extends Error {}
-const REPAIR_FAILED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits. Check that Sotto can write to the folder, then choose Refresh to try again.'
+const REPAIR_STOPPED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits.'
+const REPAIR_FAILED = `${REPAIR_STOPPED} Check that Sotto can write to the folder, then choose Refresh to try again.`
 /** A repair that stopped, in plain words: what kept it, when Sotto knows, and what to press. */
 function unfinishedRepair(cause: unknown): Error {
-  return new Error(cause instanceof RemovalKept ? `Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits. ${cause.message}` : REPAIR_FAILED, { cause })
+  return new Error(cause instanceof RemovalKept ? `${REPAIR_STOPPED} ${cause.message}` : REPAIR_FAILED, { cause })
 }
 /**
  * The first entry in a checkout, as a folder-relative path, that is not a real folder where one of `files` needs its
