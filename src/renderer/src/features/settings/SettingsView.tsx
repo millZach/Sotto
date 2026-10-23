@@ -39,6 +39,7 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
+import { NightFallsSettings } from './NightFallsSettings'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -706,6 +707,7 @@ export function SettingsView({
               <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}>
                 <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current}>
                   <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
+                  {watcherOn ? <NightFallsSettings settings={settings} onSave={save} /> : null}
                 </AppearanceSettings>
               </div>
 
