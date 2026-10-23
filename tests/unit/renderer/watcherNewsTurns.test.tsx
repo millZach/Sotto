@@ -113,6 +113,67 @@ describe('Watcher’s replies to news', () => {
   })
 })
 
+/**
+ * Watcher working on news: the wake-up that began the turn is left out, so the turn has nothing drawn until its first reply,
+ * only its running work under the last turn (#1452).
+ */
+describe('Watcher working on news before its first reply', () => {
+  const news: AgentActivity[] = [
+    { id: 'turn-news-4', turnId: 'news-4', afterMessageId: 'news-4', sequence: 50, kind: 'turn', status: 'running', title: 'Turn', startedAt: clock('59:50.000') },
+    { id: 'news-4-0', turnId: 'news-4', afterMessageId: 'news-4', sequence: 51, kind: 'tool', status: 'running', title: 'read_thread', startedAt: clock('59:50.100') },
+  ]
+  const working: ActivityContext = { ...finished, liveTurn: 'news-4', running: true }
+  const list = (shown: readonly AgentMessage[], records: readonly AgentActivity[], running: boolean, streamText = true, watcher = true) =>
+    <MessageList messages={shown} provider="Claude Code" running={running} placement={placeActivities(shown, shown, records)}
+      context={running ? working : finished} streamText={streamText} speaker={watcher ? 'watcher' : undefined} />
+  /** Each drawn message's element, by ID, in the order drawn. */
+  const drawnMessages = (): Map<string, Element> => new Map([...document.querySelectorAll('[data-message-id]')].map(item => [item.getAttribute('data-message-id')!, item]))
+
+  it('leaves your finished turn as it was: folded, its reply whole and the same element, so nothing above or under the reader moves', () => {
+    const view = render(list(messages, activities, false, false))
+    const before = drawnMessages()
+    const reply = document.querySelector('[data-message-id="answer-2"]')!.textContent
+    view.rerender(list(messages, [...activities, ...news], true, false))
+    expect(screen.getByRole('button', { name: 'Worked for 27s' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-message-id="answer-2"]')!.textContent).toBe(reply)
+    // The same elements stay, so the window's scroll anchoring holds the reader's place.
+    const during = drawnMessages()
+    expect([...during.keys()]).toEqual([...before.keys()])
+    for (const [id, element] of before) expect(during.get(id), id).toBe(element)
+    // The news turn's work is the newest thing drawn.
+    expect(inOrder(['Sent it the merge.', 'Read thread'])).toBe(true)
+    // It ends with no reply: the conversation is as it was.
+    view.rerender(list(messages, [...activities, ...news.map(item => ({ ...item, status: 'completed' as const, completedAt: clock('59:55.000') }))], false, false))
+    const after = drawnMessages()
+    for (const [id, element] of before) expect(after.get(id), id).toBe(element)
+  })
+
+  it('leaves the reply to the last news as it was, its work still in its header', () => {
+    const shown = messages.slice(0, 4)
+    const records = activities.filter(item => item.turnId !== 'news-3' && item.turnId !== 'you-2')
+    const view = render(list(shown, records, false))
+    expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toHaveTextContent('After news · 7.3s')
+    view.rerender(list(shown, [...records, ...news], true))
+    expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toHaveTextContent('After news · 7.3s')
+    expect(inOrder(['CI went green', 'Read thread'])).toBe(true)
+  })
+
+  it('still draws your own turn live while Watcher works on it', () => {
+    const yours = [...activities.filter(item => item.turnId !== 'you-2'),
+      { id: 'turn-you-2', turnId: 'you-2', afterMessageId: 'you-2', sequence: 40, kind: 'turn', status: 'running', title: 'Turn', startedAt: clock('59:06.224') } satisfies AgentActivity]
+    render(<MessageList messages={messages} provider="Claude Code" running placement={placeActivities(messages, messages, yours)}
+      context={{ ...finished, liveTurn: 'you-2', running: true }} streamText={false} speaker="watcher" />)
+    expect(screen.queryByRole('button', { name: /^Worked for 27s/u })).not.toBeInTheDocument()
+    expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+  })
+
+  it('changes nothing in another thread, whose running turn is always its newest', () => {
+    render(list(messages, [...activities, ...news], true, false, false))
+    expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+  })
+})
+
 describe('an unshown turn in another thread', () => {
   it('keeps its work before its reply, on the line every turn has', () => {
     show(activities, false)

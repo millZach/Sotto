@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
-import type { AgentActivity } from '../../../shared/agentActivity'
+import { isTerminalActivity, type AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
@@ -317,7 +317,9 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * to know about its place; everything else it reads is shared across updates.
  */
 const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, briefs, continuedIn }: {
-  readonly turn: TranscriptTurn; readonly provider: string; readonly running: boolean; readonly last: boolean
+  readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
+  /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
+  readonly running: boolean
   readonly writing: string | undefined
   readonly speaker?: 'watcher' | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
@@ -436,6 +438,21 @@ function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveT
   return shown.length === groups.length ? groups : shown
 }
 
+/**
+ * Whether a turn of Watcher's conversation finished while Watcher still works: on a news turn, whose wake-up the
+ * conversation leaves out (`watcherWakeUpsAsShown`), so nothing of it is drawn until its first reply. The turn's own
+ * lifecycle record says it finished; without one, running work that no drawn message holds says another turn is going.
+ * Otherwise the finished turn would open into the running turn's layout while the news turn runs and fold again when it
+ * ends, moving what a reader higher up was reading (#1452).
+ */
+function finishedBeforeNews(turn: TranscriptTurn, placement: ActivityPlacement, liveTurn: string | null): boolean {
+  const opening = turn.unshown ? placement.unshown.get(turn.replies[0]!.id) ?? [] : []
+  const own = [...opening, ...[turn.user, ...turn.replies].flatMap(message => message ? placement.after.get(message.id) ?? [] : [])]
+  const lifecycle = own.find(group => group.turn)?.turn
+  if (lifecycle !== undefined) return isTerminalActivity(lifecycle.status)
+  return liveTurn !== null && !own.some(group => group.turnId === liveTurn) && placement.trailing.some(group => group.turnId === liveTurn)
+}
+
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
 export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
 
@@ -453,18 +470,21 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   /** Links to the threads that continue this one, by the user message that began the turn each follows (ADR-0089). */
   readonly continuedIn?: ReadonlyMap<string, readonly ThreadContinuedIn[]> | undefined
 }): ReactNode {
-  const last = messages.findLast(drawn)
-  // A visual after the reply means the reply is no longer being written.
-  const writing = running && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
+  // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation once that
+  // turn has finished: Watcher is then working on news, whose own message is left out, so its turn has nothing drawn yet.
+  const live = running && !(speaker === 'watcher' && turns.length > 0 && finishedBeforeNews(turns.at(-1)!, placement, context.liveTurn))
+  const last = messages.findLast(drawn)
+  // A visual after the reply means the reply is no longer being written.
+  const writing = live && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
   return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
   {turns.map((turn, index) => <React.Fragment key={turn.key}>
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
-    <TurnView turn={turn} provider={provider} running={running}
+    <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
       delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
   </React.Fragment>)}
