@@ -783,3 +783,13 @@ artifacts/sidebar-crossing/*
 !artifacts/sidebar-crossing/owl-settings-foot-dark.png
 !artifacts/sidebar-crossing/threads-820x560-dark.png
 !artifacts/sidebar-crossing/settings-820x560-dark.png
+artifacts/watcher-picture-owls/*
+!artifacts/watcher-picture-owls/sotto-dark-1280x800.png
+!artifacts/watcher-picture-owls/sotto-dark-1600x1000.png
+!artifacts/watcher-picture-owls/sotto-dark-820x560.png
+!artifacts/watcher-picture-owls/sotto-dark-blob-1280x800.png
+!artifacts/watcher-picture-owls/sotto-dark-card-820x560.png
+!artifacts/watcher-picture-owls/sotto-dark-reduced-motion-1280x800.png
+!artifacts/watcher-picture-owls/sotto-light-1600x1000.png
+!artifacts/watcher-picture-owls/sotto-light-820x560.png
+!artifacts/watcher-picture-owls/tropic-dark-1280x800.png

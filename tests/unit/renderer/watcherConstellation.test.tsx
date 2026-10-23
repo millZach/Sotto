@@ -6,8 +6,9 @@ import type { WatcherRoomState } from '../../../src/shared/watcherRoom'
 import { watcherOverview } from '../../../src/shared/watcherOverview'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import type { OverviewEntry } from '../../../src/renderer/src/watcher/WatcherOverview'
-import { blobTag, buildPicture, edgePoints, layoutPicture, nodeActivity, pictureMessages, PICTURE_TWO_SIDES_MIN, targetKey,
+import { blobTag, buildPicture, edgePoints, nodeActivity, pictureMessages, targetKey,
   type PictureMergeTurns } from '../../../src/renderer/src/watcher/constellation'
+import { layoutGrove } from '../../../src/renderer/src/watcher/pictureGrove'
 import { threadsStateFixture } from '../../fixtures/agentState'
 
 const NOW = Date.parse('2026-10-22T18:00:00.000Z')
@@ -185,38 +186,12 @@ describe("Watcher's picture", () => {
   })
 })
 
-describe("the picture's layout", () => {
-  const clustersOf = (sizes: number[]) => sizes.map((size, index) => ({ key: `c${index}`, project: `P${index}`, computer: 'This computer',
-    nodes: Array.from({ length: size }, (_, at) => ({ key: `c${index}-${at}` })) })) as unknown as Parameters<typeof layoutPicture>[0]
-
-  it('puts Watcher in the middle with every dot facing it, the left side mirrored', () => {
-    const layout = layoutPicture(clustersOf([5, 3, 2]), 1280, 600)
-    expect(layout.oneColumn).toBe(false)
-    expect(layout.owl.x).toBe(640)
-    for (const node of layout.at.values()) {
-      expect(node.mirror).toBe(node.x < layout.owl.x)
-      expect(Math.abs(node.x - layout.owl.x)).toBeGreaterThan(50)
-    }
-  })
-
-  it('keeps twenty threads of one project on the screen at the smallest window, one line each', () => {
-    const layout = layoutPicture(clustersOf([20, 2]), 820, 330)
-    expect(layout.height).toBe(330)
-    const ys = [...layout.at.values()].map(node => node.y)
-    expect(Math.min(...ys)).toBeGreaterThan(0)
-    expect(Math.max(...ys)).toBeLessThan(330)
-    // No two lines of the same cluster share a place.
-    const places = [...layout.at.values()].map(node => `${Math.round(node.x)}:${Math.round(node.y)}`)
-    expect(new Set(places).size).toBe(places.length)
-  })
-
-  it('stacks the clusters under Watcher when the pane is narrow, and scrolls rather than squeezing', () => {
-    const layout = layoutPicture(clustersOf([6, 6, 6]), PICTURE_TWO_SIDES_MIN - 1, 300)
-    expect(layout.oneColumn).toBe(true)
-    expect(layout.owl.y).toBeLessThan(Math.min(...[...layout.at.values()].map(node => node.y)))
-    expect(layout.height).toBeGreaterThan(300)
-    const path = edgePoints(layout.owl, layout.at.get('c0-0')!, true)
-    expect(path[0]).toEqual(layout.owl)
-    expect(path.at(-1)).toEqual({ x: layout.at.get('c0-0')!.x, y: layout.at.get('c0-0')!.y })
+describe("a message's path", () => {
+  it('runs from Watcher to a thread’s owl, ending at its face', () => {
+    const layout = layoutGrove([{ key: 'c0', project: 'P0', computer: 'This computer', nodes: [{ key: 'c0-0' }, { key: 'c0-1' }] }], 1280, 600, { watcher: 132, you: 148 })
+    const owl = layout.at.get('c0-0')!
+    const path = edgePoints(layout.watcherAt, owl.head, false)
+    expect(path[0]).toEqual(layout.watcherAt)
+    expect(path.at(-1)).toEqual(owl.head)
   })
 })
