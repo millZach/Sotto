@@ -8,8 +8,9 @@
 /* Follow-up queue (ADR-0112): no card and no card per row. The list hangs off a thin rule in the accent above the composer,
    under a muted line that says what it holds and when it sends; each row is its words on one line, then Steer now as a
    text button in the accent and the row's other actions as ghost icons. It is the one part of the compose area that
-   gives up height: its rows scroll under a head that stays put, never the prompt below it. */
-.thread-followups { --followups-surface: var(--tt-canvas); display: flex; flex: 0 1 auto; flex-direction: column; min-height: calc(var(--followups-top, 28px) + 4px); max-height: max(220px, calc(var(--followups-top, 28px) + 90px)); margin: 0 0 8px; padding: 0 0 0 10px; overflow-y: auto; overscroll-behavior: contain; border-left: 2px solid color-mix(in oklab, var(--tt-accent) 60%, transparent); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+   gives up height: its rows scroll under a head that stays put, never the prompt below it. The 5px it keeps at the right
+   and bottom is room for a focus ring, which the scrolling list would otherwise clip. */
+.thread-followups { --followups-surface: var(--tt-canvas); display: flex; flex: 0 1 auto; flex-direction: column; min-height: calc(var(--followups-top, 28px) + 4px); max-height: max(220px, calc(var(--followups-top, 28px) + 90px)); margin: 0 0 8px; padding: 0 5px 5px 10px; overflow-y: auto; overscroll-behavior: contain; border-left: 2px solid color-mix(in oklab, var(--tt-accent) 60%, transparent); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-followups > * { flex: none; }
 .thread-followups__top { position: sticky; top: 0; z-index: 1; display: flow-root; background: var(--followups-surface); }
 .thread-followups__head { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; margin-bottom: 2px; }

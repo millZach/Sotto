@@ -237,7 +237,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
   const current = options.find(option => option.id === value && !option.disabled)
   const shown = current?.label ?? (value ? capitalise(value) : placeholder)
   // A chip that can show its glyph alone says its value in its tooltip too, so the shield can be read by pointing at it.
-  const title = disabled && fixedReason ? `${label}. ${fixedReason}` : icon ? `${label}: ${shown}` : label
+  const title = disabled && fixedReason ? `${icon ? `${label}: ${shown}` : label}. ${fixedReason}` : icon ? `${label}: ${shown}` : label
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
   const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
     {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
