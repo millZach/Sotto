@@ -90,7 +90,7 @@ export const branchReceiveFinishAnswerSchema = z.union([branchMovedSchema, branc
 export const branchReceiveRefAnswerSchema = branchReceiveFinishAnswerSchema
 export const branchSendBeginAnswerSchema = z.union([z.object({ type: z.literal('sending'), branch: branchNameSchema, commit: commitIdSchema,
   size: z.number().int().positive().max(BRANCH_BUNDLE_MAX_BYTES), sha256: sha256Schema, snapshot: snapshotCarriedSchema.optional() }).strict(),
-  z.object({ type: z.literal('present'), branch: branchNameSchema, commit: commitIdSchema }).strict(), branchMoveRefusalSchema])
+  z.object({ type: z.literal('present'), branch: branchNameSchema, commit: commitIdSchema, snapshot: snapshotCarriedSchema.optional() }).strict(), branchMoveRefusalSchema])
 export const branchCopyAnswerSchema = z.union([branchMovedSchema, branchMoveRefusalSchema])
 export const branchSendChunkAnswerSchema = z.union([z.object({ type: z.literal('chunk'), data: chunkData }).strict(), branchMoveRefusalSchema])
 

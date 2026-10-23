@@ -105,7 +105,7 @@ export class DesktopBranchMoves {
       const prepared = await this.options.bundles.prepare({ repository: folder, moveId, commit: source.commit, bases: tips.tips })
       // The host already has the commit: only its incoming ref is made, and nothing travels.
       if (prepared.type === 'present') {
-        return answer(branchReceiveRefAnswerSchema, await host.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: source.branch, commit: source.commit }))
+        return carrying(answer(branchReceiveRefAnswerSchema, await host.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: source.branch, commit: source.commit })), source.snapshot)
       }
       if (prepared.type !== 'sending') return prepared
       staged = prepared
@@ -145,7 +145,7 @@ export class DesktopBranchMoves {
       const sending = answer(branchSendBeginAnswerSchema, await host.branchMove({ action: 'send-begin', moveId, threadId: input.threadId, bases: tips,
         ...input.snapshot ? { snapshot: true } : {} }))
       if (refused(sending)) return sending
-      if (sending.type === 'present') return await this.options.bundles.receiveRef({ repository: folder, moveId, branch: sending.branch, commit: sending.commit })
+      if (sending.type === 'present') return carrying(await this.options.bundles.receiveRef({ repository: folder, moveId, branch: sending.branch, commit: sending.commit }), sending.snapshot)
       const begun = await this.options.bundles.receive({ repository: folder, moveId, branch: sending.branch, commit: sending.commit, size: sending.size, sha256: sending.sha256 })
       if (!(begun instanceof IncomingBundle)) return carrying(begun, sending.snapshot)
       incoming = begun
@@ -184,7 +184,7 @@ export class DesktopBranchMoves {
       if (refused(sending)) return sending
       // The receiving host already has the commit: only its incoming ref is made, and nothing travels.
       if (sending.type === 'present') {
-        return answer(branchReceiveRefAnswerSchema, await to.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: sending.branch, commit: sending.commit }))
+        return carrying(answer(branchReceiveRefAnswerSchema, await to.branchMove({ action: 'receive-ref', moveId, projectId: input.projectId, branch: sending.branch, commit: sending.commit })), sending.snapshot)
       }
       const begun = answer(branchReceiveBeginAnswerSchema, await to.branchMove({ action: 'receive-begin', moveId, projectId: input.projectId,
         branch: sending.branch, commit: sending.commit, size: sending.size, sha256: sending.sha256 }))
