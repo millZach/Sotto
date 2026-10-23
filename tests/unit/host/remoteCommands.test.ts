@@ -16,7 +16,9 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
  */
-const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'] }
+const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'],
+  // A worker started from a moved branch (#1033): only the host's own Watcher or delegation names the move it starts from.
+  'create-thread': ['startFromMove'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -116,6 +118,8 @@ describe('remote command allow-list', () => {
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
       'host-facts',
+      // Which repository each of the machine's projects is a copy of, read only by a desktop that lists project-origins (#1032).
+      'project-origins',
       // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
       'start-handover',
       // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
