@@ -50,3 +50,12 @@ it('keeps a folder open for the window when session storage refuses the write', 
   fireEvent.click(screen.getByRole('button', { name: /^workshop \d+ threads?$/ }))
   expect(screen.queryByRole('button', { name: 'Visual gate flake' })).not.toBeInTheDocument()
 })
+
+// The column of counts is drawn by CSS and measured in tests/e2e/sidebar-folder-counts.spec.ts; this is the fact it leans on that needs no browser.
+it('ends every folder row on its count, after any dots', () => {
+  mount()
+  const toggles = [...document.querySelectorAll('.thread-folder__toggle')]
+  expect(toggles.length).toBeGreaterThan(2)
+  for (const toggle of toggles) expect(toggle.lastElementChild).toHaveClass('thread-folder__count')
+  expect(document.querySelector('.thread-nav__indicators + .thread-folder__count')).not.toBeNull()
+})

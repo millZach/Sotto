@@ -1,8 +1,8 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer, SHELL_START_TIMEOUT, terminalOutput, threadTerminal, waitForShellPrompt, workspaceTerminal } from './support/terminal'
+import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { forceDomTerminalRenderer, SHELL_START_TIMEOUT, terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Run after npm run build. These journeys use real ConPTYs; only external browser opening is stubbed.
@@ -86,13 +86,12 @@ async function clickTerminalLink(page: Page, scope: Locator, text: string, { mod
   }).toPass({ timeout: 10_000 })
 }
 
-for (const surface of ['tools', 'drawer', 'workspace'] as const) {
+for (const surface of ['tools', 'drawer'] as const) {
   test(`${surface} searches real output, follows safe links, saves font zoom and pastes images`, async () => {
     test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')
     test.setTimeout(180_000)
     const launched = await launchSotto()
     const { page, app } = launched
-    let restarted: LaunchedSotto | undefined
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     try {
@@ -121,7 +120,7 @@ let repaintOnResize=false;
 process.stdout.on('resize', () => { if(repaintOnResize) paint(); });
 paint();
 process.stdin.setRawMode(true); process.stdin.resume(); let line='';
-process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;asked++;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001)+'Wrote the long output\\r\\n');continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
+process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;asked++;paint();continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
 `, 'utf8')
       await app.evaluate(({ shell }) => {
         const state = globalThis as typeof globalThis & { terminalOpenedLinks?: string[] }
@@ -130,7 +129,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       })
       const links = () => app.evaluate(() => (globalThis as typeof globalThis & { terminalOpenedLinks: string[] }).terminalOpenedLinks)
       await page.reload()
-      if (surface !== 'workspace') await forceDomTerminalRenderer(page)
+      await forceDomTerminalRenderer(page)
       await resizeWindow(launched, 1600, 1000); await openThreads(page)
       await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
       const threadId = (await page.locator('.thread-pane').first().getAttribute('data-thread-id'))!
@@ -140,35 +139,16 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         scope = page.getByRole('complementary', { name: 'Tools', exact: true })
         await scope.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
         await scope.getByRole('button', { name: 'Start terminal', exact: true }).click()
-      } else if (surface === 'drawer') {
+      } else {
         await page.locator('[data-pane-terminal-toggle]').first().click()
         scope = page.locator('.pane-terminal')
-      } else {
-        await page.getByRole('radio', { name: 'Terminal', exact: true }).click()
-        await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-        const dialog = page.getByRole('dialog', { name: 'New terminal', exact: true })
-        await expect(dialog).toBeVisible()
-        if (await dialog.getByRole('textbox', { name: 'Terminal name', exact: true }).count() === 0) await dialog.locator('.new-thread-choice').filter({ hasText: folder }).click()
-        await dialog.getByRole('textbox', { name: 'Terminal name', exact: true }).fill('Search check')
-        await dialog.getByRole('combobox', { name: 'Terminal provider' }).selectOption('')
-        await dialog.getByRole('button', { name: 'Open terminal', exact: true }).click()
-        scope = page.locator('.terminal-pane')
       }
       const input = scope.locator('.xterm-helper-textarea')
       await expect(input).toBeAttached()
-      await waitForShellPrompt(() => surface === 'workspace' ? workspaceTerminal(page) : threadTerminal(page, threadId, surface))
+      await waitForShellPrompt(() => threadTerminal(page, threadId, surface))
       await input.pressSequentially('node terminal-basics.cjs'); await input.press('Enter')
-      const output = () => surface === 'workspace' ? page.evaluate(async () => {
-        const list = await window.sotto!.terminals!.list()
-        if (!list.ok || !list.value.terminals[0]) return ''
-        const result = await window.sotto!.terminals!.read({ id: list.value.terminals[0].id })
-        return result.ok ? result.value.output : ''
-      }) : terminalOutput(page, threadId, surface)
+      const output = () => terminalOutput(page, threadId, surface)
       const grid = () => page.evaluate(async ({ surface, threadId }) => {
-        if (surface === 'workspace') {
-          const list = await window.sotto!.terminals!.list()
-          return list.ok ? list.value.terminals[0]!.cols : 0
-        }
         const list = await window.sotto!.terminal!.list({ threadId, place: surface })
         return list.ok ? list.value.sessions[0]!.cols : 0
       }, { surface, threadId })
@@ -178,8 +158,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       const info = test.info()
       if (info.timeout > 0) info.setTimeout(info.timeout + SHELL_START_TIMEOUT)
       await expect.poll(output, { message: 'the fixture printed its first screen', timeout: SHELL_START_TIMEOUT }).toContain('Search check ready')
-      if (surface === 'workspace') await expect(scope.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
-      else await expect(scope.locator('.xterm-rows')).toContainText('CJK 界 emoji 😀')
+      await expect(scope.locator('.xterm-rows')).toContainText('CJK 界 emoji 😀')
       await input.press('Control+f')
       const search = scope.getByRole('search', { name: 'Search terminal output' })
       const find = search.getByRole('textbox', { name: 'Find in terminal' })
@@ -219,15 +198,6 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await search.getByRole('button', { name: 'Close search' }).press('Escape')
       await expect(search).toBeHidden(); await expect(input).toBeFocused()
       await expect(scope.locator('.xterm-decoration')).toHaveCount(0)
-      if (surface === 'workspace') {
-        await scope.locator('.xterm-screen canvas:not(.xterm-link-layer)').evaluate(canvas => {
-          const extension = (canvas as HTMLCanvasElement).getContext('webgl2')!.getExtension('WEBGL_lose_context')
-          if (!extension) throw new Error('GPU context-loss probe unavailable')
-          extension.loseContext()
-        })
-        await forceDomTerminalRenderer(page)
-        await expect(scope.locator('.xterm-rows')).toContainText('CJK 界 emoji 😀')
-      }
       await input.press('Enter'); await expect.poll(output).toContain('INPUT=\r\n')
       await clickTerminalLink(page, scope, 'https://example.com/terminal')
       expect(await links()).toEqual([])
@@ -281,15 +251,10 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await input.press('Control+='); await input.press('Control+=')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(15)
       await page.reload(); await openThreads(page)
-      if (surface === 'workspace') {
-        await page.getByRole('radio', { name: 'Terminal', exact: true }).click()
-        await page.getByRole('button', { name: 'Search check', exact: true }).click()
-      } else {
-        await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-        if (surface === 'tools') {
-          await page.getByRole('button', { name: 'Tools', exact: true }).click()
-          await scope.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
-        }
+      await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
+      if (surface === 'tools') {
+        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await scope.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
       }
       await expect(scope.locator('.xterm-rows')).toHaveCSS('font-size', '15px')
       await input.press('Control+0')
@@ -432,19 +397,6 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         await find.press('Control+k')
         await expect(page.getByRole('region', { name: 'Dictation' })).toBeVisible()
       }
-      if (surface === 'workspace') {
-        await input.press('Control+b')
-        // Search the long output once all of it has arrived. A query typed while it streams in finds nothing at first,
-        // and the addon's recount after the rest lands shows the total with no current match.
-        await expect(scope.locator('.xterm-rows')).toContainText('Wrote the long output')
-        await input.press('Control+f'); await find.fill('many-match')
-        await expect(search.locator('output')).toHaveText('1 of 1000+')
-        await find.press('Control+=')
-        await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
-        await app.close()
-        restarted = await launchSotto('success', launched.userData)
-        expect(await restarted.page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
-      }
-    } finally { if (restarted) await closeSotto(restarted); await closeSotto(launched) }
+    } finally { await closeSotto(launched) }
   })
 }

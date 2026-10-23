@@ -26,6 +26,7 @@ export const OWL_FEATURES = [
   { id: 'iphone-pull-request-view', name: 'Pull requests on the iPhone', owlSince: '2026-10-21', owner: 'docs/adr/0102-the-iphone-reads-a-threads-pull-request-in-a-sheet.md', sentToStable: false },
   { id: 'iphone-agents-view', name: 'Agents on the iPhone', owlSince: '2026-10-21', owner: 'docs/adr/0103-the-iphone-lists-a-threads-agents.md', sentToStable: false },
   { id: 'dictation-off', name: 'Turn dictation off', owlSince: '2026-10-22', owner: 'docs/adr/0107-dictation-can-be-turned-off.md', sentToStable: false },
+  { id: 'message-scrubber', name: 'Message scrubber', owlSince: '2026-10-22', owner: 'docs/adr/0109-a-column-of-ticks-reaches-every-message-the-user-sent.md', sentToStable: false },
   { id: 'desktop-notifications', name: 'Notifications when a thread has finished or needs you', owlSince: '2026-10-22', owner: 'docs/adr/0112-the-desktop-notifies-when-a-thread-has-finished-everything-or-needs-you.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 

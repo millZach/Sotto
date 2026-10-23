@@ -9,7 +9,7 @@ const CHOICES: ReadonlyArray<{ readonly value: WorkingCopyChoice; readonly label
 ]
 const WORKTREE_HINT = 'Its own Git branch and folder, checked out when it opens. Folders without Git are used as they are.'
 
-/** The New worktree / Project folder choice a New thread and a New terminal share. */
+/** The New worktree / Project folder choice in New thread. */
 export function WorkingCopyFieldset({ value, disabled, sharedHint, worktreeHint = WORKTREE_HINT, onChange }: {
   readonly value: WorkingCopyChoice
   readonly disabled: boolean

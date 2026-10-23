@@ -72,7 +72,7 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
   try {
     await resize(launched, 1600, 1000)
     await prepare(launched)
-    await expectWidth(page, 320)
+    await expectWidth(page, 280)
     await expect(separator(page)).toHaveAttribute('aria-orientation', 'vertical')
     await expect(separator(page)).toHaveAccessibleDescription(/Left and Right arrow keys.*Shift.*Home.*End/)
     await expect(separator(page)).toHaveAttribute('aria-valuemin', '260')

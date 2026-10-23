@@ -94,7 +94,6 @@ export default defineConfig({
     build: { rollupOptions: { external: ['node-pty', 'sherpa-onnx-node'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
-      terminalAgentHook: resolve(__dirname, 'src/main/terminals/helper.ts'),
       // Git and gh launch on this worker thread, not on main's, which in Electron is the window's (`gitLauncher.ts`).
       gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
     } } },

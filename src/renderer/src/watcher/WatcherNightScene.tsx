@@ -48,7 +48,10 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
     word(child)
   }
   for (const line of compose.querySelectorAll(':scope > .thread-pane__meta')) word(line)
-  return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words }
+  // A long conversation's message scrubber holds a lane beside the column, which the scene keeps clear (ADR-0109).
+  const scrubber = pane.querySelector('.message-scrubber')
+  const lane = scrubber === null ? undefined : at(scrubber)
+  return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words, ...lane !== undefined && shown(lane) ? { lane } : {} }
 }
 
 /** A colour as the canvas paints it, whatever form the style gave it in. */
@@ -205,7 +208,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       const flight = watcher.flight
       if (flight !== null && t >= flight.t0 + flight.dur) watcher = { at: flight.to, side: flight.side, flight: null, next: t + stayAt(flight.to, Math.random()) }
       if (watcher.flight === null && t >= watcher.next) {
-        const next = planFlight(layout, watcher, nextPlace(watcher.at, Math.random()), t)
+        const next = planFlight(layout, watcher, nextPlace(watcher.at, Math.random(), layout.lane === null), t)
         watcher = { ...watcher, flight: next }
       }
     }
@@ -333,10 +336,16 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     const scheduleLayout = (): void => { if (layoutRequest === null && !disposed) layoutRequest = requestAnimationFrame(relayout) }
 
     const sizes = new ResizeObserver(scheduleLayout)
+    // The message scrubber sets its lane's place in its own style after a resize, which may come after the scene's
+    // measure, so the lane is watched for that too (ADR-0109).
+    const laneMoves = new MutationObserver(scheduleLayout)
     const observeParts = (): void => {
       sizes.disconnect()
+      laneMoves.disconnect()
       sizes.observe(pane)
       for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, :scope > .watcher-glance, :scope > .watcher-head')) sizes.observe(part)
+      const lane = pane.querySelector('.message-scrubber')
+      if (lane !== null) { sizes.observe(lane); laneMoves.observe(lane, { attributes: true, attributeFilter: ['style'] }) }
     }
     // The composer and what stands on it come and go; typing in the composer is left to the size watch.
     const parts = new MutationObserver(records => {
@@ -379,7 +388,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
       unwatchResolution()
-      sizes.disconnect(); parts.disconnect(); theme.disconnect()
+      sizes.disconnect(); laneMoves.disconnect(); parts.disconnect(); theme.disconnect()
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', scheduleLayout)
       pane.removeEventListener('pointerdown', press)

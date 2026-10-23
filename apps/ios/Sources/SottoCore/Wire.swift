@@ -146,17 +146,13 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// Authority for this paired client, refreshed with the shell. Older hosts send it only in hello.
     public let clientCapabilities: Hello.Capabilities?
     public let configuration: ThreadStartPreferences?
-    /// Terminal-mode rows only, from a host offering `terminals` after this phone opts in. No screen text.
-    public var terminals: [TerminalSummary]? = nil
-    /// Local decoding evidence only. Omitted unreadable rows cannot prove a pending approval left.
-    public var terminalsComplete = false
     /// Present only after accepting watcher-phone from the Owl desktop running it.
     public var watcher: WatcherPhoneState? = nil
     /// Every thread's follow-up queue, in order. Older hosts send none.
     public let followups: [Followup]?
     /// Queued replies the queue has taken from their delivery, by draft. Older hosts send none.
     public let followupReceipts: [DeliveryReceipt]?
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, terminals, followups, followupReceipts, watcher }
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -170,10 +166,6 @@ public struct Shell: Decodable, Equatable, Sendable {
         configuration = try c.decodeIfPresent(ThreadStartPreferences.self, forKey: .configuration)
         followups = try c.decodeIfPresent([Followup].self, forKey: .followups)
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
-        // A newer or malformed terminal is omitted without losing the computer's threads.
-        let rows = c.tolerant(TerminalRows.self, .terminals)
-        terminals = rows?.values
-        terminalsComplete = rows?.complete ?? false
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
     }
     public func validate(hostID: String) throws {

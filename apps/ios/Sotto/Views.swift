@@ -67,13 +67,10 @@ struct MainTabs: View {
         watcherPath = NavigationPath()
     }
     /// The requests Needs you shows, and the Recent threads that finished while nothing showed them and have not been
-    /// opened on either device (ADR-0046), with the terminals' own. A delegated thread counts only through the row that
-    /// stands for it (ADR-0081).
+    /// opened on either device (ADR-0046). A delegated thread counts only through the row that stands for it (ADR-0081).
     private var threadsBadge: Int {
         let groups = FocusThreads(model.lists, opened: model.selected)
         return groups.requestCount + groups.unreadFinishedCount
-            + model.terminalRows.filter { $0.reachable && $0.terminal.state == .needsYou }.count
-            + model.terminalRows.filter { $0.finishedUnread && $0.ref != model.selectedTerminal }.count
     }
 }
 
@@ -113,16 +110,13 @@ struct TabItemAccessibility: UIViewControllerRepresentable {
 
 /// A thread, named with its computer: two computers can hold the same thread ID.
 struct ThreadRoute: Hashable { let ref: ThreadRef }
-struct TerminalRoute: Hashable { let ref: TerminalRef }
 extension View {
     func threadDestination() -> some View {
         navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) }
-            .navigationDestination(for: TerminalRoute.self) { TerminalView(ref: $0.ref) }
     }
 }
 
 enum Words {
-    static func terminalProvider(_ id: String?) -> String { id == nil ? "Shell" : provider(id) }
     static func provider(_ id: String?) -> String {
         AgentNames.name(id)
     }

@@ -6,7 +6,7 @@
 .branch-toolbar__end { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; }
 /* The pills: every control the same 30px hairline pill. The two labels (Run on, a locked Workspace) wear it too, quieter and
    without a chevron, so the row reads as one line of buttons; they are not pressable and say so by staying muted. */
-.branch-toolbar__static, .branch-toolbar__chip, .branch-toolbar__branch, .branch-toolbar__pr { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 30px; min-height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; }
+.branch-toolbar__static, .branch-toolbar__chip, .branch-toolbar__branch, .branch-toolbar__pr { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 30px; min-height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; }
 .branch-toolbar__static { padding-left: 9px; color: var(--tt-text-muted); }
 .branch-toolbar__static > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .branch-toolbar__static > svg { flex: none; color: var(--tt-text-faint); }
@@ -64,7 +64,7 @@
 .branch-toolbar__checkout > svg { flex: none; color: var(--tt-text-muted); }
 .branch-toolbar__checkout > small { min-width: 0; margin-left: auto; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 11.5px; text-overflow: ellipsis; }
 .branch-toolbar__badges { display: inline-flex; flex: none; gap: 4px; }
-.branch-toolbar__badges > small { padding: 1px 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
+.branch-toolbar__badges > small { padding: 1px 6px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
 .branch-toolbar__badges > small[data-badge='current'] { border-color: var(--tt-activity); color: var(--tt-activity); }
 .branch-toolbar__badges > small[data-badge='default'] { color: var(--tt-text-2); }
 .branch-toolbar__more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }

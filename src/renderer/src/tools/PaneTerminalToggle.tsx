@@ -21,7 +21,7 @@ export function usePaneTerminalShortcut(): PaneTerminalShortcut | null {
 /**
  * Shows or hides this pane's own terminal drawer. Every pane carries one, not only the focused one, just after
  * the Tools toggle, so the Tools toggle appearing in a pane as it takes focus never shifts this one. Like the
- * Tools toggle, its name stays put, "Terminal drawer" (Terminal alone is Terminal mode's), and aria-pressed says
+ * Tools toggle, its name stays put, "Terminal drawer" (Terminal alone is the Tools tab's), and aria-pressed says
  * whether the drawer is open, so it never shares a name with the drawer's own Hide terminal button.
  */
 export function PaneTerminalToggle({ threadId, store = paneTerminalChromeStore }: PaneTerminalToggleProps): ReactNode {

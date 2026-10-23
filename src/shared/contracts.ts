@@ -370,7 +370,6 @@ export interface SottoBridge {
   readonly phones?: import('./phones').PhonesBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly terminal?: import('./terminal').TerminalBridge
-  readonly terminals?: import('./terminalWorkspace').TerminalWorkspaceBridge
   readonly browser?: import('./browser').BrowserBridge
   readonly cloudIphone?: import('./cloudIphone').CloudIphoneBridge
   readonly themes?: import('./themes/bridge').ThemesBridge

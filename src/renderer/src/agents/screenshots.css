@@ -5,7 +5,7 @@
 .screenshot-previews__placeholder { background: var(--tt-hover-strong); }
 .screenshot-previews figcaption { margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 10px; }
 .screenshot-previews__resized { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 10px; }
-.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 50%; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; }
+.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 4px; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; }
 .screenshot-input__tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .screenshot-input__tools .tt-button { width: 26px; min-height: 26px; padding: 0; color: var(--tt-text-muted); }
 .screenshot-input__tools small { color: var(--tt-text-muted); font-size: 11px; }

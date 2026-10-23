@@ -68,7 +68,7 @@
 .delegated-row__mark { display: grid; place-items: center; height: 20px; color: var(--tt-text-2); }
 .delegated-row__title-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .delegated-row__title-line .subagent-title { min-width: 0; }
-.delegated-row__marker { flex: none; padding: 0 6px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 11px; font-weight: 500; line-height: 16px; }
+.delegated-row__marker { flex: none; padding: 0 6px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 11px; font-weight: 500; line-height: 16px; }
 /* The meta line leaves room for the open control, which sits at the row's bottom right as a sibling of its expander. */
 .delegated-row .subagent-meta { padding-right: 132px; }
 .delegated-row__status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
