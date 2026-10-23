@@ -85,7 +85,8 @@ describe('a remote host\'s delegation reads', () => {
     f.connected = true
     f.answers.set('parent', { threadId: 'parent', delegations: [view('child', { outcome: 'unknown', unknownWhy: 'restarted' })], received: [] })
     f.reads.taken(HOST)
-    expect(f.told).toEqual([[key('parent')], [key('parent')]])
+    // Every thread the window asked for while it was away is told too, the one never read included.
+    expect(f.told).toEqual([[key('parent')], [key('parent'), key('other')]])
     const back = await f.reads.views(key('parent'))
     expect(back.lastRead).toBeUndefined()
     expect(back.delegations[0]).toMatchObject({ outcome: 'unknown', unknownWhy: 'restarted' })
