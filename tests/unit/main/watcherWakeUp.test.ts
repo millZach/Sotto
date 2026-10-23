@@ -715,6 +715,26 @@ it('holds unavailable-recipient news without deadlines and resumes the unchanged
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
 })
 
+it('keeps its news and evidence through passes while this computer has no host ID, and tells them once it is back (#1129)', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.canDeliver.mockReturnValue(false)
+  f.checks()
+  const evidence = f.wakes.evidence.read(centerTarget).map(fact => fact.id)
+  expect(evidence).not.toHaveLength(0)
+  // As while Sotto starts: the snapshot names no host while a pass and the news timers run.
+  const hostId = f.snapshot.hostId
+  delete f.snapshot.hostId
+  expect(() => f.wakes.observe()).not.toThrow()
+  await f.advance(10 * 60_000)
+  expect(f.deliver).not.toHaveBeenCalled()
+  expect(f.wakes.evidence.read(centerTarget).map(fact => fact.id)).toEqual(evidence)
+  f.snapshot.hostId = hostId
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.delivered[0]!.events.map(event => event.kind)).toContain('evidence-changed')
+})
+
 it.each(['deliver', 'remember'] as const)('backs off %s failures, caps automatic attempts and retains news for event-driven recovery', async failing => {
   const f = fixture()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
