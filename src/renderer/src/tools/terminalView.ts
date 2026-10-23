@@ -209,10 +209,10 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       measureGpu = false
       if (disposed || renderer && !includeGpu || !element.isConnected) return
       const weight = terminal.options.fontWeight ?? 'normal'
-      (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['respace:start', Date.now()])
+      ;(window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['respace:start', Date.now()])
       terminal.options.fontWeight = weight === 'normal' ? 400 : 'normal'
       terminal.options.fontWeight = weight
-      (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['respace:end', Date.now()])
+      ;(window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push(['respace:end', Date.now()])
       if (includeGpu) {
         const grid = view.fit()
         if (grid) handlers.onResize?.(grid)
