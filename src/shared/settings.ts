@@ -27,6 +27,13 @@ export type ReducedMotion = 'system' | 'on'
 export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma' | 'accent'
 export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
 export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
+/**
+ * The little pixel character that stands above a thread's composer while it watches, works or waits: Sotto's own, or
+ * Claude bot. It is the same character in every pose, and a choice about how Sotto looks, never about what it claims.
+ */
+export type Creature = 'sotto' | 'claude'
+export const CREATURES = ['sotto', 'claude'] as const satisfies readonly Creature[]
+export const CREATURE_LABELS: Record<Creature, string> = { sotto: 'Sotto', claude: 'Claude bot' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 
 /**
@@ -118,6 +125,8 @@ export interface AppSettings {
   menuBarOwlBody: MenuBarOwlBody
   /** The colour its eyes glow. */
   menuBarOwlEyes: MenuBarOwlEyes
+  /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
+  creature: Creature
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -320,6 +329,7 @@ const fieldSchemas = {
   effortColor: z.enum(EFFORT_COLORS),
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
+  creature: z.enum(CREATURES),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -410,6 +420,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   effortColor: 'ember',
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
+  creature: 'sotto',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -559,6 +570,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     effortColor: parseField(persisted, 'effortColor', defaults),
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
+    creature: parseField(persisted, 'creature', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),

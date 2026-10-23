@@ -111,6 +111,7 @@ const settingKeys = [
   'effortColor',
   'menuBarOwlBody',
   'menuBarOwlEyes',
+  'creature',
   'customThemes',
   'reducedMotion',
   'terminalFontSize',
