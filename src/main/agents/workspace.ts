@@ -3660,8 +3660,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!metadata.path) {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
+        // The thread a moved branch came from stays on the record, so the worker can bring its commits back there (#1030).
+        const madeFrom = metadata.madeFrom
         metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
           ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}), ...(metadata.incomingRef ? { incomingRef: metadata.incomingRef } : {}) })
+        if (madeFrom && metadata.incomingRef) metadata = { ...metadata, madeFrom }
         current().worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.

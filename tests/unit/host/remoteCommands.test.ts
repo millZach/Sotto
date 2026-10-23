@@ -16,7 +16,8 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
  */
-const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'] }
+// A start from a moved branch, and the thread whose branch it was, are Watcher's and delegation's own (#1033, #1030).
+const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'], 'create-thread': ['startFromMove', 'madeFrom'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -125,7 +126,9 @@ describe('remote command allow-list', () => {
       // A thread's delegated threads for the iPhone's Agents view: a read on a listener that offers agents-view (ADR-0103).
       'thread-delegations',
       // A branch move with a recorded desktop: it writes only a new incoming ref and answers nothing (ADR-0105 decision 8).
-      'branch-move']
+      'branch-move',
+      // Each project's GitHub origin, for a desktop placing a start on another machine (#1032).
+      'project-origins']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
