@@ -1192,15 +1192,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private async bringChangesArrived(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away: BringBackAway }): Promise<AgentHostSnapshot> {
     const { away } = command
-    let arrived: { readonly repository: string; readonly ref: string } | undefined
+    // The desktop landed the branch before asking, so its incoming ref is found first and goes whatever happens next,
+    // a refusal to take the checkout included: no press, and no retry of one, leaves a ref behind.
+    await this.initialize()
+    const named = this.state.snapshot.threads.find(item => item.id === command.threadId)
+    const repository = named ? this.state.snapshot.projects.find(item => item.id === named.projectId)?.path : undefined
+    const arrived = repository ? await movedBranchRef(repository, away.moveId).then(ref => ({ repository, ref }), () => undefined) : undefined
     try {
       await this.onGitLane(command.threadId, async () => {
         if (!this.bringBackAllowed) throw new GitActionRefusal(BRING_BACK_OFF)
         const parent = this.thread(command.threadId)
-        const project = this.state.snapshot.projects.find(item => item.id === parent.projectId)
-        if (!project) throw new GitActionRefusal(BRING_BACK_NO_TARGET)
-        try { arrived = { repository: project.path, ref: await movedBranchRef(project.path, away.moveId) } }
-        catch { throw new GitActionRefusal('The branch didn’t arrive here, so nothing was brought back. Try again. Nothing changed.') }
+        if (!repository) throw new GitActionRefusal(BRING_BACK_NO_TARGET)
+        if (!arrived) throw new GitActionRefusal('The branch didn’t arrive here, so nothing was brought back. Try again. Nothing changed.')
+        const project = { path: repository }
         const branch = incomingRefBranch(arrived.ref)
         if (!branch) throw new GitActionRefusal('The branch didn’t arrive here, so nothing was brought back. Try again. Nothing changed.')
         const key = `${parent.id}\0${away.from}`

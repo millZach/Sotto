@@ -174,6 +174,22 @@ describe('bringing a thread’s commits back to the branch of the thread it bega
     expect(() => git(project, 'rev-parse', '-q', '--verify', ref)).toThrow()
   })
 
+  it('lets the incoming ref go when the parent’s checkout is busy, and leaves none behind across retries', async () => {
+    const { f, project, main } = await family()
+    const { elsewhere, from, land } = await arrival(project, f.root)
+    await commitFile(elsewhere, 'away.txt', 'from forge\n', 'Work done on forge')
+    const before = main()
+    const held = await f.host.acquireCheckoutMutation('parent')
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const { moveId } = land()
+        await expect(f.host.bringChangesBack({ threadId: 'parent', actionId: randomUUID(), away: { moveId, from, target: 'main' } })).rejects.toThrow()
+      }
+    } finally { held() }
+    expect(git(project, 'for-each-ref', 'refs/sotto/incoming')).toBe('')
+    expect(main()).toBe(before)
+  })
+
   it('refuses a branch from another machine when the parent is no longer on its branch, and switches nothing', async () => {
     const { f, project, thread, main } = await family()
     const { elsewhere, from, land } = await arrival(project, f.root)
