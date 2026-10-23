@@ -2,7 +2,14 @@ import { accessSync, constants, mkdirSync, promises as fsPromises, readlinkSync,
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { i18n } from '@lingui/core'
+import { compileMessage } from '@lingui/message-utils/compileMessage'
 import { afterEach, vi } from 'vitest'
+
+// Tests read English whatever this computer's language is (ADR-0123): nothing here asks the system, and every
+// message shows its English source, extracted or not, compiled the way a catalog would compile it.
+i18n.setMessagesCompiler(compileMessage)
+i18n.loadAndActivate({ locale: 'en', messages: {} })
 
 // macOS: /var/folders is a symlink to /private/var/folders. Git, fs.realpath and PATH
 // lookups return the physical path, so a test that builds expected paths from os.tmpdir()

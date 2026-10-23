@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
 import { TurnRecorder, turnRecordSchema } from '../../../src/main/agents/turns'
-import { markSendStage, SEND_STAGE_FIELDS } from '../../../src/main/agents/sendStages'
+import { holdTurnEnd, markSendStage, SEND_STAGE_FIELDS, TURN_END_FIELDS, type TurnEndTimings } from '../../../src/main/agents/sendStages'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { TrayController } from '../../../src/main/tray/trayController'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
@@ -426,6 +426,29 @@ describe('coordinator turn records', () => {
       expect(raw).not.toContain(PROMPT)
       expect(raw).not.toContain(REPLY)
       expect(raw).not.toContain(f.root.replace(/\\/gu, '\\\\'))
+    })
+
+    it('waits past the first words for the end of a turn its adapter times, and adds the two numbers it reports (#1420)', async () => {
+      const f = await fixture()
+      let report: ((timings: TurnEndTimings) => void) | undefined
+      const execute = f.host.execute.bind(f.host)
+      vi.spyOn(f.host, 'execute').mockImplementation(async command => {
+        if (command.type !== 'send') return execute(command)
+        markSendStage(command.commandId, 'written')
+        const result = await execute(command)
+        markSendStage(command.commandId, 'acknowledged')
+        report = holdTurnEnd(command.commandId)
+        return result
+      })
+      const before = (await f.recorder.recent(100)).length
+      await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: REPLY, status: 'running' })
+      expect(report).toEqual(expect.any(Function))
+      report!({ turnFirstOutputMs: 1_200, turnFinishWaitMs: 21_600 })
+      await vi.waitFor(async () => expect(await f.recorder.recent(100)).toHaveLength(before + 1), { timeout: 5_000 })
+      const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual([...TIMING_FIELDS, ...SEND_STAGE_FIELDS, ...TURN_END_FIELDS])
+      expect(turnRecordSchema.parse(JSON.parse(raw)).timings).toMatchObject({ firstOutputMs: expect.any(Number), turnFirstOutputMs: 1_200, turnFinishWaitMs: 21_600 })
     })
 
     it('keeps the finish and totalMs at the command finishing, however long the first words take', async () => {

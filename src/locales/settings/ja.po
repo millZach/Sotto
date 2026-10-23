@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: ja\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr "{count, plural, other {# 個のテーマを削除しました。}}"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr "{name} を書き出せませんでした。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr "{name} を書き出しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr "外観"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr "色と枠線の強さ。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr "配色を保存しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr "コントラスト"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr "コントラストを保存しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr "キャラクターを非表示にしました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr "キャラクターを保存しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr "キャラクターを表示しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr "推論レベルの色を保存しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr "このウインドウでは書き出しできません。"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr "言語"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr "言語を保存しました。"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr "メニュー、ボタン、メッセージ。音声入力した内容やエージェントが書いた文章はそのままです。"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr "プレビュー"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr "コントラストを {amount} に戻す"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr "このコンピューターと同じ（{computerLanguage}）"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr "そのテーマを保存できませんでした。以前のテーマがそのまま使われています。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr "テーマを保存しました。"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr "テーマ、コントラスト、動き"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr "翻訳は新しい機能で、まず Owl で提供します。一部の言葉は英語のままの場合があります。"

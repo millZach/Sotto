@@ -542,6 +542,19 @@ textarea.tt-input {
   }
 }
 
+/* ---- interface language ---- */
+
+/*
+ * A translated paragraph or description (ADR-0123): in Arabic and Urdu it runs right to left from the right edge of its
+ * box, while the window keeps its English layout and short labels keep the English label's place. Every paragraph a
+ * message fills carries this class; docs/translation-glossary.md says so for the pull requests that add them.
+ */
+:root:is(:lang(ar), :lang(ur)) .tt-paragraph {
+  direction: rtl;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+
 /* ---- motion ---- */
 
 @media (prefers-reduced-motion: reduce) {

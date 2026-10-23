@@ -1,0 +1,100 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: mr\n"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
+msgstr "{count, plural, one {थीम काढली.} other {# थीम काढल्या.}}"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} could not be exported."
+msgstr "{name} एक्सपोर्ट करता आली नाही."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "{name} exported."
+msgstr "{name} एक्सपोर्ट झाली."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr "स्वरूप"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity."
+msgstr "रंग आणि कडांची तीव्रता."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color scheme saved."
+msgstr "रंगसंगती जतन केली."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast"
+msgstr "कॉन्ट्रास्ट"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Contrast saved."
+msgstr "कॉन्ट्रास्ट जतन केला."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature hidden."
+msgstr "पात्र लपवले."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature saved."
+msgstr "पात्र जतन केले."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Creature shown."
+msgstr "पात्र दाखवले जात आहे."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Effort color saved."
+msgstr "प्रयत्नाचा रंग जतन केला."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Exporting is not available in this window."
+msgstr "या विंडोमध्ये एक्सपोर्ट उपलब्ध नाही."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Language"
+msgstr "भाषा"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Language saved."
+msgstr "भाषा जतन केली."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+msgstr "मेनू, बटणे आणि संदेश. तुम्ही जे डिक्टेट करता आणि एजंट जे लिहितात, ते जसे आहे तसेच राहते."
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Preview"
+msgstr "प्रीव्ह्यू"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Reset contrast to {amount}"
+msgstr "कॉन्ट्रास्ट {amount} वर रीसेट करा"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Same as this computer ({computerLanguage})"
+msgstr "या कॉम्प्युटरप्रमाणे ({computerLanguage})"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "That theme could not be saved. Your previous theme is still active."
+msgstr "ती थीम जतन करता आली नाही. तुमची आधीची थीम अजूनही सुरू आहे."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme saved."
+msgstr "थीम जतन केली."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Themes, contrast & motion"
+msgstr "थीम, कॉन्ट्रास्ट आणि हालचाल"
+
+#: src/renderer/src/features/settings/LanguagePicker.tsx
+msgid "Translations are new and ship on Owl first. Some words may still be in English."
+msgstr "भाषांतरे नवीन आहेत आणि आधी Owl वर येतात. काही शब्द अजूनही इंग्रजीत असू शकतात."

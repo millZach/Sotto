@@ -3433,6 +3433,37 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }, this.organizationLanes)
   }
   /**
+   * New work reopens a settled thread before it goes (October 23, 2026), so no thread works while settled, where Settle
+   * finished threads, a request's end and the cleanup's on-settle rule would take it for put aside. Its own settlement is
+   * restored as Restore does, with the delegated threads settled with it. A settled project returns with this thread
+   * alone, as a new thread there returns it: the project's other threads keep its timestamp as their own.
+   */
+  async reopenThreadForWork(threadId: string): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const projectId = this.thread(threadId).projectId
+    await this.onLane(projectId, async () => {
+      const project = this.state.snapshot.projects.find(item => item.id === projectId)
+      const projectSettledAt = project?.workspaceSettledAt ?? null
+      if (!project || projectSettledAt === null) return
+      const inherited = this.state.snapshot.threads.filter(thread => thread.projectId === projectId && thread.id !== threadId && thread.workspaceSettledAt == null)
+      for (const thread of inherited) thread.workspaceSettledAt = projectSettledAt
+      project.workspaceSettledAt = null
+      this.dirty = true
+      try { await this.flush() }
+      catch (error) {
+        // A snapshot taken while the write waited replaced these records: the rollback finds them again by ID.
+        const current = this.state.snapshot.projects.find(item => item.id === projectId)
+        if (current) current.workspaceSettledAt = projectSettledAt
+        const ids = new Set(inherited.map(thread => thread.id))
+        for (const thread of this.state.snapshot.threads) if (ids.has(thread.id)) thread.workspaceSettledAt = null
+        throw error
+      }
+      this.publish()
+    }, this.organizationLanes)
+    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false)
+    return this.workspaceSnapshot()
+  }
+  /**
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
    * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
    */
