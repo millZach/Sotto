@@ -9,13 +9,13 @@
  * Every command run here that the guard should refuse is a dry run, so a broken guard still changes nothing.
  */
 import { exec, execFile, execFileSync, execSync, spawn, spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { realpathSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { assertTemporaryFolderOutsideRepositories, gitCommandChanges, gitGuard, gitGuardRefusal, repositoryHoldingFolder, temporaryRoots } from '../../fixtures/gitGuard'
+import { assertTemporaryFolderOutsideRepositories, gitCallsInLine, gitCallsOf, gitCommandChanges, gitGuard, gitGuardRefusal, repositoryHoldingFolder, temporaryRoots } from '../../fixtures/gitGuard'
 import { ownedGitRepository } from '../../fixtures/gitRepository'
 import { GitActions } from '../../../src/main/agents/gitActions'
 import { GitStatusReader } from '../../../src/main/agents/gitStatus'
@@ -27,7 +27,7 @@ async function repository() { const made = await ownedGitRepository(); owned.pus
 const roots = temporaryRoots()
 /** A folder outside the temporary folder that every machine has: the checkout the tests run from. */
 const outside = process.cwd()
-const refused = /The test harness refused `git (commit|add|clean)` in .*: a test may change only repositories under the temporary folder/u
+const refused = /The test harness refused `git (commit|add|clean)` on .*: a test may change only repositories under the temporary folder/u
 
 describe('a temporary folder inside a repository, the way the October 23 commit happened', () => {
   it('stops the run before a test, naming the repository a plain folder there would have found', async () => {
@@ -103,6 +103,44 @@ describe('the Git guard every test file has', () => {
     expect(refusal(['status'], { cwd: outside })).toBeNull()
     expect(gitGuardRefusal({ file: 'C:\\Program Files\\Git\\cmd\\git.exe', args: ['commit'], cwd: outside }, roots)).toMatch(refused)
     expect(gitGuardRefusal({ file: 'gh', args: ['pr', 'create'], cwd: outside }, roots)).toBeNull()
+    // What else a command run from the temporary folder can write: a separate Git folder, a new worktree, a config file.
+    expect(refusal(['init', `--separate-git-dir=${join(outside, 'x.git')}`])).toMatch(/refused `git init`/u)
+    expect(refusal(['clone', '--separate-git-dir', join(outside, 'x.git'), join(inside, 'remote.git'), 'copy'])).toMatch(/refused `git clone`/u)
+    expect(refusal(['worktree', 'add', '-b', 'x', join(outside, 'tree')])).toMatch(/refused `git worktree`/u)
+    expect(refusal(['worktree', 'add', '-b', 'x', join(inside, 'tree')])).toBeNull()
+    expect(refusal(['config', '--file', join(outside, '.git', 'config'), 'core.bare', 'true'])).toMatch(/refused `git config`/u)
+    expect(refusal(['config', '--global', 'user.name', 'x'])).toMatch(/refused `git config`/u)
+    expect(refusal(['config', '--global', 'user.name', 'x'], { env: { GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null' } })).toBeNull()
+  })
+
+  it('refuses through a link under the temporary folder, and from a linked worktree whose repository is outside it', async () => {
+    const made = await repository()
+    // A junction (a symlink off Windows) under the temporary folder that leads out of it. It is unlinked before the
+    // folder is removed, so the removal never walks into what it points at.
+    const link = join(made.root, 'link-out')
+    symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      expect(gitGuardRefusal({ file: 'git', args: ['commit'], cwd: link, env: {} }, roots)).toMatch(refused)
+      expect(gitGuardRefusal({ file: 'git', args: ['commit'], cwd: join(link, 'not-made-yet'), env: {} }, roots)).toMatch(refused)
+    } finally { if (process.platform === 'win32') rmdirSync(link); else unlinkSync(link) }
+    // A worktree folder under the temporary folder whose .git file names a Git folder outside it.
+    const tree = join(made.root, 'tree')
+    await mkdir(join(tree, 'src'), { recursive: true })
+    await writeFile(join(tree, '.git'), `gitdir: ${join(outside, '.git', 'worktrees', 'tree')}\n`)
+    expect(gitGuardRefusal({ file: 'git', args: ['commit'], cwd: join(tree, 'src'), env: {} }, roots)).toMatch(/refused `git commit` on .*worktrees/u)
+    expect(gitGuardRefusal({ file: 'git', args: ['status'], cwd: join(tree, 'src'), env: {} }, roots)).toBeNull()
+  })
+
+  it('reads every Git command in a shell line, in the folder each runs in', () => {
+    const inside = join(tmpdir(), 'sotto-guard-case')
+    const refusal = (file: string, args: string[], options: { cwd?: string; shell?: boolean } = {}) =>
+      gitCallsOf(file, args, { cwd: inside, env: {}, ...options }).map(call => gitGuardRefusal(call, roots)).find(Boolean) ?? null
+    expect(refusal('cmd.exe', ['/d', '/s', '/c', `cd /d "${outside}" && git reset --hard`])).toMatch(/refused `git reset`/u)
+    expect(refusal('sh', ['-c', `git status; cd '${outside}' && git checkout .`])).toMatch(/refused `git checkout`/u)
+    expect(refusal('git', ['status', '&&', 'git', '-C', `"${outside}"`, 'commit'], { shell: true })).toMatch(refused)
+    expect(refusal('bash', ['-c', 'git status && git commit -qm x'])).toBeNull()
+    expect(gitCallsInLine(`GIT_TRACE=1 git -C ${inside} commit -m "a && b" | cat`, outside, {}).map(call => call.args)).toEqual([['-C', inside, 'commit', '-m', 'a && b']])
+    expect(() => execSync('git status && git commit --dry-run', { cwd: outside, stdio: 'ignore' })).toThrow(refused)
   })
 
   it.each([
@@ -117,6 +155,9 @@ describe('the Git guard every test file has', () => {
     ['symbolic-ref', ['HEAD', 'refs/heads/x'], true], ['symbolic-ref', ['--short', '-q', 'refs/remotes/origin/HEAD'], false],
     ['apply', ['--check', 'x.patch'], false], ['apply', ['x.patch'], true],
     ['status', ['--porcelain=v2'], false], ['diff', ['--cached'], false], ['log', ['-1'], false], ['write-tree', [], false], ['rev-parse', ['HEAD'], false],
+    // A command it does not know as a read counts as a change.
+    ['gc', ['--prune=now'], true], ['reflog', ['expire', '--expire=now', '--all'], true], ['reflog', [], false], ['hash-object', ['-w', 'x'], true], ['hash-object', ['x'], false],
+    ['submodule', ['foreach', 'git reset --hard'], true], ['submodule', ['status'], false], ['maintenance', ['run'], true], ['some-future-command', [], true],
   ] as const)('counts git %s %j as a change: %s', (command, args, changes) => {
     expect(gitCommandChanges(command, args)).toBe(changes)
   })
