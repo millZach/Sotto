@@ -239,6 +239,8 @@ function freezeSaved(value: unknown): void {
 }
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
+/** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
+export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
 /** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
 class WakeUpNoLongerDue extends Error {
   constructor() { super('Babysitting ended before this wake-up went, so what it said of that pull request was taken out.') }
@@ -743,6 +745,8 @@ export class AgentControl {
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
   private readonly titleWrites = new Set<Promise<void>>()
+  /** Set once closing has stopped waiting for title writes: a title that comes back after the final save is let go. */
+  private titleWritesLetGo = false
   /** Threads seen this run with nothing said yet: their first message, when it comes, gives them a first-message title. */
   private readonly awaitingFirstMessage = new Set<string>()
   /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
@@ -2911,12 +2915,14 @@ export class AgentControl {
     if (this.disposed) return
     try {
       const title = await write()
-      if (this.disposed || title === null) return
+      // A write started before Sotto began closing is still applied, and `closed()` saves it (#980).
+      if (this.titleWritesLetGo || title === null) return
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
       if (source === 'first-message' && (!carriesDefaultTitle(thread) || thread.titledFromFirstMessage)) return
       this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, source))
-      await this.persist()
+      // Once closing, the final save in `closed()` writes it.
+      if (!this.disposed) await this.persist()
     } catch {
       // A name Sotto offered to write is never worth an error banner: the thread keeps the name it has.
       this.dependencies.logFailure?.('thread-title-failed', 'failed')
@@ -5170,11 +5176,23 @@ export class AgentControl {
   }
   /** Called after disconnecting providers, before the headless process releases its stores. */
   async closed(): Promise<void> {
-    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), ...this.titleWrites])
+    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), this.titleWritesSettled()])
     await this.persist(true)
     // A send's record still waiting for its reply is written now, without a first output, rather than when the wait runs out.
     this.firstOutputs.closeAll()
     await this.dependencies.turns?.drain()
+  }
+  /**
+   * Waits for the thread titles still being written, at most `TITLE_WRITE_CLOSING_WAIT_MS`. Once disposed, one that
+   * takes longer is let go: the thread keeps the name it had, and nothing is written after the final save.
+   */
+  private async titleWritesSettled(): Promise<void> {
+    if (this.titleWrites.size > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const cap = new Promise<void>(resolve => { timer = setTimeout(resolve, TITLE_WRITE_CLOSING_WAIT_MS) })
+      try { await Promise.race([Promise.allSettled([...this.titleWrites]), cap]) } finally { clearTimeout(timer) }
+    }
+    if (this.disposed) this.titleWritesLetGo = true
   }
   dispose(): void {
     this.disposed = true

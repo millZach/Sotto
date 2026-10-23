@@ -5,7 +5,7 @@
  * alone, and asks for nothing when generation is off or local history is not kept.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../../src/main/agents/control'
+import { AgentControl, TITLE_WRITE_CLOSING_WAIT_MS } from '../../../src/main/agents/control'
 
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
 import { firstMessageTitle, firstMessageTitleWriter, threadTitleWriter, type ThreadTitleExchange } from '../../../src/main/llm/threadTitle'
@@ -59,13 +59,16 @@ const workshop = (control: AgentControl): AgentThread =>
   ?? control.get().host.threads.find(thread => thread.providerId === 'codex')!
 const titled = (control: AgentControl, threadId: string): AgentThread => control.get().host.threads.find(thread => thread.id === threadId)!
 
-/** Shuts a coordinator down before another opens its folder, so the second reads everything the first knew and the
- * first can write nothing after it. Its title writes land and are saved first; then it closes in the app's own quit
- * order. Disposing with a title write still in flight drops that title, which is #980, not what these tests check. */
-async function savedForReopening(f: { control: AgentControl; stop: () => Promise<void> }): Promise<void> {
-  await f.control.closed()
-  const entry = opened.findIndex(item => item.control === f.control)
+/** Takes a coordinator off the list the cleanup closes, for a test that closes it itself. */
+function forget(control: AgentControl): void {
+  const entry = opened.findIndex(item => item.control === control)
   if (entry >= 0) opened.splice(entry, 1)
+}
+
+/** Shuts a coordinator down in the app's own quit order before another opens its folder, so the second reads
+ * everything the first knew and the first can write nothing after it. */
+async function savedForReopening(f: { control: AgentControl; stop: () => Promise<void> }): Promise<void> {
+  forget(f.control)
   f.control.dispose()
   await f.control.closed()
   await f.stop()
@@ -100,22 +103,52 @@ describe('naming a thread from its first exchange', () => {
     expect(f.control.get().error).toBeNull()
   })
 
-  it('drains an automatic title request without applying its result after disposal', async () => {
+  it('keeps a title still being written when Sotto closes, across a restart (#980)', async () => {
+    let finish!: (title: string) => void
+    const f = await coordinator({ writeThreadTitle: () => { const pending = deferred<string>(); finish = pending.resolve; return pending.promise } })
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
+    // Sotto quits while the name is being written: it disposes, then waits in `closed()` for the final save.
+    forget(f.control)
+    f.control.dispose()
+    const settled = vi.fn()
+    const closed = f.control.closed().then(settled)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(settled).not.toHaveBeenCalled()
+    finish('Dark theme contrast')
+    await closed
+    await f.stop()
+
+    const reopened = await coordinator({ root: f.root })
+    expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' })
+    expect(reopened.titles).not.toHaveBeenCalled()
+  })
+
+  it('waits two seconds at most for a title when Sotto closes, and lets go of one that comes back later', async () => {
     let finish!: (title: string) => void
     const f = await coordinator({ writeThreadTitle: () => { const pending = deferred<string>(); finish = pending.resolve; return pending.promise } })
     const threadId = workshop(f.control).id
     reply(f.adapters.codex)
     await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
     const rename = vi.spyOn(f.host, 'renameThread')
-    f.control.dispose()
-    const settled = vi.fn()
-    const closed = f.control.closed().then(settled)
-    await Promise.resolve()
-    expect(settled).not.toHaveBeenCalled()
+    forget(f.control)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      f.control.dispose()
+      const settled = vi.fn()
+      const closed = f.control.closed().then(settled)
+      await vi.advanceTimersByTimeAsync(TITLE_WRITE_CLOSING_WAIT_MS - 1)
+      expect(settled).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      await closed
+    } finally { vi.useRealTimers() }
+    // The write comes back after the final save: the thread keeps the name it had, and nothing is written.
     finish('Late generated title')
-    await closed
+    await new Promise(resolve => setImmediate(resolve))
     expect(rename).not.toHaveBeenCalled()
     expect(titled(f.control, threadId).title).toBe('Workshop')
+    await f.stop()
   })
 
   it('writes a title from the agent\'s own reply, never from a visual drawn before it (ADR-0056)', async () => {
