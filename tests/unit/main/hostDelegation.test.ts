@@ -74,6 +74,20 @@ describe('the desktop defaults a host keeps', () => {
     expect(again.ceiling(() => true)).toEqual({ mode: 'auto-accept-edits' })
   })
 
+  it('builds each record on the one saved before it, so two desktops sending at once never bring back replaced defaults', async () => {
+    const root = await folder(), store = new DesktopDefaultsStore(root)
+    await store.load()
+    await store.record('desktop-a', { newThreadRuntimeMode: 'full-access' })
+    // Desktop A narrows to Ask for approval while desktop B sends Ask for approval too, both before either has saved.
+    await Promise.all([store.record('desktop-a', { newThreadRuntimeMode: 'approval-required' }), store.record('desktop-b', { newThreadRuntimeMode: 'approval-required' })])
+    // Desktop B revoked or forgotten: desktop A's Ask for approval applies, never the Full access it replaced.
+    const onlyA = (clientId: string) => clientId === 'desktop-a'
+    expect(store.ceiling(onlyA)).toEqual({ mode: 'approval-required' })
+    const again = new DesktopDefaultsStore(root); await again.load()
+    expect(again.ceiling(onlyA)).toEqual({ mode: 'approval-required' })
+    expect(again.ceiling(() => true)).toEqual({ mode: 'approval-required' })
+  })
+
   it('keeps no more than its limit of desktops, dropping the oldest', async () => {
     const root = await folder()
     let now = Date.parse('2026-10-23T10:00:00.000Z')

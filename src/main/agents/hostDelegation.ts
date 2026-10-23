@@ -41,24 +41,44 @@ export class DesktopDefaultsStore {
   private readonly store: AtomicJsonStore<DesktopDefaultsFile>
   /** Newest first, one per desktop. */
   private kept: readonly Kept[] = []
+  /**
+   * Every load and record in the order they were called, one at a time, so each record builds on what the one before it
+   * saved. Two desktops sending at once must not each start from the same old list: the one saved last would bring back
+   * defaults the other had just replaced, and those would apply again once the last desktop stopped counting.
+   */
+  private queue: Promise<unknown> = Promise.resolve()
   constructor(directory: string, private readonly now: () => Date = () => new Date()) {
     this.store = new AtomicJsonStore(join(directory, 'desktop-defaults.json'), input => fileSchema.parse(input), (): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
   }
   /** Reads what was kept. A record that does not read is treated as never told, which can only narrow a start. */
   async load(): Promise<void> {
-    const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
-    this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, newThreadRuntimeMode: saved.newThreadRuntimeMode,
-      ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
-      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(0, KEPT_DESKTOP_DEFAULTS)
+    return this.serialized(async () => {
+      const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
+      this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, newThreadRuntimeMode: saved.newThreadRuntimeMode,
+        ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
+        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(0, KEPT_DESKTOP_DEFAULTS)
+    })
   }
-  /** Keeps a desktop's defaults in place of the ones it sent before, saved before it answers. A save that fails keeps the old ones. */
+  /**
+   * Keeps a desktop's defaults in place of the ones it sent before, saved before it answers. A save that fails keeps the old
+   * ones. Runs after every earlier record has saved or failed, and reads the list only then.
+   */
   async record(clientId: string, input: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
-    const defaults = readDesktopDefaults(input), receivedAt = this.now().toISOString()
-    const next = [{ clientId, receivedAt, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
-    await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
-      ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt })) })
-    this.kept = next
-    return { receivedAt }
+    const defaults = readDesktopDefaults(input)
+    return this.serialized(async () => {
+      const receivedAt = this.now().toISOString()
+      const next = [{ clientId, receivedAt, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
+      await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
+        ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt })) })
+      this.kept = next
+      return { receivedAt }
+    })
+  }
+  /** Runs `work` once everything queued before it has finished, whether that succeeded or not. */
+  private serialized<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(work, work)
+    this.queue = run.catch(() => undefined)
+    return run
   }
   /** The defaults that apply now: the most recent from a desktop that still counts, or none. */
   current(counts: DesktopCounts): Kept | undefined { return this.kept.find(item => counts(item.clientId)) }
