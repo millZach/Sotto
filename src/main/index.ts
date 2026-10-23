@@ -1383,9 +1383,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   // Electron announces a restart for an update before it closes a window. On a Mac it then closes every window itself and
   // installs once they are all gone, so the main window, which hides to the tray when closed, has to let go or the update
-  // never comes. electron-updater announces it on Windows too, just before it quits. A Mac announces it a second time once
-  // the last window has closed, and again whenever the last window next closes after a refusal; only a restart that is
-  // under way begins a quit, or a refused one would leave Sotto unable to show a window.
+  // never comes. electron-updater announces it on this same autoUpdater on Windows too (BaseUpdater.quitAndInstall), just
+  // before it calls app.quit(). A Mac announces it a second time once the last window has closed, and again whenever the
+  // last window next closes after a refusal; only a restart that is under way begins a quit, or a refused one would leave
+  // Sotto unable to show a window.
   nativeAutoUpdater.on('before-quit-for-update', () => { if (updates.restarting()) windows.beginQuit() })
 
   const messageDelivery = new NativeMessageDelivery(windows)
