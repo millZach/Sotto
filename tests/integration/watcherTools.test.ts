@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WATCHER_STOP_PAUSE } from '../../src/main/agents/followups'
+import { queueHold } from '../../src/main/agents/watcherSendHolds'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
@@ -1552,6 +1553,11 @@ it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after 
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+  // The failed prompt waits for the user's review and holds the queue, so another queued prompt is refused rather than
+  // left behind it for good. Once it is gone from the queue, the queue takes prompts again.
+  expect(await f.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message: queueHold('failed-followups', false) })
+  const failed = storedFollowups(f.control).find(item => item.text === input.text)!
+  await followupStoreOf(f.control).edit(first.target.threadId, failed.id)
   for (let count = 2; count <= 4; count++) {
     expect(await f.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'ok', limits: { promptCount: count } })
     await f.finish(first.target.threadId)
