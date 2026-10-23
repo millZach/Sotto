@@ -826,6 +826,10 @@ export class WatcherWakeUp {
   private observePass(): void {
     if (!this.started || this.closed) return
     const snapshot = this.snapshot(), stamp = new Date(this.now()).toISOString()
+    // Without this computer's host ID, as while Sotto starts, none of its threads can be named, so a pass would read every
+    // thread as gone and let go of its evidence and news. It waits instead, and the next pass once the ID is back reads
+    // them as they are (#1129).
+    if (!snapshot.hostId) return
     this.cancelObserve?.(); this.cancelObserve = undefined
     this.observedAt = this.now(); this.observedEdges = { record: this.record(), threads: this.threadEdges(snapshot) }
     const targets = new Set<string>(), watched = new Set(this.watchedByKey().keys())
@@ -1127,7 +1131,11 @@ export class WatcherWakeUp {
     if (!participant || participant.generation !== event.generation || participant.automationStopped) return false
     if (event.kind === 'taken-over') return participant.state === 'taken-over'
     if (participant.state !== 'participating') return false
-    const snapshot = this.snapshot(), thread = this.thread(snapshot, event.target)
+    const snapshot = this.snapshot()
+    // Without this computer's host ID its threads cannot be read, so nothing says the news is out of date: it stays, and
+    // is asked again once the ID is back (#1129). Only a thread that can be read is checked.
+    if (!snapshot.hostId) return true
+    const thread = this.thread(snapshot, event.target)
     if (!thread || isThreadArchived(thread) || !standing && (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)))) return false
     if (event.kind === 'delivery-changed') {
       const operation = record.operations.find(item => item.id === event.operationId)

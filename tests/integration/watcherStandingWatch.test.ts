@@ -1138,10 +1138,16 @@ it.each([['a pull request wake-up', 'a standing watch'], ['a pull request wake-u
 it('gives a paired thread back to Watcher when its watch reaches the owning host after the user sent there', async () => {
   const master = await fixture(), worker = await fixture(true), target = await worker.create()
   const clientId = randomUUID()
+  // While the watch is held back, the desktop's reads reach the host without it, as before the watch had reached it.
+  let watchHeld = false, reading = 0
   const remote: WatcherRemoteHosts = {
     hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
     snapshot: () => worker.control.watcherSnapshot(),
-    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    read: async (_hostId, request) => {
+      reading++
+      try { return await worker.service.readRemote(watchHeld ? { ...request, standingWatches: undefined } : request, clientId, () => undefined) }
+      finally { reading-- }
+    },
     control: (_hostId, request) => worker.service.admitRemote(request, clientId, () => undefined),
     subscribe: listener => worker.control.subscribe(() => listener(target.hostId)),
   }
@@ -1152,7 +1158,10 @@ it('gives a paired thread back to Watcher when its watch reaches the owning host
   expect(await master.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic paired brief', delivery: 'now' })).toMatchObject({ status: 'ok' })
   await worker.finish(target.threadId)
   // The host holds the participation but, as before the desktop's watch reached it, no watch: the user's send there
-  // takes the participation as if the thread were watched for a request alone.
+  // takes the participation as if the thread were watched for a request alone. The desktop reads the host whenever the
+  // host changes, so its reads stop carrying the watch first, and one already on its way lands before the watch goes.
+  watchHeld = true
+  await expect.poll(() => reading).toBe(0)
   await worker.control.updateWatcher(record => { record.watches = [] })
   expect((await worker.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic owning-host user prompt' })).error).toBeNull()
   const states = () => worker.control.watcherRecord().requests.flatMap(request => request.participants).filter(item => item.target.threadId === target.threadId).map(item => item.state)
@@ -1161,6 +1170,7 @@ it('gives a paired thread back to Watcher when its watch reaches the owning host
   await expect.poll(() => worker.control.hasPendingThreadWork(target.threadId)).toBe(false)
   // The watch arrives, and with it the thread is Watcher's again, on the host and then on the desktop.
   expect(await worker.service.readRemote({ master: identity, standingWatches: [watch] }, clientId, () => undefined)).toMatchObject({ hostId: target.hostId })
+  watchHeld = false
   expect(states()).toEqual(states().map(() => 'participating'))
   // The user's request closed once its only participation was taken; the watch carries Watcher's next brief.
   await master.finish(master.watcherId())

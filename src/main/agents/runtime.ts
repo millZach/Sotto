@@ -322,8 +322,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const resumeFrozen = restartResume?.freeze()
     agentControl.dispose()
     stoppingProviders = (async () => {
-      // The record's last write runs beside the providers' closing; nothing they do changes it now.
-      const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()),
+      // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
+      // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
+      const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
         ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain

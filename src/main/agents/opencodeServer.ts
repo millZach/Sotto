@@ -322,12 +322,20 @@ export function orphanedDescendants(rows: readonly ProcessRow[], root: number, s
 }
 
 const PROCESS_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,CommandLine | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2} {3}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds(), ($_.CommandLine -replace '[\\r\\n]', ' ') } }"
-/** The process table, read once through PowerShell's CIM query; empty when it cannot be read. Windows only. */
-function processTable(): Promise<ProcessRow[]> {
+/** How long a read of the process table may take before it is given up as empty: seconds when idle, and more on a loaded machine. */
+const PROCESS_TABLE_MS = 15_000
+/**
+ * How long the read that finds an exited server's tools may take. Nothing else can find them once it has gone, so a read
+ * given up early leaves them running; on a loaded Windows runner it has taken longer than 15 s (#1354). The thread's
+ * turn has already ended by then; only a disconnect, and so a reconnect or quitting, waits for it.
+ */
+const ORPHAN_TABLE_MS = 60_000
+/** The process table, read once through PowerShell's CIM query; empty when it cannot be read within `boundMs`. Windows only. */
+function processTable(boundMs = PROCESS_TABLE_MS): Promise<ProcessRow[]> {
   return new Promise(resolve => {
     let output = ''
     const reader = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PROCESS_QUERY], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'ignore'] })
-    const timer = setTimeout(() => { reader.kill(); resolve([]) }, 15_000); timer.unref()
+    const timer = setTimeout(() => { reader.kill(); resolve([]) }, boundMs); timer.unref()
     reader.stdout.setEncoding('utf8')
     reader.stdout.on('data', (chunk: string) => { output += chunk })
     reader.once('error', () => { clearTimeout(timer); resolve([]) })
@@ -344,7 +352,7 @@ function processTable(): Promise<ProcessRow[]> {
 
 /** End what an exited server left running, on Windows, where nothing else reaches it once its leader is gone. */
 async function endOrphans(root: number, startedAt: number, rows?: readonly ProcessRow[]): Promise<void> {
-  for (const pid of orphanedDescendants(rows ?? await processTable(), root, startedAt)) {
+  for (const pid of orphanedDescendants(rows ?? await processTable(ORPHAN_TABLE_MS), root, startedAt)) {
     try { process.kill(pid) } catch { /* Ended meanwhile. */ }
   }
 }

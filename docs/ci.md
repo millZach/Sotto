@@ -346,6 +346,12 @@ the child and drains that owned child on completion. A failure reports only fixe
 facts; no command arguments or output are logged. The exact-string assertion and the
 global deadline are unchanged. See [the shell fixture evidence](verification/terminal-clipboard-shell-budget.md).
 
+The host self-update test's clean-up has 120 s rather than the 15 s hook default (#1247). It finds the
+restart and the host it starts by their command lines, because the test never starts them itself, and on
+Windows that is a PowerShell CIM query. A busy runner kept that query for most of 15 s, and the folder's
+removal then retries for up to 11 s while a killed host lets go of its files. On a developer machine the
+whole clean-up takes about 1.5 s.
+
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
 `tests/setup.ts` gives Testing Library's `findBy` and `waitFor`, and vitest's own `vi.waitFor` and
 `vi.waitUntil`, the same 5 s rather than their 1 s. No vitest setting raises `vi.waitFor` or `vi.waitUntil`,
@@ -379,6 +385,26 @@ in time" / "Claude did not acknowledge the request" on a loaded runner. That was
 *Gates (Windows)* runs on PRs #100 and #103: `claudeFixture` defaulted to 150 ms and several Codex and
 Grok tests passed 150–500 ms.
 
+Even 2000 ms is not always enough. With the runner's other worker busy, a Codex test's first app-server
+start took more than 2000 ms to answer `initialize`, and "still holds a send behind a permission change
+Codex did not confirm" failed in its setup (#1307). The Codex adapter also waits that same deadline for
+Codex to confirm a settings change, so that test could not simply raise it. It now passes the adapter's
+own 15 s, and the fake loses the confirmation on cue: `script({ stopBeforeSettingsConfirmation: true })`
+acknowledges the change and stops the app-server before confirming it, so the change is unconfirmed
+immediately instead of after a deadline.
+
+Devin is the exception to the 2000 ms default. Native ACP sends no acknowledgement, so a send waits until
+its own stream or a replay of the session shows the prompt taken, and the replay is read in a process of
+its own after the integration checks start two more. On a loaded Linux runner that took longer than five
+seconds, and sends came back uncertain (#1073, #1110). `devinFixture` therefore defaults to the adapter's
+own 15 s. A Devin prompt is uncertain only when that deadline passes with nothing showing it taken, so
+`driver.delayNextAck()` hides the prompt from the replay and lowers that fixture's deadline to 2000 ms
+until the fake receives the prompt. By then the send has taken its deadline, so the replay reads and
+processes started after the prompt keep 15 s; only that send, and a process it starts before its prompt,
+wait the short one. A short deadline is safe for the send that expects to come back uncertain, because a
+slow runner can only delay the evidence it waits for. This departs from the rule above on purpose: Devin
+has no acknowledgement to lose, so its uncertain answer cannot be reached without a deadline.
+
 To reproduce runner load locally, pin the run to two cores and give it a competitor on the same cores:
 
 ```powershell
@@ -390,6 +416,18 @@ Stop-Process -Id $busy.Id
 
 Before the deadline change, that loop failed seven or eight of the adapter tests on every run. Three
 busy loops instead of one is beyond what the runner does, and the suite is not expected to pass there.
+
+`grokFixture` no longer takes the 2000 ms default; it takes the adapter's own 15 s (#1021). Grok starts a process
+for every thread, and on a loaded run `session/new` on that new process took longer than two seconds, so the create
+came back uncertain and the next send was refused for want of a confirmed provider session. The client-update
+contract now checks that its create was accepted, so a create that comes back uncertain fails there rather than at the
+send. Grok does acknowledge a prompt, but Sotto finds an acknowledgement lost only when its deadline passes, so a test
+of that still waits one out, and only that wait is short. `driver.delayNextAck()` takes `session/prompt`,
+`session/new`, `authenticate` or `_x.ai/session/updates` and scripts the reply lost. A lost prompt gives the next send
+an acknowledgement deadline of 2000 ms; any other method gives each of its requests 2000 ms until the script changes.
+Every other request on every process keeps 15 s, so a slow start or a slow create before the lost reply still has the
+long deadline. A lost answer is lost on Sotto's side: `grokAnswerReoffers.test.ts` holds the answer's write to the
+thread's process open and gives that process the short deadline only until the answer comes back uncertain.
 
 `tests/setup.ts` holds the two things every test run needs on Windows: web storage is emptied after each
 test, so no test paints the cached agent shell a previous test left behind, and a recursive `fs.rm`
