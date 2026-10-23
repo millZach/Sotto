@@ -162,6 +162,9 @@
 /* A thread that babysits a pull request says so where it would say Done (ADR-0061): Sotto's claim, so not the activity colour. */
 .thread-nav__status[data-babysitting] { color: var(--tt-text-2); }
 .thread-nav__status[data-unseen] i { background: var(--tt-activity); }
+/* A prototype waiting for review (ADR-0108): the page's quiet glyph in the accent, the words in the row's own ink. */
+.thread-nav__status[data-prototype] { color: var(--tt-text-2); }
+.thread-nav__status[data-prototype] > svg { flex: none; display: inline-block; margin-right: 5px; vertical-align: -2px; color: var(--tt-accent-text); }
 
 .provider-mark { display: block; flex: none; fill: currentColor; }
 .provider-mark--initial { display: grid; place-items: center; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1; }

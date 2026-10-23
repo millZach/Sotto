@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMessage, AgentRequest } from '../../../../src/shared/agents'
 import type { RequestDraft, RequestDraftBridge, RequestDraftOwner, RequestDraftStatus } from '../../../../src/shared/requestDrafts'
 import { AgentRequestCard, requestExplanation } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
+import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
+import type { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import type { BrowserBridge, BrowserPage } from '../../../../src/shared/browser'
 import { textLinks } from '../../../../src/renderer/src/agents/requests/LinkedText'
 import { linkPlace, messageLinks } from '../../../../src/renderer/src/agents/requests/messageLinks'
 import { claudePending } from '../../../../src/main/agents/claudeRequests'
@@ -633,6 +636,73 @@ describe('a question’s pages', () => {
       fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
       expect(await screen.findByText('Sotto could not open that page. Nothing else changed. Try again.')).toBeVisible()
     } finally { delete window.sotto }
+  })
+})
+
+// A page main opened in Sotto's browser, as Web links in threads chose (ADR-0108), is shown where the thread's links show theirs.
+describe('a question’s page opened in Sotto’s browser', () => {
+  const file = { token: 'f'.repeat(32), kind: 'file' as const, name: 'greeting-prototype.html', start: 'greeting-prototype.html' }
+  const opened = { id: 'page-1', url: 'http://127.0.0.1:5123/page/x/greeting-prototype.html' } as unknown as BrowserPage
+  const card = () => <AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={{ id: 'req-plain', kind: 'question', text: 'Which greeting?', options: [], pages: [file] }} blocked={null}
+    onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />
+
+  it('shows the page in the thread’s Tools > Browser', async () => {
+    window.sotto = { openQuestionPage: vi.fn(async () => ({ ok: true as const, page: opened })) } as unknown as NonNullable<typeof window.sotto>
+    const store = { showBrowserPage: vi.fn(() => 'opened' as const) } as unknown as ToolsPanelStore
+    try {
+      render(<ThreadWebLinks threadId="thread-a" threadTitle="Workshop" bridge={{} as BrowserBridge} store={store}>{card()}</ThreadWebLinks>)
+      fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
+      await waitFor(() => expect(store.showBrowserPage).toHaveBeenCalledWith(opened, true))
+      expect(screen.queryByRole('status')).toBeNull()
+    } finally { delete window.sotto }
+  })
+
+  it('says where the page is when nothing here can show it', async () => {
+    window.sotto = { openQuestionPage: vi.fn(async () => ({ ok: true as const, page: opened })) } as unknown as NonNullable<typeof window.sotto>
+    try {
+      render(card())
+      fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
+      expect(await screen.findByText('Opened in Sotto’s browser. Open Tools > Browser in this thread to see it.')).toBeVisible()
+    } finally { delete window.sotto }
+  })
+})
+
+// A question about a prototype that still names no page that opens (ADR-0108).
+describe('a question whose prototype link is missing', () => {
+  const missing = 'No working link. This question is about a prototype, and no page it names opens.'
+
+  it.each<[string, AgentRequest]>([
+    ['a structured question', { ...structured([single]), linkMissing: true }],
+    ['a plain question', { id: 'req-plain', kind: 'question', text: 'Which chart should I build?', options: [], linkMissing: true }],
+  ])('shows %s a muted row where Open the prototype would be, which is not a button', (_name, request) => {
+    render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={request} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />)
+    const row = screen.getByText(missing)
+    expect(row).toBeVisible()
+    expect(row.closest('a, button, [role="link"], [role="button"], [tabindex]')).toBeNull()
+    expect(row.closest('.agent-request__no-link')).not.toBeNull()
+    expect(screen.queryByRole('link', { name: /Open the prototype/u })).toBeNull()
+  })
+
+  it('keeps the message’s own links under the row, and shows no row without the mark', () => {
+    const { unmount } = render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={{ ...structured([single]), linkMissing: true }} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} messageLinks={['https://github.com/o/r/pull/1']} />)
+    const group = screen.getByRole('group', { name: 'Links from the message above' })
+    const row = screen.getByText(missing)
+    expect(within(group).queryByText(missing)).toBeNull()
+    expect(row.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(group).getByRole('link', { name: 'Open the link, github.com/o/r/pull/1' })).toBeVisible()
+    unmount()
+    setup(structured([single]))
+    expect(screen.queryByText(missing)).toBeNull()
+  })
+
+  it('still says the link is missing when the card offers a loopback page that did not answer', () => {
+    const dead = { token: 'd'.repeat(32), kind: 'server' as const, name: 'localhost:9', start: '' }
+    render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={{ ...structured([single]), linkMissing: true, pages: [dead] }} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />)
+    expect(screen.getByText(missing)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open the prototype, localhost:9' })).toBeVisible()
   })
 })
 

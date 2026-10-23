@@ -411,6 +411,33 @@ describe("Watcher's room", () => {
     expect(line).toHaveTextContent('last turn failed')
   })
 
+  it('names a thread whose prototype waits for review in the needs-you line, and the Overview opens its first page (ADR-0108)', async () => {
+    const state = stateWithWatcher()
+    const pages = [{ token: 'f'.repeat(32), kind: 'file' as const, name: 'settings-prototype.html', start: 'settings-prototype.html' },
+      { token: 's'.repeat(32), kind: 'server' as const, name: 'localhost:8075', start: '' }]
+    state.host.threads.find(thread => thread.id === 'grok-previews')!.prototypeReady = { source: 'reply:grok-previews-2', pages }
+    const openQuestionPage = vi.fn(async () => ({ ok: true as const }))
+    const before = window.sotto
+    window.sotto = { ...before, openQuestionPage } as unknown as NonNullable<typeof window.sotto>
+    try {
+      renderRoom(state, roomState())
+      await paneReady()
+      const line = screen.getByRole('heading', { level: 2, name: '3 need you' }).closest('section')!
+      const name = within(line).getByRole('button', { name: 'Open Grok voice previews to review its prototype' })
+      expect(name.closest('li')).toHaveTextContent('prototype to review')
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      const list = within(screen.getByRole('dialog', { name: 'All threads' }))
+      const row = list.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).closest('li')!
+      expect(row.closest('section')).toHaveAccessibleName('Needs you, 3 threads')
+      expect(row).toHaveTextContent('Prototype to review')
+      const open = within(row).getByRole('button', { name: 'Open the prototype, settings-prototype.html' })
+      expect(open).toHaveTextContent('Open the prototype')
+      fireEvent.click(open)
+      expect(openQuestionPage).toHaveBeenCalledExactlyOnceWith({ threadId: 'grok-previews', token: pages[0]!.token })
+      await waitFor(() => expect(openQuestionPage).toHaveBeenCalledTimes(1))
+    } finally { if (before === undefined) delete window.sotto; else window.sotto = before }
+  })
+
   it('counts the names past five in the needs-you line, and the count opens All threads with focus coming back to it', async () => {
     const state = stateWithWatcher()
     for (const index of [1, 2, 3, 4, 5]) state.host.threads.push({ id: `asks-${index}`, title: `Asks ${index}`, projectId: 'workshop', modelId: 'claude:sonnet', providerId: 'claude',
@@ -812,39 +839,41 @@ describe('Watcher’s thread in the window', () => {
 describe('Watcher’s night scene', () => {
   const scene = (container: HTMLElement) => container.querySelectorAll('#watcher-pane > canvas.watcher-scene')
 
-  it('is drawn behind the first entry, hidden from assistive technology, and fades away once the first message is sent', async () => {
+  it('is drawn beside the first entry, hidden from assistive technology, and stays once the first message is sent', async () => {
     const { container } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
     const canvases = scene(container)
     expect([...canvases].map(canvas => [canvas.className, canvas.getAttribute('aria-hidden'), canvas.hasAttribute('tabindex')])).toEqual([
       ['watcher-scene watcher-scene--land', 'true', false], ['watcher-scene watcher-scene--owl', 'true', false],
     ])
+    // The thread owls' buttons answer the pointer only; the Watched view is the keyboard's way to the same threads.
+    expect(container.querySelector('#watcher-pane > .watcher-scene--owls')).toHaveAttribute('aria-hidden', 'true')
     setPromptText(screen.getByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
     fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
-    await waitFor(() => expect(scene(container)[0]).toHaveAttribute('data-leaving', 'true'))
-    await waitFor(() => expect(scene(container)).toHaveLength(0))
-    // Watcher's new conversation is empty only until the first message reaches it; the scene does not come back.
+    // The scene lives in the margins, so a conversation does not put it away.
     expect(await screen.findByRole('region', { name: 'Watcher' })).toBeInTheDocument()
-    expect(scene(container)).toHaveLength(0)
+    expect(scene(container)).toHaveLength(2)
+    expect(scene(container)[0]).not.toHaveAttribute('data-leaving')
   })
 
-  it('is drawn behind an empty Watcher conversation, such as a new Watcher after a provider change', async () => {
-    const state = stateWithWatcher()
-    state.host.threads = state.host.threads.map(thread => thread.id === 'watcher' ? { ...thread, messages: [] } : thread)
-    const { container } = renderRoom(state, roomState())
+  it('stays beside a conversation on Conversation and Watched, and steps away while Visualize shows', async () => {
+    const { container } = renderRoom(stateWithWatcher(), roomState())
     await paneReady()
     expect(scene(container)).toHaveLength(2)
-    // The Watched view stands in the conversation's place, and the scene goes with it until the conversation is back.
     fireEvent.click(screen.getByRole('tab', { name: /^Watched, / }))
+    expect(scene(container)).toHaveLength(2)
+    // Visualize's picture takes the pane's whole width, so the scene fades and goes until another view is back.
+    fireEvent.click(screen.getByRole('tab', { name: 'Visualize' }))
+    await waitFor(() => expect(scene(container)[0]).toHaveAttribute('data-leaving', 'true'))
     await waitFor(() => expect(scene(container)).toHaveLength(0))
     fireEvent.click(screen.getByRole('tab', { name: 'Conversation' }))
     await waitFor(() => expect(scene(container)).toHaveLength(2))
   })
 
-  it('stays through a reload of an empty conversation: loading or failing to read it puts the scene away without ending it', async () => {
+  it('stays while Watcher’s conversation loads again or cannot be read', async () => {
     const withHistory = (historyStatus: AgentThread['historyStatus']): AgentState => {
       const state = stateWithWatcher()
-      state.host.threads = state.host.threads.map(thread => thread.id === 'watcher' ? { ...thread, messages: [], historyStatus } : thread)
+      state.host.threads = state.host.threads.map(thread => thread.id === 'watcher' ? { ...thread, historyStatus } : thread)
       return state
     }
     mockApp('watcher')
@@ -857,15 +886,8 @@ describe('Watcher’s night scene', () => {
     for (const status of ['loading', 'error', 'ready'] as const) {
       mockAgents(withHistory(status))
       rerender(room())
-      if (status === 'ready') await waitFor(() => expect(scene(container)).toHaveLength(2))
-      else await waitFor(() => expect(scene(container)).toHaveLength(0))
+      expect(scene(container)).toHaveLength(2)
     }
-  })
-
-  it('is not drawn once Watcher has a conversation', async () => {
-    const { container } = renderRoom(stateWithWatcher(), roomState())
-    await paneReady()
-    expect(scene(container)).toHaveLength(0)
   })
 
   it('does not exist with the Watcher gate off', () => {

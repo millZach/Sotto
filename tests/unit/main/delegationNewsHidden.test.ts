@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
+import { WATCHER_STOP_PAUSE } from '../../../src/main/agents/followups'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentDelivery, AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
 import type { DelegationNews } from '../../../src/shared/delegation'
@@ -136,7 +137,7 @@ it('goes past a machine Stop\'s fence, pausing the user\'s held prompts first so
   expect(sends(f.host)[0]).toMatchObject({ hiddenWakeUp: true })
   // The news turn completes like any other, so the user's prompt was paused for their review before it went.
   await expect.poll(() => stored(f.control).map(item => [item.wakeUp ? 'wake-up' : item.text, item.status])).toEqual([['Synthetic queued prompt', 'paused'], ['wake-up', 'queued']])
-  expect(f.control.shell().followups?.find(item => !item.wakeUp)?.error).toBe('Watcher stopped this thread. Review the queue and resume it when ready.')
+  expect(f.control.shell().followups?.find(item => !item.wakeUp)?.error).toBe(WATCHER_STOP_PAUSE)
   // The news turn ends and the Stop's hold lifts: the prompt still waits, and so does the news behind it.
   end(f.host)
   f.fence(false)

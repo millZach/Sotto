@@ -6,8 +6,8 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 
 | Component | Version / revision | License | Copyright / attribution |
 |---|---|---|---|
-| `Electron` | `43.1.0` | MIT | Electron contributors |
-| `Chromium and bundled third-party code` | `Electron 43.1.0 distribution` | Multiple | Chromium authors and third-party contributors |
+| `Electron` | `43.8.3` | MIT | Electron contributors |
+| `Chromium and bundled third-party code` | `Electron 43.8.3 distribution` | Multiple | Chromium authors and third-party contributors |
 | `react` | `19.2.7` | MIT | Meta Platforms, Inc. and affiliates |
 | `react-dom` | `19.2.7` | MIT | Meta Platforms, Inc. and affiliates |
 | `scheduler` | `0.27.0` | MIT | Meta Platforms, Inc. and affiliates |

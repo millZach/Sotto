@@ -5,7 +5,7 @@ import { WATCHER_GROUPS, type WatcherGroup } from '../../../shared/watcherOvervi
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
-import { openAtRequestLabel, statusWord, threadPress, TONES, waitKind, type OpenThread, type OverviewEntry, type OverviewGroup } from './WatcherOverview'
+import { OpenPrototype, openAtRequestLabel, statusWord, threadPress, TONES, waitKind, type OpenThread, type OverviewEntry, type OverviewGroup } from './WatcherOverview'
 import { hasStandingWatch, threadForTarget, useWatchActions, watchedRows, type WatcherRoom } from './watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge, WatcherOwl } from './WatcherOwl'
 
@@ -86,8 +86,9 @@ function Card({ card, room, onOpen, onStopping }: { readonly card: WatchedCard; 
       : <button type="button" className="watched-card__title watched-card__open tt-focusable" aria-label={`Open ${title} beside Watcher`} aria-describedby={describedBy} title={title}
         {...threadPress(onOpen, threadId, false)}><span>{title}</span></button>}
     <span className="watched-card__actions">
-      {kind !== null && threadId !== null ? <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(title, kind)} {...threadPress(onOpen, threadId, true)}>
-        {kind === 'failed' ? 'Open' : 'Open to answer'}</button> : null}
+      {kind === 'prototype' && entry !== undefined ? <OpenPrototype thread={entry.overview.thread} />
+        : kind !== null && threadId !== null ? <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(title, kind)} {...threadPress(onOpen, threadId, true)}>
+          {kind === 'failed' ? 'Open' : 'Open to answer'}</button> : null}
       {actions === null ? null : <button type="button" className="watched-card__stop tt-focusable" aria-label={`Stop watching ${title}`}
         onClick={event => { onStopping(event.currentTarget); void actions.set(row.target, title, false) }}>Stop watching</button>}
     </span>

@@ -8,7 +8,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -17,7 +17,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -65,6 +65,8 @@ import { startHandoverSend, startHandoversShown } from './startHandover'
 import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
 import { FailuresSeen } from './failuresSeen'
 import { FinishedUnread } from './finishedUnread'
+import { PrototypeReady } from './prototypeReady'
+import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
@@ -157,6 +159,12 @@ const savedSchema = z.object({
   deliveries: z.array(agentDeliverySchema).default([]),
   /** The threads that finished while no client showed them, oldest first (ADR-0046). */
   finishedUnread: z.array(z.string()).default([]),
+  /** The prototypes the user opened a page of, or answered the question after, by thread and source, oldest first (ADR-0108). */
+  prototypesCleared: z.array(z.object({ threadId: z.string(), source: z.string() })).default([]),
+  /** When prototype-ready marks began on this computer, in milliseconds: older replies earn none (ADR-0108). */
+  prototypesSince: z.number().optional(),
+  /** The reply that holds each thread's prototype-ready mark until the user opens its page or replies, oldest first (ADR-0108). */
+  prototypesMarked: z.array(z.object({ threadId: z.string(), messageId: z.string(), createdAt: z.string() })).default([]),
   /** The failed threads a client has shown since they failed, or Dismiss all named, oldest first (ADR-0092). */
   failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string(), turn: z.string().optional(), since: z.number().optional() })).default([]),
   composing: z.boolean(), outbox: z.array(z.object({
@@ -262,6 +270,8 @@ const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto 
 const PROMPT_NOT_SAVED = 'Could not save this prompt, so it was not sent. Check access to local storage and send it again.'
 /** The 30-second upkeep of previews and staged images failed: nothing anyone still needs was touched. */
 const ATTACHMENT_UPKEEP_ERROR = 'Could not remove screenshots Sotto no longer needs. Nothing was lost. Check access to local storage.'
+/** Who a thread's log says answered when Sotto sent a prototype question back (ADR-0108): Sotto, on this host, and no user. */
+const PROTOTYPE_SEND_BACK_CLIENT: ClientIdentity = { clientId: 'sotto-prototype-send-back', user: '', transport: 'ipc' }
 /**
  * The first thing asked of a thread and the first answer it got, the only content a generated title is
  * written from. Automatic naming needs the thread to be at its first exchange and settled: a running turn
@@ -660,6 +670,16 @@ export class AgentControl {
     // Found pages are taken like a new snapshot, so the question carries them at once.
     changed: () => this.acceptSnapshot(this.state.host),
   })
+  /** Threads whose prototype waits for the user's review, from the pages their replies and questions name (ADR-0108). */
+  private readonly prototypeReady = new PrototypeReady(this.questionPages, [], Date.now())
+  /** Questions about a prototype, held while their pages are looked for and sent back when none opens (ADR-0108). */
+  private readonly prototypeQuestions = new PrototypeQuestions({
+    searched: (threadId, source) => this.questionPages.searched(threadId, source),
+    sendBack: (threadId, request, answer) => this.sendPrototypeQuestionBack(threadId, request, answer),
+    // A send-back's outcome and the end of its minute are taken like a new snapshot, so every client sees them at once.
+    changed: () => this.acceptSnapshot(this.state.host),
+    timer: (run, ms) => (this.dependencies.prototypeQuestionTimer ?? startTimer)(run, ms),
+  })
   private unsubscribeSottoRequests: (() => void) | undefined
   private visibleCommandError: unknown
   private setCommandError(error: unknown, message: string | null): void {
@@ -777,6 +797,8 @@ export class AgentControl {
     installedProviders?: () => Promise<readonly ProviderId[]>
     /** Continuing agents as threads and forking at a reply (#1028): the Owl list's answer, read once at start. Absent fails closed. */
     threadStartsEnabled?: boolean
+    /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
+    prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
   }) {
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
@@ -851,9 +873,10 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
     this.finishedUnread.restore(finishedUnread)
+    this.prototypeReady.restore(prototypesCleared, prototypesSince, prototypesMarked)
     this.failuresSeen.restore(failuresSeen)
     this.deliveredPromptDigests = deliveredPromptDigests
     this.answeredRequests = answeredRequests
@@ -958,10 +981,13 @@ export class AgentControl {
   }
   /**
    * A host's snapshot as everything in Sotto shows it: Watcher's threads only where the gate allows them (ADR-0072), its
-   * user messages as typed (ADR-0073), Sotto's own requests among the provider's (ADR-0035), and the pages found for
-   * each question on it (ADR-0085).
+   * user messages as typed (ADR-0073), Sotto's own requests among the provider's (ADR-0035), the pages found for
+   * each question on it (ADR-0085), and each thread's prototype waiting for review (ADR-0108), without a prototype
+   * question Sotto holds while it looks for that question's pages (ADR-0108).
    */
   private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+    // The coordinator's own published snapshot, taken again, still has the questions it held: they are the provider's.
+    snapshot = this.prototypeQuestions.restore(snapshot)
     if (this.dependencies.watcherEnabled !== true) {
       for (const thread of snapshot.threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') { this.dormantThreadIds.add(thread.id); this.dormantWatcherIds.add(thread.id) }
       snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.threadAvailable(thread.id)) }
@@ -980,10 +1006,21 @@ export class AgentControl {
     // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
     if (this.dependencies.threadStartsEnabled === true) snapshot = startHandoversShown(snapshot)
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
-    return this.questionPages.decorate(snapshot)
+    // A prototype waiting for review is marked from the pages found for its question or its newest reply (ADR-0108).
+    // A question about a prototype is held last, so both of those still read it while no client sees it.
+    return this.prototypeQuestions.decorate(this.prototypeReady.decorate(this.questionPages.decorate(snapshot, this.prototypeReady.replies(snapshot))))
   }
   /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
+  /**
+   * One of a question's or reply's pages was opened, from this computer or through the page route (ADR-0108). The
+   * prototype it belongs to is reviewed: its mark clears on every client, and the record is saved so a restart keeps it.
+   */
+  questionPageOpened(token: string): void {
+    if (this.disposed || !this.prototypeReady.opened(token)) return
+    this.acceptSnapshot(this.state.host)
+    void this.persist().catch(() => undefined)
+  }
   /**
    * The threads some client shows now (ADR-0046). The host service says which: every client's observed threads, the
    * desktop window's only while it has the focus. Showing a thread is what reads its finish, on every client at once,
@@ -1580,6 +1617,9 @@ export class AgentControl {
       outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
       obsoleteDrafts: this.state.obsoleteDrafts ?? [],
       finishedUnread: this.finishedUnread.saved(),
+      prototypesCleared: this.prototypeReady.saved(),
+      prototypesSince: this.prototypeReady.since(),
+      prototypesMarked: this.prototypeReady.marked(),
       failuresSeen: this.failuresSeen.saved(),
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
@@ -3316,7 +3356,7 @@ export class AgentControl {
             ...(origin?.operationId ? { watcherOperationId: origin.operationId, messageId: this.watcher.operations.find(item => item.id === origin.operationId)?.messageId } : {}),
             // A phone's follow-up keeps the phone it came from, so it goes under that phone's guard and origin (#1229).
             ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}),
-            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
+            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !this.waitsOnRequest(thread) ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
         } else {
           await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })
         }
@@ -3363,6 +3403,11 @@ export class AgentControl {
   private isUserFollowup(item: Readonly<QueuedFollowup>): boolean {
     return !item.wakeUp && !item.watcherOperationId && !item.news?.length && !this.delegationHooks?.guardFor(item.draftId)
   }
+  /**
+   * Whether a thread waits on a request: one every client sees, or a question about a prototype Sotto holds (ADR-0108),
+   * which the provider still waits on. Nothing queued goes to a thread while either waits.
+   */
+  private waitsOnRequest(thread: AgentThread): boolean { return thread.requests.length > 0 || this.prototypeQuestions.holds(thread.id) }
   private followupReady(threadId: string, followup: Readonly<QueuedFollowup>): boolean {
     const userFollowup = this.isUserFollowup(followup)
     if (this.pendingSetAsideDeliveries.has(threadId) || !userFollowup && this.hasSetAsideUpdateHold(threadId)) return false
@@ -3375,7 +3420,7 @@ export class AgentControl {
       && (followup.watcherOperationId !== undefined || !this.watcherHooks?.preserveUserQueue(threadId))
       // A phone's follow-up waits until the phone listener can say whether that phone is still paired (#1229).
       && (followup.phoneOrigin === undefined || this.phoneAdmission !== undefined)
-      && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !thread.requests.length
+      && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !this.waitsOnRequest(thread)
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
       && !this.outbox.some(item => item.threadId === threadId && item.id !== followup.commandId
@@ -3389,7 +3434,7 @@ export class AgentControl {
   private delegationNewsReady(threadId: string, followup: Readonly<QueuedFollowup>): boolean {
     const thread = this.state.host.threads.find(t => t.id === threadId)
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && thread.clientConnected !== false && !isThreadTurnRunning(thread)
-      && !thread.requests.length && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
+      && !this.waitsOnRequest(thread) && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
       && !this.pendingSetAsideDeliveries.has(threadId)
       && !this.outbox.some(item => item.threadId === threadId && item.id !== followup.commandId && this.blocksExplicitPrompt(item, undefined, false))
@@ -3436,6 +3481,17 @@ export class AgentControl {
         void this.followupStore.separateWakeUps(threadId, isDelegationNews, word).then(() => { separated = true })
           .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (separated) this.pumpFollowups() })
+        continue
+      }
+      // A pause a Watcher stop made lasts as long as its hold: once the user's own command ended it, the queue goes on.
+      // Only Watcher can say the hold ended, so without it the pause stays for Resume queue.
+      if (items.some(item => item.threadId === threadId && item.status === 'paused' && item.pausedBy === 'watcher')
+        && this.watcherHooks && !this.watcherHooks.preserveUserQueue(threadId)) {
+        this.pumping.add(threadId)
+        let released = false
+        void this.followupStore.releaseWatcherPause(threadId).then(() => { released = true })
+          .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (released) this.pumpFollowups() })
         continue
       }
       // A steer may have selected any queue item. Reconcile its late echo before the queue head.
@@ -3485,10 +3541,10 @@ export class AgentControl {
         // Stop lifts. They are paused for the user's Resume first, as a turn that did not finish pauses them (ADR-0073).
         const stopHeld = (item: Readonly<QueuedFollowup>): boolean => this.isUserFollowup(item) && item.id !== first.id
         if (step === 'send' && this.watcherHooks?.preserveUserQueue(threadId)
-          && items.some(item => item.threadId === threadId && item.status === 'queued' && stopHeld(item))) {
+          && items.some(item => item.threadId === threadId && (item.status === 'queued' || item.pausedBy === 'watcher') && stopHeld(item))) {
           this.pumping.add(threadId)
           let paused = false
-          void this.followupStore.pauseUserPrompts(threadId, 'Watcher stopped this thread. Review the queue and resume it when ready.', stopHeld)
+          void this.followupStore.pauseUserPrompts(threadId, WATCHER_STOP_PAUSE, stopHeld)
             .then(() => { paused = true })
             .catch(() => { this.state.error = 'Could not pause the follow-up queue. The news was not sent.' })
             .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
@@ -3505,18 +3561,24 @@ export class AgentControl {
           continue
         }
       }
-      if (first.status === 'queued' && terminalBlocked) {
-        // A machine Stop fences its own sends. A user's queue remains intact and waits for explicit review.
-        if (!first.watcherOperationId && this.watcherHooks?.preserveUserQueue(threadId)) continue
+      // A machine Stop fences its own sends. A user's queue, and Sotto's wake-up in it, waits for the user's review
+      // (ADR-0073), so once the thread rests the queue is paused by Watcher and says so: Resume queue is that review.
+      // A hidden wake-up never pauses, as above.
+      const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
+      // Whatever joins the queue behind a pause, such as later news, is paused with it, so the queue says why it waits.
+      const stopHeld = !confirmed && thread && !isThreadTurnRunning(thread)
+        && items.some(item => item.threadId === threadId && item.status === 'queued' && !item.watcherOperationId && !isHiddenWakeUp(item))
+        && this.watcherHooks?.preserveUserQueue(threadId)
+      if (stopHeld || first.status === 'queued' && terminalBlocked) {
         this.pumping.add(threadId)
         let paused = false
-        void this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.')
+        void (stopHeld ? this.followupStore.pause(threadId, WATCHER_STOP_PAUSE, 'watcher')
+          : this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.'))
           .then(() => { paused = true })
           .catch(() => { this.state.error = 'Could not pause the follow-up queue.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
         continue
       }
-      const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       const ready = (item: Readonly<QueuedFollowup>): boolean => isDelegationOnlyWakeUp(item) ? this.delegationNewsReady(threadId, item) : this.followupReady(threadId, item)
       if (!confirmed && (first.status !== 'queued' || !ready(first))) continue
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {
@@ -3569,7 +3631,7 @@ export class AgentControl {
             if (isDelegationOnlyWakeUp(item) && this.watcherHooks?.preserveUserQueue(threadId) && this.followupStore.peek().items.some(queued => queued.threadId === threadId
               && queued.status === 'queued' && queued.id !== item.id && this.isUserFollowup(queued))) throw new Error('The thread\'s queue changed before the news went.')
             const latest = this.thread(threadId)
-            if (latest.status === 'running' || latest.requests.length || isThreadClosed(latest)
+            if (latest.status === 'running' || this.waitsOnRequest(latest) || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))) throw new Error('The thread changed before dispatch. Review it and resume the queue.')
             this.canAct(threadId)
             validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
@@ -4213,6 +4275,17 @@ export class AgentControl {
         const answerDraft = sentDraft ?? (!command.questionAnswers ? this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
           && draft.text.trim() === command.answer.trim() && !draft.attachments.length) : undefined)
         if (request.delivery === 'uncertain') throw new Error('This answer may already have arrived. Refresh the original request; it will not be resent.')
+        if (this.prototypeQuestions.isCopy(command.threadId, request.id)) {
+          // Sotto's copy of a question it sent back (ADR-0108): the user's answer goes to the thread as the user's own
+          // message, quoting the question, and waits in the queue while the thread is busy.
+          await this.answerPrototypeQuestionCopy(command, answerDraft?.draftId)
+          this.recordAnswerAttribution({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer,
+            ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}) }, client)
+          if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
+            && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
+          this.say(`Answered ${thread.title}.`)
+          return
+        }
         if (isSottoRequest(request.id)) {
           // Sotto's own request: the answer is Sotto's to act on, and no provider hears it. Only a client that may
           // grant reaches here (guardClientGrant above), as for every other request (ADR-0004).
@@ -4232,10 +4305,60 @@ export class AgentControl {
         }
         if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
           && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
+        // The user answering a question replies to the prototype waiting before it (ADR-0108); its leaving alone does not.
+        if (request.kind === 'question' && this.prototypeReady.answered(command.threadId)) void this.persist().catch(() => undefined)
         this.say(`Answered ${thread.title}.`)
         return
       }
     }
+  }
+  /**
+   * The user's answer to Sotto's copy of a question it sent back (ADR-0108), sent to the thread as the user's message
+   * through the follow-up queue, so it goes at once to a thread at rest and after the turn of a busy one. The copy and
+   * the drafts that answered it go; when the message cannot be queued, both come back and nothing was sent.
+   */
+  private async answerPrototypeQuestionCopy(command: Extract<AgentCommand, { type: 'answer' }>, sentDraftId: string | undefined): Promise<void> {
+    const { threadId, requestId } = command
+    const text = this.prototypeQuestions.copyAnswer(threadId, requestId, command.answer, command.questionAnswers)
+    const drafts = this.state.threadDrafts ?? []
+    const answering = (draft: (typeof drafts)[number]): boolean => draft.threadId === threadId && (draft.requestId === requestId || draft.draftId === sentDraftId)
+    const kept = drafts.filter(answering)
+    if (kept.length) this.state.threadDrafts = drafts.filter(draft => !answering(draft))
+    const copy = this.prototypeQuestions.withdrawCopy(threadId, requestId)
+    // The thread reads without the copy before the message is queued, as a thread at rest with nothing to answer.
+    this.acceptSnapshot(this.state.host)
+    const draftId = randomUUID()
+    await this.followupCommand({ type: 'queue-followup', threadId, draftId, text })
+    const { items, receipts } = this.followupStore.get()
+    if (items.some(item => item.threadId === threadId && item.draftId === draftId) || receipts.some(item => item.threadId === threadId && item.draftId === draftId)) {
+      // The draft that answered is delivered, as an answer to a provider's question is.
+      if (sentDraftId) {
+        this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(item => item.threadId !== threadId || item.draftId !== sentDraftId),
+          { threadId, draftId: sentDraftId }])
+        this.clearEmptyDraftBinding(threadId, sentDraftId)
+      }
+      return
+    }
+    if (copy) this.prototypeQuestions.putBackCopy(threadId, copy)
+    if (kept.length) this.state.threadDrafts = [...(this.state.threadDrafts ?? []), ...kept.filter(draft => !this.state.threadDrafts?.some(item => item.threadId === draft.threadId))]
+    this.acceptSnapshot(this.state.host)
+    throw new Error('Your answer could not be sent to the thread. The question is still here. Answer it again.')
+  }
+  /**
+   * Sends a question about a prototype back to its thread with ADR-0108's note, as Sotto and never as a client: no
+   * client grant is asked and none is given, and the thread's log records Sotto as the one who answered. Nothing is
+   * queued or saved, because a hold lives in memory alone. True once the provider took the note.
+   */
+  private async sendPrototypeQuestionBack(threadId: string, request: AgentRequest, reply: PrototypeSendBack): Promise<boolean> {
+    if (this.disposed) return false
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (!thread || !this.state.host.connected || !isThreadProviderConnected(this.state.host, thread) || !capabilitiesForThread(this.state.host, thread).questions) return false
+    const command = { type: 'answer' as const, commandId: randomUUID(), threadId, requestId: request.id, ...reply }
+    const result = await this.dependencies.host.execute(command)
+    const taken = result.accepted && !result.uncertain ? true
+      : result.uncertain && result.answerCompletion ? await result.answerCompletion.catch(() => false) : false
+    if (taken) this.recordAnswerAttribution(command, PROTOTYPE_SEND_BACK_CLIENT)
+    return taken
   }
   private recordAtomicDelivery(item: Saved['outbox'][number]): void {
     if (!item.atomicDigest || !item.draftId || !item.threadId) return

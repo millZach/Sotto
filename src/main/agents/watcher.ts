@@ -226,6 +226,13 @@ const withSince = (checksPassedAt: string | undefined) => checksPassedAt === und
 /** One row of read_state's pages: the watched thread, merge queue item and pending settle at the same place in each list. */
 interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined; readonly settle: WatcherPendingSettle | undefined }
 
+/**
+ * A participation Watcher stopped: Watcher's own Stop of the thread, or a stopped request on a thread Watcher started.
+ * It holds the thread's queue for the user's review, and the user's own command in the thread is that review (ADR-0073).
+ */
+const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
+  participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
+
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
@@ -941,7 +948,7 @@ export class WatcherService implements WatcherControlHooks {
       const work = owned ? watcherBackgroundWorkCount(owned) : thread.backgroundWorkCount
       // The cards of the threads it delegated to, as list_threads gives them; a paired host's are left out, as above.
       const delegatedWaitsOn = owned ? local.threads.filter(child => child.delegatedBy === owned.id).flatMap(child => child.requests) : []
-      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn }) }
+      return { target: thread.target, title: thread.title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn, prototypeReady: owned?.prototypeReady !== undefined }) }
     })
   }
   /**
@@ -1737,7 +1744,7 @@ export class WatcherService implements WatcherControlHooks {
       if (!watch) participant.generation++
       // Only a thread watched for a request alone, as on an older paired host, becomes the user's again, and so does a
       // participation Watcher had already stopped, which the user's own command reviews: its held queue goes on.
-      if (!watch || participant.automationStopped) { participant.state = 'taken-over'; participant.takeover = { reason, at } }
+      if (!watch || stoppedParticipation(request, participant)) { participant.state = 'taken-over'; participant.takeover = { reason, at } }
       for (const operation of record.operations.filter(item => item.requestId === request.id && key(item.target) === key(target))) {
         operations.add(operation.id)
         if (operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_TAKEN_OVER'; operation.updatedAt = now() }
@@ -1752,8 +1759,9 @@ export class WatcherService implements WatcherControlHooks {
     void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A taken-over thread’s queued Watcher message could not be removed. It is fenced and will not be sent.'; this.publish() })
   }
   preserveUserQueue(threadId: string): boolean {
-    return this.record().requests.some(request => request.participants.some(participant => participant.target.hostId === this.hostId() && participant.target.threadId === threadId
-      && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
+    // Read, not copied: the follow-up queue asks this on the update path.
+    return this.view().requests.some(request => request.participants.some(participant => participant.target.hostId === this.hostId() && participant.target.threadId === threadId
+      && participant.state === 'participating' && stoppedParticipation(request, participant)))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
     if (origin?.phoneOrigin && (command.type === 'send' || command.type === 'steer')) this.guardPhoneSend(command.threadId)
@@ -3342,8 +3350,9 @@ ${operation.draftId}`)
   /** What Watcher is given of a read's full result (#1191): slim unless it asked for all of it. */
   private slim(name: WatcherToolName, input: unknown, result: unknown): unknown {
     const watched = this.wakes.watchedKeys()
-    return watcherSlimRead(name, input, result, target => watched.has(key(target)),
-      target => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)?.lastTurn?.status === 'failed')
+    const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
+    return watcherSlimRead(name, input, result, target => watched.has(key(target)), target => thread(target)?.lastTurn?.status === 'failed',
+      target => thread(target)?.prototypeReady !== undefined)
   }
   private prunePages(): void {
     for (const [id, page] of this.pages) if (page.expires < Date.now()) this.pages.delete(id)

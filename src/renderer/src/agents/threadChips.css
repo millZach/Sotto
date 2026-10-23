@@ -9,6 +9,9 @@
 /* The hover tint lies over the chip's own fill, whichever surface that is. */
 .thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); color: var(--tt-text); }
 .thread-chip:disabled { opacity: .55; cursor: default; }
+/* Watch on a new thread's chips: pressed, the thread is watched from its first send, in the theme's accent. */
+.thread-chip.watch-on-send[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-accent-text); }
+.thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: var(--tt-accent-border); color: var(--tt-accent-text); }
 /* At the model's highest level the effort chip's word wears the colourway; the composer reads the same mark for its outline (ADR-0019). */
 .thread-chip[data-effort-top='true'] > span { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
 
