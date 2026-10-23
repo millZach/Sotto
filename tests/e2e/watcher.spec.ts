@@ -47,6 +47,8 @@ const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
 const macEvidence = evidenceDirectory('artifacts/macos-traffic-light-room')
 /** New Watcher in Watcher's composer (Zach's pick A of prototype/new-watcher-button): captures for its note. */
 const newWatcherEvidence = evidenceDirectory('artifacts/new-watcher-button')
+/** The message scrubber in Watcher's conversation (ADR-0109), beside the thread captures in message-scrubber.spec.ts. */
+const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -878,6 +880,44 @@ test.describe("Watcher's room on the built app", () => {
         await capture(launched, `room-sotto-dark-1280x800-reduced-motion-${motion === 'normal' ? 'system' : 'setting'}.png`)
       })
     })
+  })
+
+  test('a long Watcher conversation has the message scrubber, its cards naming Watcher', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true })
+      await openRoom(page)
+      const pane = watcherPane(page)
+      await page.evaluate(async master => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: Array.from({ length: 40 }, (_, index) => ({
+          id: `watcher-scrub-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
+          text: index % 2 ? `Watching it. Package (Windows) is still running for message ${(index - 1) / 2 + 1}, and I will say when it finishes.` : `Is the release thread green yet? (${index / 2 + 1})`,
+          createdAt: new Date(Date.UTC(2026, 6, 12, 18, index)).toISOString() })) })
+      }, CURRENT)
+      await expect(pane.getByText('Is the release thread green yet? (20)', { exact: true })).toBeVisible()
+      const scrubber = pane.getByRole('navigation', { name: 'Messages you sent' })
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await expect(scrubber.getByRole('button')).toHaveCount(20)
+        // The lane is the margin's, left of the conversation's column.
+        const lane = (await scrubber.boundingBox())!
+        const column = (await pane.locator('.thread-transcript__content').boundingBox())!
+        expect(lane.x + lane.width).toBeLessThanOrEqual(column.x + 0.5)
+        const tick = (await scrubber.getByRole('button').nth(4).boundingBox())!
+        await page.mouse.move(tick.x + tick.width / 2, tick.y + tick.height / 2)
+        const card = pane.locator('.message-scrubber__card')
+        await expect(card).toContainText('Message 5 of 20')
+        await expect(card).toContainText('Is the release thread green yet? (5)')
+        await expect(card).toContainText('Watcher replied')
+        await page.evaluate(() => Promise.all(document.querySelector('.message-scrubber__card')!.getAnimations().map(animation => animation.finished)))
+        expect(await pageBoundProblems(page), `scrubber at ${width}x${height}`).toEqual([])
+        await captureInto(scrubberEvidence, launched, `watcher-hover-dark-${width}x${height}.png`)
+        await page.mouse.move(0, 0)
+        await expect(card).toHaveCount(0)
+      }
+    }))
   })
 
   test('a long title, a disconnected host and no other threads stay inside the room', async () => {
