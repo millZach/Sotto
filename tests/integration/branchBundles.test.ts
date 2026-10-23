@@ -94,6 +94,19 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(git(machines.forge, 'for-each-ref', '--format=%(refname)', 'refs/sotto')).toBe(incomingRef(moveId, 'main'))
   })
 
+  it('lands only a commit: a blob or a tree the receiver has is refused before anything is recorded or created', async () => {
+    const forge = new BranchBundles(machines.data('forge'))
+    const blob = git(machines.forge, 'rev-parse', 'main:README.md'), tree = git(machines.forge, 'rev-parse', 'main^{tree}')
+    for (const object of [blob, tree]) {
+      const moveId = randomUUID()
+      expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'main', commit: object }))
+        .toEqual({ type: 'refused', reason: 'not-whole', message: branchMoveWords.notWhole })
+      const records = await readFile(machines.data('forge').recordsPath, 'utf8').catch(() => '{"moves":{}}')
+      expect(JSON.parse(records).moves[moveId]).toBeUndefined()
+    }
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+  })
+
   it('refuses uncommitted work and a working copy on no branch, and moves nothing', async () => {
     await featureBranch()
     const laptop = new BranchBundles(machines.data('laptop'))

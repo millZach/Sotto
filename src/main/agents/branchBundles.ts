@@ -126,6 +126,14 @@ export class BranchBundles {
     try { return (await this.git(repository, ['rev-parse', '--verify', '--quiet', ref + '^{commit}'], undefined, 30_000)).trim() || null } catch { return null }
   }
 
+  /**
+   * Whether `oid` names a commit this repository has. A blob or a tree passes `rev-list --count <oid> --not --all` as
+   * readily as a reachable commit does, so nothing is recorded or published for an object until this says it is a commit.
+   */
+  private async isCommit(repository: string, oid: string): Promise<boolean> {
+    try { return (await this.git(repository, ['cat-file', '-t', oid], undefined, 30_000)).trim() === 'commit' } catch { return false }
+  }
+
   /** Whether `ref` is a symbolic ref, whether or not what it points at exists. */
   private async symbolic(repository: string, ref: string): Promise<boolean> {
     try { await this.git(repository, ['symbolic-ref', '--quiet', ref], undefined, 30_000); return true } catch { return false }
@@ -253,6 +261,7 @@ export class BranchBundles {
     const admitted = await this.admit(repository, moveId, branch, commit)
     if (admitted !== null) return admitted
     try {
+      if (!await this.isCommit(repository, commit)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
       let missing: string
       try { missing = (await this.git(repository, ['rev-list', '--count', commit, '--not', '--all'], undefined, 60_000)).trim() } catch { missing = '' }
       if (missing !== '0') return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
@@ -276,6 +285,7 @@ export class BranchBundles {
   /** Creates the move's incoming ref only if it does not exist, and reads it back. */
   private async createRef(repository: string, moveId: string, branch: string, commit: string): Promise<BranchMoved | BranchMoveRefusal> {
     const ref = incomingRef(moveId, branch)
+    if (!await this.isCommit(repository, commit)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
     if (await this.symbolic(repository, ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
     // `--no-deref`: the ref itself is written, never a branch a symbolic ref put in its place points at.
     try { await this.git(repository, ['update-ref', '--no-deref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
