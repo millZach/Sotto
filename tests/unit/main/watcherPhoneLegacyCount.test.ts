@@ -24,12 +24,12 @@ function page(starts: number) {
 }
 
 it.each([0, 3, 7])('sends the true count of %i, below the limit an older iPhone reads', starts => {
-  expect(page(starts)).toMatchObject({ inFlight: starts, inFlightLimit: WATCHER_PHONE_LEGACY_LIMIT, working: starts > 0 })
+  expect(page(starts)).toMatchObject({ inFlight: starts, inFlightLimit: WATCHER_PHONE_LEGACY_LIMIT })
 })
 
 it.each([8, 9, 25])('never tells an older iPhone that Watcher starts nothing new, with %i starts working', starts => {
   const state = page(starts)
   // The old meter's room line reads "Watcher starts nothing new" when the limit minus the count is zero or less.
   expect(state.inFlightLimit - state.inFlight).toBeGreaterThan(0)
-  expect(state).toMatchObject({ inFlight: WATCHER_PHONE_LEGACY_LIMIT - 1, working: true })
+  expect(state).toMatchObject({ inFlight: WATCHER_PHONE_LEGACY_LIMIT - 1 })
 })

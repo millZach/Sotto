@@ -574,3 +574,7 @@ A Muse Watcher called `read_thread` 2.9 times a turn in an hour of use, against 
 - **Lines name their operation and stop there.** A finish's line says which operation the turn answers without pointing at `read_operation`; the footer says when to use it.
 
 This is wording, so unit tests check the prompt, the reply line and the footer, and the measure is `read_thread` calls per turn in Watcher's activity before and after. #1142's design goes further: news comes from the thread's own events and watching starts with the thread's state, so Watcher has less reason to read at all. This change needs none of that and stays true under it, since #1142 also keeps the ping small and leaves reading for when Watcher wants more.
+
+## October 23, 2026: the iPhone says Watcher works only for its own turn (#1436)
+
+The phone's page called Watcher working while its own turn ran or any thread it started was still working. Watcher starts threads that run for hours, so the iPhone's pill, tab dot and "Watcher is working" line stayed on while Watcher was idle. Zach decided on October 23, 2026 that Watcher working, on the phone as on the desktop, is Watcher's own turn, a turn on news of a watched thread included: Watcher is really working then, and a send steers or queues behind it. A thread Watcher started says its own state under Watched. The desktop does not change. Host protocol version 1 does not change either: `working` keeps its shape, and an iPhone already installed shows the new meaning once its computer updates. `inFlight` still counts the starts.
