@@ -1808,17 +1808,15 @@ it('does not take an answer about another operation as the paired machine having
     const snapshot = real(id)
     return snapshot && id === hostId ? { ...snapshot, threads: [...snapshot.threads.filter(thread => thread.title !== 'Synthetic held worker'), ...nine] } : snapshot
   })
-  // The host answers the first start "ok", but its receipt names another operation, and the start's own receipt cannot be read.
+  // The host answers the first start "ok", but its receipt names another operation.
   const control = f.socket.watcherControl.bind(f.socket)
   vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => {
     const answer = await control(...args) as { receipt: { operationId: string } }
     return { ...answer, receipt: { ...answer.receipt, operationId: randomUUID() } }
   })
-  const reads = f.socket.watcherRead.bind(f.socket)
-  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async request => {
-    if ((request as { call?: { name?: string } }).call?.name === 'read_operation') throw new Error('synthetic-connection-lost')
-    return reads(request)
-  })
+  // Nothing of the host can be read back either: the projection would carry the host's own receipt for the start, which
+  // is proof it was made, and reconciling the uncertain start reads it before the next start.
+  vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic-connection-lost'))
   const held = () => ({ ...f.start(), machine: hostId, title: 'Synthetic held worker' })
   const mismatched = await f.call('start_thread', held())
   expect(mismatched).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
