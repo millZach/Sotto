@@ -887,6 +887,25 @@ it('changes Watcher’s model with its send queued for a working thread, while a
   expect(f.service.state()).toMatchObject({ current: { target: { threadId: f.id } }, history: [] })
 })
 
+it('changes Watcher’s provider at rest when its only queued send waits for the user’s review, not a working thread', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic GO MERGE' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  // The worker's turn ends without confirming it finished: its queue waits for the user, and the send with it, for good.
+  const worker = f.native(first.target.threadId)
+  worker.status = 'idle'; worker.lastTurn = { id: randomUUID(), status: 'interrupted' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === 'Synthetic GO MERGE')?.status).toBe('paused'))
+  await f.finish(f.id)
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
+  // Watcher rests and no thread is working on its behalf: nothing of Watcher's holds the change.
+  expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok' })
+  expect(f.service.state().current!.provider).toBe('claude')
+  expect(f.service.state().history.at(-1)!.target.threadId).toBe(f.id)
+})
+
 it('changes Watcher’s model or effort while a send to another thread has been unconfirmed for days, set aside and through a restart, as Settings asks (#1325)', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')

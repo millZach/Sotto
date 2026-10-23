@@ -2286,6 +2286,19 @@ export class AgentControl {
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
+  /**
+   * Whether a Watcher send's prompt still waits in its thread's queue for that thread's turn, which only the turn holds:
+   * false once it has left the queue, and while it waits instead on the user, its queue paused or holding a failed prompt,
+   * or its thread settled or archived. A provider change waits only for the first (#1325).
+   */
+  watcherQueuedSendWaits(operationId: string): boolean {
+    const items = this.followupStore.peek().items
+    const own = items.find(item => item.watcherOperationId === operationId)
+    if (!own || own.status === 'paused' || own.status === 'failed') return false
+    if (items.some(item => item.threadId === own.threadId && !isWaitingWakeUp(item) && (item.status === 'paused' || item.status === 'failed'))) return false
+    const thread = this.state.host.threads.find(item => item.id === own.threadId)
+    return !!thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
       || this.watcher.current?.target.hostId !== target.hostId || this.watcher.current.target.threadId !== target.threadId) return false
