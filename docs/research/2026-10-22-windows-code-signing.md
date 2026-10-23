@@ -76,7 +76,7 @@ Identity validation can be done only in the portal, not the CLI. Accepted ID is 
 
 - Signing certificates are valid **three days**. Timestamping is therefore required, or a signature stops validating after three days. Learn recommends the Microsoft timestamp server `http://timestamp.acs.microsoft.com/` (signing-integrations, updated 2026-08-03).
 - The signing endpoint must match the region of both the account and the profile. A mismatch returns 403 and a `SignerSign()` failure. Fifteen endpoints are listed, for example `https://wus2.codesigning.azure.net` and `https://eus.codesigning.azure.net`.
-- The signing client is the `Azure.CodeSigning.Dlib` package (NuGet `Microsoft.ArtifactSigning.Client`). It works with SignTool from Windows SDK 10.0.2261.755 or newer. The 20348 SDK is not supported. It also needs the .NET 8 runtime and the VC++ redistributable. Install with `winget install -e --id Microsoft.Azure.ArtifactSigningClientTools`.
+- The signing client is the `Azure.CodeSigning.Dlib` package (NuGet `Microsoft.ArtifactSigning.Client`). Learn gives the minimum SignTool version as Windows SDK 10.0.2261.755, printed that way in three places on the page. That number looks like it dropped a digit, possibly 10.0.22621.755, so confirm the intended minimum with Microsoft before pinning it. The 20348 SDK is not supported. It also needs the .NET 8 runtime and the VC++ redistributable. Install with `winget install -e --id Microsoft.Azure.ArtifactSigningClientTools`.
 - The older `Microsoft.Trusted.Signing.Client` package is unlisted and should not be used.
 
 ### SmartScreen
@@ -213,7 +213,7 @@ Use **Artifact Signing, Basic tier, under Zach's individual identity**, and sign
 4. **Scope.** Stable and Owl, with the same publisher name for both. Sign `.exe`, `.dll` and `.node` files.
 5. **Order.** Pick the exact publisher string from a test signature first. Ship one signed test build and install it. Then test one update from it to a second signed build, and one update that should be refused because its publisher is wrong. Only then ship a stable release.
 
-**Fallbacks.** If Artifact Signing identity validation fails, use SSL.com IV with eSigner and a custom hook. If Zach wants no cost at all, SignPath is probably closed to Sotto while the Anthropic Agent SDK files ship. Any paid route costs more than the recommendation.
+**Fallbacks.** If Artifact Signing identity validation fails, use SSL.com IV with eSigner and a custom hook. If Zach wants no cost at all, SignPath is probably closed to Sotto while the Anthropic Agent SDK files ship. Certum's reported price is lower than the recommendation, but it was out of stock when read, and its availability and full costs need checking.
 
 ## Decisions only Zach can make
 
@@ -252,6 +252,7 @@ Use **Artifact Signing, Basic tier, under Zach's individual identity**, and sign
 - The exact subject string an individual certificate carries. Read it from a test signature.
 - The lifetime of a completed identity validation.
 - Whether `signtool` signs `.node` files. Test on the PC.
+- The intended minimum Windows SDK for SignTool. Learn prints 10.0.2261.755, which may have dropped a digit.
 - Whether `azure/login` alone works for electron-builder 26.15.3 in CI.
 - The GitHub OIDC subject rule for repositories created after mid-July 2026.
 - The 26.18.0 signing order, as opposed to 26.15.3.
