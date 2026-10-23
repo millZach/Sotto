@@ -3502,22 +3502,22 @@ ${operation.draftId}`)
     // wherever the facts do, or where a host does not send them.
     const live = this.options.crossMachine === true
     const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
-    // A paired machine's count gains the starts this desktop has admitted there that it has not counted yet. This
+    // A paired machine's count gains the starts this desktop has admitted there that it has not counted. Those starts are
+    // read before the host is asked, so they and its answer are one observation (`placedNotStartedWith`). This
     // computer's own report already holds this Watcher's starts here (`startsNotYetSent`).
-    const placedOf = (report: HostMachineReport, remote: string | undefined) => remote === undefined ? report.placedNotStarted ?? null
-      : placedNotStartedWith(report, this.startsNotYetSentOn(remote),
-        threadId => this.owningSnapshot(remote)?.threads.some(thread => thread.id === threadId && thread.status === 'running') === true)
-    const loadOf = (report: HostMachineReport, remote: string | undefined) => {
+    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
-      return { load, placedNotStarted: placedOf(report, remote), memoryState: states.memory, cpuState: states.cpu }
+      const placedNotStarted = reserved === undefined ? report.placedNotStarted ?? null : placedNotStartedWith(report, reserved)
+      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
     }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
       try {
+        const reserved = live && remote !== undefined ? this.startsNotYetSentOn(remote) : undefined
         const report = await facts()
         if (!report) return unknown(older)
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, remote) }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,

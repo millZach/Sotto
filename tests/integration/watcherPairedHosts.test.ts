@@ -232,6 +232,26 @@ it('shows each machine’s live load and work placed but not started with Work a
   expect(f.tools.definitions.find(tool => tool.name === 'list_machines')!.description).toContain('how busy its CPU and memory are now')
 })
 
+it('reads a paired machine’s starts on their way before asking it, so a start counted by neither cannot slip between (#1311)', async () => {
+  const f = await master(undefined, false, true)
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
+  let held = 0
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  const starting = f.call('start_thread', f.start())
+  await vi.waitFor(() => expect(held).toBe(1))
+  // The host answers before the start reaches it, and the start goes through before the desktop reads the answer.
+  const facts = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementationOnce(async () => {
+    const answer = await facts()
+    gate.resolve(); expect(await starting).toMatchObject({ status: 'ok' })
+    return answer
+  })
+  const [, machine] = await machines()
+  // The answer saw neither the thread nor its turn, so the start counts as placed rather than nowhere.
+  expect(machine).toMatchObject({ runningThreads: 0, placedNotStarted: 1 })
+})
+
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {
   const f = await master(), selected = f.router.shell().activeThreadId, input = f.start()
   expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, workSettled: true })])
