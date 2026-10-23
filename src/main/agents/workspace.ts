@@ -1263,19 +1263,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!projectPath) return 'worktree'
     try { return await checkoutIdentity(folder) === await checkoutIdentity(projectPath) ? 'project' : 'worktree' } catch { return 'worktree' }
   }
-  /** After a bring-back moved a branch: the parent thread, and every thread working where it is checked out, read again. */
+  /**
+   * After a bring-back moved a branch: the parent thread, and every thread working where it is checked out, read again.
+   * One pass over the threads finds them all, with the projects looked up by ID, so the work grows with the threads and
+   * not with their square; the folder's status is let go once, and each thread then reads it on its own lane.
+   */
   private followBroughtChanges(parentId: string, checkout: string | null): void {
-    const projects = this.state.snapshot.projects
-    const ids = new Set([parentId])
-    if (checkout !== null) {
-      for (const thread of this.state.snapshot.threads) {
-        try { if (sameFolder(resolveThreadWorkingDirectory(thread, projects.find(project => project.id === thread.projectId)), checkout)) ids.add(thread.id) } catch { /* A thread with no folder reads nothing. */ }
-      }
+    const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
+    const ids: string[] = []
+    for (const thread of this.state.snapshot.threads) {
+      if (thread.id === parentId) { ids.push(thread.id); continue }
+      if (checkout === null) continue
+      try { if (sameFolder(resolveThreadWorkingDirectory(thread, projects.get(thread.projectId)), checkout)) ids.push(thread.id) } catch { /* A thread with no folder reads nothing. */ }
     }
-    for (const id of ids) {
-      if (!this.state.snapshot.threads.some(thread => thread.id === id)) continue
-      void this.onLane(id, () => this.followGitChange(id)).catch(() => undefined)
-    }
+    if (checkout !== null) this.gitStatus?.invalidate(checkout)
+    for (const id of ids) void this.onLane(id, () => this.followGitChange(id)).catch(() => undefined)
   }
   private pullRequestsOrRefuse(): GitPullRequests {
     if (!this.gitPullRequests) throw new Error('Pull requests are unavailable on this host.')

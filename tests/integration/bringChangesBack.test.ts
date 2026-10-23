@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { GitActions } from '../../src/main/agents/gitActions'
+import type { AgentThread } from '../../src/shared/agents'
 import { GitStatusReader } from '../../src/main/agents/gitStatus'
 import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_QUESTION_GONE, bringBackTarget } from '../../src/shared/bringChangesBack'
 import { initializeGitRepository, runFixtureGit } from '../fixtures/gitRepository'
@@ -120,6 +121,25 @@ describe('bringing a thread’s commits back to the branch of the thread it bega
     await expect(press()).rejects.toThrow(BRING_BACK_NO_TARGET)
     expect(record()).toBeUndefined()
     expect(main()).toBe(before)
+  })
+
+  it('finds every thread to read again in one pass over the thread list, however many share the folder', async () => {
+    const { f, project, thread } = await family()
+    const host = f.host as unknown as { state: { snapshot: { threads: AgentThread[] } }; onLane: (threadId: string, run: () => Promise<void>) => Promise<void>
+      followBroughtChanges(parentId: string, checkout: string | null): void }
+    const real = host.state.snapshot.threads
+    const many = Array.from({ length: 1_000 }, (_, index) => ({ ...thread('parent'), id: `shared-${index}` }))
+    let visits = 0
+    host.state.snapshot.threads = new Proxy(many, { get(target, key, receiver) {
+      if (typeof key === 'string' && /^\d+$/u.test(key)) visits++
+      return Reflect.get(target, key, receiver) as unknown
+    } })
+    const onLane = host.onLane
+    let queued = 0
+    host.onLane = async () => { queued++ }
+    try { host.followBroughtChanges('shared-0', project) } finally { host.onLane = onLane; host.state.snapshot.threads = real }
+    expect(queued).toBe(1_000)
+    expect(visits).toBeLessThanOrEqual(1_000)
   })
 
   it('refuses in plain words while the Owl list keeps it off', async () => {
