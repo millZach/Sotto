@@ -246,6 +246,7 @@ import { OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS } from '../shared/omarchySet
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
+import { zoomDiag, zoomTimed } from './zoomDiag'
 import { terminalTakesMenuShortcut } from './terminals/menuShortcuts'
 import { BrowserService } from './tools/browser'
 import { createBrowserAgentServer } from './tools/browserAgentTools'
@@ -770,6 +771,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
+        zoomDiag(`input ${input.type} ${input.key} c${input.control} s${input.shift} focus${terminalFocus.has(window.webContents)}`)
         window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
       })
       window.webContents.on('did-start-loading', () => terminalFocus.delete(window.webContents))
@@ -1576,15 +1578,15 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         if (!dictationActive) {
           windows.hideWidget()
         } else if (!dictationLifecycle.isIdle()) {
-          await dictationLifecycle.repaint()
+          await zoomTimed('notify:repaint', () => dictationLifecycle.repaint())
         } else if (settings.onboardingComplete) {
           // Re-seed the resting sliver so theme/shortcut changes repaint it and
           // the idle-visibility reveal/conceal decision is re-evaluated.
-          await publishIdleWidgetState(settings)
+          await zoomTimed('notify:idleWidget', () => publishIdleWidgetState(settings))
         } else if (!settings.showWidgetWhenIdle) {
           windows.hideWidget()
         }
-        const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
+        const delivered = await zoomTimed('notify:sendToMain', () => messageDelivery.sendToMain(SETTINGS_CHANGED, settings))
         if (!delivered) logOperational('native-main-send-failed')
       }, [cleanRetiredHistory])
     },
@@ -1847,6 +1849,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         terminal: terminalService,
         onTerminalFocus: focused => {
           const main = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())?.webContents
+          zoomDiag(`terminalFocus ${focused}`)
           if (main) { if (focused) terminalFocus.add(main); else terminalFocus.delete(main) }
         },
         browser: browserService,
