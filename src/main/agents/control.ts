@@ -2312,6 +2312,22 @@ export class AgentControl {
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
+  /**
+   * The Watcher sends whose prompts still wait in their threads' queues for those threads' turns, which only the turn
+   * holds, by operation, in one pass over the queue. Not one that has left the queue or whose send is unconfirmed, nor one
+   * that waits instead on the user, its queue holding a paused or failed item, a wake-up included, nor one for a thread
+   * settled or archived. A provider change waits only for these (#1325).
+   */
+  watcherQueuedSendsWaiting(): ReadonlySet<string> {
+    const items = this.followupStore.peek().items, blocked = new Set<string>(), waiting = new Set<string>()
+    for (const item of items) if (item.status === 'paused' || item.status === 'failed') blocked.add(item.threadId)
+    for (const item of items) {
+      if (!item.watcherOperationId || (item.status !== 'queued' && item.status !== 'dispatching') || blocked.has(item.threadId)) continue
+      const thread = this.state.host.threads.find(candidate => candidate.id === item.threadId)
+      if (thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) waiting.add(item.watcherOperationId)
+    }
+    return waiting
+  }
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
       || this.watcher.current?.target.hostId !== target.hostId || this.watcher.current.target.threadId !== target.threadId) return false
