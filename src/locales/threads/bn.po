@@ -6,3 +6,31 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: bn\n"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{label} details"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Models"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update {label} to {version}"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update to {version}"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating {label} to {version}"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating…"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Waiting to update"
+msgstr ""

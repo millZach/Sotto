@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronRight, CircleArrowUp, RefreshCw } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
@@ -49,6 +50,7 @@ function shortVersion(version: string): string {
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
   const held = useHeldProviders()
+  const { t } = useLingui()
   const [open, setOpen] = useState<ProviderId | null>('codex')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
   const [errors, setErrors] = useState<Partial<Record<ProviderId, string | undefined>>>({})
@@ -244,7 +246,7 @@ export function ProvidersSettings(): ReactNode {
         {provider === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
       </div>
       <div className="provider-row__column provider-row__models" role="group" aria-labelledby={`${rowId}-${provider}-models`}>
-        <h4 id={`${rowId}-${provider}-models`}>Models</h4>
+        <h4 id={`${rowId}-${provider}-models`}><Trans>Models</Trans></h4>
         {models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small data-agent-setting={model.ready && model.id === inheritedEntryId ? true : undefined}>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul>
           : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
       </div>
@@ -260,6 +262,7 @@ export function ProvidersSettings(): ReactNode {
     const statusLabel = pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : status.connection === 'connected' ? 'Connected' : status.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
+    const version = update?.published ?? ''
     const error = errors[provider] ?? status.error
     const id = `${rowId}-${provider}`
     // Closes the open row from anywhere in it and gives focus back to its header; a dialog's own Escape is its own.
@@ -285,14 +288,14 @@ export function ProvidersSettings(): ReactNode {
           </span>
         </button>
         {checkClientUpdates && update?.published && (update.canInstall || providerUpdating)
-          ? <button type="button" className="provider-row__update tt-focusable" aria-label={`${providerUpdating ? 'Updating' : 'Update'} ${label} to ${update.published}`}
+          ? <button type="button" className="provider-row__update tt-focusable" aria-label={providerUpdating ? t`Updating ${label} to ${version}` : t`Update ${label} to ${version}`}
             disabled={providerUpdating || Boolean(connecting) || updating || checkingUpdates} onClick={() => void runUpdate(provider)}>
-            <CircleArrowUp size={13} aria-hidden="true" />{providerUpdating ? update.state === 'queued' ? 'Waiting to update' : 'Updating…' : `Update to ${update.published}`}</button>
+            <CircleArrowUp size={13} aria-hidden="true" />{providerUpdating ? update.state === 'queued' ? t`Waiting to update` : t`Updating…` : t`Update to ${version}`}</button>
           : <span className="provider-row__update-slot" />}
         <Toggle label={`Enable ${label}`} checked={active} disabled={Boolean(connecting) || providerUpdating} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
       </div>
       {error && <p role="alert" className="provider-row__error">{error}</p>}
-      {isOpen && <div id={`${id}-panel`} role="region" aria-label={`${label} details`} className="provider-row__panel">{details(provider)}</div>}
+      {isOpen && <div id={`${id}-panel`} role="region" aria-label={t`${label} details`} className="provider-row__panel">{details(provider)}</div>}
     </li>
   }
 
