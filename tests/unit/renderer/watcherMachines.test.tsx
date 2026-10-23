@@ -178,6 +178,27 @@ describe('The machines line in Watcher’s room', () => {
     expect(screen.getByRole('dialog', { name: 'forge' })).toHaveTextContent('forge is not connected. It is where new workers start, so until it connects they start on this computer, and Watcher says so. Connect it in Settings, under Hosts & phones.')
   })
 
+  it('keeps a machine’s panel within the room under its name, so its foot stays in reach and the rest scrolls inside', async () => {
+    const pane = document.body.appendChild(document.createElement('div'))
+    pane.className = 'thread-pane'
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 800, width: 800, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    const measured = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this === pane ? rect(0, 560) : this.classList.contains('watcher-machines__name') ? rect(100, 120) : rect(80, 130)
+    })
+    try {
+      vi.mocked(useWatcherRoom).mockReturnValue({ readMachines: vi.fn(async () => ({ status: 'ok', machines: [local(), forge()], observedAt: new Date(NOW).toISOString() })),
+        state: null } as unknown as ReturnType<typeof useWatcherRoom>)
+      vi.mocked(useOptionalApp).mockReturnValue({ actions: { navigate: vi.fn() } } as unknown as ReturnType<typeof useOptionalApp>)
+      render(<WatcherMachines state={agentState([])} now={NOW} />, { container: pane })
+      await act(async () => { fireEvent.click(wide().getByRole('button', { name: /^This computer,/u })) })
+      const panel = screen.getByRole('dialog', { name: 'This computer' })
+      // 560 at the room's foot, less the name's 120, the 6 under it and the 12 kept free.
+      expect(panel.style.maxHeight).toBe('422px')
+      expect(panel.querySelector('.watcher-machine-panel__body')).not.toBeNull()
+      expect(panel.lastElementChild).toHaveClass('watcher-machine-panel__foot')
+    } finally { measured.mockRestore(); pane.remove() }
+  })
+
   it('shows every machine in a narrow room once more is pressed', async () => {
     show([local(), forge({ cpuState: 'busy' }), machine({ hostId: STUDIO, name: 'studio' })], [])
     await act(async () => undefined)

@@ -15,6 +15,9 @@ import { threadAddressIndex, useWatcherRoom } from './watcherRoom'
 /** How many working threads a machine's panel names before it counts the rest. */
 const NAMED = 6
 const FOCUSABLE = 'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+/** The space a machine's panel keeps below it inside the room, and the least height it takes however short the room. */
+const PANEL_GAP = 12
+const PANEL_MIN_HEIGHT = 160
 
 /** The threads working on one machine, as its panel lists them: who started each, and its title. */
 function workingOn(entry: MachineEntry, threads: readonly AgentThread[]): readonly AgentThread[] {
@@ -57,18 +60,25 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
 }): ReactNode {
   const heading = useId()
   const panel = useRef<HTMLDivElement>(null)
-  const [place, setPlace] = useState<{ readonly top: number; readonly left: number } | null>(null)
+  const [place, setPlace] = useState<{ readonly top: number; readonly left: number; readonly maxHeight: number } | null>(null)
   useLayoutEffect(() => {
     if (anchor === null || frame === null) return
+    // The panel may be no taller than the room leaves under its name, so its foot stays in reach in a short window; what
+    // does not fit scrolls inside it.
+    const room = frame.closest<HTMLElement>('.thread-pane') ?? document.documentElement
     const measure = (): void => {
       const at = anchor.getBoundingClientRect(), box = frame.getBoundingClientRect()
       const width = Math.min(340, box.width)
-      setPlace({ top: at.bottom - box.top + 6, left: Math.max(0, Math.min(at.left - box.left - 4, box.width - width)) })
+      const bottom = room === document.documentElement ? window.innerHeight : room.getBoundingClientRect().bottom
+      setPlace({ top: at.bottom - box.top + 6, left: Math.max(0, Math.min(at.left - box.left - 4, box.width - width)),
+        maxHeight: Math.max(PANEL_MIN_HEIGHT, Math.floor(bottom - at.bottom - 6 - PANEL_GAP)) })
     }
     measure()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
     observer?.observe(frame)
-    return () => observer?.disconnect()
+    if (room !== frame) observer?.observe(room)
+    window.addEventListener('resize', measure)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
   }, [anchor, frame])
   const placed = place !== null
   useLayoutEffect(() => {
@@ -114,10 +124,10 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   const memoryKnown = machine !== null && machine.memoryState !== 'unknown' && load?.availableMemoryBytes != null
   const busy = machine?.cpuState === 'busy', short = machine?.memoryState === 'short'
   return <div ref={panel} className="watcher-machine-panel" role="dialog" aria-labelledby={heading} tabIndex={-1} onKeyDown={onKeyDown}
-    style={place ? { top: place.top, left: place.left } : { visibility: 'hidden' }}>
-    <h2 id={heading}><MachineIcon entry={entry} size={15} />{entry.name}</h2>
+    style={place ? { top: place.top, left: place.left, maxHeight: place.maxHeight } : { visibility: 'hidden' }}>
+    <h2 id={heading}><MachineIcon entry={entry} size={15} /><span>{entry.name}</span></h2>
     <button type="button" className="watcher-machine-panel__close tt-focusable" aria-label={`Close ${entry.name}’s panel`} onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
-    {!entry.connected ? <p>{entry.name} is not connected.{entry.isDefault ? ' It is where new workers start, so until it connects they start on this computer, and Watcher says so.' : ''} Connect it in Settings, under Hosts & phones.</p> : <>
+    <div className="watcher-machine-panel__body">{!entry.connected ? <p>{entry.name} is not connected.{entry.isDefault ? ' It is where new workers start, so until it connects they start on this computer, and Watcher says so.' : ''} Connect it in Settings, under Hosts & phones.</p> : <>
       <dl>
         {system !== null ? <><dt>System</dt><dd>{system}{cpus !== null ? ` · ${cpus} CPUs` : ''}</dd></> : null}
         <dt>CPU</dt><dd data-warn={busy || !cpuKnown || undefined}>{cpuKnown ? `${load!.cpuBusyPercent}% busy over ${windowWords(load!.windowMs)}${busy ? '. Busy' : ''}` : 'unknown'}</dd>
@@ -135,7 +145,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
         {entry.starting > 0 ? <li><span className="watcher-machine-panel__wait" aria-hidden="true" /><span className="watcher-machine-panel__title">{entry.starting} placed here, starting</span>
           <span className="watcher-machine-panel__who">Counted, so the next start sees it</span></li> : null}
       </ul> : null}
-    </>}
+    </>}</div>
     {onChangeDefault !== null ? <div className="watcher-machine-panel__foot">
       <button type="button" className="watcher-machine-panel__link tt-focusable" onClick={onChangeDefault}>Change where new workers start</button>
     </div> : null}
