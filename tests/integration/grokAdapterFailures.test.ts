@@ -109,7 +109,7 @@ it('rejects concurrent prompts and deduplicates acknowledged command identities'
 })
 it('does not duplicate an uncertain creation, including after its late native response',async()=>{
  f=await grokFixture();await f.host.connect()
- await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.script({delayCreate:3000})
+ await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.driver.delayNextAck('session/new')
  const command={type:'create-thread',commandId:'create',threadId:randomUUID(),projectId:'project',title:'Test',modelId:f.modelId} as const
  expect(await f.host.execute(command)).toEqual({accepted:false,uncertain:true});expect(await f.host.execute(command)).toEqual({accepted:false,uncertain:true})
  await expect.poll(async()=>(await f!.host.snapshot()).threads[0]?.modelId).toBe(f.modelId)
@@ -194,7 +194,7 @@ it('reads a page of history larger than a megabyte instead of losing the connect
 it('says the connection was lost, and never blames the version, when the client stops answering',async()=>{
  // The version and the sign-in are what the old wording blamed for every failure, including this one,
  // where the client had already answered `initialize` with a version Sotto accepts.
- f=await grokFixture();await f.script({ignoreAuthenticate:true})
+ f=await grokFixture();await f.driver.delayNextAck('authenticate')
  const error=await f.host.connect().then(()=>undefined,(reason:Error)=>reason)
  expect(error?.message).toBe('Could not connect Grok. Grok did not acknowledge the operation in time. Connect again to retry.')
  expect(error?.message).not.toContain('Grok CLI')
