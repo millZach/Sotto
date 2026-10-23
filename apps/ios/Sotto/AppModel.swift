@@ -216,7 +216,8 @@ extension AppModel {
             photos = self.photos(box)
         }
         guard let computer = computer(hostID) else { preparingSends.remove(box.id); return }
-        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.digest))
+        // The host holds a draft ID to one packet, its photos' handles included: photos staged again go as another message.
+        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.id))
         watcherSending[hostID] = text; drafts[key] = ""
         if !photos.isEmpty { watcherSendingPhotos[hostID] = photos; draftPhotos[key] = nil; photoNotices[key] = nil }
         defer {
@@ -257,13 +258,15 @@ extension AppModel {
                     watcherDrafts[hostID]?.resolve(draftID)
                     return
                 }
-                restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false)
+                // A refused message's photos are staged again before they go, as a refused reply's are (ADR-0031), unless
+                // the computer can't say whether Watcher took it: sent again, it is then the same message.
+                restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false, restage: refusal.code != "DELIVERY_UNCERTAIN")
                 // An older computer refuses a message while Watcher works, in words that don't say why.
                 let busy = !steer && refusal.code == "PROVIDER_UNAVAILABLE" && workingAtSend
                 feedback = busy ? WatcherWords.updateToSteer(name(hostID)) : refusal.message
             }
         } catch let refusal as HostRefusal {
-            restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false)
+            restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false, restage: true)
             feedback = refusal.localizedDescription
         } catch {
             // Lost on its way, perhaps after Watcher took it. Its part on the wire has ended either way, so the page read
@@ -284,10 +287,13 @@ extension AppModel {
     static let watcherUnconfirmedSetAside = "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again."
     /// Puts words that didn't reach Watcher, or that it didn't confirm, back in its box. When the user has written
     /// something new there since, they are kept under the conversation instead, to be put back once the box is empty.
-    /// Says whether they went back in the box. Photos always go back in the box: it stayed locked while they were away.
-    @discardableResult private func restoreWatcherDraft(_ text: String, photos: [DraftPhoto] = [], on hostID: String, unconfirmed: Bool) -> Bool {
+    /// Says whether they went back in the box. Photos always go back in the box: it stayed locked while they were away. With
+    /// `restage`, they are staged again before they next go.
+    @discardableResult private func restoreWatcherDraft(_ text: String, photos: [DraftPhoto] = [], on hostID: String, unconfirmed: Bool,
+                                                        restage: Bool = false) -> Bool {
         let key = watcherDraftKey(hostID)
-        if !photos.isEmpty { draftPhotos[key] = (draftPhotos[key] ?? []) + photos }
+        let returned = restage ? photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo } : photos
+        if !returned.isEmpty { draftPhotos[key] = (draftPhotos[key] ?? []) + returned }
         let box = drafts[key] ?? ""
         if box.isEmpty || box == text { drafts[key] = text; return true }
         var kept = watcherSetAside[hostID] ?? []
@@ -296,10 +302,16 @@ extension AppModel {
         watcherSetAside[hostID] = kept
         return false
     }
+    /// Whether words kept under the conversation can go back in Watcher's box: once it is empty, and not while a message
+    /// with photos is on its way, whose words and photos come back to the box together if it doesn't go.
+    func canRestoreWatcherWords(on hostID: String) -> Bool {
+        let box = PhotoBox.watcher(hostID: hostID)
+        return (drafts[box.id] ?? "").isEmpty && !preparingSends.contains(box.id)
+    }
     /// Puts words kept under the conversation back in Watcher's box, once it is empty.
     func restoreWatcherWords(_ words: WatcherSetAside, on hostID: String) {
         let key = watcherDraftKey(hostID)
-        guard (drafts[key] ?? "").isEmpty, var kept = watcherSetAside[hostID], let index = kept.firstIndex(of: words) else { return }
+        guard canRestoreWatcherWords(on: hostID), var kept = watcherSetAside[hostID], let index = kept.firstIndex(of: words) else { return }
         drafts[key] = words.text
         kept.remove(at: index)
         watcherSetAside[hostID] = kept.isEmpty ? nil : kept
@@ -314,11 +326,10 @@ extension AppModel {
         guard !taken.isEmpty else { return }
         let key = watcherDraftKey(hostID)
         for sent in taken {
-            // Photos put back with the words leave with them, and only the same photos: newer ones the user chose stay.
-            let photos = draftPhotos[key] ?? []
-            let samePhotos = !sent.photos.isEmpty && photos.allSatisfy { $0.staged != nil } && photos.compactMap(\.staged?.digest) == sent.photos
-            if samePhotos { draftPhotos[key] = nil }
-            if drafts[key] == sent.text && (sent.photos.isEmpty || samePhotos) { drafts[key] = "" }
+            // Only the whole message leaves the box, its words and photos together: one the user has changed since stays.
+            if drafts[key] == sent.text && (draftPhotos[key] ?? []).map(\.staged?.id) == sent.photos.map(Optional.some) {
+                drafts[key] = ""; draftPhotos[key] = nil
+            }
             if let kept = watcherSetAside[hostID] {
                 let left = kept.filter { $0.text != sent.text }
                 if left != kept { watcherSetAside[hostID] = left.isEmpty ? nil : left }

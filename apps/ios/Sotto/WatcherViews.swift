@@ -711,15 +711,7 @@ private struct WatcherMessage: View, Equatable {
             // The user's photos stand on their own above their words, as in a thread and in Messages.
             let photos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter(\.hasPreview)
             VStack(alignment: .trailing, spacing: Space.s1) {
-                if let ref {
-                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                        Button { open(OpenPhotos(ref: ref, messageID: message.id, photos: photos, index: index)) } label: {
-                            SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: message.id, attachmentID: photo.id), name: photo.name)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open photo \(photo.name)")
-                    }
-                }
+                if let ref { SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open) }
                 if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         if !message.text.isEmpty { MarkdownText(text: message.text).equatable() }
@@ -762,11 +754,13 @@ private struct WatcherMessage: View, Equatable {
 private struct SendingBubble: View {
     let text: String
     let photos: [DraftPhoto]
+    private static let shown = 4
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             if !photos.isEmpty {
+                // At most four, then how many more, so eight fit the narrowest iPhone.
                 HStack(spacing: 6) {
-                    ForEach(photos) { photo in
+                    ForEach(photos.prefix(Self.shown)) { photo in
                         Group {
                             if let thumbnail = photo.prepared?.thumbnail { Image(decorative: thumbnail, scale: 1).resizable().scaledToFill() }
                             else { Rectangle().fill(Palette.surface) }
@@ -774,6 +768,11 @@ private struct SendingBubble: View {
                         .frame(width: 60, height: 60)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .opacity(0.6)
+                    }
+                    if photos.count > Self.shown {
+                        Text("+\(photos.count - Self.shown)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.muted)
+                            .frame(width: 60, height: 60)
+                            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
                 .accessibilityElement()
@@ -850,7 +849,7 @@ private struct SetAsideCard: View {
             }
             Button("Put it back in the box") { model.restoreWatcherWords(words, on: hostID) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!(model.drafts[model.watcherDraftKey(hostID)] ?? "").isEmpty)
+                .disabled(!model.canRestoreWatcherWords(on: hostID))
                 .accessibilityHint("Once the box is empty")
         }
         .card()

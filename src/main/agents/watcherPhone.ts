@@ -166,9 +166,9 @@ export class WatcherPhoneService {
    * Watcher, or a photo Sotto keeps no copy of. Watcher's thread is hidden from the phone's own reads.
    */
   async preview(request: WatcherPhonePreview): Promise<AgentAttachmentPreviewResult> {
-    const current = this.watcher.state().current
-    if (!current || current.target.hostId !== request.target.hostId || current.target.threadId !== request.target.threadId) return null
-    return await this.control.attachmentPreview({ threadId: current.target.threadId, messageId: request.messageId, attachmentId: request.attachmentId })
+    const { hostId, threadId } = request.target
+    if (hostId !== this.control.hostId() || !this.watcher.isCurrent(threadId)) return null
+    return await this.control.attachmentPreview({ threadId, messageId: request.messageId, attachmentId: request.attachmentId })
   }
   /** Why a phone's message did not go, in words for the phone: never sent twice, and the words stay on the phone. */
   private refused(error: string, threadId: string, draftId: string): WatcherRefusal {

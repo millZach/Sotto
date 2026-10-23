@@ -666,8 +666,13 @@ final class WatcherModelTests: XCTestCase {
         var requests: [JSONValue] = []
         var reply = "refuse"
         HostConnection.watcherHandler = { op, operation, _ in
-            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            guard op == "watcher-phone-send", let request = operation["request"] else {
+                // The page read after a lost acknowledgement: the computer has the last draft, and may still deliver it.
+                let last = requests.last?["draftId"].string ?? ""
+                return try self.ok(self.page(Spec(workerCard: false, deliveries: [last: "uncertain"])))
+            }
             requests.append(request)
+            if reply == "lose" { throw ClientError.uncertain }
             if reply == "refuse" {
                 return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
             }
@@ -684,26 +689,36 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(requests[0]["text"], .string(""))
         guard case .array(let first) = requests[0]["images"] else { return XCTFail("The message carried no photos") }
         XCTAssertEqual(first.map { $0["id"] }, [.string("staged-1")])
-        XCTAssertEqual(model.photos(box).map(\.staged?.id), ["staged-1"], "Refused, the photo goes back in the box")
+        XCTAssertEqual(model.photos(box).count, 1, "Refused, the photo goes back in the box")
+        XCTAssertNil(model.photos(box).first?.staged, "A refused message's photo is staged again before it next goes")
         XCTAssertEqual(model.feedback, "Watcher changed. Nothing new was sent.")
         XCTAssertFalse(model.preparingSends.contains(box.id), "The box is unlocked again")
         XCTAssertNil(model.watcherSendingPhotos[laptop])
 
-        reply = "ok"
+        // Lost on its way: the message comes back whole, and sent again it is the same message, under the same draft ID.
+        reply = "lose"
         model.drafts[box.id] = "What does this screen say?"
         await model.sendToWatcher(laptop)
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(requests[1]["text"], .string("What does this screen say?"))
         guard case .array(let second) = requests[1]["images"] else { return XCTFail("The words went without their photo") }
-        XCTAssertEqual(second.map { $0["id"] }, [.string("staged-1")])
+        XCTAssertEqual(second.map { $0["id"] }, [.string("staged-2")])
         XCTAssertNotEqual(requests[1]["draftId"], requests[0]["draftId"], "Words with the photo are another message than the photo alone")
+        XCTAssertEqual(model.drafts[box.id], "What does this screen say?")
+        XCTAssertEqual(model.photos(box).map(\.staged?.id), ["staged-2"], "Unconfirmed, the photo comes back as it went")
+
+        reply = "ok"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests[2]["draftId"], requests[1]["draftId"], "The same words and photos go with the same draft ID")
+        XCTAssertEqual(requests[2]["images"], requests[1]["images"])
         XCTAssertTrue(model.photos(box).isEmpty, "Taken, the photo leaves the box")
         XCTAssertEqual(model.drafts[box.id], "")
 
         // Words alone carry no photos, as before.
         model.drafts[box.id] = "Thanks"
         await model.sendToWatcher(laptop)
-        XCTAssertEqual(requests[2]["images"], .null)
+        XCTAssertEqual(requests[3]["images"], .null)
         model.phase(.background)
     }
 

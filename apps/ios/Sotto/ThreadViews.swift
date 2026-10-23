@@ -740,13 +740,7 @@ private struct MessageView: View, Equatable {
     private var userMessage: some View {
         let photos = (message.attachments ?? []).filter(\.hasPreview)
         return VStack(alignment: .trailing, spacing: Space.s1) {
-            ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                Button { open(OpenPhotos(ref: ref, messageID: message.id, photos: photos, index: index)) } label: {
-                    SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: message.id, attachmentID: photo.id), name: photo.name)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open photo \(photo.name)")
-            }
+            SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
             if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
                 content(ink: Palette.bubbleInk)
                     .padding(.horizontal, Space.s4)

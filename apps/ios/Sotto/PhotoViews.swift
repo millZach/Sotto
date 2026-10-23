@@ -73,6 +73,24 @@ import SottoCore
     }
 }
 
+/// A user message's photos its computer keeps, each standing on its own above the words, as in Messages: a press opens
+/// them full screen. A thread's and Watcher's conversation draw them the same way.
+struct SentPhotoButtons: View {
+    let ref: ThreadRef
+    let messageID: String
+    let photos: [Attachment]
+    let open: (OpenPhotos) -> Void
+    var body: some View {
+        ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+            Button { open(OpenPhotos(ref: ref, messageID: messageID, photos: photos, index: index)) } label: {
+                SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: photo.id), name: photo.name)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open photo \(photo.name)")
+        }
+    }
+}
+
 /// The photos of one message in a thread: what a press opens full screen.
 struct OpenPhotos: Identifiable {
     let ref: ThreadRef; let messageID: String; let photos: [Attachment]; var index: Int

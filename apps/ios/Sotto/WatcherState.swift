@@ -74,7 +74,8 @@ extension WatcherPhoneState {
 struct WatcherDrafts: Equatable, Sendable {
     struct Sent: Equatable, Sendable {
         let text: String
-        /// The digests of the photos that went with the words, in order. The same words with other photos are another message.
+        /// The staged handles of the photos that went with the words, by ID, in order: the same words with other photos, or
+        /// with the same photos staged again, are another message, as the host holds a draft ID to one packet.
         var photos: [String] = []
         let draftID: String
         /// Its send has ended, so a page asked for from now on says where it stands.
