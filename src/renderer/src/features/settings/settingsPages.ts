@@ -209,11 +209,16 @@ export function findSettingControl(root: HTMLElement, name: string): HTMLElement
   return [...root.querySelectorAll<HTMLElement>('[aria-label]')].find(element => (element.getAttribute('aria-label') ?? '').startsWith(`${name} on `)) ?? null
 }
 
-/** What the page says under a setting, so Find a setting matches its description as well as its name. */
-export function describeSetting(root: HTMLElement, name: string): string {
-  const control = findSettingControl(root, name)
-  const ids = control?.getAttribute('aria-describedby')?.split(/\s+/u) ?? []
-  return ids.map(id => root.ownerDocument.getElementById(id)?.textContent ?? '').join(' ')
+/**
+ * What the page says about a setting, so Find a setting matches its description as well as its name: the text the
+ * control is described by, or else its whole row, as for Clear transcript history and Reset settings.
+ */
+export function describeSetting(control: HTMLElement): string {
+  const ids = control.getAttribute('aria-describedby')?.split(/\s+/u) ?? []
+  if (ids.length > 0) return ids.map(id => control.ownerDocument.getElementById(id)?.textContent ?? '').join(' ')
+  let row: HTMLElement | null = control
+  while (row && !row.parentElement?.classList.contains('settings-rows')) row = row.parentElement
+  return row?.textContent ?? ''
 }
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'

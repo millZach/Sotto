@@ -675,7 +675,8 @@ export function AppProvider({
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
     navigate: (destination, settingsSection) => {
       setNavigation(destination)
-      if (destination === 'settings' && settingsSection !== undefined) setSettingsRequest(request => ({ section: settingsSection, key: (request?.key ?? 0) + 1 }))
+      // A request is for one visit: Settings opened any other way starts on its first page again.
+      setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
     },
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)

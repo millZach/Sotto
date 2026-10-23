@@ -132,7 +132,7 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
       expect(await fields(page, 'Research')).toEqual(['Haiku 5.5', 'Haiku 5.5 has none', 'Ask for approval'])
       expect(await fields(page, 'Computer use')).toEqual(['GPT-6 Astra', 'Medium', 'Full access'])
       const computer = card(page, 'Computer use').locator('.worker-role__note')
-      await expect(computer).toHaveText([/^Workers never start wider than your new-thread default, so these start on “Ask for approval”\. Change it in Agents$/u,
+      await expect(computer).toHaveText([/^Workers never start wider than your new-thread default, so these start on “Ask for approval”\. Change it in Threads$/u,
         'On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so.'])
       const review = card(page, 'Code review').locator('.worker-role__defaults li')
       await expect(review.nth(0)).toContainText('Muse Wonder Full, Extra high')

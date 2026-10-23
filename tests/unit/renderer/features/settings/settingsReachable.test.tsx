@@ -128,6 +128,21 @@ describe('Find a setting', () => {
     expect(within(screen.getByRole('list', { name: 'Settings found' })).getAllByRole('button').map(button => button.textContent)).toEqual(['AI formattingCleanup'])
   })
 
+  it('matches the words in a row with no description of its own, such as Clear transcript history', async () => {
+    const user = userEvent.setup()
+    render(<SettingsView {...baseProps()} />)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'without changing')
+    expect(within(screen.getByRole('list', { name: 'Settings found' })).getAllByRole('button').map(button => button.textContent)).toContain('Clear transcript historyApplication')
+  })
+
+  it('leaves out a setting its page is not showing, such as the providers while the local host is off', async () => {
+    const user = userEvent.setup()
+    // No agent state: Providers shows only Loading providers, with no switch to land on.
+    render(<SettingsView {...baseProps()} />)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'client updates')
+    expect(screen.getByText('No setting matches “client updates”.')).toBeVisible()
+  })
+
   it('lands on a setting that shows only in some states, or where it will show until then', async () => {
     const user = userEvent.setup()
     const view = render(<SettingsView {...baseProps()} />)

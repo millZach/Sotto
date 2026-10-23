@@ -415,13 +415,16 @@ export function SettingsView({
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld }
-  // Find a setting reaches only what the page shows now, by name, other words and, while it holds text, what the page
-  // says under each setting.
+  // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
+  // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
+  // each one is matched as well as its name.
   const searching = findQuery.trim() !== ''
-  const findIndex = settingsIndex(platform).filter(entry => entry.gate === undefined || gates[entry.gate]).map(entry => {
-    if (!searching) return entry
+  const findIndex = settingsIndex(platform).filter(entry => entry.gate === undefined || gates[entry.gate]).flatMap(entry => {
+    if (!searching) return [entry]
     const panel = document.getElementById(panelIdOf(settingsSectionHome(entry.section).page))
-    return panel ? { ...entry, words: `${entry.words ?? ''} ${describeSetting(panel, entry.target ?? entry.label)}` } : entry
+    const control = panel && findSettingControl(panel, entry.target ?? entry.label)
+    if (!control) return panel && entry.fallback && findSettingControl(panel, entry.fallback) ? [entry] : []
+    return [{ ...entry, words: `${entry.words ?? ''} ${describeSetting(control)}` }]
   })
   if (!sections.some(section => section.id === activeSection)) setActiveSection('settings-capture')
   useEffect(() => { if (!dictation) stopMicrophoneTest() }, [dictation, stopMicrophoneTest])
