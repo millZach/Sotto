@@ -26,6 +26,8 @@ import { resizeContentWindow } from './support/sottoWindow'
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-owl-family.
  */
 const evidence = evidenceDirectory('artifacts/watcher-owl-family')
+/** The message scrubber's lane beside the column, which the scene keeps clear (ADR-0109). */
+const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const CURRENT = 'release-notes'
 const recorded: Record<string, unknown> = {}
@@ -148,6 +150,37 @@ async function sceneHolds(page: Page, key: string): Promise<void> {
   recorded[key] = reading
 }
 
+/**
+ * The message scrubber's lane, when a long conversation shows it, holds none of the scene: not one painted pixel on
+ * either canvas inside it, and no thread owl's button over it (ADR-0109).
+ */
+async function laneHolds(page: Page, key: string): Promise<void> {
+  const lane = page.locator('#watcher-pane .message-scrubber')
+  await expect(lane).toBeVisible()
+  const reading = await page.evaluate(() => {
+    const pane = document.getElementById('watcher-pane')!
+    const base = pane.getBoundingClientRect()
+    const box = pane.querySelector('.message-scrubber')!.getBoundingClientRect()
+    const out: Record<string, number> = {}
+    for (const canvas of pane.querySelectorAll<HTMLCanvasElement>(':scope > canvas.watcher-scene')) {
+      const scale = canvas.width / canvas.clientWidth
+      const x0 = Math.floor((box.left - base.left) * scale), x1 = Math.ceil((box.right - base.left) * scale)
+      const y0 = Math.floor((box.top - base.top) * scale), y1 = Math.ceil((box.bottom - base.top) * scale)
+      const data = canvas.getContext('2d')!.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data
+      let painted = 0
+      for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted++
+      out[canvas.className] = painted
+    }
+    out.owlButtons = [...pane.querySelectorAll(':scope > .watcher-scene--owls > .watcher-scene__owl')].filter(button => {
+      const own = button.getBoundingClientRect()
+      return own.right > box.left && own.left < box.right && own.bottom > box.top && own.top < box.bottom
+    }).length
+    return out
+  })
+  for (const [part, painted] of Object.entries(reading)) expect(painted, `${part} in the scrubber's lane, ${key}`).toBe(0)
+  recorded[`lane-${key}`] = reading
+}
+
 test.describe("Watcher's night scene on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => { await mkdir(evidence, { recursive: true }) })
@@ -192,6 +225,35 @@ test.describe("Watcher's night scene on the built app", () => {
         await expect(land(page)).toHaveCount(0, { timeout: 5_000 })
         await page.getByRole('tab', { name: 'Conversation' }).click()
         await expect(land(page)).toHaveCount(1)
+      }))
+    })
+  }
+
+  for (const appearance of ['dark', 'light'] as const) {
+    test(`a long conversation's message scrubber keeps its lane clear of the scene at three sizes, ${appearance}`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, true, [['footer-links', 'running'], ['visual-gate', 'waiting'], ['weekly-note', 'idle']])
+        await openRoom(page)
+        await page.evaluate(async ({ thread, now }) => {
+          await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: 40 }, (_, index) => ({
+            id: `lane-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
+            text: index % 2 ? `Watching it. Package (Windows) is still running for message ${(index - 1) / 2 + 1}.` : `Is the release thread green yet? (${index / 2 + 1})`,
+            createdAt: new Date(now - (40 - index) * 60_000).toISOString() })) })
+        }, { thread: CURRENT, now: E2E_THREADS_NOW })
+        await expect(page.getByText('Is the release thread green yet? (20)', { exact: true })).toBeVisible()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          expect(await pageBoundProblems(page), `scrubber at ${width}x${height}`).toEqual([])
+          await expect(owlButtons(page)).toHaveCount(3)
+          await sceneHolds(page, `scrubber-${appearance}-${width}x${height}`)
+          await laneHolds(page, `${appearance}-${width}x${height}`)
+          await settle(page)
+          await holdOwlSky(page)
+          await captureWindow(launched.app, resolve(scrubberEvidence, `watcher-owls-${appearance}-${width}x${height}.png`))
+        }
       }))
     })
   }

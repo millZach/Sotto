@@ -19,6 +19,13 @@ With motion reduced, the ticks rose and the card appeared without moving. On sta
 `tests/e2e/watcher.spec.ts` gave Watcher's conversation 20 messages sent. Its column showed 20 ticks in the margin at every
 size, and the card said "Watcher replied".
 
+Once Watcher's owl family (#1363) merged, `tests/e2e/watcher-night-scene.spec.ts` gave the same conversation, with three
+watched threads, at 1600x1000, 1280x800 and 820x560 in dark and light. Before the fix the landscape painted 161 pixels
+inside the lane at 1600x1000, and Watcher's owl sits at the column end of its limb, inside the lane. Now the scene reads
+the lane and lays its left margin out from the lane's outer edge, and not one pixel of either canvas, nor any thread
+owl's button, falls inside it at any of the six. At 820x560 the left margin is narrower than the lane, so the rail of
+eyes shows on the right only, as Zach picked.
+
 | Screenshot | What it shows |
 | --- | --- |
 | `artifacts/message-scrubber/rest-dark-1280x800.png` | The column at rest, faint, dark |
@@ -34,6 +41,12 @@ size, and the card said "Watcher replied".
 | `artifacts/message-scrubber/watcher-hover-dark-1600x1000.png` | Watcher's conversation, 1600x1000 |
 | `artifacts/message-scrubber/watcher-hover-dark-1280x800.png` | The same at 1280x800 |
 | `artifacts/message-scrubber/watcher-hover-dark-820x560.png` | The same at the minimum |
+| `artifacts/message-scrubber/watcher-owls-dark-1600x1000.png` | The owls and the lane, dark, 1600x1000 |
+| `artifacts/message-scrubber/watcher-owls-dark-1280x800.png` | The same at 1280x800 |
+| `artifacts/message-scrubber/watcher-owls-dark-820x560.png` | At the minimum: the rail on the right alone |
+| `artifacts/message-scrubber/watcher-owls-light-1600x1000.png` | The owls and the lane, light, 1600x1000 |
+| `artifacts/message-scrubber/watcher-owls-light-1280x800.png` | The same at 1280x800 |
+| `artifacts/message-scrubber/watcher-owls-light-820x560.png` | The same at the minimum |
 
 The ticks and the card take every colour from theme roles in `src/renderer/src/agents/messageScrubber.css`, which
 `themeTokens.test.ts` checks. The card's text is the transcript's own text roles on the elevated surface.
@@ -41,6 +54,6 @@ The ticks and the card take every colour from theme roles in `src/renderer/src/a
 ## Not checked here
 
 The column is faint at rest on purpose (Zach asked for it to stay faint until hovered), so its resting ticks are below 3:1
-against the canvas; they reach full strength under the pointer or the keyboard. Watcher's owl family (#1343) has not merged,
-so the lane beside the column that its scene keeps clear was not checked against the owls. macOS and Linux were not checked.
+against the canvas; they reach full strength under the pointer or the keyboard. A flight between Watcher's two trees crosses
+behind the room above the column, as it always has, and is not checked against the lane. macOS and Linux were not checked.
 The design captures run on stable, where the column does not show, so no baseline changes.

@@ -26,7 +26,7 @@ The transcript's left margin is empty on the Threads page. On Watcher's Conversa
 
 **6. The keyboard is designed, not inherited.** The column is one Tab stop, before the transcript, landing on the last message on screen. Up and Down move between ticks and show each card, Page Up and Page Down move five, Home and End go to the ends, Enter or Space goes there and puts focus on the message, and Escape closes the card, then returns to the transcript. No chord is claimed.
 
-**7. Watcher's owls keep the lane clear.** The scrubber shows in Watcher's Conversation tab, through the same transcript. Watcher's night scene keeps the lane (`SCRUBBER_LANE_PX`) beside the column free, so the owls and the ticks never meet, and when the left margin is too narrow for its tree, its rail of eyes shows on the right only.
+**7. Watcher's owls keep the lane clear.** The scrubber shows in Watcher's Conversation tab, through the same transcript. While it shows, Watcher's night scene reads its lane (`measureRoom` finds `.message-scrubber`), keeps it clear like the room's words, and lays the left margin's tree, Watcher's owl, its owls and its rail out from the lane's outer edge, so the owls and the ticks never meet. When the left margin is then too narrow for the tree, the rail of eyes shows on the right only. Watcher's owl does not fly to the composer's left branch meanwhile, whose perch would put its head in the lane.
 
 **8. Not on the iPhone, for now.** Nothing changes in host protocol version 1.
 
@@ -34,4 +34,4 @@ The transcript's left margin is empty on the Threads page. On Watcher's Conversa
 
 - With hundreds of messages sent the ticks are a pixel or two apart and the pointer picks among them only roughly; the keyboard still reaches each one.
 - A turn whose question was answered on its card shows the reply that followed, not the question, because an answered request leaves no record in the thread's history.
-- The night scene in #1343 has to read the lane when it lands; until it does, the two can overlap in the left margin.
+- While a long conversation shows the scrubber, Watcher's tree stands up to 44 pixels further from the column, and its left margin holds a few fewer owls.
