@@ -747,6 +747,26 @@ artifacts/main-freeze-notice/*
 !artifacts/main-freeze-notice/settings-1600x1000-light.png
 !artifacts/main-freeze-notice/popover-1280x800-dark-reduced-motion.png
 !artifacts/main-freeze-notice/attached-1280x800-dark.png
+artifacts/message-scrubber/*
+!artifacts/message-scrubber/hover-dark-1280x800.png
+!artifacts/message-scrubber/hover-dark-1600x1000.png
+!artifacts/message-scrubber/hover-dark-820x560.png
+!artifacts/message-scrubber/hover-light-1280x800.png
+!artifacts/message-scrubber/hover-light-1600x1000.png
+!artifacts/message-scrubber/hover-light-820x560.png
+!artifacts/message-scrubber/hover-reduced-dark-1280x800.png
+!artifacts/message-scrubber/keys-light-1280x800.png
+!artifacts/message-scrubber/rest-dark-1280x800.png
+!artifacts/message-scrubber/rest-light-820x560.png
+!artifacts/message-scrubber/watcher-hover-dark-1280x800.png
+!artifacts/message-scrubber/watcher-hover-dark-1600x1000.png
+!artifacts/message-scrubber/watcher-hover-dark-820x560.png
+!artifacts/message-scrubber/watcher-owls-dark-1280x800.png
+!artifacts/message-scrubber/watcher-owls-dark-1600x1000.png
+!artifacts/message-scrubber/watcher-owls-dark-820x560.png
+!artifacts/message-scrubber/watcher-owls-light-1280x800.png
+!artifacts/message-scrubber/watcher-owls-light-1600x1000.png
+!artifacts/message-scrubber/watcher-owls-light-820x560.png
 
 # Terminal mode removed (ADR-0111); retain only the capture its verification note cites.
 artifacts/remove-terminal-mode/*
