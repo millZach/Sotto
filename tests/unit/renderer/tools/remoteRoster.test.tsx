@@ -174,7 +174,7 @@ describe('Tools › Agents for a remote parent', () => {
     // Escape closes it and gives the focus back to the row.
     fireEvent.keyDown(head, { key: 'Escape' })
     expect(head).toHaveAttribute('aria-expanded', 'false')
-    expect(within(panel()).queryByRole('status')).toBeNull()
+    expect(panel().querySelector('.roster-notice')).toBeNull()
   })
 
   it('keeps the rows greyed with their last outcome while forge is not connected, and says so above them', async () => {
@@ -182,14 +182,14 @@ describe('Tools › Agents for a remote parent', () => {
     setup(remoteState(false), () => ({ lastRead: new Date(LOST).toISOString() }))
     const group = await screen.findByRole('region', { name: /^forge/u })
     await waitFor(() => expect(within(group).getByText('Working when last read')).toBeInTheDocument())
-    expect(within(group).getByRole('heading', { level: 3 })).toHaveTextContent('forge2 threadsnot connected')
+    expect(within(group).getByRole('heading', { level: 3 })).toHaveTextContent('forge3 threadsnot connected')
     const review = group.querySelector<HTMLElement>(`[data-thread-id="${REVIEW}"]`)!
     expect(review).toHaveAttribute('data-last-read')
     expect(within(review).getByText(`as of ${clockLabel(LOST)}`)).toBeInTheDocument()
     expect(within(review).getByText('Working when last read')).toHaveAttribute('data-last-read')
     // The held line is not repeated on a row that is only as Sotto last read it.
     expect(within(review).queryByText(/^Started at Ask for approval/u)).toBeNull()
-    expect(within(panel()).getByRole('status')).toHaveTextContent(`forge is not connected. These threads are as Sotto last read them at ${clockLabel(LOST)}. Losing the connection stops nothing on forge.`)
+    expect(panel().querySelector('.roster-notice')).toHaveTextContent(`forge is not connected. These threads are as Sotto last read them at ${clockLabel(LOST)}. Losing the connection stops nothing on forge.`)
     fireEvent.click(within(review).getByRole('button', { name: /^Review the socket changes, delegated thread on Codex, Working when last read/u }))
     expect(within(review).getByText(/^It was working at .*, when Sotto last read it\. forge is not connected/u)).toBeInTheDocument()
     expect(within(review).getByText('The start of the brief, as Sotto last read it from forge.')).toBeInTheDocument()
@@ -210,6 +210,6 @@ describe('Tools › Agents for a remote parent', () => {
     await waitFor(() => expect(within(panel()).getByRole('list', { name: 'Delegated threads and agents, newest first' })).toBeInTheDocument())
     expect(within(panel()).queryByRole('region', { name: /^forge/u })).toBeNull()
     expect(within(panel()).queryByText(/when last read/u)).toBeNull()
-    expect(within(panel()).queryByRole('status')).toBeNull()
+    expect(panel().querySelector('.roster-notice')).toBeNull()
   })
 })
