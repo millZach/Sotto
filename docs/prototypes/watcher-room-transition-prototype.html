@@ -20,7 +20,7 @@
     7  Pan. The window pans left to Watcher, which sits beside Threads. Threads slides out to the right while the room slides in, with the scene and the parts moving at their own depths.
     8  Zoom. Watcher opens out of the owl in the sidebar foot and grows to fill the window, while Threads stays in place and dims behind it.
     9  Night falls. A band of flickering ASCII sweeps from left to right. Threads breaks into glyphs ahead of it and the night room settles in behind it.
-   10  Rise. Threads sinks a little and dims while the room rises from below the window edge in layers: the night first, then the composer, then the pill.
+   10  Rise. The room rises from below the window edge as one sheet and covers Threads, which sinks a little and dims as the sheet passes over it.
 
   The stage is a 1280x800 window drawn in Citrine, the built-in theme Drake's screenshots show (colours from
   src/shared/themes/palettes.ts, checked against the raw pixels of his screenshots), with the real owl glyph and the real
@@ -1625,7 +1625,7 @@ var __sceneBundle = (() => {
       this.k = width / 1280
       this.vp.style.width = width + 'px'; this.vp.style.height = (800 * this.k) + 'px'
       this.win.style.transform = `scale(${this.k})`; this.win.style.transformOrigin = '0 0'
-      const dpr = Math.max(1, Math.min(2, Math.round((window.devicePixelRatio || 1) * this.k)))
+      const dpr = Math.max(1, Math.min(2, Math.ceil((window.devicePixelRatio || 1) * this.k - 0.001))) // never fewer canvas pixels than screen pixels
       if (dpr !== this.dpr) { this.dpr = dpr; this.paintScene(); if (this.run) this.run.seek(this.pos) }
     }
 
@@ -1648,7 +1648,8 @@ var __sceneBundle = (() => {
       this.scene.paint(ctx, { ink: cssVar('--ink'), accent: cssVar('--muted'), ...opts })
     }
 
-    refreshTheme() { this.paintScene() }
+    // The scene bakes some colours when it is made, so a theme change builds it again from the new variables.
+    refreshTheme() { this.initScene(); this.paintScene() }
 
     /** Every rect a variant needs, in logical px relative to .win. Measured while the stage is idle. */
     measure() {
@@ -2224,7 +2225,7 @@ Transitions.register({
       for (let k = FLY0 + step; k < FLY1 - 70; k += step) {
         const age = dir < 0 ? k - t : t - k   // the trail stays behind the owl whichever way it flies
         if (age < 0 || age > life) continue
-        const q = at(k / 820), a = 1 - age / life
+        const q = at(k / 820), a = (1 - age / life) * clamp(t / 120, 0, 1) * clamp((820 - t) / 120, 0, 1)   // gone at both ends, either direction
         ctx.globalAlpha = a
         ctx.fillText(age < life / 2 ? ':' : '.', Math.round(ox + q.x), Math.round(oy + q.y + 6))
       }
@@ -2540,41 +2541,44 @@ Transitions.register({
 
 ;
 /* src/variants/10-rise.js */
-/* 10 Rise: vertical. Threads sinks and dims while Watcher's room rises from below the window edge, scene first, pill last. */
+/* 10 Rise: vertical. Watcher's room rises from below the window edge as one opaque sheet and covers Threads, which sinks a little and dims. */
 Transitions.register({
   id: 'rise', n: 10, name: 'Rise',
-  feel: 'Threads sinks a little and dims while the room rises from below the window edge in layers: the night first, then the composer, then the pill.',
-  controls: 'The foot ducks under the bottom edge as one piece, and a beat later the pill rises from the same edge at the centre. The controls leave downwards and come back upwards.',
-  cost: 'View Transitions API: one startViewTransition around the navigation. The old room snapshot sinks and the live room rises by translateY; the foot and pill get their own names to sink and rise on their own timing.',
-  duration: 760,
+  feel: 'The room rises from below the window edge as one sheet and covers Threads, which sinks a little and dims as the sheet passes over it.',
+  controls: 'The foot\'s controls stay on top of the rising sheet and duck down out of the window as the pill, riding the sheet, climbs into view. Some controls are always on screen.',
+  cost: 'View Transitions API: one startViewTransition around the navigation. The live new room is ::view-transition-new(root) translating up over the old snapshot; the foot gets its own name to sink.',
+  duration: 780,
   run(r) {
     const { s, ease } = r, P = s.part
-    // Watcher's room sits above Threads with a clear background, so its pieces can rise over the sinking room.
-    const bg = s.W.style.background; s.W.style.background = 'transparent'; r.undo(() => { s.W.style.background = bg })
+    const { cssVar } = window.StageHelpers
 
-    // Threads sinks 24 px, shrinks a touch and dims slowly, staying readable until the room has mostly arrived.
+    // The room is one opaque sheet (its layer keeps its canvas background), rising from below the window edge.
+    // A soft shadow rides its top edge and fades as it lands.
+    const shade = cssVar('--shadow-color')
+    r.anim(s.W, [
+      { transform: 'translateY(800px)', boxShadow: '0 -12px 32px 0 transparent' },
+      { transform: 'translateY(752px)', boxShadow: `0 -12px 32px 0 ${shade}`, offset: 0.06 },
+      { transform: 'translateY(0px)', boxShadow: '0 -12px 32px 0 transparent' }], { duration: 780, easing: ease.out })
+
+    // Threads stays readable above the sheet's edge: it sinks 24 px, shrinks a touch and dims to 0.75 late, and fades out only under the sheet.
     r.anim(s.T, [
       { transform: 'translateY(0px) scale(1)', opacity: 1 },
-      { transform: 'translateY(10px) scale(0.994)', opacity: 1, offset: 0.3 },
-      { transform: 'translateY(18px) scale(0.989)', opacity: 0.95, offset: 0.55 },
-      { transform: 'translateY(22px) scale(0.986)', opacity: 0.7, offset: 0.8 },
-      { transform: 'translateY(24px) scale(0.985)', opacity: 0 }], { duration: 760, easing: ease.soft })
+      { transform: 'translateY(12px) scale(0.993)', opacity: 1, offset: 0.4 },
+      { transform: 'translateY(22px) scale(0.986)', opacity: 0.75, offset: 0.85 },
+      { transform: 'translateY(24px) scale(0.985)', opacity: 0 }], { duration: 780, easing: ease.soft })
 
-    // The foot ducks under the floor: it sinks past the bottom edge, fading as it goes.
-    r.anim(P.foot, [{ transform: 'translateY(0px)', opacity: 1 }, { transform: 'translateY(60px)', opacity: 0.75, offset: 0.7 }, { transform: 'translateY(104px)', opacity: 0 }],
-      { delay: 0, duration: 460, easing: ease.soft })
-    // Threads' composer and messages leave a little ahead of the room, so the two rooms' text barely overlaps.
-    r.fade(P.tComposer, 1, 0, { delay: 240, duration: 300, easing: ease.soft })
-    r.fade(P.tMsgs, 1, 0.7, { delay: 200, duration: 300, easing: ease.soft })
-
-    // The room rises as a staggered group: scene, then the header lines, then the composer, then the pill.
-    const rise = (el, dy, delay, duration) => r.anim(el, [{ transform: `translateY(${dy}px)`, opacity: 0 }, { transform: 'translateY(0px)', opacity: 1 }], { delay, duration, easing: ease.out })
-    // The night's canvas is opaque, so it rises fast but thickens slowly, letting Threads show through until the room's text is up.
-    r.anim(P.wScene, [{ transform: 'translateY(120px)', opacity: 0 }, { transform: 'translateY(60px)', opacity: 0, offset: 0.3 }, { transform: 'translateY(16px)', opacity: 0.3, offset: 0.55 }, { transform: 'translateY(0px)', opacity: 1 }], { delay: 0, duration: 700, easing: ease.soft })
-    r.anim(P.wHead, [{ transform: 'translateY(8px)', opacity: 0 }, { transform: 'translateY(0px)', opacity: 1 }], { delay: 260, duration: 360, easing: ease.out })
-    for (const el of [P.wNeed, P.wRule, P.wBody]) rise(el, 90, 160, 440)
-    rise(P.wComposer, 140, 220, 460)
-    rise(P.dock, 96, 150, 580)
+    // The foot's controls ride above the sheet as an inert copy of the foot, ducking under the floor as the pill climbs into view.
+    const wrap = document.createElement('div')
+    wrap.className = 't-sb'
+    wrap.setAttribute('inert', ''); wrap.setAttribute('aria-hidden', 'true')
+    Object.assign(wrap.style, { background: 'transparent', borderRight: '0', pointerEvents: 'none' })
+    wrap.appendChild(P.foot.cloneNode(true))
+    s.fx.appendChild(wrap); r.undo(() => wrap.remove())
+    r.hide(P.foot)
+    r.anim(wrap, [
+      { transform: 'translateY(0px)', opacity: 1 },
+      { transform: 'translateY(30px)', opacity: 0.8, offset: 0.5 },
+      { transform: 'translateY(72px)', opacity: 0 }], { delay: 120, duration: 380, easing: ease.in })
   },
 })
 
@@ -2624,7 +2628,7 @@ Transitions.register({
     card.innerHTML = `
 <header class="card__head" title="Open this one large"><span class="card__n">${def.n}</span><h2>${esc(def.name)}</h2><p class="card__feel">${esc(def.feel)}</p><button type="button" class="card__open" aria-label="Open ${esc(def.name)} large">Open large</button></header>
 <div class="card__stage"></div>
-<div class="card__ctl"><button type="button" class="play">To Watcher</button><input class="scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub ${esc(def.name)}"><span class="time">0 ms</span></div>
+<div class="card__ctl"><button type="button" class="play">To Watcher</button><input class="scrub" type="range" min="0" max="1000" step="10" value="0" aria-label="Scrub ${esc(def.name)}"><span class="time">0 ms</span></div>
 <dl class="card__notes"><dt>Controls</dt><dd>${esc(def.controls)}</dd><dt>Real build</dt><dd>${esc(def.cost)}</dd></dl>`
     grid.appendChild(card)
     cards[def.id] = card
