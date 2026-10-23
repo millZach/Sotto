@@ -28,7 +28,7 @@ import { watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries,
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
-import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
+import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, SET_ASIDE_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
 import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
@@ -1344,11 +1344,33 @@ export class WatcherService implements WatcherControlHooks {
       ...[...this.pendingWatchAssignments.values()].filter(watch => watch.target.hostId === hostId)].map(watch => [key(watch.target), watch])).values()]
       .filter(watch => this.owningSnapshot(hostId)?.threads.some(thread => thread.id === watch.target.threadId))
   }
-  /** While the user's own turn runs, Watcher may steer it and nothing else: a send or a queued prompt waits for it to end. */
+  /**
+   * While the user's own turn runs, Watcher may steer it and nothing else: a send or a queued prompt waits for it to end.
+   * A watch stays paused after that turn while an earlier send to the thread is unconfirmed, and the refusal says so,
+   * with what ends it, rather than that a turn runs (#1222). Only the thread's own computer knows its deliveries; the
+   * writer there checks again before it sends.
+   */
   private checkHumanTurn(thread: AgentThread, record: WatcherRecord, delivery: WatcherOperation['delivery']): void {
     if (delivery === 'steer') return
-    const watch = record.watches?.find(item => key(item.target) === key({ hostId: thread.hostId ?? this.hostId(), threadId: thread.id }))
-    if (watch?.pausedByUserMessageId || this.humanTurnRunning(thread, record)) refuse('THREAD_BUSY', 'The user’s own turn in this thread is running. Steer it, or send once it ends. Nothing was sent.', true)
+    if (this.humanTurnRunning(thread, record)) refuse('THREAD_BUSY', USER_TURN_RUNNING, true)
+    const target = { hostId: thread.hostId ?? this.hostId(), threadId: thread.id }
+    if (!record.watches?.find(item => key(item.target) === key(target))?.pausedByUserMessageId) return
+    if (target.hostId === this.hostId() && this.options.control.pendingThreadWorkReason(thread.id) === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', this.unconfirmedHold(target))
+    refuse('THREAD_BUSY', USER_TURN_RUNNING, true)
+  }
+  /**
+   * What an unconfirmed earlier send to a thread waits on (#1222): Sotto's confirmation, or the user setting it aside with
+   * Continue with a new message. Once the user set aside a prompt of their own, it waits for their next message to be
+   * confirmed instead (ADR-0058). A paired host's thread is answered for by that host.
+   */
+  private unconfirmedHold(target: WatcherThreadTarget): string {
+    return target.hostId !== this.hostId() || this.options.control.pendingThreadWorkReason(target.threadId, { setAsideIgnored: true }) === 'uncertain-send'
+      ? UNCONFIRMED_SEND_HOLD : SET_ASIDE_HOLD
+  }
+  /** Whether a prompt revision sent to a thread on this computer is one of Watcher's own sends. */
+  ownsDraft(threadId: string, draftId: string): boolean {
+    const hostId = this.hostId()
+    return this.view().operations.some(operation => operation.draftId === draftId && operation.target.threadId === threadId && operation.target.hostId === hostId)
   }
   /**
    * Watcher on its own never stops the user's running turn. It may only while it answers the user's own message asking
@@ -2521,6 +2543,9 @@ export class WatcherService implements WatcherControlHooks {
         if ((imported ? existing.digest : existing.inputDigest ?? existing.digest) !== inputDigest) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Use the original receipt.')
         return { operation: existing, retry: true }
       }
+      // A slash command sent as text never confirms, and its thread would then hold every later send (#1222). The master
+      // refuses it before routing, so a paired host is never asked and never answers with a code an older desktop lacks.
+      if (!imported && name === 'send_to_thread' && startsWithSlashCommand((input as WatcherToolInput<'send_to_thread'>).text)) refuse('SLASH_COMMAND', SLASH_COMMAND_REFUSAL)
       const turn = turnOf()
       if (imported && request.remoteOrigin) this.checkRemoteAuthority(imported, request.remoteOrigin.master, request.remoteOrigin.clientId, request.standingWatchId)
       // This host closes its copy of a paired request once the threads it holds have settled, but cannot see the master's
@@ -2620,6 +2645,7 @@ export class WatcherService implements WatcherControlHooks {
         // Only the foreground turn and the thread's own queue hold a send, never background work, and a refusal says which (#1203).
         if (sent.delivery === 'now' && thread.status === 'running') refuse('THREAD_BUSY', RUNNING_TURN_HOLD)
         const queued = sent.delivery === 'now' && !remote ? this.options.control.pendingThreadWorkReason(thread.id) : null
+        if (queued === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', this.unconfirmedHold(target))
         if (queued) refuse('THREAD_BUSY', queueHold(queued, this.preserveUserQueue(thread.id) && this.userWorkPending(thread.id, record)))
         if (sent.delivery === 'steer' && thread.status !== 'running' && thread.lastTurn?.status !== 'running') refuse('STEER_UNAVAILABLE', NO_TURN_TO_STEER)
         if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || !sent.expectedTurnId || sent.expectedTurnId !== thread.lastTurn?.id || thread.status !== 'running')) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
@@ -2882,7 +2908,9 @@ ${operation.draftId}`)
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
           : 'You took over this thread. Watcher stopped sending to it.'
-        : operation.refusalCode === 'THREAD_BUSY' ? watched?.pausedByUserMessageId ? 'The user’s own turn in this thread is running. Steer it, or send once it ends. Nothing was sent.' : RUNNING_TURN_HOLD
+        : operation.refusalCode === 'THREAD_BUSY' ? watched?.pausedByUserMessageId ? USER_TURN_RUNNING : RUNNING_TURN_HOLD
+        // A send the writer turned away as unconfirmed was held by an earlier send to its thread (#1222).
+        : operation.refusalCode === 'DELIVERY_UNCERTAIN' && operation.deliveryState === 'failed' && operation.action === 'send' ? this.unconfirmedHold(operation.target)
         : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
     }
     if (name === 'start_thread') {

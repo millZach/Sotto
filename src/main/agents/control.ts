@@ -4856,12 +4856,15 @@ export class AgentControl {
     if (delivery?.status === 'accepted' || this.state.deliveredDrafts?.some(matches)) return
     const entry = this.outbox.find(matches)
     const now = new Date().toISOString()
-    const recovery: AgentDelivery = { threadId, draftId, createdAt: delivery?.createdAt ?? now, ...delivery, status: 'uncertain', setAside: true, updatedAt: now }
+    // A send of Watcher's leaves no prompt of the user's in doubt, so setting it aside holds no automatic work back, and a
+    // watch it paused goes on at once (#1222). The user's own prompt holds it until their next one is confirmed (ADR-0058).
+    const resumed = this.watcherHooks?.ownsDraft?.(threadId, draftId) === true ? { updatesResumed: true } : {}
+    const recovery: AgentDelivery = { threadId, draftId, createdAt: delivery?.createdAt ?? now, ...delivery, status: 'uncertain', setAside: true, ...resumed, updatedAt: now }
     this.pendingSetAsideDeliveries.set(threadId, recovery)
     const previousObsoleteDrafts = this.state.obsoleteDrafts
     let recoveryObsoleteDrafts: AgentState['obsoleteDrafts']
     if (entry) {
-      this.outbox = this.outbox.map(item => item === entry ? { ...item, setAside: true } : item)
+      this.outbox = this.outbox.map(item => item === entry ? { ...item, setAside: true, ...resumed } : item)
     } else {
       // A lost IPC reply can have no outbox entry. Retire only this revision, never claim delivery.
       this.obsoleteDraft(threadId, draftId)
@@ -4869,13 +4872,13 @@ export class AgentControl {
     }
     try { await this.persist() }
     catch {
-      if (entry) this.outbox = this.outbox.map(item => item.id === entry.id ? { ...item, setAside: entry.setAside } : item)
+      if (entry) this.outbox = this.outbox.map(item => item.id === entry.id ? { ...item, setAside: entry.setAside, updatesResumed: entry.updatesResumed } : item)
       // A concurrent newer draft can independently retire this revision. Keep its fence and its edits.
       else if (this.state.obsoleteDrafts === recoveryObsoleteDrafts) this.state.obsoleteDrafts = previousObsoleteDrafts
       throw new Error('Could not save this recovery. The prompt is still unconfirmed. Restore access to local storage and try again.')
     } finally { this.pendingSetAsideDeliveries.delete(threadId) }
     const latest = this.state.deliveries?.find(matches)
-    this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true })
+    this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true, ...resumed })
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
