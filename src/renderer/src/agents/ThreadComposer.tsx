@@ -376,7 +376,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div className="thread-prompt__actions">
           {running && capabilities.steer === true
-            ? <Button variant="secondary" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? 'Send this now, without waiting for the turn to end' : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}>Steer now</Button>
+            ? <Button variant="ghost" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? 'Send this now, without waiting for the turn to end' : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}>Steer now</Button>
             : null}
           {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} title={stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}

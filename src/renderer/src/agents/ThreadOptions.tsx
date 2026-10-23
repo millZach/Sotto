@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, Lock } from 'lucide-react'
+import { Check, ChevronDown, Lock, Shield } from 'lucide-react'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
@@ -23,6 +23,8 @@ export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   auto: 'Auto',
   'full-access': 'Full access',
 }
+/** Permissions' glyph, which stands for the value in a narrow composer. */
+export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
 
 /** The choices used when creating a thread, visible while its optional controls are collapsed. */
@@ -188,7 +190,7 @@ export function unconfirmedSettingText(provider: string, wanted: string, error: 
  * the line that says what is still in force (`describedBy`), so the words are the ones on screen, said once. A `foot`
  * is a line under the list that holds in every choice; it sits outside the listbox, so it is read, never chosen.
  */
-export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason, flip = false }: {
+export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason, flip = false, icon }: {
   readonly label: string; readonly placeholder: string; readonly value: string; readonly options: readonly ChoiceOption[]
   readonly disabled: boolean; readonly pending: boolean; readonly describedBy?: string | undefined; readonly onChange: (id: string) => void
   readonly foot?: string | undefined
@@ -199,6 +201,11 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
    * chip can sit near the top. The composer's chips never need it: they sit at the bottom of their pane.
    */
   readonly flip?: boolean
+  /**
+   * A glyph that stands for the value where the composer is narrow (permissions' shield). The value's words stay in the
+   * chip for assistive technology, hidden only from the eye, so the chip still says what it is set to.
+   */
+  readonly icon?: ReactNode
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const [below, setBelow] = useState(false)
@@ -228,6 +235,9 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
     return () => { document.removeEventListener('pointerdown', dismiss, true) }
   }, [open])
   const current = options.find(option => option.id === value && !option.disabled)
+  const shown = current?.label ?? (value ? capitalise(value) : placeholder)
+  // A chip that can show its glyph alone says its value in its tooltip too, so the shield can be read by pointing at it.
+  const title = disabled && fixedReason ? `${label}. ${fixedReason}` : icon ? `${label}: ${shown}` : label
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
   const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
     {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
@@ -239,11 +249,12 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()
     }}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
-    <button ref={trigger} type="button" className="thread-chip tt-focusable" role="combobox" aria-label={label} title={disabled && fixedReason ? `${label}. ${fixedReason}` : label} aria-haspopup="listbox" aria-expanded={open}
+    <button ref={trigger} type="button" className="thread-chip tt-focusable" role="combobox" aria-label={label} title={title} aria-haspopup="listbox" aria-expanded={open}
       aria-controls={open ? listId : undefined} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
       disabled={disabled} onClick={() => setOpen(value => !value)}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
-      <span>{current?.label ?? (value ? capitalise(value) : placeholder)}</span><ChevronDown size={12} aria-hidden="true" />
+      {icon ? <span className="thread-chip__icon" aria-hidden="true">{icon}</span> : null}
+      <span className="thread-chip__value">{shown}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {!open ? null : foot ? <div ref={panel} className="thread-chip-menu__list thread-chip-menu__list--foot" data-below={below ? 'true' : undefined}>{listbox}<p className="thread-chip-menu__foot">{foot}</p></div> : listbox}
   </div>
@@ -471,7 +482,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {watcher
         ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
           disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
-        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
+        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
       {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only). */}

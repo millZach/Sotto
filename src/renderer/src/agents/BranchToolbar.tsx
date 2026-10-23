@@ -143,13 +143,15 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   return <div className="branch-toolbar" role="group" aria-label="Branch toolbar" data-busy={busy ?? undefined}>
     <LabelPill icon={thread.remoteHost ? Server : Laptop} label="Run on" value={hostName}
       title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'} />
+    <Separator />
     {locked
       ? <LabelPill icon={Folder} label="Workspace" value={workspaceLabel(thread)} title={`Workspace: ${workspaceLabel(thread)}`} />
       : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspaceLabel(thread)} value={workspaceOptionId(workspaceChoice(thread))}
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
-    {/* The badge and the picker wrap as one onto the next line at the 820px minimum, still at the right. */}
+    {/* The badge and the picker wrap as one onto the next line when the line has no room for them. */}
     <span className="branch-toolbar__end">
-      {pullRequest ? <PullRequestBadge pullRequest={pullRequest} where={opener.where} onOpen={() => opener.open(thread.id)} /> : null}
+      <Separator />
+      {pullRequest ? <><PullRequestBadge pullRequest={pullRequest} where={opener.where} onOpen={() => opener.open(thread.id)} /><Separator /></> : null}
       <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} busy={busy === 'branch'} disabled={busy !== null}
         draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
@@ -160,9 +162,14 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   </div>
 }
 
+/** The faint dot between the line's parts, for the eye only. */
+function Separator(): ReactNode {
+  return <span className="branch-toolbar__separator" aria-hidden="true">·</span>
+}
+
 /**
- * A label that wears the row's pill without being a control: Run on, and Workspace once it has locked. The key word
- * stays in the text for the screen reader and the tests; the eye gets the glyph and the value.
+ * A label in the line that is not a control: Run on, and Workspace once it has locked. The key word stays in the text for
+ * the screen reader and the tests; the eye gets the glyph and the value.
  */
 function LabelPill({ icon: Icon, label, value, title }: { readonly icon: typeof Laptop; readonly label: string; readonly value: string; readonly title: string }): ReactNode {
   return <span className="branch-toolbar__static" title={title}><Icon size={13} aria-hidden="true" /><span className="tt-visually-hidden">{label} </span><span>{value}</span></span>

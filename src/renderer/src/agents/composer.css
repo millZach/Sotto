@@ -1,44 +1,48 @@
 /* Queue and skills around the Threads composer. Same field, ink and accent as the prompt; nothing new competes with it. */
 
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 8px; }
-.thread-prompt__steer.tt-button { height: 28px; min-height: 28px; padding: 0 11px; font-size: 13px; }
+/* While a turn runs, Steer now is a text button in the accent beside Stop (ADR-0112). */
+.thread-prompt__steer.tt-button { height: 28px; min-height: 28px; padding: 0 7px; border-color: transparent; background: transparent; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; }
+.thread-prompt__steer.tt-button:hover:not(:disabled), .thread-prompt__steer.tt-button:active:not(:disabled) { border-color: transparent; background: var(--tt-hover); color: var(--tt-accent-text); }
 
-/* Follow-up queue: a short ordered ledger resting on the composer it came from. It is the one part of the
-   compose area that gives up height: its rows scroll under a head that stays put, never the prompt below it. */
-.thread-followups { --followups-surface: color-mix(in srgb, var(--threads-field) 70%, var(--tt-canvas)); display: flex; flex: 0 1 auto; flex-direction: column; min-height: calc(var(--followups-top, 40px) + 7px); max-height: max(250px, calc(var(--followups-top, 40px) + 90px)); margin: 0 12px -1px; padding: 0 6px 6px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--threads-field-border); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--followups-surface); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+/* Follow-up queue (ADR-0112): no card and no card per row. The list hangs off a thin rule in the accent above the composer,
+   under a muted line that says what it holds and when it sends; each row is its words on one line, then Steer now as a
+   text button in the accent and the row's other actions as ghost icons. It is the one part of the compose area that
+   gives up height: its rows scroll under a head that stays put, never the prompt below it. */
+.thread-followups { --followups-surface: var(--tt-canvas); display: flex; flex: 0 1 auto; flex-direction: column; min-height: calc(var(--followups-top, 28px) + 4px); max-height: max(220px, calc(var(--followups-top, 28px) + 90px)); margin: 0 0 8px; padding: 0 0 0 10px; overflow-y: auto; overscroll-behavior: contain; border-left: 2px solid color-mix(in oklab, var(--tt-accent) 60%, transparent); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-followups > * { flex: none; }
 .thread-followups__top { position: sticky; top: 0; z-index: 1; display: flow-root; background: var(--followups-surface); }
-.thread-followups__head { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 2px 0 0; }
-.thread-followups__toggle { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; min-height: 32px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
-.thread-followups__toggle:hover { background: var(--threads-hover); color: var(--tt-text-2); }
+.thread-followups__head { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; margin-bottom: 2px; }
+.thread-followups__toggle { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; min-height: 26px; margin-left: -4px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.thread-followups__toggle:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-followups__toggle > svg { flex: none; }
 .thread-followups__label { flex: none; }
-.thread-followups__count { margin-left: 4px; color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
-.thread-followups__next { min-width: 0; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+.thread-followups__count { margin-left: 3px; font-variant-numeric: tabular-nums; }
+.thread-followups__when { min-width: 0; margin-left: -4px; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-followups__next { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
 .thread-followups__next::before { content: '·'; margin-right: 6px; color: var(--tt-text-muted); }
 .thread-followups__next-label { margin-right: 6px; color: var(--tt-text-muted); }
 .thread-followups__next[data-added] .thread-followups__next-label { color: var(--tt-activity); }
-.thread-followups__head .tt-button { flex: none; min-height: 30px; font-size: 13px; }
-.thread-followups__note { margin: 0 8px 6px 27px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
-.thread-followups__error { margin: 2px 8px 6px 27px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
-.thread-followups__list { margin: 0; padding: 0; list-style: none; }
-.thread-followup { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; min-height: 40px; padding: 4px 4px 4px 27px; border-radius: 10px; }
-.thread-followup:hover, .thread-followup:focus-within { background: var(--threads-hover); }
-.thread-followup + .thread-followup { margin-top: 2px; }
-/* Sotto's wake-up waiting in the queue (ADR-0061): named Sotto's, its words run together on one or two lines. */
-.thread-followup[data-wake-up] .thread-followup__text { white-space: normal; }
+.thread-followups__head .tt-button { flex: none; min-height: 28px; margin-left: auto; font-size: 12.5px; }
+.thread-followups__note { margin: 0 4px 6px 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.thread-followups__error { margin: 2px 4px 6px 0; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
+.thread-followups__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.thread-followup { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 8px; min-height: 32px; }
 .thread-followup__sotto { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; color: var(--tt-text); font-weight: 500; vertical-align: -3px; }
 .thread-followup__mark { flex: none; width: 16px; height: 16px; }
-.thread-followup__text { display: -webkit-box; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Its words on one line; the whole message is in the tooltip and in Edit. */
+.thread-followup__text { margin: 0; overflow: hidden; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .thread-followup__extra { color: var(--tt-text-muted); }
 .thread-followup__state { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
 .thread-followup__state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-followup__state[data-status='uncertain'], .thread-followup__state[data-status='failed'], .thread-followup[data-status='failed'] > .thread-followup__state { color: var(--threads-warning-text); }
 .thread-followup__state[data-status='paused'] { color: var(--tt-text-2); }
 .thread-followups__head > .thread-followup__state { padding: 0 4px; }
-.thread-followup__tools { display: inline-flex; grid-column: 3; }
-.thread-followup__tools [data-tool="steer"] { min-height: 32px; padding: 0 10px; margin-right: 6px; font-size: 14px; white-space: nowrap; }
-.thread-followup__tools .tt-button--icon { width: 32px; min-height: 32px; }
+.thread-followup__tools { display: inline-flex; grid-column: 3; align-items: center; }
+.thread-followup__tools .thread-followup__steer { gap: 5px; height: 28px; min-height: 28px; margin-right: 2px; padding: 0 7px; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; }
+.thread-followup__tools .tt-button--icon { width: 28px; height: 28px; min-height: 28px; }
+.thread-followup__tools .tt-button:hover:not([aria-disabled='true']) { border-color: transparent; background: var(--tt-hover); color: var(--tt-text); }
+.thread-followup__tools .thread-followup__steer:hover:not([aria-disabled='true']) { color: var(--tt-accent-text); }
 .thread-followup__tools .tt-button[aria-disabled='true'] { opacity: .45; cursor: default; }
 .thread-followup__tools .tt-button[aria-disabled='true']:hover { background: transparent; }
 .thread-followup__detail { display: flex; flex-wrap: wrap; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 4px 10px; padding-bottom: 4px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
@@ -91,12 +95,9 @@
 @keyframes composer-picker-turn { to { transform: rotate(360deg); } }
 
 @media (max-width: 980px) {
-  .thread-followups { margin-inline: 8px; }
   .composer-picker__name { max-width: 22ch; }
 }
 /* Short windows and large display scaling: the prompt and its send button stay in view. Below 680px the queue also rests as one line until opened. */
 @media (max-height: 760px) {
-  .thread-followups { min-height: calc(var(--followups-top, 36px) + 4px); max-height: max(196px, calc(var(--followups-top, 36px) + 90px)); padding-bottom: 3px; }
-  .thread-followups__head { min-height: 36px; padding-top: 2px; }
-  .thread-followup__text { -webkit-line-clamp: 1; }
+  .thread-followups { max-height: max(180px, calc(var(--followups-top, 28px) + 90px)); }
 }

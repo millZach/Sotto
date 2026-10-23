@@ -27,7 +27,8 @@ const each = (ink: string, surfaces: ReadonlyArray<readonly [string, ...string[]
 
 const rooms = [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['sidebar'], ['code-bg'], ['card'], ['card-selected']] as const
 const glass = [['canvas', '--tt-glass'], ['sidebar', '--tt-glass'], ['canvas', '--tt-glass-field']] as const
-const hovered = [['sidebar', hover], ['surface-elevated', hover], ['surface-overlay', hover], ['field', hover]] as const
+// The composer's text buttons and its branch line take the hover wash on the card and on the room (ADR-0112).
+const hovered = [['sidebar', hover], ['surface-elevated', hover], ['surface-overlay', hover], ['field', hover], ['card', hover], ['canvas', hover]] as const
 /** Changes lines: context on the code background, and added and removed lines with their tint over it. */
 const context = ['code-bg'] as const, added = ['code-bg', '--changes-added'] as const, removed = ['code-bg', '--changes-removed'] as const
 const lines = [context, added, removed] as const
@@ -74,6 +75,8 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('primary-hover', [['canvas'], ['surface'], ['bubble'], ['code-bg'], ['surface-sunken'], ['field'], ['field', hover], ['selected']], 'link hover'),
   ...each('link', [['canvas'], ['surface'], ['bubble'], ['sidebar'], ['selected']], 'links'),
   ...each('accent-text', [['canvas'], ['surface'], ['surface-elevated'], ['card'], ['card-selected'], ['sidebar'], ['selected'], ['bubble'], ['field'], ['hover-strong']], 'accent text and activity'),
+  // Steer now, in the composer and on a queued message, keeps the accent while pointed at.
+  ...each('accent-text', [['card', hover], ['canvas', hover]], 'Steer now, hovered'),
   // Text on its own fill.
   pair('bubble-text', ['bubble'], 'bubble'), pair('sidebar-text', ['sidebar'], 'sidebar'), pair('update-text', ['update-surface'], 'update chip'),
   pair('on-accent', ['accent'], 'accent fill'), pair('primary-contrast', ['primary'], 'primary action'), pair('primary-contrast', ['primary-hover'], 'primary action, hovered'),

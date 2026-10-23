@@ -73,9 +73,11 @@ describe('main-window theme tokens', () => {
   it.each(combinations)('%s mode of %s keeps the tinted effort word readable in every colourway', (mode, id) => {
     for (const effortColor of EFFORT_COLORS) {
       const color = palette(mode, id, { effortColor })
-      // The word on its card and on the chip in the composer, where the colourway also paints it.
+      // The word on its card, on a chip in a field, and on the composer's card, where the reasoning text button sits
+      // with no fill of its own (ADR-0112) and the colourway also paints it.
       expect(contrast(color('effort-text'), color('surface-elevated')), `${effortColor} word on the card`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('effort-text'), color('field')), `${effortColor} word on the chip`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(color('effort-text'), color('card')), `${effortColor} word on the composer`).toBeGreaterThanOrEqual(4.5)
       // The colourway's hues reach the fill and the outline through three tokens every colourway declares.
       for (const hue of ['effort-a', 'effort-b', 'effort-c', 'effort-border'] as const) expect(color(hue).a, `${effortColor} ${hue}`).toBeGreaterThan(0)
     }
