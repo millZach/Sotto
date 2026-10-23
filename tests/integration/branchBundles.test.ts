@@ -133,6 +133,32 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(git(machines.forge, 'rev-parse', incomingRef(other, 'feature/login'))).toBe(git(machines.forge, 'rev-parse', 'main'))
   })
 
+  it('never writes through a symbolic ref in the incoming ref’s place, even one that points nowhere', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const main = git(machines.forge, 'rev-parse', 'main')
+    for (const target of ['refs/heads/unborn', 'refs/heads/main']) {
+      const moveId = randomUUID(), ref = incomingRef(moveId, 'feature/login')
+      git(machines.forge, 'symbolic-ref', ref, target)
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+      expect(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+        .toEqual({ type: 'refused', reason: 'move-differs', message: branchMoveWords.moveDiffers })
+      expect(await forge.receiveRef({ repository: machines.forge, moveId, branch: 'feature/login', commit })).toMatchObject({ reason: 'move-differs' })
+      expect(git(machines.forge, 'symbolic-ref', ref)).toBe(target)
+      await laptop.discard(prepared)
+    }
+    expect(git(machines.forge, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads')).toBe(`refs/heads/main ${main}`)
+    // Should one appear between the check and the write, the write is to the ref itself and never where it points.
+    const moveId = randomUUID(), ref = incomingRef(moveId, 'feature/login')
+    const racing: RunGitCommand = (cwd, command, args, options) => {
+      if (args[0] === 'update-ref' && args.includes(ref)) git(machines.forge, 'symbolic-ref', ref, 'refs/heads/unborn')
+      return runGitStatusCommand(cwd, command, args, options)
+    }
+    const raced = new BranchBundles({ ...machines.data('forge'), run: racing })
+    expect(await raced.receiveRef({ repository: machines.forge, moveId, branch: 'feature/login', commit: main })).not.toMatchObject({ type: 'refused', reason: 'failed' })
+    expect(git(machines.forge, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads')).toBe(`refs/heads/main ${main}`)
+  })
+
   it('refuses a bundle over the cap on both sides, in plain words, and keeps nothing staged', async () => {
     git(machines.laptop, 'switch', '-q', '-c', 'big')
     const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(64 * 1024))

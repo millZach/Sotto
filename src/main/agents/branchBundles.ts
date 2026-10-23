@@ -121,6 +121,11 @@ export class BranchBundles {
     try { return (await this.git(repository, ['rev-parse', '--verify', '--quiet', ref + '^{commit}'], undefined, 30_000)).trim() || null } catch { return null }
   }
 
+  /** Whether `ref` is a symbolic ref, whether or not what it points at exists. */
+  private async symbolic(repository: string, ref: string): Promise<boolean> {
+    try { await this.git(repository, ['symbolic-ref', '--quiet', ref], undefined, 30_000); return true } catch { return false }
+  }
+
   // The sending side.
 
   /**
@@ -261,7 +266,9 @@ export class BranchBundles {
   /** Creates the move's incoming ref only if it does not exist, and reads it back. */
   private async createRef(repository: string, moveId: string, branch: string, commit: string): Promise<BranchMoved | BranchMoveRefusal> {
     const ref = incomingRef(moveId, branch)
-    try { await this.git(repository, ['update-ref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
+    if (await this.symbolic(repository, ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+    // `--no-deref`: the ref itself is written, never a branch a symbolic ref put in its place points at.
+    try { await this.git(repository, ['update-ref', '--no-deref', ref, commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
     return await this.refCommit(repository, ref) === commit ? { type: 'moved', moveId, branch, commit, ref } : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
   }
 
@@ -269,6 +276,8 @@ export class BranchBundles {
   private async landed(repository: string, moveId: string, ref: string, commit: string): Promise<BranchMoved | BranchMoveRefusal | null> {
     const record = (await this.records.read()).moves[moveId]
     if (record && (record.commit !== commit || record.ref !== ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
+    // A symbolic ref where the incoming ref goes, even one pointing nowhere, is never written through or counted as landed.
+    if (await this.symbolic(repository, ref)) return branchMoveRefusal('move-differs', branchMoveWords.moveDiffers)
     const existing = await this.refCommit(repository, ref)
     if (existing === null) return null
     if (record && existing === commit) return { type: 'moved', moveId, branch: ref.slice(`refs/sotto/incoming/${moveId}/`.length), commit, ref }
