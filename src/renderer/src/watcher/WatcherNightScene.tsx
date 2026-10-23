@@ -55,7 +55,7 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
 }
 
 /** A colour as the canvas paints it, whatever form the style gave it in. */
-function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | null {
+export function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | null {
   pixel.clearRect(0, 0, 1, 1)
   pixel.fillStyle = 'rgba(0, 0, 0, 0)'
   pixel.fillStyle = value
@@ -65,7 +65,7 @@ function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | null {
 }
 
 /** The surface the scene is drawn on: the first painted background at or above the pane. */
-function surfaceOf(pane: HTMLElement, pixel: CanvasRenderingContext2D): Rgb | null {
+export function surfaceOf(pane: HTMLElement, pixel: CanvasRenderingContext2D): Rgb | null {
   for (let node: Element | null = pane; node !== null; node = node.parentElement) {
     const found = toRgb(getComputedStyle(node).backgroundColor, pixel)
     if (found !== null) return found

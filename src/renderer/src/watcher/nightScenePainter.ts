@@ -1,7 +1,7 @@
 import {
   clamp, gridFor, groundAt, inkAt, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph, RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded,
   smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
-  type Grid, type Limb, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
+  type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
 import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
 
@@ -16,22 +16,22 @@ import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from 
  */
 
 /** Field pixels per glyph cell, a side. */
-const SS = 2
+export const SS = 2
 /** Only the offscreen fields' coverage is read, never their colour, so they are drawn in any opaque ink. */
-const MASK = 'black'
+export const MASK = 'black'
 /** The glyphs' size, which fills a 7 by 12 cell. */
-const GLYPH_PX = 10.5
+export const GLYPH_PX = 10.5
 
-function context(canvas: HTMLCanvasElement | OffscreenCanvas, read = false): CanvasRenderingContext2D | null {
+export function context(canvas: HTMLCanvasElement | OffscreenCanvas, read = false): CanvasRenderingContext2D | null {
   return (canvas as HTMLCanvasElement).getContext('2d', read ? { willReadFrequently: true } : undefined) as CanvasRenderingContext2D | null
 }
 
-function makeCanvas(): HTMLCanvasElement {
+export function makeCanvas(): HTMLCanvasElement {
   return document.createElement('canvas')
 }
 
 /** Averages a block of field pixels' coverage into each cell of `out`. */
-function readField(ctx: CanvasRenderingContext2D, out: Float32Array, grid: Grid, c0: number, r0: number, cn: number, rn: number): void {
+export function readField(ctx: CanvasRenderingContext2D, out: Float32Array, grid: Grid, c0: number, r0: number, cn: number, rn: number): void {
   if (cn <= 0 || rn <= 0) return
   const data = ctx.getImageData(c0 * SS, r0 * SS, cn * SS, rn * SS).data
   const stride = cn * SS
@@ -42,7 +42,7 @@ function readField(ctx: CanvasRenderingContext2D, out: Float32Array, grid: Grid,
   }
 }
 
-function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: SceneLayout): void {
+export function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: { readonly width: number; readonly height: number }): void {
   ctx.setTransform(SS / grid.cw, 0, 0, SS / grid.ch, 0, 0)
   ctx.clearRect(-layout.width, -layout.height, layout.width * 3, layout.height * 3)
   ctx.globalAlpha = 1
@@ -51,7 +51,7 @@ function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: SceneLayout)
   ctx.strokeStyle = MASK
 }
 
-function strokeLimb(fx: CanvasRenderingContext2D, l: Limb): void {
+export function strokeLimb(fx: CanvasRenderingContext2D, l: Limb): void {
   fx.beginPath(); fx.moveTo(l.x0, l.y0); fx.quadraticCurveTo((l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2 + l.sag, l.x1, l.y1); fx.stroke()
 }
 
@@ -117,18 +117,7 @@ function drawLandscape(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2
     fx.beginPath(); fx.moveTo(x, y + 2); fx.lineTo(x + (R() - 0.5) * 5, y - h); fx.stroke()
   }
 
-  // The moon with its rim and craters, and the accent's glow around it.
-  const m = g.moon
-  fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
-  fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
-  fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(m.x, m.y, m.r - 1.5, 0, 7); fx.stroke()
-  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
-  for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]] as const) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
-  fx.globalCompositeOperation = 'source-over'
-  const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
-  glow.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
-  ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = MASK
-  ax.globalCompositeOperation = 'destination-out'; ax.beginPath(); ax.arc(m.x, m.y, m.r * 0.98, 0, 7); ax.fill(); ax.globalCompositeOperation = 'source-over'
+  drawMoon(fx, ax, g.moon)
 
   // Watcher's broad tree on the left, the bare one on the right, and the composer's two branches.
   const spots = [...g.spots.filter(spot => spot.kind === 'tree'), g.home]
@@ -143,6 +132,20 @@ function drawLandscape(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2
     fx.globalAlpha = 0.18
     for (const [dx, dy, r] of [[6, -18, 9], [-2, -10, 7], [14, -8, 6]] as const) { fx.beginPath(); fx.arc(b.x1 + d * dx * g.s, b.y1 + dy * g.s, r * g.s, 0, 7); fx.fill() }
   }
+}
+
+/** The moon with its rim and craters, and the accent's glow around it. */
+export function drawMoon(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2D, m: Moon): void {
+  fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
+  fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
+  fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(m.x, m.y, m.r - 1.5, 0, 7); fx.stroke()
+  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
+  for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]] as const) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
+  fx.globalCompositeOperation = 'source-over'
+  const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
+  glow.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
+  ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = MASK
+  ax.globalCompositeOperation = 'destination-out'; ax.beginPath(); ax.arc(m.x, m.y, m.r * 0.98, 0, 7); ax.fill(); ax.globalCompositeOperation = 'source-over'
 }
 
 function drawTree(fx: CanvasRenderingContext2D, t: Tree, seed: number, leaves: boolean, clear: readonly { readonly x: number; readonly y: number }[]): void {
@@ -225,7 +228,7 @@ function wing(d: CanvasRenderingContext2D, side: 1 | -1, o: OwlPose): void {
 }
 
 /** The owl as vectors: its body on `d`, its eyes on `a`, the accent's field. */
-function drawOwl(d: CanvasRenderingContext2D, a: CanvasRenderingContext2D, o: OwlPose): void {
+export function drawOwl(d: CanvasRenderingContext2D, a: CanvasRenderingContext2D, o: OwlPose): void {
   for (const ctx of [d, a]) { ctx.save(); ctx.translate(o.x, o.y - 30 * o.s); ctx.rotate(o.bank); ctx.scale(o.s, o.s * o.squash); ctx.translate(0, 30 * (1 - o.squash)) }
   const fly = o.spread > 0.05
   d.globalAlpha = 0.9
