@@ -222,7 +222,7 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(row('Find what the iPhone reads for agents').locator('.delegated-row__status')).toHaveText('Answered when last read')
       await expect(row('Review the delegation socket changes').locator('.subagent-time')).toHaveText(/^as of \d{1,2}:\d{2}/u)
       await expect(forge.getByRole('heading', { level: 3 })).toHaveText('Forge4 threadsnot connected')
-      await expect(tools(page).getByRole('status').filter({ hasText: 'Forge is not connected.' })).toHaveText(/^Forge is not connected\. These threads are as Sotto last read them at \d{1,2}:\d{2}\. Losing the connection stops nothing on Forge\.$/u)
+      await expect(tools(page).getByRole('status').filter({ hasText: 'Forge is not connected.' })).toHaveText(/^Forge is not connected\. These threads are as Sotto last read them at \d{1,2}:\d{2}(?: [ap]m)?\. Losing the connection stops nothing on Forge\.$/u)
       await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__outcome')).toHaveText('Working when last read')
       await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__wait')).toContainText('Forge is not connected, so Sotto cannot read how it went since.')
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
