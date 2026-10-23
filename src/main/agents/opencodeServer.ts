@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { compareClientVersions } from './clientVersions'
 import { withCliPath } from './cliLookup'
 import { acceptOpenCode, opencodeCandidates, resetOpenCodeLookup, type OpenCodeLookupOptions } from './opencodeLookup'
+import type { OwnServer } from '../../shared/ownModelServers'
+import { openCodeProviders } from '../ownModelServers/providerBlock'
 
 /**
  * OpenCode's floor: the oldest client Sotto connects (ADR-0042, ADR-0087). 2.0.31 is the client this adapter's routes,
@@ -41,16 +43,24 @@ export function opencodeDatabase(folders: OpenCodeFolders): string { return join
 
 /** What every Sotto server is told on top of its own config: no share links, and no update of its own (ADR-0087). */
 export const OPENCODE_CONFIG_CONTENT = JSON.stringify({ share: 'disabled', update: 'disable' })
+/**
+ * The same, with the user's own model servers (ADR-0123) as provider blocks beside it. With none it is exactly
+ * `OPENCODE_CONFIG_CONTENT`, so a run with the Owl feature off gives OpenCode what it always did.
+ */
+export function opencodeConfigContent(servers: readonly OwnServer[] = []): string {
+  return servers.length ? JSON.stringify({ share: 'disabled', update: 'disable', providers: openCodeProviders(servers) }) : OPENCODE_CONFIG_CONTENT
+}
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'comspec', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
 /**
  * The environment an OpenCode process gets: the shared allow-list and nothing else, so no provider's key reaches it and
  * a thread runs on the sign-ins OpenCode keeps in Sotto's own folder. The XDG folders are always Sotto's; the user's own
- * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one.
+ * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one. `servers`
+ * are the user's own model servers (ADR-0123), passed only while their Owl feature is on.
  */
-export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string): NodeJS.ProcessEnv {
+export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string, servers: readonly OwnServer[] = []): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
   return { ...env, XDG_DATA_HOME: folders.data, XDG_CONFIG_HOME: folders.config, XDG_STATE_HOME: folders.state, XDG_CACHE_HOME: folders.cache,
-    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT, OPENCODE_DISABLE_AUTOUPDATE: '1' }
+    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT: opencodeConfigContent(servers), OPENCODE_DISABLE_AUTOUPDATE: '1' }
 }
 /** A fresh secret for one server, never written down or logged. */
 export function opencodePassword(): string { return randomBytes(32).toString('base64url') }

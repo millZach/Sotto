@@ -9,6 +9,7 @@ import { useHeldProviders } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
+import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
@@ -39,6 +40,7 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
   const held = useHeldProviders()
+  const ownServers = useOwnServersBridge()
   const [selected, setSelected] = useState<ProviderId>('codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
@@ -168,6 +170,8 @@ export function ProvidersSettings(): ReactNode {
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   return <div className="providers-settings">
+    {/* Your own model servers sit above the provider tiles, apart from any one provider (ADR-0123, layout B). */}
+    {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     <div className="providers-workspace">
       <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.filter(provider => !held.has(provider)).map(provider => {
         const current = statusFor(provider)

@@ -138,6 +138,14 @@ export class OpenCodeSignIn {
     const sources = await this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning }))
     return { status: 'ok', sources, ...(read ? {} : { warning: SIGN_IN_WORDS.catalogUnread }) }
   }
+  /**
+   * The catalog read again after something other than a sign-in changed what OpenCode lists, such as the user's own
+   * model servers (ADR-0123): every thread server is outdated and the model menu gets what changed. False when OpenCode
+   * is not running or the catalog could not be read; the thread servers move on regardless.
+   */
+  catalogAgain(): Promise<boolean> {
+    return this.use(server => this.options.changed(server.client).then(() => true, () => false), () => false)
+  }
   /** The integration a request names, from the last list read, reading again when it is not there. */
   private async integration(server: SignInServer, sourceId: string): Promise<Integration | undefined> {
     if (!this.integrations.has(sourceId)) await this.read(server).catch(() => undefined)

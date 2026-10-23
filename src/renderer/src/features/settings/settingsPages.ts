@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -133,6 +133,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Settle finished threads', section: 'settings-watcher', gate: 'watcher' },
     { label: 'Worker roles', section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },
 
+    { label: 'Your own model servers', section: 'settings-providers', words: 'local self-hosted ollama lm studio vllm sglang llama.cpp tailnet opencode add server', gate: 'own-model-servers' },
     { label: 'Thread providers', section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { label: 'Check for client updates', section: 'settings-providers', words: 'agent clients' },
     { label: 'Shell sandbox', section: 'settings-providers', words: 'muse', fallback: 'Thread providers', gate: 'muse' },
