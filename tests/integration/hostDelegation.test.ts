@@ -30,12 +30,15 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 async function hostFixture(version = OWL) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-delegation-'))
   // Codex's own app server, faked as a child process, which takes Sotto's tool servers at each launch as the real one does.
-  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
   const provider = { tools: [] as readonly ScopedThreadTools[] }
-  const useThreadTools = native.adapter.useThreadTools.bind(native.adapter)
-  native.adapter.useThreadTools = tools => { provider.tools = tools; useThreadTools(tools) }
-  const host = await startFixtureHeadlessHost({ dataDirectory: root, port: 0, sottoVersion: version, providers: { codex: native.adapter } })
-  const url = 'http://127.0.0.1:' + host.descriptor!.port
+  const launch = async () => {
+    const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+    const useThreadTools = native.adapter.useThreadTools.bind(native.adapter)
+    native.adapter.useThreadTools = tools => { provider.tools = tools; useThreadTools(tools) }
+    return { native, host: await startFixtureHeadlessHost({ dataDirectory: root, port: 0, sottoVersion: version, providers: { codex: native.adapter } }) }
+  }
+  let { native, host } = await launch()
+  let url = 'http://127.0.0.1:' + host.descriptor!.port
   const clients: SocketHostService[] = []
   cleanups.push(async () => {
     await Promise.all(clients.map(client => client.close()))
@@ -52,9 +55,10 @@ async function hostFixture(version = OWL) {
   const project = (await command({ type: 'create-project', provider: 'codex', title: 'Synthetic host project', path, useExisting: true })).host.projects.find(item => item.path === path)!
   const model = host.service.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
   /** A desktop the launch script recorded, paired and connected over the host's socket. */
+  const recorded: string[] = []
   const desktop = async (record = true) => {
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
-    if (record) await writeFile(join(root, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
+    if (record) { recorded.push(pairing.clientId); await writeFile(join(root, DESKTOP_CLIENTS_FILE), JSON.stringify(recorded)) }
     const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId })
     clients.push(socket)
     const hello = await socket.connect()
@@ -108,7 +112,21 @@ async function hostFixture(version = OWL) {
     await peer.call('hello', { op: 'hello' })
     return await peer.call('defaults', { op: 'desktop-defaults', defaults })
   }
-  return { root, host, url, provider, native, command, desktop, answers, session, parentThread, call, start, reply, thread, model, project, descriptor, raw }
+  /** The host's own owner forgets a paired desktop, as `--revoke-client` does. Its answers grant stays on record. */
+  const revoke = async (clientId: string) => {
+    const response = await fetch(url + '/v1/admin/revoke-client', { method: 'POST',
+      headers: { Authorization: 'Bearer ' + (await descriptor()).adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId }) })
+    expect(response.status).toBe(200)
+  }
+  /** The host stops and starts again on the same records, with its provider launched afresh. */
+  const restart = async () => {
+    await host.close()
+    ;({ native, host } = await launch())
+    url = 'http://127.0.0.1:' + host.descriptor!.port
+    await command({ type: 'connect', provider: 'codex' })
+  }
+  return { root, get host() { return host }, get url() { return url }, provider, get native() { return native }, command, desktop, answers, revoke, restart,
+    session, parentThread, call, start, reply, thread, model, project, descriptor, raw }
 }
 
 it('lets a thread on a host start a child on its own machine under the desktop defaults, and tells it the outcome there', async () => {
@@ -176,7 +194,7 @@ it('holds starts to Ask for approval without the desktop\'s answers grant, and f
   // Told on connecting, as the desktop tells each host it connects to.
   router.add({ hostId: pairing.hostId, name: 'Synthetic host', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
   await push.settled()
-  expect(JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8'))).toMatchObject({ defaults: { clientId: pairing.clientId, newThreadRuntimeMode: 'auto' } })
+  expect(JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8'))).toMatchObject({ desktops: [{ clientId: pairing.clientId, newThreadRuntimeMode: 'auto' }] })
   const parent = await f.parentThread()
   // Without the grant, the desktop's wider default is held to Ask for approval.
   const held = await f.start(parent.threadId, 'auto') as { status: string; code: string; message: string }
@@ -198,8 +216,40 @@ it('holds starts to Ask for approval without the desktop\'s answers grant, and f
   // A reconnect tells the host again, so a host that missed a change catches up.
   router.replace({ hostId: pairing.hostId, name: 'Synthetic host', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
   await push.settled()
-  expect(JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8'))).toMatchObject({ defaults: { newThreadRuntimeMode: 'full-access' } })
+  expect(JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8'))).toMatchObject({ desktops: [{ newThreadRuntimeMode: 'full-access' }] })
 })
+
+it('applies the last defaults from a desktop still paired with an answers grant, and none from one forgotten, after a restart too', async () => {
+  const f = await hostFixture()
+  const first = await f.desktop(), second = await f.desktop()
+  await f.answers(first.pairing.clientId, true); await f.answers(second.pairing.clientId, true)
+  await first.socket.desktopDefaults({ newThreadRuntimeMode: 'full-access' })
+  await second.socket.desktopDefaults({ newThreadRuntimeMode: 'auto' })
+  const parent = await f.parentThread('full-access')
+  // The last one sent applies.
+  expect(await f.start(parent.threadId, 'full-access')).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
+  expect(await f.start(parent.threadId, 'auto')).toMatchObject({ status: 'ok' })
+  // Forgetting the second falls back to the most recent defaults from a desktop that still counts: the first's.
+  await f.revoke(second.pairing.clientId)
+  expect(await f.start(parent.threadId, 'full-access')).toMatchObject({ status: 'ok' })
+  // Forgetting the first leaves none. Its grant is still on record, but a desktop no longer paired here counts for nothing.
+  await f.revoke(first.pairing.clientId)
+  expect(await f.start(parent.threadId, 'auto')).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE',
+    message: expect.stringContaining(HOST_CEILING_HOLD_WORDS['no-answer-grant']) })
+  expect(await f.call(parent.threadId, 'read_delegation', {})).toMatchObject({ newThreadDefault: { permission: 'approval-required', note: HOST_CEILING_HOLD_WORDS['no-answer-grant'] } })
+  const asked = await f.start(parent.threadId, 'approval-required') as { status: string; delegation: { thread: string } }
+  expect(asked.status).toBe('ok')
+  await expect.poll(() => f.thread(asked.delegation.thread)?.runtimeMode).toBe('approval-required')
+  // The kept defaults survive a restart, and still do not count.
+  expect((JSON.parse(await readFile(join(f.root, 'desktop-defaults.json'), 'utf8')) as { desktops: unknown[] }).desktops).toHaveLength(2)
+  await f.restart()
+  const after = await f.parentThread('full-access')
+  expect(await f.start(after.threadId, 'auto')).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE',
+    message: expect.stringContaining(HOST_CEILING_HOLD_WORDS['no-answer-grant']) })
+  const again = await f.start(after.threadId, 'approval-required') as { status: string; delegation: { thread: string } }
+  expect(again.status).toBe('ok')
+  await expect.poll(() => f.thread(again.delegation.thread)?.runtimeMode).toBe('approval-required')
+}, 60_000)
 
 it('starts a kind of work on the desktop\'s worker roles, held to the desktop\'s new-thread default', async () => {
   const f = await hostFixture()

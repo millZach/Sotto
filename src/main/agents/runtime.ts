@@ -86,11 +86,12 @@ export interface AgentRuntimeOptions {
   crossMachineEnabled?: boolean
   /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
-   * machines. It holds them to the desktop defaults a desktop sent it, and to Ask for approval unless that desktop may
-   * answer here, which `mayAnswer` reads from the host's policy records at every start. `roles` is the host's own Owl
-   * answer for worker roles: with it, a delegation's kind of work starts on the desktop's roles.
+   * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
+   * when none counts. `counts` says whether a desktop is still paired here with an answers grant, read from the host's
+   * pairing and policy records at every start. `roles` is the host's own Owl answer for worker roles: with it, a
+   * delegation's kind of work starts on the desktop's roles.
    */
-  hostDelegation?: { mayAnswer(clientId: string): boolean; roles: boolean }
+  hostDelegation?: { counts(clientId: string): boolean; roles: boolean }
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -278,8 +279,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
     const defaults = desktopDefaults
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.mayAnswer(clientId)),
-      ...hostDelegation.roles ? { roles: () => defaults.roles() } : {},
+      newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId)),
+      ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
       machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })
   }

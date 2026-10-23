@@ -10,63 +10,70 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { DelegationServiceOptions } from './delegation'
 
-const fileSchema = z.object({
-  version: z.literal(1),
-  defaults: z.object({
-    /** The paired desktop that sent them, whose `remote-answer` grant on this host decides whether they may be used as sent. */
-    clientId: z.string().min(1).max(512),
-    newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
-    workerRoles: z.unknown().optional(),
-    receivedAt: z.iso.datetime(),
-  }).strict().nullable(),
+const keptSchema = z.object({
+  /** The paired desktop that sent them, which must still be paired with a `remote-answer` grant on this host to count. */
+  clientId: z.string().min(1).max(512),
+  newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
+  workerRoles: z.unknown().optional(),
+  receivedAt: z.iso.datetime(),
 }).strict()
+const fileSchema = z.object({ version: z.literal(1), desktops: z.array(keptSchema).max(512) }).strict()
 type DesktopDefaultsFile = z.infer<typeof fileSchema>
 interface Kept extends DesktopDefaults { readonly clientId: string; readonly receivedAt: string }
+/** How many desktops' defaults a host keeps; the oldest beyond it are dropped. A forgotten desktop's stop counting anyway. */
+export const KEPT_DESKTOP_DEFAULTS = 16
+/** Whether a desktop's defaults count on this host now: it is still paired here and may answer permission requests here. */
+export type DesktopCounts = (clientId: string) => boolean
 
 /**
- * The desktop defaults a headless host keeps (#1310): the new-thread default and worker roles the last desktop to send
- * them gave, with that desktop's client ID and when they came, in `desktop-defaults.json` beside the host's other records.
- * Settings, not a key: nothing here is secret and nothing here grants anything. Kept across restarts, so a host the desktop
- * has told once keeps to them while the desktop is away. A host never told answers none, and delegation holds every start
- * to Ask for approval.
+ * The desktop defaults a headless host keeps (#1310): the new-thread default and worker roles each desktop last sent, with
+ * its client ID and when they came, in `desktop-defaults.json` beside the host's other records. Settings, not a key:
+ * nothing here is secret and nothing here grants anything. Kept across restarts, so a host a desktop has told keeps to
+ * them while the desktop is away.
+ *
+ * With several desktops, the last one sent applies, among the desktops that still count (Zach, October 23): still paired
+ * here, with an answers grant, read afresh at every start. A desktop that is forgotten, revoked or loses its grant stops
+ * counting at once and after a restart alike, and the most recent defaults from a desktop that still counts apply instead
+ * (ADR-0074 decision 3: a wider start needs a desktop that may answer there). When none counts, every start is held to
+ * Ask for approval with the roles' own defaults; a host never told says so.
  */
 export class DesktopDefaultsStore {
   private readonly store: AtomicJsonStore<DesktopDefaultsFile>
-  private kept: Kept | undefined
+  /** Newest first, one per desktop. */
+  private kept: readonly Kept[] = []
   constructor(directory: string, private readonly now: () => Date = () => new Date()) {
-    this.store = new AtomicJsonStore(join(directory, 'desktop-defaults.json'), input => fileSchema.parse(input), (): DesktopDefaultsFile => ({ version: 1, defaults: null }))
+    this.store = new AtomicJsonStore(join(directory, 'desktop-defaults.json'), input => fileSchema.parse(input), (): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
   }
   /** Reads what was kept. A record that does not read is treated as never told, which can only narrow a start. */
   async load(): Promise<void> {
-    const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, defaults: null }))
-    const saved = file.defaults
-    this.kept = saved ? { clientId: saved.clientId, receivedAt: saved.receivedAt, newThreadRuntimeMode: saved.newThreadRuntimeMode,
-      ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) } : undefined
+    const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
+    this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, newThreadRuntimeMode: saved.newThreadRuntimeMode,
+      ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(0, KEPT_DESKTOP_DEFAULTS)
   }
-  /** Keeps a desktop's defaults in place of whatever was kept, saved before it answers. A save that fails keeps the old ones. */
+  /** Keeps a desktop's defaults in place of the ones it sent before, saved before it answers. A save that fails keeps the old ones. */
   async record(clientId: string, input: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     const defaults = readDesktopDefaults(input), receivedAt = this.now().toISOString()
-    const next: Kept = { clientId, receivedAt, ...defaults }
-    await this.store.write({ version: 1, defaults: { clientId, newThreadRuntimeMode: next.newThreadRuntimeMode,
-      ...(next.workerRoles ? { workerRoles: next.workerRoles } : {}), receivedAt } })
+    const next = [{ clientId, receivedAt, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
+    await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
+      ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt })) })
     this.kept = next
     return { receivedAt }
   }
-  current(): Kept | undefined { return this.kept }
+  /** The defaults that apply now: the most recent from a desktop that still counts, or none. */
+  current(counts: DesktopCounts): Kept | undefined { return this.kept.find(item => counts(item.clientId)) }
   /**
-   * The widest a thread delegated on this host may start on, as the desktop's new-thread default: Ask for approval when no
-   * desktop has told this host, and no wider than Ask for approval unless the desktop that told it may answer here,
-   * asked afresh each time so a grant taken away holds the next start at once. `held` says why when that narrowed it.
+   * The widest a thread delegated on this host may start on, as the desktop's new-thread default: the defaults that apply
+   * now, asked afresh each time so a desktop forgotten or a grant taken away holds the next start at once. Ask for approval
+   * when none apply, and `held` says why: no desktop has told this host, or none that told it still counts.
    */
-  ceiling(mayAnswer: (clientId: string) => boolean): { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold } {
-    const kept = this.kept
-    if (!kept) return { mode: 'approval-required', held: 'not-told' }
-    const told = kept.newThreadRuntimeMode ?? 'approval-required'
-    if (told === 'approval-required' || mayAnswer(kept.clientId)) return { mode: told }
-    return { mode: 'approval-required', held: 'no-answer-grant' }
+  ceiling(counts: DesktopCounts): { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold } {
+    if (!this.kept.length) return { mode: 'approval-required', held: 'not-told' }
+    const applies = this.current(counts)
+    return applies ? { mode: applies.newThreadRuntimeMode ?? 'approval-required' } : { mode: 'approval-required', held: 'no-answer-grant' }
   }
-  /** The worker roles the desktop sent, or the roles' own defaults when it sent none. */
-  roles(): WorkerRoleChoices { return this.kept?.workerRoles ?? {} }
+  /** The worker roles of the defaults that apply now, or the roles' own defaults when they carry none or none apply. */
+  roles(counts: DesktopCounts): WorkerRoleChoices { return this.current(counts)?.workerRoles ?? {} }
 }
 
 

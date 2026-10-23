@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DesktopDefaultsStore, hostDelegationMachines, THIS_MACHINE } from '../../../src/main/agents/hostDelegation'
+import { DesktopDefaultsStore, hostDelegationMachines, KEPT_DESKTOP_DEFAULTS, THIS_MACHINE } from '../../../src/main/agents/hostDelegation'
 import { DesktopDefaultsPush, type DesktopDefaultsTarget } from '../../../src/main/hosts/desktopDefaults'
 import { delegationToolDefinitions } from '../../../src/main/agents/delegationTools'
 import { HostFactsSource } from '../../../src/main/agents/hostFacts'
@@ -31,27 +31,69 @@ describe('the desktop defaults a host keeps', () => {
     const root = await folder(), store = new DesktopDefaultsStore(root)
     await store.load()
     expect(store.ceiling(() => true)).toEqual({ mode: 'approval-required', held: 'not-told' })
-    expect(store.roles()).toEqual({})
+    expect(store.roles(() => true)).toEqual({})
     await store.record('desktop-a', { newThreadRuntimeMode: 'full-access', workerRoles: { 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' }, retired: { modelId: 'x' } } })
     expect(store.ceiling(clientId => clientId === 'desktop-a')).toEqual({ mode: 'full-access' })
     expect(store.ceiling(() => false)).toEqual({ mode: 'approval-required', held: 'no-answer-grant' })
     // A newer desktop's role an older host does not know costs only that row.
-    expect(store.roles()).toEqual({ 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' } })
-    // Ask for approval, or the provider's own default, needs no grant.
+    expect(store.roles(() => true)).toEqual({ 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' } })
+    // Roles from a desktop that does not count do not apply either.
+    expect(store.roles(() => false)).toEqual({})
+    // The provider's own default reads as Ask for approval.
     await store.record('desktop-b', { newThreadRuntimeMode: null })
-    expect(store.ceiling(() => false)).toEqual({ mode: 'approval-required' })
-    expect(store.roles()).toEqual({})
+    expect(store.ceiling(() => true)).toEqual({ mode: 'approval-required' })
+    expect(store.roles(() => true)).toEqual({})
+  })
+
+  it('applies the last defaults sent by a desktop that still counts, and falls back when one stops counting', async () => {
+    const root = await folder()
+    let now = Date.parse('2026-10-23T10:00:00.000Z')
+    const store = new DesktopDefaultsStore(root, () => new Date(now += 1000))
+    await store.load()
+    await store.record('desktop-a', { newThreadRuntimeMode: 'full-access', workerRoles: { 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' } } })
+    await store.record('desktop-b', { newThreadRuntimeMode: 'auto' })
+    const counting = new Set(['desktop-a', 'desktop-b']), counts = (clientId: string) => counting.has(clientId)
+    // The last one sent wins, roles and all.
+    expect(store.ceiling(counts)).toEqual({ mode: 'auto' })
+    expect(store.roles(counts)).toEqual({})
+    // Desktop B forgotten, or its grant taken away: desktop A's defaults apply again.
+    counting.delete('desktop-b')
+    expect(store.ceiling(counts)).toEqual({ mode: 'full-access' })
+    expect(store.roles(counts)).toEqual({ 'code-review': { modelId: 'model-a', reasoningEffort: 'low', runtimeMode: 'auto' } })
+    // Neither counts: Ask for approval, with the roles' own defaults.
+    counting.delete('desktop-a')
+    expect(store.ceiling(counts)).toEqual({ mode: 'approval-required', held: 'no-answer-grant' })
+    expect(store.roles(counts)).toEqual({})
+    // The same after a restart: what was kept is read back newest first, and still asked afresh.
+    const again = new DesktopDefaultsStore(root); await again.load()
+    expect(again.ceiling(counts)).toEqual({ mode: 'approval-required', held: 'no-answer-grant' })
+    expect(again.ceiling(() => true)).toEqual({ mode: 'auto' })
+    expect(again.ceiling(clientId => clientId === 'desktop-a')).toEqual({ mode: 'full-access' })
+    // A desktop that sends again replaces its own defaults and becomes the last.
+    await again.record('desktop-a', { newThreadRuntimeMode: 'auto-accept-edits' })
+    expect(again.ceiling(() => true)).toEqual({ mode: 'auto-accept-edits' })
+  })
+
+  it('keeps no more than its limit of desktops, dropping the oldest', async () => {
+    const root = await folder()
+    let now = Date.parse('2026-10-23T10:00:00.000Z')
+    const store = new DesktopDefaultsStore(root, () => new Date(now += 1000))
+    for (let index = 0; index <= KEPT_DESKTOP_DEFAULTS; index++) await store.record(`desktop-${index}`, { newThreadRuntimeMode: 'auto' })
+    const saved = JSON.parse(await readFile(join(root, 'desktop-defaults.json'), 'utf8')) as { desktops: { clientId: string }[] }
+    expect(saved.desktops).toHaveLength(KEPT_DESKTOP_DEFAULTS)
+    expect(saved.desktops[0]!.clientId).toBe(`desktop-${KEPT_DESKTOP_DEFAULTS}`)
+    expect(saved.desktops.some(item => item.clientId === 'desktop-0')).toBe(false)
   })
 
   it('keeps them across a restart, and reads a damaged record as never told', async () => {
     const root = await folder()
     await new DesktopDefaultsStore(root).record('desktop-a', { newThreadRuntimeMode: 'auto' })
-    const saved = JSON.parse(await readFile(join(root, 'desktop-defaults.json'), 'utf8')) as { defaults: Record<string, unknown> }
-    expect(saved.defaults).toMatchObject({ clientId: 'desktop-a', newThreadRuntimeMode: 'auto' })
+    const saved = JSON.parse(await readFile(join(root, 'desktop-defaults.json'), 'utf8')) as { desktops: Record<string, unknown>[] }
+    expect(saved.desktops).toMatchObject([{ clientId: 'desktop-a', newThreadRuntimeMode: 'auto' }])
     const again = new DesktopDefaultsStore(root); await again.load()
     expect(again.ceiling(() => true)).toEqual({ mode: 'auto' })
     const { writeFile } = await import('node:fs/promises')
-    await writeFile(join(root, 'desktop-defaults.json'), '{"version":1,"defaults":{"clientId":""}}')
+    await writeFile(join(root, 'desktop-defaults.json'), '{"version":1,"desktops":[{"clientId":""}]}')
     const damaged = new DesktopDefaultsStore(root); await damaged.load()
     expect(damaged.ceiling(() => true)).toEqual({ mode: 'approval-required', held: 'not-told' })
   })
@@ -150,7 +192,7 @@ describe('the Owl answer', () => {
     const credentials = await testCredentials(root, { encryption: { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' } })
     return createAgentRuntime({ directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
       historyEnabled: () => true, openExternal: async () => undefined, host: new E2EAgentHost(), reasoner: e2eAgentReasoner, watcherEnabled: true, delegationEnabled: true,
-      runsAs: 'headless-host', crossMachineEnabled, hostDelegation: { roles: true, mayAnswer: () => false } })
+      runsAs: 'headless-host', crossMachineEnabled, hostDelegation: { roles: true, counts: () => false } })
   }
   it('builds delegation and keeps desktop defaults on a host only where Work across machines is on', async () => {
     const stable = await runtime(false)

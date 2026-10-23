@@ -134,12 +134,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
+    const pairing = new PairedClients(directory)
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
-      // the desktop defaults a desktop sent and, beyond Ask for approval, to that desktop's answers grant here, read each time.
+      // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
+      // forgotten or revoked stops counting at once and after a restart (ADR-0074 decision 3).
       hostDelegation: { roles: owlFeatures['worker-roles'],
-        mayAnswer: clientId => policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false },
+        counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false) },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
@@ -164,7 +166,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = runtime.delegation && crossMachineEnabled
       ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine' })] : []
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
-    const pairing = new PairedClients(directory)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}),
       connect: async (provider, clientId) => {
