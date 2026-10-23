@@ -261,6 +261,27 @@ it('reads a paired machine’s starts on their way before asking it, so a start 
   expect(machine).toMatchObject({ runningThreads: 0, placedNotStarted: 1 })
 })
 
+it('counts a start admitted for a paired machine while that machine was being asked for its count (#1311)', async () => {
+  const f = await master(undefined, false, true)
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
+  let held = 0
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  // While the host samples its load, Watcher admits a start there that is held before it is sent.
+  let starting: Promise<unknown> | undefined
+  const facts = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementationOnce(async () => {
+    starting = f.call('start_thread', f.start())
+    await vi.waitFor(() => expect(held).toBe(1))
+    return facts()
+  })
+  const [, machine] = await machines()
+  // The answer was taken before the host had it, and the desktop read none before asking: it still counts once.
+  expect(machine).toMatchObject({ runningThreads: 0, placedNotStarted: 1 })
+  gate.resolve()
+  expect(await starting).toMatchObject({ status: 'ok' })
+})
+
 it.each([
   ['timed out', true],
   ['lost its connection', false],
@@ -286,6 +307,39 @@ it.each([
     return f.control.watcherRecordView().operations.find(item => item.id === operationId)?.deliveryState
   }).toBe('failed')
   expect((await machines())[1]).toMatchObject({ placedNotStarted: 0 })
+})
+
+it('leaves a timed-out paired start to the host once the host’s own receipt shows it holds it, even as uncertain (#1311)', async () => {
+  const f = await master(undefined, false, true)
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  // The start's operation, once its answer names it.
+  const own: { operationId?: string } = {}
+  // Until the host answers, nothing of the start can be read back.
+  let readable = false
+  const read = f.socket.watcherRead.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async (request, ...rest) => {
+    if (!readable) throw new Error('lost-projection')
+    // The host holds the start, and its own receipt says the start's delivery is uncertain there.
+    const answer = await read(request, ...rest) as { operations?: { id: string; deliveryState: string }[]; receipt?: { operationId: string; deliveryState: string } }
+    return { ...answer, ...answer.operations ? { operations: answer.operations.map(item => item.id === own.operationId ? { ...item, deliveryState: 'uncertain' } : item) } : {},
+      ...answer.receipt?.operationId === own.operationId ? { receipt: { ...answer.receipt, deliveryState: 'uncertain' } } : {} }
+  })
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => {
+    await control(...args)
+    throw new HostRequestTimeoutError('The host did not answer in time. Try refreshing.', 'disconnected')
+  })
+  const started = await f.call('start_thread', f.start())
+  expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  if (!('receipt' in started) || !started.receipt) throw new Error('no-receipt')
+  own.operationId = started.receipt.operationId
+  expect((await machines())[1]).toMatchObject({ placedNotStarted: 1 })
+  readable = true
+  await expect.poll(async () => {
+    await (f.watcher as unknown as { reconcileRemote: (hostId: string) => Promise<void> }).reconcileRemote(f.pairing.hostId).catch(() => undefined)
+    return (await machines())[1]!.placedNotStarted
+  }).toBe(0)
+  expect(f.control.watcherRecordView().operations.find(item => item.id === own.operationId)?.deliveryState).toBe('uncertain')
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {

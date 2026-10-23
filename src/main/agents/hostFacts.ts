@@ -201,6 +201,11 @@ function cpuBusy(start: LoadSample['cpu'], end: LoadSample['cpu']): number | nul
   return Math.min(100, Math.max(0, Math.round(busy * 1_000) / 10))
 }
 
+/** The longest window `hostLoadSchema` takes. */
+const HOST_LOAD_WINDOW_LIMIT_MS = 24 * 60 * 60_000
+/** Whether a load window, as it ended, still says how the machine is now: forward, and no longer than a minute. */
+const windowCurrent = (start: LoadSample, end: LoadSample): boolean => end.at - start.at >= 0 && end.at - start.at <= HOST_LOAD_WINDOW_MAX_MS
+
 /**
  * One machine's facts as a host keeps them (#1031). The operating system, architecture and CPU count are read once, when
  * the host starts; memory is read again when facts are asked for and the last reading is at least `HOST_FACTS_REFRESH_MS` old.
@@ -264,22 +269,32 @@ export class HostFactsSource {
     if (this.lastLoad && age >= 0 && age < HOST_FACTS_REFRESH_MS) return this.lastLoad
     // A starting sample too old to say how busy the machine is now, or from a clock that went backwards, is sampled again.
     const kept = this.sample, keptAge = kept ? now - kept.at : Number.NaN
-    const start = kept && keptAge >= 0 && keptAge <= HOST_LOAD_WINDOW_MAX_MS ? kept : await this.takeSample(family)
-    const wait = HOST_LOAD_SAMPLE_MS - (this.now() - start.at)
-    if (wait > 0) await this.sleep(wait)
-    const end = await this.takeSample(family)
+    let start = kept && keptAge >= 0 && keptAge <= HOST_LOAD_WINDOW_MAX_MS ? kept : await this.takeSample(family)
+    let end = await this.endSample(start, family)
+    // The machine slept, or its clock jumped, while it waited: the window ends now but began long ago, and what it says
+    // of the CPU and of memory at its start is not how the machine is now. It samples afresh once.
+    if (!windowCurrent(start, end)) { start = end; end = await this.endSample(start, family) }
+    const current = windowCurrent(start, end)
     const pressure = family === 'linux' ? await readText(this.readFile, MEMORY_PRESSURE) : null
     this.sample = end
     this.lastLoad = hostLoadSchema.parse({
       observedAt: new Date(end.at).toISOString(),
-      windowMs: Math.max(1, Math.round(end.at - start.at)),
-      cpuBusyPercent: cpuBusy(start.cpu, end.cpu),
+      windowMs: Math.min(HOST_LOAD_WINDOW_LIMIT_MS, Math.max(1, Math.round(end.at - start.at))),
+      // A window that still is not current says nothing of how busy the CPU is now, or of memory at its start.
+      cpuBusyPercent: current ? cpuBusy(start.cpu, end.cpu) : null,
       loadAverage: loadAverage(this.system, family),
       availableMemoryBytes: end.availableMemoryBytes,
-      windowStartAvailableMemoryBytes: start.availableMemoryBytes,
+      windowStartAvailableMemoryBytes: current ? start.availableMemoryBytes : null,
       memoryPressurePercent: pressure === null ? null : parseMemoryPressure(pressure),
     })
     return this.lastLoad
+  }
+
+  /** The window's end: waits out the rest of the sample gap from `start`, then samples. */
+  private async endSample(start: LoadSample, family: HostOsFamily | null): Promise<LoadSample> {
+    const wait = HOST_LOAD_SAMPLE_MS - (this.now() - start.at)
+    if (wait > 0) await this.sleep(wait)
+    return this.takeSample(family)
   }
 
   private async takeSample(family: HostOsFamily | null): Promise<LoadSample> {
