@@ -1,0 +1,1516 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything. No network, nothing saved.
+
+  Question: What should adding your own model server look like, and how does the user choose which provider
+  (harness) drives it?
+
+  The user points Sotto at a model server they run (SGLang, vLLM, Ollama, LM Studio, llama.cpp, anything that
+  speaks the OpenAI API), on this computer or across Tailscale, then a provider (the native client) drives it:
+  OpenCode today, Codex only when the server speaks the Responses API, others (oh-my-pi) later. A thread or
+  Watcher can then run on it. Watcher needs dependable tool calls, at least 64K of context and enough speed, so
+  adding a server runs a short check: answers, OpenAI API, key, models with their context, a tool call, speed.
+
+  Three variants on ?variant=A|B|C, and the bar at the bottom (Left and Right arrows too, unless the focus is in a
+  field, a menu or a dialog):
+   A  Inside OpenCode's dialog. Settings > Providers > OpenCode > Model sources. Add a model source gains
+      "Your own server" as its first row: name, address, key, Check this server, models with context and
+      Thinking, Add to OpenCode. The provider is implicit; one quiet line says other providers come later.
+   B  Your own servers, then the provider. A group "Your own model servers" above the provider cards. Adding is
+      two steps in one dialog: address and check, then "Run it with" provider cards (OpenCode, Codex if the
+      Responses API was found, oh-my-pi not yet), each saying what the user gets. More than one may be picked.
+   C  From the model menu. The composer's model menu (source first) ends OpenCode's source list with "Your own
+      server...". The add flow runs inside the menu: address, check, then "Run with" above the models found;
+      picking a model adds the server and sets the chip ("Sparks / DeepSeek V4.1 Flash 1017 · OpenCode").
+      Settings keeps a short list to check and remove servers.
+
+  Every variant: a Thread view (the model menu), a Watcher view (Watcher's model menu with readiness lines) and
+  a Settings view, picked in the bar. Bar extras, all prototype chrome: Server state (what the next check, and
+  the first server in every list, does: Reachable, Asleep or unreachable, Wrong key, No models, Not
+  OpenAI-compatible, Too small for Watcher), "3 servers" (start with Sparks, Ollama and LM Studio added),
+  Light/Dark, and State, a readout of the simulated state that marks what changed after each action.
+
+  Data: everything is SAMPLE. Sparks (four DGX Sparks, SGLang, DeepSeek V4.1 Flash 1017, 1M context, about 78
+  tokens a second, needs a key, Responses API found). Ollama on this computer (qwen3-coder 30B at 64K and
+  gemma3 4B at 8K, no key, no Responses API). LM Studio on forge (gpt-oss 20B at 32K, Responses API found).
+  Watcher's bar here: the test tool call works, at least 64,000 tokens of context, at least 15 tokens a second.
+
+  URL switches for captures: variant=A|B|C, view=settings|thread|watcher, theme=light, servers=1,
+  state=reachable|asleep|wrong-key|no-models|not-openai|too-small, panel=1, scene=add|checked|step2|menu.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto prototype - your own model server, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* SOTTO_DARK/LIGHT_THEME_COLORS (src/shared/themes/palettes.ts) through the --tt-* names tokens.css gives them. */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-overlay: oklch(0.215 0.008 265);
+  --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-sidebar-row-hover: oklch(0.28 0.003 265);
+  --tt-sidebar-row-active: oklch(0.32 0.025 190);
+  --tt-card: oklch(0.185 0.008 265);
+  --tt-card-inset: oklch(0.115 0.008 265);
+  --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-card-selected: color-mix(in oklab, var(--tt-accent-surface) 65%, var(--tt-card));
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-border: color-mix(in oklab, oklch(0.375 0.024 265) 25%, oklch(0.72 0.014 265));
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-activity: var(--tt-accent-text);
+  --tt-focus-ring: oklch(0.714403 0.104089 183.092);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--tt-canvas);
+  --tt-error: oklch(0.702184 0.189226 22.228);
+  --tt-warning: oklch(0.829017 0.171221 81.038);
+  --tt-overlay: color-mix(in srgb, var(--tt-canvas) 64%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-scrollbar: oklch(0.315 0.008 265);
+  --tt-code-bg: oklch(0.155 0.008 265);
+  --tt-message: oklch(0.205 0.014 265);
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-devin: #a5d8f5;
+  --tt-provider-muse: #f2b8d8;
+  --tt-provider-opencode: #ece3d0;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --strip-h: 26px;
+  --chrome-h: 52px;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.99 0.003 85);
+  --tt-surface-overlay: oklch(0.945 0.007 85);
+  --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-sidebar-row-hover: oklch(0.93 0.01 85);
+  --tt-sidebar-row-active: oklch(0.915 0.02 190);
+  --tt-card: color-mix(in oklab, oklch(0.235 0.014 75) 4%, oklch(0.978 0.004 85));
+  --tt-card-inset: oklch(0.978 0.004 85);
+  --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-text-faint: oklch(0.505 0.015 78);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.8 0.016 80);
+  --tt-border: color-mix(in oklab, oklch(0.8 0.016 80) 25%, oklch(0.5 0.014 75));
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.43 0.08 186);
+  --tt-focus-ring: oklch(0.53 0.095 186);
+  --tt-hover: color-mix(in srgb, oklch(0.92 0.03 186) 70%, transparent);
+  --tt-error: oklch(0.509494 0.208583 28.513);
+  --tt-warning: oklch(0.530927 0.155556 45.359);
+  --tt-overlay: color-mix(in srgb, var(--tt-canvas) 60%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-scrollbar: oklch(0.84 0.01 85);
+  --tt-code-bg: oklch(0.96 0.005 85);
+  --tt-message: oklch(0.93 0.012 85);
+  --tt-provider-claude: color-mix(in srgb, #e3b58e 55%, var(--tt-text));
+  --tt-provider-codex: color-mix(in srgb, #d7dbe1 30%, var(--tt-text));
+  --tt-provider-grok: color-mix(in srgb, #c9baff 55%, var(--tt-text));
+  --tt-provider-devin: color-mix(in srgb, #a5d8f5 45%, var(--tt-text));
+  --tt-provider-muse: color-mix(in srgb, #f2b8d8 45%, var(--tt-text));
+  --tt-provider-opencode: #625843;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+svg.mark { flex: none; fill: currentColor; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 3px; background: var(--tt-scrollbar) padding-box; }
+.mark[data-p='codex'] { color: var(--tt-provider-codex); }
+.mark[data-p='claude'] { color: var(--tt-provider-claude); }
+.mark[data-p='grok'] { color: var(--tt-provider-grok); }
+.mark[data-p='devin'] { color: var(--tt-provider-devin); }
+.mark[data-p='muse'] { color: var(--tt-provider-muse); }
+.mark[data-p='opencode'] { color: var(--tt-provider-opencode); }
+.mark[data-p='omp'] { color: var(--tt-text-muted); }
+.mono { font-family: var(--tt-font-mono); font-size: .9em; }
+
+/* ---- controls: soft squares, never pills (ADR-0110) ---- */
+.tt-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-field-border); border-radius: 6px; padding: 0 13px; background: transparent; color: var(--tt-text-2); font-size: 13.5px; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+.tt-button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); background: var(--tt-hover); }
+.tt-button:disabled { cursor: not-allowed; opacity: .45; }
+.tt-button--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.tt-button--primary:hover:not(:disabled) { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.12); }
+.tt-button--ghost { border-color: transparent; color: var(--tt-text-muted); }
+.tt-button--ghost:hover:not(:disabled) { border-color: transparent; }
+.tt-button--sm { min-height: 30px; padding: 0 11px; font-size: 13px; }
+.tt-button--icon { width: 34px; padding: 0; }
+.tt-input { width: 100%; min-height: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); padding: 6px 12px; color: var(--tt-text); font-size: 14px; font-weight: 500; }
+.tt-input:hover { border-color: var(--tt-border); }
+.tt-input::placeholder { color: var(--tt-text-faint); font-weight: 400; }
+.tt-input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.tt-input[aria-invalid='true'] { border-color: var(--tt-error); }
+.tt-dialog .tt-input, .pop .tt-input { background: var(--tt-canvas); border-color: var(--tt-field-border); }
+.tt-toggle { display: inline-grid; grid-template-columns: 36px; align-items: center; border: 0; background: transparent; padding: 2px 0; }
+.tt-toggle__track { position: relative; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: 5px; background: var(--tt-card-inset); }
+.tt-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 3px; background: var(--tt-text-muted); transition: transform 120ms ease; }
+.tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--tt-text); background: var(--tt-text); }
+.tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--tt-canvas); transform: translateX(16px); }
+.dot { display: inline-block; width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--tt-text-muted); }
+.st[data-tone='ok'] { color: var(--tt-activity); }
+.st[data-tone='bad'] { color: var(--tt-error); }
+.st[data-tone='warn'] { color: var(--tt-warning); }
+.problem { display: flex; gap: 10px; margin: 12px 0 0; padding: 11px 13px; border-left: 2px solid var(--tt-error); border-radius: 0 6px 6px 0; background: var(--tt-card-inset); color: var(--tt-text); font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.problem svg { color: var(--tt-error); margin-top: 3px; }
+.notice { margin: 12px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.55; }
+.quiet { margin: 10px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+
+/* ---- the app frame, under the prototype's strip ---- */
+.app { position: fixed; top: var(--strip-h); left: 0; right: 0; bottom: 0; overflow: hidden; }
+.app-pad { padding-bottom: calc(var(--chrome-h) + 12px); }
+
+/* ---- Settings (crossing-settings.css, ADR-0115's nine pages in four runs) ---- */
+.settings-layout { display: grid; grid-template-columns: 268px minmax(0, 1fr); height: 100%; }
+.settings-sidebar { display: flex; flex-direction: column; min-height: 0; padding: 0 10px; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); }
+.nav-top { display: flex; flex: none; align-items: center; gap: 8px; height: 44px; padding: 0 4px; font-size: 14px; font-weight: 600; }
+.nav-top i { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--tt-accent), color-mix(in srgb, var(--tt-accent) 45%, var(--tt-text))); }
+.settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0 calc(var(--chrome-h) + 12px); scrollbar-width: thin; }
+.find { display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 2px 14px; padding: 0 10px; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text-muted); font-size: 13.5px; }
+.settings-sidebar h1 { margin: 4px 0 14px; padding: 0 8px; font-size: 24px; font-weight: 600; letter-spacing: -.7px; }
+.subnav { display: flex; flex-direction: column; gap: 3px; }
+.subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 40px; padding: 9px 12px; border: 0; border-radius: 6px; color: var(--tt-text-muted); background: transparent; text-align: left; font-size: 14.5px; }
+.subnav button:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-text); }
+.subnav button[aria-current='page'] { color: var(--tt-text); background: var(--tt-sidebar-row-active); }
+.subnav button[aria-current='page'] svg { color: var(--tt-accent); }
+.subnav button[data-run] { margin-top: 26px; }
+.subnav button[data-run]::before { content: ''; position: absolute; top: -15px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
+.settings-detail { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.settings-mhead { display: none; }
+.settings-scroll { flex: 1; min-height: 0; overflow: auto; padding: 38px 6vw 0; scrollbar-width: thin; }
+.settings-form { width: 100%; max-width: 790px; margin: 0 auto; }
+.heading { margin: 0 0 6px; padding: 0 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.heading h2 { margin: 0 0 8px; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
+.heading p { margin: 0; color: var(--tt-text-muted); font-size: 16px; }
+.group { margin-top: 24px; }
+.group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 0 2px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; }
+.group > h3 svg { color: var(--tt-text-muted); }
+.group__note { margin: 0 0 10px; padding: 0 2px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; max-width: 46em; }
+.card { padding: 4px 20px; border-radius: 14px; background: var(--tt-card); }
+.rows { margin: 0; padding: 0; list-style: none; }
+.rows > li { padding: 14px 0; border-bottom: 2px solid var(--tt-card-inset); }
+.rows > li:last-child { border-bottom: 0; }
+.srv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; }
+.srv__name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+.srv__name strong { font-size: 15px; font-weight: 600; }
+.srv__addr { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font: 12.5px/1.5 var(--tt-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.srv__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; grid-column: 1 / -1; }
+.srv__meta > span:not(.st) { color: var(--tt-text-muted); font-size: 12.5px; }
+.srv__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; grid-row: 1; grid-column: 2; }
+.srv .problem { grid-column: 1 / -1; margin-top: 6px; }
+.empty { margin: 0; padding: 16px 0; color: var(--tt-text-muted); font-size: 14px; line-height: 1.55; }
+.below { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; }
+
+/* Providers: a card each, the toggle on the name's line (ADR-0110 P1), the selected one's detail under them. */
+.providers { container: providers / inline-size; margin-top: 22px; }
+.pcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@container providers (width < 560px) { .pcards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pcard { position: relative; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
+.pcard[data-selected='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
+.pcard__select { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'mark name' 'status status'; gap: 6px 8px; width: 100%; padding: 13px 56px 13px 12px; border: 0; border-radius: 11px; background: transparent; text-align: left; }
+.pcard__select strong { grid-area: name; overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pcard__select .st { grid-area: status; }
+.pcard .tt-toggle { position: absolute; top: 11px; right: 12px; }
+.pdetail { margin-top: 14px; padding: 0 20px 8px; border-radius: 14px; background: var(--tt-card); }
+.pdetail__head { display: flex; align-items: center; gap: 10px; padding: 18px 0 12px; }
+.pdetail__head h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.ver { padding: 1px 7px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-muted); font-size: 12px; }
+.ptabs { display: flex; gap: 22px; border-bottom: 1px solid var(--tt-hairline); }
+.ptabs button { min-height: 40px; padding: 0 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--tt-text-muted); font-size: 14px; }
+.ptabs button[aria-selected='true'] { color: var(--tt-text); border-bottom-color: var(--tt-activity); }
+.pbody { padding: 20px 0 14px; }
+.pbody h4 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.pbody > p { margin: 0; max-width: 36em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
+.sources { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--tt-hairline); }
+.slist { margin: 4px 0 0; padding: 0; list-style: none; }
+.slist > li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 14px; min-height: 56px; padding: 10px 0; }
+.slist > li + li { border-top: 2px solid var(--tt-card-inset); }
+.ssrc { display: grid; gap: 3px; min-width: 0; }
+.ssrc strong { overflow: hidden; font-size: 14.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.ssrc small { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.scount { color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sacts { display: flex; gap: 4px; }
+.slist .problem { grid-column: 1 / -1; margin-top: 2px; }
+.updates { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; padding: 16px 20px; border-radius: 14px; background: var(--tt-card); }
+.updates h4 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
+.updates p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+
+/* ---- dialogs ---- */
+.backdrop { position: fixed; top: var(--strip-h); left: 0; right: 0; bottom: var(--chrome-h); z-index: 50; display: grid; place-items: center; padding: 16px; background: var(--tt-overlay); }
+.tt-dialog { display: flex; flex-direction: column; width: min(540px, 100%); max-height: 100%; min-height: 0; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); padding: 22px 24px 20px; }
+.tt-dialog--pick { height: min(600px, 100%); }
+.tt-dialog h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.tt-dialog__desc { margin: 6px 0 14px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
+.tt-dialog__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -24px; padding: 2px 24px 4px; scrollbar-width: thin; }
+.tt-dialog__actions { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 14px; }
+.tt-dialog__actions .tt-button { min-height: 38px; }
+.tt-dialog__actions .spacer { margin-right: auto; }
+@media (prefers-reduced-motion: no-preference) { .tt-dialog { animation: rise 160ms cubic-bezier(.2, .8, .2, 1); } .pop { animation: rise 140ms cubic-bezier(.2, .8, .2, 1); } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; height: 30px; margin: -4px 0 8px -8px; padding: 0 10px 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font-size: 13px; }
+.back:hover { background: var(--tt-hover); color: var(--tt-text); }
+.steps { display: flex; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.steps li { display: flex; align-items: center; gap: 6px; }
+.steps li + li::before { content: ''; width: 18px; height: 1px; background: var(--tt-hairline); }
+.steps b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--tt-card-inset); font-size: 11px; font-weight: 600; }
+.steps li[aria-current='step'] { color: var(--tt-text); font-weight: 600; }
+.steps li[aria-current='step'] b { background: var(--tt-text); color: var(--tt-canvas); }
+.search { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-canvas); color: var(--tt-text-muted); }
+.search:focus-within { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 13.5px; }
+.search input::placeholder { color: var(--tt-text-faint); }
+.pick { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -12px 0; padding: 0 12px 4px; scrollbar-width: thin; }
+.ghead { position: sticky; top: 0; z-index: 1; margin: 0 -12px; padding: 10px 22px 4px; background: var(--tt-surface-elevated); color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); text-align: left; }
+.opt:hover, .opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.opt:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.opt__name { flex: 1; min-width: 0; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.opt__how { flex: none; max-width: 58%; overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.opt--own { min-height: 52px; background: var(--tt-card); }
+.opt--own .opt__name { display: grid; gap: 1px; white-space: normal; }
+.opt--own .opt__name small { color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; }
+.opt[aria-disabled='true'] { cursor: default; }
+.opt[aria-disabled='true'] .opt__how { color: var(--tt-activity); }
+.pnote { margin: 10px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+
+/* ---- the server form and its check (shared by every variant) ---- */
+.fields { display: grid; gap: 12px; }
+.field { display: grid; gap: 6px; min-width: 0; font-size: 13.5px; font-weight: 600; }
+.field small { color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; line-height: 1.45; }
+.field .opt-word { color: var(--tt-text-muted); font-weight: 400; }
+.fill { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; }
+.fill > span { color: #555; font: 12px/1 var(--tt-font-ui); }
+.proto-btn { height: 26px; padding: 0 9px; border: 1px dashed #888; border-radius: 4px; background: #f1f1f1; color: #111; font: 12px/1 var(--tt-font-ui); }
+.proto-btn:hover { background: #ddd; }
+.fill-wrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; background: #f1f1f1; }
+.check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.check-row .st { font-size: 13px; }
+.check { margin: 12px 0 0; padding: 4px 14px; border-radius: 10px; background: var(--tt-card); list-style: none; }
+.check li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; padding: 8px 0; font-size: 13.5px; }
+.check li + li { border-top: 2px solid var(--tt-card-inset); }
+.check li svg { margin-top: 2px; }
+.check li[data-r='ok'] svg { color: var(--tt-activity); }
+.check li[data-r='bad'] svg { color: var(--tt-error); }
+.check li[data-r='skip'] { color: var(--tt-text-muted); }
+.check li[data-r='run'] svg { color: var(--tt-text-muted); }
+.check li b { font-weight: 600; }
+.check li span { color: var(--tt-text-muted); }
+.check li > div { min-width: 0; overflow-wrap: anywhere; }
+.models { display: grid; gap: 8px; margin-top: 12px; }
+.models > h4 { margin: 4px 0 0; font-size: 13.5px; font-weight: 600; }
+.mcard { display: grid; gap: 8px; padding: 12px 14px; border-radius: 10px; background: var(--tt-card); }
+.mcard__top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.mcard__top strong { flex: 1 1 160px; min-width: 0; font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.think { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-size: 13px; }
+.mcard__facts { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; align-items: start; }
+.fact { display: grid; gap: 3px; min-width: 0; font-size: 13px; }
+.fact > span:first-child { color: var(--tt-text-muted); font-size: 12px; }
+.ctx { display: flex; align-items: center; gap: 6px; }
+.ctx .tt-input { width: 84px; min-height: 30px; padding: 3px 8px; font: 500 13px/1.3 var(--tt-font-mono); }
+.ready { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; }
+.ready svg { margin-top: 2px; }
+.ready[data-ok='true'] { color: var(--tt-activity); }
+.ready[data-ok='false'] { color: var(--tt-text-2); }
+.ready[data-ok='false'] svg { color: var(--tt-warning); }
+
+/* B - "Run it with" provider cards. */
+.runwith { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.runwith legend { margin-bottom: 4px; padding: 0; font-size: 14px; font-weight: 600; }
+.rcard { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 4px 12px; padding: 13px 14px; border: 1px solid transparent; border-radius: 10px; background: var(--tt-card); cursor: pointer; }
+.rcard:has(input:checked) { border-color: var(--tt-accent); background: var(--tt-card-selected); }
+.rcard:has(input:focus-visible) { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.rcard[data-off='true'] { cursor: default; }
+.rcard input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--tt-accent); }
+.rcard input:focus-visible { outline: 0; }
+.rcard__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.rcard__head b { display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
+.rcard[data-off='true'] .rcard__head b { color: var(--tt-text-2); }
+.rcard__why { grid-column: 2; margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.rcard ul { grid-column: 2; display: grid; gap: 3px; margin: 4px 0 0; padding: 0; list-style: none; }
+.rcard li { display: flex; gap: 7px; align-items: flex-start; color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+.rcard li svg { margin-top: 2px; color: var(--tt-activity); }
+.rcard li[data-has='false'] { color: var(--tt-text-muted); }
+.rcard li[data-has='false'] svg { color: var(--tt-text-muted); }
+
+/* ---- the Threads page, around the composer ---- */
+.threads { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: 100%; }
+.tside { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-text-muted); font-size: 14px; overflow: hidden; }
+.tside__group { padding: 12px 8px 4px; font-size: 12.5px; color: var(--tt-text-faint); }
+.trow { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 8px; border-radius: 6px; color: var(--tt-text-2); white-space: nowrap; overflow: hidden; }
+.trow > span { overflow: hidden; text-overflow: ellipsis; }
+.trow[aria-current] { background: var(--tt-sidebar-row-active); color: var(--tt-text); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { display: flex; align-items: center; gap: 10px; flex: none; height: 44px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.pane__head h2 { margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.pane__crumb { color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 20px max(20px, calc((100% - 760px) / 2)) 8px; }
+.turn { max-width: 760px; margin: 0 auto 18px; font-size: 15px; line-height: 1.55; }
+.turn--user { width: fit-content; max-width: 80%; margin-right: 0; padding: 10px 14px; border-radius: 12px 12px 4px 12px; background: var(--tt-message); }
+.turn p { margin: 0; }
+.who { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.compose { flex: none; padding: 6px max(20px, calc((100% - 760px) / 2)) calc(var(--chrome-h) + 14px); }
+.composer { position: relative; padding: 12px 14px 8px; border-radius: 14px; background: var(--tt-card); }
+.composer textarea { display: block; width: 100%; min-height: 52px; resize: none; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: 15px/1.5 var(--tt-font-ui); }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.composer__foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+.chips { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; }
+/* ADR-0113: in a composer the option chips are text buttons, no edge or fill at rest. */
+.sel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.sel:hover, .sel[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.sel .mark { width: 13px; height: 13px; }
+.sel__txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sel__svc { color: var(--tt-text-muted); }
+.sel--muted { color: var(--tt-text-muted); }
+.disc { display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--tt-accent-text); color: var(--tt-canvas); }
+.below-composer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 14px; margin: 6px 4px 0; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.below-composer .ready { font-size: 12.5px; }
+
+/* The model menu: the provider rail, then the list (source first, Zach's pick C of the menu prototype). */
+.pop { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; display: flex; align-items: stretch; width: min(420px, calc(100vw - 24px)); max-height: min(470px, calc(100dvh - var(--strip-h) - var(--chrome-h) - 190px)); min-height: 220px; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface); box-shadow: var(--tt-shadow-lg); }
+.rail { display: flex; flex: none; flex-direction: column; gap: 4px; width: 52px; padding: 8px 6px; border-right: 1px solid var(--tt-hairline); background: var(--tt-card); overflow-y: auto; scrollbar-width: none; }
+.rail__tile { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 8px; background: transparent; }
+.rail__tile .mark { width: 18px; height: 18px; opacity: .8; }
+.rail__tile:hover { background: var(--tt-hover); }
+.rail__tile[aria-selected='true'] { background: var(--tt-card-selected); }
+.rail__tile[aria-selected='true'] .mark { opacity: 1; }
+.rail__tile[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--tt-accent); }
+.mlist { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.mhead { display: flex; align-items: center; gap: 6px; flex: none; min-height: 40px; padding: 0 12px 0 6px; border-bottom: 1px solid var(--tt-hairline); }
+.mhead b { min-width: 0; overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.mhead .back { margin: 0; }
+.mhead--title { padding-left: 12px; }
+.mhead span { margin-left: auto; flex: none; color: var(--tt-text-muted); font-size: 12px; }
+.mscroll { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; scrollbar-width: thin; }
+.mgroup { padding: 10px 8px 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.svc { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 7px 8px 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); text-align: left; }
+.svc:hover, .svc:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.svc:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.svc__t { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.svc__t b { overflow: hidden; font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.svc__t em { font-style: normal; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.svc__t em[data-tone='ok'] { color: var(--tt-activity); }
+.svc__t em[data-tone='bad'] { color: var(--tt-error); }
+.svc[aria-current='true'] .svc__t b { color: var(--tt-accent-text); }
+.svc > svg { color: var(--tt-text-muted); }
+.svc--add { color: var(--tt-text); border-top: 0; }
+.svc--add .svc__t b { font-weight: 600; }
+.svc[aria-disabled='true'] { cursor: default; }
+.svc[aria-disabled='true'] .svc__t b { color: var(--tt-text-muted); }
+.mrow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13.5px; text-align: left; }
+.mrow:hover, .mrow:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.mrow:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.mrow[aria-selected='true'] { color: var(--tt-accent-text); }
+.mrow__t { display: grid; flex: 1; min-width: 0; gap: 1px; }
+.mrow__t b { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.mrow__t em { font-style: normal; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.mrow__t em[data-tone='ok'] { color: var(--tt-activity); }
+.mrow[aria-disabled='true'] { cursor: default; }
+.mrow[aria-disabled='true'] .mrow__t b { color: var(--tt-text-muted); }
+.mrow .tick { color: var(--tt-accent-text); }
+.mrow:not([aria-selected='true']) .tick { visibility: hidden; }
+.mform { padding: 8px 8px 10px; }
+.mform .fields { gap: 10px; }
+.mform .fill { margin-bottom: 10px; }
+.mform .check { padding: 2px 12px; }
+.mform .check li { padding: 6px 0; font-size: 13px; }
+.mform .problem { font-size: 13px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 6px; background: var(--tt-card-inset); }
+.seg button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font-size: 13px; }
+.seg button:hover:not([aria-disabled='true']) { color: var(--tt-text); }
+.seg button[aria-checked='true'] { background: var(--tt-surface-overlay); color: var(--tt-text); box-shadow: 0 1px 2px rgb(0 0 0 / 25%); }
+.seg button[aria-disabled='true'] { cursor: default; text-decoration: underline dotted; text-underline-offset: 3px; }
+.seg .mark { width: 12px; height: 12px; }
+.runbar { display: grid; gap: 6px; padding: 8px 8px 10px; border-bottom: 1px solid var(--tt-hairline); }
+.runbar > span { color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.runbar p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+.mnote { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+
+/* ---- Watcher's room, enough of it for the model menu ---- */
+.wroom { position: relative; display: flex; flex-direction: column; height: 100%; background: radial-gradient(120% 60% at 0% 0%, color-mix(in oklab, var(--tt-accent-surface) 45%, var(--tt-canvas)), var(--tt-canvas) 60%); }
+.whead { display: flex; align-items: center; gap: 12px; flex: none; height: 52px; padding: 0 18px; }
+.whead .owl { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--tt-card); color: var(--tt-accent-text); }
+.whead h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.wtabs { display: flex; gap: 2px; margin-left: 10px; }
+.wtabs span { padding: 5px 10px; border-radius: 6px; color: var(--tt-text-muted); font-size: 13.5px; }
+.wtabs span:first-child { background: var(--tt-card); color: var(--tt-text); }
+.wbody { flex: 1; min-height: 0; display: grid; place-items: center; padding: 20px; color: var(--tt-text-muted); font-size: 14px; text-align: center; }
+.wbody p { max-width: 30em; margin: 0; line-height: 1.6; }
+
+/* ---- the prototype's own chrome: not part of the design ---- */
+.strip { position: fixed; top: 0; left: 0; right: 0; z-index: 90; display: flex; align-items: center; gap: 8px; min-height: var(--strip-h); padding: 3px 12px; background: #fff3c4; color: #2b2300; font: 12.5px/1.35 var(--tt-font-ui); }
+.strip b { flex: none; font-weight: 700; letter-spacing: .04em; }
+.strip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chrome { position: fixed; left: 50%; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 99; display: flex; width: max-content; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; max-width: calc(100vw - 16px); padding: 5px 8px; border-radius: 12px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--tt-font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); }
+.chrome button, .chrome select { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: #111; font: 12.5px/1 var(--tt-font-ui); }
+.chrome select { border: 1px solid #bbb; background: #fff; padding: 0 6px; }
+.chrome button:hover { background: #ddd; }
+.chrome button[aria-pressed='true'] { background: #d2d2d2; font-weight: 600; }
+.chrome .grp { display: inline-flex; align-items: center; gap: 2px; }
+.chrome .lbl { padding: 0 4px; white-space: nowrap; }
+.chrome .lbl b { font-weight: 700; }
+.chrome .sep { width: 1px; height: 18px; background: #ccc; }
+.chrome .short { display: none; }
+@media (max-width: 900px) { .chrome .long, .chrome .hide-mid { display: none; } .chrome .short { display: inline; } }
+.chrome label { display: inline-flex; align-items: center; gap: 5px; color: #333; }
+.chrome :focus-visible { outline: 2px solid #0a6; outline-offset: 1px; }
+.statep { position: fixed; right: 10px; top: calc(var(--strip-h) + 10px); bottom: calc(var(--chrome-h) + 14px); z-index: 95; display: flex; flex-direction: column; width: min(360px, calc(100vw - 20px)); border-radius: 10px; background: #fbfbfb; color: #111; box-shadow: 0 10px 40px rgb(0 0 0 / 45%); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.statep header { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-bottom: 1px solid #ddd; font: 600 12.5px/1.2 var(--tt-font-ui); }
+.statep header span { margin-right: auto; }
+.statep header button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 6px; background: #e6e6e6; color: #111; font: 12px/1 var(--tt-font-ui); }
+.statep pre { flex: 1; min-height: 0; margin: 0; padding: 10px 12px 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.statep pre .chg { background: #fff0a8; box-shadow: -12px 0 0 #fff0a8, 12px 0 0 #fff0a8; }
+.statep pre .k { color: #555; }
+
+/* ---- narrow windows: 820 wide down to a phone ---- */
+@media (max-width: 1100px) { .settings-layout { grid-template-columns: 205px minmax(0, 1fr); } .settings-scroll { padding: 30px 30px 0; } .threads { grid-template-columns: 220px minmax(0, 1fr); } }
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 180px minmax(0, 1fr); }
+  .subnav button { min-height: 36px; padding: 7px 10px; gap: 8px; font-size: 14px; }
+  .subnav button[data-run] { margin-top: 20px; }
+  .subnav button[data-run]::before { top: -11px; }
+  .settings-scroll { padding: 24px 22px 0; }
+  .threads { grid-template-columns: 190px minmax(0, 1fr); }
+  .mcard__facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .mcard__facts .fact:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  :root { --strip-h: 40px; }
+  .strip span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-sidebar { display: none; }
+  .settings-mhead { display: flex; align-items: center; gap: 6px; flex: none; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 14px; }
+  .settings-mhead b { color: var(--tt-text); font-weight: 600; }
+  .settings-scroll { padding: 18px 14px 0; }
+  .heading h2 { font-size: 24px; }
+  .heading p { font-size: 14.5px; }
+  .card { padding: 2px 14px; }
+  .pdetail { padding: 0 14px 6px; }
+  .srv { grid-template-columns: minmax(0, 1fr); }
+  .srv__actions { grid-row: auto; grid-column: 1; justify-content: flex-start; }
+  .slist > li { grid-template-columns: minmax(0, 1fr) auto; }
+  .slist .sacts { grid-column: 1 / -1; }
+  .updates { padding: 14px; }
+  .threads { grid-template-columns: minmax(0, 1fr); }
+  .tside { display: none; }
+  .transcript { padding: 14px 14px 6px; }
+  .compose { padding: 6px 10px calc(var(--chrome-h) + 16px); }
+  .pop { left: -4px; }
+  .rail { width: 46px; padding: 6px 4px; }
+  .rail__tile { width: 38px; height: 38px; }
+  .backdrop { padding: 8px; align-items: end; }
+  .tt-dialog { padding: 18px 16px 14px; }
+  .tt-dialog__body { margin: 0 -16px; padding: 2px 16px 4px; }
+  .mcard__facts { grid-template-columns: minmax(0, 1fr); }
+  .mcard__facts .fact:first-child { grid-column: auto; }
+  .chrome { left: 8px; right: 8px; width: auto; transform: none; max-width: none; padding: 6px; gap: 4px; }
+  .chrome button, .chrome select { min-height: 36px; padding: 0 8px; }
+  .chrome select { max-width: 150px; }
+  .strip { font-size: 12px; }
+  .chrome .hide-narrow { display: none; }
+  .statep { top: auto; height: 46vh; left: 8px; right: 8px; width: auto; }
+  .wtabs { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+:root[data-motion='reduce'] *, :root[data-motion='reduce'] *::before { animation: none !important; transition: none !important; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15v4M21 17h-4"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-owl" viewBox="0 0 24 24"><path d="M5 4l3 3h8l3-3v9a7 7 0 0 1-14 0z"/><circle cx="9" cy="11" r="2"/><circle cx="15" cy="11" r="2"/><path d="M11 15l1 1 1-1"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="9" r="1"/><circle cx="14" cy="7.5" r="1"/><circle cx="16.5" cy="12" r="1"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-dash" viewBox="0 0 24 24"><path d="M7 12h10"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+  <symbol id="m-codex" viewBox="0 0 256 260"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></symbol>
+  <symbol id="m-grok" viewBox="0 0 24 24"><path d="M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"/></symbol>
+  <symbol id="m-devin" viewBox="48 48 330 330"><path d="M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"/></symbol>
+  <symbol id="m-muse" viewBox="0 0 100 100"><path d="M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z"/></symbol>
+  <symbol id="m-opencode" viewBox="0 0 32 40"><path fill-rule="evenodd" d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z"/></symbol>
+  <symbol id="m-omp" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M8 9h8M10 9v7M14 9v7"/></symbol>
+</svg>
+
+<div class="strip" role="note" aria-label="Prototype"><b>PROTOTYPE</b><span title="What should adding your own model server look like, and how does the user choose which provider drives it?">What should adding your own model server look like, and how does the user choose which provider drives it?</span></div>
+<div class="app" id="app"></div>
+<div id="layer"></div>
+<div class="chrome" id="chrome" role="group" aria-label="Prototype controls"></div>
+<div id="panel"></div>
+
+<script>
+/* PROTOTYPE - throwaway. Every action is a stub; nothing leaves this page. */
+
+/* ---------- Sample data ---------- */
+const PROFILES = {
+  sparks: { kind: 'SGLang', name: 'Sparks', needsKey: true, ms: 140, responses: true,
+    models: [{ name: 'DeepSeek V4.1 Flash 1017', context: 1048576, tools: true, speed: 78, thinking: true }] },
+  ollama: { kind: 'Ollama', name: 'Ollama on this computer', needsKey: false, ms: 3, responses: false,
+    models: [{ name: 'qwen3-coder 30B', context: 65536, tools: true, speed: 31, thinking: false }, { name: 'gemma3 4B', context: 8192, tools: false, speed: 96, thinking: false }] },
+  lmstudio: { kind: 'LM Studio', name: 'LM Studio on forge', needsKey: false, ms: 22, responses: true,
+    models: [{ name: 'gpt-oss 20B', context: 32768, tools: true, speed: 44, thinking: true }] },
+  generic: { kind: 'OpenAI-compatible server', name: '', needsKey: false, ms: 30, responses: false,
+    models: [{ name: 'local-model', context: 131072, tools: true, speed: 24, thinking: false }] }
+}
+const PRESETS = [
+  { id: 'sparks', label: 'Sparks', name: 'Sparks', address: 'http://spark-head.tail1234.ts.net:8888', key: 'sk-sparks-7f3a91c2' },
+  { id: 'ollama', label: 'Ollama', name: 'Ollama on this computer', address: 'http://localhost:11434', key: '' },
+  { id: 'lmstudio', label: 'LM Studio', name: 'LM Studio on forge', address: 'http://forge.tail1234.ts.net:1234', key: '' }
+]
+const SERVER_STATES = [
+  ['reachable', 'Reachable'], ['asleep', 'Asleep or unreachable'], ['wrong-key', 'Wrong key'], ['no-models', 'No models'],
+  ['not-openai', 'Not OpenAI-compatible'], ['too-small', 'Too small for Watcher']
+]
+const WATCHER_MIN_CONTEXT = 64000, WATCHER_MIN_SPEED = 15
+const ZEN = ['Big Pickle', 'DeepSeek V4.1 Flash Free', 'GLM 5.3 Flash Free', 'MiMo V2.6 Flash Free', 'Nemotron 3.5 Super VL Free', 'Space Bunny Free']
+const ANTHROPIC = ['Claude Opus 5.5', 'Claude Fable 5.1', 'Claude Sonnet 5', 'Claude Haiku 4.5']
+const NATIVE = { codex: ['GPT-6-Sol', 'GPT-6-Astra', 'GPT-6-Luna', 'GPT-5.6-Terra'], claude: ['Claude Opus 5.5', 'Claude Fable 5.1', 'Claude Sonnet 5'], grok: ['Grok 5', 'Grok 5 Fast'], muse: ['Muse Spark 1.3'] }
+const PNAME = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', omp: 'oh-my-pi' }
+const RAIL = ['codex', 'claude', 'grok', 'muse', 'opencode']
+const COMMON = [['anthropic', 'Anthropic', 'Signed in'], ['openai', 'OpenAI', 'API key or ChatGPT account'], ['openrouter', 'OpenRouter', 'API key'], ['github-copilot', 'GitHub Copilot', 'GitHub account'], ['google', 'Google', 'API key'], ['xai', 'xAI', 'API key or SuperGrok subscription']]
+const ATOZ = ['302.AI', 'Amazon Bedrock', 'Azure', 'Baseten', 'Cerebras', 'Cloudflare Workers AI', 'Cohere', 'DeepInfra', 'DeepSeek', 'Fireworks AI', 'Groq', 'Hugging Face', 'Mistral', 'Moonshot AI', 'Nvidia', 'Ollama Cloud', 'Perplexity', 'Together AI', 'Vercel AI Gateway', 'Z.AI']
+const VARIANTS = {
+  A: { name: 'Inside OpenCode’s dialog', short: 'In OpenCode', views: ['settings', 'thread', 'watcher'] },
+  B: { name: 'Your own servers, then the provider', short: 'Servers first', views: ['settings', 'thread', 'watcher'] },
+  C: { name: 'From the model menu', short: 'Model menu', views: ['thread', 'settings', 'watcher'] }
+}
+const VIEW_NAMES = { settings: 'Settings', thread: 'Thread', watcher: 'Watcher' }
+
+/* ---------- State ---------- */
+const state = {
+  variant: 'A', view: 'settings', serverState: 'reachable', seeded: false, panel: false,
+  servers: [], selectedProvider: 'opencode', ptab: 'configuration',
+  chosen: { thread: { provider: 'opencode', source: 'zen', model: 'Big Pickle' }, watcher: { provider: 'codex', source: null, model: 'GPT-6-Sol' } },
+  dialog: null, menu: null, notice: '', lastCheck: null, lastAction: 'Opened the prototype'
+}
+let opener = null, uid = 0
+
+/* ---------- Small helpers ---------- */
+const $ = s => document.querySelector(s)
+function el(tag, attrs, kids) {
+  const n = document.createElement(tag)
+  for (const k of Object.keys(attrs || {})) {
+    const v = attrs[k]
+    if (v === undefined || v === null || v === false) continue
+    if (k === 'text') n.textContent = v
+    else if (k === 'on') for (const e of Object.keys(v)) n.addEventListener(e, v[e])
+    else if (k === 'value') n.value = v
+    else if (k === 'checked') n.checked = true
+    else n.setAttribute(k, v === true ? '' : String(v))
+  }
+  for (const c of [].concat(kids === undefined ? [] : kids).flat(3)) if (c !== null && c !== undefined && c !== false) n.append(c)
+  return n
+}
+function use(href, cls, size) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  s.setAttribute('class', cls); s.setAttribute('aria-hidden', 'true')
+  if (size) { s.setAttribute('width', size); s.setAttribute('height', size) }
+  const u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', href); s.append(u)
+  return s
+}
+const icon = (id, sm) => use('#i-' + id, sm ? 'i sm' : 'i')
+const mark = (p, size) => { const s = use('#m-' + p, 'mark', size || 16); s.setAttribute('data-p', p); return s }
+const btn = (text, attrs, pre) => el('button', { type: 'button', ...attrs }, [pre || null, text])
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's')
+const fmtCtx = n => n >= 1048576 && n % 1048576 === 0 ? (n / 1048576) + 'M' : n >= 1000000 ? (Math.round(n / 100000) / 10) + 'M' : n % 1024 === 0 ? (n / 1024) + 'K' : n >= 1000 ? Math.round(n / 1000) + 'K' : String(n)
+function parseCtx(text) {
+  const t = String(text).trim().replace(/[, _]/g, '').toUpperCase()
+  const m = /^(\d+(?:\.\d+)?)(K|M)?$/.exec(t)
+  if (!m) return null
+  const n = parseFloat(m[1]) * (m[2] === 'M' ? 1048576 : m[2] === 'K' ? 1024 : 1)
+  return n >= 1024 ? Math.round(n) : null
+}
+const normal = a => { const t = a.trim(); return !t ? '' : /^https?:\/\//i.test(t) ? t : 'http://' + t }
+function hostOf(address) { try { return new URL(normal(address)).hostname } catch { return address } }
+function shortHost(address) { try { const u = new URL(normal(address)); return u.hostname.split('.')[0] + (u.port ? ':' + u.port : '') } catch { return address } }
+const isLocal = a => /localhost|127\.0\.0\.1/.test(a)
+const isTailnet = a => /\.ts\.net/.test(a)
+function profileFor(address) {
+  if (/spark/i.test(address)) return 'sparks'
+  if (/:11434\b/.test(address)) return 'ollama'
+  if (/forge|:1234\b/.test(address)) return 'lmstudio'
+  return 'generic'
+}
+const listNames = names => names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.motion === 'reduce'
+
+/* Watcher's bar: does this model suit Watcher, and if not, why not, in plain words. */
+function watcherFit(m) {
+  const why = []
+  if (!m.tools) why.push('it did not call the test tool correctly')
+  if (m.context < WATCHER_MIN_CONTEXT) why.push('its context is ' + fmtCtx(m.context) + ' and Watcher needs at least 64K')
+  if (m.speed < WATCHER_MIN_SPEED) why.push('it answers at about ' + m.speed + ' tokens a second and Watcher needs about ' + WATCHER_MIN_SPEED)
+  return { ok: !why.length, why }
+}
+const fitText = (m, long) => {
+  const f = watcherFit(m)
+  if (f.ok) return long ? 'Suits Watcher: the test tool call worked, ' + fmtCtx(m.context) + ' of context, about ' + m.speed + ' tokens a second.' : 'Suits Watcher'
+  const s = f.why.join(', and ')
+  return 'Does not suit Watcher: ' + s + '.' + (long ? ' Threads can still use it.' : '')
+}
+
+/* ---------- The check: a stub that follows the Server state control ---------- */
+function whereAdvice(address) {
+  if (isLocal(address)) return 'Check the server is running on this computer'
+  if (isTailnet(address)) return 'Check the machine is on and this computer is on the tailnet'
+  return 'Check the machine is on and this computer can reach it'
+}
+function runCheck(form, forceState) {
+  const address = normal(form.address)
+  const p = PROFILES[profileFor(address)]
+  const name = form.name.trim() || p.name || hostOf(address)
+  const short = shortHost(address)
+  const s = forceState || state.serverState
+  const steps = []
+  const res = { name, address, kind: p.kind, responses: p.responses, steps, models: [], error: null, ok: false }
+  const fail = (label, text, error) => { steps.push({ label, r: 'bad', text }); res.error = error; return finish() }
+  const finish = () => {
+    const all = ['Answers', 'Speaks the OpenAI API', 'Key', 'Models', 'Tool call and speed']
+    for (const label of all.slice(steps.length)) steps.push({ label, r: 'skip', text: 'Not checked.' })
+    return res
+  }
+  if (s === 'asleep') return fail('Answers', 'No answer from ' + short + ' in 10 seconds.', name + ' did not answer at ' + short + '. Nothing was sent. ' + whereAdvice(address) + ', then try again.')
+  steps.push({ label: 'Answers', r: 'ok', text: 'Answered in ' + p.ms + ' ms.' })
+  if (s === 'not-openai') return fail('Speaks the OpenAI API', 'It answered with a web page.', 'Something answered at ' + short + ', but it does not speak the OpenAI API. Nothing was sent to it. Check the address uses the model server’s API port, not its web page, then try again.')
+  steps.push({ label: 'Speaks the OpenAI API', r: 'ok', text: p.kind + '. ' + (p.responses ? 'Chat Completions and Responses.' : 'Chat Completions only, no Responses API.') })
+  const keyless = !form.key.trim()
+  if (s === 'wrong-key' || (p.needsKey && keyless)) {
+    return fail('Key', keyless ? 'It asks for a key.' : 'It turned the key down.', keyless
+      ? name + ' answered but asks for a key. Nothing was saved. Paste the key the server was started with, then check again.'
+      : name + ' answered but turned the key down. Nothing was saved. Paste the key the server was started with, then check again.')
+  }
+  steps.push({ label: 'Key', r: 'ok', text: keyless ? 'No key needed.' : 'Accepted the key.' })
+  if (s === 'no-models') return fail('Models', 'None loaded.', name + ' answered but has no models loaded. Nothing was added. Load a model on the server, then check again.')
+  res.models = p.models.map((m, i) => ({ ...m, id: 'm' + (++uid), context: s === 'too-small' && i === 0 ? 32768 : m.context }))
+  steps.push({ label: 'Models', r: 'ok', text: 'Found ' + plural(res.models.length, 'model') + ': ' + listNames(res.models.map(m => m.name)) + '.' })
+  const toolFails = res.models.filter(m => !m.tools).map(m => m.name)
+  steps.push({ label: 'Tool call and speed', r: 'ok', text: toolFails.length ? 'Ran one short task on each model. ' + listNames(toolFails) + ' did not call the test tool.' : 'Ran one short task on each model. Every one called the test tool.' })
+  res.ok = true
+  return res
+}
+/* Reveal a check one line at a time, as the real one would come back. */
+function startCheck(holder, form, key) {
+  const res = runCheck(form)
+  holder.check = { phase: 'running', shown: 0, res, with: { address: form.address, key: form.key } }
+  state.lastCheck = res
+  state.lastAction = 'Checked ' + res.name + ' (' + res.address + ')'
+  const step = () => {
+    if (holder.check?.res !== res) return
+    holder.check.shown++
+    const failedAt = res.steps.findIndex(s => s.r === 'bad')
+    const last = failedAt >= 0 ? failedAt + 1 : res.steps.length
+    if (holder.check.shown >= last) holder.check.phase = 'done'
+    render(holder.check.phase === 'done' ? key : undefined)
+    if (holder.check.phase === 'done') document.querySelector('.pop .problem, .tt-dialog .problem, .pop .models, .tt-dialog .models')?.scrollIntoView({ block: 'nearest' })
+    if (holder.check.phase !== 'done') setTimeout(step, reduced() ? 60 : 260)
+  }
+  render()
+  setTimeout(step, reduced() ? 60 : 260)
+}
+
+/* ---------- Servers ---------- */
+function makeServer(res, form, providers) {
+  return { id: 's' + (++uid), name: res.name, address: res.address, key: Boolean(form.key.trim()), kind: res.kind, responses: res.responses,
+    models: res.models.map(m => ({ ...m })), providers: [...providers], status: 'reachable', lastError: null }
+}
+function seed() {
+  state.servers = PRESETS.map(p => {
+    const res = runCheck({ name: p.name, address: p.address, key: p.key }, 'reachable')
+    const providers = state.variant === 'B' && res.responses && p.id === 'sparks' ? ['opencode', 'codex'] : ['opencode']
+    return makeServer(res, { key: p.key }, providers)
+  })
+  applyStateToFirst()
+}
+/* The Server state control also stands for the first server in every list. */
+function applyStateToFirst() {
+  const s = state.servers[0]
+  if (!s) return
+  const st = state.serverState
+  const p = PROFILES[profileFor(s.address)]
+  s.models.forEach((m, i) => { if (i === 0) m.context = st === 'too-small' ? 32768 : (m.userContext || p.models[0].context) })
+  s.status = st === 'too-small' ? 'reachable' : st
+  s.lastError = st === 'reachable' || st === 'too-small' ? null : statusProblem(s, st)
+}
+function statusProblem(s, st) {
+  const short = shortHost(s.address)
+  if (st === 'asleep') return s.name + ' did not answer at ' + short + ' at 2:14 PM. Threads on it wait until it answers; nothing in them was lost. ' + whereAdvice(s.address) + ', then check again.'
+  if (st === 'wrong-key') return s.name + ' turned the saved key down at 2:14 PM. Threads on it are paused; nothing in them was lost. Paste the server’s key again, then check again.'
+  if (st === 'no-models') return s.name + ' answered at 2:14 PM but has no models loaded. Threads on it wait; nothing in them was lost. Load a model on the server, then check again.'
+  if (st === 'not-openai') return 'Something answered at ' + short + ' at 2:14 PM, but not the model server’s OpenAI API. Threads on it wait; nothing was lost. Check the model server still uses that port, then check again.'
+  return null
+}
+const STATUS_WORDS = { reachable: ['ok', 'Reachable'], asleep: ['bad', 'Did not answer'], 'wrong-key': ['bad', 'Key turned down'], 'no-models': ['bad', 'No models loaded'], 'not-openai': ['bad', 'Not the OpenAI API'] }
+function statusEl(s) {
+  const [tone, words] = STATUS_WORDS[s.status] || ['', s.status]
+  return el('span', { class: 'st', 'data-tone': tone }, [el('span', { class: 'dot', 'aria-hidden': 'true' }), words])
+}
+const suitsAny = s => s.models.some(m => watcherFit(m).ok)
+function watcherSummary(s) {
+  if (s.status !== 'reachable') return null
+  const ok = s.models.filter(m => watcherFit(m).ok)
+  if (ok.length === s.models.length) return el('span', { class: 'st', 'data-tone': 'ok' }, 'Suits Watcher')
+  if (ok.length) return el('span', { class: 'st' }, ok.length + ' of ' + s.models.length + ' models suit Watcher')
+  return el('span', { class: 'st', 'data-tone': 'warn' }, [icon('alert', true), 'Too small for Watcher'])
+}
+function recheck(s) {
+  const res = runCheck({ name: s.name, address: s.address, key: s.key ? 'saved-key' : '' })
+  state.lastCheck = res
+  if (res.ok) {
+    s.status = 'reachable'; s.lastError = null
+    s.models = res.models.map(m => { const old = s.models.find(o => o.name === m.name); return old ? { ...m, thinking: old.thinking, context: state.serverState === 'too-small' ? m.context : (old.userContext || m.context), userContext: old.userContext } : m })
+    state.notice = s.name + ' answered. ' + plural(s.models.length, 'model') + '; ' + (suitsAny(s) ? 'it suits Watcher.' : 'it does not suit Watcher.')
+  } else {
+    s.status = state.serverState; s.lastError = statusProblem(s, state.serverState) || res.error
+    state.notice = ''
+  }
+  state.lastAction = 'Checked ' + s.name + ' again'
+}
+function removeServer(s) {
+  state.servers = state.servers.filter(x => x !== s)
+  for (const k of ['thread', 'watcher']) if (state.chosen[k].source === s.id) state.chosen[k] = k === 'thread' ? { provider: 'opencode', source: 'zen', model: 'Big Pickle' } : { provider: 'codex', source: null, model: 'GPT-6-Sol' }
+  state.notice = 'Removed ' + s.name + '. Threads that used it keep their history; pick another model in them to go on.'
+  state.lastAction = 'Removed ' + s.name
+}
+const providersWords = s => listNames(s.providers.map(p => PNAME[p]))
+
+/* ---------- The form and the check results, shared ---------- */
+function serverForm(holder, ctx, compact) {
+  const f = holder.form
+  const k = ctx + '-'
+  const onField = name => ({
+    input: e => { f[name] = e.target.value; const b = document.querySelector('[data-k="' + k + 'check"]'); if (b) b.disabled = !f.address.trim() || holder.check?.phase === 'running' },
+    change: () => { const c = holder.check; if (c && name !== 'name' && (c.with.address !== f.address || c.with.key !== f.key)) { holder.check = null; holder.pending = null; render() } else updatePanel() },
+    keydown: e => { if (e.key === 'Enter' && f.address.trim()) { e.preventDefault(); startCheck(holder, f, k + 'check') } }
+  })
+  const fill = el('div', { class: 'fill' }, el('span', { class: 'fill-wrap' }, [el('span', { text: 'Fill in (prototype):' }), PRESETS.map(p => el('button', {
+    type: 'button', class: 'proto-btn', 'aria-label': 'Fill in ' + p.name, text: p.label,
+    on: { click: () => { Object.assign(f, { name: p.name, address: p.address, key: p.key }); holder.check = null; state.lastAction = 'Filled in ' + p.name; render(k + 'check') } }
+  }))]))
+  const fields = el('div', { class: 'fields' }, [
+    el('label', { class: 'field' }, ['Address', el('input', { class: 'tt-input', type: 'url', inputmode: 'url', 'data-k': k + 'address', value: f.address, placeholder: 'http://localhost:11434', autocomplete: 'off', spellcheck: 'false', on: onField('address') }),
+      compact ? null : el('small', { text: 'Where the server listens, on this computer or across your tailnet.' })]),
+    el('label', { class: 'field' }, ['Name', el('input', { class: 'tt-input', type: 'text', 'data-k': k + 'name', value: f.name, placeholder: f.address ? PROFILES[profileFor(normal(f.address))].name || hostOf(f.address) : 'Sparks', autocomplete: 'off', on: onField('name') })]),
+    el('label', { class: 'field' }, [el('span', {}, ['Key ', el('span', { class: 'opt-word', text: '(optional)' })]), el('input', { class: 'tt-input', type: 'password', 'data-k': k + 'key', value: f.key, placeholder: 'Only if the server was started with one', autocomplete: 'off', spellcheck: 'false', on: onField('key') })])
+  ])
+  const running = holder.check?.phase === 'running'
+  const checkRow = el('div', { class: 'check-row' }, [
+    btn(holder.check && !running ? 'Check again' : 'Check this server', { class: 'tt-button' + (holder.check?.res?.ok ? '' : ' tt-button--primary') + (compact ? ' tt-button--sm' : ''), 'data-k': k + 'check', disabled: !f.address.trim() || running,
+      'aria-label': (holder.check && !running ? 'Check again: ' : 'Check this server: ') + 'ask it for its models and try one short task', on: { click: () => startCheck(holder, f, k + 'check') } }, icon('refresh', true)),
+    running ? el('span', { class: 'st', role: 'status' }, 'Checking…') : null
+  ])
+  return [fill, fields, checkRow, checkResults(holder, compact)]
+}
+function checkResults(holder, compact) {
+  const c = holder.check
+  if (!c) return null
+  const res = c.res
+  const shown = res.steps.slice(0, c.shown)
+  const list = el('ul', { class: 'check', 'aria-label': 'What the check found' }, [
+    shown.map(s => el('li', { 'data-r': s.r }, [icon(s.r === 'ok' ? 'check' : s.r === 'bad' ? 'x' : 'dash', true), el('div', {}, [el('b', { text: s.label + '. ' }), el('span', { text: s.text })])])),
+    c.phase === 'running' ? el('li', { 'data-r': 'run' }, [icon('clock', true), el('div', {}, el('span', { text: 'Checking ' + (res.steps[c.shown]?.label || '').toLowerCase() + '…' }))]) : null
+  ])
+  const out = [list]
+  if (c.phase === 'done' && res.error) out.push(el('div', { class: 'problem', role: 'alert' }, [icon('alert'), el('span', { text: res.error })]))
+  if (c.phase === 'done' && res.ok && !compact) out.push(modelCards(res.models))
+  return out
+}
+function modelCards(models, live) {
+  return el('div', { class: 'models' }, [el('h4', { text: 'Models found' }), models.map(m => {
+    const fit = watcherFit(m)
+    return el('div', { class: 'mcard' }, [
+      el('div', { class: 'mcard__top' }, [el('strong', { text: m.name }),
+        el('span', { class: 'think' }, ['Thinking', el('button', { type: 'button', class: 'tt-toggle', role: 'switch', 'aria-checked': String(m.thinking), 'data-k': 'think-' + m.id, 'aria-label': 'Thinking for ' + m.name,
+          on: { click: () => { m.thinking = !m.thinking; state.lastAction = 'Thinking ' + (m.thinking ? 'on' : 'off') + ' for ' + m.name; render('think-' + m.id) } } }, el('span', { class: 'tt-toggle__track' }, el('span', { class: 'tt-toggle__thumb' })))])]),
+      el('div', { class: 'mcard__facts' }, [
+        el('div', { class: 'fact' }, [el('span', { text: 'Context, in tokens' }), el('span', { class: 'ctx' }, [el('input', { class: 'tt-input', type: 'text', 'data-k': 'ctx-' + m.id, value: fmtCtx(m.context), 'aria-label': 'Context for ' + m.name + ', in tokens. The server reported ' + fmtCtx(m.reported || m.context) + '.',
+          on: { change: e => { const n = parseCtx(e.target.value); if (n) { m.reported = m.reported || m.context; m.context = n; m.userContext = n; state.lastAction = 'Set the context of ' + m.name + ' to ' + fmtCtx(n) } render('ctx-' + m.id) } } })])]),
+        el('div', { class: 'fact' }, [el('span', { text: 'Tool call' }), el('span', { class: 'st', 'data-tone': m.tools ? 'ok' : 'bad', text: m.tools ? 'Worked' : 'Did not call the tool' })]),
+        el('div', { class: 'fact' }, [el('span', { text: 'Speed' }), el('span', { text: 'About ' + m.speed + ' tokens a second' })])
+      ]),
+      el('div', { class: 'ready', 'data-ok': String(fit.ok) }, [icon(fit.ok ? 'check' : 'alert', true), el('span', { text: fitText(m, true) })])
+    ])
+  })])
+}
+
+/* ---------- Settings ---------- */
+const PAGES = [['Dictation', 'mic'], ['Cleanup', 'sparkles'], ['Threads', 'message', 1], ['Git & worktrees', 'git'], ['Watcher', 'owl'], ['Providers', 'command', 1], ['Hosts & phones', 'server'], ['Cloud iPhone', 'cloud'], ['Appearance', 'palette', 1], ['Application', 'settings'], ['Performance', 'gauge']]
+function settingsView() {
+  const side = el('aside', { class: 'settings-sidebar', 'aria-label': 'Settings pages' }, [
+    el('div', { class: 'nav-top' }, [el('i', { 'aria-hidden': 'true' }), 'Sotto']),
+    el('div', { class: 'settings-sidebar__body' }, [
+      el('div', { class: 'find', 'aria-hidden': 'true' }, [icon('search', true), 'Find a setting']),
+      el('h1', { text: 'Settings' }),
+      el('nav', { class: 'subnav', 'aria-label': 'Settings pages' }, PAGES.map(([label, ic, run]) => el('button', { type: 'button', 'data-run': run ? '' : undefined, 'aria-current': label === 'Providers' ? 'page' : undefined, 'aria-label': 'Open ' + label + ' (not drawn in this prototype)' }, [icon(ic), el('span', { text: label })])))
+    ])
+  ])
+  const form = el('div', { class: 'settings-form' }, [
+    el('div', { class: 'heading' }, [el('h2', { text: 'Providers' }), el('p', { text: 'Accounts & connections' })]),
+    state.variant === 'B' ? serversGroupB() : null,
+    providersBlock(),
+    state.variant === 'C' ? serversGroupC() : null,
+    el('div', { class: 'updates' }, [el('div', {}, [el('h4', { text: 'Check for client updates' }), el('p', { text: 'Checks each client’s published version, at most once an hour. No thread text is sent.' })]), toggle(true, 'Check for client updates')]),
+    el('div', { class: 'app-pad' })
+  ])
+  return el('div', { class: 'settings-layout' }, [side, el('main', { class: 'settings-detail' }, [
+    el('div', { class: 'settings-mhead' }, [el('span', { text: 'Settings' }), icon('chev-r', true), el('b', { text: 'Providers' })]),
+    el('div', { class: 'settings-scroll', 'data-scroll': 'settings' }, form)])])
+}
+function toggle(on, label) {
+  return el('button', { type: 'button', class: 'tt-toggle', role: 'switch', 'aria-checked': String(on), 'aria-label': label }, el('span', { class: 'tt-toggle__track' }, el('span', { class: 'tt-toggle__thumb' })))
+}
+const PROVIDER_CARDS = [['codex', 'Connected', true], ['claude', 'Connected', true], ['grok', 'Connected', true], ['devin', 'Not connected', true], ['muse', 'Off', false], ['opencode', 'Connected', true]]
+function providersBlock() {
+  const cards = el('div', { class: 'pcards' }, PROVIDER_CARDS.map(([id, status, on]) => el('div', { class: 'pcard', 'data-selected': String(state.selectedProvider === id) }, [
+    el('button', { type: 'button', class: 'pcard__select', 'aria-pressed': String(state.selectedProvider === id), 'data-k': 'pcard-' + id, 'aria-label': 'Show ' + PNAME[id] + '’s settings',
+      on: { click: () => { state.selectedProvider = id; state.ptab = 'configuration'; state.lastAction = 'Opened ' + PNAME[id] + ' in Providers'; render('pcard-' + id) } } },
+      [mark(id, 18), el('strong', { text: PNAME[id] }), el('span', { class: 'st', 'data-tone': status === 'Connected' ? 'ok' : '' }, [el('span', { class: 'dot', 'aria-hidden': 'true' }), status])]),
+    toggle(on, 'Enable ' + PNAME[id])
+  ])))
+  return el('div', { class: 'providers' }, [cards, state.selectedProvider === 'opencode' ? opencodeDetail() : otherDetail(state.selectedProvider)])
+}
+function otherDetail(id) {
+  const servers = state.servers.filter(s => s.providers.includes(id))
+  const words = { codex: 'Signed in with your ChatGPT account. Codex 0.130.0.', claude: 'Signed in with your Claude account. Claude Code 2.4.1.', grok: 'Signed in with your SuperGrok subscription.', devin: 'Not connected. Sign in to Devin to start Devin threads.', muse: 'Off. Turn Muse on to start Muse threads.' }[id]
+  return el('section', { class: 'pdetail', 'aria-label': PNAME[id] + ' settings' }, [
+    el('div', { class: 'pdetail__head' }, [mark(id, 21), el('h3', { text: PNAME[id] })]),
+    el('div', { class: 'pbody' }, [el('h4', { text: 'Connection' }), el('p', { text: words }),
+      id === 'codex' ? el('div', { class: 'sources' }, [el('h4', { text: 'Your own servers' }),
+        servers.length ? el('ul', { class: 'slist' }, servers.map(s => el('li', {}, [el('span', { class: 'ssrc' }, [el('strong', { text: s.name }), el('small', {}, [statusEl(s), ' · ', el('span', { class: 'mono', text: s.address })])]), el('span', { class: 'scount', text: plural(s.models.length, 'model') }), el('span')])))
+          : el('p', { class: 'quiet', text: state.variant === 'B' ? 'None run with Codex. A server runs with Codex when it speaks the Responses API; choose that under Your own model servers.' : state.variant === 'A' ? 'Codex cannot run your own server yet. Add it to OpenCode instead.' : 'None run with Codex. Pick Codex under Run with when you add a server from the model menu.' })]) : null])
+  ])
+}
+function opencodeDetail() {
+  const tabs = el('div', { class: 'ptabs', role: 'tablist', 'aria-label': 'OpenCode details' }, [['configuration', 'Configuration'], ['models', 'Models']].map(([v, l]) => el('button', { type: 'button', role: 'tab', 'aria-selected': String(state.ptab === v), 'data-k': 'ptab-' + v, text: l,
+    on: { click: () => { state.ptab = v; render('ptab-' + v) } } })))
+  let body
+  if (state.ptab === 'models') {
+    body = el('div', { class: 'pbody', role: 'tabpanel' }, [el('h4', { text: 'Models OpenCode offers' }), el('ul', { class: 'slist' }, [
+      el('li', {}, [el('span', { class: 'ssrc' }, [el('strong', { text: 'OpenCode Zen' }), el('small', { text: ZEN.join(', ') })]), el('span', { class: 'scount', text: plural(ZEN.length, 'model') }), el('span')]),
+      el('li', {}, [el('span', { class: 'ssrc' }, [el('strong', { text: 'Anthropic' }), el('small', { text: ANTHROPIC.join(', ') })]), el('span', { class: 'scount', text: plural(ANTHROPIC.length, 'model') }), el('span')]),
+      ocServers().map(s => el('li', {}, [el('span', { class: 'ssrc' }, [el('strong', { text: s.name }), el('small', { text: s.models.map(m => m.name + ' (' + fmtCtx(m.context) + ')').join(', ') })]), el('span', { class: 'scount', text: plural(s.models.length, 'model') }), el('span')]))
+    ])])
+  } else {
+    body = el('div', { class: 'pbody', role: 'tabpanel' }, [
+      el('h4', { text: 'Connection' }), el('p', { text: 'OpenCode 2.0.31 is installed. Sotto runs it with its own OpenCode folder.' }),
+      modelSources()
+    ])
+  }
+  return el('section', { class: 'pdetail', 'aria-label': 'OpenCode settings' }, [
+    el('div', { class: 'pdetail__head' }, [mark('opencode', 21), el('h3', { text: 'OpenCode' }), el('span', { class: 'ver', text: '2.0.31' })]), tabs, body])
+}
+const ocServers = () => state.servers.filter(s => s.providers.includes('opencode'))
+function modelSources() {
+  const v = state.variant
+  const rows = [
+    el('li', {}, [el('span', { class: 'ssrc' }, [el('strong', { text: 'OpenCode Zen' }), el('small', { text: 'Free models. No sign-in needed.' })]), el('span', { class: 'scount', text: plural(ZEN.length, 'model') }), el('span')]),
+    el('li', {}, [el('span', { class: 'ssrc' }, [el('strong', { text: 'Anthropic' }), el('small', { text: 'API key' })]), el('span', { class: 'scount', text: plural(ANTHROPIC.length, 'model') }),
+      el('span', { class: 'sacts' }, btn('Sign out', { class: 'tt-button tt-button--ghost tt-button--sm', 'aria-label': 'Sign out of Anthropic (not drawn in this prototype)' }))])
+  ]
+  for (const s of ocServers()) {
+    const sub = el('small', {}, [statusEl(s), ' · ', v === 'A' ? 'Your own server' : v === 'B' ? 'Your own server, set up above' : 'Your own server', ' · ', el('span', { class: 'mono', text: shortHost(s.address) }), watcherSummary(s) ? [' · ', watcherSummary(s)] : null])
+    rows.push(el('li', {}, [
+      el('span', { class: 'ssrc' }, [el('strong', { text: s.name }), sub]),
+      el('span', { class: 'scount', text: plural(s.models.length, 'model') }),
+      v === 'A' ? el('span', { class: 'sacts' }, [
+        btn('Check again', { class: 'tt-button tt-button--ghost tt-button--sm', 'data-k': 're-' + s.id, 'aria-label': 'Check ' + s.name + ' again', on: { click: () => { recheck(s); render('re-' + s.id) } } }),
+        btn('Remove', { class: 'tt-button tt-button--ghost tt-button--sm', 'aria-label': 'Remove ' + s.name + ' from OpenCode', on: { click: () => { removeServer(s); render('add-source') } } })]) : el('span'),
+      s.lastError ? el('div', { class: 'problem', role: 'alert' }, [icon('alert'), el('span', { text: s.lastError })]) : null
+    ]))
+  }
+  return el('div', { class: 'sources' }, [
+    el('h4', { text: 'Model sources' }),
+    el('ul', { class: 'slist' }, rows),
+    el('div', { class: 'below' }, [btn('Add a model source', { class: 'tt-button', 'data-k': 'add-source', 'aria-haspopup': 'dialog', on: { click: e => openDialog({ kind: 'pick', query: '' }, e.currentTarget) } }, icon('plus', true))]),
+    v === 'A' ? el('p', { class: 'quiet', text: 'Your own servers run with OpenCode for now. Codex and other providers come later.' }) : null,
+    state.notice && state.view === 'settings' && v === 'A' ? el('p', { class: 'notice', role: 'status', text: state.notice }) : null
+  ])
+}
+function serverRows(actions) {
+  if (!state.servers.length) return el('p', { class: 'empty', text: state.variant === 'C' ? 'None yet. Add one from the model menu in any thread’s composer: Your own server, at the end of OpenCode’s list.' : 'None yet. Add one to run threads or Watcher on models you host.' })
+  return el('ul', { class: 'rows' }, state.servers.map(s => el('li', {}, el('div', { class: 'srv' }, [
+    el('div', { class: 'srv__name' }, [el('strong', { text: s.name }), el('span', { class: 'srv__addr', text: s.address })]),
+    el('div', { class: 'srv__actions' }, actions(s)),
+    el('div', { class: 'srv__meta' }, [statusEl(s), el('span', { text: 'Runs with ' + providersWords(s) }), el('span', { text: plural(s.models.length, 'model') }), watcherSummary(s)]),
+    s.lastError ? el('div', { class: 'problem', role: 'alert' }, [icon('alert'), el('span', { text: s.lastError })]) : null
+  ]))))
+}
+function serversGroupB() {
+  return el('section', { class: 'group', 'aria-labelledby': 'own-h' }, [
+    el('h3', { id: 'own-h' }, [icon('server'), 'Your own model servers']),
+    el('p', { class: 'group__note', text: 'Model servers you run, on this computer or across your tailnet. Each runs with the providers you pick. Threads on a server send your code and messages to it, so whoever runs it can read them.' }),
+    el('div', { class: 'card' }, serverRows(s => [
+      btn('Check again', { class: 'tt-button tt-button--sm', 'data-k': 're-' + s.id, 'aria-label': 'Check ' + s.name + ' again', on: { click: () => { recheck(s); render('re-' + s.id) } } }),
+      btn('Run with…', { class: 'tt-button tt-button--sm', 'data-k': 'rw-' + s.id, 'aria-haspopup': 'dialog', 'aria-label': 'Choose the providers that run ' + s.name, on: { click: e => openDialog({ kind: 'b', step: 2, editing: s.id, form: { name: s.name, address: s.address, key: '' }, check: { with: {}, phase: 'done', shown: 5, res: { ok: true, name: s.name, address: s.address, responses: s.responses, models: s.models, steps: [] } }, run: Object.fromEntries(s.providers.map(p => [p, true])) }, e.currentTarget) } }),
+      btn('Remove', { class: 'tt-button tt-button--ghost tt-button--sm', 'aria-label': 'Remove ' + s.name, on: { click: () => { removeServer(s); render('add-server') } } })
+    ])),
+    el('div', { class: 'below' }, [btn('Add a server', { class: 'tt-button', 'data-k': 'add-server', 'aria-haspopup': 'dialog', on: { click: e => openDialog({ kind: 'b', step: 1, form: { name: '', address: '', key: '' }, check: null, run: { opencode: true } }, e.currentTarget) } }, icon('plus', true)),
+      state.notice && state.view === 'settings' ? el('p', { class: 'notice', role: 'status', style: 'margin:0', text: state.notice }) : null])
+  ])
+}
+function serversGroupC() {
+  return el('section', { class: 'group', 'aria-labelledby': 'own-h' }, [
+    el('h3', { id: 'own-h' }, [icon('server'), 'Your own model servers']),
+    el('p', { class: 'group__note', text: 'Servers you added from a thread’s model menu. Add another there, under Your own server.' }),
+    el('div', { class: 'card' }, serverRows(s => [
+      btn('Check again', { class: 'tt-button tt-button--sm', 'data-k': 're-' + s.id, 'aria-label': 'Check ' + s.name + ' again', on: { click: () => { recheck(s); render('re-' + s.id) } } }),
+      btn('Remove', { class: 'tt-button tt-button--ghost tt-button--sm', 'aria-label': 'Remove ' + s.name, on: { click: () => { removeServer(s); render() } } })
+    ])),
+    state.notice && state.view === 'settings' ? el('p', { class: 'notice', role: 'status', text: state.notice }) : null
+  ])
+}
+
+/* ---------- Dialogs: A's Add a model source, and B's Add a server ---------- */
+function openDialog(d, from) { opener = from ? from.dataset.k : null; state.dialog = d; state.notice = ''; state.lastAction = d.kind === 'pick' ? 'Opened Add a model source' : d.editing ? 'Opened Run with for a server' : 'Opened Add a server'; render('dlg-first') }
+function closeDialog(why) { state.dialog = null; if (why) state.lastAction = why; render(opener || undefined) }
+function dialogView() {
+  const d = state.dialog
+  if (!d) return null
+  let inner
+  if (d.kind === 'pick') inner = pickDialog(d)
+  else if (d.kind === 'a-server') inner = aServerDialog(d)
+  else if (d.kind === 'other') inner = otherDialog(d)
+  else inner = bDialog(d)
+  return el('div', { class: 'backdrop', on: { mousedown: e => { if (e.target === e.currentTarget) closeDialog('Closed the dialog') } } }, inner)
+}
+function pickDialog(d) {
+  const q = d.query.trim().toLowerCase()
+  const showOwn = state.variant === 'A' && (!q || 'your own server sglang vllm ollama lm studio llama.cpp openai-compatible local'.includes(q))
+  const common = COMMON.filter(([, n]) => !q || n.toLowerCase().includes(q))
+  const rest = ATOZ.filter(n => !q || n.toLowerCase().includes(q))
+  const choose = (id, name) => { state.dialog = { kind: 'other', name }; render('dlg-first') }
+  const list = el('div', { class: 'pick', role: 'list', 'aria-label': 'Model sources', 'data-scroll': 'pick' }, [
+    showOwn ? el('div', { role: 'group', 'aria-label': 'Your own server' }, [el('div', { class: 'ghead', 'aria-hidden': 'true', text: 'Your own server' }),
+      el('button', { type: 'button', class: 'opt opt--own', 'data-k': 'own-row', 'aria-label': 'Your own server: add a model server you run', on: { click: () => { state.dialog = { kind: 'a-server', form: { name: '', address: '', key: '' }, check: null }; state.lastAction = 'Chose Your own server'; render('a-address') } } },
+        [icon('server'), el('span', { class: 'opt__name' }, ['Your own server', el('small', { text: 'SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible address' })]), icon('chev-r', true)])]) : null,
+    common.length ? el('div', { role: 'group', 'aria-label': 'Common' }, [el('div', { class: 'ghead', 'aria-hidden': 'true', text: 'Common' }), common.map(([id, n, how]) => el('button', { type: 'button', class: 'opt', 'aria-disabled': how === 'Signed in' ? 'true' : undefined, 'aria-label': n + (how === 'Signed in' ? ', signed in' : ': sign in with ' + how), on: { click: () => { if (how !== 'Signed in') choose(id, n) } } }, [el('span', { class: 'opt__name', text: n }), el('span', { class: 'opt__how', text: how })]))]) : null,
+    rest.length ? el('div', { role: 'group', 'aria-label': 'Every model source, A to Z' }, [el('div', { class: 'ghead', 'aria-hidden': 'true', text: 'Every model source, A to Z' }), rest.map(n => el('button', { type: 'button', class: 'opt', 'aria-label': n + ': sign in with an API key', on: { click: () => choose(n, n) } }, [el('span', { class: 'opt__name', text: n }), el('span', { class: 'opt__how', text: 'API key' })]))]) : null,
+    !showOwn && !common.length && !rest.length ? el('p', { class: 'pnote', text: 'No model source matches “' + d.query + '”.' }) : null
+  ])
+  return el('div', { class: 'tt-dialog tt-dialog--pick', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dlg-h' }, [
+    el('h2', { id: 'dlg-h', text: 'Add a model source' }),
+    el('p', { class: 'tt-dialog__desc', text: state.variant === 'A' ? 'Sign in to a company OpenCode can reach, or add a model server you run.' : 'Sign in to a company OpenCode can reach.' }),
+    state.variant !== 'A' ? el('p', { class: 'pnote', style: 'margin:-6px 0 12px', text: state.variant === 'B' ? 'To add a model server you run, use Your own model servers, above the providers.' : 'To add a model server you run, use Your own server at the end of OpenCode’s list in a thread’s model menu.' }) : null,
+    el('label', { class: 'search' }, [icon('search', true), el('input', { type: 'text', 'data-k': 'dlg-first', 'aria-label': 'Search model sources', placeholder: 'Search 236 model sources', value: d.query, on: { input: e => { d.query = e.target.value; render('dlg-first') } } })]),
+    list,
+    el('div', { class: 'tt-dialog__actions' }, btn('Cancel', { class: 'tt-button', 'aria-label': 'Close without adding a model source', on: { click: () => closeDialog('Closed Add a model source') } }))
+  ])
+}
+function otherDialog(d) {
+  return el('div', { class: 'tt-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dlg-h' }, [
+    btn('Model sources', { class: 'back', 'data-k': 'dlg-first', 'aria-label': 'Back to the list of model sources', on: { click: () => { state.dialog = { kind: 'pick', query: '' }; render('dlg-first') } } }, icon('left', true)),
+    el('h2', { id: 'dlg-h', text: d.name }),
+    el('p', { class: 'tt-dialog__desc', text: 'Signing in to ' + d.name + ' works as it does today. This prototype does not draw it.' }),
+    el('div', { class: 'tt-dialog__actions' }, btn('Cancel', { class: 'tt-button', on: { click: () => closeDialog('Closed Add a model source') } }))
+  ])
+}
+function aServerDialog(d) {
+  const res = d.check?.res
+  const ok = d.check?.phase === 'done' && res?.ok
+  const add = () => {
+    const s = makeServer(res, d.form, ['opencode'])
+    state.servers.push(s)
+    state.notice = 'Added ' + s.name + '. ' + (s.models.length === 1 ? 'Its model is' : 'Its ' + s.models.length + ' models are') + ' in the model menu, under OpenCode, as ' + s.name + '.'
+    state.dialog = null; state.lastAction = 'Added ' + s.name + ' to OpenCode'
+    render('add-source')
+  }
+  return el('div', { class: 'tt-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dlg-h', style: 'height:min(720px,100%)' }, [
+    btn('Model sources', { class: 'back', 'aria-label': 'Back to the list of model sources', on: { click: () => { state.dialog = { kind: 'pick', query: '' }; render('own-row') } } }, icon('left', true)),
+    el('h2', { id: 'dlg-h', text: 'Your own server' }),
+    el('p', { class: 'tt-dialog__desc', text: 'A model server you run, on this computer or across your tailnet. OpenCode runs it like any other model source.' }),
+    el('div', { class: 'tt-dialog__body', 'data-scroll': 'dlg' }, [serverForm(d, 'a'),
+      el('p', { class: 'quiet', text: 'OpenCode keeps the key in Sotto’s OpenCode folder; Sotto keeps no copy. Threads on this server send your code and messages to it, so whoever runs it can read them.' })]),
+    el('div', { class: 'tt-dialog__actions' }, [
+      el('span', { class: 'spacer quiet', style: 'margin:0', text: 'Other providers come later.' }),
+      btn('Cancel', { class: 'tt-button', 'aria-label': 'Close without adding the server', on: { click: () => closeDialog('Closed Your own server without adding') } }),
+      btn('Add to OpenCode', { class: 'tt-button tt-button--primary', 'data-k': 'a-add', disabled: !ok, 'aria-label': ok ? 'Add ' + res.name + ' to OpenCode as a model source' : 'Add to OpenCode, once the check passes', on: { click: add } })
+    ])
+  ])
+}
+function providerOffer(p, res) {
+  const name = res.name
+  const suits = res.models.some(m => watcherFit(m).ok)
+  const watcherLine = suits ? 'Can run Watcher on ' + listNames(res.models.filter(m => watcherFit(m).ok).map(m => m.name)) : 'Cannot run Watcher: no model here suits it'
+  if (p === 'opencode') return { ready: true, status: ['ok', 'Ready'], why: 'Sotto adds ' + name + ' to OpenCode as a model source.',
+    gets: [[true, 'A request card for each file change and command, which you answer'], [true, 'Thread titles, branch names and commit text from the same model'], [suits, watcherLine]] }
+  if (p === 'codex') return res.responses
+    ? { ready: true, status: ['ok', 'Ready'], why: name + ' speaks the Responses API, which Codex needs.', gets: [[true, 'Codex’s own approvals, as request cards you answer'], [true, 'Thread titles, branch names and commit text from the same model'], [suits, watcherLine]] }
+    : { ready: false, status: ['', 'Not available'], why: name + ' speaks Chat Completions only, and Codex needs the Responses API. Use OpenCode, or check again after the server adds it.', gets: [] }
+  return { ready: false, status: ['', 'Not yet'], why: 'Sotto cannot run oh-my-pi yet. It will come with a general route for other clients.', gets: [] }
+}
+function bDialog(d) {
+  const res = d.check?.res
+  const ok = d.check?.phase === 'done' && res?.ok
+  const editing = d.editing ? state.servers.find(s => s.id === d.editing) : null
+  const stepsNav = editing ? null : el('ol', { class: 'steps', 'aria-label': 'Steps' }, [
+    el('li', { 'aria-current': d.step === 1 ? 'step' : undefined }, [el('b', { text: '1' }), 'Address']),
+    el('li', { 'aria-current': d.step === 2 ? 'step' : undefined }, [el('b', { text: '2' }), 'Run it with'])])
+  let body, actions
+  if (d.step === 1) {
+    body = [serverForm(d, 'b'), el('p', { class: 'quiet', text: 'Each provider you pick keeps the key itself, the way OpenCode keeps every model source’s key; Sotto keeps no copy. Threads on this server send your code and messages to it, so whoever runs it can read them.' })]
+    actions = [btn('Cancel', { class: 'tt-button', 'aria-label': 'Close without adding a server', on: { click: () => closeDialog('Closed Add a server') } }),
+      btn('Next', { class: 'tt-button tt-button--primary', 'data-k': 'b-next', disabled: !ok, 'aria-label': ok ? 'Next: choose the providers that run ' + res.name : 'Next, once the check passes',
+        on: { click: () => { d.step = 2; if (!res.responses) delete d.run.codex; state.lastAction = 'Went to Run it with'; render('dlg-first') } } }, icon('chev-r', true))]
+  } else {
+    const cards = ['opencode', 'codex', 'omp'].map((p, i) => {
+      const o = providerOffer(p, res)
+      const checked = Boolean(d.run[p]) && o.ready
+      return el('label', { class: 'rcard', 'data-off': String(!o.ready) }, [
+        el('input', { type: 'checkbox', 'data-k': i === 0 ? 'dlg-first' : 'run-' + p, checked, disabled: !o.ready, 'aria-describedby': 'why-' + p,
+          on: { change: e => { d.run[p] = e.target.checked; state.lastAction = (e.target.checked ? 'Picked ' : 'Unpicked ') + PNAME[p]; render(i === 0 ? 'dlg-first' : 'run-' + p) } } }),
+        el('div', { class: 'rcard__head' }, [el('b', {}, [mark(p, 15), PNAME[p]]), el('span', { class: 'st', 'data-tone': o.status[0] }, [el('span', { class: 'dot', 'aria-hidden': 'true' }), o.status[1]])]),
+        el('p', { class: 'rcard__why', id: 'why-' + p, text: o.why }),
+        o.gets.length ? el('ul', {}, o.gets.map(([has, words]) => el('li', { 'data-has': String(has) }, [icon(has ? 'check' : 'dash', true), words]))) : null
+      ])
+    })
+    const picked = Object.keys(d.run).filter(p => d.run[p])
+    const finish = () => {
+      if (editing) { editing.providers = picked; state.notice = editing.name + ' now runs with ' + providersWords(editing) + '.'; state.lastAction = 'Changed the providers for ' + editing.name }
+      else {
+        const s = makeServer(res, d.form, picked); state.servers.push(s)
+        state.notice = 'Added ' + s.name + '. It runs with ' + providersWords(s) + '; its models are in the model menu under ' + (picked.length > 1 ? 'each.' : 'it.')
+        state.lastAction = 'Added ' + s.name + ', run with ' + providersWords(s)
+      }
+      state.dialog = null; render(editing ? 'rw-' + editing.id : 'add-server')
+    }
+    body = [el('fieldset', { class: 'runwith' }, [el('legend', { text: 'Run ' + res.name + ' with' }), el('p', { class: 'quiet', style: 'margin:0 0 4px', text: 'Pick one or more. Each shows ' + res.name + '’s models in its own part of the model menu.' }), cards])]
+    actions = [editing ? null : btn('Back', { class: 'tt-button spacer', 'aria-label': 'Back to the address and the check', on: { click: () => { d.step = 1; render('b-next') } } }, icon('left', true)),
+      btn('Cancel', { class: 'tt-button', 'aria-label': editing ? 'Close without changing the providers' : 'Close without adding the server', on: { click: () => closeDialog('Closed the dialog') } }),
+      btn(editing ? 'Save' : 'Add server', { class: 'tt-button tt-button--primary', disabled: !picked.length, 'aria-label': picked.length ? (editing ? 'Save: run ' : 'Add ' + res.name + ', run with ') + listNames(picked.map(p => PNAME[p])) : 'Pick a provider first', on: { click: finish } })]
+  }
+  return el('div', { class: 'tt-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dlg-h', style: 'height:min(720px,100%)' }, [
+    el('h2', { id: 'dlg-h', text: editing ? 'Run ' + editing.name + ' with' : 'Add your own model server' }),
+    el('p', { class: 'tt-dialog__desc', text: editing ? 'Choose the providers that run it.' : 'SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server, on this computer or across your tailnet.' }),
+    stepsNav,
+    el('div', { class: 'tt-dialog__body', 'data-scroll': 'dlg' }, body),
+    el('div', { class: 'tt-dialog__actions' }, actions)
+  ])
+}
+
+/* ---------- The model menu, for a thread and for Watcher ---------- */
+const chosenOf = mode => state.chosen[mode]
+function serverById(id) { return state.servers.find(s => s.id === id) }
+function chipParts(mode) {
+  const c = chosenOf(mode)
+  const s = c.source && c.source !== 'zen' && c.source !== 'anthropic' ? serverById(c.source) : null
+  const src = c.source === 'zen' ? 'OpenCode Zen' : c.source === 'anthropic' ? 'Anthropic' : s ? s.name : null
+  return { provider: c.provider, src, model: c.model, server: s }
+}
+function chip(mode) {
+  const p = chipParts(mode)
+  const open = state.menu?.mode === mode
+  const label = (mode === 'watcher' ? 'Watcher model' : 'Thread model')
+  const tail = state.variant === 'C' && p.server ? ' · ' + PNAME[p.provider] : ''
+  return el('button', { type: 'button', class: 'sel', role: 'combobox', 'aria-haspopup': 'dialog', 'aria-expanded': String(open), 'data-k': 'chip-' + mode,
+    'aria-label': label, title: p.model + (p.src ? ' from ' + p.src : '') + ', in ' + PNAME[p.provider],
+    on: { click: () => { if (open) closeMenu(); else openMenu(mode) } } },
+    [mark(p.provider, 13), el('span', { class: 'sel__txt' }, [p.src ? el('span', { class: 'sel__svc', text: p.src + ' / ' }) : null, p.model, tail ? el('span', { class: 'sel__svc', text: tail }) : null]), icon('chev-d', true)])
+}
+function openMenu(mode) {
+  const c = chosenOf(mode)
+  state.menu = { mode, rail: c.provider === 'opencode' || c.provider === 'codex' || NATIVE[c.provider] ? c.provider : 'opencode', step: 'sources', source: null, form: { name: '', address: '', key: '' }, check: null, runWith: 'opencode' }
+  state.lastAction = 'Opened the ' + (mode === 'watcher' ? 'Watcher' : 'thread') + ' model menu'
+  render('menu-first')
+}
+function closeMenu(why) { const mode = state.menu?.mode; state.menu = null; if (why) state.lastAction = why; render(mode ? 'chip-' + mode : undefined) }
+function choose(mode, provider, source, model) {
+  state.chosen[mode] = { provider, source, model }
+  const s = serverById(source)
+  state.lastAction = 'Chose ' + (s ? s.name + ' / ' : '') + model + ' in ' + PNAME[provider] + ' for ' + (mode === 'watcher' ? 'Watcher' : 'the thread')
+  state.menu = null
+  render('chip-' + mode)
+}
+function menuView(mode) {
+  const m = state.menu
+  if (!m || m.mode !== mode) return null
+  const rail = el('div', { class: 'rail', role: 'tablist', 'aria-orientation': 'vertical', 'aria-label': 'Providers' }, RAIL.map((p, i) => el('button', { type: 'button', class: 'rail__tile', role: 'tab', 'aria-selected': String(m.rail === p), 'aria-label': PNAME[p], title: PNAME[p], 'data-k': 'rail-' + p, tabindex: m.rail === p ? '0' : '-1',
+    on: { click: () => { m.rail = p; m.step = 'sources'; m.source = null; render('rail-' + p) }, keydown: e => {
+      const d = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
+      if (d) { e.preventDefault(); const n = RAIL[(i + d + RAIL.length) % RAIL.length]; m.rail = n; m.step = 'sources'; m.source = null; render('rail-' + n) }
+    } } }, mark(p, 18))))
+  return el('div', { class: 'pop', role: 'dialog', 'aria-label': (mode === 'watcher' ? 'Watcher' : 'Thread') + ' model menu' }, [rail, el('div', { class: 'mlist' }, menuList(m))])
+}
+function serverLine(s, mode) {
+  if (s.status !== 'reachable') return el('em', { 'data-tone': 'bad', text: (STATUS_WORDS[s.status] || [])[1] + ' when last checked' })
+  if (mode === 'watcher') { const any = suitsAny(s); return el('em', { 'data-tone': any ? 'ok' : undefined, text: any ? 'Suits Watcher · ' + plural(s.models.length, 'model') : 'Does not suit Watcher' }) }
+  return el('em', { text: 'Your own server · ' + plural(s.models.length, 'model') })
+}
+function menuList(m) {
+  const mode = m.mode
+  const c = chosenOf(mode)
+  const C = state.variant === 'C'
+  const servFor = p => state.servers.filter(s => s.providers.includes(p))
+  const addRow = () => el('button', { type: 'button', class: 'svc svc--add', 'data-k': 'own-add', 'aria-label': 'Your own server: add a model server you run',
+    on: { click: () => { m.step = 'add'; m.form = { name: '', address: '', key: '' }; m.check = null; state.lastAction = 'Opened Your own server in the menu'; render('m-address') } } },
+    [icon('plus'), el('span', { class: 'svc__t' }, [el('b', { text: 'Your own server…' }), el('em', { text: 'SGLang, vLLM, Ollama, LM Studio, llama.cpp' })])])
+  const head = (title, right, backTo) => el('div', { class: 'mhead' + (backTo ? '' : ' mhead--title') }, [
+    backTo ? btn('Sources', { class: 'back', 'data-k': 'menu-back', 'aria-label': 'Back to ' + PNAME[m.rail] + '’s model sources', on: { click: () => { m.step = 'sources'; m.source = null; m.check = null; render('menu-first') } } }, icon('left', true)) : null,
+    el('b', { text: title }), right ? el('span', { text: right }) : null])
+  const footNote = mode === 'watcher' ? el('p', { class: 'mnote', text: 'Watcher needs reliable tool calls, 64K of context and about 15 tokens a second.' }) : null
+
+  if (m.step === 'add') return addInMenu(m, head)
+  if (m.step === 'source') {
+    const s = m.source === 'zen' || m.source === 'anthropic' ? null : serverById(m.source)
+    const names = m.source === 'zen' ? ZEN : m.source === 'anthropic' ? ANTHROPIC : s.models.map(x => x.name)
+    const title = m.source === 'zen' ? 'OpenCode Zen' : m.source === 'anthropic' ? 'Anthropic' : s.name
+    const runbar = s && C ? runWithBar(m, s) : null
+    const rows = names.map((n, i) => {
+      const model = s ? s.models[i] : null
+      const fit = model ? watcherFit(model) : { ok: true }
+      const blocked = mode === 'watcher' && model && (!fit.ok || s.status !== 'reachable')
+      const sel = c.source === m.source && c.model === n && c.provider === (s && C ? m.runWith : m.rail)
+      const sub = model ? (mode === 'watcher' ? (s.status !== 'reachable' ? 'Did not answer when last checked' : fitText(model)) : fmtCtx(model.context) + ' context' + (model.thinking ? ' · Thinking' : '') + ' · about ' + model.speed + ' tokens a second') : null
+      return el('button', { type: 'button', class: 'mrow', role: 'option', 'aria-selected': String(sel), 'aria-disabled': blocked ? 'true' : undefined, 'data-k': i === 0 ? 'menu-first' : undefined,
+        'aria-label': n + (sub ? '. ' + sub : '') + (blocked ? '. Cannot be picked for Watcher.' : ''),
+        on: { click: () => { if (!blocked) choose(mode, s && C ? m.runWith : m.rail, m.source, n) } } },
+        [el('span', { class: 'mrow__t' }, [el('b', { text: n }), sub ? el('em', { 'data-tone': mode === 'watcher' && fit.ok && s?.status === 'reachable' ? 'ok' : undefined, text: sub }) : null]), icon('check', true)].map(x => x))
+    })
+    rows.forEach(r => r.lastChild.classList.add('tick'))
+    return [head(title, plural(names.length, 'model'), true), runbar, el('div', { class: 'mscroll', role: 'listbox', 'aria-label': title + ' models' }, rows), footNote]
+  }
+  /* The list for the rail tile. */
+  if (m.rail === 'opencode') {
+    const servers = servFor('opencode')
+    const rows = [
+      ['zen', 'OpenCode Zen', 'Free with OpenCode Zen · ' + plural(ZEN.length, 'model')],
+      ['anthropic', 'Anthropic', plural(ANTHROPIC.length, 'model')]
+    ].map(([id, n, sub], i) => el('button', { type: 'button', class: 'svc', 'aria-current': String(c.source === id), 'data-k': i === 0 ? 'menu-first' : undefined, 'aria-label': n + ', ' + sub + ': show its models', on: { click: () => { m.step = 'source'; m.source = id; render('menu-first') } } },
+      [el('span', { class: 'svc__t' }, [el('b', { text: n }), el('em', { text: sub })]), icon('chev-r', true)]))
+    for (const s of servers) {
+      const blocked = mode === 'watcher' && (s.status !== 'reachable' || !suitsAny(s))
+      rows.push(el('button', { type: 'button', class: 'svc', 'aria-current': String(c.source === s.id), 'data-k': 'src-' + s.id, 'aria-label': s.name + ', your own server: show its models',
+        on: { click: () => { m.step = 'source'; m.source = s.id; m.runWith = c.source === s.id ? c.provider : s.providers[0]; render('menu-first') } } },
+        [icon('server', true), el('span', { class: 'svc__t' }, [el('b', { text: s.name }), serverLine(s, mode)]), icon('chev-r', true)]))
+      void blocked
+    }
+    return [head('OpenCode', 'Model sources'), el('div', { class: 'mscroll' }, [rows, C ? addRow() : null,
+      !C && !servers.length && mode === 'watcher' ? el('p', { class: 'pnote', style: 'padding:4px 10px', text: state.variant === 'A' ? 'To run Watcher on a model you host, add your own server in Settings › Providers › OpenCode.' : 'To run Watcher on a model you host, add it under Your own model servers in Settings › Providers.' }) : null]), footNote]
+  }
+  const names = NATIVE[m.rail] || []
+  const rows = names.map((n, i) => el('button', { type: 'button', class: 'mrow', role: 'option', 'aria-selected': String(c.provider === m.rail && c.model === n && !c.source), 'data-k': i === 0 ? 'menu-first' : undefined, on: { click: () => choose(mode, m.rail, null, n) } },
+    [el('span', { class: 'mrow__t' }, el('b', { text: n })), (() => { const t = icon('check', true); t.classList.add('tick'); return t })()]))
+  const own = m.rail === 'codex' ? servFor('codex') : []
+  const ownRows = own.flatMap(s => s.models.map(model => {
+    const fit = watcherFit(model)
+    const blocked = mode === 'watcher' && (!fit.ok || s.status !== 'reachable')
+    const t = icon('check', true); t.classList.add('tick')
+    return el('button', { type: 'button', class: 'mrow', role: 'option', 'aria-selected': String(c.provider === 'codex' && c.source === s.id && c.model === model.name), 'aria-disabled': blocked ? 'true' : undefined,
+      on: { click: () => { if (!blocked) choose(mode, 'codex', s.id, model.name) } } },
+      [el('span', { class: 'mrow__t' }, [el('b', { text: s.name + ' / ' + model.name }), el('em', { 'data-tone': mode === 'watcher' && fit.ok ? 'ok' : undefined, text: mode === 'watcher' ? fitText(model) : fmtCtx(model.context) + ' context · your own server' })]), t])
+  }))
+  return [head(PNAME[m.rail], plural(names.length + ownRows.length, 'model')), el('div', { class: 'mscroll', role: 'listbox', 'aria-label': PNAME[m.rail] + ' models' }, [rows,
+    ownRows.length ? [el('div', { class: 'mgroup', text: 'Your own servers' }), ownRows] : null,
+    m.rail === 'codex' && C ? addRow() : null]), footNote]
+}
+function runWithBar(m, s) {
+  const opts = ['opencode', 'codex', 'omp'].map(p => {
+    const ok = p === 'opencode' || (p === 'codex' && s.responses)
+    return { p, ok }
+  })
+  const why = []
+  if (!s.responses) why.push('Codex needs the Responses API, and ' + s.name + ' speaks Chat Completions only.')
+  why.push('oh-my-pi is not available yet.')
+  return el('div', { class: 'runbar' }, [el('span', { id: 'rw-l', text: 'Run with' }),
+    el('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': 'rw-l' }, opts.map(({ p, ok }) => el('button', { type: 'button', role: 'radio', 'aria-checked': String(m.runWith === p), 'aria-disabled': ok ? undefined : 'true', 'data-k': 'rw-' + p,
+      'aria-label': 'Run ' + s.name + ' with ' + PNAME[p] + (ok ? '' : ': not available'),
+      on: { click: () => { if (ok) { m.runWith = p; if (!s.providers.includes(p) && !s.pending) s.providers.push(p); state.lastAction = 'Run with ' + PNAME[p] + ' for ' + s.name; render('rw-' + p) } } } }, [mark(p, 12), PNAME[p]]))),
+    el('p', { text: why.join(' ') })])
+}
+function addInMenu(m, head) {
+  const res = m.check?.res
+  const ok = m.check?.phase === 'done' && res?.ok
+  if (ok) {
+    /* The check passed: Run with at the top, then the models to pick. Picking adds the server. */
+    const pending = m.pending && m.pending.res === res ? m.pending.server : (m.pending = { res, server: { ...makeServer(res, m.form, [m.runWith]), pending: true } }).server
+    const rows = pending.models.map((model, i) => {
+      const fit = watcherFit(model)
+      const blocked = m.mode === 'watcher' && !fit.ok
+      const t = icon('plus', true)
+      return el('button', { type: 'button', class: 'mrow', role: 'option', 'aria-selected': 'false', 'aria-disabled': blocked ? 'true' : undefined, 'data-k': i === 0 ? 'menu-first' : undefined,
+        'aria-label': 'Add ' + pending.name + ' and use ' + model.name + ' with ' + PNAME[m.runWith] + '. ' + fitText(model),
+        on: { click: () => {
+          if (blocked) return
+          delete pending.pending; pending.providers = [m.runWith]; state.servers.push(pending)
+          state.notice = 'Added ' + pending.name + '. Manage it in Settings › Providers.'
+          choose(m.mode, m.runWith, pending.id, model.name)
+        } } },
+        [el('span', { class: 'mrow__t' }, [el('b', { text: model.name }), el('em', { 'data-tone': fit.ok ? 'ok' : undefined, text: fmtCtx(model.context) + ' context · about ' + model.speed + ' tokens a second · ' + fitText(model) })]), t])
+    })
+    const summary = el('p', { class: 'ready', 'data-ok': 'true', style: 'margin:2px 4px 6px' }, [icon('check', true), el('span', { text: res.name + ' answered: ' + res.kind + ', ' + (res.responses ? 'Chat Completions and Responses' : 'Chat Completions only') + ', ' + plural(res.models.length, 'model') + '.' })])
+    return [head(res.name, 'Pick a model', true), runWithBar(m, pending),
+      el('div', { class: 'mscroll', role: 'listbox', 'aria-label': res.name + ' models' }, [summary, rows,
+        el('div', { class: 'mform', style: 'padding-top:4px' }, [el('p', { class: 'quiet', style: 'margin:4px 2px 0', text: 'Picking a model adds ' + res.name + '. Threads on it send your code and messages to ' + shortHost(res.address) + ', so whoever runs it can read them.' }),
+          btn('Change the address', { class: 'tt-button tt-button--ghost tt-button--sm', style: 'margin-top:6px', 'aria-label': 'Back to the address and the check', on: { click: () => { m.check = null; m.pending = null; render('m-address') } } }, icon('left', true))])])]
+  }
+  return [head('Your own server', null, true), el('div', { class: 'mscroll', 'data-scroll': 'madd' }, el('div', { class: 'mform' }, serverForm(m, 'm', true)))]
+}
+
+/* ---------- Thread and Watcher views ---------- */
+function threadView() {
+  const p = chipParts('thread')
+  return el('div', { class: 'threads' }, [
+    el('aside', { class: 'tside', 'aria-hidden': 'true' }, [el('div', { class: 'nav-top' }, [el('i'), 'Sotto']), el('div', { class: 'tside__group', text: 'sotto' }),
+      el('div', { class: 'trow', 'aria-current': 'page' }, el('span', { text: 'Tidy the release notes' })), el('div', { class: 'trow' }, el('span', { text: 'Local models as a provider' })), el('div', { class: 'trow' }, el('span', { text: 'Fix the tray icon on Linux' })),
+      el('div', { class: 'tside__group', text: 'plant-net' }), el('div', { class: 'trow' }, el('span', { text: 'Rack 4 loop check' }))]),
+    el('section', { class: 'pane', 'aria-label': 'Thread' }, [
+      el('header', { class: 'pane__head' }, [mark(p.provider, 15), el('h2', { text: 'Tidy the release notes' }), el('span', { class: 'pane__crumb', text: '/ sotto' })]),
+      el('div', { class: 'transcript' }, [
+        el('div', { class: 'turn turn--user' }, el('p', { text: 'Gather what merged since 0.1.40 into the release notes, one line each.' })),
+        el('div', { class: 'turn' }, [el('div', { class: 'who' }, [mark(p.provider, 13), PNAME[p.provider] + (p.src ? ' · ' + p.src + ' / ' + p.model : ' · ' + p.model)]), el('p', { text: 'Nine pull requests merged since 0.1.40. I have drafted one line for each in docs/release/notes.md.' })])
+      ]),
+      el('div', { class: 'compose' }, [
+        el('div', { class: 'composer' }, [
+          el('label', { class: 'vh', for: 'prompt', text: 'Message' }),
+          el('textarea', { id: 'prompt', rows: '2', placeholder: 'Ask for a change, or press the dictation key to speak' }),
+          el('div', { class: 'composer__foot' }, [el('div', { class: 'chips' }, [chip('thread'), el('button', { type: 'button', class: 'sel sel--muted', 'aria-label': 'Thread reasoning' }, ['Medium', icon('chev-d', true)]), el('button', { type: 'button', class: 'sel sel--muted', 'aria-label': 'Thread permissions' }, ['Ask first', icon('chev-d', true)])]),
+            el('button', { type: 'button', class: 'disc', 'aria-label': 'Send (not drawn in this prototype)' }, icon('up'))]),
+          menuView('thread')
+        ]),
+        el('div', { class: 'below-composer' }, [p.server ? el('span', { text: 'Runs on ' + p.server.name + ' at ' + shortHost(p.server.address) + '.' }) : el('span'), state.notice && state.view === 'thread' ? el('span', { role: 'status', text: state.notice }) : el('span', { text: '21% context' })])
+      ])
+    ])
+  ])
+}
+function watcherView() {
+  const p = chipParts('watcher')
+  const model = p.server ? p.server.models.find(x => x.name === p.model) : null
+  return el('div', { class: 'wroom' }, [
+    el('header', { class: 'whead' }, [el('span', { class: 'owl', 'aria-hidden': 'true' }, icon('owl')), el('h2', { text: 'Watcher' }), el('div', { class: 'wtabs', 'aria-hidden': 'true' }, [el('span', { text: 'Conversation' }), el('span', { text: 'Watched 0' }), el('span', { text: 'Visualize' })])]),
+    el('div', { class: 'wbody' }, el('p', { text: 'Watcher starts with your first message. Pick the model it runs on below; one of your own servers works when it suits Watcher.' })),
+    el('div', { class: 'compose' }, [
+      el('div', { class: 'composer' }, [
+        el('label', { class: 'vh', for: 'wprompt', text: 'Watcher message' }),
+        el('textarea', { id: 'wprompt', rows: '2', placeholder: 'Tell Watcher what to keep an eye on' }),
+        el('div', { class: 'composer__foot' }, [el('div', { class: 'chips' }, [chip('watcher'), el('button', { type: 'button', class: 'sel sel--muted', 'aria-label': 'Watcher’s permissions' }, ['Ask first', icon('chev-d', true)])]),
+          el('button', { type: 'button', class: 'disc', 'aria-label': 'Send to Watcher (not drawn in this prototype)' }, icon('up'))]),
+        menuView('watcher')
+      ]),
+      el('div', { class: 'below-composer' }, model ? el('span', { class: 'ready', 'data-ok': String(watcherFit(model).ok && p.server.status === 'reachable') }, [icon(watcherFit(model).ok && p.server.status === 'reachable' ? 'check' : 'alert', true),
+        el('span', { text: p.server.status !== 'reachable' ? p.server.name + ' did not answer when last checked. Watcher waits for it; nothing is lost.' : 'Watcher runs on ' + p.server.name + ' / ' + p.model + ' through ' + PNAME[p.provider] + '. ' + fitText(model, true).replace(' Threads can still use it.', '') })])
+        : el('span', { text: 'Watcher runs on ' + p.model + ' through ' + PNAME[p.provider] + '.' }))
+    ])
+  ])
+}
+
+/* ---------- Drawing, focus, the prototype's chrome ---------- */
+function render(focusKey) {
+  const active = document.activeElement
+  const key = focusKey || active?.dataset?.k
+  const caret = active && active.tagName === 'INPUT' && /text|url|password/.test(active.type) ? active.selectionStart : null
+  const scrolls = {}
+  for (const n of document.querySelectorAll('[data-scroll]')) scrolls[n.dataset.scroll] = n.scrollTop
+  const app = $('#app')
+  app.replaceChildren(state.view === 'settings' ? settingsView() : state.view === 'thread' ? threadView() : watcherView())
+  $('#layer').replaceChildren(dialogView() || '')
+  drawChrome(); updatePanel(); fitPop()
+  for (const n of document.querySelectorAll('[data-scroll]')) if (scrolls[n.dataset.scroll] !== undefined) n.scrollTop = scrolls[n.dataset.scroll]
+  let target = key ? document.querySelector('[data-k="' + CSS.escape(key) + '"]') : null
+  if (target && target.disabled) target = target.closest('.tt-dialog, .pop')?.querySelector('input, button:not(:disabled)') || null
+  if (!target && (state.dialog || state.menu)) for (const sel of ['.tt-dialog input', '.tt-dialog button', '.pop [data-k="menu-first"]', '.pop .mscroll button', '.pop button']) { target = document.querySelector(sel); if (target) break }
+  if (target && target !== document.activeElement) {
+    target.focus({ preventScroll: true })
+    target.scrollIntoView({ block: 'nearest' })
+    if (caret !== null && target.tagName === 'INPUT' && target === document.activeElement && key === active?.dataset?.k) try { target.setSelectionRange(caret, caret) } catch {}
+  }
+}
+function fitPop() {
+  const pop = document.querySelector('.pop')
+  if (!pop) return
+  const top = pop.parentElement.getBoundingClientRect().top
+  const strip = document.querySelector('.strip').getBoundingClientRect().bottom
+  pop.style.maxHeight = Math.max(200, Math.min(500, top - strip - 14)) + 'px'
+}
+function drawChrome() {
+  const v = VARIANTS[state.variant]
+  const viewBtns = v.views.map(w => el('button', { type: 'button', 'aria-pressed': String(state.view === w), 'data-k': 'view-' + w, 'aria-label': 'Show the ' + VIEW_NAMES[w] + ' view', text: VIEW_NAMES[w],
+    on: { click: () => { state.view = w; state.menu = null; state.dialog = null; state.notice = ''; state.lastAction = 'Showed the ' + VIEW_NAMES[w] + ' view'; if (w !== 'settings') openMenu(w); else render('view-' + w) } } }))
+  const sel = el('select', { 'aria-label': 'Server state (prototype): what the next check, and the first server in every list, does', 'data-k': 'srv-state',
+    on: { change: e => { state.serverState = e.target.value; applyStateToFirst(); state.lastAction = 'Server state set to ' + SERVER_STATES.find(s => s[0] === e.target.value)[1]; render('srv-state') } } },
+    SERVER_STATES.map(([id, n]) => { const o = el('option', { value: id, text: n }); if (id === state.serverState) o.selected = true; return o }))
+  $('#chrome').replaceChildren(
+    el('span', { class: 'grp' }, [
+      el('button', { type: 'button', 'data-k': 'prev', 'aria-label': 'Show the previous variant', text: '←', on: { click: () => go(-1) } }),
+      el('span', { class: 'lbl', 'aria-live': 'polite' }, [el('b', { text: state.variant }), ' — ', el('span', { class: 'long', text: v.name }), el('span', { class: 'short', 'aria-hidden': 'true', text: v.short })]),
+      el('button', { type: 'button', 'data-k': 'next', 'aria-label': 'Show the next variant', text: '→', on: { click: () => go(1) } })]),
+    el('span', { class: 'sep hide-narrow' }),
+    el('span', { class: 'grp', role: 'group', 'aria-label': 'View' }, viewBtns),
+    el('span', { class: 'sep hide-narrow' }),
+    el('label', {}, [el('span', { class: 'hide-mid', text: 'Server state' }), sel]),
+    el('button', { type: 'button', 'aria-pressed': String(state.seeded), 'data-k': 'seed', 'aria-label': state.seeded ? 'Start with no servers added' : 'Start with three servers added: Sparks, Ollama and LM Studio', text: '3 servers',
+      on: { click: () => { state.seeded = !state.seeded; resetFor(); state.lastAction = state.seeded ? 'Started with Sparks, Ollama and LM Studio added' : 'Started with no servers'; render('seed') } } }),
+    el('button', { type: 'button', 'data-k': 'theme', 'aria-label': document.documentElement.dataset.theme === 'light' ? 'Switch to the dark palette' : 'Switch to the light palette', text: document.documentElement.dataset.theme === 'light' ? 'Dark' : 'Light',
+      on: { click: () => { setTheme(document.documentElement.dataset.theme !== 'light'); render('theme') } } }),
+    el('button', { type: 'button', 'aria-pressed': String(state.panel), 'data-k': 'panel', 'aria-label': state.panel ? 'Hide the state readout' : 'Show the state readout', text: 'State',
+      on: { click: () => { state.panel = !state.panel; render('panel') } } })
+  )
+  document.documentElement.style.setProperty('--chrome-h', Math.ceil($('#chrome').getBoundingClientRect().height + 8) + 'px')
+}
+let lastLines = null
+function snapshot() {
+  const out = []
+  out.push('variant: ' + state.variant + ' — ' + VARIANTS[state.variant].name)
+  out.push('view: ' + state.view)
+  out.push('server state (simulated): ' + state.serverState)
+  out.push('open: ' + (state.dialog ? 'dialog ' + state.dialog.kind + (state.dialog.step ? ' step ' + state.dialog.step : '') : state.menu ? state.menu.mode + ' menu, ' + PNAME[state.menu.rail] + ', ' + state.menu.step : 'nothing'))
+  out.push('servers: ' + (state.servers.length ? '' : 'none'))
+  for (const s of state.servers) {
+    out.push('  ' + s.name + '  ' + s.address)
+    out.push('    status: ' + s.status + '  key: ' + (s.key ? 'set' : 'none') + '  kind: ' + s.kind)
+    out.push('    runs with: ' + s.providers.map(p => PNAME[p]).join(', ') + '  responses api: ' + (s.responses ? 'yes' : 'no'))
+    for (const m of s.models) out.push('    · ' + m.name + '  ctx ' + fmtCtx(m.context) + '  thinking ' + (m.thinking ? 'on' : 'off') + '  tools ' + (m.tools ? 'ok' : 'failed') + '  ' + m.speed + ' tok/s  watcher: ' + (watcherFit(m).ok ? 'suits' : 'no'))
+  }
+  for (const k of ['thread', 'watcher']) { const p = chipParts(k); out.push(k + ' model: ' + PNAME[p.provider] + ' / ' + (p.src ? p.src + ' / ' : '') + p.model) }
+  const lc = state.lastCheck
+  out.push('last check: ' + (lc ? lc.name + ' — ' + (lc.ok ? 'passed, ' + plural(lc.models.length, 'model') : 'failed at ' + (lc.steps.find(s => s.r === 'bad') || {}).label) : 'none'))
+  if (lc && lc.ok) for (const m of lc.models) out.push('    · ' + m.name + '  ' + fmtCtx(m.context) + '  ' + (watcherFit(m).ok ? 'suits Watcher' : 'not for Watcher'))
+  const holder = state.dialog || state.menu
+  if (holder?.form && (holder.form.address || holder.form.name)) out.push('form: ' + JSON.stringify({ name: holder.form.name, address: holder.form.address, key: holder.form.key ? 'typed' : '' }))
+  if (state.dialog?.run) out.push('run with (picked): ' + Object.keys(state.dialog.run).filter(p => state.dialog.run[p]).map(p => PNAME[p]).join(', '))
+  if (state.menu?.step === 'source' || state.menu?.step === 'add') out.push('run with (menu): ' + PNAME[state.menu.runWith])
+  out.push('notice: ' + (state.notice || '—'))
+  out.push('last action: ' + state.lastAction)
+  return out
+}
+function updatePanel() {
+  const host = $('#panel')
+  const lines = snapshot()
+  if (!state.panel) { host.replaceChildren(); lastLines = lines; return }
+  const prev = new Set(lastLines || [])
+  const pre = el('pre', { tabindex: '0', 'aria-label': 'Simulated state' }, lines.map(l => el('div', { class: lastLines && !prev.has(l) ? 'chg' : undefined, text: l })))
+  host.replaceChildren(el('aside', { class: 'statep', 'aria-label': 'State readout (prototype)' }, [el('header', {}, [el('span', { text: 'State (prototype) · changes marked' }),
+    el('button', { type: 'button', 'aria-label': 'Hide the state readout', text: 'Hide', on: { click: () => { state.panel = false; render('panel') } } })]), pre]))
+  lastLines = lines
+}
+function setTheme(light) { document.documentElement.dataset.theme = light ? 'light' : 'dark' }
+function resetFor() {
+  state.servers = []; state.dialog = null; state.notice = ''; state.lastCheck = null; state.selectedProvider = 'opencode'; state.ptab = 'configuration'
+  state.chosen = { thread: { provider: 'opencode', source: 'zen', model: 'Big Pickle' }, watcher: { provider: 'codex', source: null, model: 'GPT-6-Sol' } }
+  if (state.seeded) {
+    seed()
+    const sp = state.servers[0]
+    state.chosen.thread = { provider: 'opencode', source: sp.id, model: sp.models[0].name }
+    state.chosen.watcher = { provider: 'opencode', source: sp.id, model: sp.models[0].name }
+  }
+  if (state.menu) { const mode = state.menu.mode; state.menu = null; openMenuSilently(mode) }
+}
+function openMenuSilently(mode) { const c = chosenOf(mode); state.menu = { mode, rail: c.provider, step: 'sources', source: null, form: { name: '', address: '', key: '' }, check: null, runWith: 'opencode' } }
+const keys = Object.keys(VARIANTS)
+function go(step) {
+  state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]
+  state.view = VARIANTS[state.variant].views[0]
+  state.menu = null; resetFor()
+  if (state.view !== 'settings') openMenuSilently(state.view)
+  state.lastAction = 'Switched to variant ' + state.variant
+  const u = new URL(location.href); u.searchParams.set('variant', state.variant); u.searchParams.delete('scene'); u.searchParams.delete('view'); history.replaceState(null, '', u)
+  render(step < 0 ? 'prev' : 'next')
+}
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (state.dialog) { e.preventDefault(); closeDialog('Closed the dialog with Escape'); return }
+    if (state.menu) {
+      e.preventDefault()
+      if (state.menu.step !== 'sources') { state.menu.step = 'sources'; state.menu.source = null; state.menu.check = null; render('menu-first') } else closeMenu('Closed the menu with Escape')
+      return
+    }
+    if (state.panel) { e.preventDefault(); state.panel = false; render('panel') }
+    return
+  }
+  if (e.key === 'Tab' && state.dialog) {
+    const f = [...document.querySelectorAll('.tt-dialog button:not(:disabled), .tt-dialog input:not(:disabled)')]
+    if (!f.length) return
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus() }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus() }
+    else if (!document.activeElement.closest('.tt-dialog')) { e.preventDefault(); f[0].focus() }
+    return
+  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  const n = document.activeElement
+  if (state.dialog || state.menu) return
+  if (n && (n.tagName === 'INPUT' || n.tagName === 'SELECT' || n.tagName === 'TEXTAREA' || n.closest('[role=tablist]'))) return
+  if (n && n !== document.body && !n.closest('.chrome')) return
+  go(e.key === 'ArrowLeft' ? -1 : 1)
+})
+addEventListener('mousedown', e => { if (state.menu && !e.target.closest('.pop') && !e.target.closest('.sel') && !e.target.closest('.chrome') && !e.target.closest('.statep')) closeMenu('Closed the menu') })
+addEventListener('resize', () => { drawChrome(); fitPop() })
+
+/* ---------- Start, with URL switches for captures ---------- */
+const q = new URL(location.href).searchParams
+state.variant = keys.includes((q.get('variant') || '').toUpperCase()) ? q.get('variant').toUpperCase() : 'A'
+setTheme(q.get('theme') === 'light')
+if (q.get('motion') === 'reduce') document.documentElement.dataset.motion = 'reduce'
+state.view = VARIANTS[state.variant].views.includes(q.get('view')) ? q.get('view') : VARIANTS[state.variant].views[0]
+if (SERVER_STATES.some(s => s[0] === q.get('state'))) state.serverState = q.get('state')
+state.seeded = q.get('servers') === '1'
+state.panel = q.get('panel') === '1'
+resetFor()
+const scene = q.get('scene')
+const sp = PRESETS[0]
+const instant = h => { const res = runCheck(h.form); h.check = { with: { address: h.form.address, key: h.form.key }, phase: 'done', shown: res.steps.findIndex(s => s.r === 'bad') >= 0 ? res.steps.findIndex(s => s.r === 'bad') + 1 : res.steps.length, res }; state.lastCheck = res }
+if (state.view !== 'settings') openMenuSilently(state.view)
+if (scene && state.view === 'settings' && state.variant === 'A') {
+  state.dialog = scene === 'add' || scene === 'checked' ? { kind: 'a-server', form: { ...sp }, check: null } : { kind: 'pick', query: '' }
+  if (scene === 'checked') instant(state.dialog)
+}
+if (scene && state.view === 'settings' && state.variant === 'B') {
+  state.dialog = { kind: 'b', step: 1, form: { ...sp }, check: null, run: { opencode: true } }
+  if (scene === 'checked' || scene === 'step2') instant(state.dialog)
+  if (scene === 'step2' && state.dialog.check.res.ok) { state.dialog.step = 2; if (!state.dialog.check.res.responses) delete state.dialog.run.codex }
+}
+if (scene && state.menu && (scene === 'add' || scene === 'checked')) {
+  state.menu.rail = 'opencode'; state.menu.step = 'add'; state.menu.form = { ...sp }
+  if (scene === 'checked') instant(state.menu)
+}
+if (scene === 'source' && state.menu && state.servers.length) { state.menu.rail = 'opencode'; state.menu.step = 'source'; state.menu.source = state.servers[q.get('server') ? +q.get('server') : 0].id; state.menu.runWith = state.servers[0].providers[0] }
+let sceneKey
+if (state.dialog?.kind === 'a-server') sceneKey = state.dialog.check ? 'a-add' : 'a-address'
+else if (state.dialog?.kind === 'b') sceneKey = state.dialog.step === 2 ? 'dlg-first' : state.dialog.check ? 'b-next' : 'b-address'
+else if (state.menu?.step === 'add') sceneKey = state.menu.check ? (state.menu.check.res.ok ? 'menu-first' : 'm-check') : 'm-address'
+render(sceneKey)
+if (scene === 'checked') { const b = document.querySelector('[data-scroll="dlg"]'), c = document.querySelector('.tt-dialog .check'); if (b && c) b.scrollTop = c.offsetTop - b.offsetTop - 60; document.querySelector('.pop .problem')?.scrollIntoView({ block: 'nearest' }) }
+</script>
+</body>
+</html>
