@@ -150,6 +150,7 @@ describe('bringing a worktree’s commits to the branch it was made from', () =>
   it('refuses to replace the parent’s ignored file with one the commits add, on a fast-forward and on a merge, and leaves it whole', async () => {
     const { project, child, actions, main, parentCheckout } = await repository()
     // Ignored in both folders, as a local .env or build output is, through the repository's own exclude file.
+    await mkdir(join(project, '.git', 'info'), { recursive: true })
     await writeFile(join(project, '.git', 'info', 'exclude'), 'secret.env\nout\n')
     await writeFile(join(project, 'secret.env'), 'the parent’s own key\n')
     await writeFile(join(child, 'secret.env'), 'the child’s placeholder\n')
@@ -169,6 +170,7 @@ describe('bringing a worktree’s commits to the branch it was made from', () =>
 
   it('refuses commits that add a file under a path the parent has as an ignored file', async () => {
     const { project, child, actions, main, parentCheckout } = await repository()
+    await mkdir(join(project, '.git', 'info'), { recursive: true })
     await writeFile(join(project, '.git', 'info', 'exclude'), 'out\n')
     await writeFile(join(project, 'out'), 'the parent’s build output\n')
     await mkdir(join(child, 'out'), { recursive: true })
