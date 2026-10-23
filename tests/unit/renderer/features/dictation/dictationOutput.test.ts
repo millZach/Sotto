@@ -5,7 +5,7 @@ import { type DictationOutputResult } from '../../../../../src/renderer/src/feat
 import { TranscriptionError, type TranscriptionProgress } from '../../../../../src/renderer/src/transcription/localTranscriber'
 import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
-import { tone, withBurst } from '../../../../fixtures/renderer/syntheticAudio'
+import { tone } from '../../../../fixtures/renderer/syntheticAudio'
 
 describe('DictationController', () => {
   it('keeps text and publishes clipboard unavailability without a transcript on the widget', async () => {
@@ -460,7 +460,7 @@ describe('a silent tail at stop (#937)', () => {
     const heard: Float32Array[] = []
     const harness = createHarness({
       recorder: {
-        stop: vi.fn(async () => ({ samples: tone(0.47, 0.0005), sourceSampleRate: 48_000, durationMs: 13_470 })),
+        stop: vi.fn(async () => ({ samples: tone(0.47, 0.0005), sourceSampleRate: 48_000, durationMs: 13_470, peakChunkRms: 0.0006 })),
       },
       transcribe: async (options) => {
         heard.push(options.audio)
@@ -468,7 +468,7 @@ describe('a silent tail at stop (#937)', () => {
       },
     })
     await harness.controller.start()
-    recorderOptions(harness).onSegment?.({ samples: quietSegment, sourceSampleRate: 48_000, durationMs: 6_500 })
+    recorderOptions(harness).onSegment?.({ samples: quietSegment, sourceSampleRate: 48_000, durationMs: 6_500, peakChunkRms: 0.0006 })
     recorderOptions(harness).onSegment?.({ samples: tone(6.5, 0.05), sourceSampleRate: 48_000, durationMs: 6_500 })
     await harness.controller.stop()
 
@@ -480,9 +480,10 @@ describe('a silent tail at stop (#937)', () => {
   })
 
   it('sends a short tail with a brief sound above the pause level', async () => {
-    const tail = withBurst(tone(0.5, 0.0005), 0.2, 0.03, 0.03)
+    // Quiet on average, but the recorder measured one capture block above the pause level.
+    const tail = tone(0.5, 0.0005)
     const harness = createHarness({
-      recorder: { stop: vi.fn(async () => ({ samples: tail, sourceSampleRate: 48_000, durationMs: 7_000 })) },
+      recorder: { stop: vi.fn(async () => ({ samples: tail, sourceSampleRate: 48_000, durationMs: 7_000, peakChunkRms: 0.012 })) },
       transcribe: async (options) => ({ text: options.audio === tail ? 'no' : 'first part', language: 'en' }),
     })
     await harness.controller.start()
@@ -496,7 +497,7 @@ describe('a silent tail at stop (#937)', () => {
   it('says no speech was heard when the whole recording is one short silent tail', async () => {
     const harness = createHarness({
       recorder: {
-        stop: vi.fn(async () => ({ samples: tone(0.5, 0.0005), sourceSampleRate: 48_000, durationMs: 500 })),
+        stop: vi.fn(async () => ({ samples: tone(0.5, 0.0005), sourceSampleRate: 48_000, durationMs: 500, peakChunkRms: 0.0006 })),
       },
     })
     await harness.controller.start()
@@ -506,12 +507,13 @@ describe('a silent tail at stop (#937)', () => {
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'NO_SPEECH' })
   })
+
   it('keeps a recording whose segment was turned away, and Try again sends that segment alone', async () => {
     const segment = tone(6.5, 0.05)
     let refusals = 1
     const harness = createHarness({
       recorder: {
-        stop: vi.fn(async () => ({ samples: tone(0.47, 0.0005), sourceSampleRate: 48_000, durationMs: 6_970 })),
+        stop: vi.fn(async () => ({ samples: tone(0.47, 0.0005), sourceSampleRate: 48_000, durationMs: 6_970, peakChunkRms: 0.0006 })),
       },
       transcribe: async () => {
         if (refusals-- > 0) throw new TranscriptionError('failed')

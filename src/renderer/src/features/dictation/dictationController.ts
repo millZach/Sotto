@@ -608,7 +608,7 @@ export class DictationController {
     if (!this.isCurrent(session)) return
     // A short tail that never rises above a pause holds no speech; the speech model
     // would only make a filler word of it, so it is left out like an empty one.
-    const tail = isSilentTail(recording.samples) ? new Float32Array() : recording.samples
+    const tail = isSilentTail(recording) ? new Float32Array() : recording.samples
     if (tail.length === 0 && session.parts.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return

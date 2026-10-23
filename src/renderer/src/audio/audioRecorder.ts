@@ -100,6 +100,11 @@ export interface AudioRecordingResult {
   samples: Float32Array
   sourceSampleRate: number
   durationMs: number
+  /**
+   * On the result at stop: the RMS of the loudest capture block in these
+   * samples, measured as the recorder judges pauses, before resampling.
+   */
+  peakChunkRms?: number
 }
 
 export interface AudioRecorderOptions {
@@ -128,6 +133,8 @@ interface RecordingSession {
   sourceFrames: number
   totalFrames: number
   silentFrames: number
+  /** The loudest capture block since the last segment was emitted. */
+  peakChunkRms: number
   segmentationDisabled: boolean
   lastLevelEmitAt: number
   starting: boolean
@@ -219,6 +226,7 @@ export class AudioRecorder {
       sourceFrames: 0,
       totalFrames: 0,
       silentFrames: 0,
+      peakChunkRms: 0,
       segmentationDisabled: false,
       lastLevelEmitAt: Number.NEGATIVE_INFINITY,
       starting: true,
@@ -328,10 +336,12 @@ export class AudioRecorder {
     const levelsOnly = this.options.levelsOnly === true
     const chunk = levelsOnly ? data : new Float32Array(data)
     if (!levelsOnly) {
+      const rms = calculateRms(chunk)
       session.chunks.push(chunk)
       session.sourceFrames += chunk.length
       session.totalFrames += chunk.length
-      this.maybeEmitSegment(session, chunk)
+      session.peakChunkRms = Math.max(session.peakChunkRms, rms)
+      this.maybeEmitSegment(session, chunk, rms)
     }
     const now = Date.now()
     if (now - session.lastLevelEmitAt < LEVEL_EMIT_INTERVAL_MS) return
@@ -347,14 +357,14 @@ export class AudioRecorder {
     }
   }
 
-  private maybeEmitSegment(session: RecordingSession, chunk: Float32Array): void {
+  private maybeEmitSegment(session: RecordingSession, chunk: Float32Array, rms: number): void {
     const onSegment = this.options.onSegment
     if (onSegment === undefined || session.segmentationDisabled) return
     const sampleRate = session.context?.sampleRate
     if (sampleRate === undefined || sampleRate <= 0) return
 
     session.silentFrames =
-      calculateRms(chunk) < SEGMENT_SILENCE_RMS ? session.silentFrames + chunk.length : 0
+      rms < SEGMENT_SILENCE_RMS ? session.silentFrames + chunk.length : 0
 
     const segmentSeconds = session.sourceFrames / sampleRate
     const silenceSeconds = session.silentFrames / sampleRate
@@ -383,6 +393,7 @@ export class AudioRecorder {
     session.chunks.length = 0
     session.sourceFrames = 0
     session.silentFrames = 0
+    session.peakChunkRms = 0
   }
 
   private async finishAtDurationLimit(session: RecordingSession): Promise<void> {
@@ -466,6 +477,7 @@ export class AudioRecorder {
               : samples,
             sourceSampleRate: sampleRate,
             durationMs: (session.totalFrames / sampleRate) * 1_000,
+            peakChunkRms: session.peakChunkRms,
           }
         }
       } catch {
