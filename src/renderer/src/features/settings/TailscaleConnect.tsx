@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Network } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { HostsBridge } from '../../../../shared/hosts'
 import type { TailscaleSummary } from '../../../../shared/hostDevices'
 import { Button } from '../../components/Button'
@@ -26,6 +29,7 @@ export interface TailscaleControl {
  * while a sign-in finishes in the browser.
  */
 export function useTailscale(bridge: HostsBridge | undefined): TailscaleControl {
+  const { t } = useLingui()
   const [summary, setSummary] = useState<TailscaleSummary | null>(null)
   const [phase, setPhase] = useState<TailscaleControl['phase']>('idle')
   const [notice, setNotice] = useState<string | null>(null)
@@ -56,7 +60,7 @@ export function useTailscale(bridge: HostsBridge | undefined): TailscaleControl 
       void refresh().then(next => {
         if (!alive.current) return
         if (next?.state === 'running') { setPhase('idle'); setNotice(null) }
-        else if (Date.now() - started > SIGN_IN_WAIT_MS) { setPhase('idle'); setNotice('Tailscale is still not signed in. Press Connect to Tailscale to try again.') }
+        else if (Date.now() - started > SIGN_IN_WAIT_MS) { setPhase('idle'); setNotice(i18n._(msg`Tailscale is still not signed in. Press Connect to Tailscale to try again.`)) }
       })
     }, SIGN_IN_POLL_MS)
     return () => window.clearInterval(timer)
@@ -68,25 +72,23 @@ export function useTailscale(bridge: HostsBridge | undefined): TailscaleControl 
     if (!reopening) { setPhase('connecting'); setNotice(null) }
     void bridge.connectTailscale().catch(() => 'failed' as const).then(async outcome => {
       if (!alive.current) return
-      if (outcome === 'sign-in-opened') { setPhase('signing-in'); setNotice('Sign in to Tailscale in your browser. Sotto lists your devices once you have.'); return }
+      if (outcome === 'sign-in-opened') { setPhase('signing-in'); setNotice(i18n._(msg`Sign in to Tailscale in your browser. Sotto lists your devices once you have.`)); return }
       setPhase('idle')
       await refresh()
       if (!alive.current) return
-      if (outcome === 'sign-in-needed') setNotice(reopening ? 'Your browser did not open. Open the Tailscale app on this computer and sign in there.' : 'Tailscale needs you to sign in. Open the Tailscale app on this computer and sign in there.')
-      else if (outcome === 'failed') setNotice('Tailscale did not connect. Open the Tailscale app on this computer and connect from there.')
+      if (outcome === 'sign-in-needed') setNotice(reopening ? i18n._(msg`Your browser did not open. Open the Tailscale app on this computer and sign in there.`) : i18n._(msg`Tailscale needs you to sign in. Open the Tailscale app on this computer and sign in there.`))
+      else if (outcome === 'failed') setNotice(i18n._(msg`Tailscale did not connect. Open the Tailscale app on this computer and connect from there.`))
     })
   }, [bridge, phase, refresh])
   const getTailscale = useCallback((): void => {
     if (!bridge) return
     setNotice(null)
-    void bridge.openTailscaleDownload().catch(() => { if (alive.current) setNotice('Your browser did not open. Go to tailscale.com/download to get Tailscale.') })
+    void bridge.openTailscaleDownload().catch(() => { if (alive.current) setNotice(i18n._(msg`Your browser did not open. Go to tailscale.com/download to get Tailscale.`)) })
   }, [bridge])
   // A first read that fails leaves the row saying so, rather than checking for ever.
-  const unreadNotice = unread && summary === null ? 'Sotto could not check Tailscale on this computer. Nothing was changed. Come back to this window to check again.' : null
+  const unreadNotice = unread && summary === null ? t`Sotto could not check Tailscale on this computer. Nothing was changed. Come back to this window to check again.` : null
   return { summary, phase, notice: notice ?? unreadNotice, connect, getTailscale }
 }
-
-const devicesOnTailnet = (count: number): string => `${count} ${count === 1 ? 'device' : 'devices'} on your tailnet`
 
 /**
  * The button a Tailscale that is off or missing offers: the same on the Hosts page and in Add host, where
@@ -94,23 +96,29 @@ const devicesOnTailnet = (count: number): string => `${count} ${count === 1 ? 'd
  * page again, since a second tailscale up would only replace the first.
  */
 function TailscaleAction({ control, summary, primary = false }: { readonly control: TailscaleControl; readonly summary: TailscaleSummary; readonly primary?: boolean }): ReactNode {
-  if (summary.state === 'missing') return <Button variant="secondary" onClick={control.getTailscale}>Get Tailscale</Button>
+  const { t } = useLingui()
+  if (summary.state === 'missing') return <Button variant="secondary" onClick={control.getTailscale}>{t`Get Tailscale`}</Button>
   if (summary.state !== 'off') return null
-  const label = control.phase === 'connecting' ? 'Connecting…' : control.phase === 'signing-in' ? 'Open sign-in page' : 'Connect to Tailscale'
+  const label = control.phase === 'connecting' ? t`Connecting…` : control.phase === 'signing-in' ? t`Open sign-in page` : t`Connect to Tailscale`
   return <Button variant={primary ? 'primary' : 'secondary'} disabled={control.phase === 'connecting'} onClick={control.connect}>{label}</Button>
 }
 
+/** "Connected as zach · 4 devices on your tailnet". */
+const connectedAs = (user: string, count: number): string =>
+  plural(count, { one: `Connected as ${user} · # device on your tailnet`, other: `Connected as ${user} · # devices on your tailnet` })
+
 /** The Hosts page's Tailscale row, under This computer. */
 export function TailscaleRow({ control }: { readonly control: TailscaleControl }): ReactNode {
+  const { t } = useLingui()
   const { summary } = control
   return <section className="hosts-tailscale" aria-label="Tailscale">
     <span className="hosts-row__icon hosts-row__icon--local" aria-hidden="true"><Network size={18} /></span>
     <div className="hosts-tailscale__copy">
       <h4>Tailscale</h4>
-      {summary === null ? <p>Checking Tailscale on this computer…</p>
-        : summary.state === 'running' ? <p><span className="hosts-dot" data-online="true" aria-hidden="true" />Connected as {summary.user} · {devicesOnTailnet(summary.deviceCount)}</p>
-        : summary.state === 'off' ? <p>Off on this computer. Connect to reach your other machines.</p>
-        : <p>Not installed. Hosts still work over SSH without it.</p>}
+      {summary === null ? <p>{t`Checking Tailscale on this computer…`}</p>
+        : summary.state === 'running' ? <p><span className="hosts-dot" data-online="true" aria-hidden="true" />{connectedAs(summary.user, summary.deviceCount)}</p>
+        : summary.state === 'off' ? <p>{t`Off on this computer. Connect to reach your other machines.`}</p>
+        : <p>{t`Not installed. Hosts still work over SSH without it.`}</p>}
       {control.notice ? <p className="hosts-tailscale__notice" role="status">{control.notice}</p> : null}
     </div>
     {summary ? <div className="hosts-tailscale__action"><TailscaleAction control={control} summary={summary} /></div> : null}
@@ -123,8 +131,8 @@ export function TailscalePrompt({ control }: { readonly control: TailscaleContro
   if (summary === null || summary.state === 'running') return control.notice ? <p className="hosts-tailscale-prompt__notice" role="status">{control.notice}</p> : null
   return <div className="hosts-tailscale-prompt">
     <p>{summary.state === 'off'
-      ? <><b>Tailscale is off on this computer.</b> Connect to see the machines on your tailnet.</>
-      : <><b>Tailscale is not installed.</b> Any machine you reach over SSH works; Tailscale makes your other machines easy to reach.</>}</p>
+      ? <Trans><b>Tailscale is off on this computer.</b> Connect to see the machines on your tailnet.</Trans>
+      : <Trans><b>Tailscale is not installed.</b> Any machine you reach over SSH works; Tailscale makes your other machines easy to reach.</Trans>}</p>
     <TailscaleAction control={control} summary={summary} primary />
     {control.notice ? <p className="hosts-tailscale-prompt__notice" role="status">{control.notice}</p> : null}
   </div>

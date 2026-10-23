@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
@@ -34,44 +37,53 @@ export function shownVersion(version: string): string {
   return version.match(/\d+\.\d+\.\d+(?:-[\w.]+)?/u)?.[0] ?? version.trim().slice(0, 36)
 }
 
-/** The tile for one of a host's providers, from the status the host publishes. `host` is the name this computer saved it under. */
+/**
+ * The tile for one of a host's providers, from the status the host publishes. `host` is the name this computer saved it under.
+ * Read while the tile renders, in the interface language.
+ */
 export function hostProviderTile(status: AgentProviderStatus | undefined, host: string): HostProviderTile {
   const version = status?.version ? shownVersion(status.version) : ''
-  if (status?.connection === 'connected') return { kind: 'connected', state: 'Connected', detail: [status.account, version].filter(Boolean).join(' · ') }
-  if (status?.connection === 'connecting') return { kind: 'connecting', state: 'Connecting…', detail: version }
-  if (status?.connection !== 'error') return { kind: 'off', state: 'Turned off', detail: version || `Connect it to use it on ${host}.` }
+  if (status?.connection === 'connected') return { kind: 'connected', state: i18n._(msg({ message: 'Connected', comment: 'A provider on a host: connected and ready.' })), detail: [status.account, version].filter(Boolean).join(' · ') }
+  if (status?.connection === 'connecting') return { kind: 'connecting', state: i18n._(msg`Connecting…`), detail: version }
+  if (status?.connection !== 'error') return { kind: 'off', state: i18n._(msg({ message: 'Turned off', comment: 'A provider on a host that the user disconnected.' })), detail: version || i18n._(msg`Connect it to use it on ${host}.`) }
   switch (status.problem) {
-    case 'signed-out': return { kind: 'signed-out', state: 'Not signed in', detail: version || `Installed on ${host}.` }
-    case 'not-installed': return { kind: 'not-installed', state: 'Not installed', detail: `Not on ${host} yet.` }
-    case 'too-old': return { kind: 'too-old', state: 'Too old to use',
-      detail: `${version ? `${version} on ${host}.` : `The one on ${host} is too old.`} Sotto needs ${status.requiredVersion ? `${shownVersion(status.requiredVersion)} or later` : 'a newer version'}.` }
-    default: return { kind: 'cannot-start', state: "Can't be started", detail: `Installed, but ${host}'s host could not find or start it.` }
+    case 'signed-out': return { kind: 'signed-out', state: i18n._(msg`Not signed in`), detail: version || i18n._(msg`Installed on ${host}.`) }
+    case 'not-installed': return { kind: 'not-installed', state: i18n._(msg`Not installed`), detail: i18n._(msg`Not on ${host} yet.`) }
+    case 'too-old': {
+      const required = status.requiredVersion ? shownVersion(status.requiredVersion) : ''
+      const installed = version ? i18n._(msg`${version} on ${host}.`) : i18n._(msg`The one on ${host} is too old.`)
+      const needs = required ? i18n._(msg`Sotto needs ${required} or later.`) : i18n._(msg`Sotto needs a newer version.`)
+      return { kind: 'too-old', state: i18n._(msg`Too old to use`), detail: `${installed} ${needs}` }
+    }
+    default: return { kind: 'cannot-start', state: i18n._(msg`Can't be started`), detail: i18n._(msg`Installed, but ${host}'s host could not find or start it.`) }
   }
 }
 
 /** How many of a host's providers are connected, as its row says after "Connected". */
 export function connectedProvidersLabel(providers: readonly AgentProviderStatus[]): string {
   const count = providers.filter(provider => provider.connection === 'connected').length
-  return `${count} provider${count === 1 ? '' : 's'}`
+  return plural(count, { one: '# provider', other: '# providers' })
 }
 
 type Pending = HostProviderAction['action']
-const PENDING_LABEL: Readonly<Record<Pending, string>> = { connect: 'Connecting…', disconnect: 'Disconnecting…', refresh: 'Checking…' }
+const PENDING_LABEL: Readonly<Record<Pending, MessageDescriptor>> = { connect: msg`Connecting…`, disconnect: msg`Disconnecting…`, refresh: msg`Checking…` }
 
 /** Devin and Muse sign in on the host itself: their tiles show the command, with Copy, instead of Sign in. */
 function SignInCommand({ host, provider }: { readonly host: string; readonly provider: ProviderId }): ReactNode {
+  const { t } = useLingui()
   const command = PROVIDER_SIGN_IN_COMMANDS[provider] ?? ''
+  const name = PROVIDER_LABELS[provider]
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => { try { await writeClipboard(command); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
-    <p>Sign in on {host} with:</p>
+    <p><Trans>Sign in on {host} with:</Trans></p>
     <code>{command}</code>
-    <Button variant="secondary" aria-label={`Copy the ${PROVIDER_LABELS[provider]} sign-in command`} onClick={() => void copy()}>
-      {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy'}
+    <Button variant="secondary" aria-label={t`Copy the ${name} sign-in command`} onClick={() => void copy()}>
+      {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy`}
     </Button>
-    {copied === 'failed' ? <p>The command could not be copied. Select it and copy it yourself.</p> : null}
-    <span className="tt-visually-hidden" role="status">{copied === 'copied' ? 'Copied the command' : ''}</span>
+    {copied === 'failed' ? <p><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
+    <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the command` : ''}</span>
   </div>
 }
 
@@ -83,10 +95,11 @@ const running = (job: HostProviderJobState): boolean => job.phase === 'starting'
  */
 function jobNote(job: HostProviderJobState | undefined, kind: HostProviderTileKind): string {
   if (!job || running(job)) return ''
-  if (job.phase === 'found') return kind !== 'signed-out' ? '' : `${job.host}'s host found it. ${job.modelName} worked in the thread ${job.threadTitle}.`
+  const { host, modelName: model, threadTitle: thread } = job
+  if (job.phase === 'found') return kind !== 'signed-out' ? '' : i18n._(msg`${host}'s host found it. ${model} worked in the thread ${thread}.`)
   if (kind !== 'not-installed' && kind !== 'too-old' && kind !== 'cannot-start') return ''
-  if (job.phase === 'stopped') return `Stopped. Anything the agent installed on ${job.host} stays there, and the thread ${job.threadTitle} stays in your Threads list.`
-  if (job.phase === 'failed') return job.error ?? `The thread ${job.threadTitle} did not start working. Nothing was changed on ${job.host}.`
+  if (job.phase === 'stopped') return i18n._(msg`Stopped. Anything the agent installed on ${host} stays there, and the thread ${thread} stays in your Threads list.`)
+  if (job.phase === 'failed') return job.error ?? i18n._(msg`The thread ${thread} did not start working. Nothing was changed on ${host}.`)
   return ''
 }
 
@@ -103,8 +116,11 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
   /** The host's client updates, when it offers them: this tile shows its own client's. */
   readonly updates?: TileUpdates | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const name = PROVIDER_LABELS[provider]
+  const hostName = host.name
   const working = job && running(job) ? job : undefined
+  const workingThread = working?.threadTitle
   const shown = hostProviderTile(status, host.name)
   const tile: HostProviderTile = working ? { kind: 'working', state: HOST_PROVIDER_JOB_WORDS[working.case].working, detail: '' } : shown
   const agents = useOptionalAgents()
@@ -166,10 +182,10 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     try {
       const result = await bridge.providerAction({ id: host.id, provider, action })
       // Check again that finds nothing new says so; its refusal is the same sentence the tile already stands for.
-      if (action === 'refresh') setNote({ text: `Checked again. Nothing changed on ${host.name}.`, kind: before })
+      if (action === 'refresh') setNote({ text: t`Checked again. Nothing changed on ${hostName}.`, kind: before })
       else if (result.error) setNote({ text: result.error, kind: before })
     } catch (failure) {
-      setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : `${host.name} did not answer. Nothing was changed. Try again.`, kind: before })
+      setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`${hostName} did not answer. Nothing was changed. Try again.`, kind: before })
     } finally { setPending(null) }
   }
   /** Show thread: the Threads page, on the job's thread. The job carries on. */
@@ -182,34 +198,37 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     if (!working || stopping) return
     setStopping(true)
     try { await bridge.command({ type: 'stop-provider-job', id: working.id }) }
-    catch (failure) { setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : 'The agent could not be stopped. Try again.', kind: 'working' }) }
+    catch (failure) { setNote({ text: failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`The agent could not be stopped. Try again.`, kind: 'working' }) }
     finally { setStopping(false) }
   }
   const shownNote = refused ?? (note && note.kind === tile.kind ? note.text : jobNote(job, tile.kind) || parts.note || '')
   const jobCase = hostProviderJobCase(status)
   const action = (): ReactNode => {
     // Keys keep a pressed control from turning into another one in place: Stop must not become Check again under focus.
-    if (working) return <div className="host-provider__actions">
-      <Button key="show" variant="secondary" disabled={!working.threadId} aria-label={`Show thread ${working.threadTitle}`} onClick={showThread}>Show thread</Button>
-      <Button key="stop" variant="ghost" disabled={stopping} aria-label={`Stop the agent working on ${name} on ${host.name}`} onClick={() => void stop()}>{stopping ? 'Stopping…' : 'Stop'}</Button>
-    </div>
+    if (working) {
+      const thread = working.threadTitle
+      return <div className="host-provider__actions">
+        <Button key="show" variant="secondary" disabled={!working.threadId} aria-label={t`Show thread ${thread}`} onClick={showThread}>{t`Show thread`}</Button>
+        <Button key="stop" variant="ghost" disabled={stopping} aria-label={t`Stop the agent working on ${name} on ${hostName}`} onClick={() => void stop()}>{stopping ? t`Stopping…` : t({ message: 'Stop', comment: 'Stops the agent installing or fixing a provider on a host.' })}</Button>
+      </div>
+    }
     if (tile.kind === 'connected') {
-      const disconnect = <Button key="disconnect" variant="ghost" disabled={pending !== null} aria-label={`Disconnect ${name} on ${host.name}`} onClick={() => void act('disconnect')}>{pending ? PENDING_LABEL[pending] : 'Disconnect'}</Button>
+      const disconnect = <Button key="disconnect" variant="ghost" disabled={pending !== null} aria-label={t`Disconnect ${name} on ${hostName}`} onClick={() => void act('disconnect')}>{pending ? i18n._(PENDING_LABEL[pending]) : t`Disconnect`}</Button>
       // Update beside Disconnect, as the pick drew it: the tile's own update, run on this host.
       return parts.action ? <div className="host-provider__actions">{parts.action}{disconnect}</div> : disconnect
     }
-    if (tile.kind === 'off') return <Button variant="secondary" disabled={pending !== null} aria-label={`Connect ${name} on ${host.name}`} onClick={() => void act('connect')}>{pending ? PENDING_LABEL[pending] : 'Connect'}</Button>
+    if (tile.kind === 'off') return <Button variant="secondary" disabled={pending !== null} aria-label={t`Connect ${name} on ${hostName}`} onClick={() => void act('connect')}>{pending ? i18n._(PENDING_LABEL[pending]) : t({ message: 'Connect', comment: 'Connects a provider on a host.' })}</Button>
     if (tile.kind === 'signed-out') {
       // OpenCode connects with no sign-in and signs in to model sources under the tiles instead (#1107).
       if (provider === 'opencode') return null
       if (!PROVIDER_SIGN_IN_SHAPES[provider]) return <SignInCommand host={host.name} provider={provider} />
-      return <Button variant="primary" aria-label={`Sign in to ${name} on ${host.name} from this computer`} onClick={() => onSignIn(provider)}>Sign in</Button>
+      return <Button variant="primary" aria-label={t`Sign in to ${name} on ${hostName} from this computer`} onClick={() => onSignIn(provider)}>{t`Sign in`}</Button>
     }
     if (jobCase) {
       // Have my agent install it (update it, fix it), with Check again beside it (ADR-0035).
       return <div className="host-provider__actions">
         <Button key="agent" variant="primary" aria-label={`${HOST_PROVIDER_JOB_WORDS[jobCase].button.replace(/ it$/u, ` ${name}`)} on ${host.name}`} onClick={() => onAgent(provider, jobCase)}>{HOST_PROVIDER_JOB_WORDS[jobCase].button}</Button>
-        <Button key="check" variant="ghost" disabled={pending !== null} aria-label={`Check ${host.name} for ${name} again`} onClick={() => void act('refresh')}>{pending ? PENDING_LABEL[pending] : 'Check again'}</Button>
+        <Button key="check" variant="ghost" disabled={pending !== null} aria-label={t`Check ${hostName} for ${name} again`} onClick={() => void act('refresh')}>{pending ? i18n._(PENDING_LABEL[pending]) : t`Check again`}</Button>
       </div>
     }
     return null
@@ -220,7 +239,7 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
       <h5 id={titleId}>{name}</h5>
     </div>
     <p className="host-provider__state"><span className="host-provider__dot" aria-hidden="true" />{tile.state}</p>
-    {working ? <p className="host-provider__detail">In the thread <b>{working.threadTitle}</b> on this computer.</p>
+    {working ? <p className="host-provider__detail"><Trans>In the thread <b>{workingThread}</b> on this computer.</Trans></p>
       : tile.detail ? <p className="host-provider__detail">{tile.detail}</p> : null}
     {parts.line}{parts.below ? <div className="host-client-update__below">{parts.below}</div> : null}
     <div ref={actions} className="host-provider__act" onFocus={focusIn} onBlur={focusOut}>{action()}</div>
@@ -245,6 +264,8 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   /** The models an agent can run on, shared with Have my agent set this up. */
   readonly choice?: HostSetupChoice | undefined
 }): ReactNode {
+  const { t } = useLingui()
+  const hostName = host.name
   const heldProviders = useHeldProviders()
   const [open, setOpen] = useState(false)
   const [signingIn, setSigningIn] = useState<HostProviderId | null>(null)
@@ -268,11 +289,11 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
       if (result.error) setRefusal({ providers: ids, text: result.error })
       return result.error
     } catch (failure) {
-      const text = failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : `${host.name} did not answer. Nothing was changed. Try again.`
+      const text = failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`${hostName} did not answer. Nothing was changed. Try again.`
       setRefusal({ providers: ids, text })
       return text
     } finally { setSending(false) }
-  }, [bridge, host.id, host.name])
+  }, [bridge, host.id, hostName, t])
   const tileUpdates: TileUpdates | undefined = updates ? { view, run, send, busy: sending, refusal } : undefined
   /**
    * The dialog closes onto its tile. Escape gives focus back to the button that opened it; Start removes that button, so
@@ -289,20 +310,20 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   return <div className="host-providers" data-host-providers={host.id}>
     <div className="host-providers__bar">
       <Button variant="ghost" className="host-providers__toggle" aria-expanded={open} aria-controls={open ? gridId : undefined}
-        aria-label={`${open ? 'Hide' : 'Show'} providers on ${host.name}`} onClick={() => setOpen(value => !value)}>
-        {open ? 'Hide providers' : 'Show providers'}
+        aria-label={open ? t`Hide providers on ${hostName}` : t`Show providers on ${hostName}`} onClick={() => setOpen(value => !value)}>
+        {open ? t`Hide providers` : t`Show providers`}
       </Button>
       {updates ? <HostClientUpdatesChip host={host.name} hostId={host.id} view={view} run={run} busy={sending} refusal={refusal?.text} send={send} /> : null}
     </div>
     {open ? <div id={gridId} className="host-providers__panel">
-      <ul ref={grid} className="host-providers__grid" aria-label={`Providers on ${host.name}`}>
+      <ul ref={grid} className="host-providers__grid" aria-label={t`Providers on ${hostName}`}>
         {shownProviders.map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
           status={providers.find(item => item.id === provider)} job={own?.provider === provider ? own : undefined}
           onSignIn={setSigningIn} onAgent={(id, jobCase) => setAgent({ provider: id, jobCase })} updates={tileUpdates} />)}
       </ul>
       {opencodeBridge && opencodeConnected ? <OpenCodeModelSources bridge={opencodeBridge} host={host.name} /> : null}
       {heldProviders.has('opencode') || opencodeOnHost ? null : <p className="host-providers__foot">{opencodeNotOnHost(host.name)}</p>}
-      <p className="host-providers__foot">{host.name} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</p>
+      <p className="host-providers__foot"><Trans>{hostName} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</Trans></p>
     </div> : null}
     {signingIn ? <HostProviderSignIn host={host} provider={signingIn} bridge={bridge} onClose={() => setSigningIn(null)} /> : null}
     {agent ? <HostProviderAgent host={host} provider={agent.provider} jobCase={agent.jobCase} choice={choice} bridge={bridge} onClose={closeAgent} /> : null}

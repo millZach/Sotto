@@ -1,5 +1,8 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy, LoaderCircle } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { writeClipboard } from '../../agents/richActions'
 import { isCompositionKey } from '../../agents/composerKeys'
 import { PROVIDER_LABELS } from '../../../../shared/agents'
@@ -17,7 +20,10 @@ const clean = (failure: unknown, fallback: string): string =>
 const running = (view: ProviderSignInView | null): boolean => view !== null && (view.stage === 'starting' || view.stage === 'waiting' || view.stage === 'finishing')
 
 /** "W D J B, dash, M J H T": a code read out one character at a time, so a screen reader does not say it as a word. */
-function spelled(code: string): string { return [...code].map(character => character === '-' ? 'dash' : character).join(' ') }
+function spelled(code: string): string {
+  const dash = i18n._(msg({ message: 'dash', comment: 'The character "-", read aloud by a screen reader in a sign-in code.' }))
+  return [...code].map(character => character === '-' ? dash : character).join(' ')
+}
 
 /**
  * Sign in to a provider on a host, from this computer (ADR-0037). The provider's own client runs on the host; the user
@@ -27,7 +33,9 @@ function spelled(code: string): string { return [...code].map(character => chara
 export function HostProviderSignIn({ host, provider, bridge, onClose }: {
   readonly host: HostStatus; readonly provider: HostProviderId; readonly bridge: HostsBridge; readonly onClose: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const name = PROVIDER_LABELS[provider]
+  const hostName = host.name
   const [view, setView] = useState<ProviderSignInView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [opened, setOpened] = useState(false)
@@ -49,9 +57,9 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
     bridge.signIn({ type: 'start', id: host.id, provider }).then(started => {
       if (alive) { setView(started); return }
       if (started && running(started)) void bridge.signIn({ type: 'cancel', id: host.id, signInId: started.id }).catch(() => undefined)
-    }, failure => { if (alive) setError(clean(failure, `${name} could not start signing in on ${host.name}. Nothing was changed. Try again.`)) })
+    }, failure => { if (alive) setError(clean(failure, i18n._(msg`${name} could not start signing in on ${hostName}. Nothing was changed. Try again.`))) })
     return () => { alive = false }
-  }, [attempt, bridge, host.id, host.name, name, provider])
+  }, [attempt, bridge, host.id, hostName, name, provider])
   useEffect(() => () => { const last = current.current; if (last && running(last)) void bridge.signIn({ type: 'cancel', id: host.id, signInId: last.id }).catch(() => undefined) }, [bridge, host.id])
 
   // While it runs, follow it: a device code is finished on the page, and a pasted code by the client on the host.
@@ -67,11 +75,11 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
         setView(next ?? { id: signInId, provider, shape: view!.shape, stage: 'ended' })
       }, () => {
         if (!alive || ++missed < READ_MISSES) return
-        setError(`${host.name} stopped answering while ${name} was signing in. If its tile still says Not signed in, try again.`)
+        setError(i18n._(msg`${hostName} stopped answering while ${name} was signing in. If its tile still says Not signed in, try again.`))
       })
     }, READ_EVERY_MS)
     return () => { alive = false; clearInterval(timer) }
-  }, [bridge, error, host.id, host.name, name, provider, signInId, stage])
+  }, [bridge, error, host.id, hostName, name, provider, signInId, stage])
 
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   useEffect(() => { if (opened) field.current?.focus() }, [opened])
@@ -89,14 +97,14 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
     if (!view) return
     setBusy(true)
     try { await bridge.signIn({ type: 'open', id: host.id, signInId: view.id }); setOpened(true) }
-    catch (failure) { setError(clean(failure, 'The sign-in page could not open. Nothing was changed. Try again.')) }
+    catch (failure) { setError(clean(failure, t`The sign-in page could not open. Nothing was changed. Try again.`)) }
     finally { setBusy(false) }
   }
   const finish = async (): Promise<void> => {
     if (!view || !code.trim() || busy) return
     setBusy(true); setCodeError(null)
     try { const next = await bridge.signIn({ type: 'code', id: host.id, signInId: view.id, code: code.trim() }); setCode(''); if (next) setView(next) }
-    catch (failure) { setCodeError(clean(failure, 'The code could not be sent. Nothing was changed. Try again.')) }
+    catch (failure) { setCodeError(clean(failure, t`The code could not be sent. Nothing was changed. Try again.`)) }
     finally { setBusy(false) }
   }
   const copy = async (value: string): Promise<void> => { try { await writeClipboard(value); setCopied('copied') } catch { setCopied('failed') } }
@@ -105,56 +113,58 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
 
   const body = (): ReactNode => {
     if (error) return <div className="hosts-notice hosts-notice--error" role="alert"><p>{error}</p></div>
-    if (!view || view.stage === 'starting') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p>Starting {name}'s sign-in on {host.name}…</p></div>
-    if (view.stage === 'finishing') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p>Finishing sign-in on {host.name}, then connecting {name}…</p></div>
-    if (view.stage === 'connected') return <div className="hosts-notice host-sign-in__done" role="status"><Check size={16} aria-hidden="true" /><p>{name} is signed in and connected on {host.name}.</p></div>
-    if (view.stage === 'refused') return <div className="hosts-notice hosts-notice--error" role="alert"><p>{name} did not accept that code, so {host.name} is still not signed in. Open the sign-in page again for a new code.</p></div>
-    if (view.stage === 'failed') return <div className="hosts-notice hosts-notice--error" role="alert"><p>{view.message ?? `${name} could not finish signing in on ${host.name}. Nothing was changed.`}</p></div>
-    if (view.stage === 'ended') return <div className="hosts-notice hosts-notice--error" role="alert"><p>The sign-in on {host.name} ended before it was finished. Nothing was signed in.</p></div>
-    const page = view.page ?? 'the sign-in page'
+    if (!view || view.stage === 'starting') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p><Trans>Starting {name}'s sign-in on {hostName}…</Trans></p></div>
+    if (view.stage === 'finishing') return <div className="hosts-notice" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p><Trans>Finishing sign-in on {hostName}, then connecting {name}…</Trans></p></div>
+    if (view.stage === 'connected') return <div className="hosts-notice host-sign-in__done" role="status"><Check size={16} aria-hidden="true" /><p><Trans>{name} is signed in and connected on {hostName}.</Trans></p></div>
+    if (view.stage === 'refused') return <div className="hosts-notice hosts-notice--error" role="alert"><p><Trans>{name} did not accept that code, so {hostName} is still not signed in. Open the sign-in page again for a new code.</Trans></p></div>
+    // The host's own sentence, when it sent one.
+    if (view.stage === 'failed') return <div className="hosts-notice hosts-notice--error" role="alert"><p>{view.message ?? t`${name} could not finish signing in on ${hostName}. Nothing was changed.`}</p></div>
+    if (view.stage === 'ended') return <div className="hosts-notice hosts-notice--error" role="alert"><p><Trans>The sign-in on {hostName} ended before it was finished. Nothing was signed in.</Trans></p></div>
+    const page = view.page ?? t({ message: 'the sign-in page', comment: 'Stands in for the address of a provider\'s sign-in page, as in "Waiting for you on {page}."' })
+    const minutes = view.expiresInMinutes, spoken = spelled(view.code ?? '')
     if (view.shape === 'device-code') return <div className="host-sign-in">
-      <p>Enter this code on {name}'s sign-in page. {host.name} finishes signing in by itself once you do.</p>
+      <p><Trans>Enter this code on {name}'s sign-in page. {hostName} finishes signing in by itself once you do.</Trans></p>
       <div className="host-sign-in__code-row">
         <span className="host-sign-in__code" aria-hidden="true">{view.code}</span>
-        <span className="tt-visually-hidden">Code {spelled(view.code ?? '')}</span>
-        <Button variant="secondary" aria-label="Copy the code" onClick={() => void copy(view.code ?? '')}>
-          {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy code'}
+        <span className="tt-visually-hidden"><Trans comment="{spoken} is a sign-in code read one character at a time.">Code {spoken}</Trans></span>
+        <Button variant="secondary" aria-label={t`Copy the code`} onClick={() => void copy(view.code ?? '')}>
+          {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy code`}
         </Button>
       </div>
       <div className="host-sign-in__row">
-        <Button variant="primary" data-autofocus disabled={busy} onClick={() => void open()}>{opened ? 'Open sign-in page again' : 'Open sign-in page'}</Button>
+        <Button variant="primary" data-autofocus disabled={busy} onClick={() => void open()}>{opened ? t`Open sign-in page again` : t`Open sign-in page`}</Button>
       </div>
-      <p className="host-sign-in__waiting" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />Waiting for you on {page}.{view.expiresInMinutes ? ` The code lasts ${view.expiresInMinutes} minutes.` : ''}</p>
-      {copied === 'failed' ? <p className="host-sign-in__quiet">The code could not be copied. Type it on the page instead.</p> : null}
-      <span className="tt-visually-hidden" role="status">{copied === 'copied' ? 'Copied the code' : ''}</span>
+      <p className="host-sign-in__waiting" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />{t`Waiting for you on ${page}.`}{minutes ? <> {plural(minutes, { other: 'The code lasts # minutes.' })}</> : null}</p>
+      {copied === 'failed' ? <p className="host-sign-in__quiet"><Trans>The code could not be copied. Type it on the page instead.</Trans></p> : null}
+      <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the code` : ''}</span>
     </div>
     return <div className="host-sign-in">
-      <p>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</p>
+      <p><Trans>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</Trans></p>
       <div className="host-sign-in__row">
-        <Button variant={opened ? 'secondary' : 'primary'} data-autofocus disabled={busy} onClick={() => void open()}>{opened ? 'Open sign-in page again' : 'Open sign-in page'}</Button>
-        {opened ? <span className="host-sign-in__quiet">Opened {page} in your browser.</span> : null}
+        <Button variant={opened ? 'secondary' : 'primary'} data-autofocus disabled={busy} onClick={() => void open()}>{opened ? t`Open sign-in page again` : t`Open sign-in page`}</Button>
+        {opened ? <span className="host-sign-in__quiet"><Trans>Opened {page} in your browser.</Trans></span> : null}
       </div>
       {opened ? <div className="tt-field host-sign-in__field">
-        <label className="tt-field__label" htmlFor={fieldId}>Code from the page</label>
+        <label className="tt-field__label" htmlFor={fieldId}>{t`Code from the page`}</label>
         <div className="host-sign-in__row">
           <input ref={field} id={fieldId} className="tt-input tt-focusable" value={code} maxLength={PASTED_CODE_MAX} autoComplete="off" spellCheck={false}
-            aria-describedby={hintId} aria-invalid={codeError ? true : undefined} placeholder="Paste the code"
+            aria-describedby={hintId} aria-invalid={codeError ? true : undefined} placeholder={t`Paste the code`}
             onChange={event => { setCode(event.target.value); setCodeError(null) }}
             onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); void finish() } }} />
-          <Button variant="primary" disabled={!code.trim() || busy} onClick={() => void finish()}>Finish sign-in</Button>
+          <Button variant="primary" disabled={!code.trim() || busy} onClick={() => void finish()}>{t`Finish sign-in`}</Button>
         </div>
-        <p className="tt-field__description" id={hintId}>Sotto hands the code to {name} on {host.name} and keeps nothing.</p>
+        <p className="tt-field__description" id={hintId}><Trans>Sotto hands the code to {name} on {hostName} and keeps nothing.</Trans></p>
         {codeError ? <p className="host-sign-in__error" role="alert">{codeError}</p> : null}
       </div> : null}
     </div>
   }
   const ended = error !== null || (view !== null && !running(view))
   const again = error !== null || view?.stage === 'refused' || view?.stage === 'failed' || view?.stage === 'ended'
-  return <HostsModal title={`Sign in to ${name} on ${host.name}`} onClose={close} className="host-sign-in-dialog" busy={busy}
+  return <HostsModal title={t`Sign in to ${name} on ${hostName}`} onClose={close} className="host-sign-in-dialog" busy={busy}
     footer={<>
-      {ended ? <Button variant={again ? 'secondary' : 'primary'} data-autofocus={again ? undefined : true} onClick={close}>{view?.stage === 'connected' ? 'Done' : 'Close'}</Button>
-        : <Button variant="secondary" onClick={close}>Cancel</Button>}
-      {again ? <Button variant="primary" data-autofocus onClick={tryAgain}>Try again</Button> : null}
+      {ended ? <Button variant={again ? 'secondary' : 'primary'} data-autofocus={again ? undefined : true} onClick={close}>{view?.stage === 'connected' ? t({ message: 'Done', comment: 'Closes a dialog.' }) : t`Close`}</Button>
+        : <Button variant="secondary" onClick={close}>{t`Cancel`}</Button>}
+      {again ? <Button variant="primary" data-autofocus onClick={tryAgain}>{t`Try again`}</Button> : null}
     </>}>
     <div ref={anchor}>{body()}</div>
   </HostsModal>

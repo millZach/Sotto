@@ -1,5 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { AudioLines, Eye } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { themeBrand, widgetPaletteFor } from '../../../../../shared/themeBranding'
 import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
@@ -29,6 +30,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
   /** The app's Reduced motion setting; the sample also follows the system's. */
   readonly still?: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const systemStill = useSystemStill()
   const widgetMode = resolveAppearance('system', systemDark, shown)
   const followsOmarchy = system === 'Linux' && shown.omarchyTheme &&
@@ -37,27 +39,27 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
   const widgetColors = widgetPalette[widgetMode]
   const widgetBrand = themeBrand(widgetColors, widgetMode, { appIcon: widgetPalette.appIcon[widgetMode] })
   return (
-    <aside className="theme-live-preview" aria-label="Appearance preview">
-      <h3><Eye size={14} aria-hidden="true" />Live appearance</h3>
+    <aside className="theme-live-preview" aria-label={t`Appearance preview`}>
+      <h3><Eye size={14} aria-hidden="true" /><Trans>Live appearance</Trans></h3>
       <div className="theme-live-preview__window">
-        <div className="theme-live-preview__titlebar"><SottoMark /><strong>Sotto</strong><span>Dictate</span></div>
+        <div className="theme-live-preview__titlebar"><SottoMark /><strong>Sotto</strong><span>{t({ message: 'Dictate', comment: 'The Dictate room, named in the title bar' })}</span></div>
         <div className="theme-live-preview__body">
           <VoiceWave stage="idle" value={0} label="" size="preview" />
-          <strong>Ready when you are</strong>
+          <strong><Trans>Ready when you are</Trans></strong>
           <div className="theme-live-preview__composer" aria-hidden="true"><AudioLines size={18} /><span /><span /></div>
         </div>
       </div>
       <div className="theme-live-preview__parts">
-        <div><SottoMark className="theme-live-preview__app-icon" /><span>App icon</span></div>
+        <div><SottoMark className="theme-live-preview__app-icon" /><span><Trans>App icon</Trans></span></div>
         <div>
           <div className="theme-live-preview__widget" data-widget-mode={widgetMode} style={{ backgroundColor: widgetColors.surfaceRaised, color: widgetColors.text, borderColor: widgetColors.mutedForeground }}>
-            <AudioLines size={18} style={{ color: widgetBrand.tile }} aria-hidden="true" /><strong>Ready</strong>
+            <AudioLines size={18} style={{ color: widgetBrand.tile }} aria-hidden="true" /><strong>{t({ message: 'Ready', comment: 'The floating widget, waiting to dictate' })}</strong>
           </div>
-          <span>Floating widget</span>
+          <span><Trans>Floating widget</Trans></span>
         </div>
       </div>
       <EffortColorSample effortColor={shown.effortColor} still={still || systemStill} />
-      <p>{followsOmarchy ? 'The widget follows the Omarchy theme’s mode.' : `The widget follows ${system} light or dark mode.`}</p>
+      <p>{followsOmarchy ? t`The widget follows the Omarchy theme’s mode.` : t`The widget follows ${system} light or dark mode.`}</p>
     </aside>
   )
 }

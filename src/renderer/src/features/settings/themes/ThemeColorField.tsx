@@ -10,29 +10,34 @@
  */
 
 import React, { memo, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 
 import { parseThemeColor, themeColorToHex } from '../../../../../shared/themes/color'
 import type { ThemeColorRole } from '../../../../../shared/themes/library'
 
-const ROLE_LABELS: Partial<Record<ThemeColorRole, string>> = {
-  canvas: 'Background',
-  toolbar: 'Toolbar background',
-  toolbarForeground: 'Toolbar text',
-  toolbarBorder: 'Toolbar border',
-  toolbarControl: 'Toolbar control',
-  toolbarControlForeground: 'Toolbar control text',
-  toolbarControlHover: 'Toolbar control hover',
-  accent: 'Accent color',
-  errorForeground: 'Error text',
-  errorSurface: 'Error background',
-  warningForeground: 'Warning text',
-  warningSurface: 'Warning background',
-  updateForeground: 'Update text',
-  updateSurface: 'Update background',
+const ROLE_LABELS: Partial<Record<ThemeColorRole, MessageDescriptor>> = {
+  canvas: msg({ message: 'Background', comment: 'A theme color: the window background' }),
+  toolbar: msg`Toolbar background`,
+  toolbarForeground: msg`Toolbar text`,
+  toolbarBorder: msg`Toolbar border`,
+  toolbarControl: msg`Toolbar control`,
+  toolbarControlForeground: msg`Toolbar control text`,
+  toolbarControlHover: msg`Toolbar control hover`,
+  accent: msg`Accent color`,
+  errorForeground: msg`Error text`,
+  errorSurface: msg`Error background`,
+  warningForeground: msg`Warning text`,
+  warningSurface: msg`Warning background`,
+  updateForeground: msg({ message: 'Update text', comment: 'A theme color: text on the update notice' }),
+  updateSurface: msg({ message: 'Update background', comment: 'A theme color: the update notice background' }),
 }
 
+/** A theme color's name in the interface language; a role with no name of its own is spelled out from its id. */
 export function themeRoleLabel(role: ThemeColorRole): string {
-  return ROLE_LABELS[role] ?? role.replace(/([A-Z])/gu, ' $1').replace(/^./u, character => character.toUpperCase())
+  const label = ROLE_LABELS[role]
+  return label ? i18n._(label) : role.replace(/([A-Z])/gu, ' $1').replace(/^./u, character => character.toUpperCase())
 }
 
 export function isEditorColor(value: string): boolean {
@@ -93,6 +98,7 @@ function rgbTextToHex(value: string): string | null {
 }
 
 function ColorPickerPanel({ label, value, onChange }: { readonly label: string; readonly value: string; readonly onChange: (value: string) => void }): ReactNode {
+  const { t } = useLingui()
   const normalized = pickerHex(value)
   const suffix = alphaSuffix(value)
   const [hsv, setHsv] = useState(() => hexToHsv(normalized))
@@ -184,17 +190,19 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
 
   const textFocus = { onFocus: () => { editingText.current = true }, onBlur: () => { editingText.current = false; setHexDraft(current); setRgbDraft(rgbText(current)) } }
 
+  const saturation = Math.round(hsv.s * 100)
+  const brightness = Math.round(hsv.v * 100)
   return (
     <div className="theme-picker">
       <div
         className="theme-picker__plane tt-focusable"
         role="slider"
         tabIndex={0}
-        aria-label={`${label} saturation and brightness`}
+        aria-label={t`${label} saturation and brightness`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(hsv.v * 100)}
-        aria-valuetext={`saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`}
+        aria-valuetext={t`saturation ${saturation}%, brightness ${brightness}%`}
         style={{ backgroundColor: `hsl(${Math.round(hsv.h)} 100% 50%)` }}
         onKeyDown={planeKeys}
         {...dragging(fromPlane)}
@@ -205,7 +213,7 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
         className="theme-picker__hue tt-focusable"
         role="slider"
         tabIndex={0}
-        aria-label={`${label} hue`}
+        aria-label={t`${label} hue`}
         aria-valuemin={0}
         aria-valuemax={360}
         aria-valuenow={Math.round(hsv.h)}
@@ -220,7 +228,7 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
           <span>HEX</span>
           <input
             className="tt-input"
-            aria-label={`${label} picker hex value`}
+            aria-label={t`${label} picker hex value`}
             spellCheck={false}
             maxLength={9}
             value={hexDraft}
@@ -239,7 +247,7 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
           <span>RGB</span>
           <input
             className="tt-input"
-            aria-label={`${label} picker RGB value`}
+            aria-label={t`${label} picker RGB value`}
             spellCheck={false}
             maxLength={24}
             value={rgbDraft}
@@ -270,6 +278,7 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
   readonly onSelect?: (role: ThemeColorRole) => void
   readonly onToggleSelected?: (role: ThemeColorRole) => void
 }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const name = label ?? themeRoleLabel(role)
@@ -277,6 +286,8 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
   const swatch = valid ? pickerHex(value) : '#000000'
   // OKLCH values show as hex; whatever the user is typing shows as typed.
   const text = value.trim().toLowerCase().startsWith('oklch(') ? themeColorToHex(value) ?? value : value
+  const usage = selected ? t`Hide where ${name} is used` : t`Show where ${name} is used`
+  const choose = t`Choose ${name} color`
   return (
     <div className="theme-color-field" data-theme-color-role={role} data-open={open || undefined} data-selected={selected || undefined}>
       <div className="theme-color-field__row">
@@ -285,9 +296,9 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
               <button
                 type="button"
                 className="theme-color-field__label theme-color-field__usage tt-focusable"
-                aria-label={`${selected ? 'Hide' : 'Show'} where ${name} is used`}
+                aria-label={usage}
                 aria-pressed={selected}
-                title={`${selected ? 'Hide' : 'Show'} where ${name} is used`}
+                title={usage}
                 onClick={() => onToggleSelected(role)}
               >
                 {name}
@@ -297,10 +308,10 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
         <button
           type="button"
           className="theme-color-field__swatch tt-focusable"
-          aria-label={`Choose ${name} color`}
+          aria-label={choose}
           aria-expanded={open}
           aria-controls={panelId}
-          title={`Choose ${name} color`}
+          title={choose}
           onClick={() => {
             onSelect?.(role)
             setOpen(current => !current)
@@ -310,7 +321,7 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
         </button>
         <input
           className="theme-color-field__hex tt-input"
-          aria-label={`${name} hex value`}
+          aria-label={t`${name} hex value`}
           aria-invalid={!valid}
           spellCheck={false}
           maxLength={96}

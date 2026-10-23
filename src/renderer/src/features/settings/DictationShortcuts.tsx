@@ -1,5 +1,8 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type {
   DictationShortcutsChange,
@@ -39,29 +42,30 @@ interface Slot { readonly role: ShortcutRole; readonly index: number | null }
 interface RowMessage { readonly role: ShortcutRole; readonly text: string; readonly alert: boolean }
 
 const UNAVAILABLE = { ok: false, reason: 'unavailable' } as const
-const UNSUPPORTED_KEY = 'That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key.'
+const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key.`
 // Linux: Hyprland ran one of Sotto's own bindings, so the recording never saw the keys.
-const TAKEN = {
-  'taken-press': 'Sotto’s start-and-stop shortcut already uses those keys. Pick other keys.',
-  'taken-hold': 'Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys.',
-} as const
+const TAKEN: Readonly<Record<'taken-press' | 'taken-hold', MessageDescriptor>> = {
+  'taken-press': msg`Sotto’s start-and-stop shortcut already uses those keys. Pick other keys.`,
+  'taken-hold': msg`Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys.`,
+}
 
-const rowCopy: Readonly<Record<ShortcutRole, { label: string; one: (keys: string) => string; several: string; none: string }>> = {
+const rowCopy: Readonly<Record<ShortcutRole, { label: MessageDescriptor; one: (keys: string) => MessageDescriptor; several: MessageDescriptor; none: MessageDescriptor }>> = {
   hold: {
-    label: 'Hold to dictate',
-    one: (keys) => `Hold ${keys}, speak, then let go.`,
-    several: 'Hold any of these, speak, then let go.',
-    none: 'Add a shortcut to talk only while you hold it.',
+    label: msg`Hold to dictate`,
+    one: (keys) => msg`Hold ${keys}, speak, then let go.`,
+    several: msg`Hold any of these, speak, then let go.`,
+    none: msg`Add a shortcut to talk only while you hold it.`,
   },
   press: {
-    label: 'Press to start and stop',
-    one: (keys) => `Press ${keys} to start, and again to finish.`,
-    several: 'Press any of these to start, and again to finish.',
-    none: 'Add a shortcut to start and stop without holding keys.',
+    label: msg`Press to start and stop`,
+    one: (keys) => msg`Press ${keys} to start, and again to finish.`,
+    several: msg`Press any of these to start, and again to finish.`,
+    none: msg`Add a shortcut to start and stop without holding keys.`,
   },
 }
 
 export function DictationShortcuts({ settings, platform, onReplaceHotkey, onReplaceDictationShortcuts, locked }: DictationShortcutsProps): ReactNode {
+  const { t, i18n } = useLingui()
   const owl = useOwlFeature('dictation-hold-shortcuts')
   const darwin = platform === 'darwin'
   const linux = platform === 'linux'
@@ -118,14 +122,16 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     ).catch(() => UNAVAILABLE)
     // A newer save answers for the row; this slower, older answer must not overwrite it.
     if (mine !== saveRef.current) return result.ok
-    if (result.ok) show(role, 'Shortcut saved.', false)
+    const kept = inline(previous)
+    if (result.ok) show(role, t`Shortcut saved.`, false)
     else if (result.message !== undefined) {
       // Linux says why in Hyprland's terms; a refused chord leaves the previous one bound.
-      show(role, result.reason === 'unavailable' ? result.message : `${result.message} ${inline(previous)} still works.`, true)
+      const problem = result.message
+      show(role, result.reason === 'unavailable' ? problem : t`${problem} ${kept} still works.`, true)
     } else if (result.reason === 'conflict') {
-      const refused = 'chord' in result && result.chord !== undefined ? result.chord : chord
-      show(role, `Another app already uses ${inline(refused)}. ${inline(previous)} still works. Pick other keys, or free that shortcut in the other app.`, true)
-    } else show(role, `The shortcut could not be changed. ${inline(previous)} still works.`, true)
+      const refused = inline('chord' in result && result.chord !== undefined ? result.chord : chord)
+      show(role, t`Another app already uses ${refused}. ${kept} still works. Pick other keys, or free that shortcut in the other app.`, true)
+    } else show(role, t`The shortcut could not be changed. ${kept} still works.`, true)
     return result.ok
   }
 
@@ -133,7 +139,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     const row = set[slot.role]
     const current = slot.index === null ? undefined : row[slot.index]
     if (current !== undefined && sameChord(current, chord, platform)) {
-      show(slot.role, 'Shortcut saved.', false)
+      show(slot.role, t`Shortcut saved.`, false)
       return true
     }
     const check = validateChord(chord, slot, set, platform, { listener })
@@ -157,8 +163,8 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     const chord = await recorder.record()
     if (generation !== generationRef.current) return
     setTarget(null)
-    if (chord === 'unsupported-key') show(slot.role, UNSUPPORTED_KEY, true)
-    else if (chord === 'taken-press' || chord === 'taken-hold') show(slot.role, TAKEN[chord], true)
+    if (chord === 'unsupported-key') show(slot.role, i18n._(UNSUPPORTED_KEY), true)
+    else if (chord === 'taken-press' || chord === 'taken-hold') show(slot.role, i18n._(TAKEN[chord]), true)
     const saved = chord !== null && chord !== 'unsupported-key' && chord !== 'taken-press' && chord !== 'taken-hold' && await commit(slot, chord)
     const self = `${slot.role}-${slot.index ?? 'add'}`
     setFocusKeys(slot.index === null && saved ? [`${slot.role}-${set[slot.role].length}`, self, `${slot.role}-0`] : [self, `${slot.role}-0`])
@@ -210,20 +216,21 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const recordingBox = (role: ShortcutRole): ReactNode => (
     <span className="dictation-shortcuts__recording">
       {recorder.held.length === 0
-        ? <span className="dictation-shortcuts__prompt">Press the new keys…</span>
+        ? <span className="dictation-shortcuts__prompt"><Trans>Press the new keys…</Trans></span>
         : <ShortcutKey accelerator={recorder.held.join('+')} platform={platform} />}
-      <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label="Cancel recording" data-recording-cancel autoFocus onClick={recorder.cancel} data-focus-key={`${role}-cancel`}>
+      <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Cancel recording`} data-recording-cancel autoFocus onClick={recorder.cancel} data-focus-key={`${role}-cancel`}>
         <X size={13} aria-hidden="true" />
       </button>
     </span>
   )
 
-  const addLabel = (role: ShortcutRole): string => role === 'hold' ? 'Add a hold shortcut' : 'Add a start-and-stop shortcut'
+  const addLabel = (role: ShortcutRole): string => role === 'hold' ? t`Add a hold shortcut` : t`Add a start-and-stop shortcut`
+  const add = t({ message: '+ Add', comment: 'Adds a dictation shortcut' })
   const addControl = (role: ShortcutRole): ReactNode => {
     if (!owl || locked || set[role].length >= MAX_SHORTCUTS_PER_ROLE) return null
     if (target?.role === role && target.index === null) return recordingBox(role)
     if (!darwin) {
-      return <button type="button" className="dictation-shortcuts__add tt-focusable" aria-label={addLabel(role)} data-focus-key={`${role}-add`} onClick={() => void record({ role, index: null })}>+ Add</button>
+      return <button type="button" className="dictation-shortcuts__add tt-focusable" aria-label={addLabel(role)} data-focus-key={`${role}-add`} onClick={() => void record({ role, index: null })}>{add}</button>
     }
     const open = menuRole === role
     return (
@@ -251,12 +258,12 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
               else setMenuRole(role)
             }
           }}
-        >+ Add</button>
+        >{add}</button>
         {open ? (
-          <div className="dictation-shortcuts__menu" role="menu" id={`${id}-${role}-menu`} aria-label="Add a shortcut" onKeyDown={(event) => menuKeys(event, role)}>
-            <button type="button" role="menuitem" className="tt-focusable" autoFocus onClick={() => void record({ role, index: null })}>Record keys…</button>
+          <div className="dictation-shortcuts__menu" role="menu" id={`${id}-${role}-menu`} aria-label={t`Add a shortcut`} onKeyDown={(event) => menuKeys(event, role)}>
+            <button type="button" role="menuitem" className="tt-focusable" autoFocus onClick={() => void record({ role, index: null })}>{t`Record keys…`}</button>
             <button type="button" role="menuitem" className="tt-focusable" disabled={fnInUse} onClick={() => void addFn(role)}>
-              {fnInUse ? 'Fn is already in use' : 'Fn on its own'}
+              {fnInUse ? t`Fn is already in use` : t`Fn on its own`}
             </button>
           </div>
         ) : null}
@@ -267,15 +274,15 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const row = (role: ShortcutRole): ReactNode => {
     const chords = set[role]
     const copy = rowCopy[role]
-    const description = chords.length === 0 ? copy.none : chords.length === 1 ? copy.one(inline(chords[0] ?? '')) : copy.several
+    const description = i18n._(chords.length === 0 ? copy.none : chords.length === 1 ? copy.one(inline(chords[0] ?? '')) : copy.several)
     const recordingHere = target?.role === role
     const line = recordingHere
-      ? { text: recorder.held.length === 0 ? 'Hold the keys you want, then let go. Esc cancels.' : 'Let go to save. Esc cancels.', alert: false }
+      ? { text: recorder.held.length === 0 ? t`Hold the keys you want, then let go. Esc cancels.` : t`Let go to save. Esc cancels.`, alert: false }
       : message?.role === role ? message : null
     return (
       <div className="dictation-shortcuts__row" role="group" aria-labelledby={`${id}-${role}-label`} aria-describedby={`${id}-${role}-description`}>
         <div className="dictation-shortcuts__text">
-          <span className="tt-field__label" id={`${id}-${role}-label`}>{copy.label}</span>
+          <span className="tt-field__label" id={`${id}-${role}-label`}>{i18n._(copy.label)}</span>
           <p className="tt-field__description" id={`${id}-${role}-description`}>{description}</p>
         </div>
         <div className="dictation-shortcuts__controls">
@@ -288,7 +295,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
                 <button
                   type="button"
                   className="dictation-shortcuts__chip tt-focusable"
-                  aria-label={`Change shortcut, ${words}`}
+                  aria-label={t`Change shortcut, ${words}`}
                   data-focus-key={`${role}-${index}`}
                   disabled={!!locked}
                   onClick={() => void record({ role, index })}
@@ -296,7 +303,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
                   <ShortcutKey accelerator={chord} platform={platform} />
                 </button>
                 {removable(role, index)
-                  ? <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={`Remove shortcut, ${words}`} onClick={() => void remove(role, index)}><X size={13} aria-hidden="true" /></button>
+                  ? <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Remove shortcut, ${words}`} onClick={() => void remove(role, index)}><X size={13} aria-hidden="true" /></button>
                   : null}
               </span>
             )
@@ -317,13 +324,13 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
       <div className="dictation-shortcuts__notes">
         {denied ? (
           <div className="dictation-shortcuts__permission">
-            <p>Holding a shortcut, and Fn, need Input Monitoring. Sotto watches only modifier keys and your shortcuts’ keys, and keeps nothing it sees.</p>
-            <p>After an update, macOS may need you to turn Sotto off and on again in that list.</p>
-            <Button variant="secondary" onClick={() => void window.sotto?.requestKeyListenerPermission?.().then(setPermission).catch(() => undefined)}>Open System Settings</Button>
+            <p><Trans>Holding a shortcut, and Fn, need Input Monitoring. Sotto watches only modifier keys and your shortcuts’ keys, and keeps nothing it sees.</Trans></p>
+            <p><Trans>After an update, macOS may need you to turn Sotto off and on again in that list.</Trans></p>
+            <Button variant="secondary" onClick={() => void window.sotto?.requestKeyListenerPermission?.().then(setPermission).catch(() => undefined)}><Trans>Open System Settings</Trans></Button>
           </div>
         ) : null}
         {darwin && all.some((chord) => chordTokens(chord).includes('Fn'))
-          ? <p>If Fn opens emoji or Apple’s dictation, set System Settings › Keyboard › “Press 🌐 key to” to Do Nothing.</p>
+          ? <p><Trans>If Fn opens emoji or Apple’s dictation, set System Settings › Keyboard › “Press 🌐 key to” to Do Nothing.</Trans></p>
           : null}
         {locked ? (
           <div className="dictation-shortcuts__permission" role="status">
@@ -332,8 +339,8 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
           </div>
         ) : null}
         {linux
-          ? <p>These shortcuts are Hyprland bindings, so keys Hyprland already uses can’t be one of them. Press Cancel on the widget to stop without transcribing.</p>
-          : <p>Press Esc in any app to cancel a recording. Nothing is transcribed.</p>}
+          ? <p><Trans>These shortcuts are Hyprland bindings, so keys Hyprland already uses can’t be one of them. Press Cancel on the widget to stop without transcribing.</Trans></p>
+          : <p><Trans>Press Esc in any app to cancel a recording. Nothing is transcribed.</Trans></p>}
       </div>
     </div>
   )

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import { writeClipboard } from '../../agents/richActions'
 import { Check, Copy } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import { Button } from '../../components/Button'
 import {
@@ -44,44 +47,48 @@ export function HostSpinner(): ReactNode { return <span className="host-client-u
 
 /** The command to run on the host by hand, a line each, with Copy. */
 export function CommandLines({ lead, lines, name, host }: { readonly lead: string; readonly lines: readonly string[]; readonly name: string; readonly host: string }): ReactNode {
+  const { t } = useLingui()
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => { try { await writeClipboard(lines.join('\n')); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
     <p>{lead}</p>
     <code>{lines.map((line, index) => <React.Fragment key={index}>{index ? <br /> : null}{line}</React.Fragment>)}</code>
-    <Button variant="secondary" aria-label={`Copy the command that updates ${name} on ${host}`} onClick={() => void copy()}>
-      {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy'}
+    <Button variant="secondary" aria-label={t`Copy the command that updates ${name} on ${host}`} onClick={() => void copy()}>
+      {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy`}
     </Button>
-    {copied === 'failed' ? <p>The command could not be copied. Select it and copy it yourself.</p> : null}
-    <span className="tt-visually-hidden" role="status">{copied === 'copied' ? 'Copied the command' : ''}</span>
+    {copied === 'failed' ? <p><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
+    <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the command` : ''}</span>
   </div>
 }
 
 /** A connected tile's update: the line under its version, what goes below it, its press, and its note. */
 export interface TileUpdateParts { readonly line?: ReactNode; readonly below?: ReactNode; readonly action?: ReactNode; readonly note?: string; readonly phase: ClientUpdatePhase }
 
-/** The parts of a provider tile that say how its client's update stands, or nothing while it is current. */
+/**
+ * The parts of a provider tile that say how its client's update stands, or nothing while it is current. Called while the
+ * tile renders, which follows the interface language (HostProviders).
+ */
 export function tileUpdateParts({ update, phase, host, waitingFor, busy, send }: {
   readonly update: ProviderClientUpdate | undefined; readonly phase: ClientUpdatePhase; readonly host: string
   readonly waitingFor: ProviderId | undefined; readonly busy: boolean; readonly send: SendClientUpdate
 }): TileUpdateParts {
   if (!update || phase === 'current') return { phase: 'current' }
-  const name = PROVIDER_LABELS[update.id], to = targetVersion(update)
+  const name = PROVIDER_LABELS[update.id], to = targetVersion(update), installed = update.installed
   const line = (tone?: 'quiet' | 'error'): ReactNode => <p className="host-client-update__line" data-tone={tone}>
     {phase === 'updating' ? <HostSpinner /> : null}{tileLine(update, phase, waitingFor)}</p>
   switch (phase) {
     case 'behind': return { phase, line: line(),
-      action: <Button key="update" data-update-action="" variant="secondary" disabled={busy} aria-label={`Update ${name} on ${host} to ${to}`} onClick={() => void send('update', [update.id])}>Update</Button> }
+      action: <Button key="update" data-update-action="" variant="secondary" disabled={busy} aria-label={i18n._(msg`Update ${name} on ${host} to ${to}`)} onClick={() => void send('update', [update.id])}>{i18n._(msg({ message: 'Update', comment: 'A button that updates one agent client on a host.' }))}</Button> }
     case 'queued': return { phase, line: line('quiet'),
-      action: <Button key="cancel" data-update-action="" variant="secondary" disabled={busy} aria-label={`Cancel the ${name} update on ${host}`} onClick={() => void send('cancel', [update.id])}>Cancel update</Button> }
-    case 'updating': return { phase, line: line(), note: `Your threads on ${host} keep working.` }
-    case 'updated': return { phase, note: `${name} is now ${update.installed}.` }
+      action: <Button key="cancel" data-update-action="" variant="secondary" disabled={busy} aria-label={i18n._(msg`Cancel the ${name} update on ${host}`)} onClick={() => void send('cancel', [update.id])}>{i18n._(msg`Cancel update`)}</Button> }
+    case 'updating': return { phase, line: line(), note: i18n._(msg`Your threads on ${host} keep working.`) }
+    case 'updated': return { phase, note: i18n._(msg`${name} is now ${installed}.`) }
     case 'by-hand': {
-      const lines = byHandLines(update)
+      const lines = byHandLines(update), reason = byHandReason(update, host)
       return { phase, line: line(), below: lines.length
-        ? <CommandLines lead={`${byHandReason(update, host)} Run this on ${host}:`} lines={lines} name={name} host={host} />
-        : <p className="host-client-update__words">{byHandReason(update, host)} Update it the way you installed it.</p> }
+        ? <CommandLines lead={i18n._(msg`${reason} Run this on ${host}:`)} lines={lines} name={name} host={host} />
+        : <p className="host-client-update__words">{i18n._(msg`${reason} Update it the way you installed it.`)}</p> }
     }
     case 'failed': {
       const lines = byHandLines(update)
@@ -89,17 +96,17 @@ export function tileUpdateParts({ update, phase, host, waitingFor, busy, send }:
         below: <>
           <p className="host-client-update__words" role="status">{failedShort(update, host)}</p>
           <details className="host-client-update__details">
-            <summary>Details<span className="tt-visually-hidden"> of why {name} did not update</span></summary>
+            <summary><Trans>Details<span className="tt-visually-hidden"> of why {name} did not update</span></Trans></summary>
             <div className="host-client-update__details-body">
               <p className="host-client-update__words">{failedLong(update, host)}</p>
-              {lines.length ? <CommandLines lead={`Or run this on ${host}:`} lines={lines} name={name} host={host} /> : null}
+              {lines.length ? <CommandLines lead={i18n._(msg`Or run this on ${host}:`)} lines={lines} name={name} host={host} /> : null}
               {update.printed ? <details className="host-client-update__printed">
                 <summary>{printedHeading(update)}</summary><pre>{update.printed}</pre>
               </details> : null}
             </div>
           </details>
         </>,
-        action: update.canInstall ? <Button key="again" data-update-action="" variant="secondary" disabled={busy} aria-label={`Try updating ${name} on ${host} again`} onClick={() => void send('update', [update.id])}>Try again</Button> : undefined }
+        action: update.canInstall ? <Button key="again" data-update-action="" variant="secondary" disabled={busy} aria-label={i18n._(msg`Try updating ${name} on ${host} again`)} onClick={() => void send('update', [update.id])}>{i18n._(msg`Try again`)}</Button> : undefined }
     }
     default: return { phase }
   }
@@ -125,6 +132,7 @@ export function HostClientUpdatesChip({ host, hostId, view, run, busy, refusal, 
   readonly host: string; readonly hostId: string; readonly view: HostClientUpdatesView; readonly run: ClientUpdateRun | undefined
   readonly busy: boolean; readonly refusal: string | undefined; readonly send: SendClientUpdate
 }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const chip = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -184,41 +192,45 @@ export function HostClientUpdatesChip({ host, hostId, view, run, busy, refusal, 
   const done = (): void => { acknowledge(hostId, view.shown); close(true) }
   const status = popoverStatus(view, run, host)
   const busyNow = view.running !== undefined || view.queued.length > 0
-  const summary = view.failed.length ? `${view.failed.length === 1 ? PROVIDER_LABELS[view.failed[0]!] : `${view.failed.length} clients`} did not update` : shown.text
+  const updateAllNames = namesOf(view.updateAll)
+  const failed = view.failed.length, failedName = failed === 1 ? PROVIDER_LABELS[view.failed[0]!] : ''
+  const summary = !failed ? shown.text
+    : failed === 1 ? t`${failedName} did not update`
+    : plural(failed, { one: '# client did not update', other: '# clients did not update' })
   return <>
     <button ref={chip} type="button" className="host-client-updates__chip tt-focusable" data-tone={shown.tone}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
-      aria-label={`Show the client updates on ${host}. ${summary}`} onClick={() => { if (open) close(false); else setOpen(true) }}>
+      aria-label={t`Show the client updates on ${host}. ${summary}`} onClick={() => { if (open) close(false); else setOpen(true) }}>
       {shown.tone === 'done' ? <Check size={13} aria-hidden="true" /> : busyNow ? <HostSpinner /> : null}{shown.text}
     </button>
     {open ? <div ref={panel} id={panelId} className="host-client-updates__panel" role="dialog" aria-labelledby={titleId}
       onKeyDown={onKeyDown} onBlur={onBlur}>
-      <h6 id={titleId}>Client updates on {host}</h6>
+      <h6 id={titleId}><Trans>Client updates on {host}</Trans></h6>
       <p className="host-client-updates__status" role="status">{status}</p>
-      <ul className="host-client-updates__list" aria-label={`Clients on ${host}`}>
+      <ul className="host-client-updates__list" aria-label={t`Clients on ${host}`}>
         {view.shown.map(update => {
           const phase = view.phases.get(update.id)!
           const name = PROVIDER_LABELS[update.id]
-          const state = rowState(update, phase)
+          const state = rowState(update, phase), installed = update.installed, reason = byHandReason(update, host)
           return <li key={update.id} data-phase={phase}>
-            <div><span className="host-client-updates__name">{name}</span> <span className="host-client-updates__versions">{phase === 'updated' ? `now ${update.installed}` : <>{update.installed}<span aria-hidden="true"> → </span><span className="tt-visually-hidden"> to </span>{targetVersion(update)}</>}</span></div>
+            <div><span className="host-client-updates__name">{name}</span> <span className="host-client-updates__versions">{phase === 'updated' ? t({ message: `now ${installed}`, comment: '{installed} is the version a client was updated to.' }) : <>{installed}<span aria-hidden="true"> → </span><span className="tt-visually-hidden"> {t({ message: 'to', comment: 'Read between two version numbers: from one version to another.' })} </span>{targetVersion(update)}</>}</span></div>
             {state ? <span className="host-client-updates__state">{phase === 'updating' ? <HostSpinner /> : phase === 'updated' ? <Check size={13} aria-hidden="true" /> : null}{state}</span> : <span />}
             {phase === 'failed' ? <div className="host-client-updates__why"><p>{failedShort(update, host)}</p>
-              {update.canInstall ? <Button variant="secondary" disabled={busy} aria-label={`Try updating ${name} on ${host} again`} onClick={() => void send('update', [update.id])}>Try again</Button> : null}</div>
-              : phase === 'by-hand' ? <div className="host-client-updates__why"><p>{byHandReason(update, host)} Its tile has the command to run.</p></div> : null}
+              {update.canInstall ? <Button variant="secondary" disabled={busy} aria-label={t`Try updating ${name} on ${host} again`} onClick={() => void send('update', [update.id])}>{t`Try again`}</Button> : null}</div>
+              : phase === 'by-hand' ? <div className="host-client-updates__why"><p>{t`${reason} Its tile has the command to run.`}</p></div> : null}
           </li>
         })}
       </ul>
-      {!settled || view.behind.length ? <p className="host-client-updates__note">One client updates at a time. Your threads keep working, and move to the new version when they are idle.</p> : null}
+      {!settled || view.behind.length ? <p className="host-client-updates__note"><Trans>One client updates at a time. Your threads keep working, and move to the new version when they are idle.</Trans></p> : null}
       {refusal ? <p className="host-client-updates__refusal" role="alert">{refusal}</p> : null}
       <div className="host-client-updates__actions">
         {settled && !view.behind.length
-          ? <Button variant="primary" data-main="" onClick={done}>Done</Button>
-          : <Button variant="ghost" onClick={() => close(true)}>{busyNow ? 'Close' : 'Not now'}</Button>}
+          ? <Button variant="primary" data-main="" onClick={done}>{t({ message: 'Done', comment: 'Puts away the finished client updates.' })}</Button>
+          : <Button variant="ghost" onClick={() => close(true)}>{busyNow ? t`Close` : t`Not now`}</Button>}
         {/* Update all joins the host's line, behind an update a tile started, as long as something is behind. */}
         {view.updateAll.length ? <Button variant="primary" data-main="" disabled={busy}
-          aria-label={`Update ${namesOf(view.updateAll)} on ${host}, one after another`}
-          onClick={() => void send('update', view.updateAll)}>Update all</Button> : null}
+          aria-label={t`Update ${updateAllNames} on ${host}, one after another`}
+          onClick={() => void send('update', view.updateAll)}>{t`Update all`}</Button> : null}
       </div>
     </div> : null}
   </>

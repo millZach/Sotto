@@ -7,6 +7,9 @@
 
 import React, { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Check, Copy, Download, Moon, Paintbrush, PenLine, Plus, Sun, Trash2 } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import {
   BUILT_IN_THEMES,
@@ -35,9 +38,13 @@ export interface ThemeGalleryProps {
   readonly onAddTheme: () => void
 }
 
-const HALF_TITLES: Readonly<Record<ThemeAppearance, string>> = { light: 'Light', dark: 'Dark' }
+const HALF_TITLES: Readonly<Record<ThemeAppearance, MessageDescriptor>> = {
+  light: msg({ message: 'Light', comment: 'The light color scheme, or the themes that paint it' }),
+  dark: msg({ message: 'Dark', comment: 'The dark color scheme, or the themes that paint it' }),
+}
 
 export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, onRemove, onExport, onAddTheme }: ThemeGalleryProps): ReactNode {
+  const { t } = useLingui()
   const [removal, setRemoval] = useState<{ theme: ThemeDefinition; collection: ThemeDefinition[] } | null>(null)
   const [removeIds, setRemoveIds] = useState<string[]>([])
   const headingId = useId()
@@ -62,18 +69,18 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
       <SchemeTrack appearance={shown.appearance} system={system} onChoose={onChooseMode} />
 
       <div className="theme-settings__bar">
-        <h3 className="theme-settings__subheading" id={headingId}>Themes</h3>
+        <h3 className="theme-settings__subheading" id={headingId}><Trans>Themes</Trans></h3>
         <div className="theme-settings__actions">
           {/* Creating starts from the theme painting the window, which is also how a built-in is duplicated. */}
           <Button variant="ghost" onClick={() => openEditor({ seedThemeId: resolved === 'light' ? shown.lightTheme : shown.darkTheme })}>
-            <Paintbrush size={15} aria-hidden="true" />Create theme
+            <Paintbrush size={15} aria-hidden="true" /><Trans>Create theme</Trans>
           </Button>
           <Button variant="ghost" onClick={onAddTheme}>
-            <Plus size={15} aria-hidden="true" />Add theme
+            <Plus size={15} aria-hidden="true" /><Trans>Add theme</Trans>
           </Button>
         </div>
       </div>
-      <p className="theme-settings__assignment-hint">Choose one theme for light mode and one for dark.</p>
+      <p className="theme-settings__assignment-hint"><Trans>Choose one theme for light mode and one for dark.</Trans></p>
 
       <div className="theme-halves" role="group" aria-labelledby={headingId}>
         {(['light', 'dark'] as const).map(half => (
@@ -86,8 +93,10 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
             omarchyMode={shown.omarchyTheme?.appearance}
             chosen={half === 'light' ? shown.lightTheme : shown.darkTheme}
             note={half === resolved
-              ? 'Painting the window now.'
-              : shown.appearance === 'system' ? `Used when ${system} turns ${half}.` : `Used when you switch to ${HALF_TITLES[half]}.`}
+              ? t`Painting the window now.`
+              : shown.appearance === 'system'
+                ? half === 'light' ? t`Used when ${system} turns light.` : t`Used when ${system} turns dark.`
+                : half === 'light' ? t`Used when you switch to Light.` : t`Used when you switch to Dark.`}
             live={half === resolved}
             onPick={id => onSelect(assignHalfPatch(half, id))}
           />
@@ -100,7 +109,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
             <YourThemes
               themes={shown.customThemes}
               onEdit={theme => openEditor({ editingThemeId: theme.id, seedThemeId: null })}
-              onDuplicate={theme => openEditor({ seedThemeId: theme.id, seedName: `${theme.label} copy`.slice(0, 48) })}
+              onDuplicate={theme => { const name = theme.label; openEditor({ seedThemeId: theme.id, seedName: t({ message: `${name} copy`, comment: 'The name a duplicated theme starts with' }).slice(0, 48) }) }}
               onExport={onExport}
               onRemove={remove}
             />
@@ -108,15 +117,19 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
 
       {removal === null
         ? null
-        : (
+        : (() => {
+            const collection = removal.theme.collection?.label ?? removal.theme.label
+            const name = removal.theme.label
+            const count = removeIds.length
+            return (
             <ConfirmationDialog
               title={removal.collection.length > 1
-                ? `Remove themes from “${removal.theme.collection?.label ?? removal.theme.label}”?`
-                : `Remove “${removal.theme.label}”?`}
+                ? t`Remove themes from “${collection}”?`
+                : t`Remove “${name}”?`}
               description={removal.collection.length > 1
                 ? (
                     <>
-                      <p>Select the variants you want to remove. You can restore them by installing the extension again.</p>
+                      <p><Trans>Select the variants you want to remove. You can restore them by installing the extension again.</Trans></p>
                       <div className="theme-remove-grid">
                         {removal.collection.map(theme => (
                           <label key={theme.id} className="theme-remove-option">
@@ -135,15 +148,16 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
                       </div>
                     </>
                   )
-                : 'You can bring it back anytime by importing its JSON file.'}
-              confirmLabel={removal.collection.length > 1 ? `Remove selected${removeIds.length > 0 ? ` (${removeIds.length})` : ''}` : 'Remove theme'}
-              cancelLabel="Cancel"
+                : t`You can bring it back anytime by importing its JSON file.`}
+              confirmLabel={removal.collection.length > 1 ? count > 0 ? t`Remove selected (${count})` : t`Remove selected` : t`Remove theme`}
+              cancelLabel={t`Cancel`}
               confirmDisabled={removeIds.length === 0}
-              failureMessage="The theme could not be removed. Your themes are unchanged."
+              failureMessage={t`The theme could not be removed. Your themes are unchanged.`}
               onConfirm={() => onRemove(removeIds)}
               onCancel={() => setRemoval(null)}
             />
-          )}
+            )
+          })()}
     </>
   )
 }
@@ -162,12 +176,13 @@ function SchemeTrack({ appearance, system, onChoose }: {
   readonly system: string
   readonly onChoose: (mode: ThemeMode) => void
 }): ReactNode {
+  const { t, i18n } = useLingui()
   const headingId = useId()
   const buttons = useRef<Array<HTMLButtonElement | null>>([])
-  const stops: ReadonlyArray<readonly [ThemeMode, string]> = [['light', 'Light'], ['system', `Match ${system}`], ['dark', 'Dark']]
+  const stops: ReadonlyArray<readonly [ThemeMode, string]> = [['light', i18n._(HALF_TITLES.light)], ['system', t`Match ${system}`], ['dark', i18n._(HALF_TITLES.dark)]]
   return (
     <div className="theme-settings__scheme">
-      <h3 className="theme-settings__subheading" id={headingId}>Color scheme</h3>
+      <h3 className="theme-settings__subheading" id={headingId}><Trans>Color scheme</Trans></h3>
       <div className="theme-scheme-track" role="radiogroup" aria-labelledby={headingId}>
         <span className="theme-scheme-track__rail" aria-hidden="true" />
         {stops.map(([mode, label], index) => (
@@ -208,8 +223,10 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick, omarchyTheme, o
   readonly live: boolean
   readonly onPick: (id: string) => void
 }): ReactNode {
+  const { t, i18n } = useLingui()
   const titleId = useId()
   const noteId = useId()
+  const waitsFor = half === 'light' ? t`Waits for a light Omarchy theme` : t`Waits for a dark Omarchy theme`
   const buttons = useRef<Array<HTMLButtonElement | null>>([])
   const Icon = half === 'light' ? Sun : Moon
   // A saved choice that is not listed (a removed theme mid-save) still leaves one option reachable by Tab.
@@ -218,10 +235,10 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick, omarchyTheme, o
     <section className="theme-half" data-half={half} data-live={live || undefined} aria-labelledby={titleId}>
       <header className="theme-half__head">
         <Icon size={15} aria-hidden="true" />
-        <h4 id={titleId}>{HALF_TITLES[half]}</h4>
+        <h4 id={titleId}>{i18n._(HALF_TITLES[half])}</h4>
         <p id={noteId}>{note}</p>
       </header>
-      <div className="theme-half__options" role="radiogroup" aria-label={`${HALF_TITLES[half]} theme`} aria-describedby={noteId}>
+      <div className="theme-half__options" role="radiogroup" aria-label={half === 'light' ? t`Light theme` : t`Dark theme`} aria-describedby={noteId}>
         {themes.map((theme, index) => {
           const picked = theme.id === chosen
           const isOmarchy = theme === omarchyTheme
@@ -238,7 +255,7 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick, omarchyTheme, o
               tabIndex={theme.id === focusable ? 0 : -1}
               // A long imported name is cut to one line; the tooltip reads it whole.
               title={theme.label}
-              aria-label={isOmarchy ? `Omarchy ${waiting ? `Waits for a ${half} Omarchy theme` : omarchyName}` : undefined}
+              aria-label={isOmarchy ? `Omarchy ${waiting ? waitsFor : omarchyName}` : undefined}
               onClick={() => onPick(theme.id)}
               onKeyDown={event => {
                 const next = radioStep(event, index, themes.length)
@@ -249,7 +266,7 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick, omarchyTheme, o
               }}
             >
               {waiting ? <span className="theme-chord theme-chord--waiting" aria-hidden="true" /> : <ThemeChord theme={theme} half={half} />}
-              <span className="theme-option__name">{theme.label}{isOmarchy ? <small>{' '}{waiting ? `Waits for a ${half} Omarchy theme` : omarchyName}</small> : null}</span>
+              <span className="theme-option__name">{theme.label}{isOmarchy ? <small>{' '}{waiting ? waitsFor : omarchyName}</small> : null}</span>
               {picked ? <Check className="theme-option__check" size={15} aria-hidden="true" /> : null}
             </button>
           )
@@ -285,7 +302,7 @@ function ThemeChords({ theme }: { readonly theme: ThemeDefinition }): ReactNode 
 
 function modesLabel(theme: ThemeDefinition): string {
   const modes = getThemeModes(theme)
-  return modes.length === 2 ? 'Light and dark' : modes[0] === 'light' ? 'Light only' : 'Dark only'
+  return modes.length === 2 ? t`Light and dark` : modes[0] === 'light' ? t`Light only` : t`Dark only`
 }
 
 function YourThemes({ themes, onEdit, onDuplicate, onExport, onRemove }: {
@@ -295,12 +312,13 @@ function YourThemes({ themes, onEdit, onDuplicate, onExport, onRemove }: {
   readonly onExport: (theme: ThemeDefinition) => void
   readonly onRemove: (theme: ThemeDefinition) => void
 }): ReactNode {
+  const { t } = useLingui()
   const headingId = useId()
   return (
     <div className="theme-own">
-      <h3 className="theme-settings__subheading" id={headingId}>Your themes</h3>
+      <h3 className="theme-settings__subheading" id={headingId}><Trans>Your themes</Trans></h3>
       <ul className="theme-own__list" aria-labelledby={headingId}>
-        {themes.map(theme => (
+        {themes.map(theme => { const name = theme.label; return (
           <li key={theme.id} className="theme-own__row" data-theme-row={theme.id}>
             <ThemeChords theme={theme} />
             <span className="theme-own__text">
@@ -308,13 +326,13 @@ function YourThemes({ themes, onEdit, onDuplicate, onExport, onRemove }: {
               <span className="theme-own__modes">{theme.collection === undefined ? modesLabel(theme) : `${modesLabel(theme)} · ${theme.collection.label}`}</span>
             </span>
             <span className="theme-own__actions">
-              <Button variant="ghost" iconOnly aria-label={`Edit ${theme.label}`} onClick={() => onEdit(theme)}><PenLine size={14} aria-hidden="true" /></Button>
-              <Button variant="ghost" iconOnly aria-label={`Duplicate ${theme.label}`} onClick={() => onDuplicate(theme)}><Copy size={14} aria-hidden="true" /></Button>
-              <Button variant="ghost" iconOnly aria-label={`Export ${theme.label}`} onClick={() => onExport(theme)}><Download size={14} aria-hidden="true" /></Button>
-              <Button variant="ghost" iconOnly className="theme-own__remove" aria-label={`Remove ${theme.label}`} onClick={() => onRemove(theme)}><Trash2 size={14} aria-hidden="true" /></Button>
+              <Button variant="ghost" iconOnly aria-label={t`Edit ${name}`} onClick={() => onEdit(theme)}><PenLine size={14} aria-hidden="true" /></Button>
+              <Button variant="ghost" iconOnly aria-label={t`Duplicate ${name}`} onClick={() => onDuplicate(theme)}><Copy size={14} aria-hidden="true" /></Button>
+              <Button variant="ghost" iconOnly aria-label={t`Export ${name}`} onClick={() => onExport(theme)}><Download size={14} aria-hidden="true" /></Button>
+              <Button variant="ghost" iconOnly className="theme-own__remove" aria-label={t`Remove ${name}`} onClick={() => onRemove(theme)}><Trash2 size={14} aria-hidden="true" /></Button>
             </span>
           </li>
-        ))}
+        ) })}
       </ul>
     </div>
   )
