@@ -41,7 +41,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
-import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
+import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
@@ -1462,9 +1462,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!project) throw new Error('Choose an available project.')
     return this.worktrees.options(project.path)
   }
-  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection): Promise<AgentWorktree> {
+  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection & { readonly startFromMove?: string | undefined }): Promise<AgentWorktree> {
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
     if (!project) throw new Error('Choose an available project.')
+    if (selection.startFromMove) return { mode: 'independent', status: 'pending', incomingRef: await movedBranchRef(project.path, selection.startFromMove) }
     if (selection.workingCopy === 'shared') return this.worktrees.inspect(await this.worktrees.allocate(project.path, 'shared'))
     // A draft pointed at a worktree that exists carries that worktree's branch, so the toolbar can name it.
     const existing = selection.existingWorktreePath
@@ -3493,7 +3494,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
         metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
-          ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}) })
+          ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}), ...(metadata.incomingRef ? { incomingRef: metadata.incomingRef } : {}) })
         current().worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.

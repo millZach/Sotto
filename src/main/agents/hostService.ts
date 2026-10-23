@@ -23,6 +23,7 @@ import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
+import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
@@ -107,6 +108,9 @@ export interface HostService {
    */
   readonly supportsProjectOrigins?: boolean
   projectOrigins?(): Promise<ProjectOrigins>
+  /** The host moves branches with this desktop over its socket (`branch-moves`, ADR-0105 decision 8); a remote host's only. */
+  readonly supportsBranchMoves?: boolean
+  branchMove?(request: HostBranchMoveRequest): Promise<unknown>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed

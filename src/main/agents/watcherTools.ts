@@ -29,13 +29,21 @@ const descriptions: Record<WatcherToolName, string> = {
 const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt. ${WORKING_WARNING}`
 /** With Work across machines on (#1032), a start may name its machine or system, and list_machines says where one that names neither goes. */
 const START_WHERE = 'Name machine, a host ID from list_machines, or os (windows, macos or linux) to say where it runs; leave both out to start it where new workers start, which list_machines gives as newWorkersStart. A system never falls back to another. The placement in the receipt names the machine.'
+/** With Work across machines on (#1033), a start may begin from a thread's branch, and say it is a test run. */
+const START_FROM = 'To start from a thread\'s branch, name fromThread with its hostId and threadId and a new-worktree working copy: Sotto carries that branch to the machine the worker starts on and starts the worker in a new worktree on it. Uncommitted work there refuses the start; ask that thread to commit first. Set testRun when the worker is there to run tests: its uncommitted work then goes too, as a snapshot, and nothing in that thread changes. The receipt\'s startedFrom says where it started, from which branch and what the snapshot carried.'
 const MACHINES_WHERE = ' newWorkersStart says where a start that names no machine goes: This computer, a machine the user chose, or your choice.'
 /** Without worker roles, a start names its model, as it always has, and the offered schema has no role. */
 const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
-/** The start's schema as offered: no machine or system while Work across machines is off. */
+/** What Work across machines adds to a start (#1032, #1033), none of it offered while that is off. */
+const ACROSS_MACHINES = { machine: true, os: true, fromThread: true, testRun: true } as const
+/** The start's schema as offered: no machine, system or branch to start from while Work across machines is off, and never a move. */
 const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
-  if (roles) return machines ? watcherToolSchemas.start_thread.input : watcherToolSchemas.start_thread.input.omit({ machine: true, os: true })
-  return machines ? startByModel : startByModel.omit({ machine: true, os: true })
+  if (roles) {
+    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true })
+    return machines ? start : start.omit(ACROSS_MACHINES)
+  }
+  const start = startByModel.omit({ fromMove: true })
+  return machines ? start : start.omit(ACROSS_MACHINES)
 }
 
 /**
@@ -44,7 +52,7 @@ const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
  */
 export function watcherToolDefinitions(roles: boolean, machines = false): readonly ThreadToolDefinition[] {
   return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
-    description: name === 'start_thread' ? `${roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE}` : ''}`
+    description: name === 'start_thread' ? `${roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE} ${START_FROM}` : ''}`
       : name === 'list_machines' && machines ? descriptions[name] + MACHINES_WHERE : descriptions[name],
     inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines) : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(watcherToolSchemas[name].output),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,

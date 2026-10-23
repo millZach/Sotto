@@ -67,3 +67,23 @@ describe('delegate with Work across machines', () => {
     }
   })
 })
+
+// #1033: starting from a thread's branch, and saying a start is a test run, are Work across machines too.
+describe('starting from a branch with Work across machines', () => {
+  it('offers Watcher no thread to start from and no test run while it is off, and never a move', () => {
+    for (const roles of [false, true]) for (const machines of [false, true]) {
+      const properties = tool(watcherToolDefinitions(roles, machines), 'start_thread')!.schema.properties
+      expect(properties).not.toHaveProperty('fromMove')
+      for (const name of ['fromThread', 'testRun']) expect(Object.hasOwn(properties, name)).toBe(machines)
+      expect(tool(watcherToolDefinitions(roles, machines), 'start_thread')!.description.includes('fromThread')).toBe(machines)
+    }
+    expect(WATCHER_MACHINES_PROMPT).toContain('Set testRun only when the worker is there to run tests')
+  })
+  it('offers a delegating thread from_my_branch and test_run only while it is on', () => {
+    for (const roles of [false, true]) for (const machines of [false, true]) {
+      const delegate = tool(delegationToolDefinitions(roles, machines), 'delegate')!
+      for (const name of ['from_my_branch', 'test_run']) expect(Object.hasOwn(delegate.schema.properties, name)).toBe(machines)
+      expect(delegate.description.includes('from_my_branch')).toBe(machines)
+    }
+  })
+})

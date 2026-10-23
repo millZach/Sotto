@@ -11,6 +11,8 @@ import { countWorkingThreads, workingThreadsWarning } from '../../shared/working
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
+import type { DesktopBranchMoves } from './branchMoves'
+import { branchStartWords, type BranchStartReceipt } from '../../shared/branchMoves'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
@@ -88,6 +90,12 @@ export interface DelegationServiceOptions {
     name(hostId: string): string | undefined
     setting(): WorkerMachineSetting
   }
+  /**
+   * Starting a new delegated thread from the delegating thread's branch (#1033), present only while Work across machines
+   * is on: the branch, or for a test run a snapshot of uncommitted work too, lands in the project's incoming ref for the
+   * new thread's worktree, and is let go again when the start is refused before it runs.
+   */
+  readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere'>
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -198,6 +206,8 @@ interface DelegatedStart {
   /** A title the delegating thread gave is a deliberate name, kept as a user's is; without one, Sotto's naming applies. */
   readonly projectId: string; readonly title: string; readonly titleSource: 'user' | 'default'; readonly modelId: string; readonly reasoningEffort?: string
   readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
+  /** The move that landed the delegating thread's branch for this thread's worktree (#1033). */
+  readonly startFromMove?: string
 }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
 const NEWS_ATTEMPTS_MAX = 5
@@ -386,17 +396,22 @@ export class DelegationService {
     const input = parsed.data
     const placed = await this.place(threadId, input)
     if (placed && 'status' in placed) return placed
+    const branch = await this.fromBranch(threadId, input)
+    if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
     catch (error) {
+      // A start refused here never runs, so the branch landed for it is let go.
+      if (branch) await this.options.branchMoves?.forgetHere({ projectId: branch.projectId, moveId: branch.moveId }).catch(() => undefined)
       return error instanceof Refusal ? await this.refused(threadId, input, error.result)
         : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
     }
     const record = admitted.record
     if (admitted.retry) return this.result(record)
+    const start = admitted.start && branch ? { ...admitted.start, workingCopy: 'independent' as const, startFromMove: branch.moveId } : admitted.start
     this.calling.add(record.id)
     try {
-      await this.execute(record, input.brief, admitted.start)
+      await this.execute(record, input.brief, start)
       // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so. The
       // new thread counts as working while its first brief is on its way or its turn has not ended, whatever its status
       // says yet; one whose brief failed, or whose turn already ended, counts only if it is working.
@@ -413,7 +428,8 @@ export class DelegationService {
         if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
       }
       const answer = await this.result(this.record(record.id)!)
-      return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...admitted.start && placed ? { placement: placed } : {}, ...warning ? { warning } : {} }
+      return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...admitted.start && placed ? { placement: placed } : {},
+        ...admitted.start && branch ? { startedFrom: branch.receipt } : {}, ...warning ? { warning } : {} }
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -605,6 +621,32 @@ export class DelegationService {
     if (placed.hostId !== local) return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE',
       `A delegated thread starts only on This computer for now, so it cannot start on ${placed.receipt.name}. Leave out the machine and system to start it here. Nothing was started.`))
     return { ...placed.receipt, awayFromDefault: false }
+  }
+  /**
+   * Lands the delegating thread's branch for a new thread that starts from it (#1033): in the incoming ref of a move of
+   * its own in the delegating thread's project, from which the new thread's worktree is made. Committed work only, as a
+   * move; a test run's uncommitted work goes too, as a snapshot, and nothing in the delegating thread changes. Undefined
+   * when there is nothing to land: no branch asked for, a send to a thread, a retry, or a caller admission refuses. A
+   * test run with no branch to start from starts as any start does until test runs queue (#1312).
+   */
+  private async fromBranch(threadId: string, input: DelegateInput): Promise<{ readonly moveId: string; readonly projectId: string; readonly receipt: BranchStartReceipt } | DelegationRefusal | undefined> {
+    if (input.from_my_branch === undefined && input.test_run === undefined) return undefined
+    const moves = this.options.branchMoves
+    if (!moves) return delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
+    if (input.thread !== undefined) return delegationRefusal('INVALID_INPUT', 'from_my_branch and test_run are only for a new thread. Leave them out to send another brief. Nothing was sent.')
+    if (input.from_my_branch !== true) return undefined
+    if (input.working_copy === 'shared') return delegationRefusal('INVALID_INPUT', 'A thread started from your branch gets a worktree of its own. Leave working_copy out. Nothing was started.')
+    const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
+    if (!caller || !local || !this.admits(threadId)) return undefined
+    if (input.retry_key && this.records.some(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)) return undefined
+    const moveId = randomUUID()
+    let moved: Awaited<ReturnType<DesktopBranchMoves['forStart']>>
+    try { moved = await moves.forStart({ from: { hostId: local, threadId: caller.id }, to: { hostId: local, projectId: caller.projectId }, here: local, moveId, snapshot: input.test_run === true }) }
+    catch { return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this thread\'s branch just now. Nothing was started. Try again.') }
+    if (moved.type === 'refused') return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', moved.message))
+    const name = 'This computer'
+    return { moveId, projectId: caller.projectId, receipt: { hostId: local, name, branch: moved.branch, ...moved.snapshot ? { snapshot: moved.snapshot } : {},
+      note: branchStartWords(name, moved.branch, moved.snapshot) } }
   }
   /**
    * Records a delegation main refused under its rules, when a thread Sotto holds asked for it, and answers with the
@@ -885,7 +927,7 @@ export class DelegationService {
     if (record.action === 'start' && start) {
       try {
         const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: start.projectId,
-          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy,
+          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy, ...start.startFromMove ? { startFromMove: start.startFromMove } : {},
           ...(start.reasoningEffort ? { reasoningEffort: start.reasoningEffort } : {}),
           ...(start.runtimeMode ? { runtimeMode: start.runtimeMode } : {}), ...(start.providerMode ? { providerMode: start.providerMode } : {}) },
         () => { this.guardLive(record.id); this.guardCeiling(record, start) })

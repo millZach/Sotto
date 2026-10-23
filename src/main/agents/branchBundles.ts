@@ -1,13 +1,13 @@
-import { createHash, type Hash } from 'node:crypto'
+import { createHash, randomUUID, type Hash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, open, readdir, stat, unlink, type FileHandle } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, mkdir, open, readdir, stat, unlink, type FileHandle } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 import {
   BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, BRANCH_TIPS_MAX, branchMoveRefusal, branchMoveWords, branchNameSchema, commitIdSchema,
-  incomingRef, outgoingRef, type BranchMoved, type BranchMoveRefusal,
+  incomingRef, outgoingRef, SNAPSHOT_UNTRACKED_LISTED, type BranchMoved, type BranchMoveRefusal, type SnapshotCarried,
 } from '../../shared/branchMoves'
 
 /**
@@ -19,8 +19,14 @@ import {
  * Git's output never reaches a log or an answer: a failure is one of the refusals in `branchMoveWords`.
  */
 
-/** What a sender moves: the branch's name and the commit Sotto checked. A test-run snapshot will be a commit object here. */
-export interface BranchSource { readonly branch: string; readonly commit: string }
+/**
+ * What a sender moves: the branch's name and the commit Sotto checked. For a test run with uncommitted work the commit is
+ * a snapshot made from a temporary index, on no branch, and `snapshot` says what it carried.
+ */
+export interface BranchSource { readonly branch: string; readonly commit: string; readonly snapshot?: SnapshotCarried }
+/** Who a test-run snapshot's commit names, so it reads as Sotto's own and needs no identity configured in the repository. */
+const SNAPSHOT_IDENTITY = { GIT_AUTHOR_NAME: 'Sotto', GIT_AUTHOR_EMAIL: 'sotto@localhost', GIT_COMMITTER_NAME: 'Sotto', GIT_COMMITTER_EMAIL: 'sotto@localhost' } as const
+const SNAPSHOT_MESSAGE = 'Snapshot of uncommitted work for a test run\n\nMade by Sotto from a temporary index. It is on no branch, and the working tree it came from is unchanged.\n'
 /** A bundle staged for sending, with what the receiver checks it against. */
 export interface PreparedBundle { readonly type: 'sending'; readonly path: string; readonly size: number; readonly sha256: string }
 
@@ -33,8 +39,8 @@ type Records = z.infer<typeof recordsSchema>
 /** Records kept, newest by time; one a later move pushes out only stops an old retry being recognised. */
 const RECORDS_MAX = 1000
 
-/** The bundle file names this module stages, so a start clears what a crash left and nothing else. */
-const STAGED = /^[0-9a-f-]{36}\.(?:in|out)\.bundle$/u
+/** The bundle and snapshot index file names this module stages, so a start clears what a crash left and nothing else. */
+const STAGED = /^[0-9a-f-]{36}\.(?:(?:in|out)\.bundle|snapshot\.index)$/u
 
 export interface BranchBundlesOptions {
   /** A folder of Sotto's own, in its data folder, where bundles wait while they cross. Emptied of them at start. */
@@ -86,8 +92,8 @@ export class BranchBundles {
     })()
   }
 
-  private git(cwd: string, args: readonly string[], stdin?: string, timeoutMs = 120_000): Promise<string> {
-    return this.run(cwd, 'git', args, { timeoutMs, ...(stdin !== undefined ? { stdin } : {}) })
+  private git(cwd: string, args: readonly string[], stdin?: string, timeoutMs = 120_000, env?: Readonly<Record<string, string>>): Promise<string> {
+    return this.run(cwd, 'git', args, { timeoutMs, ...(stdin !== undefined ? { stdin } : {}), ...(env ? { env } : {}) })
   }
   private async isRepository(folder: string): Promise<boolean> {
     try { return (await this.git(folder, ['rev-parse', '--is-inside-work-tree', '--git-dir'], undefined, 30_000)).length > 0 } catch { return false }
@@ -113,6 +119,92 @@ export class BranchBundles {
       if (!commitIdSchema.safeParse(commit).success) return branchMoveRefusal('failed', branchMoveWords.failed)
       return { branch, commit }
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+  }
+
+  /** `branchOf` for a move, or `snapshotOf` for a test run, which carries uncommitted work rather than refusing it. */
+  sourceOf(workingCopy: string, snapshot: boolean): Promise<BranchSource | BranchMoveRefusal> {
+    return snapshot ? this.snapshotOf(workingCopy) : this.branchOf(workingCopy)
+  }
+
+  /**
+   * A test run's source (ADR-0105 decision 8): the branch and its commit when the working copy is clean, and otherwise a
+   * snapshot of it. The snapshot is a commit object made from a copy of the index: `git add -A` against the copy, so
+   * `.gitignore` is respected, then its tree, with the branch's commit as parent. No branch, no stash, and the working tree
+   * and the real index are untouched. It names the untracked files it took.
+   */
+  async snapshotOf(workingCopy: string): Promise<BranchSource | BranchMoveRefusal> {
+    if (!await this.isRepository(workingCopy)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
+    await this.start()
+    const index = join(this.options.stagingDirectory, `${randomUUID()}.snapshot.index`)
+    try {
+      let branch: string
+      try { branch = (await this.git(workingCopy, ['symbolic-ref', '--quiet', '--short', 'HEAD'], undefined, 30_000)).trim() } catch { return branchMoveRefusal('not-on-branch', branchMoveWords.notOnBranch) }
+      if (!branchNameSchema.safeParse(branch).success) return branchMoveRefusal('unsupported', branchMoveWords.branchName)
+      const head = (await this.git(workingCopy, ['rev-parse', '--verify', 'HEAD^{commit}'], undefined, 30_000)).trim()
+      if (!commitIdSchema.safeParse(head).success) return branchMoveRefusal('failed', branchMoveWords.failed)
+      if (!(await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal'], undefined, 60_000)).trim()) return { branch, commit: head }
+      // From the top of the working tree, so `add -A` takes all of it and the untracked paths read from its root.
+      const top = (await this.git(workingCopy, ['rev-parse', '--show-toplevel'], undefined, 30_000)).trim()
+      const untracked = (await this.git(top, ['ls-files', '--others', '--exclude-standard', '-z'], undefined, 60_000)).split('\0').filter(Boolean)
+      const real = resolve(top, (await this.git(top, ['rev-parse', '--git-path', 'index'], undefined, 30_000)).trim())
+      // A repository with nothing staged yet may have no index; the temporary one then starts empty.
+      await copyFile(real, index).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+      const env = { GIT_INDEX_FILE: index }
+      await this.git(top, ['add', '-A', '--', '.'], undefined, 300_000, env)
+      const tree = (await this.git(top, ['write-tree'], undefined, 60_000, env)).trim()
+      // Never signed: the snapshot is a throwaway object on no branch, and a signing prompt would hold the start.
+      const commit = (await this.git(top, ['commit-tree', '--no-gpg-sign', tree, '-p', head, '-F', '-'], SNAPSHOT_MESSAGE, 60_000, SNAPSHOT_IDENTITY)).trim()
+      if (!commitIdSchema.safeParse(commit).success) return branchMoveRefusal('failed', branchMoveWords.failed)
+      return { branch, commit, snapshot: { untracked: untracked.slice(0, SNAPSHOT_UNTRACKED_LISTED), untrackedCount: untracked.length } }
+    } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+    finally { await unlink(index).catch(() => undefined) }
+  }
+
+  /**
+   * Lands a branch on the same machine, for a worker started there from a thread's branch: in `repository`'s incoming ref
+   * for the move, written once, as a move lands. When `repository` already holds the commit, as a thread's own worktree
+   * and its project's checkout share one object store, only the ref is written; otherwise the commit goes across from
+   * `from` as a bundle staged here and taken in at once.
+   */
+  async copy(input: { readonly from: string; readonly source: BranchSource; readonly repository: string; readonly moveId: string }): Promise<BranchMoved | BranchMoveRefusal> {
+    const { source, repository, moveId } = input
+    if (!await this.isRepository(repository)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
+    const ref = incomingRef(moveId, source.branch)
+    try { await this.git(repository, ['check-ref-format', ref], undefined, 30_000) } catch { return branchMoveRefusal('unsupported', branchMoveWords.branchName) }
+    const carried = (moved: BranchMoved | BranchMoveRefusal): BranchMoved | BranchMoveRefusal => moved.type === 'moved' && source.snapshot ? { ...moved, snapshot: source.snapshot } : moved
+    try {
+      if (await this.refCommit(repository, source.commit) !== source.commit) {
+        const tips = await this.tips(repository)
+        if (!Array.isArray(tips)) return tips
+        const prepared = await this.prepare({ repository: input.from, moveId, commit: source.commit, bases: tips })
+        if (prepared.type !== 'sending') return prepared
+        try {
+          const incoming = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
+          if (!(incoming instanceof IncomingBundle)) return carried(incoming)
+          for (let offset = 0; offset < prepared.size;) {
+            const chunk = await this.readChunk(prepared.path, offset)
+            if (!await incoming.write(offset, chunk)) { await this.abandon(incoming); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
+            offset += chunk.byteLength
+          }
+          return carried(await this.finish(incoming))
+        } finally { await this.discard(moveId) }
+      }
+      const landed = await this.landed(repository, moveId, ref, source.commit)
+      if (landed) return carried(landed)
+      await this.record(moveId, source.commit, ref)
+      try { await this.git(repository, ['update-ref', ref, source.commit, ''], undefined, 30_000) } catch { /* Read back below: another writer or a lost answer. */ }
+      return carried(await this.refCommit(repository, ref) === source.commit ? { type: 'moved', moveId, branch: source.branch, commit: source.commit, ref }
+        : branchMoveRefusal('move-differs', branchMoveWords.moveDiffers))
+    } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+  }
+
+  /** Removes the incoming ref a move landed in `repository`, for a start that never made its worktree. Best effort. */
+  async forget(repository: string, moveId: string): Promise<void> {
+    if (!/^[0-9a-f-]{36}$/u.test(moveId)) return
+    try {
+      const refs = (await this.git(repository, ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`], undefined, 30_000)).split(/\r?\n/u).filter(Boolean)
+      for (const ref of refs) await this.git(repository, ['update-ref', '-d', ref], undefined, 30_000)
+    } catch { /* Kept: its commits stay until the thread goes. */ }
   }
 
   /** The receiver's newest branch tips, which a sender bundles against so the bundle carries only what they lack. */

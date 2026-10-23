@@ -4163,10 +4163,15 @@ export class AgentControl {
         if (command.threadId !== undefined && this.state.host.threads.some(thread => thread.id === command.threadId)) {
           throw new Error('This thread already exists. Select it instead of creating it again.')
         }
+        // Only Watcher's and delegation's own starts begin from a moved branch (#1033): they moved it themselves, just now.
+        if (command.startFromMove !== undefined && (!origin || command.workingCopy === 'shared' || command.existingWorktreePath !== undefined || command.baseBranch !== undefined)) {
+          throw new Error('A thread starts from a moved branch only in a new worktree that Watcher or a delegation makes. Nothing was made.')
+        }
         const threadId = command.threadId ?? randomUUID()
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
           ...(command.titleSource ? { titleSource: command.titleSource } : {}),
+          ...(command.startFromMove ? { workingCopy: 'independent' as const, startFromMove: command.startFromMove } : {}),
           ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
           ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),

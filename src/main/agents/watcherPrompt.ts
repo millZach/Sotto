@@ -35,7 +35,8 @@ export const WATCHER_MACHINES_PROMPT = `Workers can run on This computer or on a
 A start_thread in a project on This computer that names no machine goes where new workers start, to that machine's copy of the project; one in a project on another machine starts there. Name machine or os when the work needs one, as when the user asks for it ("spawn these on forge") or its checks need a system. An os never falls back to another system: Sotto refuses rather than start it elsewhere. The user's words in a request decide over where new workers start, for that request.
 When newWorkersStart leaves the choice to you, choose for each worker: the system its checks need, then a machine with room.
 Read the project's own notes, such as its AGENTS.md, on where checks run, and follow them.
-When a start's placement says awayFromDefault, say in your reply which machine it is on and why. When it carries a note, pass that on.`
+When a start's placement says awayFromDefault, say in your reply which machine it is on and why. When it carries a note, pass that on.
+To check one thread's work on another machine, start the worker from that thread's branch with fromThread. Set testRun only when the worker is there to run tests; say so yourself, as Sotto never guesses it from commands. When a start's startedFrom carries a note, pass that on.`
 
 /** Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines. */
 export function watcherSystemPrompt(roles: boolean, machines = false): string {

@@ -45,11 +45,13 @@ export function runWithGhStandIn(standIn: { readonly executable: string; readonl
 }
 
 function spawnCommand(cwd: string, command: string, args: readonly string[], options: GitCommandOptions): Promise<string> { return new Promise((accept, reject) => {
-  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never', ...options.env }
-  // Variables that would point Git at another repository or index are dropped; the ones that carry the
-  // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
-  // reaches the remote the way the user's own Git does.
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
+  // Variables Sotto inherited that would point Git at another repository or index are dropped; the ones that
+  // carry the user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a
+  // fetch reaches the remote the way the user's own Git does. A caller's own, such as a test-run snapshot's
+  // temporary index, is set on purpose and kept.
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
+  Object.assign(env, options.env)
   // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
   const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {} })
   let stdout = '', stderr = '', timedOut = false, settled = false

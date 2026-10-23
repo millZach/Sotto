@@ -8,6 +8,24 @@ import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
 
+/** A move's incoming ref (ADR-0082 decision 2), `refs/sotto/incoming/<move>/<branch>`, with the moved branch's name. */
+const INCOMING_REF = /^refs\/sotto\/incoming\/[0-9a-f-]{36}\/(.+)$/u
+/** How far `<name>-<n>` counts before a worker started from a moved branch takes a `sotto/<token>` branch instead. */
+const MOVED_BRANCH_SUFFIXES_MAX = 99
+
+/**
+ * The incoming ref one move landed in this project's repository (#1033): the only ref under `refs/sotto/incoming/<move>/`.
+ * A worker started from a moved branch names its move, and its worktree is made from this ref.
+ */
+export async function movedBranchRef(projectPath: string, moveId: string, git: RunGit = runWorktreeGit): Promise<string> {
+  if (!/^[0-9a-f-]{36}$/u.test(moveId)) throw new Error('That is not a branch Sotto moved here. Nothing was made.')
+  let refs: string[] = []
+  try { refs = (await git(await existingWorkingDirectory(projectPath), ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`])).split(/\r?\n/u).filter(Boolean) }
+  catch { refs = [] }
+  if (refs.length !== 1 || !INCOMING_REF.test(refs[0]!)) throw new Error('The branch this worker starts from is not in this project. Start the worker again. Nothing was made.')
+  return refs[0]!
+}
+
 /** `quiet` is for a fetch nobody pressed anything for: it fails rather than ask for a sign-in, as the background fetch does. */
 export type RunGit = (cwd: string, args: string[], options?: { readonly quiet?: boolean }) => Promise<string>
 const QUOTE_PATHS: readonly string[] = ['-c', 'core.quotePath=false']
@@ -606,7 +624,7 @@ export class ThreadWorktrees {
    * `checkoutBranch` names a branch that exists already, such as a pull request's head: the worktree checks it
    * out as it stands rather than cutting a new branch from a base.
    */
-  async allocate(projectPath: string, mode: 'independent' | 'shared', selection: Partial<AgentWorkingCopySelection> & { readonly checkoutBranch?: string | undefined } = {}): Promise<AgentWorktree> {
+  async allocate(projectPath: string, mode: 'independent' | 'shared', selection: Partial<AgentWorkingCopySelection> & { readonly checkoutBranch?: string | undefined; readonly incomingRef?: string | undefined } = {}): Promise<AgentWorktree> {
     const cwd = await existingWorkingDirectory(projectPath)
     if (mode === 'shared') return { mode, status: 'ready', path: cwd }
     let repositoryRoot: string
@@ -624,6 +642,7 @@ export class ThreadWorktrees {
       const projectRelativePath = relative(await realpath(repositoryRoot), cwd).split(sep).join('/')
       return (await this.inspectWithin({ mode, status: 'ready', path, repositoryRoot: await realpath(repositoryRoot), projectRelativePath, reused: true }, identity)).worktree
     }
+    if (selection.incomingRef) return this.allocateFromMove(repositoryRoot, cwd, mode, selection.incomingRef)
     const checkoutBranch = selection.checkoutBranch
     if (checkoutBranch) {
       await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${checkoutBranch}`])
@@ -652,6 +671,46 @@ export class ThreadWorktrees {
     return { mode, status: 'pending', ...(originBase ? { originBase } : {}), path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${this.home === THREAD_WORKTREE_HOME ? token.slice(0, 8) : token}`, baseCommit, projectRelativePath, baseBranch, startFromOrigin: selection.startFromOrigin, temporaryBranch: this.home === THREAD_WORKTREE_HOME }
   }
 
+
+  /**
+   * A worktree for a worker started from a thread's branch (ADR-0082 decision 4, #1033): on a branch of the moved name,
+   * made from the move's incoming ref. A branch of that name that is already here, as the source thread's own is when the
+   * worker starts on the same machine, is never moved: the new branch takes the next free `<name>-<n>` instead. The record
+   * keeps the incoming ref, which goes when this worktree is removed (decision 3).
+   */
+  private async allocateFromMove(repositoryRoot: string, cwd: string, mode: 'independent' | 'shared', ref: string): Promise<AgentWorktree> {
+    const moved = INCOMING_REF.exec(ref)?.[1]
+    if (!moved) throw new Error('That is not a branch Sotto moved here. Nothing was made.')
+    await this.git(repositoryRoot, ['check-ref-format', ref])
+    let baseCommit: string
+    try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${ref}^{commit}`])).trim() }
+    catch { throw new Error('The branch this worker starts from is no longer here. Start the worker again. Nothing was made.') }
+    const root = await realpath(repositoryRoot), projectRelativePath = relative(root, cwd).split(sep).join('/')
+    if (projectRelativePath) {
+      try {
+        if ((await this.git(repositoryRoot, ['cat-file', '-t', `${baseCommit}:${projectRelativePath}`])).trim() !== 'tree') throw new Error('Not a committed directory')
+      } catch { throw new Error('The project subdirectory is not on the branch this worker starts from. Nothing was made.') }
+    }
+    const token = randomUUID()
+    return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: root,
+      branch: await this.freeBranch(repositoryRoot, moved, token), baseCommit, projectRelativePath, incomingRef: ref, temporaryBranch: false }
+  }
+  /** `name` when no branch has it here, else the first free `<name>-<n>`, so a branch already here is never moved. */
+  private async freeBranch(repositoryRoot: string, name: string, token: string): Promise<string> {
+    for (let n = 1; n <= MOVED_BRANCH_SUFFIXES_MAX; n++) {
+      const candidate = n === 1 ? name : `${name}-${n}`
+      try { await this.git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${candidate}`]) }
+      catch { return candidate }
+    }
+    return `${this.home.branchPrefix}${token.slice(0, 8)}`
+  }
+  /** Removes the incoming ref a worktree was made from, once the worktree is gone (ADR-0082 decision 3). */
+  private async withoutIncomingRef(record: AgentWorktree): Promise<AgentWorktree> {
+    const { incomingRef: ref, ...rest } = record
+    if (!ref) return record
+    if (INCOMING_REF.test(ref) && record.repositoryRoot) await this.git(record.repositoryRoot, ['update-ref', '-d', ref]).catch(() => undefined)
+    return rest
+  }
 
   async options(projectPath: string): Promise<AgentWorkingCopyOptions> {
     const cwd = await existingWorkingDirectory(projectPath)
@@ -1108,7 +1167,7 @@ export class ThreadWorktrees {
       // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
       try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!, nestedWorktrees) }
       catch (error) { throw unfinishedRemoval(error) }
-      return reclaimedRecord(metadata, facts.path, facts.branch)
+      return this.withoutIncomingRef(reclaimedRecord(metadata, facts.path, facts.branch))
     })
   }
 
@@ -1229,7 +1288,7 @@ export class ThreadWorktrees {
       }
       try { await this.removeLocked(repositoryRoot, path, identity, settle.nested) }
       catch (error) { throw unfinishedRemoval(error) }
-      return reclaimedRecord(metadata, path, settle.branch ?? metadata.branch)
+      return this.withoutIncomingRef(reclaimedRecord(metadata, path, settle.branch ?? metadata.branch))
     })
   }
 

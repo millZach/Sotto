@@ -38,6 +38,9 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readProjectOrigins } from '../../src/main/agents/projectOrigins'
 import type { WorkerMachineSetting } from '../../src/shared/workerMachine'
+import { BranchBundles } from '../../src/main/agents/branchBundles'
+import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
+import { branchMoveWords } from '../../src/shared/branchMoves'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -69,9 +72,13 @@ async function master(native?: CodexAppServerHost, usage = false, machines?: { s
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource()
-  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
+  // A start from a thread's branch moves it as the desktop does (#1033), over this computer's sockets to its hosts.
+  const moving: { watcher?: WatcherService } = {}
+  const branchMoves = new DesktopBranchMoves({ bundles: new BranchBundles({ stagingDirectory: join(f.root, 'branch-moves'), recordsPath: join(f.root, 'branch-moves.json') }),
+    folders: foldersOfSnapshot(() => f.control.watcherSnapshot()), host: id => moving.watcher?.branchMoveHost(id), hostName: id => moving.watcher?.machineName(id) ?? 'That machine' })
+  const watcher = moving.watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
     machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads),
-    ...machines ? { workerMachine: machines.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {} })
+    ...machines ? { workerMachine: machines.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects), branchMoves } : {} })
   const tools = new WatcherToolServer(watcher, { machines: machines !== undefined }); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
@@ -1537,11 +1544,75 @@ it('starts a worker that names a system on a machine of it, and refuses one no c
   expect(f.control.watcherRecord().operations).toHaveLength(before)
 })
 
+// Starting from a thread's branch (#1033): This computer's project is a repository with a branch, and a thread works in it.
+async function fromBranch() {
+  const f = await acrossMachines()
+  const run = async (...args: string[]) => (await git('git', ['-C', f.local.path, '-c', 'user.name=Sotto test', '-c', 'user.email=test@example.invalid', ...args])).stdout.trim()
+  await writeFile(join(f.local.path, 'README.md'), '# Project\n'); await run('add', 'README.md'); await run('commit', '-q', '-m', 'Start the project')
+  await run('switch', '-q', '-c', 'feat/x')
+  await writeFile(join(f.local.path, 'x.txt'), 'x\n'); await run('add', 'x.txt'); await run('commit', '-q', '-m', 'Add x')
+  const here = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
+  const source = randomUUID()
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: source, projectId: f.local.id, title: 'Synthetic source', modelId: here.id, workingCopy: 'shared' })).error).toBeNull()
+  return { ...f, run, commit: await run('rev-parse', 'HEAD'), fromThread: { hostId: f.control.hostId()!, threadId: source } }
+}
+
+it('starts a worker on the paired machine from a thread’s branch on This computer, in a new worktree on that branch, and says so (#1033)', async () => {
+  const f = await fromBranch()
+  expect(f.hello.features).toContain('branch-moves')
+  const raw = vi.spyOn(f.socket as unknown as { call(request: { op: string }): Promise<unknown> }, 'call')
+  const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+  if (started.status !== 'ok' || !('target' in started)) throw new Error(`start-refused: ${started.status === 'refused' ? started.message : ''}`)
+  expect(started.startedFrom).toEqual({ hostId: f.pairing.hostId, name: 'Synthetic remote', branch: 'feat/x', note: 'Started on Synthetic remote from feat/x.' })
+  // The host is sent the move the start comes from, and neither the thread nor the machine it named.
+  const packet = raw.mock.calls.map(([request]) => request).find(request => request.op === 'watcher-control') as unknown as { request: { call: { input: Record<string, unknown> } } }
+  raw.mockRestore()
+  const moveId = packet.request.call.input['fromMove'] as string
+  expect(moveId).toMatch(/^[0-9a-f-]{36}$/u)
+  expect(packet.request.call.input).not.toHaveProperty('fromThread')
+  expect(packet.request.call.input).not.toHaveProperty('testRun')
+  // The worker's worktree on the host is made from the move's incoming ref, on the branch's own name.
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
+  const worktree = f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!.worktree!
+  expect(worktree).toMatchObject({ branch: 'feat/x', incomingRef: `refs/sotto/incoming/${moveId}/feat/x` })
+  expect((await git('git', ['-C', worktree.path!, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(f.commit)
+})
+
+it('refuses a start from a thread with uncommitted work in the move’s words, and a test run starts from a snapshot of it (#1033)', async () => {
+  const f = await fromBranch()
+  await writeFile(join(f.local.path, 'x.txt'), 'edited\n'); await writeFile(join(f.local.path, 'new.txt'), 'new\n')
+  const refused = await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+  expect(refused).toMatchObject({ status: 'refused', code: 'WORKING_COPY_UNAVAILABLE', message: branchMoveWords.uncommitted })
+  expect(f.control.shell().host.threads.filter(thread => thread.title === 'Synthetic remote worker')).toHaveLength(0)
+  expect(await f.run('for-each-ref', 'refs/sotto')).toBe('')
+  const tested = await f.startHere({ ...f.staysHere(), title: 'Synthetic test run', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true })
+  if (tested.status !== 'ok' || !('target' in tested)) throw new Error(`start-refused: ${tested.status === 'refused' ? tested.message : ''}`)
+  expect(tested.startedFrom).toEqual({ hostId: f.control.hostId(), name: 'This computer', branch: 'feat/x', snapshot: { untracked: ['new.txt'], untrackedCount: 1 },
+    note: 'Started on This computer from feat/x with your uncommitted changes (1 untracked file).' })
+  await expect.poll(() => f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
+  const worktree = f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)!.worktree!
+  // The source thread holds feat/x, so the worker's branch takes the next name; its folder has the uncommitted work.
+  expect(worktree.branch).toBe('feat/x-2')
+  // As committed: this computer's own `core.autocrlf` may give a checkout CRLF on the way out.
+  expect((await readFile(join(worktree.path!, 'new.txt'), 'utf8')).replace(/\r\n/gu, '\n')).toBe('new\n')
+  expect((await readFile(join(worktree.path!, 'x.txt'), 'utf8')).replace(/\r\n/gu, '\n')).toBe('edited\n')
+  // The source is as it was: on feat/x, its changes uncommitted, nothing stashed.
+  expect(await f.run('symbolic-ref', '--short', 'HEAD')).toBe('feat/x')
+  // Trimmed, so the first line's leading space is gone.
+  expect(await f.run('status', '--porcelain')).toBe('M x.txt\n?? new.txt')
+  expect(await f.run('stash', 'list')).toBe('')
+  // Watcher never names a move itself.
+  expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+})
+
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
   expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(await f.call('start_thread', { ...f.start(), os: family })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  // Nor a thread's branch to start from, or a test run (#1033).
+  expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' }, fromThread: { hostId: f.pairing.hostId, threadId: 'x' } })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(await f.call('start_thread', { ...f.start(), testRun: true })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   const listed = await f.call('list_machines', {})
   expect(listed).not.toHaveProperty('newWorkersStart')
   expect(await f.call('start_thread', f.start())).not.toHaveProperty('placement')

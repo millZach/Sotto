@@ -46,6 +46,8 @@ export const delegateInputSchema = z.object({
   working_copy: z.enum(['shared', 'independent']).optional().describe('For a new thread: share this project\'s checkout (the default) or start its own worktree.'),
   machine: z.uuid().optional().describe(`For a new thread: the machine it starts on, a host ID from ${LIST_MACHINES_TOOL}. A delegated thread starts only on This computer for now.`),
   os: workerSystemSchema.optional().describe('For a new thread: the system it needs, windows, macos or linux. Never falls back to another system.'),
+  from_my_branch: z.boolean().optional().describe('For a new thread: start it in a worktree of its own on this thread\'s branch, with this thread\'s commits. Uncommitted work here refuses it; commit first, or set test_run.'),
+  test_run: z.boolean().optional().describe('For a new thread that is there to run tests. With from_my_branch, this thread\'s uncommitted work goes too, as a snapshot, and nothing in this thread changes. Sotto never guesses it from commands.'),
   title: z.string().trim().min(1).max(DELEGATION_TITLE_MAX).optional().describe('For a new thread: its name in the sidebar, which Sotto keeps. Left out, Sotto names the thread from the brief, as it names any thread.'),
   wait_seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional()
     .describe(`How long to wait in this call for the outcome, up to ${DELEGATION_WAIT_MAX_SECONDS}. Left out, ${DELEGATION_WAIT_MAX_SECONDS}. When the wait ends first the call returns working, and Sotto sends a wake-up when the outcome changes.`),
@@ -65,7 +67,10 @@ export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTE
   'QUEUE_HELD',
   // The machine or system a new thread named could not take it (#1032): not connected, no copy of the project, none of
   // that system, or a machine other than This computer, where delegated threads start for now.
-  'MACHINE_UNAVAILABLE'])
+  'MACHINE_UNAVAILABLE',
+  // The delegating thread's branch could not go to the new thread (#1033): uncommitted work without a test run, no branch,
+  // or Git could not copy it.
+  'BRANCH_UNAVAILABLE'])
 export type DelegationRefusalCode = z.infer<typeof delegationRefusalCodeSchema>
 /**
  * A refusal, and the delegation it is recorded as when the call was a delegation main refused under its rules: the
@@ -79,7 +84,7 @@ export interface DelegationRefusal { readonly status: 'refused'; readonly code: 
  */
 export const RECORDED_REFUSALS: ReadonlySet<DelegationRefusalCode> = new Set(['NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD', 'QUEUE_HELD',
-  'MACHINE_UNAVAILABLE'])
+  'MACHINE_UNAVAILABLE', 'BRANCH_UNAVAILABLE'])
 
 /**
  * Where a delegation stands (CONTEXT.md, Outcome): Watcher's outcomes (ADR-0073), and `refused`, a delegation main

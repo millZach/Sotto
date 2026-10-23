@@ -62,14 +62,28 @@ export class HostBranchMoves {
         const holding: Transfer = { owner }
         this.transfers.set(request.moveId, holding)
         try {
-          const source = await this.bundles.branchOf(folder)
+          const source = await this.bundles.sourceOf(folder, request.snapshot === true)
           if ('type' in source) { this.transfers.delete(request.moveId); return source }
           const prepared = await this.bundles.prepare({ repository: folder, moveId: request.moveId, commit: source.commit, bases: request.bases })
           if (prepared.type !== 'sending') { this.transfers.delete(request.moveId); return prepared }
           if (gone.aborted || this.transfers.get(request.moveId) !== holding) { await this.bundles.discard(request.moveId); this.transfers.delete(request.moveId); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
           this.transfers.set(request.moveId, { owner, outgoing: prepared })
-          return { type: 'sending', branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 }
+          return { type: 'sending', branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256, ...source.snapshot ? { snapshot: source.snapshot } : {} }
         } catch (error) { this.transfers.delete(request.moveId); await this.bundles.discard(request.moveId); throw error }
+      }
+      case 'copy': {
+        // A thread's branch into a project on this same machine, for a worker the desktop starts here from it: nothing
+        // crosses the socket but the answer.
+        const from = this.folders.threadFolder(request.threadId)
+        if (!from) return branchMoveRefusal('unknown-thread', branchMoveWords.unknownThread)
+        const repository = this.folders.projectFolder(request.projectId)
+        if (!repository) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
+        if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
+        this.transfers.set(request.moveId, { owner })
+        try {
+          const source = await this.bundles.sourceOf(from, request.snapshot === true)
+          return 'type' in source ? source : await this.bundles.copy({ from, source, repository, moveId: request.moveId })
+        } finally { this.transfers.delete(request.moveId) }
       }
       case 'send-chunk': {
         const outgoing = this.own(request.moveId, owner)?.outgoing
