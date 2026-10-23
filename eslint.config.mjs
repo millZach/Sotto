@@ -34,6 +34,7 @@ export default tseslint.config(
       'artifacts/sotto-owl-night-sky/**',
       'artifacts/watcher-room/**',
       'artifacts/watcher-room-polish/**',
+      'artifacts/message-scrubber/**',
       'artifacts/watcher-answer/**',
       'artifacts/macos-traffic-light-room/**',
       'artifacts/main-freeze-notice/**',

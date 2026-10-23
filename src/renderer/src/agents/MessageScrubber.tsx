@@ -47,8 +47,19 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   readonly onJump: (messageId: string, focus: boolean) => void
 }): ReactNode {
   const [geometry, setGeometry] = useState<Geometry | null>(null)
-  const [hot, setHot] = useState<{ readonly index: number; readonly via: Via } | null>(null)
-  const [focusIndex, setFocusIndex] = useState<number | null>(null)
+  // The card's tick and the focused tick are held by message, so loading earlier messages or a rewind, which shift the
+  // ticks, leaves them on the message they were on.
+  const [hotMark, setHotMark] = useState<{ readonly messageId: string; readonly via: Via } | null>(null)
+  const [focusId, setFocusId] = useState<string | null>(null)
+  const indexOf = useMemo(() => new Map(marks.map((mark, index) => [mark.messageId, index])), [marks])
+  const hotIndex = hotMark === null ? undefined : indexOf.get(hotMark.messageId)
+  const hot = hotMark === null || hotIndex === undefined ? null : { index: hotIndex, via: hotMark.via }
+  const focusIndex = focusId === null ? null : indexOf.get(focusId) ?? null
+  const setHot = (next: { readonly index: number; readonly via: Via } | null): void => {
+    const mark = next === null ? undefined : marks[next.index]
+    setHotMark(next === null || mark === undefined ? null : { messageId: mark.messageId, via: next.via })
+  }
+  const setFocusIndex = (index: number | null): void => { setFocusId(index === null ? null : marks[index]?.messageId ?? null) }
   const [inView, setInView] = useState<ReadonlySet<string>>(() => new Set())
   const ticks = useRef<(HTMLButtonElement | null)[]>([])
   const card = useRef<HTMLDivElement>(null)
@@ -118,12 +129,24 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     const onKey = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== 'Escape') return
       event.stopPropagation()
-      setHot(null)
+      setHotMark(null)
       for (const tick of ticks.current) tick?.style.removeProperty('--rise')
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [pointerCard])
+  // A card a tap opened has no pointer to leave it, so a tap anywhere else closes it.
+  const tapCard = hot?.via === 'touch'
+  useEffect(() => {
+    if (!tapCard) return
+    const onDown = (event: PointerEvent): void => {
+      const target = event.target as Node | null
+      if (nav.current?.contains(target) || card.current?.contains(target)) return
+      setHotMark(null)
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    return () => window.removeEventListener('pointerdown', onDown, true)
+  }, [tapCard])
 
   const shown = geometry !== null && geometry.long && geometry.lane > 0
   const { pitch, places } = useMemo(() => tickPlaces(shown ? count : 0, geometry?.height ?? 0), [shown, count, geometry?.height])
@@ -138,10 +161,11 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     }
   }, [places])
 
-  const close = useCallback((): void => { setHot(null); rise(null) }, [rise])
-  // A thread with fewer messages, or one that is no longer long, keeps no card open on a tick that has gone.
-  useEffect(() => { if (!shown || (hot !== null && hot.index >= count)) close() }, [shown, hot, count, close])
-  useEffect(() => { if (focusIndex !== null && focusIndex >= count) setFocusIndex(null) }, [focusIndex, count])
+  const close = useCallback((): void => { setHotMark(null); rise(null) }, [rise])
+  // A thread that is no longer long, or a message that has gone, keeps no card open and no tick focused.
+  const hotGone = hotMark !== null && hotIndex === undefined
+  useEffect(() => { if (!shown || hotGone) close() }, [shown, hotGone, close])
+  useEffect(() => { if (focusId !== null && !indexOf.has(focusId)) setFocusId(null) }, [focusId, indexOf])
 
   const jump = (index: number, focus: boolean): void => {
     const mark = marks[index]
@@ -216,6 +240,9 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     <nav ref={nav} className="message-scrubber" aria-label="Messages you sent" style={style} data-active={hot !== null || undefined}
       data-narrow={geometry.lane < NARROW_LANE_PX || undefined}
       onPointerMove={onPointerMove} onPointerLeave={leave} onPointerDown={event => { lastPointer.current = event.pointerType }} onWheel={onWheel} onKeyDown={onKeyDown}
+      // A press with the pointer leaves focus where it was: focusing the button under it would swap the card's tick for
+      // that button's, which is another message where packed ticks overlap. The keyboard reaches the ticks with Tab.
+      onMouseDown={event => event.preventDefault()}
       onFocus={event => {
         const index = ticks.current.indexOf(event.target as HTMLButtonElement)
         if (index < 0) return

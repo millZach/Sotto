@@ -135,12 +135,41 @@ describe('the message scrubber', () => {
     const shown = 120
     fireEvent.pointerMove(scrubber()!, { clientY: places[shown], pointerType: 'mouse' })
     expect(ticks()[shown]).toHaveAttribute('data-hot')
-    // The pointer is over the next button too, whose hit area overlaps; the press still goes where the card said.
-    fireEvent.click(ticks()[shown + 1]!, { detail: 1 })
+    // The pointer is over the next button too, whose hit area overlaps; the whole press still goes where the card said.
+    // The press does not move focus there, which would swap the card for that button's message.
+    const under = ticks()[shown + 1]!
+    fireEvent.pointerDown(under, { pointerType: 'mouse' })
+    expect(fireEvent.mouseDown(under)).toBe(false)
+    expect(ticks()[shown]).toHaveAttribute('data-hot')
+    fireEvent.mouseUp(under)
+    fireEvent.click(under, { detail: 1 })
     expect(article(`u${shown}`)).toHaveAttribute('data-sought')
     // Assistive technology's press has no pointer, and lands with focus.
     fireEvent.click(ticks()[shown - 5]!, { detail: 0 })
     expect(article(`u${shown - 5}`)).toHaveFocus()
+  })
+
+  it('keeps a card on its message when messages are added above, and closes a tapped card on a tap elsewhere', () => {
+    const live = mount(conversation(6))
+    const places = tickPlaces(6, VIEW).places
+    fireEvent.pointerMove(scrubber()!, { clientY: places[3], pointerType: 'mouse' })
+    expect(card()).toHaveTextContent('Question 3:')
+    // Two earlier turns arrive above, as Show earlier messages loads them: the card stays on Question 3.
+    const thread = live.state.host.threads.find(item => item.id === 'long')!
+    const earlier: AgentMessage[] = [
+      { id: 'e0', role: 'user', text: 'An earlier question?', createdAt: at(40) }, { id: 'e1', role: 'assistant', text: 'An earlier answer.', createdAt: at(39) },
+      { id: 'e2', role: 'user', text: 'Another earlier question?', createdAt: at(38) }, { id: 'e3', role: 'assistant', text: 'Another answer.', createdAt: at(37) },
+    ]
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item === thread ? { ...thread, messages: [...earlier, ...thread.messages] } : item) } }) })
+    expect(card()).toHaveTextContent('Question 3:')
+    expect(card()).toHaveTextContent('Message 6 of 8')
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    // A tap shows a card with no pointer to leave it; a tap anywhere else closes it.
+    fireEvent.pointerDown(ticks()[1]!, { pointerType: 'touch' })
+    fireEvent.click(ticks()[1]!, { detail: 1 })
+    expect(card()).toHaveTextContent('Message 2 of 8')
+    fireEvent.pointerDown(transcript(), { pointerType: 'touch' })
+    expect(card()).toBeNull()
   })
 
   it('lands on a message the window has not drawn yet, widening it first', () => {
