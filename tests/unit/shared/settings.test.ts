@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platform'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
+import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES } from '../../../src/shared/menuBarOwl'
 import {
   dictationOn,
   APPEARANCES,
@@ -29,6 +30,8 @@ const customSettings = {
   darkTheme: aurora.id,
   appearanceContrast: 135,
   effortColor: 'aurora',
+  menuBarOwlBody: 'ink',
+  menuBarOwlEyes: 'amber',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -276,6 +279,15 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, effortColor: 'neon' }).success).toBe(false)
   })
 
+  it('keeps every menu bar owl body and eye colour and recovers an unknown one as the shipped default', () => {
+    for (const menuBarOwlBody of MENU_BAR_OWL_BODIES) expect(parseSettings({ menuBarOwlBody }).menuBarOwlBody).toBe(menuBarOwlBody)
+    for (const menuBarOwlEyes of MENU_BAR_OWL_EYES) expect(parseSettings({ menuBarOwlEyes }).menuBarOwlEyes).toBe(menuBarOwlEyes)
+    expect(parseSettings({ menuBarOwlBody: 'chrome', menuBarOwlEyes: 'pink' })).toMatchObject({ menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal' })
+    expect(parseSettings({})).toMatchObject({ menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal' })
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlBody: 'chrome' }).success).toBe(false)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlEyes: 'pink' }).success).toBe(false)
+  })
+
   it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
     const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffdf8' } })
     expect(parseSettings({ lightTheme: 'hush', darkTheme: 'linen' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'linen' })
@@ -318,6 +330,8 @@ describe('settings', () => {
       darkTheme: 't3-code',
       appearanceContrast: 100,
       effortColor: 'ember',
+      menuBarOwlBody: 'slate',
+      menuBarOwlEyes: 'teal',
       customThemes: [],
       reducedMotion: 'system',
       microphoneId: null,
