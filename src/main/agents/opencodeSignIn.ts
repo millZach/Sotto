@@ -147,7 +147,7 @@ export class OpenCodeSignIn {
   }
   /**
    * The catalog read again after something other than a sign-in changed what OpenCode lists, such as the user's own
-   * model servers (ADR-0123): every thread server is outdated and the model menu gets what changed. False when OpenCode
+   * model servers (ADR-0124): every thread server is outdated and the model menu gets what changed. False when OpenCode
    * is not running or the catalog could not be read; the thread servers move on regardless.
    */
   catalogAgain(): Promise<boolean> {

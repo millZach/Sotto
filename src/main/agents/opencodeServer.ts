@@ -44,7 +44,7 @@ export function opencodeDatabase(folders: OpenCodeFolders): string { return join
 /** What every Sotto server is told on top of its own config: no share links, and no update of its own (ADR-0087). */
 export const OPENCODE_CONFIG_CONTENT = JSON.stringify({ share: 'disabled', update: 'disable' })
 /**
- * The same, with the user's own model servers (ADR-0123) as provider blocks beside it. With none it is exactly
+ * The same, with the user's own model servers (ADR-0124) as provider blocks beside it. With none it is exactly
  * `OPENCODE_CONFIG_CONTENT`, so a run with the Owl feature off gives OpenCode what it always did.
  */
 export function opencodeConfigContent(servers: readonly OwnServer[] = []): string {
@@ -55,7 +55,7 @@ const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'tem
  * The environment an OpenCode process gets: the shared allow-list and nothing else, so no provider's key reaches it and
  * a thread runs on the sign-ins OpenCode keeps in Sotto's own folder. The XDG folders are always Sotto's; the user's own
  * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one. `servers`
- * are the user's own model servers (ADR-0123), passed only while their Owl feature is on.
+ * are the user's own model servers (ADR-0124), passed only while their Owl feature is on.
  */
 export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string, servers: readonly OwnServer[] = []): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))

@@ -12,7 +12,7 @@ import { SettingsGroup } from '../features/settings/SettingsGroup'
 import './ownServers.css'
 
 /**
- * Your own model servers (ADR-0123), phase 1: the bridge, only while the `own-model-servers` Owl feature is on and main
+ * Your own model servers (ADR-0124), phase 1: the bridge, only while the `own-model-servers` Owl feature is on and main
  * gave the window one. Every part of the feature asks this before it exists.
  */
 export function useOwnServersBridge(): OwnServersBridge | undefined {

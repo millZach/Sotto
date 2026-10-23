@@ -14,7 +14,7 @@ const FAILED = { status: 'refused', reason: 'failed', message: OWN_SERVER_WORDS.
 export const OWN_SERVERS_UNREAD = 'Sotto could not read your own model servers.'
 
 /**
- * The main window's bridge to the user's own model servers (ADR-0123). The `own-model-servers` Owl answer decides whether
+ * The main window's bridge to the user's own model servers (ADR-0124). The `own-model-servers` Owl answer decides whether
  * the handlers exist: with it off, or OpenCode held, nothing is registered and no renderer can turn it on. Every request
  * is checked by the service's schema, one that fails it or throws answers that nothing was changed rather than echoing
  * what was sent (a list that cannot be read rejects with fixed words instead), and every answer is checked against its schema on the way out, so no key ever crosses back.

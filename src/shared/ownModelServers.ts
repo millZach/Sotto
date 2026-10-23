@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Your own model servers (ADR-0123): model servers the user runs, such as SGLang, vLLM, Ollama, LM Studio or llama.cpp,
+ * Your own model servers (ADR-0124): model servers the user runs, such as SGLang, vLLM, Ollama, LM Studio or llama.cpp,
  * on this computer, their network or their tailnet, which a provider drives as a model source. OpenCode is the first
  * provider to run them. Main keeps the record and checks a server only when the user presses Check or Add; a key goes
  * from the dialog to main once and from main to Sotto's OpenCode once, and nothing here carries one back.

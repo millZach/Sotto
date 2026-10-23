@@ -93,7 +93,7 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * control; typing searches every source at once, under small source headings. Escape steps back one level at a time:
  * it clears the search, then leaves the source with focus on its row, then closes the menu. The chip names the source
  * before the model, and the source gives way first in a narrow composer. With `ownServers`, OpenCode's source list ends
- * with Your own server…, which closes the menu and opens the Add a server dialog (ADR-0123); closing that hands focus
+ * with Your own server…, which closes the menu and opens the Add a server dialog (ADR-0124); closing that hands focus
  * back to the chip.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {

@@ -1,6 +1,6 @@
 # Your own model servers
 
-Checked on Windows on October 23, 2026, for #1426 (ADR-0123), in two halves: the built app with Owl features on over Sotto's stand-in OpenCode (`tests/fixtures/fakeOpenCodeServer.mjs`) and a stand-in SGLang server on 127.0.0.1, and Sotto's own code against the real OpenCode 2.1.4 and a fake OpenAI-compatible server. Zach picked layout B with C's model menu entry from `prototype/local-model-server`.
+Checked on Windows on October 23, 2026, for #1426 (ADR-0124), in two halves: the built app with Owl features on over Sotto's stand-in OpenCode (`tests/fixtures/fakeOpenCodeServer.mjs`) and a stand-in SGLang server on 127.0.0.1, and Sotto's own code against the real OpenCode 2.1.4 and a fake OpenAI-compatible server. Zach picked layout B with C's model menu entry from `prototype/local-model-server`.
 
 ## What was done
 

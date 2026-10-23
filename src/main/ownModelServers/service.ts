@@ -58,7 +58,7 @@ interface Refusal { readonly status: 'refused'; readonly reason: OwnServerRefusa
 const refusal = (reason: OwnServerRefusal, message: string): Refusal => ({ status: 'refused', reason, message })
 
 /**
- * The user's own model servers (ADR-0123): the record main keeps in `own-model-servers.json`, the check, and adding and
+ * The user's own model servers (ADR-0124): the record main keeps in `own-model-servers.json`, the check, and adding and
  * removing a server with Sotto's OpenCode told each time. Adds and removes take turns, so two never interleave.
  */
 export class OwnServers {

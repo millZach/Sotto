@@ -4,7 +4,7 @@ import {
 } from '../../shared/ownModelServers'
 
 /**
- * Checking a model server the user runs (ADR-0123), only when they press Check, Add or Check again. The model list comes
+ * Checking a model server the user runs (ADR-0124), only when they press Check, Add or Check again. The model list comes
  * from the OpenAI API every such server answers; each model's context and abilities from what that kind of server says
  * about it. A failed extra request only leaves something unknown: the list alone decides whether the check passes.
  * Nothing the server sends reaches a log, and the key goes only to the address the user gave, as a Bearer token.

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The user's own model servers (ADR-0123) on OpenCode 2 itself. Never in CI: it needs OpenCode 2 installed. Run with
+ * The user's own model servers (ADR-0124) on OpenCode 2 itself. Never in CI: it needs OpenCode 2 installed. Run with
  *
  *   SOTTO_OPENCODE_LIVE=1 SOTTO_OPENCODE_EXECUTABLE=<path to opencode 2> npx vitest run tests/integration/opencodeOwnServersLive.test.ts
  *

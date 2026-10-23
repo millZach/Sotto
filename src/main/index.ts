@@ -225,6 +225,8 @@ import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
+import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
+import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -340,6 +342,7 @@ type NativeDiagnostic =
   | 'owl-failed'
   | 'desktop-notification-failed'
   | OwnServerEvent
+  | 'interface-language-load-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -700,7 +703,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled: owlFeatures['interface-language'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -713,7 +716,20 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
-  // The user's own model servers (ADR-0123): an Owl feature run by this computer's OpenCode, so it exists only while the
+  // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
+  // English as the computer's language, so every test and design capture reads English on any machine; the setting still
+  // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
+  const interfaceLanguageEnabled = owlFeatures['interface-language']
+  const interfaceLanguage = new MainInterfaceLanguage({
+    enabled: interfaceLanguageEnabled,
+    systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
+    override: app.isPackaged ? undefined : process.env.SOTTO_INTERFACE_LANGUAGE,
+  })
+  // A catalog that cannot be read leaves Sotto in English, which every window can show.
+  const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
+    interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
+  await applyInterfaceLanguage(startupSettings)
+  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode, so it exists only while the
   // Owl list turns it on, OpenCode is not held and the local host runs. Otherwise main keeps the record untouched, gives
   // OpenCode no server, passes no renderer argument and registers no channel.
   const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && !heldProviders.has('opencode') && startupSettings.localHostEnabled
@@ -770,13 +786,13 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     title: buildName,
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-      const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
+      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
-        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : [])] : []
+        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -1144,22 +1160,26 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       .then(() => { windows.sendToMain(UPDATE_CHECK_REQUESTED, null) })
       .catch(() => logOperational('native-main-show-failed'))
   }
-  const applicationMenuTemplate = buildApplicationMenuTemplate({
-    platform,
-    appName: APP_NAME,
-    includeDeveloperTools: !app.isPackaged,
-    onShowSettings: () => {
-      void windows.showMain().catch(() => logOperational('native-main-show-failed'))
-    },
-    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
-    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
-    onShowTurnRecords: showTurnRecords,
-  })
-  if (applicationMenuTemplate !== null) {
-    // Windows and Linux keep Electron's default menu: installing null would also drop the
-    // reload/devtools accelerators the app ships with today.
-    Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+  // Built again whenever the interface language changes, so the menu's own words follow it.
+  const installApplicationMenu = (): void => {
+    const applicationMenuTemplate = buildApplicationMenuTemplate({
+      platform,
+      appName: APP_NAME,
+      includeDeveloperTools: !app.isPackaged,
+      onShowSettings: () => {
+        void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+      },
+      // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+      ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+      onShowTurnRecords: showTurnRecords,
+    })
+    if (applicationMenuTemplate !== null) {
+      // Windows and Linux keep Electron's default menu: installing null would also drop the
+      // reload/devtools accelerators the app ships with today.
+      Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+    }
   }
+  installApplicationMenu()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const linuxClipboard = e2eState === null && platform === 'linux'
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
@@ -1569,6 +1589,13 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
+      // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
+      if (await applyInterfaceLanguage(settings)) {
+        trayController.update(currentTrayState)
+        installApplicationMenu()
+        windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+      }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
@@ -1823,7 +1850,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
-      // The user's own model servers (ADR-0123): only while their Owl feature is on, so stable registers nothing.
+      // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
       const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
@@ -1921,6 +1948,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
+        ...(interfaceLanguageEnabled ? { interfaceLanguage } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },

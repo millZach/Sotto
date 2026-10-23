@@ -2,7 +2,7 @@
 
 Zach asked for local inference in Sotto, for anyone who runs a model: "use whatever model he has or anyone has on their local machines... use Sotto to drive that machine through whatever harness we want... a thread or watcher could even use that model." It began as four DGX Sparks at his brother's house serving DeepSeek V4.1 Flash with SGLang, and became the general case: any user points Sotto at a model server they run (SGLang, vLLM, Ollama, LM Studio, llama.cpp, TGI or any OpenAI-compatible endpoint), on this computer, on their network or across their tailnet, and picks which provider drives it.
 
-In Sotto's words the "harness" is the **provider** (the native client: OpenCode, Codex), and the server is a **model source**, as Anthropic or OpenRouter are under OpenCode today. ADR-0123 records the decision; [the prototype](https://github.com/millZach/Sotto/blob/prototype/local-model-server/docs/prototypes/local-model-server-prototype.html) is tagged `prototype/local-model-server`.
+In Sotto's words the "harness" is the **provider** (the native client: OpenCode, Codex), and the server is a **model source**, as Anthropic or OpenRouter are under OpenCode today. ADR-0124 records the decision; [the prototype](https://github.com/millZach/Sotto/blob/prototype/local-model-server/docs/prototypes/local-model-server-prototype.html) is tagged `prototype/local-model-server`.
 
 ## Zach's picks, October 23, 2026
 
@@ -32,7 +32,7 @@ In Sotto's words the "harness" is the **provider** (the native client: OpenCode,
 
 | # | What | Size |
 |---|---|---|
-| 1 | Your own model servers as OpenCode model sources on this computer, behind `own-model-servers`. Check, Add, Check again, Remove; the model menu shortcut; ADR-0123, README, CONTEXT, guide. | medium |
+| 1 | Your own model servers as OpenCode model sources on this computer, behind `own-model-servers`. Check, Add, Check again, Remove; the model menu shortcut; ADR-0124, README, CONTEXT, guide. | medium |
 | 2 | Plain words in a thread when the server is asleep, unreachable, refuses the key, lacks the model or gets a prompt too long for it, with Try again. | small to medium |
 | 3 | Watcher on your own model: OpenCode gets Watcher's note channel (an instruction entry), compaction (`POST /api/session/:id/compact`) and a context reading from step tokens; the readiness check (tool call, 128K, 30 tokens a second); Watcher's compaction point scaled to the model's limit. | medium to large |
 | 4 | Hosts: a connected host's OpenCode gets the same group, over the `opencode-sign-in` host feature. | medium |

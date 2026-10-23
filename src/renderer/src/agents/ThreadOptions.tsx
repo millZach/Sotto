@@ -320,7 +320,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
 }): ReactNode {
   const settings = usePendingSettings(thread.id)
   // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
-  // and never for Watcher (ADR-0123, phase 1).
+  // and never for Watcher (ADR-0124, phase 1).
   const ownServersBridge = useOwnServersBridge()
   const ownServers = !watcher && (!thread.hostId || thread.hostId === localHostId(state)) ? ownServersBridge : undefined
   const bar = useRef<HTMLDivElement>(null)

@@ -79,7 +79,7 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
-   * The user's own model servers (ADR-0123), given to this computer's OpenCode at each process start. Present only while
+   * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
    */
   ownServers?: () => Promise<readonly OwnServer[]>
@@ -396,7 +396,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  // The user's own model servers reach the same OpenCode (ADR-0123), only where it runs and they were asked for.
+  // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, prepareForShutdown, close }
 }

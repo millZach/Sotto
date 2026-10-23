@@ -136,7 +136,7 @@ function howSignedIn(integration: Integration, methods: readonly ModelSourceMeth
 }
 
 /**
- * Whether a source is one of the user's own model servers (ADR-0123). OpenCode lists them as sources too; the sign-in
+ * Whether a source is one of the user's own model servers (ADR-0124). OpenCode lists them as sources too; the sign-in
  * reads them like any other, and the dialog's list leaves them out, since they have their own group, added and removed
  * there, apart from any one provider.
  */

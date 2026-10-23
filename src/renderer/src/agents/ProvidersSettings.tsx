@@ -170,7 +170,7 @@ export function ProvidersSettings(): ReactNode {
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   return <div className="providers-settings">
-    {/* Your own model servers sit above the provider tiles, apart from any one provider (ADR-0123, layout B). */}
+    {/* Your own model servers sit above the provider tiles, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     <div className="providers-workspace">
       <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.filter(provider => !held.has(provider)).map(provider => {

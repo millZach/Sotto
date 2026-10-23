@@ -1,7 +1,7 @@
 import type { OwnServer, OwnServerModel } from '../../shared/ownModelServers'
 
 /**
- * How a saved server reaches OpenCode (ADR-0123): one provider block per server in `OPENCODE_CONFIG_CONTENT`, built from
+ * How a saved server reaches OpenCode (ADR-0124): one provider block per server in `OPENCODE_CONFIG_CONTENT`, built from
  * Sotto's record at each start, so nothing is written into Sotto's OpenCode folder. OpenCode never asks such a server for
  * its models, so each is declared with its limits, its input and whether it thinks (checked against OpenCode 2.1.4).
  */

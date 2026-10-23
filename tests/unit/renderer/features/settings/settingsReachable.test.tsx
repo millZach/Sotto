@@ -30,7 +30,7 @@ function withMain(): void {
   const activity: MainActivityState = { reading: { blockedShare: 0.03, longestFreezeMs: 90, freezesOver100ms: 0, bars: Array.from({ length: 60 }, () => 20), frozen: false }, recording: { phase: 'idle' }, noticeHidden: false }
   const mainActivity: MainActivityBridge = { read: vi.fn(async () => activity), command: vi.fn(async () => activity), onChanged: () => () => undefined }
   const notifications: NotificationsBridge = { test: vi.fn(async () => 'shown' as const), onOpened: () => () => undefined }
-  // Your own model servers, with none saved: the group shows only with its bridge (ADR-0123).
+  // Your own model servers, with none saved: the group shows only with its bridge (ADR-0124).
   const ownServers: OwnServersBridge = { list: vi.fn(async () => []), check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
   vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers })
 }

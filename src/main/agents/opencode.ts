@@ -289,7 +289,7 @@ export interface OpenCodeHostOptions {
   /** Usage's startup answer (ADR-0083): count this computer's OpenCode threads. OpenCode reports no account limits. */
   usageEnabled?: boolean
   /**
-   * The user's own model servers (ADR-0123), read at each process start and given to it as provider blocks. Present only
+   * The user's own model servers (ADR-0124), read at each process start and given to it as provider blocks. Present only
    * while the `own-model-servers` Owl answer is on; a headless host has none.
    */
   ownServers?: () => Promise<readonly OwnServer[]>
@@ -727,14 +727,14 @@ export class OpenCodeHost implements AgentHost {
     const servers = await this.ownServers()
     return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword(), servers), timeoutMs).catch(() => undefined)
   }
-  /** The user's own model servers as they are saved now (ADR-0123); none while their Owl answer is off or the record cannot be read. */
+  /** The user's own model servers as they are saved now (ADR-0124); none while their Owl answer is off or the record cannot be read. */
   private async ownServers(): Promise<readonly OwnServer[]> {
     return this.options.ownServers ? await this.options.ownServers().catch(() => []) : []
   }
   /** Whether OpenCode is connected, so its processes may be started for a sign-in or a catalog read. */
   isConnected(): boolean { return this.state.connected }
   /**
-   * The user's own model servers changed (ADR-0123): every OpenCode process was started with the old list, so each thread
+   * The user's own model servers changed (ADR-0124): every OpenCode process was started with the old list, so each thread
    * server is outdated, as after a sign-in change, and the sign-in server moves to a fresh one once nothing uses it.
    */
   ownServersChanged(): void {
