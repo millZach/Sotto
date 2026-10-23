@@ -249,7 +249,7 @@ describe('BranchToolbar', () => {
     expect(screen.queryByRole('combobox', { name: 'Workspace' })).toBeNull()
     expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveTextContent('feat/x')
   })
-  it('parts the line with faint dots the screen reader never hears (ADR-0112)', () => {
+  it('parts the line with faint dots the screen reader never hears (ADR-0113)', () => {
     mount(thread())
     const dots = [...screen.getByRole('group', { name: 'Branch toolbar' }).querySelectorAll('.branch-toolbar__separator')]
     expect(dots).toHaveLength(2)

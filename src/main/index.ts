@@ -1472,7 +1472,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         tooltip: buildName,
       })
     : { setContextMenu: () => undefined, destroy: () => undefined }
-  // The menu bar owl (ADR-0113): on a Mac in an Owl build the tray's picture is swapped on a schedule. When its frames cannot
+  // The menu bar owl (ADR-0114): on a Mac in an Owl build the tray's picture is swapped on a schedule. When its frames cannot
   // be read the one-tint template stays and the user loses only the animation.
   const menuBarOwl: MenuBarOwl | null = menuBarOwlWanted(platform, owlFeatures, e2eConfiguration !== null) && 'setImage' in nativeTray
     ? startMenuBarOwl(nativeTray, startupSettings, electronOwlEnvironment({ nativeImage, systemPreferences, powerMonitor }, resourceRoot, event => { if (event === 'owl-frames-unavailable' || event === 'owl-failed') logOperational(event) }))

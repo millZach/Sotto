@@ -1,4 +1,4 @@
-// The menu bar owl's drawing (ADR-0113): the approved prototype's variant A (docs/prototypes/menubar-owl-prototype.html),
+// The menu bar owl's drawing (ADR-0114): the approved prototype's variant A (docs/prototypes/menubar-owl-prototype.html),
 // ported line for line with its exact colours and geometry. scripts/generate-tray-owl.mjs injects `drawOwlFrame` as
 // source into a hidden Electron page, so it closes over nothing: every constant lives inside it. The body and eye
 // swatches in src/shared/menuBarOwl.ts are TONES[body].b0 and GLOWS[eyes].c; keep them equal.

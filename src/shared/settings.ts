@@ -121,7 +121,7 @@ export interface AppSettings {
   appearanceContrast: number
   /** The colour the effort control turns at a model's highest level. */
   effortColor: EffortColor
-  /** The colour of the menu bar owl's body on a Mac running an Owl build (ADR-0113); kept whole where the feature is off. */
+  /** The colour of the menu bar owl's body on a Mac running an Owl build (ADR-0114); kept whole where the feature is off. */
   menuBarOwlBody: MenuBarOwlBody
   /** The colour its eyes glow. */
   menuBarOwlEyes: MenuBarOwlEyes

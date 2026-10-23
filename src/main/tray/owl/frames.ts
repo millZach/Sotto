@@ -1,5 +1,5 @@
 /*
- * The menu bar owl's frames (ADR-0113): scripts/generate-tray-owl.mjs draws every pose at 1x into
+ * The menu bar owl's frames (ADR-0114): scripts/generate-tray-owl.mjs draws every pose at 1x into
  * resources/tray/owl/, one deflated file per body and eye colour. This file reads the manifest, inflates a
  * palette's file, doubles the pixels and encodes PNGs with node:zlib, as the Dock icon does. No Electron here:
  * the caller turns the PNGs into images.

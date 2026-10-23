@@ -1,4 +1,4 @@
-// When the menu bar owl flaps, glances and blinks (ADR-0113): the approved prototype's schedule
+// When the menu bar owl flaps, glances and blinks (ADR-0114): the approved prototype's schedule
 // (docs/prototypes/menubar-owl-prototype.html, `brain`), as a pure object. Time only comes in as `nowMs` and chance only
 // from `random`, so the animator owns the one timer and tests run it on a made-up clock.
 

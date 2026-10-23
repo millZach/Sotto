@@ -19,7 +19,7 @@ describe('composer option chips', () => {
     expect(screen.queryByRole('listbox')).toBeNull()
   })
 
-  it('gives permissions a shield for a narrow composer and keeps its value in the chip for assistive technology (ADR-0112)', () => {
+  it('gives permissions a shield for a narrow composer and keeps its value in the chip for assistive technology (ADR-0113)', () => {
     mount()
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
     expect(chip.querySelector('.thread-chip__icon[aria-hidden="true"] svg')).not.toBeNull()

@@ -74,7 +74,7 @@ describe('main-window theme tokens', () => {
     for (const effortColor of EFFORT_COLORS) {
       const color = palette(mode, id, { effortColor })
       // The word on its card, on a chip in a field, and on the composer's card, where the reasoning text button sits
-      // with no fill of its own (ADR-0112) and the colourway also paints it.
+      // with no fill of its own (ADR-0113) and the colourway also paints it.
       expect(contrast(color('effort-text'), color('surface-elevated')), `${effortColor} word on the card`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('effort-text'), color('field')), `${effortColor} word on the chip`).toBeGreaterThanOrEqual(4.5)
       expect(contrast(color('effort-text'), color('card')), `${effortColor} word on the composer`).toBeGreaterThanOrEqual(4.5)

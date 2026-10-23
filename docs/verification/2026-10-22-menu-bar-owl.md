@@ -1,6 +1,6 @@
 # The menu bar owl, October 22, 2026
 
-The macOS menu bar icon of a Sotto Owl build became the menu bar owl ([ADR-0113](../adr/0113-the-menu-bar-owl-is-alive.md), from variant A of `docs/prototypes/menubar-owl-prototype.html`): the Sotto mark's owl, in colour, on a wooden branch, drawn at 1x and shown pixel-doubled. Everything below was measured on one Mac (macOS 27, a notched 16-inch display whose bar window is 33 points tall, system menu bar spacing tightened to 2), in a throwaway AppKit status item, in a bare Electron 43.8.3 app running the app's own frames and animator, and in the built app for the Settings choices. The owl in the full app's own tray was not run (see Not covered).
+The macOS menu bar icon of a Sotto Owl build became the menu bar owl ([ADR-0114](../adr/0114-the-menu-bar-owl-is-alive.md), from variant A of `docs/prototypes/menubar-owl-prototype.html`): the Sotto mark's owl, in colour, on a wooden branch, drawn at 1x and shown pixel-doubled. Everything below was measured on one Mac (macOS 27, a notched 16-inch display whose bar window is 33 points tall, system menu bar spacing tightened to 2), in a throwaway AppKit status item, in a bare Electron 43.8.3 app running the app's own frames and animator, and in the built app for the Settings choices. The owl in the full app's own tray was not run (see Not covered).
 
 ## What was checked
 

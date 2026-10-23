@@ -1,5 +1,5 @@
 /**
- * The menu bar owl's two choices (ADR-0113): the colour of its body and of its eyes. Shared by main, which picks the
+ * The menu bar owl's two choices (ADR-0114): the colour of its body and of its eyes. Shared by main, which picks the
  * frames to show, and the renderer, which draws the swatches in Settings → Appearance. The swatches are the colours the
  * frames are drawn in (`scripts/lib/trayOwlDraw.mjs`), so what the user presses is what the bar will show.
  */
