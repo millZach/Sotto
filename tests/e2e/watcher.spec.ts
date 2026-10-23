@@ -1362,8 +1362,14 @@ test.describe("Watcher's room on the built app", () => {
           const long = 'The build server under the stairs in the second-floor office'
           await seedRoom(page, { current: true, more, machines: hostId => {
             const read = machines(hostId)
-            return { ...read, machines: read.machines.map(item => item.hostId === STUDIO ? { ...item, name: long, factsState: 'reported' as const, facts: facts('Omarchy', 'linux', 8, 16),
-              note: undefined, runningThreads: 0, load: load(96, 0.5), placedNotStarted: 0, memoryState: 'short' as const, cpuState: 'busy' as const } : item) }
+            if (read.status !== 'ok') return read
+            return { ...read, machines: read.machines.map(item => {
+              if (item.hostId !== STUDIO) return item
+              const { note: _note, ...studio } = item
+              void _note
+              return { ...studio, name: long, factsState: 'reported' as const, facts: facts('Omarchy', 'linux', 8, 16), runningThreads: 0, load: load(96, 0.5),
+                placedNotStarted: 0, memoryState: 'short' as const, cpuState: 'busy' as const }
+            }) }
           } })
           await resizeContentWindow(launched, 820, 560)
           await openRoom(page)
