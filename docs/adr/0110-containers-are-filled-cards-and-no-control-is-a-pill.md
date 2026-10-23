@@ -24,13 +24,13 @@ Almost every container in the main window was a 1px line in the faintest border 
 - Meters, progress bars and slider tracks: 2px corners. Scrollbar thumbs: 3px.
 - A status is a small dot or its icon, and its words, never a capsule. Small status dots and spinner rings stay circles.
 
-`themeTokens.test.ts` fails if any renderer stylesheet uses a radius of 999px or more, or the pill token.
+`themeTokens.test.ts` fails if any renderer stylesheet uses a radius of 999px or more, or the pill token, and if a rule rounds a corner by 50 pixels or more, or by at least half its own height on anything but a square, unless the corner is 2px. The floating widget's stylesheet is the one it leaves alone.
 
 **3. Each provider is a card with its toggle on its name's line.** Mark, name, then the toggle at the line's end; the status under them across the card. The select button fills the card, and the toggle sits over its corner and follows it in the Tab order, so the markup and the toggle's name (`Enable <Provider>`) are unchanged.
 
 **4. Usage's index and chart scale with the room**, and a narrow room wraps the index into a grid rather than a row that scrolls sideways.
 
-**5. The sidebar's default width is 30% of the window, from 260 to 280 pixels**, and its text is a step larger. Until the user drags the edge the sidebar follows that default; a dragged width stays the user's, and Reset forgets it. A saved width of exactly 320, the old default that Collapse and Reset wrote down, reads as no choice.
+**5. The sidebar's default width is 30% of the window, from 260 to 280 pixels**, and its text is a step larger. Until the user drags the edge the sidebar follows that default; a dragged width stays the user's, and Reset forgets it. Every width saved from now on carries a mark that the user chose it. Only an unmarked 320, the old default that Collapse and Reset wrote down, reads as no choice, so a width the user picks now is kept, 320 included.
 
 ## Consequences
 

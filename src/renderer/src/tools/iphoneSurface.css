@@ -21,8 +21,10 @@
 
 /* The Cloud iPhone card (ADR-0047): a run.cloud session's build, device, minutes and steps. */
 .iphone-surface__card h3 { display: flex; align-items: center; gap: 8px; }
-.iphone-surface__cloud-badge { font-size: 11px; font-weight: 600; color: var(--tt-accent-text); background: var(--tt-accent-surface); padding: 1px 8px; border-radius: 99px; }
-.iphone-surface__cloud-meter { height: 5px; border-radius: 99px; background: var(--tt-surface-sunken); overflow: hidden; margin-top: 4px; }
+/* Running is a dot and the word, never a capsule (ADR-0110). */
+.iphone-surface__cloud-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--tt-accent-text); }
+.iphone-surface__cloud-badge::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.iphone-surface__cloud-meter { height: 5px; border-radius: 2px; background: var(--tt-surface-sunken); overflow: hidden; margin-top: 4px; }
 .iphone-surface__cloud-meter > i { display: block; height: 100%; background: var(--tt-accent); }
 .iphone-surface__card .tt-button { margin-top: 10px; }
 .iphone-surface__cloud-steps { margin: 10px 0 0; padding: 0 0 0 20px; color: var(--tt-text-2); font-size: 13px; }

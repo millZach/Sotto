@@ -430,7 +430,7 @@
 .journal-where__name { overflow: hidden; font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .journal-where__value { color: var(--tt-text-2); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .journal-where__value small { margin-left: 6px; color: var(--tt-text-muted); font-size: 12px; }
-.journal-meter { grid-column: 1 / -1; display: block; height: 6px; overflow: hidden; border-radius: 6px; background: color-mix(in oklab, var(--tt-text) 10%, var(--tt-canvas)); }
+.journal-meter { grid-column: 1 / -1; display: block; height: 6px; overflow: hidden; border-radius: 2px; background: color-mix(in oklab, var(--tt-text) 10%, var(--tt-canvas)); }
 .journal-meter i { display: block; height: 100%; border-radius: inherit; background: var(--tt-accent); }
 
 /* -- a narrower room: the figures over the feed, the charts aside -- */

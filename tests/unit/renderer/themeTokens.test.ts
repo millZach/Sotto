@@ -334,9 +334,27 @@ describe('main-window theme tokens', () => {
     const root = join(process.cwd(), 'src/renderer/src')
     const sheets = (readdirSync(root, { recursive: true }) as string[]).filter(name => name.endsWith('.css')).map(name => join(root, name))
     expect(sheets.length).toBeGreaterThan(60)
+    // The floating widget keeps its capsule until Zach decides its shape; it is the one sheet this rule leaves alone.
+    const undecided = new Set([join(root, 'widget', 'widget.css')])
+    const capsules: string[] = []
     for (const path of sheets) {
       const css = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
       expect(css.match(/\b9{3,}px|--tt-radius-pill/gu) ?? [], relative(process.cwd(), path)).toEqual([])
+      if (undecided.has(path)) continue
+      // A corner of 50 pixels or more, or a corner at least half a rule's own height on anything but a square, rounds
+      // the whole end: a pill. Thin bars may keep 2px corners, as the ADR allows.
+      for (const [, selector = '', body = ''] of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+        const radius = /(?:^|[;\s])border-radius:\s*([^;]+)/u.exec(body)?.[1]
+        if (!radius) continue
+        const corners = [...radius.matchAll(/(\d+(?:\.\d+)?)px/gu)].map(match => Number(match[1]))
+        if (!corners.length) continue
+        const height = /(?:^|[;\s])height:\s*(\d+(?:\.\d+)?)px/u.exec(body)?.[1]
+        const width = /(?:^|[;\s])width:\s*(\d+(?:\.\d+)?)px/u.exec(body)?.[1]
+        const largest = Math.max(...corners)
+        const capsule = height !== undefined && width !== height && largest * 2 >= Number(height) && largest > 2
+        if (largest >= 50 || capsule) capsules.push(`${relative(process.cwd(), path)}: ${selector.trim()}`)
+      }
     }
+    expect(capsules).toEqual([])
   })
 })

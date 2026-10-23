@@ -54,7 +54,7 @@
 .usage-seg--small { padding: 3px; border-radius: 6px; }
 .usage-seg--small button { height: 24px; padding: 0 10px; border-radius: 4px; font-size: 12.5px; }
 .usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 0; border-radius: 6px; background: var(--tt-card); color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card); color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
 .usage-filter:hover, .usage-filter[aria-expanded='true'] { background: color-mix(in srgb, var(--tt-accent-surface) 38%, var(--tt-card)); color: var(--tt-text); }
 .usage-filter svg { color: var(--tt-text-muted); }
 .usage-dates { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; margin-top: 12px; }
@@ -196,7 +196,7 @@
 .usage-share__name > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .usage-share__value { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .usage-share__value small { margin-left: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
-.usage-share__bar { grid-column: 1 / -1; height: 6px; overflow: hidden; border-radius: 6px; background: var(--usage-track); }
+.usage-share__bar { grid-column: 1 / -1; height: 6px; overflow: hidden; border-radius: 2px; background: var(--usage-track); }
 .usage-share__bar i { display: block; width: calc(var(--usage-w) * 100%); height: 100%; border-radius: inherit; background: var(--usage-strong); }
 .usage-share__bar i.usage-share__fill--outside { background: var(--usage-outside); }
 .usage-share__note { grid-column: 1 / -1; margin-top: -4px; color: var(--tt-text-muted); font-size: 12.5px; }
@@ -219,7 +219,7 @@
 .usage-tokens { container: usage-tokens / inline-size; margin-top: 22px; }
 .usage-tokens__brackets { display: flex; gap: 4px; height: 30px; }
 .usage-tokens__bracket { position: relative; flex-basis: 0; min-width: 8px; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
-.usage-tokens__bracket::after { content: ''; position: absolute; right: 0; bottom: 3px; left: 0; height: 6px; border: 1px solid var(--tt-text-faint); border-bottom: 0; border-radius: 3px 3px 0 0; opacity: .65; }
+.usage-tokens__bracket::after { content: ''; position: absolute; right: 0; bottom: 3px; left: 0; height: 6px; border: 1px solid var(--tt-text-faint); border-bottom: 0; border-radius: 2px 2px 0 0; opacity: .65; }
 .usage-tokens__bracket > span { position: absolute; top: 0; left: 0; }
 .usage-tokens__bracket--output > span { right: 0; left: auto; }
 .usage-tokens__bracket b { margin-right: 5px; color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
@@ -306,8 +306,8 @@
 .usage-window__left b { margin-right: 5px; color: var(--tt-text); font-size: 28px; font-weight: 450; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
 .usage-window__left b[data-low] { color: var(--usage-low); }
 .usage-window__left b.usage-dash { color: var(--tt-text-faint); font-weight: 400; }
-.usage-window__track { position: relative; height: 10px; margin-top: 10px; border-radius: 6px; background: var(--usage-track); }
-.usage-window__fill { position: absolute; top: 0; bottom: 0; left: 0; width: var(--usage-w); border-radius: 6px; background: var(--tt-accent); }
+.usage-window__track { position: relative; height: 10px; margin-top: 10px; border-radius: 2px; background: var(--usage-track); }
+.usage-window__fill { position: absolute; top: 0; bottom: 0; left: 0; width: var(--usage-w); border-radius: 2px; background: var(--tt-accent); }
 .usage-window__fill[data-low] { background: var(--usage-low); }
 .usage-window__now { position: absolute; top: -6px; bottom: -6px; left: var(--usage-x); width: 2px; margin-left: -1px; border-radius: 2px; background: var(--tt-text); }
 .usage-window__track--unknown { border: 1px dashed var(--tt-text-faint); background: transparent; }
