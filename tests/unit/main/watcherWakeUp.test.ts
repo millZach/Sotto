@@ -13,6 +13,7 @@ import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurn
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
+import { WATCHER_SYSTEM_PROMPT } from '../../../src/main/agents/watcherPrompt'
 
 const cleanups: (() => void)[] = []
 /** Most tests here are about what news says and when it may go; the ordinary batch's own timing has its own tests. */
@@ -1286,7 +1287,7 @@ it('names the operation a finished turn answers on its finish and work-settled n
   f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(2_000)
   const events = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished' || event.kind === 'work-settled')
   expect(events.map(event => [event.kind, event.operationId])).toEqual([['turn-finished', operationId], ['work-settled', operationId]])
-  expect(watcherNewsText(f.delivered[0]!)).toContain(`This turn answers operation ${operationId}; read_operation gives its outcome and reply.`)
+  expect(watcherNewsText(f.delivered[0]!)).toContain(`This turn answers operation ${operationId}.`)
   expect(answers).toHaveBeenCalledWith(centerTarget, expect.objectContaining({ id: f.thread.id }), expect.objectContaining({ operations: expect.any(Array) }))
 })
 
@@ -1692,9 +1693,12 @@ it('carries the start of the newest turn’s own reply, in the worker’s words,
       { id: 'reply', role: 'assistant', text: 'é'.repeat(WATCHER_NEWS_REPLY_CHARS + 20), createdAt: centerTime }] }
   const long = watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))!
   expect(long).toContain(`Its reply begins, in the worker's words: "${'é'.repeat(WATCHER_NEWS_REPLY_CHARS)}"`)
-  expect(long).toContain('(cut; read_operation or read_thread has the rest)')
+  // The rest is read_operation's for a turn that answers an operation, and read_thread's for one that does not.
+  expect(long).toContain('(cut; read_thread has the rest)')
+  expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread), true)).toContain('(cut; read_operation has the rest)')
+  // A reply given whole says so: that is what lets Watcher act on it without reading the thread (#1419).
   thread.messages[1]!.text = 'Done. PR #12 is open.'
-  expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))).toBe('Its reply is, in the worker\'s words: "Done. PR #12 is open.".')
+  expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))).toBe('Its whole reply, in the worker\'s words: "Done. PR #12 is open.".')
   expect(watcherReplyStart(thread, 'turn-0', watcherNewestTurnReply(thread))).toBeUndefined()
   expect(watcherReplyStart({ ...thread, status: 'running' }, 'turn-1', watcherNewestTurnReply(thread))).toBeUndefined()
   // A steer's turn that failed before it replied carries no reply: the one above it is the turn before's.
@@ -1703,6 +1707,17 @@ it('carries the start of the newest turn’s own reply, in the worker’s words,
     { id: 'steer', role: 'user', text: 'Also this', createdAt: centerTime },
     { id: 'reply', role: 'assistant', text: 'Done with the thing.', createdAt: centerTime, turnMessageId: 'brief' }] }
   expect(watcherNewestTurnReply(steered)).toBeUndefined()
+})
+
+it('tells Watcher a reply its news gives whole is enough to act on, and to read the thread only for what it does not say (#1419)', () => {
+  // The prompt says it once; every news footer says it again beside the lines it is about.
+  expect(WATCHER_SYSTEM_PROMPT).toContain('A reply the news gives whole is enough to act on')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('Call read_thread only for what the reply does not say')
+  expect(WATCHER_SYSTEM_PROMPT).not.toContain('before paging read_thread')
+  const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0, events: [] }
+  const footer = watcherNewsText(news).split('\n').at(-1)!
+  expect(footer).toContain('A reply given whole here is enough to act on.')
+  expect(footer).toContain('Use read_thread only for what a reply does not say')
 })
 
 it('tells a finish again under the older request when the newer one it was made under stops before it goes', async () => {
@@ -1983,7 +1998,7 @@ describe('#1263: held finishes say they were released, and the same facts are no
     const held = (event: WatcherNews['events'][number]) => f.wakes.heldMinutes(event)
     const text = watcherNewsText(f.delivered[0]!, event => watcherReplyStart(f.thread, event.turnId, watcherNewestTurnReply(f.thread)), held)
     expect(text).toContain('Held 20 minutes, thread idle.')
-    expect(text).toContain('Its reply is, in the worker\'s words: "Synthetic review is under way in the background."')
+    expect(text).toContain('Its whole reply, in the worker\'s words: "Synthetic review is under way in the background."')
     expect(text).not.toContain('Sotto sends work-settled news for it when that work ends')
     // A finish told sooner, with a question, is not said to have been held.
     expect(f.wakes.heldMinutes({ ...f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!, observedAt: new Date(f.now()).toISOString() })).toBeUndefined()

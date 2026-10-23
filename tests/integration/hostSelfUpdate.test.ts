@@ -51,6 +51,11 @@ async function stopEverythingIn(root: string): Promise<void> {
   })
   for (const pid of pids) if (pid !== process.pid) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
 }
+// The command line is the only way to find the restart and the host it starts, whose processes the test never sees. On
+// Windows that is a PowerShell CIM query, which a busy runner can keep for most of the default 15 s hook deadline before the
+// folder's removal retries for up to 11 s while a killed host lets go of its files. A clean-up that is not stuck never reaches
+// this; a stuck one still fails the test.
+const CLEAN_UP_TIMEOUT_MS = 120_000
 afterEach(async () => {
   for (const frames of raws.splice(0)) frames.close()
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill('SIGKILL')
@@ -59,7 +64,7 @@ afterEach(async () => {
     await stopEverythingIn(root)
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined)
   }
-})
+}, CLEAN_UP_TIMEOUT_MS)
 
 /** forge's host as an SSH launch leaves it: a flat install of `OLD`, started by the launch script, with ssh on its path recording any use. */
 async function installedHost(publish: Map<string, Uint8Array | string>, hold?: Parameters<typeof releasesPage>[2]) {
