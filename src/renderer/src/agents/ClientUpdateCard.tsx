@@ -1,5 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { plural, t } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOptionalAgents } from './AgentContext'
@@ -8,10 +10,10 @@ import './clientUpdates.css'
 
 function sinceLabel(iso: string): string {
   const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60_000)
-  if (!Number.isFinite(minutes) || minutes < 1) return 'Checked just now'
-  if (minutes < 60) return `Checked ${minutes} minute${minutes === 1 ? '' : 's'} ago`
+  if (!Number.isFinite(minutes) || minutes < 1) return t`Checked just now`
+  if (minutes < 60) return plural(minutes, { one: 'Checked # minute ago', other: 'Checked # minutes ago' })
   const hours = Math.floor(minutes / 60)
-  return `Checked ${hours} hour${hours === 1 ? '' : 's'} ago`
+  return plural(hours, { one: 'Checked # hour ago', other: 'Checked # hours ago' })
 }
 
 /**
@@ -20,6 +22,7 @@ function sinceLabel(iso: string): string {
  * never speaks for a client Sotto cannot update: that row shows the command to run instead.
  */
 export function ClientUpdateCard(): ReactNode {
+  const { t } = useLingui()
   const agents = useOptionalAgents()
   const card = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
@@ -67,7 +70,7 @@ export function ClientUpdateCard(): ReactNode {
       const ranAt = result?.clientUpdates?.find(update => update.id === provider)?.ranAt
       const ran = type === 'update-client' && ranAt !== undefined && ranAt !== ranBefore
       if (result?.error && !ran) setFailure(result.error)
-    } catch { setFailure('Could not reach the update. Try again.') }
+    } catch { setFailure(t`Could not reach the update. Try again.`) }
     finally { setBusy(false) }
   }
   const dismiss = (): Promise<void> => run('dismiss-client-updates')
@@ -79,28 +82,35 @@ export function ClientUpdateCard(): ReactNode {
   const single = shown.length === 1 ? shown[0]! : undefined
   if (single && (single.state === 'failed' || single.state === 'unchanged' || single.state === 'updating' || single.state === 'updated')) {
     const name = PROVIDER_LABELS[single.id]
-    const line = single.state === 'updating' ? `Updating ${name} to ${single.published ?? 'the published version'}…`
-      : single.state === 'failed' ? `${name} did not update.`
-      : single.state === 'updated' ? `${name} is now ${single.installed}.` : `${name} is still on ${single.installed}.`
-    const under = single.state === 'updating' ? 'Your threads keep working.'
-      : single.state === 'failed' ? 'Nothing was changed.'
-      : single.state === 'unchanged' && single.published ? `${single.published} is published.` : undefined
+    const { installed, published, error, command: byHand } = single
+    const line = single.state === 'updating'
+      ? published ? t({ message: `Updating ${name} to ${published}…`, comment: '{name} is a provider\'s name; {published} is a version number.' }) : t({ message: `Updating ${name} to the published version…`, comment: '{name} is a provider\'s name.' })
+      : single.state === 'failed' ? t({ message: `${name} did not update.`, comment: '{name} is a provider\'s name.' })
+      : single.state === 'updated' ? t({ message: `${name} is now ${installed}.`, comment: '{name} is a provider\'s name; {installed} is a version number.' })
+      : t({ message: `${name} is still on ${installed}.`, comment: '{name} is a provider\'s name; {installed} is a version number.' })
+    const under = single.state === 'updating' ? t`Your threads keep working.`
+      : single.state === 'failed' ? t`Nothing was changed.`
+      : single.state === 'unchanged' && published ? t({ message: `${published} is published.`, comment: '{published} is a version number.' }) : undefined
     const details = single.state === 'updated' || single.state === 'updating' ? undefined : single.state === 'failed'
-      ? `${single.error ? `The installer said: ${single.error}.` : 'The installer reported a failure.'} Another app may be using ${name}. Close it, then try again.`
-      : single.error ? single.error
-      : `The installer finished, but ${name} still reports ${single.installed}. Try again${single.command ? `, or run ${single.command} yourself to see what it says` : ''}.`
+      ? error
+        ? t({ message: `The installer said: ${error}. Another app may be using ${name}. Close it, then try again.`, comment: '{error} is what the installer said; {name} is a provider\'s name.' })
+        : t({ message: `The installer reported a failure. Another app may be using ${name}. Close it, then try again.`, comment: '{name} is a provider\'s name.' })
+      : error ? error
+      : byHand
+        ? t({ message: `The installer finished, but ${name} still reports ${installed}. Try again, or run ${byHand} yourself to see what it says.`, comment: '{name} is a provider\'s name; {installed} is a version number; {byHand} is a terminal command.' })
+        : t({ message: `The installer finished, but ${name} still reports ${installed}. Try again.`, comment: '{name} is a provider\'s name; {installed} is a version number.' })
     return <div className="client-updates client-updates--single" ref={card} role="status" aria-live="polite" aria-label={line}
       data-tone={single.state === 'failed' ? 'error' : undefined}>
       <div className="client-updates__row" data-state={single.state}>
         <ProviderMark provider={single.id} name={name} size={16} />
         <div><span>{line}</span>{under ? <small>{under}</small> : null}</div>
-        {single.state === 'updating' ? <span className="client-updates__spinner" aria-label="Updating" /> : <>
-          {single.canInstall && single.state !== 'updated' ? <Button variant="secondary" disabled={busy} onClick={() => void run('update-client', single.id)}>Try again</Button> : null}
-          <Button variant="ghost" iconOnly aria-label="Dismiss" disabled={busy} onClick={() => void dismiss()}><X size={14} /></Button>
+        {single.state === 'updating' ? <span className="client-updates__spinner" aria-label={t({ message: 'Updating', comment: 'A provider\'s client is being updated.' })} /> : <>
+          {single.canInstall && single.state !== 'updated' ? <Button variant="secondary" disabled={busy} onClick={() => void run('update-client', single.id)}>{t`Try again`}</Button> : null}
+          <Button variant="ghost" iconOnly aria-label={t`Dismiss`} disabled={busy} onClick={() => void dismiss()}><X size={14} /></Button>
         </>}
       </div>
       {failure === null ? null : <p className="client-updates__error">{failure}</p>}
-      {details === undefined ? null : <details className="client-updates__details"><summary>Details</summary><p>{details}</p></details>}
+      {details === undefined ? null : <details className="client-updates__details"><summary>{t`Details`}</summary><p className="tt-paragraph">{details}</p></details>}
     </div>
   }
 
@@ -108,13 +118,15 @@ export function ClientUpdateCard(): ReactNode {
   const installable = behind.filter(update => update.canInstall)
   const failed = shown.filter(update => update.state === 'failed')
   const unchanged = shown.filter(update => update.state === 'unchanged')
-  const heading = updating ? 'Updating clients' : failed.length ? 'A client did not update'
-    : unchanged.length ? 'A client did not change' : behind.length ? 'Client updates' : 'Clients updated'
-  const under = updating ? 'Your threads keep working'
-    : failed.length ? 'Your installed version is unchanged'
-    : unchanged.length ? 'The update ran, but the version did not move'
-    : behind.length ? `${behind.length} of ${updates.length} clients ${behind.length === 1 ? 'has' : 'have'} a newer version`
+  const heading = updating ? t`Updating clients` : failed.length ? t`A client did not update`
+    : unchanged.length ? t`A client did not change` : behind.length ? t`Client updates` : t`Clients updated`
+  const behindCount = behind.length, total = updates.length
+  const under = updating ? t`Your threads keep working`
+    : failed.length ? t`Your installed version is unchanged`
+    : unchanged.length ? t`The update ran, but the version did not move`
+    : behindCount ? plural(behindCount, { one: `# of ${total} clients has a newer version`, other: `# of ${total} clients have a newer version` })
     : undefined
+  const installCount = installable.length
   const checkedAt = shown.map(update => update.checkedAt).sort().at(-1) ?? new Date().toISOString()
 
   return <div className="client-updates" ref={card} role="status" aria-live="polite" aria-label={heading}>
@@ -123,26 +135,27 @@ export function ClientUpdateCard(): ReactNode {
     </div>
     {shown.map(update => {
       const name = PROVIDER_LABELS[update.id]
+      const { installed, command: runIt } = update
       return <div className="client-updates__row" key={update.id} data-state={update.state}>
         <ProviderMark provider={update.id} name={name} size={16} />
         <div>
           <span>{name}</span>
           <small>
-            {update.state === 'updated' ? `Now ${update.installed}`
-              : update.state === 'unchanged' ? update.error ?? `Still ${update.installed}. Try again.`
-              : update.state === 'failed' ? (update.error ?? 'The installer reported a failure')
+            {update.state === 'updated' ? t({ message: `Now ${installed}`, comment: '{installed} is a version number.' })
+              : update.state === 'unchanged' ? update.error ?? t({ message: `Still ${installed}. Try again.`, comment: '{installed} is a version number.' })
+              : update.state === 'failed' ? (update.error ?? t`The installer reported a failure`)
               : update.behind ? `${update.installed} → ${update.published ?? ''}`
               : update.installed}
             {update.behind && !update.canInstall && update.state === 'idle'
-              ? ` · update it with ${update.command ?? 'the installer you used'}`
+              ? ' · ' + (runIt ? t({ message: `update it with ${runIt}`, comment: '{runIt} is a terminal command.' }) : t`update it with the installer you used`)
               : ''}
           </small>
         </div>
-        {update.state === 'updating' ? <span className="client-updates__spinner" aria-label="Updating" /> : null}
+        {update.state === 'updating' ? <span className="client-updates__spinner" aria-label={t({ message: 'Updating', comment: 'A provider\'s client is being updated.' })} /> : null}
         {update.canInstall && update.state !== 'updating' && update.state !== 'updated'
           ? <Button variant="secondary" disabled={busy || updating}
             onClick={() => void run('update-client', update.id)}>
-            {update.state === 'failed' || update.state === 'unchanged' ? 'Try again' : 'Update'}
+            {update.state === 'failed' || update.state === 'unchanged' ? t`Try again` : t({ message: 'Update', comment: 'A button that installs the published version of a provider\'s client.' })}
           </Button>
           : null}
       </div>
@@ -154,10 +167,10 @@ export function ClientUpdateCard(): ReactNode {
         {installable.length > 1 && !updating
           ? <Button variant="primary" disabled={busy}
             onClick={() => void (async () => { for (const update of installable) await run('update-client', update.id) })()}>
-            Update all {installable.length}
+            {t({ message: `Update all ${installCount}`, comment: '{installCount} is how many clients the press updates.' })}
           </Button>
           : null}
-        {updating ? null : <Button variant="ghost" disabled={busy} onClick={() => void dismiss()}>{behind.length ? 'Not now' : 'Dismiss'}</Button>}
+        {updating ? null : <Button variant="ghost" disabled={busy} onClick={() => void dismiss()}>{behind.length ? t`Not now` : t`Dismiss`}</Button>}
       </div>
     </div>
   </div>

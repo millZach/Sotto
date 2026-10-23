@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
@@ -174,6 +175,7 @@ export interface ThreadPaneProps {
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
 export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherBody, watcherEmpty }: ThreadPaneProps): ReactNode {
+  const { t } = useLingui()
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const renameReturn = useRef<HTMLElement | null>(null)
@@ -264,44 +266,45 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const { settle: settleThread, dialog: settleDialog } = useSettleThread(command)
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
-    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: 'Rename', icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
+    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
     // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
     // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
     ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
-      ? [{ id: 'regenerate', label: 'Regenerate title', icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
-    ...(onOpenBeside ? [{ id: 'beside', label: 'Open beside', icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
+      ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
+    ...(onOpenBeside ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
   ]
   // Compaction is offered where it can run: the banner under the composer only ever recommends it.
   const context: PaneMenuItem[] = compactionOffered(capabilities, thread) && rowConnected && !closed && !compactionBusy(thread, threadBusy)
-    ? [{ id: 'compact', label: 'Compact context', icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
+    ? [{ id: 'compact', label: t`Compact context`, icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
   const shelf: PaneMenuItem[] = row.settledBy === null
-    ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
+    ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
-      ? [{ id: 'restore', label: 'Restore', icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
+      ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
   // Continue on another provider (ADR-0089; Owl only): the composer begins it, with the model picker open on the other providers.
   const continueOn = useContinueEnabled() && !ownPane && thread.nativeSessionStarted !== false && thread.remoteHost !== true && !isThreadArchived(thread)
     && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
   const continueTargets = continueOn ? providerDefaults(state, continueModels(state, thread)) : []
   const continueRefusal = continueOn ? continueThreadRefusal(thread) : null
-  const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: 'Continue on another provider…', icon: <CornerDownRight size={15} aria-hidden="true" />,
+  const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: t`Continue on another provider…`, icon: <CornerDownRight size={15} aria-hidden="true" />,
     disabled: continueRefusal !== null, ...(continueRefusal !== null ? { hint: continueRefusal } : {}),
     run: () => { continueStore.set(thread.id, { ...continueChoiceFor(state, thread, continueTargets[0]!.id, continueStore.get(thread.id)), pick: true }) } }] : []
   const recovery: PaneMenuItem[] = [
-    ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
+    ...(!rowConnected ? [{ id: 'reconnect', label: t`Reconnect`, icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
+  const title = thread.title, provider = row.provider
   return <>
     {ownPane ? watcherHeader : <header className="thread-workspace__head">
       <div className="thread-workspace__title">
         <ProviderMark provider={row.providerId} name={row.provider} size={16} />
         {watched ? <WatchedBadge size={16} /> : null}
         {renaming
-          ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
+          ? <h2><ThreadNameField title={thread.title} label={t`Rename ${title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
           : <h2>{thread.title}</h2>}
         <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span>{row.project?.title ?? row.provider}</span>{workingCopy}
-          {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
-          {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
+          {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
+          {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
       </div>
       <div className="thread-workspace__actions">
@@ -312,7 +315,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {actions}
         <PaneMenu groups={[naming, continuing, context, shelf, recovery]} />
       </div>
-      {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
+      {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' })} title={t`Close pane`} onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}
     {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}
     {ownPane ? null : <DelegatedBy thread={thread} state={state} command={command} />}

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import { MAX_OUTPUT_IMAGE_DATA_URL } from '../../../shared/contracts'
 
 const FEEDBACK_MS = 1_600
@@ -81,7 +83,8 @@ export class ImageTooLargeError extends Error {
   constructor() { super('Image too large to copy') }
 }
 
-export const COPIED_IMAGE = 'Copied image'
+/** What a copy that worked says; read with `i18n._` where it is shown or compared. */
+export const COPIED_IMAGE = msg`Copied image`
 
 /**
  * Copy image with its feedback: "Copied image", or what went wrong and what to do. Only the latest copy's result is
@@ -93,9 +96,9 @@ export function useCopyImage(): [string | null, (source: string) => void, (messa
   const copy = useCallback((source: string): void => {
     const request = ++latest.current
     const settle = (message: string): void => { if (request === latest.current) showFeedback(message) }
-    void writeClipboardImage(source).then(() => settle(COPIED_IMAGE), error => settle(error instanceof ImageTooLargeError
-      ? 'This image is too large to copy. Nothing was put on the clipboard.'
-      : 'Could not copy the image. Try again.'))
+    void writeClipboardImage(source).then(() => settle(i18n._(COPIED_IMAGE)), error => settle(error instanceof ImageTooLargeError
+      ? t`This image is too large to copy. Nothing was put on the clipboard.`
+      : t`Could not copy the image. Try again.`))
   }, [showFeedback])
   return [feedback, copy, showFeedback]
 }

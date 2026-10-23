@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Folder, FolderGit2, FolderMinus, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentProject, type AgentThread, type WorktreeReclaimPreview } from '../../../shared/agents'
 import { useOptionalApp } from '../state/AppContext'
 import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
@@ -33,7 +36,7 @@ export interface WorkingCopyFacts {
 
 /** The project already names itself beside this label, so its own folder is called what it is. */
 function folderLabel(path: string, project: Pick<AgentProject, 'path'> | undefined): string {
-  if (project && folderKey(project.path) === folderKey(path)) return 'Project folder'
+  if (project && folderKey(project.path) === folderKey(path)) return i18n._(msg`Project folder`)
   return path.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || path
 }
 
@@ -44,19 +47,20 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
   const resolve = (): string | undefined => { try { return resolveThreadWorkingDirectory(thread, project) } catch { return undefined } }
   if (!worktree) {
     const directory = resolve()
-    return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : 'Working folder' }
+    return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : i18n._(msg`Working folder`) }
   }
   const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt) }
-  if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? 'Project folder' : 'New worktree' }
-  if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktree.error }
+  if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? i18n._(msg`Project folder`) : i18n._(msg`New worktree`) }
+  if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: i18n._(msg`Worktree not ready`), error: worktree.error }
   const directory = resolve()
-  const label = worktree.branch ?? (worktree.repositoryRoot ? 'Detached HEAD' : directory ? folderLabel(directory, project) : 'Working folder')
+  const label = worktree.branch ?? (worktree.repositoryRoot ? i18n._(msg({ message: 'Detached HEAD', comment: 'Git\'s name for a checkout on no branch.' })) : directory ? folderLabel(directory, project) : i18n._(msg`Working folder`))
   return { ...common, status: 'ready', directory, label }
 }
 
 type Action = 'retry-thread-worktree' | 'refresh-thread-worktree' | 'open-thread-folder' | 'restore-thread-branch' | 'reclaim-thread-worktree'
 function useWorkingCopyAction(threadId: string, command: AgentConnection['command']) {
   // Busy buttons use aria-disabled, not disabled: a disabled button would drop keyboard focus to the page.
+  const { t } = useLingui()
   const [running, setRunning] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
   const lastError = useRef<string | null>(null)
@@ -68,9 +72,9 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
     const fail = (message: string): false => { lastError.current = message; setError(message); return false }
     try {
       const result = await command(type === 'restore-thread-branch' || type === 'reclaim-thread-worktree' ? { type, threadId, withUncommittedChanges, ...(type === 'reclaim-thread-worktree' && confirmedIgnored ? { confirmedIgnored, confirmedRepositories, confirmedItems } : {}) } : { type, threadId })
-      if (!result || result.error) return fail(result?.error ?? 'Could not confirm this action. Try again.')
+      if (!result || result.error) return fail(result?.error ?? t`Could not confirm this action. Try again.`)
       return true
-    } catch { return fail('Could not confirm this action. Try again.') }
+    } catch { return fail(t`Could not confirm this action. Try again.`) }
     finally { inFlight.current = false; setRunning(null) }
   }
   return { running, error, lastError, run }
@@ -78,6 +82,7 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
 
 /** Pane header chip: the actual branch or folder, with its details and folder actions. */
 export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCopyProps): ReactNode {
+  const { t } = useLingui()
   const facts = describeWorkingCopy(thread, project)
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ left: number; width: number; maxHeight: number } | null>(null)
@@ -128,28 +133,29 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
     return () => { observer?.disconnect(); window.removeEventListener('resize', update) }
   }, [open])
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.branch || facts.repositoryRoot ? GitBranch : Folder
+  const label = facts.label, branch = facts.branch
   return <span className="working-copy" ref={root} data-status={facts.status}
     onKeyDown={event => { if (event.key === 'Escape' && open && !reclaiming) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
     <button ref={trigger} type="button" className="working-copy__trigger tt-focusable" aria-expanded={open} aria-controls={open ? panelId : undefined}
-      aria-label={`Working copy: ${facts.label}`} title={facts.directory ?? facts.label} onClick={() => setOpen(value => !value)}>
+      aria-label={t`Working copy: ${label}`} title={facts.directory ?? facts.label} onClick={() => setOpen(value => !value)}>
       <Icon size={14} aria-hidden="true" /><span>{facts.label}</span>
     </button>
-    {open ? <div ref={panel} id={panelId} className="working-copy__panel" style={position ?? undefined} role="group" aria-label="Working copy details">
+    {open ? <div ref={panel} id={panelId} className="working-copy__panel" style={position ?? undefined} role="group" aria-label={t`Working copy details`}>
       <dl>
-        {facts.directory ? <div><dt>Folder</dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
-        {facts.branch ? <div><dt>Branch</dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
-        {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt>Repository</dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
-        {facts.status === 'ready' && facts.reclaimed ? <div><dt>Status</dt><dd>Folder removed. Sending to this thread puts it back on {facts.branch ?? 'its branch'}.</dd></div> : null}
-        {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt>Changes</dt><dd>{facts.dirty ? 'Uncommitted changes' : 'No uncommitted changes'}</dd></div> : null}
+        {facts.directory ? <div><dt><Trans>Folder</Trans></dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
+        {facts.branch ? <div><dt><Trans>Branch</Trans></dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
+        {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt><Trans>Repository</Trans></dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
+        {facts.status === 'ready' && facts.reclaimed ? <div><dt><Trans>Status</Trans></dt><dd>{branch === undefined ? t`Folder removed. Sending to this thread puts it back on its branch.` : t({ message: `Folder removed. Sending to this thread puts it back on ${branch}.`, comment: '{branch} is a Git branch name.' })}</dd></div> : null}
+        {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt><Trans>Changes</Trans></dt><dd>{facts.dirty ? t`Uncommitted changes` : t`No uncommitted changes`}</dd></div> : null}
         {/* A draft's worktree is not being prepared: it is made on first send, and the composer's toolbar chooses it (ADR-0027). */}
-        {facts.status === 'pending' ? <div><dt>Status</dt><dd>{thread.nativeSessionStarted === false ? 'Created on first send. Choose the workspace and branch under the composer.' : 'Preparing the working copy.'}</dd></div> : null}
-        {facts.status === 'error' ? <div><dt>Status</dt><dd>{facts.error ?? 'Setup did not finish.'}</dd></div> : null}
+        {facts.status === 'pending' ? <div><dt><Trans>Status</Trans></dt><dd>{thread.nativeSessionStarted === false ? t`Created on first send. Choose the workspace and branch under the composer.` : t`Preparing the working copy.`}</dd></div> : null}
+        {facts.status === 'error' ? <div><dt><Trans>Status</Trans></dt><dd>{facts.error ?? t`Setup did not finish.`}</dd></div> : null}
       </dl>
-      {thread.remoteHost ? <p>This folder is on the host machine. Open it there.</p> : null}
+      {thread.remoteHost ? <p className="tt-paragraph"><Trans>This folder is on the host machine. Open it there.</Trans></p> : null}
       <div className="working-copy__actions">
-        {facts.directory && !facts.reclaimed ? <Button variant="secondary" aria-disabled={running !== null || thread.remoteHost === true} onClick={() => { if (!thread.remoteHost) void run('open-thread-folder') }}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
-        {thread.worktree ? <Button variant="ghost" aria-disabled={running !== null} onClick={() => void run('refresh-thread-worktree')}><RefreshCw size={15} aria-hidden="true" />{running === 'refresh-thread-worktree' ? 'Checking...' : 'Refresh'}</Button> : null}
-        {reclaimable ? <Button variant="ghost" aria-disabled={running !== null} aria-label="Remove worktree folder, keeping its branch" onClick={() => setReclaiming(facts.dirty ? 'dirty' : 'clean')}><FolderMinus size={15} aria-hidden="true" />{running === 'reclaim-thread-worktree' ? 'Removing…' : 'Remove worktree'}</Button> : null}
+        {facts.directory && !facts.reclaimed ? <Button variant="secondary" aria-disabled={running !== null || thread.remoteHost === true} onClick={() => { if (!thread.remoteHost) void run('open-thread-folder') }}><FolderOpen size={15} aria-hidden="true" />{t`Open folder`}</Button> : null}
+        {thread.worktree ? <Button variant="ghost" aria-disabled={running !== null} onClick={() => void run('refresh-thread-worktree')}><RefreshCw size={15} aria-hidden="true" />{running === 'refresh-thread-worktree' ? t`Checking...` : t`Refresh`}</Button> : null}
+        {reclaimable ? <Button variant="ghost" aria-disabled={running !== null} aria-label={t`Remove worktree folder, keeping its branch`} onClick={() => setReclaiming(facts.dirty ? 'dirty' : 'clean')}><FolderMinus size={15} aria-hidden="true" />{running === 'reclaim-thread-worktree' ? t`Removing…` : t`Remove worktree`}</Button> : null}
       </div>
       {error && !reclaiming ? <p className="agent-error" role="alert">{error}</p> : null}
     </div> : null}
@@ -175,6 +181,7 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
   readonly onCancel: () => void
   readonly fallbackFocusRef?: React.RefObject<HTMLElement | null> | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const [preview, setPreview] = useState<WorktreeReclaimPreview | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
@@ -183,38 +190,60 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
     void command({ type: 'preview-reclaim-thread-worktree', threadId }).then(result => {
       if (!active) return
       const facts = result?.worktreeReclaimPreview
-      if (result?.error || !facts) setFailure(result?.error ?? 'The folder could not be checked. Nothing was removed. Close this question and try again.')
+      if (result?.error || !facts) setFailure(result?.error ?? t`The folder could not be checked. Nothing was removed. Close this question and try again.`)
       else setPreview(facts)
-    }).catch(() => { if (active) setFailure('The folder could not be checked. Nothing was removed. Close this question and try again.') })
+    }).catch(() => { if (active) setFailure(t`The folder could not be checked. Nothing was removed. Close this question and try again.`) })
     return () => { active = false }
-  }, [command, threadId])
+  }, [command, threadId, t])
   const hasChanges = dirty || preview?.dirty === true
   const blocked = Boolean(preview?.outsideLink || (preview && !preview.branch))
   const nestedKinds = preview ? [...new Set(preview.repositories.map(item => item.kind))] : []
-  const nestedName = nestedKinds.length === 1 ? (preview!.repositories.length === 1 ? `${nestedKinds[0]}’s` : `${nestedKinds[0] === 'repository' ? 'repositories' : 'worktrees'}’`) : 'repositories and worktrees’'
   const listedPaths = preview ? [...new Set([...preview.ignored, ...preview.repositories.map(repository => repository.path)])] : []
-  return <ConfirmationDialog title={title ?? 'Remove this worktree?'} danger
+  /** The acknowledgement: how many ignored items go, and whose uncommitted work goes with them when a nested checkout is listed. */
+  const items = listedPaths.length
+  const nested = !preview?.repositories.length ? 'none' : nestedKinds.length !== 1 ? 'mixed'
+    : preview!.repositories.length === 1 ? nestedKinds[0]! : nestedKinds[0] === 'repository' ? 'repositories' : 'worktrees'
+  const acknowledgement = nested === 'none' ? plural(items, { one: 'Delete this # ignored item with the folder', other: 'Delete these # ignored items with the folder' })
+    : nested === 'repository' ? plural(items, { one: 'Delete this # ignored item with the folder, including the nested repository’s uncommitted work', other: 'Delete these # ignored items with the folder, including the nested repository’s uncommitted work' })
+      : nested === 'worktree' ? plural(items, { one: 'Delete this # ignored item with the folder, including the nested worktree’s uncommitted work', other: 'Delete these # ignored items with the folder, including the nested worktree’s uncommitted work' })
+        : nested === 'repositories' ? plural(items, { one: 'Delete this # ignored item with the folder, including the nested repositories’ uncommitted work', other: 'Delete these # ignored items with the folder, including the nested repositories’ uncommitted work' })
+          : nested === 'worktrees' ? plural(items, { one: 'Delete this # ignored item with the folder, including the nested worktrees’ uncommitted work', other: 'Delete these # ignored items with the folder, including the nested worktrees’ uncommitted work' })
+            : plural(items, { one: 'Delete this # ignored item with the folder, including the nested repositories and worktrees’ uncommitted work', other: 'Delete these # ignored items with the folder, including the nested repositories and worktrees’ uncommitted work' })
+  const branch = facts.branch
+  const outsideLink = preview?.outsideLink
+  return <ConfirmationDialog title={title ?? t`Remove this worktree?`} danger
     confirmDisabled={!preview || blocked || (preview.ignored.length > 0 && !acknowledged)}
     description={<>
-      <p>This thread’s worktree folder and everything installed in it is removed. {facts.branch ? <>The branch {facts.branch} keeps its commits</> : <>Its commits are kept</>}, and sending to this thread puts the folder back.</p>
-      {!preview && !failure ? <p role="status">Checking the folder…</p> : null}
+      <p>{branch
+        ? <Trans comment="{branch} is a Git branch name.">This thread’s worktree folder and everything installed in it is removed. The branch {branch} keeps its commits, and sending to this thread puts the folder back.</Trans>
+        : <Trans>This thread’s worktree folder and everything installed in it is removed. Its commits are kept, and sending to this thread puts the folder back.</Trans>}</p>
+      {!preview && !failure ? <p className="tt-paragraph" role="status"><Trans>Checking the folder…</Trans></p> : null}
       {failure ? <p role="alert">{failure}</p> : null}
-      {hasChanges ? <p><strong>This folder has uncommitted changes.</strong> They are lost with it.</p> : null}
+      {hasChanges ? <p className="tt-paragraph"><Trans><strong>This folder has uncommitted changes.</strong> They are lost with it.</Trans></p> : null}
       {preview && listedPaths.length ? <>
-        <div className="working-copy__callout">These files are ignored by Git and are deleted with the folder:</div>
+        <div className="working-copy__callout"><Trans>These files are ignored by Git and are deleted with the folder:</Trans></div>
         <ul className="working-copy__ignored">{listedPaths.map(path => {
           const repository = preview.repositories.find(item => item.path === path)
           const item = preview.items.find(item => item.path === path)
-          const size = item ? `${Math.max(1, Math.ceil(item.bytes / 1024)).toLocaleString()} KB${path.endsWith('/') ? `, ${item.fileCount} ${item.fileCount === 1 ? 'file' : 'files'}` : ''}, ignored` : 'Ignored'
-          return <li key={path}><span className="working-copy__path">{path}</span><span className={repository ? 'working-copy__nested-note' : 'working-copy__file-note'}>{repository ? `Nested ${repository.kind} · ${repository.changeCount} uncommitted ${repository.changeCount === 1 ? 'change' : 'changes'}${repository.kind === 'repository' ? ` · ${repository.unpushedCommitCount ?? 0} ${(repository.unpushedCommitCount ?? 0) === 1 ? 'commit' : 'commits'} not on any remote` : ''}` : size}</span></li>
+          const kilobytes = item ? Math.max(1, Math.ceil(item.bytes / 1024)).toLocaleString() : ''
+          const files = item?.fileCount ?? 0
+          const size = !item ? t({ message: 'Ignored', comment: 'A file Git ignores.' })
+            : path.endsWith('/') ? plural(files, { one: `${kilobytes} KB, # file, ignored`, other: `${kilobytes} KB, # files, ignored` })
+              : t`${kilobytes} KB, ignored`
+          const changes = repository?.changeCount ?? 0, unpushed = repository?.unpushedCommitCount ?? 0
+          const note = !repository ? size
+            : repository.kind === 'repository'
+              ? t`Nested repository · ${plural(changes, { one: '# uncommitted change', other: '# uncommitted changes' })} · ${plural(unpushed, { one: '# commit not on any remote', other: '# commits not on any remote' })}`
+              : t`Nested worktree · ${plural(changes, { one: '# uncommitted change', other: '# uncommitted changes' })}`
+          return <li key={path}><span className="working-copy__path">{path}</span><span className={repository ? 'working-copy__nested-note' : 'working-copy__file-note'}>{note}</span></li>
         })}</ul>
-        {!blocked ? <label className="working-copy__acknowledge"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />{listedPaths.length === 1 ? 'Delete this 1 ignored item' : `Delete these ${listedPaths.length} ignored items`} with the folder{preview.repositories.length ? `, including the nested ${nestedName} uncommitted work` : ''}</label> : null}
+        {!blocked ? <label className="working-copy__acknowledge"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />{acknowledgement}</label> : null}
       </> : null}
-      {preview && !preview.branch ? <p role="alert">This folder has no branch checked out. Switch it to a branch before removing it. Nothing was changed.</p> : null}
-      {preview?.outsideLink ? <p role="alert">Remove the link to another folder ({preview.outsideLink}) before removing this folder. Nothing was changed.</p> : null}
+      {preview && !preview.branch ? <p className="tt-paragraph" role="alert"><Trans>This folder has no branch checked out. Switch it to a branch before removing it. Nothing was changed.</Trans></p> : null}
+      {outsideLink ? <p className="tt-paragraph" role="alert"><Trans comment="{outsideLink} is the folder a link points to.">Remove the link to another folder ({outsideLink}) before removing this folder. Nothing was changed.</Trans></p> : null}
     </>}
-    confirmLabel={listedPaths.length ? 'Remove with these files' : hasChanges ? 'Remove and lose changes' : 'Remove worktree'} cancelLabel="Keep folder" {...(fallbackFocusRef ? { fallbackFocusRef } : {})}
-    failureMessage={removalError ?? "Nothing was removed. Close this question and choose Remove worktree again to review the folder."} onConfirm={async () => preview && !blocked && (!preview.ignored.length || acknowledged) ? onConfirm(preview) : false} onCancel={onCancel} />
+    confirmLabel={listedPaths.length ? t`Remove with these files` : hasChanges ? t`Remove and lose changes` : t`Remove worktree`} cancelLabel={t`Keep folder`} {...(fallbackFocusRef ? { fallbackFocusRef } : {})}
+    failureMessage={removalError ?? t`Nothing was removed. Close this question and choose Remove worktree again to review the folder.`} onConfirm={async () => preview && !blocked && (!preview.ignored.length || acknowledged) ? onConfirm(preview) : false} onCancel={onCancel} />
 }
 
 /**
@@ -224,6 +253,7 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
  */
 export function useSettleThread(command: AgentConnection['command'], fallbackFocusRef?: React.RefObject<HTMLElement | null>) {
   const app = useOptionalApp()
+  const { t } = useLingui()
   const [removalError, setRemovalError] = useState<string | null>(null)
   const onSettleRule = app?.settings?.worktreeCleanup.onSettle === true
   const [questions, setQuestions] = useState<readonly { thread: WorkingCopyThread; project: Pick<AgentProject, 'path'> | undefined; dirty: boolean }[]>([])
@@ -236,7 +266,7 @@ export function useSettleThread(command: AgentConnection['command'], fallbackFoc
     if (onSettleRule && !dirty) { await command({ type: 'reclaim-thread-worktree', threadId: thread.id }); return }
     setQuestions(current => current.some(question => question.thread.id === thread.id) ? current : [...current, { thread, project, dirty }])
   }, [command, onSettleRule])
-  const dialog = asking ? <ReclaimWorktreeDialog key={asking.thread.id} facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title="Remove its worktree too?" removalError={removalError} threadId={asking.thread.id} command={command} fallbackFocusRef={fallbackFocusRef}
+  const dialog = asking ? <ReclaimWorktreeDialog key={asking.thread.id} facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title={t`Remove its worktree too?`} removalError={removalError} threadId={asking.thread.id} command={command} fallbackFocusRef={fallbackFocusRef}
     onCancel={nextQuestion}
     onConfirm={async preview => {
       setRemovalError(null)
@@ -254,6 +284,7 @@ export function useSettleThread(command: AgentConnection['command'], fallbackFoc
  * worktree that started from the local branch because origin had nothing to fetch. The draft stays untouched.
  */
 export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered }: ThreadWorkingCopyProps & { readonly onRecovered?: (() => void) | undefined }): ReactNode {
+  const { t } = useLingui()
   const facts = describeWorkingCopy(thread, project)
   const { running, error, run } = useWorkingCopyAction(thread.id, command)
   const recovering = useRef(false)
@@ -271,12 +302,12 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
   if (facts.status === 'ready' && (originBase === 'not-on-origin' || originBase === 'no-origin') && !localBranchNoticeDismissed(thread.id)) {
     // The local branch notice (CONTEXT.md): Start from origin found nothing to fetch and the worktree took the local
     // branch instead (ADR-0014). Said once, in the status tone: nothing stopped, and the pane header names the branch.
-    const base = thread.worktree?.baseBranch ?? 'the branch'
+    const base = thread.worktree?.baseBranch ?? t({ message: 'the branch', comment: 'Stands for a branch\'s name when the record has none.' })
     return <div className="working-copy-notice" data-tone="status" role="status">
       <p>{originBase === 'not-on-origin'
-        ? <><strong>origin/{base} was not found</strong>, so the worktree started from the local branch {base}.</>
-        : <><strong>This project has no origin</strong>, so the worktree started from the local branch {base}.</>}</p>
-      <Button variant="secondary" aria-label="Dismiss the local branch notice" onClick={() => { dismissLocalBranchNotice(thread.id); rerender(value => value + 1) }}>Dismiss</Button>
+        ? <Trans comment="{base} is a Git branch name."><strong>origin/{base} was not found</strong>, so the worktree started from the local branch {base}.</Trans>
+        : <Trans comment="{base} is a Git branch name."><strong>This project has no origin</strong>, so the worktree started from the local branch {base}.</Trans>}</p>
+      <Button variant="secondary" aria-label={t`Dismiss the local branch notice`} onClick={() => { dismissLocalBranchNotice(thread.id); rerender(value => value + 1) }}><Trans>Dismiss</Trans></Button>
     </div>
   }
   if (facts.status !== 'error') return null
@@ -284,9 +315,9 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
   const retry = thread.nativeSessionStarted === false
   const action: Action = retry ? 'retry-thread-worktree' : 'refresh-thread-worktree'
   return <div className="working-copy-notice" role="alert">
-    <p><strong>{retry ? 'Worktree not ready.' : 'Working folder unavailable.'}</strong> {facts.error ?? 'Setup did not finish.'}</p>
+    <p className="tt-paragraph"><strong>{retry ? t`Worktree not ready.` : t`Working folder unavailable.`}</strong> {facts.error ?? t`Setup did not finish.`}</p>
     <Button variant="secondary" aria-disabled={running !== null} onClick={() => { if (running) return; recovering.current = true; void run(action).then(done => { if (!done) recovering.current = false }) }}>
-      <RefreshCw size={15} aria-hidden="true" />{running ? (retry ? 'Retrying...' : 'Checking...') : retry ? 'Retry setup' : 'Check again'}
+      <RefreshCw size={15} aria-hidden="true" />{running ? (retry ? t`Retrying...` : t`Checking...`) : retry ? t`Retry setup` : t`Check again`}
     </Button>
     {error && error !== facts.error ? <p className="working-copy-notice__result">{error}</p> : null}
   </div>
@@ -324,6 +355,7 @@ export function resetBranchNoticeDismissals(): void {
 }
 
 export function ThreadBranchNotice({ thread, project, command, composing }: ThreadWorkingCopyProps & { readonly composing: boolean }): ReactNode {
+  const { t } = useLingui()
   const facts = describeWorkingCopy(thread, project)
   const sent = thread.worktree?.sentBranch
   const [, rerender] = useState(0)
@@ -334,6 +366,7 @@ export function ThreadBranchNotice({ thread, project, command, composing }: Thre
   // A later switch is a new thing to say, so dismissal is remembered for this pair of branches alone.
   const change = [thread.id, sent ?? '', facts.branch ?? ''].join('\n')
   const dismiss = (): void => { dismissedBranchNotices.add(change); rerender(value => value + 1) }
+  const branch = facts.branch
   if (!changed || !composing || dismissedBranchNotices.has(change)) return null
   const restore = (withUncommittedChanges?: boolean): void => {
     if (running) return
@@ -344,19 +377,19 @@ export function ThreadBranchNotice({ thread, project, command, composing }: Thre
   }
   return <div className="branch-notice" role="status"
     onKeyDown={event => { if (event.key === 'Escape' && !confirming) { event.stopPropagation(); dismiss() } }}>
-    <p><strong>Branch changed, was {sent}.</strong> {facts.branch
-      ? <>Sending will continue on {facts.branch}.</>
-      : <>This folder has no branch checked out; sending will continue there.</>}</p>
-    <Button ref={trigger} variant="secondary" aria-disabled={running !== null} aria-label={`Restore branch ${sent}`}
+    <p>{branch
+      ? <Trans comment="{sent} is the branch the last send went to; {branch} is the one the folder is on now."><strong>Branch changed, was {sent}.</strong> Sending will continue on {branch}.</Trans>
+      : <Trans comment="{sent} is the branch the last send went to."><strong>Branch changed, was {sent}.</strong> This folder has no branch checked out; sending will continue there.</Trans>}</p>
+    <Button ref={trigger} variant="secondary" aria-disabled={running !== null} aria-label={t({ message: `Restore branch ${sent}`, comment: '{sent} is a Git branch name.' })}
       onClick={() => { if (facts.dirty) setConfirming(true); else restore() }}>
-      <Undo2 size={15} aria-hidden="true" />{running === 'restore-thread-branch' ? 'Switching…' : 'Restore branch'}
+      <Undo2 size={15} aria-hidden="true" />{running === 'restore-thread-branch' ? t`Switching…` : t`Restore branch`}
     </Button>
-    <Button variant="ghost" aria-label="Dismiss the branch notice" onClick={() => dismiss()}>Dismiss</Button>
+    <Button variant="ghost" aria-label={t`Dismiss the branch notice`} onClick={() => dismiss()}><Trans>Dismiss</Trans></Button>
     {error && !confirming ? <p className="branch-notice__result" role="alert">{error}</p> : null}
-    {confirming ? <ConfirmationDialog title={`Switch back to ${sent}?`} danger={false}
-      description={<>This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict.</>}
-      confirmLabel="Switch branch" cancelLabel="Keep this branch" fallbackFocusRef={trigger}
-      failureMessage="The branch could not be switched. Nothing was changed."
+    {confirming ? <ConfirmationDialog title={t({ message: `Switch back to ${sent}?`, comment: '{sent} is a Git branch name.' })} danger={false}
+      description={<Trans comment="{sent} is a Git branch name.">This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict.</Trans>}
+      confirmLabel={t`Switch branch`} cancelLabel={t`Keep this branch`} fallbackFocusRef={trigger}
+      failureMessage={t`The branch could not be switched. Nothing was changed.`}
       onConfirm={async () => run('restore-thread-branch', true)}
       onCancel={() => setConfirming(false)} /> : null}
   </div>

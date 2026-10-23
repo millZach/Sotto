@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { RotateCw } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentFileReference } from '../../../shared/agentFiles'
 import type { FilesBridge } from '../../../shared/files'
 import type { PromptSelection } from './promptSelection'
@@ -44,7 +46,6 @@ export function composerFilesBridge(): FilesBridge | undefined {
 }
 
 const empty = (threadId: string): Catalog => ({ threadId, workspaceId: null, listings: new Map() })
-const UNAVAILABLE = 'Files is not available in this window.'
 
 /**
  * The `@` picker's state for one thread's composer. It browses exactly the listing the Files tool
@@ -54,6 +55,7 @@ const UNAVAILABLE = 'Files is not available in this window.'
 export function useFilePicker({ threadId, bridge, enabled, text }: {
   readonly threadId: string; readonly bridge: FilesBridge | undefined; readonly enabled: boolean; readonly text: string
 }): FilePickerModel {
+  const { t } = useLingui()
   const [selection, setSelection] = useState<{ readonly start: number; readonly end: number } | null>(null)
   const [active, setActive] = useState<{ readonly key: string; readonly index: number } | null>(null)
   const [dismissed, setDismissed] = useState<string | null>(null)
@@ -86,7 +88,7 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
 
   const load = useCallback(async (path: string, workspaceId: string | null): Promise<void> => {
     put(path, { status: 'loading' })
-    if (!bridge) { put(path, { status: 'error', message: UNAVAILABLE }); return }
+    if (!bridge) { put(path, { status: 'error', message: t`Files is not available in this window.` }); return }
     try {
       // A deeper folder needs the root's workspace token, so the root is always listed first.
       let token = workspaceId
@@ -99,8 +101,8 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
       const result = await bridge.list({ threadId, path, ...(path === '' || token === null ? {} : { workspaceId: token }) })
       if (!result.ok) { put(path, { status: 'error', message: result.error.message }); return }
       put(path, { status: 'ready', entries: result.value.entries, truncated: result.value.truncated }, result.value.workspace.workspaceId)
-    } catch { put(path, { status: 'error', message: 'Files could not be reached.' }) }
-  }, [bridge, put, threadId])
+    } catch { put(path, { status: 'error', message: t`Files could not be reached.` }) }
+  }, [bridge, put, threadId, t])
 
   const known = listing !== undefined
   useEffect(() => {
@@ -143,6 +145,7 @@ export function FilePicker({ model, listId, selected = [], onSelect }: {
   /** A folder continues browsing; a file is mentioned in the draft. */
   readonly onSelect: (entry: FileEntry) => void
 }): ReactNode {
+  const { t } = useLingui()
   const list = useRef<HTMLUListElement>(null)
   const { trigger, options, activeIndex, listing, directory } = model
   useLayoutEffect(() => {
@@ -154,13 +157,14 @@ export function FilePicker({ model, listId, selected = [], onSelect }: {
   const { filter } = fileQueryParts(trigger.query)
   const spaced = listing?.status === 'ready' ? unmentionableCount(listing.entries) : 0
   const message = failed !== null ? failed
-    : listing === undefined || listing.status !== 'ready' ? 'Loading files…'
-      : listing.entries.length === 0 ? `${directory || 'This working copy'} has nothing to mention.`
-        : options.length === 0 ? `No files match “${filter}”.` : null
+    : listing === undefined || listing.status !== 'ready' ? t`Loading files…`
+      : listing.entries.length === 0 ? (directory ? t`${directory} has nothing to mention.` : t`This working copy has nothing to mention.`)
+        : options.length === 0 ? t`No files match “${filter}”.` : null
+  const max = MAX_MENTIONED_FILES
   // The limit is the draft's, not this folder's: entries stay listed, and folders still browse.
   const full = options.some(entry => entry.kind !== 'directory' && fileLimitReached(selected, entry.path))
   return <div className="composer-picker file-picker" data-kind="file">
-    {message === null ? <ul ref={list} className="composer-picker__list" role="listbox" id={listId} aria-label="Files">
+    {message === null ? <ul ref={list} className="composer-picker__list" role="listbox" id={listId} aria-label={t`Files`}>
       {options.map((entry, index) => {
         const over = entry.kind !== 'directory' && fileLimitReached(selected, entry.path)
         return <li key={entry.path} id={fileOptionId(listId, index)} role="option" aria-selected={index === activeIndex} aria-disabled={over || undefined}
@@ -174,14 +178,14 @@ export function FilePicker({ model, listId, selected = [], onSelect }: {
     <div className="composer-picker__foot" data-message={message !== null || undefined}>
       <span className="composer-picker__notes">
         {message !== null ? <span className="composer-picker__message" role={failed !== null ? 'alert' : 'status'} data-tone={failed !== null ? 'warning' : undefined}>{message}</span> : null}
-        {full ? <span className="composer-picker__limit" role="status">{`A prompt mentions at most ${MAX_MENTIONED_FILES} files. Remove one to mention another.`}</span>
-          : message === null ? <span>{options[activeIndex ?? 0]?.kind === 'directory' ? 'Enter or Tab opens the folder' : 'Enter or Tab mentions the file'}</span> : null}
-        {model.truncated ? <span data-tone="warning">Only the first entries of this folder are listed. Keep typing to narrow them.</span> : null}
-        {spaced > 0 ? <span data-tone="warning">{spaced === 1 ? '1 entry has a space in its name and cannot be mentioned' : `${spaced} entries have spaces in their names and cannot be mentioned`}</span> : null}
+        {full ? <span className="composer-picker__limit" role="status">{plural(max, { one: 'A prompt mentions at most # file. Remove one to mention another.', other: 'A prompt mentions at most # files. Remove one to mention another.' })}</span>
+          : message === null ? <span>{options[activeIndex ?? 0]?.kind === 'directory' ? t`Enter or Tab opens the folder` : t`Enter or Tab mentions the file`}</span> : null}
+        {model.truncated ? <span data-tone="warning"><Trans>Only the first entries of this folder are listed. Keep typing to narrow them.</Trans></span> : null}
+        {spaced > 0 ? <span data-tone="warning">{plural(spaced, { one: '# entry has a space in its name and cannot be mentioned', other: '# entries have spaces in their names and cannot be mentioned' })}</span> : null}
       </span>
       <button type="button" className="composer-picker__refresh tt-focusable" data-loading={listing?.status === 'loading' || undefined} disabled={listing?.status === 'loading'}
         onMouseDown={event => event.preventDefault()} onClick={() => model.refresh()}>
-        <RotateCw size={14} aria-hidden="true" />{listing?.status === 'loading' ? 'Refreshing' : failed !== null ? 'Try again' : 'Refresh'}
+        <RotateCw size={14} aria-hidden="true" />{listing?.status === 'loading' ? t`Refreshing` : failed !== null ? t`Try again` : t`Refresh`}
       </button>
     </div>
   </div>

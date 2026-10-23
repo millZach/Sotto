@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { RotateCw, WandSparkles } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { PromptSelection } from './promptSelection'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import type { AgentState } from '../../../shared/agents'
@@ -50,6 +52,7 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
   readonly ownerId: string; readonly catalog: AgentSkillCatalog | undefined; readonly load: (forceReload: boolean) => Promise<boolean>
   readonly enabled: boolean; readonly text: string
 }): SkillPickerModel {
+  const { t } = useLingui()
   const [selection, setSelection] = useState<{ readonly start: number; readonly end: number } | null>(null)
   const [active, setActive] = useState<{ readonly key: string; readonly index: number } | null>(null)
   const [dismissed, setDismissed] = useState<string | null>(null)
@@ -73,9 +76,9 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
     void load(forceReload).then(ok => {
       if (!mounted.current) return
       setLoading(false)
-      if (!ok) setRequestError('Sotto couldn’t load skills.')
-    }, () => { if (mounted.current) { setLoading(false); setRequestError('Sotto couldn’t load skills.') } })
-  }, [load])
+      if (!ok) setRequestError(t`Sotto couldn’t load skills.`)
+    }, () => { if (mounted.current) { setLoading(false); setRequestError(t`Sotto couldn’t load skills.`) } })
+  }, [load, t])
 
   useEffect(() => {
     if (!open || openKey === null || requested.current === openKey) return
@@ -105,7 +108,7 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
 export const skillOptionId = (listId: string, index: number): string => `${listId}-option-${index}`
 
 /** The skills list above the composer's text. It shows the native catalog exactly; it never manages skills. */
-export function SkillPicker({ model, listId, provider, selected = [], emptyMessage = 'No skills are available in this thread’s folder.', onSelect }: {
+export function SkillPicker({ model, listId, provider, selected = [], emptyMessage, onSelect }: {
   readonly model: SkillPickerModel
   readonly listId: string
   readonly provider: string
@@ -115,6 +118,7 @@ export function SkillPicker({ model, listId, provider, selected = [], emptyMessa
   readonly emptyMessage?: string
   readonly onSelect: (skill: CatalogSkill) => void
 }): ReactNode {
+  const { t } = useLingui()
   const list = useRef<HTMLUListElement>(null)
   const { trigger, options, activeIndex, catalog, loading, requestError } = model
   useLayoutEffect(() => {
@@ -122,25 +126,30 @@ export function SkillPicker({ model, listId, provider, selected = [], emptyMessa
     list.current?.querySelector<HTMLElement>(`#${CSS.escape(skillOptionId(listId, activeIndex))}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [activeIndex, listId])
   if (!model.open || trigger === null) return null
-  const failure = requestError ?? (catalog?.status === 'error' ? catalog.error ?? `${provider} couldn’t list skills for this folder.` : null)
+  const failure = requestError ?? (catalog?.status === 'error' ? catalog.error ?? t`${provider} couldn’t list skills for this folder.` : null)
   const unsupported = failure === null && catalog?.status === 'unsupported'
   const limit = catalog?.maxSkillsPerMessage
+  const query = trigger.query
   const message = failure !== null ? failure
-    : unsupported ? catalog.error ?? `${provider} doesn’t list skills here.`
-      : catalog === undefined ? (loading ? 'Loading skills…' : 'Skills aren’t loaded yet.')
-        : catalog.skills.length === 0 ? emptyMessage
-          : pickableSkills(catalog.skills).length === 0 ? `None of ${provider}’s skills here can be chosen from a message.`
-            : options.length === 0 ? `No skills match “${trigger.query}”.` : null
+    : unsupported ? catalog.error ?? t`${provider} doesn’t list skills here.`
+      : catalog === undefined ? (loading ? t`Loading skills…` : t`Skills aren’t loaded yet.`)
+        : catalog.skills.length === 0 ? emptyMessage ?? t`No skills are available in this thread’s folder.`
+          : pickableSkills(catalog.skills).length === 0 ? t`None of ${provider}’s skills here can be chosen from a message.`
+            : options.length === 0 ? t`No skills match “${query}”.` : null
   const skipped = catalog?.status === 'ready' ? catalog.errors.length : 0
   const held = selected.at(-1)
   const heldSkill = held === undefined ? undefined : catalog?.skills.find(skill => skill.name === held.name && skill.path === held.path) ?? held
+  const heldToken = heldSkill === undefined ? '' : skillToken(heldSkill)
   const limitNote = limit !== undefined && held !== undefined && options.some(skill => skillLimitReached(selected, skill, limit))
-    ? `${provider} takes ${limit === 1 ? 'one skill' : `${limit} skills`} per message. Remove ${skillToken(heldSkill!)} to choose another.` : null
-  const hint = options.length === 0 ? (trigger.kind === 'slash' || unsupported ? 'Enter sends what you typed.' : null)
-    : trigger.kind === 'slash' && activeIndex === null ? '↓ to choose · Enter sends what you typed' : 'Enter or Tab inserts the skill'
+    ? plural(limit, {
+      one: `${provider} takes one skill per message. Remove ${heldToken} to choose another.`,
+      other: `${provider} takes # skills per message. Remove ${heldToken} to choose another.`,
+    }) : null
+  const hint = options.length === 0 ? (trigger.kind === 'slash' || unsupported ? t`Enter sends what you typed.` : null)
+    : trigger.kind === 'slash' && activeIndex === null ? t`↓ to choose · Enter sends what you typed` : t`Enter or Tab inserts the skill`
   // The list gets the height; what Sotto has to say about it and the one reload action share a line under it.
   return <div className="composer-picker" data-kind={trigger.kind}>
-    {message === null ? <ul ref={list} className="composer-picker__list" role="listbox" id={listId} aria-label="Skills">
+    {message === null ? <ul ref={list} className="composer-picker__list" role="listbox" id={listId} aria-label={t`Skills`}>
       {options.map((skill, index) => {
         const over = skillLimitReached(selected, skill, limit)
         return <li key={`${skill.path}\n${skill.name}\n${index}`} id={skillOptionId(listId, index)} role="option" aria-selected={index === activeIndex} aria-disabled={over || undefined}
@@ -157,11 +166,11 @@ export function SkillPicker({ model, listId, provider, selected = [], emptyMessa
         {message !== null ? <span className="composer-picker__message" role={failure !== null ? 'alert' : 'status'} data-tone={failure !== null ? 'warning' : undefined}>{message}</span> : null}
         {limitNote !== null ? <span className="composer-picker__limit" role="status">{limitNote}</span> : hint !== null ? <span>{hint}</span> : null}
         {catalog?.invocationNotice && catalog.status !== 'error' ? <span>{catalog.invocationNotice}</span> : null}
-        {skipped > 0 ? <span data-tone="warning">{skipped === 1 ? '1 skill file couldn’t be read' : `${skipped} skill files couldn’t be read`}</span> : null}
+        {skipped > 0 ? <span data-tone="warning">{plural(skipped, { one: '# skill file couldn’t be read', other: '# skill files couldn’t be read' })}</span> : null}
       </span>
       <button type="button" className="composer-picker__refresh tt-focusable" data-loading={loading || undefined} disabled={loading}
         onMouseDown={event => event.preventDefault()} onClick={() => model.refresh(true)}>
-        <RotateCw size={14} aria-hidden="true" />{loading ? 'Refreshing' : failure !== null ? 'Try again' : 'Refresh'}
+        <RotateCw size={14} aria-hidden="true" />{loading ? t`Refreshing` : failure !== null ? t`Try again` : t`Refresh`}
       </button>
     </div>
   </div>

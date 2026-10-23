@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { useOwlFeature } from '../state/owlFeature'
 import { useListedRows } from './unsentThreads'
 import { useOptionalApp } from '../state/AppContext'
@@ -29,6 +30,7 @@ export function PageSidebar({ now: fixedNow }: {
   /** A fixed clock for captures; the rows' times then hold still. */
   readonly now?: number | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
@@ -58,9 +60,9 @@ export function PageSidebar({ now: fixedNow }: {
   }, [navigate])
 
   if (state === null) {
-    return <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label="Thread sidebar">
+    return <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={t`Thread sidebar`}>
       <SidebarTop />
-      <div className="thread-nav__scroll"><p className="thread-nav__empty">{agents.error ?? 'Preparing agent controls…'}</p></div>
+      <div className="thread-nav__scroll"><p className="thread-nav__empty tt-paragraph">{agents.error ?? t`Preparing agent controls…`}</p></div>
       <SidebarFoot />
     </aside>
   }

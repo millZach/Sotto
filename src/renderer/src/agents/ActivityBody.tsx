@@ -1,6 +1,8 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
+import { t } from '@lingui/core/macro'
 import { CodeBlock, MessageContent } from './MessageContent'
 import type { ActivityBodyView } from './activityBodies'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import './activityBodies.css'
 
 /**
@@ -13,15 +15,53 @@ import './activityBodies.css'
 
 export type CutBodyKind = 'output' | 'diff' | 'input' | 'thinking' | 'text'
 
-interface Words { readonly the: string; readonly The: string; readonly getting: string; readonly more: string; readonly only: string; readonly line: string }
+interface Words {
+  readonly getting: string; readonly more: string; readonly only: string; readonly line: string
+  /** A failed read, of the whole body and of the rest of it, and the name of the way to ask again. */
+  readonly failed: string; readonly failedRest: string; readonly retry: string
+  /** The body's host is not connected. */
+  readonly offline: string
+}
+/** Whole sentences for each kind of body, so each language can word them its own way. `host` is the host's name. */
 function words(kind: CutBodyKind, host: string): Words {
-  const rest = `Getting the rest from ${host}…`, after = `⋯ the rest is on ${host}`
+  const rest = (): string => t`Getting the rest from ${host}…`
+  const after = (): string => t({ message: `⋯ the rest is on ${host}`, comment: 'Marks where a body its host sent cut goes on; {host} is the computer it runs on.' })
   switch (kind) {
-    case 'output': return { the: 'this output', The: 'The output', getting: `Getting output from ${host}…`, more: `Getting earlier lines from ${host}…`, only: 'End of the output only', line: `⋯ earlier lines are on ${host}` }
-    case 'diff': return { the: 'this diff', The: 'The diff', getting: `Getting the diff from ${host}…`, more: rest, only: 'Start of the diff only', line: after }
-    case 'input': return { the: 'this input', The: 'The input', getting: `Getting the input from ${host}…`, more: rest, only: 'Part of the input only', line: after }
-    case 'thinking': return { the: 'this thinking', The: 'The thinking', getting: `Getting the thinking from ${host}…`, more: rest, only: '', line: after }
-    case 'text': return { the: 'this text', The: 'The text', getting: `Getting the text from ${host}…`, more: rest, only: '', line: after }
+    case 'output': return {
+      getting: t`Getting output from ${host}…`, more: t`Getting earlier lines from ${host}…`, only: t({ message: 'End of the output only', comment: 'A body its host sent cut shows only this part.' }), line: t({ message: `⋯ earlier lines are on ${host}`, comment: 'Marks where command output its host sent cut goes on; {host} is the computer it runs on.' }),
+      failed: t`Couldn’t get this output from ${host}. Nothing is lost: it is still there.`,
+      failedRest: t`Couldn’t get the rest of this output from ${host}. Nothing is lost: it is still there.`,
+      retry: t`Try again to get this output from ${host}`,
+      offline: t`${host} is not connected. The output is still there and shows here when ${host} reconnects.`,
+    }
+    case 'diff': return {
+      getting: t`Getting the diff from ${host}…`, more: rest(), only: t({ message: 'Start of the diff only', comment: 'A body its host sent cut shows only this part.' }), line: after(),
+      failed: t`Couldn’t get this diff from ${host}. Nothing is lost: it is still there.`,
+      failedRest: t`Couldn’t get the rest of this diff from ${host}. Nothing is lost: it is still there.`,
+      retry: t`Try again to get this diff from ${host}`,
+      offline: t`${host} is not connected. The diff is still there and shows here when ${host} reconnects.`,
+    }
+    case 'input': return {
+      getting: t`Getting the input from ${host}…`, more: rest(), only: t({ message: 'Part of the input only', comment: 'A body its host sent cut shows only this part.' }), line: after(),
+      failed: t`Couldn’t get this input from ${host}. Nothing is lost: it is still there.`,
+      failedRest: t`Couldn’t get the rest of this input from ${host}. Nothing is lost: it is still there.`,
+      retry: t`Try again to get this input from ${host}`,
+      offline: t`${host} is not connected. The input is still there and shows here when ${host} reconnects.`,
+    }
+    case 'thinking': return {
+      getting: t`Getting the thinking from ${host}…`, more: rest(), only: '', line: after(),
+      failed: t`Couldn’t get this thinking from ${host}. Nothing is lost: it is still there.`,
+      failedRest: t`Couldn’t get the rest of this thinking from ${host}. Nothing is lost: it is still there.`,
+      retry: t`Try again to get this thinking from ${host}`,
+      offline: t`${host} is not connected. The thinking is still there and shows here when ${host} reconnects.`,
+    }
+    case 'text': return {
+      getting: t`Getting the text from ${host}…`, more: rest(), only: '', line: after(),
+      failed: t`Couldn’t get this text from ${host}. Nothing is lost: it is still there.`,
+      failedRest: t`Couldn’t get the rest of this text from ${host}. Nothing is lost: it is still there.`,
+      retry: t`Try again to get this text from ${host}`,
+      offline: t`${host} is not connected. The text is still there and shows here when ${host} reconnects.`,
+    }
   }
 }
 
@@ -31,14 +71,15 @@ const Dot = (): ReactNode => <span className="activity-body__dot" aria-hidden="t
 /** What a read that failed says, under the part that stays, and the way to ask again. */
 function Problem({ view, said, rest }: { readonly view: ActivityBodyView; readonly said: Words; readonly rest: boolean }): ReactNode {
   return <div className="activity-body__problem" role="status">
-    <p>Couldn’t get {rest ? said.the.replace(/^this /u, 'the rest of this ') : said.the} from {view.hostName}. Nothing is lost: it is still there.</p>
-    <button type="button" className="activity-body__retry tt-focusable" aria-label={`Try again to get ${said.the} from ${view.hostName}`} onClick={view.retry}>Try again</button>
+    <p>{rest ? said.failedRest : said.failed}</p>
+    <button type="button" className="activity-body__retry tt-focusable" aria-label={said.retry} onClick={view.retry}>{t`Try again`}</button>
   </div>
 }
 
 function Offline({ view, said, rest }: { readonly view: ActivityBodyView; readonly said: Words; readonly rest: boolean }): ReactNode {
+  const host = view.hostName
   return <p className="activity-body__problem" role="status">
-    {view.hostName} is not connected. {rest ? 'The rest shows here when it reconnects.' : `${said.The} is still there and shows here when ${view.hostName} reconnects.`}
+    {rest ? t`${host} is not connected. The rest shows here when it reconnects.` : said.offline}
   </p>
 }
 
@@ -70,6 +111,7 @@ export function CutCode({ view, kind, text, language, cut }: {
   readonly view: ActivityBodyView; readonly kind: 'output' | 'diff' | 'input'; readonly text: string; readonly language: string
   readonly cut: boolean
 }): ReactNode {
+  useInterfaceLanguageState()
   const said = words(kind, view.hostName)
   const waiting = cut && partial(view)
   const code = text.replace(/\n$/u, '')
@@ -87,6 +129,7 @@ export function CutCode({ view, kind, text, language, cut }: {
 
 /** A cut body drawn as words: thinking as Markdown, or a tool's plain text. The rest, when it comes, is the same words longer. */
 export function CutProse({ view, kind, text, cut }: { readonly view: ActivityBodyView; readonly kind: 'thinking' | 'text'; readonly text: string; readonly cut: boolean }): ReactNode {
+  useInterfaceLanguageState()
   const said = words(kind, view.hostName)
   const waiting = cut && partial(view)
   if (waiting && !text) return <Empty view={view} said={said} />

@@ -1,5 +1,7 @@
 import React, { useRef, useState, type ReactNode } from 'react'
 import { MessageSquare } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentAttachmentHandle, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
@@ -55,6 +57,7 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
   readonly onOpenThread: (threadId: string) => void
   readonly error?: string | null
 }): ReactNode {
+  const { t } = useLingui()
   const [confirming, setConfirming] = useState(false)
   const [moving, setMoving] = useState(false)
   // A discard removes the button that opened its question, so focus lands on the page's heading instead.
@@ -62,7 +65,9 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
   const offer = savedDraftOffer(state)
   const connecting = state.connection === 'connecting'
   const images = state.draftAttachments ?? []
-  const connect = <>{error && !connecting ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}<Button disabled={connecting} onClick={() => void command({ type: 'connect' })}>{connecting ? 'Connecting...' : 'Connect providers'}</Button></>
+  const imageNames = images.map(image => image.name).join(', ')
+  const imageCount = images.length
+  const connect = <>{error && !connecting ? <p className="agent-error thread-workspace__error tt-paragraph" role="alert">{error}</p> : null}<Button disabled={connecting} onClick={() => void command({ type: 'connect' })}>{connecting ? t`Connecting...` : t`Connect providers`}</Button></>
   const moveDraft = (draft: CarriedDraft): void => {
     if (moving) return
     setMoving(true)
@@ -72,19 +77,21 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
   const page = ((): { readonly heading: string; readonly detail: string; readonly action: ReactNode; readonly showDraft: boolean; readonly discardable: boolean } => {
     switch (offer.kind) {
       case 'reconnect':
-        return { heading: 'Your draft is saved.', detail: 'Reconnect to continue your saved draft.', action: connect, showDraft: true, discardable: false }
-      case 'thread':
-        return { heading: `Your draft for ${offer.title} is saved.`, detail: 'Open the thread to finish it, or discard it.',
-          action: <Button onClick={() => onOpenThread(offer.threadId)}>Open thread</Button>, showDraft: true, discardable: true }
+        return { heading: t`Your draft is saved.`, detail: t`Reconnect to continue your saved draft.`, action: connect, showDraft: true, discardable: false }
+      case 'thread': {
+        const title = offer.title
+        return { heading: t({ message: `Your draft for ${title} is saved.`, comment: '{title} is a thread\'s title.' }), detail: t`Open the thread to finish it, or discard it.`,
+          action: <Button onClick={() => onOpenThread(offer.threadId)}><Trans>Open thread</Trans></Button>, showDraft: true, discardable: true }
+      }
       case 'leftover':
-        return { heading: offer.answer ? 'An answer from an earlier thread is saved.' : 'A draft from an earlier thread is saved.',
-          detail: offer.answer ? 'Its thread and the question it answered are no longer here. Start a new thread with it, or discard it.'
-            : 'Its thread is no longer here. Start a new thread with it, or discard it.',
-          action: <Button disabled={moving} onClick={() => moveDraft(offer.draft)}>New thread with this draft</Button>, showDraft: true, discardable: true }
+        return { heading: offer.answer ? t`An answer from an earlier thread is saved.` : t`A draft from an earlier thread is saved.`,
+          detail: offer.answer ? t`Its thread and the question it answered are no longer here. Start a new thread with it, or discard it.`
+            : t`Its thread is no longer here. Start a new thread with it, or discard it.`,
+          action: <Button disabled={moving} onClick={() => moveDraft(offer.draft)}><Trans>New thread with this draft</Trans></Button>, showDraft: true, discardable: true }
       case 'none':
-        return { ...(state.host.threads.length > 0 ? { heading: 'Choose a thread.', detail: 'Select a thread to read its messages and continue working.' }
-          : { heading: 'No threads yet.', detail: 'Start a thread to begin working with your agent.' }),
-        action: state.connection === 'connected' ? <Button onClick={onNewThread}>New thread</Button> : connect, showDraft: false, discardable: false }
+        return { ...(state.host.threads.length > 0 ? { heading: t`Choose a thread.`, detail: t`Select a thread to read its messages and continue working.` }
+          : { heading: t`No threads yet.`, detail: t`Start a thread to begin working with your agent.` }),
+        action: state.connection === 'connected' ? <Button onClick={onNewThread}><Trans>New thread</Trans></Button> : connect, showDraft: false, discardable: false }
     }
   })()
   const discard = async (): Promise<boolean> => {
@@ -99,16 +106,16 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
     <p>{page.detail}</p>
     {state.notice && state.notice !== error ? <p className="agent-notice" role="status">{state.notice}</p> : null}
     {page.showDraft ? <div className="thread-prompt thread-prompt--saved">
-      <label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Saved draft</label>
+      <label className="tt-visually-hidden" htmlFor="saved-thread-prompt"><Trans>Saved draft</Trans></label>
       <textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly />
-      {images.length ? <p className="thread-prompt__images">{images.length === 1 ? 'Image' : 'Images'}: {images.map(image => image.name).join(', ')}</p> : null}
+      {images.length ? <p className="thread-prompt__images tt-paragraph">{plural(imageCount, { one: `Image: ${imageNames}`, other: `Images: ${imageNames}` })}</p> : null}
     </div> : null}
     <div className="thread-workspace__empty-actions">
       {page.action}
-      {page.discardable ? <Button variant="danger" disabled={state.globalLaneBusy || moving} onClick={() => setConfirming(true)}>Discard draft</Button> : null}
+      {page.discardable ? <Button variant="danger" disabled={state.globalLaneBusy || moving} onClick={() => setConfirming(true)}><Trans>Discard draft</Trans></Button> : null}
     </div>
-    {confirming ? <ConfirmationDialog title="Discard this draft?" description="The draft is deleted and cannot be brought back."
-      confirmLabel="Discard draft" cancelLabel="Keep draft" onConfirm={discard} onCancel={() => setConfirming(false)} fallbackFocusRef={headingRef}
-      failureMessage="The draft could not be discarded. It is still saved. Try again." /> : null}
+    {confirming ? <ConfirmationDialog title={t`Discard this draft?`} description={t`The draft is deleted and cannot be brought back.`}
+      confirmLabel={t`Discard draft`} cancelLabel={t`Keep draft`} onConfirm={discard} onCancel={() => setConfirming(false)} fallbackFocusRef={headingRef}
+      failureMessage={t`The draft could not be discarded. It is still saved. Try again.`} /> : null}
   </div>
 }

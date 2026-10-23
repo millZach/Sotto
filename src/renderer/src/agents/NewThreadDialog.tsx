@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Laptop, Server, X } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import { defaultNewThreadModelId, hostForThread, isSubscriptionReasoning, type AgentProject, type AgentState } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
@@ -29,6 +30,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
    */
   readonly onCreating?: ((start: ThreadCreationStart) => void) | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   // With threads from more than one host listed, New thread starts by choosing the host; its projects follow.
@@ -93,18 +95,18 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   return <dialog ref={dialog} className="new-thread-dialog" aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); if (!creating) onClose() }}
     onClick={event => { if (event.target === event.currentTarget && !creating) onClose() }}>
-    <h2 id={titleId} className="tt-visually-hidden">New thread</h2>
+    <h2 id={titleId} className="tt-visually-hidden">{t`New thread`}</h2>
     <header className="new-thread-dialog__search">
       {chooser.search}
-      <Button variant="ghost" iconOnly aria-label="Close new thread dialog" disabled={creating} onClick={onClose}><X size={16} /></Button>
+      <Button variant="ghost" iconOnly aria-label={t`Close new thread dialog`} disabled={creating} onClick={onClose}><X size={16} /></Button>
     </header>
-      {hosts.length > 1 ? <div className="new-thread-hosts" role="group" aria-label="Host">
+      {hosts.length > 1 ? <div className="new-thread-hosts" role="group" aria-label={t({ message: 'Host', comment: 'The computer a new thread starts on.' })}>
         {hosts.map(item => <button key={item.hostId} type="button" className="tt-focusable" aria-pressed={item.hostId === chosenHost?.hostId} onClick={() => setHostId(item.hostId)}>
           {item.kind === 'local' ? <Laptop size={15} aria-hidden="true" /> : <Server size={15} aria-hidden="true" />}{item.name}</button>)}
       </div> : null}
       {chooser.choices}
-      {creating ? <p role="status" className="new-thread-dialog__empty">Opening the thread…</p> : null}
+      {creating ? <p role="status" className="new-thread-dialog__empty">{t`Opening the thread…`}</p> : null}
       {error && <p className="agent-error" role="alert">{error}</p>}
-    <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Select</span><span><kbd>Esc</kbd> Close</span></footer>
+    <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> {t({ message: 'Navigate', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span><span><kbd>Enter</kbd> {t({ message: 'Select', comment: 'A keyboard hint: Enter picks the highlighted item.' })}</span><span><kbd>Esc</kbd> {t({ message: 'Close', comment: 'A keyboard hint: Escape closes the dialog.' })}</span></footer>
   </dialog>
 }

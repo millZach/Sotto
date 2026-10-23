@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import {
   VISUAL_IPC_ESCAPE, VISUAL_IPC_HEIGHT, VISUAL_IPC_STEP, VISUAL_IPC_THEME, VISUAL_PAGE_HEIGHT_MIN,
   clampVisualPageHeight, type VisualStepPlace, type VisualTheme,
@@ -65,6 +68,7 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
   /** Escape pressed inside the page: focus goes back to the card. */
   readonly onEscape: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const frame = useRef<HTMLDivElement>(null)
   const guest = useRef<VisualGuestElement | null>(null)
   const [height, setHeight] = useState(VISUAL_PAGE_HEIGHT_MIN)
@@ -87,7 +91,7 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
   useEffect(() => {
     if (!running) { setPage({ phase: 'waiting' }); setReady(false); return }
     const bridge = window.sotto?.visuals
-    if (!bridge || threadId === undefined) { setPage({ phase: 'refused', reason: 'This window cannot show the page.' }); return }
+    if (!bridge || threadId === undefined) { setPage({ phase: 'refused', reason: i18n._(msg`This window cannot show the page.`) }); return }
     let current = true
     setPage({ phase: 'waiting' })
     // Asked inside a promise, so a bridge that refuses by throwing at once lands here as a refusal, not in React.
@@ -96,7 +100,7 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
       if (result.ok) setPage({ phase: 'open', url: result.url })
       // A refusal that may pass, such as a seal that could not be set up just now, can be tried again.
       else setPage(result.retry ? { phase: 'lost', reason: result.reason } : { phase: 'refused', reason: result.reason })
-    }, () => { if (current) setPage({ phase: 'lost', reason: 'Sotto could not open the page.' }) })
+    }, () => { if (current) setPage({ phase: 'lost', reason: i18n._(msg`Sotto could not open the page.`) }) })
     return () => { current = false }
   }, [running, threadId, visualId, attempt])
 
@@ -114,22 +118,22 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
       const failure = event as LoadFailure
       if (!failure.isMainFrame || failure.errorCode === LOAD_ABORTED) return
       setReady(false)
-      setPage({ phase: 'lost', reason: 'The page could not be loaded.' })
+      setPage({ phase: 'lost', reason: i18n._(msg`The page could not be loaded.`) })
     }
     // An address that is spent or unknown is answered with Not found, which commits as a page rather than failing.
     const onCommitted = (event: Event): void => {
       if ((event as LoadCommitted).httpResponseCode < 400) return
       setReady(false)
-      setPage({ phase: 'lost', reason: 'The page could not be loaded.' })
+      setPage({ phase: 'lost', reason: i18n._(msg`The page could not be loaded.`) })
     }
     const onMessage = (event: Event): void => {
       const { channel, args } = event as GuestIpcEvent
       if (channel === VISUAL_IPC_HEIGHT) setHeight(clampVisualPageHeight(args[0]))
       else if (channel === VISUAL_IPC_ESCAPE) latest.current.onEscape()
     }
-    const onGone = (): void => { setReady(false); setPage({ phase: 'lost', reason: 'The page stopped.' }) }
+    const onGone = (): void => { setReady(false); setPage({ phase: 'lost', reason: i18n._(msg`The page stopped.`) }) }
     // A guest main refused to attach (its address lapsed, or the seal was being set up again) only goes away.
-    const onDestroyed = (): void => { setReady(false); setPage({ phase: 'lost', reason: 'The page could not be started.' }) }
+    const onDestroyed = (): void => { setReady(false); setPage({ phase: 'lost', reason: i18n._(msg`The page could not be started.`) }) }
     const events: [string, (event: Event) => void][] = [['dom-ready', onReady], ['did-finish-load', onLoaded], ['did-fail-load', onFailed], ['did-navigate', onCommitted],
       ['ipc-message', onMessage], ['render-process-gone', onGone], ['destroyed', onDestroyed]]
     for (const [name, listener] of events) element.addEventListener(name, listener)
@@ -150,23 +154,24 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
       ? React.createElement('webview', {
         key: page.url, ref: (element: VisualGuestElement | null) => { guest.current = element },
         src: page.url, partition: VISUAL_PARTITION, className: 'interactive-visual__page', tabIndex: 0,
-        'aria-label': `${title}, interactive page`,
+        'aria-label': t({ message: `${title}, interactive page`, comment: '{title} is the title of a page an agent made.' }),
       })
       : <div className="interactive-visual__placeholder">
         <p>{placeholderText(page, slot.state, fallbackHint)}</p>
-        {page.phase === 'lost' && <button type="button" className="tt-button tt-focusable" onClick={() => setAttempt(value => value + 1)}>Try again</button>}
-        {page.phase === 'waiting' && slot.state === 'crowded' && <button type="button" className="tt-button tt-focusable" onClick={slot.runNow}>Run this page</button>}
+        {page.phase === 'lost' && <button type="button" className="tt-button tt-focusable" onClick={() => setAttempt(value => value + 1)}>{t`Try again`}</button>}
+        {page.phase === 'waiting' && slot.state === 'crowded' && <button type="button" className="tt-button tt-focusable" onClick={slot.runNow}>{t`Run this page`}</button>}
       </div>}
   </div>
 }
 
 /** The words in the frame while the page is not showing: what is true now, and where to turn. */
 function placeholderText(page: Exclude<PageState, { phase: 'open' }>, slot: PageSlotState, fallbackHint: string): string {
-  if (page.phase === 'refused') return `${page.reason} ${fallbackHint}`
-  if (page.phase === 'lost') return `${page.reason} Try again to start it from the top. ${fallbackHint}`
-  if (slot === 'crowded') return `Three other pages are running, the most Sotto runs at once. ${fallbackHint}`
-  if (slot === 'running') return 'Starting the page.'
-  return 'The page starts when it is in view.'
+  const reason = page.phase === 'waiting' ? '' : page.reason
+  if (page.phase === 'refused') return `${reason} ${fallbackHint}`
+  if (page.phase === 'lost') return i18n._(msg({ message: `${reason} Try again to start it from the top. ${fallbackHint}`, comment: '{reason} says why the page is not shown; {fallbackHint} says where else to look.' }))
+  if (slot === 'crowded') return i18n._(msg({ message: `Three other pages are running, the most Sotto runs at once. ${fallbackHint}`, comment: '{fallbackHint} says where else to look, such as "Its steps are below."' }))
+  if (slot === 'running') return i18n._(msg`Starting the page.`)
+  return i18n._(msg`The page starts when it is in view.`)
 }
 
 /** Sends the guest the theme or the walkthrough's place; a guest that has gone takes nothing. */

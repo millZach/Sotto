@@ -1,4 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { Check, ChevronDown, Folder, GitBranch, GitMerge, GitPullRequest, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft, Laptop, Plus, Search, Server } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { GitPullRequestSummary } from '../../../shared/gitStatus'
@@ -11,9 +14,10 @@ import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { writeClipboard } from './richActions'
 import { isCompositionKey } from './composerKeys'
-import { branchLabel, chordClaimed, chordMatches, createRefName, newWorktreeDraft, offersCreate, pickOutcome, pullRequestTitle, refBadges, switchFailure, TOOLBAR_SHORTCUTS, toolbarApplies, workspaceChoice, workspaceLabel, workspaceLocked, workspaceOptionId, workspaceOptions, type ToolbarThread, type WorkspaceChoice } from './branchToolbar.logic'
+import { branchLabel, branchLabelIsRef, chordClaimed, chordMatches, createRefName, newWorktreeDraft, offersCreate, pickOutcome, pullRequestTitle, refBadges, switchFailure, TOOLBAR_SHORTCUTS, toolbarApplies, workspaceChoice, workspaceLabel, workspaceLocked, workspaceOptionId, workspaceOptions, type ToolbarThread, type WorkspaceChoice } from './branchToolbar.logic'
 import type { ThreadRow } from './threadFacts'
 import { threadHostName } from './HostBadge'
+import { wordsOf } from './interfaceWords'
 import './branchToolbar.css'
 
 type Command = AgentConnection['command']
@@ -37,7 +41,8 @@ export interface PullRequestOpener {
   readonly open: (threadId: string) => void
   readonly where: string
 }
-const IN_TOOLS: PullRequestOpener = { open: threadId => toolsPanelStore.showPullRequest(threadId), where: 'in Tools' }
+const IN_TOOLS_WHERE = msg({ message: 'in Tools', comment: 'Where the pull request opens: Open PR #12 - Open: title in Tools.' })
+const IN_TOOLS: PullRequestOpener = { open: threadId => toolsPanelStore.showPullRequest(threadId), get where() { return i18n._(IN_TOOLS_WHERE) } }
 export const PullRequestOpenerContext = createContext<PullRequestOpener>(IN_TOOLS)
 
 /**
@@ -56,6 +61,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   readonly onExplainedError?: ((error: string | null) => void) | undefined
 }): ReactNode {
   const thread: ToolbarThread = row.thread
+  const { t } = useLingui()
   const app = useOptionalApp()
   const platform = app?.platform ?? 'win32'
   const hotkey = app?.settings?.hotkey
@@ -87,38 +93,38 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
       const result = await command(request)
       if (!result || result.error) { setNotice({ text: failure(result?.error), tone: 'error' }); return false }
       return true
-    } catch { setNotice({ text: failure('Sotto could not confirm this change.'), tone: 'error' }); return false }
+    } catch { setNotice({ text: failure(t`Sotto could not confirm this change.`), tone: 'error' }); return false }
     finally { inFlight.current = false; setBusy(null) }
-  }, [command])
+  }, [command, t])
 
   const chooseWorkspace = async (choice: WorkspaceChoice): Promise<void> => {
     const worktree = thread.worktree
     const selection = choice.kind === 'current' ? { workingCopy: 'shared' as const }
       : choice.kind === 'new' ? { workingCopy: 'independent' as const, startFromOrigin: worktree?.startFromOrigin ?? true, ...(worktree?.baseBranch ? { baseBranch: worktree.baseBranch } : {}) }
         : { workingCopy: 'independent' as const, existingWorktreePath: choice.path }
-    await run('workspace', { type: 'configure-thread-working-copy', threadId: thread.id, ...selection }, error => error ?? 'Could not change the workspace. Your choice is retained.')
+    await run('workspace', { type: 'configure-thread-working-copy', threadId: thread.id, ...selection }, error => error ?? t`Could not change the workspace. Your choice is retained.`)
   }
 
   const pick = async (ref: GitRef): Promise<boolean> => {
     const outcome = pickOutcome(ref, thread)
     switch (outcome.kind) {
       case 'refuse': setNotice({ text: outcome.reason, tone: 'error' }); return false
-      case 'repoint': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', existingWorktreePath: outcome.path }, error => error ?? 'Could not use that worktree. Your choice is retained.')
-      case 'record-base': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', baseBranch: outcome.baseBranch, startFromOrigin: outcome.startFromOrigin }, error => error ?? 'Could not record the starting branch. Your choice is retained.')
+      case 'repoint': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', existingWorktreePath: outcome.path }, error => error ?? t`Could not use that worktree. Your choice is retained.`)
+      case 'record-base': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', baseBranch: outcome.baseBranch, startFromOrigin: outcome.startFromOrigin }, error => error ?? t`Could not record the starting branch. Your choice is retained.`)
       case 'switch': return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: outcome.ref }, switchFailure)
     }
   }
   const create = async (name: string): Promise<boolean> => {
-    if (newWorktreeDraft(thread)) { setNotice({ text: 'A new worktree starts from a branch that exists. Choose one, or create the branch after the first send.', tone: 'error' }); return false }
-    return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: name, create: true }, error => error ?? `Could not create ${name}.`)
+    if (newWorktreeDraft(thread)) { setNotice({ text: t`A new worktree starts from a branch that exists. Choose one, or create the branch after the first send.`, tone: 'error' }); return false }
+    return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: name, create: true }, error => error ?? t({ message: `Could not create ${name}.`, comment: '{name} is a Git branch name.' }))
   }
   const setStartFromOrigin = async (startFromOrigin: boolean): Promise<void> => {
     const worktree = thread.worktree
-    await run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', startFromOrigin, ...(worktree?.baseBranch ? { baseBranch: worktree.baseBranch } : {}) }, error => error ?? 'Could not change where the worktree starts from.')
+    await run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', startFromOrigin, ...(worktree?.baseBranch ? { baseBranch: worktree.baseBranch } : {}) }, error => error ?? t`Could not change where the worktree starts from.`)
   }
   const copyName = async (name: string): Promise<void> => {
-    try { await writeClipboard(name); setNotice({ text: `Copied ${name}.`, tone: 'status' }) }
-    catch { setNotice({ text: 'Could not copy the branch name. Select it and copy it with Ctrl+C.', tone: 'error' }) }
+    try { await writeClipboard(name); setNotice({ text: t({ message: `Copied ${name}.`, comment: '{name} is a Git branch name.' }), tone: 'status' }) }
+    catch { setNotice({ text: t`Could not copy the branch name. Select it and copy it with Ctrl+C.`, tone: 'error' }) }
   }
 
   // The shortcuts: each is claimed only when the dictation hotkey does not already mean the same keys, and only
@@ -140,19 +146,20 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const pullRequest = thread.worktree?.git?.pullRequest ?? null
   const hostName = threadHostName(state, row.thread)
   const draftWorktree = newWorktreeDraft(thread)
-  return <div className="branch-toolbar" role="group" aria-label="Branch toolbar" data-busy={busy ?? undefined}>
-    <LabelPill icon={thread.remoteHost ? Server : Laptop} label="Run on" value={hostName}
-      title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'} />
+  const workspace = workspaceLabel(thread)
+  return <div className="branch-toolbar" role="group" aria-label={t`Branch toolbar`} data-busy={busy ?? undefined}>
+    <LabelPill icon={thread.remoteHost ? Server : Laptop} label={t`Run on`} value={hostName}
+      title={thread.remoteHost ? t`The thread runs on this host; it was chosen when the thread was made.` : t`The thread runs on this computer.`} />
     <Separator />
     {locked
-      ? <LabelPill icon={Folder} label="Workspace" value={workspaceLabel(thread)} title={`Workspace: ${workspaceLabel(thread)}`} />
-      : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspaceLabel(thread)} value={workspaceOptionId(workspaceChoice(thread))}
+      ? <LabelPill icon={Folder} label={t({ message: 'Workspace', comment: 'Where the thread works: its checkout or a worktree.' })} value={workspace} title={t`Workspace: ${workspace}`} />
+      : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspace} value={workspaceOptionId(workspaceChoice(thread))}
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
     {/* The badge and the picker wrap as one onto the next line when the line has no room for them. */}
     <span className="branch-toolbar__end">
       <Separator />
       {pullRequest ? <><PullRequestBadge pullRequest={pullRequest} where={opener.where} onOpen={() => opener.open(thread.id)} /><Separator /></> : null}
-      <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} busy={busy === 'branch'} disabled={busy !== null}
+      <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} copyable={branchLabelIsRef(thread)} busy={busy === 'branch'} disabled={busy !== null}
         draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     </span>
@@ -161,6 +168,14 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
 }
+
+/** The words a ref's badges show; `data-badge` keeps the key. */
+const REF_BADGE_WORDS = wordsOf({
+  current: msg({ message: 'current', comment: 'A badge on a Git ref: the branch checked out here.' }),
+  worktree: msg({ message: 'worktree', comment: 'A badge on a Git ref: checked out in a worktree.' }),
+  remote: msg({ message: 'remote', comment: 'A badge on a Git ref: a remote branch.' }),
+  default: msg({ message: 'default', comment: 'A badge on a Git ref: the repository\'s default branch.' }),
+})
 
 /** The faint dot between the line's parts, for the eye only. */
 function Separator(): ReactNode {
@@ -181,9 +196,10 @@ function LabelPill({ icon: Icon, label, value, title }: { readonly icon: typeof 
  */
 function PullRequestBadge({ pullRequest, where, onOpen }: { readonly pullRequest: GitPullRequestSummary; readonly where: string; readonly onOpen: () => void }): ReactNode {
   const Icon = pullRequest.draft && pullRequest.state === 'open' ? GitPullRequestDraft : PR_ICONS[pullRequest.state]
+  const { t } = useLingui()
   const title = pullRequestTitle(pullRequest)
   return <button type="button" className="branch-toolbar__pr tt-focusable" data-state={pullRequest.draft && pullRequest.state === 'open' ? 'draft' : pullRequest.state}
-    title={title} aria-label={`Open ${title} ${where}`} onClick={onOpen}>
+    title={title} aria-label={t({ message: `Open ${title} ${where}`, comment: '{title} reads PR #12 - Open: its title; {where} says where it opens, such as in Tools.' })} onClick={onOpen}>
     <Icon size={13} aria-hidden="true" /><span>#{pullRequest.number}</span>
   </button>
 }
@@ -197,6 +213,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
   readonly disabled: boolean
   readonly onChoose: (choice: WorkspaceChoice) => void
 }): ReactNode {
+  const { t } = useLingui()
   const panel = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -266,21 +283,21 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
   return <div className="branch-toolbar__menu"
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onOpenChange(false); triggerRef.current?.focus() } }}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) onOpenChange(false) }}>
-    <button ref={triggerRef} type="button" className="branch-toolbar__chip tt-focusable" role="combobox" aria-label="Choose workspace" title={`Workspace: ${label}`} aria-haspopup="dialog" aria-expanded={open}
+    <button ref={triggerRef} type="button" className="branch-toolbar__chip tt-focusable" role="combobox" aria-label={t`Choose workspace`} title={t`Workspace: ${label}`} aria-haspopup="dialog" aria-expanded={open}
       aria-controls={open ? panelId : undefined} disabled={disabled} onClick={() => onOpenChange(!open)}>
       <Folder size={13} aria-hidden="true" /><span>{label}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open ? <div ref={panel} id={panelId} role="dialog" aria-label="Choose workspace" className="branch-toolbar__list branch-toolbar__workspace"
+    {open ? <div ref={panel} id={panelId} role="dialog" aria-label={t`Choose workspace`} className="branch-toolbar__list branch-toolbar__workspace"
       style={position ? { left: position.left, width: position.width, maxHeight: position.maxHeight, ...(position.below ? { top: 'calc(100% + 6px)', bottom: 'auto' } : {}) } : undefined}>
-      <label className="branch-toolbar__search"><Search size={14} aria-hidden="true" /><input ref={search} type="search" aria-label="Search worktrees" placeholder="Search worktrees" value={query} aria-controls={listId}
+      <label className="branch-toolbar__search"><Search size={14} aria-hidden="true" /><input ref={search} type="search" aria-label={t`Search worktrees`} placeholder={t`Search worktrees`} value={query} aria-controls={listId}
         onChange={event => setQuery(event.target.value)} onKeyDown={event => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const items = list.current?.querySelectorAll<HTMLButtonElement>('button'); (event.key === 'ArrowDown' ? items?.[0] : items?.[items.length - 1])?.focus() }
         }} /></label>
-      <div ref={list} id={listId} role="listbox" aria-label="Workspace" className="branch-toolbar__workspace-choices" onKeyDown={event => moveListboxFocus(event, list.current)}>
-        <div role="group" aria-label="Start here" className="branch-toolbar__workspace-start">{options.filter(option => option.choice.kind !== 'previous').map(optionButton)}</div>
-        <div className="branch-toolbar__workspace-heading" aria-hidden="true">{needle ? 'Search results' : 'Recent worktrees'}</div>
-        <div role="group" aria-label={needle ? 'Search results' : 'Recent worktrees'} className="branch-toolbar__workspace-recent">{recent.map(optionButton)}
-          {recent.length === 0 ? <p className="branch-toolbar__empty" role="status">{needle ? 'No matching worktrees.' : 'No recent worktrees.'}</p> : null}
+      <div ref={list} id={listId} role="listbox" aria-label={t({ message: 'Workspace', comment: 'Where the thread works: its checkout or a worktree.' })} className="branch-toolbar__workspace-choices" onKeyDown={event => moveListboxFocus(event, list.current)}>
+        <div role="group" aria-label={t`Start here`} className="branch-toolbar__workspace-start">{options.filter(option => option.choice.kind !== 'previous').map(optionButton)}</div>
+        <div className="branch-toolbar__workspace-heading" aria-hidden="true">{needle ? t`Search results` : t`Recent worktrees`}</div>
+        <div role="group" aria-label={needle ? t`Search results` : t`Recent worktrees`} className="branch-toolbar__workspace-recent">{recent.map(optionButton)}
+          {recent.length === 0 ? <p className="branch-toolbar__empty tt-paragraph" role="status">{needle ? t`No matching worktrees.` : t`No recent worktrees.`}</p> : null}
         </div>
       </div>
     </div> : null}
@@ -292,11 +309,13 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
  * with T3's badges and pages them, offers Create new ref for a name nothing matches, and for a worktree not
  * made yet carries the Start from origin switch. Right-click on a ref copies its name.
  */
-function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest }: {
+function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyable, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest }: {
   readonly threadId: string
   readonly triggerRef: React.RefObject<HTMLButtonElement | null>
   readonly open: boolean; readonly onOpenChange: (open: boolean) => void
   readonly label: string; readonly busy: boolean; readonly disabled: boolean
+  /** The label is a ref's own name, which a right-click copies. */
+  readonly copyable: boolean
   readonly draftWorktree: boolean; readonly startFromOrigin: boolean
   readonly onPick: (ref: GitRef) => Promise<boolean>
   readonly onCreate: (name: string) => Promise<boolean>
@@ -305,6 +324,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
   /** A pull request URL, `#42` or a `gh pr checkout` line typed into the search opens Checkout pull request, as in T3. */
   readonly onCheckoutPullRequest: (reference: string) => void
 }): ReactNode {
+  const { t } = useLingui()
   const [query, setQuery] = useState('')
   const [page, setPage] = useState<GitRefsPage | null>(null)
   const [refs, setRefs] = useState<GitRef[]>([])
@@ -324,7 +344,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
   const load = useCallback(async (nextQuery: string, cursor: number | undefined, refresh: boolean): Promise<void> => {
     const bridge = refsBridge()
     const turn = ++generation.current
-    if (!bridge) { setFailure('Branches are unavailable in this window.'); return }
+    if (!bridge) { setFailure(t`Branches are unavailable in this window.`); return }
     setLoading(true); setFailure(null)
     try {
       const result = await bridge({ threadId, ...(nextQuery ? { query: nextQuery } : {}), ...(cursor !== undefined ? { cursor } : {}), limit: PAGE_SIZE, ...(refresh ? { refresh: true } : {}) })
@@ -333,9 +353,9 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
       setRefs(previous => cursor ? [...previous, ...result.refs] : result.refs)
       setLoadedQuery(nextQuery)
     } catch {
-      if (turn === generation.current) setFailure('Could not read the branches. Close and open the picker to try again.')
+      if (turn === generation.current) setFailure(t`Could not read the branches. Close and open the picker to try again.`)
     } finally { if (turn === generation.current) setLoading(false) }
-  }, [threadId])
+  }, [threadId, t])
   useEffect(() => {
     if (!open) { generation.current++; enterPending.current = false; return }
     enterPending.current = false; searchEdited.current = false
@@ -398,18 +418,19 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
   }, [loadedQuery, query, refs, draftWorktree, pullRequestReference, close, choose, onCheckoutPullRequest, onCreate])
   useEffect(() => { if (open && !disabled && enterPending.current && takeEnter()) enterPending.current = false }, [open, disabled, takeEnter])
   const empty = !loading && answered && refs.length === 0 && !canCreate && !pullRequestReference
+  const checkedOutIn = (path: string): string => t({ message: `Checked out in ${path}`, comment: '{path} is the folder of the worktree that has the branch.' })
   const more = page?.nextCursor ?? null
   return <div className="branch-toolbar__picker"
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) onOpenChange(false) }}>
-    <button ref={triggerRef} type="button" className="branch-toolbar__branch tt-focusable" role="combobox" aria-label="Choose branch" title={busy ? 'Switching…' : label} aria-haspopup="listbox" aria-expanded={open}
+    <button ref={triggerRef} type="button" className="branch-toolbar__branch tt-focusable" role="combobox" aria-label={t`Choose branch`} title={busy ? t`Switching…` : label} aria-haspopup="listbox" aria-expanded={open}
       aria-controls={open ? listId : undefined} disabled={disabled} data-busy={busy || undefined} onClick={() => onOpenChange(!open)}
-      onContextMenu={event => { if (!label.startsWith('From ') && label !== 'Select ref') { event.preventDefault(); void onCopy(label) } }}>
-      <GitBranch size={13} aria-hidden="true" /><span>{busy ? 'Switching…' : label}</span><ChevronDown size={12} aria-hidden="true" />
+      onContextMenu={event => { if (copyable) { event.preventDefault(); void onCopy(label) } }}>
+      <GitBranch size={13} aria-hidden="true" /><span>{busy ? t`Switching…` : label}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open ? <div ref={panel} id={panelId} className="branch-toolbar__panel" role="group" aria-label="Branches" style={position ?? undefined}>
+    {open ? <div ref={panel} id={panelId} className="branch-toolbar__panel" role="group" aria-label={t`Branches`} style={position ?? undefined}>
       <div className="branch-toolbar__search"><Search size={14} aria-hidden="true" />
-        <input ref={search} aria-label="Search refs" placeholder="Search refs..." value={query} autoComplete="off" spellCheck={false}
+        <input ref={search} aria-label={t`Search refs`} placeholder={t`Search refs...`} value={query} autoComplete="off" spellCheck={false}
           onChange={event => {
             enterPending.current = false; searchEdited.current = true; generation.current++
             setLoadedQuery(null); setLoading(true); setQuery(event.target.value)
@@ -425,22 +446,22 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
             }
           }} />
       </div>
-      <div ref={list} id={listId} role="listbox" aria-label="Refs" className="branch-toolbar__refs" onKeyDown={event => moveListboxFocus(event, list.current)}
+      <div ref={list} id={listId} role="listbox" aria-label={t`Refs`} className="branch-toolbar__refs" onKeyDown={event => moveListboxFocus(event, list.current)}
         onScroll={event => { const element = event.currentTarget; if (more !== null && !loading && element.scrollTop + element.clientHeight >= element.scrollHeight - 24) void load(query, more, false) }}>
         {pullRequestReference ? <button type="button" role="option" aria-selected={false} className="branch-toolbar__create branch-toolbar__checkout" onClick={checkoutPullRequest}>
-          <GitPullRequestArrow size={14} aria-hidden="true" /><span className="branch-toolbar__ref-name">Checkout pull request</span><small>{pullRequestReference}</small></button> : null}
-        {refs.map(ref => <button type="button" role="option" key={ref.name} aria-selected={ref.current} title={ref.worktreePath ? `Checked out in ${ref.worktreePath}` : ref.name}
+          <GitPullRequestArrow size={14} aria-hidden="true" /><span className="branch-toolbar__ref-name"><Trans>Checkout pull request</Trans></span><small>{pullRequestReference}</small></button> : null}
+        {refs.map(ref => <button type="button" role="option" key={ref.name} aria-selected={ref.current} title={ref.worktreePath ? checkedOutIn(ref.worktreePath) : ref.name}
           onClick={() => void choose(ref)} onContextMenu={event => { event.preventDefault(); void onCopy(ref.name) }}>
           <span className="branch-toolbar__ref-name">{ref.name}</span>
-          <span className="branch-toolbar__badges">{refBadges(ref).map(badge => <small key={badge} data-badge={badge}>{badge}</small>)}</span>
+          <span className="branch-toolbar__badges">{refBadges(ref).map(badge => <small key={badge} data-badge={badge}>{REF_BADGE_WORDS[badge]}</small>)}</span>
         </button>)}
         {canCreate ? <button type="button" role="option" aria-selected={false} className="branch-toolbar__create" onClick={() => { close(true); void onCreate(createName) }}>
-          <span className="branch-toolbar__ref-name">Create new ref “{createName}”</span></button> : null}
+          <span className="branch-toolbar__ref-name"><Trans>Create new ref “{createName}”</Trans></span></button> : null}
       </div>
-      {more !== null ? <button type="button" className="branch-toolbar__more" disabled={loading} onClick={() => void load(query, more, false)}>{loading ? 'Loading…' : 'Show more'}</button> : null}
-      {empty ? <p className="branch-toolbar__empty">{failure ?? (page && !page.isRepository ? 'This folder is not a Git repository.' : query ? 'No refs match.' : 'No branches yet.')}</p> : null}
+      {more !== null ? <button type="button" className="branch-toolbar__more" disabled={loading} onClick={() => void load(query, more, false)}>{loading ? t`Loading…` : t`Show more`}</button> : null}
+      {empty ? <p className="branch-toolbar__empty tt-paragraph">{failure ?? (page && !page.isRepository ? t`This folder is not a Git repository.` : query ? t`No refs match.` : t`No branches yet.`)}</p> : null}
       {failure && !empty ? <p className="branch-toolbar__empty" role="alert">{failure}</p> : null}
-      {draftWorktree ? <label className="branch-toolbar__switch"><input type="checkbox" role="switch" checked={startFromOrigin} onChange={event => onStartFromOrigin(event.target.checked)} />Start from origin<small>{startFromOrigin ? 'Fetches the branch before first send.' : 'Uses the local branch as it is.'}</small></label> : null}
+      {draftWorktree ? <label className="branch-toolbar__switch"><input type="checkbox" role="switch" checked={startFromOrigin} onChange={event => onStartFromOrigin(event.target.checked)} />{t`Start from origin`}<small>{startFromOrigin ? t`Fetches the branch before first send.` : t`Uses the local branch as it is.`}</small></label> : null}
     </div> : null}
   </div>
 }

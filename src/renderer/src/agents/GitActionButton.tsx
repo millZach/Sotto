@@ -1,5 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, FolderGit2, GitBranch, GitCommitHorizontal, GitPullRequestArrow, RefreshCw, Upload, X } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { GitStackedAction } from '../../../shared/gitActions'
@@ -51,6 +53,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
   /** The refusal the notice is showing, so the pane's own error line does not say it twice; null when none. */
   readonly onExplainedError?: ((error: string | null) => void) | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const status = thread.worktree?.git
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [local, setLocal] = useState<GitNotice | null>(null)
@@ -74,10 +77,10 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
     flight.current = true; setInFlight(true); setLocal(null)
     try {
       const result = await command(request)
-      if (!result) setLocal({ tone: 'error', title: 'Action failed', detail: 'Sotto could not confirm this Git command.' })
-      else if (result.error) { if (!onRefused?.(result)) setLocal({ tone: 'error', title: 'Action failed', detail: result.error }) }
+      if (!result) setLocal({ tone: 'error', title: t`Action failed`, detail: t`Sotto could not confirm this Git command.` })
+      else if (result.error) { if (!onRefused?.(result)) setLocal({ tone: 'error', title: t`Action failed`, detail: result.error }) }
       else onDone(result)
-    } catch { setLocal({ tone: 'error', title: 'Action failed', detail: 'Sotto could not confirm this Git command.' }) }
+    } catch { setLocal({ tone: 'error', title: t`Action failed`, detail: t`Sotto could not confirm this Git command.` }) }
     finally { flight.current = false; setInFlight(false) }
   }
   const runAction = (request: ActionRequest): void => {
@@ -95,8 +98,8 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
   const press = (kind: GitQuickKind | 'view_pr'): void => {
     switch (kind) {
       case 'view_pr': openPullRequest(); return
-      case 'pull': void send({ type: 'git-pull', threadId: thread.id }, result => setLocal({ tone: 'success', title: result.notice ?? 'Pulled' })); return
-      case 'init': void send({ type: 'git-init', threadId: thread.id }, result => setLocal({ tone: 'success', title: result.notice ?? 'Git initialized.' })); return
+      case 'pull': void send({ type: 'git-pull', threadId: thread.id }, result => setLocal({ tone: 'success', title: result.notice ?? t({ message: 'Pulled', comment: 'A Git pull finished.' }) })); return
+      case 'init': void send({ type: 'git-init', threadId: thread.id }, result => setLocal({ tone: 'success', title: result.notice ?? t`Git initialized.` })); return
       case 'publish': setDialog({ kind: 'publish' }); return
       case 'sync': return
       default: {
@@ -126,7 +129,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
         <span className="git-action__label">{quick.label}</span>
         {quick.hint ? <span className="tt-visually-hidden">. {quick.hint}</span> : null}
       </button>
-      {menu.length > 0 ? <PaneMenu groups={[menu]} label="More Git actions" className="git-action__more" icon={<ChevronDown size={14} aria-hidden="true" />} /> : null}
+      {menu.length > 0 ? <PaneMenu groups={[menu]} label={t`More Git actions`} className="git-action__more" icon={<ChevronDown size={14} aria-hidden="true" />} /> : null}
     </div> : null}
     {noticeSlot && notice ? createPortal(notice, noticeSlot) : notice}
     {dialog?.kind === 'commit' && status ? <CommitDialog threadId={thread.id} status={status} action={dialog.action} onCancel={() => setDialog(null)}
@@ -135,12 +138,13 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
       onPush={() => { const request = dialog.request; setDialog(null); runAction({ ...request, allowDefaultBranch: true }) }}
       onFeatureBranch={() => { const request = dialog.request; setDialog(null); runAction({ ...request, featureBranch: true }) }} /> : null}
     {dialog?.kind === 'publish' ? <PublishDialog onCancel={() => setDialog(null)}
-      onPublish={(repository, visibility) => { setDialog(null); void send({ type: 'git-publish', threadId: thread.id, repository, visibility }, result => setLocal({ tone: 'success', title: result.notice ?? 'Repository published.' })) }} /> : null}
+      onPublish={(repository, visibility) => { setDialog(null); void send({ type: 'git-publish', threadId: thread.id, repository, visibility }, result => setLocal({ tone: 'success', title: result.notice ?? t`Repository published.` })) }} /> : null}
   </>
 }
 
 /** The notice above the composer: the stage as it runs, then T3's toast with its next step, or the failure in the host's words. */
 function GitActionNotice({ notice, running, onDismiss, onRun }: { readonly notice: GitNotice; readonly running: boolean; readonly onDismiss: () => void; readonly onRun: (action: GitStackedAction) => void }): ReactNode {
+  const { t } = useLingui()
   const cta = notice.cta
   return <div className="git-action-notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}
     onKeyDown={event => { if (event.key === 'Escape' && notice.tone !== 'progress') { event.stopPropagation(); onDismiss() } }}>
@@ -148,7 +152,7 @@ function GitActionNotice({ notice, running, onDismiss, onRun }: { readonly notic
     <p><strong>{notice.title}</strong>{notice.detail ? <> {notice.detail}</> : null}</p>
     {cta?.kind === 'open_pr' ? <Button variant="secondary" onClick={() => void window.sotto?.openExternalLink?.(cta.url)}>{cta.label}</Button> : null}
     {cta?.kind === 'run_action' ? <Button variant="secondary" disabled={running} onClick={() => onRun(cta.action)}>{cta.label}</Button> : null}
-    {notice.tone !== 'progress' ? <button type="button" className="git-action-notice__dismiss tt-focusable" aria-label="Dismiss the Git notice" onClick={onDismiss}><X size={14} aria-hidden="true" /></button> : null}
+    {notice.tone !== 'progress' ? <button type="button" className="git-action-notice__dismiss tt-focusable" aria-label={t`Dismiss the Git notice`} onClick={onDismiss}><X size={14} aria-hidden="true" /></button> : null}
   </div>
 }
 
@@ -161,6 +165,7 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
   readonly threadId: string; readonly status: GitStatus; readonly action: GitStackedAction
   readonly onCancel: () => void; readonly onCommit: (request: ActionRequest) => void
 }): ReactNode {
+  const { t } = useLingui()
   const [files, setFiles] = useState<GitChangedFiles | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set())
@@ -177,49 +182,56 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
   useEffect(() => {
     let live = true
     const read = changedFilesBridge()
-    if (!read) { setFailure('Changed files are not available in this window.'); return }
-    read({ threadId }).then(listed => { if (live) setFiles(listed) }, () => { if (live) setFailure('The changed files could not be read.') })
+    if (!read) { setFailure(t`Changed files are not available in this window.`); return }
+    read({ threadId }).then(listed => { if (live) setFiles(listed) }, () => { if (live) setFailure(t`The changed files could not be read.`) })
     return () => { live = false }
-  }, [threadId])
+  }, [threadId, t])
   const listed = files?.files ?? []
   const included = listed.filter(file => !excluded.has(file.path))
   const submit = (featureBranch: boolean): void => {
-    if (files && listed.length > 0 && included.length === 0) { setRefusal('Choose at least one file to commit.'); return }
+    if (files && listed.length > 0 && included.length === 0) { setRefusal(t`Choose at least one file to commit.`); return }
     const trimmed = message.trim()
     onCommit({ action, ...(trimmed ? { commitMessage: trimmed } : {}), ...(excluded.size > 0 ? { filePaths: included.map(file => file.path) } : {}), ...(featureBranch ? { featureBranch: true } : {}) })
   }
   const toggle = (file: GitChangedFile): void => setExcluded(current => { const next = new Set(current); if (next.has(file.path)) next.delete(file.path); else next.add(file.path); return next })
   const nothing = files !== null && listed.length === 0
+  const shownCount = included.length, total = listed.length
+  const filesLine = files === null ? '' : excluded.size > 0
+    ? files.truncated
+      ? plural(shownCount, { one: `# file of ${total} (more than Sotto lists)`, other: `# files of ${total} (more than Sotto lists)` })
+      : plural(shownCount, { one: `# file of ${total}`, other: `# files of ${total}` })
+    : files.truncated ? plural(shownCount, { one: '# file (more than Sotto lists)', other: '# files (more than Sotto lists)' }) : fileCount(shownCount)
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog commit-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <h2 id={titleId}>Commit changes</h2>
-      <p className="commit-dialog__branch"><GitBranch size={14} aria-hidden="true" /><span>{status.branch ?? 'Detached HEAD'}</span>{status.isDefaultBranch ? <span className="commit-dialog__tag">Default branch</span> : null}</p>
+      <h2 id={titleId}><Trans>Commit changes</Trans></h2>
+      <p className="commit-dialog__branch"><GitBranch size={14} aria-hidden="true" /><span>{status.branch ?? t({ message: 'Detached HEAD', comment: 'Git\'s name for a checkout on no branch.' })}</span>{status.isDefaultBranch ? <span className="commit-dialog__tag"><Trans>Default branch</Trans></span> : null}</p>
       <div className="commit-dialog__files">
         <div className="commit-dialog__files-head">
-          <span>{files ? `${fileCount(included.length)}${excluded.size > 0 ? ` of ${listed.length}` : ''}${files.truncated ? ' (more than Sotto lists)' : ''}` : failure ? 'Changed files' : 'Reading changes…'}</span>
-          {listed.length > 0 ? <button type="button" className="commit-dialog__edit tt-focusable" onClick={() => setEditing(value => !value)}>{editing ? 'Done' : 'Edit'}</button> : null}
+          <span>{files ? filesLine : failure ? t`Changed files` : t`Reading changes…`}</span>
+          {listed.length > 0 ? <button type="button" className="commit-dialog__edit tt-focusable" onClick={() => setEditing(value => !value)}>{editing ? t({ message: 'Done', comment: 'Finish choosing which files to commit.' }) : t({ message: 'Edit', comment: 'Choose which files to commit.' })}</button> : null}
         </div>
         {failure ? <p className="commit-dialog__note" role="alert">{failure}</p> : null}
-        {nothing ? <p className="commit-dialog__note">No changes to commit.</p> : null}
-        {listed.length > 0 ? <ul className="commit-dialog__list" aria-label="Changed files">{listed.map(file => {
+        {nothing ? <p className="commit-dialog__note tt-paragraph"><Trans>No changes to commit.</Trans></p> : null}
+        {listed.length > 0 ? <ul className="commit-dialog__list" aria-label={t`Changed files`}>{listed.map(file => {
           const counts = lineCounts(file)
           const { letter, label } = STATUS_LETTER[file.status]
           const out = excluded.has(file.path)
+          const path = file.path, added = file.insertions, removed = file.deletions
           return <li key={file.path} data-excluded={out || undefined}>
-            {editing ? <input type="checkbox" className="tt-focusable" checked={!out} aria-label={`Include ${file.path}`} onChange={() => toggle(file)} /> : null}
+            {editing ? <input type="checkbox" className="tt-focusable" checked={!out} aria-label={t({ message: `Include ${path}`, comment: '{path} is a changed file\'s path.' })} onChange={() => toggle(file)} /> : null}
             <span className="commit-dialog__badge" data-status={file.status} role="img" aria-label={label} title={label}>{letter}</span>
             <span className="commit-dialog__path" dir="auto">{file.path}</span>
-            {counts ? <span className="commit-dialog__counts" aria-label={`${file.insertions} added, ${file.deletions} removed`}>{counts}</span> : null}
+            {counts ? <span className="commit-dialog__counts" aria-label={t({ message: `${added} added, ${removed} removed`, comment: 'Lines added to and removed from a changed file.' })}>{counts}</span> : null}
           </li>
         })}</ul> : null}
       </div>
-      <label className="commit-dialog__message" htmlFor={messageId}>Commit message (optional)</label>
-      <textarea ref={messageField} id={messageId} className="tt-focusable" rows={3} value={message} maxLength={10_000} placeholder="Leave empty to auto-generate"
+      <label className="commit-dialog__message" htmlFor={messageId}><Trans>Commit message (optional)</Trans></label>
+      <textarea ref={messageField} id={messageId} className="tt-focusable" rows={3} value={message} maxLength={10_000} placeholder={t`Leave empty to auto-generate`}
         onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (submitChord && chordMatches(event, submitChord, platform)) { event.preventDefault(); submit(false) } }} />
       {refusal ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{refusal}</div> : null}
       <div className="tt-dialog__actions commit-dialog__actions">
-        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button variant="secondary" disabled={nothing || failure !== null} onClick={() => submit(true)}>Commit on new branch</Button>
+        <Button variant="secondary" onClick={onCancel}><Trans>Cancel</Trans></Button>
+        <Button variant="secondary" disabled={nothing || failure !== null} onClick={() => submit(true)}><Trans>Commit on new branch</Trans></Button>
         <Button variant="primary" disabled={nothing || failure !== null} onClick={() => submit(false)}>{commitLabel(action)}</Button>
       </div>
     </section>
@@ -230,17 +242,18 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
 function DefaultBranchDialog({ status, request, onCancel, onPush, onFeatureBranch }: {
   readonly status: GitStatus; readonly request: ActionRequest; readonly onCancel: () => void; readonly onPush: () => void; readonly onFeatureBranch: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const abort = useRef<HTMLButtonElement>(null)
   const dialog = useDialogFocus({ onEscape: onCancel, initialFocus: abort })
   const titleId = useId(), descriptionId = useId()
-  const words = defaultBranchQuestion(request.action, status.branch ?? status.defaultBranch ?? 'the default branch')
+  const words = defaultBranchQuestion(request.action, status.branch ?? status.defaultBranch ?? t({ message: 'the default branch', comment: 'Stands for a branch\'s name when Git gives none.' }))
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog default-branch-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
       <h2 id={titleId}>{words.title}</h2>
       <div id={descriptionId} className="tt-dialog__description">{words.description}</div>
       <div className="tt-dialog__actions default-branch-dialog__actions">
-        <Button ref={abort} variant="secondary" onClick={onCancel}>Abort</Button>
-        <Button variant="secondary" onClick={onFeatureBranch}>Check out feature branch & continue</Button>
+        <Button ref={abort} variant="secondary" onClick={onCancel}><Trans>Abort</Trans></Button>
+        <Button variant="secondary" onClick={onFeatureBranch}><Trans>Check out feature branch &amp; continue</Trans></Button>
         <Button variant="primary" onClick={onPush}>{words.confirm}</Button>
       </div>
     </section>
@@ -249,6 +262,7 @@ function DefaultBranchDialog({ status, request, onCancel, onPush, onFeatureBranc
 
 /** Publish repository: the GitHub name and its visibility, nothing else (ADR-0027). */
 function PublishDialog({ onCancel, onPublish }: { readonly onCancel: () => void; readonly onPublish: (repository: string, visibility: 'private' | 'public') => void }): ReactNode {
+  const { t } = useLingui()
   const [repository, setRepository] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -257,25 +271,25 @@ function PublishDialog({ onCancel, onPublish }: { readonly onCancel: () => void;
   const titleId = useId(), fieldId = useId()
   const submit = (): void => {
     const name = repository.trim()
-    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9_.-]+$/u.test(name)) { setRefusal('Name the repository as owner/name.'); return }
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9_.-]+$/u.test(name)) { setRefusal(t`Name the repository as owner/name.`); return }
     onPublish(name, visibility)
   }
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog publish-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <h2 id={titleId}>Publish repository</h2>
-      <div className="tt-dialog__description">Creates the repository on GitHub through the gh command and your own sign-in, adds it as origin, and pushes the current branch.</div>
+      <h2 id={titleId}><Trans>Publish repository</Trans></h2>
+      <div className="tt-dialog__description"><Trans>Creates the repository on GitHub through the gh command and your own sign-in, adds it as origin, and pushes the current branch.</Trans></div>
       <form onSubmit={event => { event.preventDefault(); submit() }}>
-        <label htmlFor={fieldId}>Repository</label>
-        <input ref={field} id={fieldId} className="tt-focusable" value={repository} placeholder="owner/name" maxLength={200} autoComplete="off" spellCheck={false} onChange={event => { setRepository(event.target.value); setRefusal(null) }} />
+        <label htmlFor={fieldId}><Trans>Repository</Trans></label>
+        <input ref={field} id={fieldId} className="tt-focusable" value={repository} placeholder={t({ message: 'owner/name', comment: 'The form a GitHub repository name takes.' })} maxLength={200} autoComplete="off" spellCheck={false} onChange={event => { setRepository(event.target.value); setRefusal(null) }} />
         <fieldset className="publish-dialog__visibility">
-          <legend>Visibility</legend>
-          <label><input type="radio" name="visibility" value="private" checked={visibility === 'private'} onChange={() => setVisibility('private')} /> Private</label>
-          <label><input type="radio" name="visibility" value="public" checked={visibility === 'public'} onChange={() => setVisibility('public')} /> Public</label>
+          <legend><Trans>Visibility</Trans></legend>
+          <label><input type="radio" name="visibility" value="private" checked={visibility === 'private'} onChange={() => setVisibility('private')} /> <Trans>Private</Trans></label>
+          <label><input type="radio" name="visibility" value="public" checked={visibility === 'public'} onChange={() => setVisibility('public')} /> <Trans>Public</Trans></label>
         </fieldset>
         {refusal ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{refusal}</div> : null}
         <div className="tt-dialog__actions">
-          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" type="submit">Publish</Button>
+          <Button variant="secondary" onClick={onCancel}><Trans>Cancel</Trans></Button>
+          <Button variant="primary" type="submit"><Trans>Publish</Trans></Button>
         </div>
       </form>
     </section>

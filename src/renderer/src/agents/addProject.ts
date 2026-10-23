@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, hostForThread, isSubscriptionReasoning, PROJECT_FOLDER_MISSING, type AgentState } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
@@ -19,6 +20,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
 } = {}): {
   readonly add: () => Promise<void>; readonly adding: boolean; readonly error: string | null; readonly clearError: () => void; readonly dialog: ReactNode
 } {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,7 +61,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       const existing = projectAtFolder(current.host.projects, choice.hostId, choice.path)
       if (existing) {
         const result = await command({ type: 'select-project', projectId: existing.id })
-        if (result === null || result.error !== null) { setDialogError(result?.error ?? 'Could not open the project. Nothing was changed. Try again.'); return }
+        if (result === null || result.error !== null) { setDialogError(result?.error ?? t`Could not open the project. Nothing was changed. Try again.`); return }
         setOpen(false); setAdded({ projectId: existing.id, before: latest.current }); return
       }
       const host = hostForThread(current.host, { hostId: choice.hostId })
@@ -77,15 +79,15 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       let result = await send(asNew)
       if (checking && result?.error === PROJECT_FOLDER_MISSING) { asNew = true; result = await send(true) }
       if (asNew && result !== null) unansweredNew.current.delete(unanswered)
-      if (result === null || result.error !== null) { setDialogError(result?.error ?? 'Could not confirm the new project. Choose the folder again to check; it will not be added twice.'); return }
+      if (result === null || result.error !== null) { setDialogError(result?.error ?? t`Could not confirm the new project. Choose the folder again to check; it will not be added twice.`); return }
       setOpen(false)
       const project = projectAtFolder(result.host.projects, choice.hostId, choice.path)
       if (project) setAdded({ projectId: project.id, before: latest.current })
-    } catch { setDialogError('Could not add the project. Nothing was changed. Try again.') }
+    } catch { setDialogError(t`Could not add the project. Nothing was changed. Try again.`) }
     finally { setAdding(false) }
   }
   const dialog = open ? React.createElement(FolderBrowserDialog, {
-    state, hostId: options.hostId, heading: 'Where should this project live?', busy: adding, error: dialogError,
+    state, hostId: options.hostId, heading: t`Where should this project live?`, busy: adding, error: dialogError,
     onUse: choice => { void use(choice) }, onClose: () => { if (!adding) setOpen(false) },
   }) : null
   return { add, adding, error, clearError: () => setError(null), dialog }

@@ -1,6 +1,9 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
 import { Button } from '../components/Button'
@@ -24,6 +27,7 @@ import { isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { useRepliesKeptInView, WatcherAfterMessage } from '../watcher/WatcherReceipts'
@@ -49,8 +53,12 @@ export const TRANSCRIPT_PAGE = 80
 /** Within this many pixels of the end, the reader is following the conversation. */
 const FOLLOW_SLACK_PX = 48
 
-const STATUS_LABELS: Record<SubmissionStatus, string> = {
-  queued: 'Queued', submitting: 'Sending', accepted: 'Sent', failed: 'Not sent', uncertain: 'Unconfirmed',
+const STATUS_LABELS: Record<SubmissionStatus, MessageDescriptor> = {
+  queued: msg({ message: 'Queued', comment: 'A sent message\'s delivery status.' }),
+  submitting: msg({ message: 'Sending', comment: 'A sent message\'s delivery status.' }),
+  accepted: msg({ message: 'Sent', comment: 'A sent message\'s delivery status.' }),
+  failed: msg({ message: 'Not sent', comment: 'A sent message\'s delivery status.' }),
+  uncertain: msg({ message: 'Unconfirmed', comment: 'A sent message\'s delivery status: Sotto does not know whether the provider took it.' }),
 }
 
 export interface ActivityContext {
@@ -115,6 +123,7 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
   readonly onDisclosure: (element: HTMLElement) => void; readonly onSeek?: ((message: HTMLElement) => void) | undefined
   readonly lifted: readonly LiftedReply[]; readonly who: string; readonly children: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const body = useRef<HTMLDivElement>(null)
   const bodyId = useId()
@@ -144,10 +153,10 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
       const time = clockLabel(Date.parse(message.createdAt))
       const more = questions.length - MOST_LIFTED
       return <section key={message.id} className="thread-lifted" aria-labelledby={`${liftedId}-${message.id}`}>
-        <p className="thread-lifted__who" id={`${liftedId}-${message.id}`}>{who} asked while working · <time dateTime={message.createdAt}>{time}</time></p>
+        <p className="thread-lifted__who" id={`${liftedId}-${message.id}`}><Trans comment="{who} is the provider or Watcher; the time follows.">{who} asked while working · <time dateTime={message.createdAt}>{time}</time></Trans></p>
         <blockquote className="thread-lifted__questions">{questions.slice(0, MOST_LIFTED).map(question => <p key={question}><QuestionWords text={question} /></p>)}</blockquote>
-        {more > 0 ? <p className="thread-lifted__more">{more === 1 ? 'One more question in that reply.' : `${more} more questions in that reply.`}</p> : null}
-        <button type="button" className="thread-lifted__where tt-focusable" aria-label={`Show where it asked, at ${time}`} onClick={() => seek(message.id)}>Show where it asked</button>
+        {more > 0 ? <p className="thread-lifted__more tt-paragraph">{plural(more, { one: 'One more question in that reply.', other: '# more questions in that reply.' })}</p> : null}
+        <button type="button" className="thread-lifted__where tt-focusable" aria-label={t`Show where it asked, at ${time}`} onClick={() => seek(message.id)}>{t`Show where it asked`}</button>
       </section>
     })}
   </>
@@ -187,23 +196,25 @@ function MessageCopy({ message, article }: { readonly message: AgentMessage; rea
   const [feedback, showFeedback] = useTransientFlag()
   const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number } | null>(null)
   const button = useRef<HTMLButtonElement>(null)
+  const { t } = useLingui()
   const reply = message.role === 'assistant'
-  const name = reply ? 'Copy reply as Markdown' : 'Copy message as Markdown'
-  const copied = feedback !== null && feedback !== 'Copy failed'
+  const name = reply ? t`Copy reply as Markdown` : t`Copy message as Markdown`
+  const copyFailed = t`Copy failed`
+  const copied = feedback !== null && feedback !== copyFailed
   const copy = (format: 'markdown' | 'plain'): void => {
     const rendered = article.current?.querySelector('.rich-message')
     const text = format === 'markdown' || !rendered ? message.text : renderedPlainText(rendered)
     void writeClipboard(text).then(
-      () => showFeedback(format === 'markdown' ? `Copied ${reply ? 'reply' : 'message'} as Markdown` : 'Copied as plain text'),
-      () => showFeedback('Copy failed'))
+      () => showFeedback(format === 'markdown' ? reply ? t`Copied reply as Markdown` : t`Copied message as Markdown` : t`Copied as plain text`),
+      () => showFeedback(copyFailed))
   }
   const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
     const rect = button.current?.getBoundingClientRect()
     setMenuAt(point ?? { x: rect?.left ?? 0, y: (rect?.bottom ?? 0) + 4 })
   }
   const menuItems: LinkMenuItem[] = [
-    { id: 'markdown', label: 'Copy as Markdown', run: () => copy('markdown') },
-    { id: 'plain', label: 'Copy as plain text', run: () => copy('plain') },
+    { id: 'markdown', label: t`Copy as Markdown`, run: () => copy('markdown') },
+    { id: 'plain', label: t`Copy as plain text`, run: () => copy('plain') },
   ]
   return <>
     <button type="button" ref={button} className="thread-message__copy tt-focusable" aria-label={name} title={name}
@@ -220,10 +231,10 @@ function MessageCopy({ message, article }: { readonly message: AgentMessage; rea
         openMenu(null)
       }}>
       {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
-      {feedback ? <span className="thread-message__copy-label">{copied ? 'Copied' : feedback}</span> : null}
+      {feedback ? <span className="thread-message__copy-label">{copied ? t`Copied` : feedback}</span> : null}
     </button>
     <span className="tt-visually-hidden" role="status" aria-live="polite">{feedback}</span>
-    {menuAt ? <LinkMenu at={menuAt} label="Copy options" items={menuItems} returnFocus={button.current} onClose={() => setMenuAt(null)} /> : null}
+    {menuAt ? <LinkMenu at={menuAt} label={t`Copy options`} items={menuItems} returnFocus={button.current} onClose={() => setMenuAt(null)} /> : null}
   </>
 }
 
@@ -232,8 +243,11 @@ function MessageCopy({ message, article }: { readonly message: AgentMessage; rea
  * (ADR-0076); the text is read only once the host's own record has made the message Sotto's.
  */
 function WakeUpWho({ text }: { readonly text: string }): ReactNode {
+  const { t } = useLingui()
   const resumed = useOwlFeature('resume-after-restart') && isResumeNoteText(text)
-  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{resumed ? 'Resumed' : 'Wake-up'}</span></>
+  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{resumed
+    ? t({ message: 'Resumed', comment: 'The tag on a message Sotto sent to resume a thread after a restart.' })
+    : t({ message: 'Wake-up', comment: 'The tag on a message Sotto sent to wake a thread.' })}</span></>
 }
 
 /**
@@ -258,6 +272,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly workGroups?: readonly ActivityGroup[] | undefined
   readonly activity?: ActivityContext | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const article = useRef<HTMLElement>(null)
   const workButton = useRef<HTMLButtonElement>(null)
   const [workOpen, setWorkOpen] = useState(false)
@@ -288,8 +303,8 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}
     data-not-carried={fork?.after.has(message.id) || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
-      : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
-      : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
+      : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>{t({ message: 'delegated', comment: 'Follows the name of the thread that sent this brief: that thread delegated it.' })}</span></>
+      : <span className="thread-message__who">{message.role === 'user' ? t({ message: 'You', comment: 'Who wrote a message: the user.' }) : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : t({ message: 'System', comment: 'Who wrote a message: the system.' })}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
       {work ? <button type="button" ref={workButton} className="thread-message__work tt-focusable" aria-expanded={workOpen} aria-controls={workOpen ? workId : undefined}
         onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(open => !open) }}>
@@ -299,7 +314,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     {work && workOpen && activity ? <div id={workId} className="thread-message__work-body">
       <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
     {writing && !streamText
-      ? <p className="thread-message__writing" role="status">Writing a reply…</p>
+      ? <p className="thread-message__writing tt-paragraph" role="status">{t`Writing a reply…`}</p>
       : <MessageContent text={markdown} streaming={writing} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
@@ -328,6 +343,8 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   /** The threads that continue this one, made while this turn was the newest (ADR-0089), as notes under it. */
   readonly continuedIn?: readonly ThreadContinuedIn[] | undefined
 }): ReactNode {
+  // Its work lines are worded by helpers, so it draws again when the interface language changes.
+  useInterfaceLanguageState()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
@@ -482,6 +499,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   readonly draftId: string; readonly submission?: Submission; readonly status: SubmissionStatus; readonly row: ThreadRow
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
 }): ReactNode {
+  const { t } = useLingui()
   const { draft } = useThreadComposer(store, row.thread.id)
   const watchActions = useWatchActions()
   const [settingAside, setSettingAside] = useState(false)
@@ -496,7 +514,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   const messageId = receipt?.messageId
   const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
   if (submission !== undefined && inHistory && (status === 'queued' || status === 'submitting')) return null
-  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{setAside ? 'Set aside · Unconfirmed' : STATUS_LABELS[status]}</span>
+  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{setAside ? t`Set aside · Unconfirmed` : t(STATUS_LABELS[status])}</span>
   const unresolved = !setAside && (status === 'uncertain' || submission === undefined && deliveryPending(status))
   const continueWithNewMessage = async (button: HTMLButtonElement): Promise<void> => {
     if (settingAside) return
@@ -506,16 +524,22 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
       const result = await command({ type: 'set-aside-send', threadId: row.thread.id, draftId })
       const delivery = result && deliveryFor(result, row.thread.id, draftId)
       if (!delivery?.setAside && delivery?.status !== 'accepted') {
-        setRecoveryError(result?.error ?? 'Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.')
+        setRecoveryError(result?.error ?? t`Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.`)
       } else composer?.focus()
     } catch {
-      setRecoveryError('Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.')
+      setRecoveryError(t`Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.`)
     } finally { setSettingAside(false) }
   }
   // Only the header's Reconnect acts on a disconnected provider; Check again needs a connection.
-  const detail = setAside ? 'Its delivery is still unknown. Sotto has not sent it again.'
-    : status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${submission === undefined ? '' : restored ? ' It is back in the composer.' : hasDraftContent(draft) ? ' Restoring it replaces the draft in the composer.' : ''}`
-      : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
+  const refusal = submission?.error ?? t`The provider did not take this prompt.`
+  const lastPrompt = submission === undefined && !inHistory
+  const detail = setAside ? t`Its delivery is still unknown. Sotto has not sent it again.`
+    : status === 'failed' ? submission === undefined ? refusal
+      : restored ? t({ message: `${refusal} It is back in the composer.`, comment: '{refusal} is why the prompt was not sent.' })
+        : hasDraftContent(draft) ? t({ message: `${refusal} Restoring it replaces the draft in the composer.`, comment: '{refusal} is why the prompt was not sent.' }) : refusal
+      : unresolved ? row.connected
+        ? lastPrompt ? t`Sotto will not send your last prompt twice.` : t`Sotto will not send it twice.`
+        : lastPrompt ? t`Sotto will not send your last prompt twice. Reconnect to check it.` : t`Sotto will not send it twice. Reconnect to check it.`
         : null
   // Before the send receipt supplies its refusal, the pane announces the shell's error.
   const announcesFailure = status === 'failed' && (state.error === null || submission?.error != null)
@@ -525,24 +549,24 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
       {status === 'failed' && submission !== undefined ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)}
         onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)
           // A first send retried still carries the Watch pressed on its composer.
-          .then(sent => watchAfterSend(row.thread.id, sent, submission.mode, row.thread.nativeSessionStarted === false, watchActions))}>Retry</Button> : null}
-      {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>Restore prompt</Button> : null}
+          .then(sent => watchAfterSend(row.thread.id, sent, submission.mode, row.thread.nativeSessionStarted === false, watchActions))}>{t`Retry`}</Button> : null}
+      {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>{t`Restore prompt`}</Button> : null}
       {/* Checking again refreshes the provider, which is global-lane work. */}
-      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy || settingAside} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy || settingAside} onClick={() => void command({ type: 'refresh', ...provider })}>{t`Check again`}</Button> : null}
       {status === 'uncertain' && !setAside && local && row.connected ? <Button variant="secondary" disabled={settingAside || isThreadBusy(state, row.thread.id)}
-        aria-busy={settingAside || undefined} onClick={event => void continueWithNewMessage(event.currentTarget)}>Continue with a new message</Button> : null}
-      {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
+        aria-busy={settingAside || undefined} onClick={event => void continueWithNewMessage(event.currentTarget)}>{t`Continue with a new message`}</Button> : null}
+      {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>{t`Dismiss`}</Button> : null}
     </div>
-    {status === 'uncertain' && !setAside && local ? <span>The provider may have received it. Continuing sets it aside without resending it.</span> : null}
+    {status === 'uncertain' && !setAside && local ? <span>{t`The provider may have received it. Continuing sets it aside without resending it.`}</span> : null}
     {recoveryError && !setAside && status !== 'accepted' ? <span role="alert">{recoveryError}</span> : null}
   </div>
   // With no prompt text to show (already in the history, or recovered after a restart),
   // the state is a compact line under the conversation rather than an empty second bubble.
   if (inHistory || submission === undefined) {
-    return <div className="thread-delivery" role="group" aria-label="Pending message" data-status={status} data-in-history={inHistory || undefined}>{label}{delivery}</div>
+    return <div className="thread-delivery" role="group" aria-label={t`Pending message`} data-status={status} data-in-history={inHistory || undefined}>{label}{delivery}</div>
   }
-  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label="Pending message">
-    <header><span className="thread-message__who">You</span>{label}</header>
+  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label={t`Pending message`}>
+    <header><span className="thread-message__who">{t({ message: 'You', comment: 'Who wrote a message: the user.' })}</span>{label}</header>
     <MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} />
     {delivery}
   </article>
@@ -580,6 +604,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   /** The inline request, rendered after the newest message. */
   readonly children?: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const thread = row.thread
   const streamText = useAgents().responseStreaming !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
@@ -633,7 +658,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
   const delegationCards = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
   const cardWorld = useDelegationCardWorld(state, command)
-  const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? 'The thread that delegated'
+  const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? t`The thread that delegated`
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
@@ -668,17 +693,17 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const forkBusy = thread.status === 'running'
   const forkOptions = useMemo<ForkOptions | null>(() => forkModels === undefined || thread.providerId === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : {
     threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
-    where: thread.remoteHost ? thread.hostLabel ?? 'The host' : 'This computer', models: forkModels, modelId: thread.modelId, command,
+    where: thread.remoteHost ? thread.hostLabel ?? t`The host` : t`This computer`, models: forkModels, modelId: thread.modelId, command,
     ...(forkRepository ? { sourceBranch: { currentBranch: forkBranch } } : {}),
     workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions,
     openAt: forkAt, open: setForkAt, after: forkAfter, busy: forkBusy },
-  [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy])
+  [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy, t])
   // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
   const continueOn = useContinueEnabled() && !watcher
   const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))
   const threads = state.host.threads
   const continueLinks = useMemo<ContinueLinks>(() => ({ threads, open: threadId => { void command({ type: 'select-thread', threadId }) } }), [threads, command])
-  const handoverSource = continueOn && thread.continuedFrom ? threads.find(item => item.id === thread.continuedFrom!.threadId)?.title ?? 'a thread that is no longer listed' : undefined
+  const handoverSource = continueOn && thread.continuedFrom ? threads.find(item => item.id === thread.continuedFrom!.threadId)?.title ?? t`a thread that is no longer listed` : undefined
   const handoverFrom = useMemo(() => handoverSource === undefined ? null : { title: handoverSource }, [handoverSource])
   const pendingKey = [...sending.map(item => `${item.item.draftId}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
@@ -836,15 +861,15 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
-      aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
+      aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" ref={content}>
-        {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
-        {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
+        {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
+        {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
-          ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>
+          ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}><Trans>Show earlier messages ({hidden})</Trans></Button></div>
           /* Everything the window holds is on screen, and the thread store still has older messages. */
           : thread.earlierAvailable
-            ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>Show earlier messages</Button></div>
+            ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>{t`Show earlier messages`}</Button></div>
             : null}
         {/* Where this thread continues from, above its first message (ADR-0089; Owl only). */}
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
@@ -857,7 +882,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote
-              : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
+              : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? t`Compacting the context.` : thread.status === 'running' ? t`The agent is working.` : t`What is next for this thread?`}</h3><p className="tt-paragraph">{thread.status === 'running' ? t`New messages will appear here.` : t`Write a prompt below to continue.`}</p></div>}
         {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} sendingSince={sendingSince} />
@@ -868,7 +893,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {(away || unseen) && !requestUnderJump ? <button type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
-      <ArrowDown size={16} aria-hidden="true" />{unseen ? 'New messages' : 'Jump to latest'}
+      <ArrowDown size={16} aria-hidden="true" />{unseen ? t`New messages` : t`Jump to latest`}
     </button> : null}
   </div>
 }

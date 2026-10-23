@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Check, CircleAlert, CodeXml, Copy, Maximize2 } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import { useTransientFlag, writeClipboard } from '../richActions'
 import { DiagramViewer } from './DiagramViewer'
 import { CrossFadeImage, DiagramImage } from './DiagramImage'
@@ -25,6 +26,7 @@ export interface FrameControls {
 }
 
 export function useFrameControls(source: string): FrameControls {
+  const { t } = useLingui()
   const [showSource, setShowSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [feedback, showFeedback] = useTransientFlag()
@@ -33,7 +35,7 @@ export function useFrameControls(source: string): FrameControls {
     source, showSource, expanded, feedback, expandButton,
     toggleSource: () => setShowSource(value => !value),
     expand: () => setExpanded(true),
-    copy: () => { void writeClipboard(source).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) },
+    copy: () => { void writeClipboard(source).then(() => showFeedback(t`Copied`), () => showFeedback(t`Copy failed`)) },
     close: () => {
       setExpanded(false)
       requestAnimationFrame(() => expandButton.current?.focus())
@@ -81,14 +83,16 @@ export function VisualCopyStatus({ frame }: { readonly frame: Pick<FrameControls
 export function VisualActions({ frame, showing, shownTitle, copyLabel, expandLabel }: {
   readonly frame: FrameControls; readonly showing: boolean; readonly shownTitle: string; readonly copyLabel: string; readonly expandLabel: string
 }): ReactNode {
+  const { t } = useLingui()
   const drawn = showing
+  const copied = frame.feedback === t`Copied`
   return <>
-    {drawn && <button type="button" className="rich-code__copy tt-focusable" aria-pressed={frame.showSource} aria-label="Show source" title={frame.showSource ? shownTitle : 'Show source'}
+    {drawn && <button type="button" className="rich-code__copy tt-focusable" aria-pressed={frame.showSource} aria-label={t`Show source`} title={frame.showSource ? shownTitle : t`Show source`}
       onClick={frame.toggleSource}><CodeXml size={16} aria-hidden="true" /></button>}
-    <button type="button" className="rich-code__copy tt-focusable" data-copied={frame.feedback === 'Copied' || undefined} aria-label={copyLabel} title="Copy source" onClick={frame.copy}>
-      {frame.feedback === 'Copied' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+    <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-label={copyLabel} title={t`Copy source`} onClick={frame.copy}>
+      {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
     </button>
-    {drawn && <button ref={frame.expandButton} type="button" className="rich-code__copy tt-focusable" aria-label={expandLabel} title="Expand" aria-haspopup="dialog"
+    {drawn && <button ref={frame.expandButton} type="button" className="rich-code__copy tt-focusable" aria-label={expandLabel} title={t({ message: 'Expand', comment: 'Shows a diagram or page large, over the window.' })} aria-haspopup="dialog"
       onClick={frame.expand}><Maximize2 size={15} aria-hidden="true" /></button>}
   </>
 }

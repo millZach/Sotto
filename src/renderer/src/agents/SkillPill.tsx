@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { WandSparkles } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import './skillPill.css'
 
 export interface SkillPillProps {
@@ -26,6 +27,7 @@ const EDGE = 8
  * owns where it sits; this owns how it looks.
  */
 export function SkillPill({ name, token, description, scope }: SkillPillProps): ReactNode {
+  const { t } = useLingui()
   const [pill, setPill] = useState<HTMLSpanElement | null>(null)
   const [hovered, setHovered] = useState(false)
   const [selected, setSelected] = useState(false)
@@ -97,7 +99,7 @@ export function SkillPill({ name, token, description, scope }: SkillPillProps): 
   }, [open, dismiss])
 
   const summary = description?.trim() || undefined
-  return <span ref={setPill} className="composer-skill" data-skill={name} role="img" aria-label={`Skill ${name}`} aria-description={summary}
+  return <span ref={setPill} className="composer-skill" data-skill={name} role="img" aria-label={t`Skill ${name}`} aria-description={summary}
     onPointerEnter={enter} onPointerLeave={leave}>
     <WandSparkles className="composer-skill__icon" strokeWidth={2} aria-hidden="true" />
     <span className="composer-skill__name">{name}</span>
@@ -142,10 +144,11 @@ function SkillCard({ anchor, name, token, description, scope }: SkillPillProps &
     element.dataset.side = placeBelow ? 'below' : 'above'
   }, [anchor])
 
-  const kind = scope ? `${scope} skill` : 'Skill'
   return createPortal(<div ref={card} className="skill-card" popover="manual" contentEditable={false} aria-hidden="true">
     <p className="skill-card__name">{name}</p>
     {description ? <p className="skill-card__description">{description}</p> : null}
-    <p className="skill-card__meta">{kind}, sent as <code>{token}</code></p>
+    <p className="skill-card__meta">{scope
+      ? <Trans comment="{scope} is where the skill comes from: Personal, Project, System or Admin.">{scope} skill, sent as <code>{token}</code></Trans>
+      : <Trans>Skill, sent as <code>{token}</code></Trans>}</p>
   </div>, document.body)
 }

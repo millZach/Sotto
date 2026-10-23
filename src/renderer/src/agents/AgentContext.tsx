@@ -1,4 +1,6 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
@@ -26,12 +28,12 @@ const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
 const SHELL_CACHE_INTERVAL_MS = 2_000
 /** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
-const COMMAND_UNCONFIRMED = 'The action could not be confirmed. Your draft is retained; check the connection before retrying.'
+const COMMAND_UNCONFIRMED = msg`The action could not be confirmed. Your draft is retained; check the connection before retrying.`
 
 /** Main's own sentence for a command that failed, such as which host is disconnected, or the unconfirmed sentence. */
 export function commandFailure(error: unknown): string {
   const said = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u, '').trim() : ''
-  return /^\S.*\s.*[.!?]$/su.test(said) && !isJson(said) ? said : COMMAND_UNCONFIRMED
+  return /^\S.*\s.*[.!?]$/su.test(said) && !isJson(said) ? said : i18n._(COMMAND_UNCONFIRMED)
 }
 /** A schema failure's message is its issues as JSON; a host's name may still open a sentence with a bracket. */
 function isJson(text: string): boolean {
@@ -296,7 +298,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
     void bridge?.get().then(next => {
       if (active && version === session.observed) receive(next, { urgent: true })
-    }).catch(() => { if (active) setFailure({ session, error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' }) })
+    }).catch(() => { if (active) setFailure({ session, error: i18n._(msg`Agent controls are unavailable. Reopen Sotto to reconnect.`) }) })
     const flush = (): void => threadDrafts.flushAll()
     window.addEventListener('pagehide', flush)
     window.addEventListener('beforeunload', flush)

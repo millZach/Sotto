@@ -1,5 +1,6 @@
 import React, { type ReactNode } from 'react'
 import { CircleAlert } from 'lucide-react'
+import { t } from '@lingui/core/macro'
 import type { AgentThread, ProviderId } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { failedTurnReason, THREAD_RESUME_FAILURES } from '../../../shared/threadFailures'
@@ -23,8 +24,6 @@ export type FailedTurnExplanation =
 type Explained = Pick<AgentThread, 'status' | 'requests' | 'requestNotice' | 'historyStatus' | 'activities' | 'lastTurn' | 'failureReason'
   | 'settledAt' | 'settledOverride' | 'archivedAt'>
 
-const NEXT = 'Nothing in the transcript was lost. Send a message to try again.'
-
 /**
  * `providerId` and `banner` let a thread that could not be resumed, which records no turn, give the provider's own words
  * for that as its reason: the banner is the only place they are.
@@ -37,12 +36,13 @@ export function failedTurnExplanation(thread: Explained, provider: string, provi
   const reason = failedTurnReason(thread)
   if (reason !== undefined) return { kind: 'transcript', reason }
   const turnFailed = thread.lastTurn?.status === 'failed' || (thread.activities ?? []).findLast(record => record.kind === 'turn')?.status === 'failed'
-  const title = turnFailed ? 'The last turn failed.' : `${provider} reported an error on this thread.`
-  if (thread.failureReason) return { kind: 'notice', title, body: `${thread.failureReason} Nothing in the transcript was lost.` }
+  const title = turnFailed ? t`The last turn failed.` : t({ message: `${provider} reported an error on this thread.`, comment: '{provider} is the name of the provider, such as Codex.' })
+  const failure = thread.failureReason
+  if (failure) return { kind: 'notice', title, body: t({ message: `${failure} Nothing in the transcript was lost.`, comment: '{failure} is why the turn failed, as the host or provider said it.' }) }
   if (!turnFailed && banner && providerId !== undefined && THREAD_RESUME_FAILURES[providerId]?.includes(banner)) {
-    return { kind: 'notice', title, body: `${banner} Nothing in the transcript was lost.` }
+    return { kind: 'notice', title, body: t({ message: `${banner} Nothing in the transcript was lost.`, comment: '{banner} is what the provider said about why the thread could not be resumed.' }) }
   }
-  return { kind: 'notice', title, body: NEXT }
+  return { kind: 'notice', title, body: t`Nothing in the transcript was lost. Send a message to try again.` }
 }
 
 /** The notice above the composer when the transcript cannot say why the last turn failed. Quiet: it announces nothing. */

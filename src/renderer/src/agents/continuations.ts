@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import { hostForThread, PROVIDER_LABELS, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread,
   type ProviderId, type ThreadContinuedIn } from '../../../shared/agents'
 import { continuePermission, continueProviderRefusal, type ContinuePermission, type ContinueWorkingCopy } from '../../../shared/continueThread'
@@ -80,8 +81,10 @@ export function unavailableProviders(state: AgentState, thread: AgentThread): Un
     const reason = continueProviderRefusal(host, id)
     if (reason === null) return []
     const status = host.providers?.find(item => item.id === id)
-    const short = status?.connection === 'connecting' ? 'connecting' : status?.problem === 'signed-out' ? 'not signed in'
-      : status?.problem === 'not-installed' ? 'not installed' : 'not connected'
+    const short = status?.connection === 'connecting' ? t({ message: 'connecting', comment: 'After a provider\'s name on a chip: why it cannot take a continued thread now.' })
+      : status?.problem === 'signed-out' ? t({ message: 'not signed in', comment: 'After a provider\'s name on a chip: why it cannot take a continued thread now.' })
+        : status?.problem === 'not-installed' ? t({ message: 'not installed', comment: 'After a provider\'s name on a chip: why it cannot take a continued thread now.' })
+          : t({ message: 'not connected', comment: 'After a provider\'s name on a chip: why it cannot take a continued thread now.' })
     return [{ providerId: id, name: PROVIDER_LABELS[id], reason, short }]
   })
 }

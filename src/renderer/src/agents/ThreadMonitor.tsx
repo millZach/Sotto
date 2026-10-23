@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentBackgroundWork, AgentMonitoringTask } from '../../../shared/agentMonitoring'
 import type { AgentThread } from '../../../shared/agents'
 import type { Creature } from '../../../shared/settings'
@@ -278,20 +280,22 @@ function ThreadOrnament({ kind, character, creature, label, title, status, wide 
 
 /** Observational only. The caller supplies live, eligible tasks from this thread's adapter. */
 export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitoringTask[] }): ReactNode {
+  const { t } = useLingui()
   const character = useCreature()
   const first = tasks[0]
   if (!first) return null
+  const taskCount = tasks.length
   return <ThreadOrnament kind="monitoring" character={character}
     creature={character === 'claude' ? <ClaudeBotMonitoring key={first.id} /> : <MonitoringCreature key={first.id} />}
     label={first.label} title={tasks.map(task => task.label).join('\n')}
-    status={tasks.length === 1 ? 'Monitoring' : `Monitoring ${tasks.length} tasks`} />
+    status={taskCount === 1 ? t({ message: 'Monitoring', comment: 'The readout beside the creature: the agent is monitoring a task it started.' }) : t`Monitoring ${taskCount} tasks`} />
 }
 
-const commandCount = (count: number): string => `${count} command${count === 1 ? '' : 's'}`
+const commandCount = (count: number): string => plural(count, { one: '# command', other: '# commands' })
 
 /** The readout's second line: the word for the state, how many agents when there is more than one, and any commands beside them. */
-const workingStatus = (agents: number, commands: number): string =>
-  ['Working', ...agents > 1 ? [`${agents} agents`] : [], ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
+const workingStatus = (working: string, agents: number, commands: number): string =>
+  [working, ...agents > 1 ? [plural(agents, { one: '# agent', other: '# agents' })] : [], ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
 
 /**
  * Observational only. The caller supplies this thread's live background work, provider-confirmed, and has
@@ -299,6 +303,7 @@ const workingStatus = (agents: number, commands: number): string =>
  * counted rather than drawn. Every task is named in the hover title.
  */
 export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroundWork[] }): ReactNode {
+  const { t } = useLingui()
   const character = useCreature()
   const agents = work.filter(task => task.type !== 'command')
   const commands = work.filter(task => task.type === 'command')
@@ -306,7 +311,7 @@ export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroun
   if (!first) return null
   return <ThreadOrnament kind="working" character={character}
     creature={character === 'claude' ? <ClaudeBotWorking agents={agents.length} /> : <WorkingCreature agents={agents.length} />}
-    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(agents.length, commands.length)}
+    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(t({ message: 'Working', comment: 'The readout beside the creature: background work the turn started is running.' }), agents.length, commands.length)}
     wide={commands.length > 0} />
 }
 
@@ -316,13 +321,14 @@ export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroun
  * because a command is waited on rather than worked, and counts from when Sotto saw it start.
  */
 export function ThreadWaitingCommand({ commands, now }: { readonly commands: readonly AgentBackgroundWork[]; readonly now: number | undefined }): ReactNode {
+  const { t } = useLingui()
   const character = useCreature()
   const first = commands[0]
   if (!first) return null
   return <ThreadOrnament kind="held" character={character}
     creature={character === 'claude' ? <ClaudeBotHeld key={first.id} /> : <HeldCreature key={first.id} />} label={first.label}
     title={commands.map(task => task.label).join('\n')} wide={commands.length > 1}
-    status={<>Waiting{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
+    status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
       {first.startedAt ? <WaitedFor startedAt={first.startedAt} now={now} /> : null}</>} />
 }
 
@@ -331,11 +337,12 @@ export function ThreadWaitingCommand({ commands, now }: { readonly commands: rea
  * The reader is told "Waiting", which is the plain word for it whatever the code calls the record.
  */
 export function ThreadHeld({ action, now }: { readonly action: HeldAction; readonly now: number | undefined }): ReactNode {
+  const { t } = useLingui()
   const character = useCreature()
   const label = heldLabel(action)
   return <ThreadOrnament kind="held" character={character}
     creature={character === 'claude' ? <ClaudeBotHeld key={action.id} /> : <HeldCreature key={action.id} />} label={label} title={label}
-    status={<>Waiting<WaitedFor startedAt={action.startedAt} now={now} /></>} />
+    status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}<WaitedFor startedAt={action.startedAt} now={now} /></>} />
 }
 
 /**
@@ -344,13 +351,15 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
  * the thread babysits on hover.
  */
 export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>; readonly now: number | undefined }): ReactNode {
+  const { t } = useLingui()
   const character = useCreature()
   const readout = babysitReadout(thread, new Date(now ?? Date.now()))
   if (!readout) return null
+  const { label, since } = readout
   // It comes back after every turn, so it is named rather than announced. Where the time does not fit, it drops whole
   // (threadMonitor.css); the hover title and the Pull request surface still say it.
   return <ThreadOrnament kind="babysitting" character={character}
     creature={character === 'claude' ? <ClaudeBotBabysitting /> : <BabysittingCreature />} label={readout.label} title={readout.title}
-    quiet={`Babysitting ${readout.label}${readout.since ? ` since ${readout.since}` : ''}`}
-    status={<>Babysitting{readout.since ? <span className="thread-monitor__since">{` since ${readout.since}`}</span> : null}</>} />
+    quiet={since ? t`Babysitting ${label} since ${since}` : t`Babysitting ${label}`}
+    status={<>{t({ message: 'Babysitting', comment: 'The readout beside the creature: Sotto is babysitting a pull request.' })}{since ? <span className="thread-monitor__since">{` ${t`since ${since}`}`}</span> : null}</>} />
 }

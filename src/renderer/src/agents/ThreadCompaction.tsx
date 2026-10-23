@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useSyncExternalStore, type ReactNod
 import type { AgentCapabilities, AgentCommand, AgentThread } from '../../../shared/agents'
 import { compactionPending } from '../../../shared/compaction'
 import { providerRecommendsCompaction } from '../../../shared/providerProfile'
+import { useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
 import './threadCompaction.css'
 
@@ -34,6 +35,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
   readonly thread: AgentThread; readonly supported: boolean; readonly connected: boolean
   readonly command: (command: AgentCommand) => unknown; readonly blocked?: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const [now, setNow] = useState(Date.now)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -55,18 +57,18 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     if (sending.current || busy || !connected) return
     sending.current = true; setSubmitting(true); setError('')
     try { await command({ type: 'compact-thread', threadId: thread.id }) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Native compaction could not start.') }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t`Native compaction could not start.`) }
     finally { sending.current = false; setSubmitting(false) }
   }
   if (!supported) return null
   // Compact context itself lives in the pane header's menu; what stays here is the recommendation and its result.
   return <div className="thread-compaction">
-    {offer ? <><p>This context is large and hasn’t been updated for over an hour.</p>
-      <Button variant="secondary" onClick={() => void compact()}>Compact</Button>
-      <Button variant="ghost" onClick={() => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }}>Keep full history</Button></> : null}
+    {offer ? <><p className="tt-paragraph">{t`This context is large and hasn’t been updated for over an hour.`}</p>
+      <Button variant="secondary" onClick={() => void compact()}>{t({ message: 'Compact', comment: 'A button: compact the context of this thread now.' })}</Button>
+      <Button variant="ghost" onClick={() => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }}>{t`Keep full history`}</Button></> : null}
     {/* A running compaction is said in the thread, where it would otherwise read as the agent working; what stays here is its result. */}
-    {thread.compaction && thread.compaction.status !== 'running' ? <p role="status">{thread.compaction.status === 'completed' ? 'Context compacted'
-      : thread.compaction.error ?? (thread.compaction.status === 'failed' ? 'Native compaction failed.' : 'Native compaction is unconfirmed. Reconnect to observe its result.')}</p> : null}
+    {thread.compaction && thread.compaction.status !== 'running' ? <p className="tt-paragraph" role="status">{thread.compaction.status === 'completed' ? t`Context compacted`
+      : thread.compaction.error ?? (thread.compaction.status === 'failed' ? t`Native compaction failed.` : t`Native compaction is unconfirmed. Reconnect to observe its result.`)}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
   </div>
 }

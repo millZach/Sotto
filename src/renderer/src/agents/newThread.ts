@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
+
 import { hostEntityKey, parseHostEntityKey, projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
 import { defaultNewThreadModelId, hostForThread, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -32,7 +35,7 @@ function draftHost(state: AgentState, project: AgentProject): Pick<AgentThread, 
 }
 
 /** What creation says when Settings would not say which working copy a thread starts in. */
-export const WORKING_COPY_READ_ERROR = 'Could not read your working-copy default from Settings → Threads. Check your connection and try again.'
+export const WORKING_COPY_READ_ERROR = msg`Could not read your working-copy default from Settings → Threads. Check your connection and try again.`
 
 /**
  * A project's saved working-copy default, read fresh for each creation; rejects when Settings cannot say,
@@ -130,12 +133,13 @@ function newThreadOptions(state: AgentState, project: AgentProject) { return new
  */
 export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: string }> {
   const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
-  if (!modelId) return { error: 'No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.' }
+  if (!modelId) return { error: t`No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.` }
   let workingCopy: 'independent' | 'shared'
   try { workingCopy = await projectWorkingCopy(state, project) }
-  catch { return { error: WORKING_COPY_READ_ERROR } }
+  catch { return { error: i18n._(WORKING_COPY_READ_ERROR) } }
   const worktreeChoices = workingCopy === 'independent' ? { startFromOrigin: true } : {}
   const threadId = hostEntityKey(projectHostId(state, project), crypto.randomUUID())
+  // The title is the thread's own, saved and sent to main, so it stays in English as main writes it.
   const title = 'New thread'
   const thread = draftThread({ id: threadId, projectId: project.id, title, modelId, workingCopy, ...worktreeChoices,
     ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),

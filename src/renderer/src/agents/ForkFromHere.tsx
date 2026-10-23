@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { GitFork, Laptop, Server } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentModel, type AgentWorkingCopyOptions, type AgentCommand, type AgentState, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { NATIVE_FORKS, sameFolderForks } from '../../../shared/threadStarts'
@@ -43,16 +44,18 @@ export function useForkOptions(): ForkOptions | null { return useContext(ForkCon
 
 /** The press under a reply. */
 export function ForkPress({ messageId, at }: { readonly messageId: string; readonly at: string }): ReactNode {
+  const { t } = useLingui()
   const options = useForkOptions()
   if (!options) return null
   const open = options.openAt === messageId
-  const label = options.busy ? 'Fork from here: wait for this turn to finish first'
-    : `Fork from here: a new thread with this conversation up to this reply, ${clockLabel(Date.parse(at))}`
-  return <button type="button" className="thread-message__fork tt-focusable" aria-label={label} title={options.busy ? 'Wait for this turn to finish before forking' : 'Fork from here'}
+  const time = clockLabel(Date.parse(at))
+  const label = options.busy ? t`Fork from here: wait for this turn to finish first`
+    : t`Fork from here: a new thread with this conversation up to this reply, ${time}`
+  return <button type="button" className="thread-message__fork tt-focusable" aria-label={label} title={options.busy ? t`Wait for this turn to finish before forking` : t`Fork from here`}
     aria-expanded={open} aria-disabled={options.busy || undefined} data-fork-at={messageId}
     onClick={() => { if (!options.busy) options.open(open ? null : messageId) }}
     onKeyDown={event => { if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); options.open(null) } }}>
-    <GitFork size={14} aria-hidden="true" /><span>Fork from here</span></button>
+    <GitFork size={14} aria-hidden="true" /><span>{t`Fork from here`}</span></button>
 }
 
 /** The card under the reply it forks at, and the line that says what stays behind. */
@@ -62,6 +65,7 @@ export function ForkCard({ messageId, at }: { readonly messageId: string; readon
 }
 
 function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; readonly messageId: string; readonly at: string }): ReactNode {
+  const { t } = useLingui()
   const native = NATIVE_FORKS.has(options.provider)
   const [modelId, setModelId] = useState<string | undefined>(() => forkModel(options.models, options.provider, options.modelId))
   const [copy, setCopy] = useState<'shared' | 'independent'>('shared')
@@ -95,7 +99,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
     try {
       const result = await options.command({ type: 'fork-thread', threadId: options.threadId, messageId, newThreadId: crypto.randomUUID(),
         ...(native ? { modelId } : {}), workingCopy: copy, ...(copy === 'independent' && git?.currentBranch ? { baseBranch: git.currentBranch } : {}) })
-      if (result === null) setError('Sotto could not confirm this. Look for the new thread in the list before trying again.')
+      if (result === null) setError(t`Sotto could not confirm this. Look for the new thread in the list before trying again.`)
       else if (result.error) setError(result.error)
       else options.open(null)
     } finally { setBusy(false) }
@@ -103,33 +107,36 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
   const choices = options.models.filter(model => model.ready && model.providerId === options.provider)
   // A Claude Code fork lives where its source's session does, so it starts in the thread's own folder.
   const worktree = git && !sameFolderForks(options.provider)
+  const time = clockLabel(Date.parse(at))
+  const branch = git?.currentBranch
+  const threadTitle = options.threadTitle
   return <>
-    <section ref={card} tabIndex={-1} className="fork-card" aria-label="Fork from here" onKeyDown={event => {
+    <section ref={card} tabIndex={-1} className="fork-card" aria-label={t`Fork from here`} onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault(); event.stopPropagation(); close()
     }}>
-      <h4><GitFork size={15} aria-hidden="true" />Fork from here</h4>
-      <p>{native ? `A new ${name} thread with everything above this line, through ${name}’s own fork. What’s below stays here, and this thread stays as it is.`
-        : `${name} has no fork of its own, so the new ${name} thread starts from a handover of this conversation up to ${clockLabel(Date.parse(at))}. It goes with your first message. What’s below stays here.`}</p>
+      <h4><GitFork size={15} aria-hidden="true" />{t`Fork from here`}</h4>
+      <p className="tt-paragraph">{native ? t`A new ${name} thread with everything above this line, through ${name}’s own fork. What’s below stays here, and this thread stays as it is.`
+        : t`${name} has no fork of its own, so the new ${name} thread starts from a handover of this conversation up to ${time}. It goes with your first message. What’s below stays here.`}</p>
       <div className="agent-continue__choices">
-        {native ? <Select aria-label="Model for the forked thread" value={modelId ?? ''} onChange={event => setModelId(event.target.value)}>
+        {native ? <Select aria-label={t`Model for the forked thread`} value={modelId ?? ''} onChange={event => setModelId(event.target.value)}>
           {choices.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
         </Select> : null}
-        <Select aria-label="Working copy for the forked thread" value={copy} onChange={event => setCopy(event.target.value === 'independent' ? 'independent' : 'shared')}>
-          <option value="shared">Same folder</option>
-          {worktree ? <option value="independent">{git.currentBranch ? `New worktree from ${git.currentBranch}` : 'New worktree'}</option> : null}
+        <Select aria-label={t`Working copy for the forked thread`} value={copy} onChange={event => setCopy(event.target.value === 'independent' ? 'independent' : 'shared')}>
+          <option value="shared">{t({ message: 'Same folder', comment: 'Where a continued thread works: the folder this thread works in.' })}</option>
+          {worktree ? <option value="independent">{branch ? t`New worktree from ${branch}` : t`New worktree`}</option> : null}
         </Select>
         <span className="agent-continue__where">{options.remote ? <Server size={14} aria-hidden="true" /> : <Laptop size={14} aria-hidden="true" />}{options.where}</span>
       </div>
-      {native ? <p className="agent-continue__fine">Files aren’t rewound: the new thread sees the folder as it is now.</p>
-        : <p className="agent-continue__fine">Carries the conversation up to this reply. Leaves out what follows, and the records of its work, such as tool calls.</p>}
+      {native ? <p className="agent-continue__fine tt-paragraph"><Trans>Files aren’t rewound: the new thread sees the folder as it is now.</Trans></p>
+        : <p className="agent-continue__fine tt-paragraph"><Trans>Carries the conversation up to this reply. Leaves out what follows, and the records of its work, such as tool calls.</Trans></p>}
       <div className="agent-continue__actions">
-        <Button ref={start} variant="primary" disabled={busy || !modelId} onClick={() => void fork()}>{busy ? 'Forking…' : native ? 'Fork' : `Start the ${name} thread`}</Button>
-        <Button variant="ghost" onClick={close}>Cancel</Button>
+        <Button ref={start} variant="primary" disabled={busy || !modelId} onClick={() => void fork()}>{busy ? t`Forking…` : native ? t({ message: 'Fork', comment: 'Starts the forked thread.' }) : t`Start the ${name} thread`}</Button>
+        <Button variant="ghost" onClick={close}><Trans>Cancel</Trans></Button>
       </div>
       {error ? <p className="agent-continue__error" role="alert">{error}</p> : null}
     </section>
-    <p className="fork-card__stays">Not carried: this stays in {options.threadTitle}</p>
+    <p className="fork-card__stays tt-paragraph"><Trans>Not carried: this stays in {threadTitle}</Trans></p>
   </>
 }
 

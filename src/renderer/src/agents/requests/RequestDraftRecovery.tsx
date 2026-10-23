@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest } from '../../../../shared/agents'
 import {
   requestDraftKey, requestDraftOwnerKey, requestDraftQuestions, sameRequestQuestions,
@@ -13,9 +16,9 @@ import './requestDraftRecovery.css'
 /** What Sotto currently observes of the owner's provider. Only `ready` may say that a question is no longer shown. */
 export type RecoveryObservation = 'disconnected' | 'loading' | 'unavailable' | 'ready'
 
-const LIST_ERROR = 'Sotto could not read saved answers.'
-const DISCARD_ERROR = 'Sotto could not discard this saved answer. It is still kept.'
-const COPY_ERROR = 'Could not copy. Select the answer above to copy it.'
+const LIST_ERROR = msg`Sotto could not read saved answers.`
+const DISCARD_ERROR = msg`Sotto could not discard this saved answer. It is still kept.`
+const COPY_ERROR = msg`Could not copy. Select the answer above to copy it.`
 const readable = (error: unknown, fallback: string): string => error instanceof Error && error.message
   ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : fallback
 
@@ -34,13 +37,15 @@ function savedAnswerText(question: StructuredQuestion, selection: RequestDraft['
   const text = selection.text.trim()
   if (textOnly(question)) return text || null
   const parts = question.options.filter(option => selection.optionIds.includes(option.id)).map(option => option.label)
-  if (selection.other) parts.push(text ? `Other: ${text}` : 'Other')
+  if (selection.other) parts.push(text ? i18n._(msg({ message: `Other: ${text}`, comment: 'A saved answer the user wrote in their own words; {text} is what they wrote.' })) : i18n._(msg({ message: 'Other', comment: 'A saved answer: the user chose to write their own answer.' })))
   return parts.join(', ')
 }
 
+const NO_ANSWER = msg({ message: 'No answer', comment: 'Stands for a question in a saved form that was left unanswered.' })
+
 /** The clipboard form: each question's label followed by its saved answer. */
 export function savedAnswerClipboard(draft: RequestDraft): string {
-  return draft.target.questions.map(question => `${question.question}\n${savedAnswerText(question, draft.selections[question.id]) ?? 'No answer'}`).join('\n\n')
+  return draft.target.questions.map(question => `${question.question}\n${savedAnswerText(question, draft.selections[question.id]) ?? i18n._(NO_ANSWER)}`).join('\n\n')
 }
 
 /** A form the user never filled in has nothing to recover; a held attempt is always shown. */
@@ -65,6 +70,7 @@ export interface RequestDraftRecoveryModel {
  */
 function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentRequest[], observed: string,
   bridge: RequestDraftBridge | undefined = window.sotto?.requestDrafts, answers: RequestAnswerStore = requestAnswerStore): RequestDraftRecoveryModel {
+  const { t } = useLingui()
   const ownerKey = requestDraftOwnerKey(owner)
   const [result, setResult] = useState<{ readonly ownerKey: string; readonly drafts: readonly RequestDraft[]; readonly error: string | null } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -80,17 +86,17 @@ function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentR
     bridge.list({ kind, ownerId, providerId }).then(
       drafts => { if (latest.current === call) setResult({ ownerKey, drafts, error: null }) },
       // A failed re-read keeps what was already shown for this owner; the text is never dropped on an error.
-      (error: unknown) => { if (latest.current === call) setResult(previous => ({ ownerKey, drafts: previous?.ownerKey === ownerKey ? previous.drafts : [], error: readable(error, LIST_ERROR) })) })
-  }, [bridge, ownerKey, observed, attempt, settled])
+      (error: unknown) => { if (latest.current === call) setResult(previous => ({ ownerKey, drafts: previous?.ownerKey === ownerKey ? previous.drafts : [], error: readable(error, t(LIST_ERROR)) })) })
+  }, [bridge, ownerKey, observed, attempt, settled, t])
   const reload = useCallback(() => setAttempt(value => value + 1), [])
   const discard = useCallback(async (draft: RequestDraft): Promise<string | null> => {
-    if (!bridge?.discard) return DISCARD_ERROR
+    if (!bridge?.discard) return t(DISCARD_ERROR)
     try {
       // False means it was already gone. A stale revision rejects, and the re-read shows the newer content.
       await bridge.discard({ target: draft.target, revision: draft.revision })
       return null
-    } catch (error) { return readable(error, DISCARD_ERROR) } finally { reload() }
-  }, [bridge, reload])
+    } catch (error) { return readable(error, t(DISCARD_ERROR)) } finally { reload() }
+  }, [bridge, reload, t])
   const current = result?.ownerKey === ownerKey ? result : null
   return { drafts: (current?.drafts ?? []).filter(draft => hasContent(draft) && !renderedLive(draft, live)), error: current?.error ?? null, reload, discard }
 }
@@ -131,7 +137,7 @@ export function RequestDraftRecovery({ owner, live, observation, observed, provi
   // An unreadable store is already explained inside a live card; elsewhere it is said once here.
   const listError = model.error && !liveAnswer
     ? <div className="agent-request request-recovery request-recovery--error" role="alert"><p className="agent-request__error">{model.error}</p>
-      <div className="agent-request__actions"><Button variant="secondary" onClick={model.reload}>Try again</Button></div></div> : null
+      <div className="agent-request__actions"><Button variant="secondary" onClick={model.reload}><Trans>Try again</Trans></Button></div></div> : null
   if (!listError && model.drafts.length === 0) return null
   return <div ref={container} className="request-recovery-list">
     {listError}
@@ -148,17 +154,20 @@ export function RequestDraftRecovery({ owner, live, observation, observed, provi
 /** One sentence: whether the answer went anywhere, and what Sotto can honestly say about its question now. */
 function recoveryExplanation(held: boolean, changed: boolean, observation: RecoveryObservation, provider: string): string {
   // The title already says a held answer is unconfirmed; the sentence gives its consequence.
-  const delivery = held ? 'The answer may have arrived, so Sotto won’t send it again.' : 'This answer was not sent.'
-  if (observation === 'disconnected') return `${delivery} Reconnect ${provider} to see whether its question is still open.`
-  if (observation === 'loading') return `${delivery} Checking whether ${provider} still shows its question…`
-  if (observation === 'unavailable') return `${delivery} Sotto can’t tell whether ${provider} still shows its question until this conversation loads.`
-  return `${changed ? `${provider} changed this question.` : `${provider} no longer shows this question.`} ${delivery}`
+  const delivery = held ? i18n._(msg`The answer may have arrived, so Sotto won’t send it again.`) : i18n._(msg`This answer was not sent.`)
+  if (observation === 'disconnected') return i18n._(msg({ message: `${delivery} Reconnect ${provider} to see whether its question is still open.`, comment: '{delivery} says whether the answer was sent; {provider} is a provider name.' }))
+  if (observation === 'loading') return i18n._(msg({ message: `${delivery} Checking whether ${provider} still shows its question…`, comment: '{delivery} says whether the answer was sent; {provider} is a provider name.' }))
+  if (observation === 'unavailable') return i18n._(msg({ message: `${delivery} Sotto can’t tell whether ${provider} still shows its question until this conversation loads.`, comment: '{delivery} says whether the answer was sent; {provider} is a provider name.' }))
+  return changed
+    ? i18n._(msg({ message: `${provider} changed this question. ${delivery}`, comment: '{delivery} says whether the answer was sent; {provider} is a provider name.' }))
+    : i18n._(msg({ message: `${provider} no longer shows this question. ${delivery}`, comment: '{delivery} says whether the answer was sent; {provider} is a provider name.' }))
 }
 
 function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscard }: {
   readonly draft: RequestDraft; readonly draftKey: string; readonly changed: boolean; readonly observation: RecoveryObservation; readonly provider: string
   readonly onDiscard: (element: HTMLElement) => Promise<string | null>
 }): ReactNode {
+  const { t } = useLingui()
   const [confirming, setConfirming] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -176,7 +185,7 @@ function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscar
   const cancel = (): void => { returnFocus.current = true; setConfirming(false) }
   const copy = (): void => {
     setError(null)
-    void writeClipboard(savedAnswerClipboard(draft)).then(() => showCopied('Copied'), () => setError(COPY_ERROR))
+    void writeClipboard(savedAnswerClipboard(draft)).then(() => showCopied(t`Copied`), () => setError(t(COPY_ERROR)))
   }
   const discard = (): void => {
     if (discarding || !root.current) return
@@ -193,27 +202,27 @@ function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscar
 
   return <section ref={root} className="agent-request request-recovery" data-recovery-key={draftKey} data-held={draft.held || undefined} aria-labelledby={titleId}
     onKeyDown={(event: KeyboardEvent) => { if (confirming && !discarding && event.key === 'Escape') { event.preventDefault(); cancel() } }}>
-    <div className="agent-request__head"><strong id={titleId}>{draft.held ? 'Unconfirmed answer' : 'Saved answer'}</strong></div>
+    <div className="agent-request__head"><strong id={titleId}>{draft.held ? t`Unconfirmed answer` : t`Saved answer`}</strong></div>
     <p className="request-recovery__why">{recoveryExplanation(draft.held, changed, observation, provider)}</p>
     <dl className="request-recovery__answers">
       {draft.target.questions.map(question => {
         const answer = savedAnswerText(question, draft.selections[question.id])
         return <div key={question.id} data-empty={answer === null || undefined}>
           <dt>{question.question}</dt>
-          <dd>{answer ?? 'No answer'}</dd>
+          <dd>{answer ?? t(NO_ANSWER)}</dd>
         </div>
       })}
     </dl>
     {confirming ? <div className="request-recovery__confirm" role="group" aria-labelledby={`${titleId}-confirm`}>
-      <p id={`${titleId}-confirm`}>{draft.held ? 'Discard Sotto’s copy? This doesn’t cancel or resend the answer.' : 'Discard this answer? It can’t be restored.'}</p>
+      <p className="tt-paragraph" id={`${titleId}-confirm`}>{draft.held ? t`Discard Sotto’s copy? This doesn’t cancel or resend the answer.` : t`Discard this answer? It can’t be restored.`}</p>
       <div className="agent-request__actions">
-        <Button ref={keep} variant="secondary" disabled={discarding} onClick={cancel}>Keep</Button>
-        <Button variant="danger" disabled={discarding} onClick={discard}>{discarding ? 'Discarding…' : 'Discard answer'}</Button>
+        <Button ref={keep} variant="secondary" disabled={discarding} onClick={cancel}><Trans comment="Keeps a saved answer instead of discarding it.">Keep</Trans></Button>
+        <Button variant="danger" disabled={discarding} onClick={discard}>{discarding ? t`Discarding…` : t`Discard answer`}</Button>
       </div>
     </div> : <div className="request-recovery__actions">
       <div className="agent-request__actions">
-        <Button variant="secondary" onClick={copy}>Copy answer</Button>
-        <Button ref={discardButton} variant="ghost" onClick={() => { setError(null); setConfirming(true) }}>Discard</Button>
+        <Button variant="secondary" onClick={copy}><Trans>Copy answer</Trans></Button>
+        <Button ref={discardButton} variant="ghost" onClick={() => { setError(null); setConfirming(true) }}><Trans comment="Discards a saved answer; asks first.">Discard</Trans></Button>
       </div>
       <span className="agent-request__status" role="status">{copied}</span>
     </div>}

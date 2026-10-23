@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import type { AgentThread } from '../../../shared/agents'
 import type { GitPullRequestSummary } from '../../../shared/gitStatus'
 import type { GitRef } from '../../../shared/gitRefs'
@@ -60,9 +62,16 @@ export function workspaceChoice(thread: ToolbarThread): WorkspaceChoice {
 /** What the workspace control says now, in T3's words: the checkout, the worktree the thread already has, or the one it will make. */
 export function workspaceLabel(thread: ToolbarThread): string {
   const choice = workspaceChoice(thread)
-  if (choice.kind === 'previous') return `Previous worktree (${thread.worktree?.branch ?? 'detached'})`
-  if (choice.kind === 'new') return thread.worktree?.path ? 'Current worktree' : 'New worktree'
-  return 'Current checkout'
+  if (choice.kind === 'previous') return previousWorktreeLabel(thread.worktree?.branch)
+  if (choice.kind === 'new') return thread.worktree?.path ? t`Current worktree` : t`New worktree`
+  return t`Current checkout`
+}
+
+/** "Previous worktree (main)", or "(detached)" for a worktree on no branch. */
+function previousWorktreeLabel(branch: string | null | undefined): string {
+  return branch == null
+    ? t({ message: 'Previous worktree (detached)', comment: 'A worktree another thread made, on no branch.' })
+    : t({ message: `Previous worktree (${branch})`, comment: '{branch} is a Git branch name.' })
 }
 
 /**
@@ -83,11 +92,12 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
     const key = folderKey(worktree.path)
     if (seen.has(key)) continue
     seen.add(key)
-    previous.push({ id: `previous:${key}`, label: `Previous worktree (${worktree.branch ?? 'detached'})`, name: worktree.branch ?? `Detached · ${worktree.path.split(/[\\/]/u).filter(Boolean).at(-1)}`, choice: { kind: 'previous', path: worktree.path } })
+    const folder = worktree.path.split(/[\\/]/u).filter(Boolean).at(-1)
+    previous.push({ id: `previous:${key}`, label: previousWorktreeLabel(worktree.branch), name: worktree.branch ?? t({ message: `Detached · ${folder}`, comment: 'A worktree on no branch, named by its folder.' }), choice: { kind: 'previous', path: worktree.path } })
   }
   return [
-    { id: 'current', label: 'Current checkout', choice: { kind: 'current' } },
-    { id: 'new', label: 'New worktree', choice: { kind: 'new' } },
+    { id: 'current', label: t`Current checkout`, choice: { kind: 'current' } },
+    { id: 'new', label: t`New worktree`, choice: { kind: 'new' } },
     ...previous,
   ]
 }
@@ -95,20 +105,38 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
 /** The picker's own label: the branch, Select ref for a detached HEAD, or the base a new worktree will start from. */
 export function branchLabel(thread: ToolbarThread): string {
   const worktree = thread.worktree
-  if (!worktree) return 'Select ref'
+  if (!worktree) return t`Select ref`
   if (newWorktreeDraft(thread)) {
     // A pull request checked out into a worktree: the new folder takes that branch as it stands.
     if (worktree.checkoutBranch && worktree.branch) return worktree.branch
     const base = worktree.baseBranch ?? worktree.git?.branch ?? worktree.git?.defaultBranch ?? 'main'
-    return `From ${worktree.startFromOrigin === false ? '' : 'origin/'}${base}`
+    const ref = `${worktree.startFromOrigin === false ? '' : 'origin/'}${base}`
+    return t({ message: `From ${ref}`, comment: '{ref} is the Git branch a new worktree will start from.' })
   }
-  return worktree.git?.branch ?? worktree.branch ?? 'Select ref'
+  return worktree.git?.branch ?? worktree.branch ?? t`Select ref`
+}
+
+/** Whether the picker's label names a branch or where a new worktree starts from, rather than asking for one (Select ref). */
+export function branchLabelChosen(thread: ToolbarThread): boolean {
+  const worktree = thread.worktree
+  if (!worktree) return false
+  if (newWorktreeDraft(thread)) return true
+  return (worktree.git?.branch ?? worktree.branch) != null
+}
+
+/** Whether the picker's label is a ref's own name, which a right-click copies, rather than Select ref or a new worktree's base. */
+export function branchLabelIsRef(thread: ToolbarThread): boolean {
+  const worktree = thread.worktree
+  if (!worktree) return false
+  if (newWorktreeDraft(thread)) return Boolean(worktree.checkoutBranch && worktree.branch)
+  return (worktree.git?.branch ?? worktree.branch) != null
 }
 
 /** The badge's tooltip, the way T3 writes it: "PR #12 - Open: title". */
 export function pullRequestTitle(pullRequest: GitPullRequestSummary): string {
   const state = pullRequest.state.charAt(0).toUpperCase() + pullRequest.state.slice(1).toLowerCase()
-  return `PR #${pullRequest.number} - ${state}: ${pullRequest.title}`
+  const number = pullRequest.number, title = pullRequest.title
+  return t({ message: `PR #${number} - ${state}: ${title}`, comment: '{state} is GitHub\'s word for the pull request\'s state; {title} is its title.' })
 }
 
 /** The name Create new ref gives a typed query: trimmed, whitespace to dashes. Empty when nothing usable was typed. */
@@ -147,21 +175,28 @@ export function pickOutcome(ref: GitRef, thread: ToolbarThread): PickOutcome {
     const base = ref.remote ? ref.name.slice(ref.remote.length + 1) : ref.name
     return { kind: 'record-base', baseBranch: base, startFromOrigin: ref.remote ? true : worktree?.startFromOrigin !== false }
   }
-  if (ref.current) return { kind: 'refuse', reason: `${ref.name} is already checked out here.` }
+  const name = ref.name
+  if (ref.current) return { kind: 'refuse', reason: t({ message: `${name} is already checked out here.`, comment: '{name} is a Git branch name.' }) }
   if (ref.worktreePath) {
     if (!workspaceLocked(thread)) return { kind: 'repoint', path: ref.worktreePath }
-    return { kind: 'refuse', reason: `${ref.name} is checked out in another worktree. Start a new thread there to work on it.` }
+    return { kind: 'refuse', reason: t({ message: `${name} is checked out in another worktree. Start a new thread there to work on it.`, comment: '{name} is a Git branch name.' }) }
   }
   // A draft pointed at another thread's worktree does not move that worktree's branch before it has started there.
-  if (previousWorktreeDraft(thread)) return { kind: 'refuse', reason: `This thread will work in a worktree that is on ${worktree?.branch ?? 'its own branch'}. Switch branches there after the first send.` }
+  if (previousWorktreeDraft(thread)) {
+    const branch = worktree?.branch
+    return { kind: 'refuse', reason: branch == null
+      ? t`This thread will work in a worktree that is on its own branch. Switch branches there after the first send.`
+      : t({ message: `This thread will work in a worktree that is on ${branch}. Switch branches there after the first send.`, comment: '{branch} is a Git branch name.' }) }
+  }
   return { kind: 'switch', ref: ref.name }
 }
 
 /** T3's toast title, then Git's own words. The host already says it that way; a refusal from elsewhere gets the title here. */
 export function switchFailure(error: string | null | undefined): string {
   const detail = (error ?? '').replace(/\s+/gu, ' ').trim()
-  if (!detail) return 'Failed to switch ref.'
-  return detail.startsWith('Failed to switch ref') ? detail : `Failed to switch ref. ${detail}`
+  if (!detail) return t`Failed to switch ref.`
+  // The host writes its own refusal with this title already, in English.
+  return detail.startsWith('Failed to switch ref') ? detail : t({ message: `Failed to switch ref. ${detail}`, comment: '{detail} is the host\'s or Git\'s own words for why.' })
 }
 
 interface Chord { readonly key: string; readonly ctrl: boolean; readonly shift: boolean; readonly alt: boolean; readonly meta: boolean }

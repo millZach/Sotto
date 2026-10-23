@@ -1,5 +1,6 @@
 import { focusedComposerField } from './promptSelection'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { useListedRows } from './unsentThreads'
 import type { AgentProject, AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -32,8 +33,6 @@ import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
-
-const TOO_LONG_TO_MOVE = "This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved."
 
 /** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
 function focusNewComposer(): void {
@@ -85,6 +84,7 @@ export interface ThreadsViewProps {
   readonly paneAreaHeight?: number | undefined
 }
 export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+  const { t } = useLingui()
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
@@ -174,12 +174,12 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   // the composer with it, and only if that copy is still the one carried, images included; until then both are kept.
   const placeCarriedDraft = useCallback((threadId: string, carried: CarriedDraft): void => {
     void store.place(threadId, carried).then(placed => {
-      if (placed === 'too-long') { setNewThreadError(TOO_LONG_TO_MOVE); return }
+      if (placed === 'too-long') { setNewThreadError(t`This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved.`); return }
       const latest = publishedRef.current
       const sameImages = (latest?.draftAttachments ?? []).map(image => image.id).join('\n') === carried.attachments.map(image => image.id).join('\n')
       if (placed === 'saved' && latest !== null && latest.draft === carried.text && latest.draftThreadId === carried.threadId && sameImages) void command({ type: 'cancel-draft' })
     })
-  }, [store, command])
+  }, [store, command, t])
   // Callbacks that cross into the memoised sidebar are hoisted: a fresh function each render would undo the memo.
   // The pane and its composer are on screen before the command is answered; main catches up under the same ID.
   // Shared by every instant-creation entry point: the pen, the empty page's button and the chooser.
@@ -196,11 +196,11 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       if (publishedRef.current?.host.threads.some(thread => thread.id === start.thread.id)) return
       // The pane is gone and gated sends never left the window; retain all its content, not just unsent text.
       const kept = store.carryRefusedCreation(start.thread.id, start.thread.projectId)
-      setNewThreadError(kept
-        ? `${creationError} Your prompt and screenshots are kept. Open New thread in ${projectTitle ?? 'the same project'} to get them back.`
-        : creationError)
+      setNewThreadError(!kept ? creationError : projectTitle === undefined
+        ? t({ message: `${creationError} Your prompt and screenshots are kept. Open New thread in the same project to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' })
+        : t({ message: `${creationError} Your prompt and screenshots are kept. Open New thread in ${projectTitle} to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' }))
     })
-  }, [store, placeCarriedDraft])
+  }, [store, placeCarriedDraft, t])
   // The pen and the empty page's button already know their project: the thread opens at once, on the defaults
   // from Settings → Threads, selected and focused; a refusal shows in the sidebar's own error place.
   // Settles once the thread has opened or been refused.
@@ -271,9 +271,9 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const mac = app?.platform === 'darwin'
   const page = `management-view threads-view${mac ? ' threads-view--mac' : ''}`
   if (state === null) return <div className={mac ? 'threads-view threads-view--bare threads-view--mac' : 'threads-view threads-view--bare'}>
-    <p role="status">{agents.error ?? 'Preparing agent controls…'}</p>
+    <p className="tt-paragraph" role="status">{agents.error ?? t`Preparing agent controls…`}</p>
     {/* An error can stand for good, and this page has no sidebar to leave by. */}
-    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}>Open Settings</Button> : null}
+    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button> : null}
     <PageWindowControls />
   </div>
   const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
@@ -310,7 +310,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
-    <section className="thread-workspace" aria-label="Thread workspace">
+    <section className="thread-workspace" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}

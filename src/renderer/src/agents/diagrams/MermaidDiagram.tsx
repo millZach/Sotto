@@ -1,4 +1,7 @@
 import React, { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { DiagramExpanded, VisualActions, VisualCopyStatus, DiagramStage, diagramFrameState, useDiagramFrame } from './DiagramFrame'
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
@@ -51,6 +54,7 @@ export interface MermaidRendering {
  * appearance changes. The visual card (ADR-0056) draws with this too.
  */
 export function useMermaidRendering(source: string, complete: boolean): MermaidRendering {
+  const { t } = useLingui()
   const inspection = useMemo(() => inspectDiagramSource(source), [source])
   const palette = useDiagramPalette()
   const drawable = complete && !inspection.problem
@@ -67,7 +71,7 @@ export function useMermaidRendering(source: string, complete: boolean): MermaidR
     void loadDiagramRenderer()
       .then(renderer => renderer.renderDiagram(code, palette))
       .then(result => { rememberDrawing(key, result); return result })
-      .catch((): DiagramRenderResult => ({ ok: false, reason: 'The diagram renderer could not load.' }))
+      .catch((): DiagramRenderResult => ({ ok: false, reason: i18n._(msg`The diagram renderer could not load.`) }))
       // A diagram that mounted drawn gets the same cached result back, and that confirmation is not a commit.
       .then(result => { if (live) setSettled(current => current?.code === code && current.result === result ? current : { code, result }) })
     return () => { live = false }
@@ -76,26 +80,30 @@ export function useMermaidRendering(source: string, complete: boolean): MermaidR
   // A redraw for a new appearance keeps the previous drawing on screen until the new one is ready.
   const current = drawable && settled?.code === inspection.code ? settled.result : null
   const drawing: MermaidDrawn | null = current?.ok ? current : null
-  const name = [inspection.label, drawing?.title ?? inspection.title].filter(Boolean).join(': ')
-  const notice = !complete ? 'Draws when the block is complete.'
-    : inspection.problem ?? (current && !current.ok ? `Couldn't draw this diagram. ${current.reason}` : !current ? 'Drawing…' : null)
+  const label = inspection.label, title = drawing?.title ?? inspection.title
+  const name = label && title ? t({ message: `${label}: ${title}`, comment: 'A diagram\'s kind, such as Flowchart, then its title.' }) : label || title || ''
+  const reason = current && !current.ok ? current.reason : ''
+  const notice = !complete ? t`Draws when the block is complete.`
+    : inspection.problem ?? (current && !current.ok ? t({ message: `Couldn't draw this diagram. ${reason}`, comment: '{reason} says why.' }) : !current ? t({ message: 'Drawing…', comment: 'A diagram is being drawn.' }) : null)
   const failed = !!inspection.problem || (current !== null && !current.ok)
   return { inspection, drawing, name, notice, failed }
 }
 
 /** A Mermaid block in an answer: the drawing when it can be drawn, otherwise its readable source and why. */
 export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }: MermaidDiagramProps): ReactNode {
+  const { t } = useLingui()
   const rendering = useMermaidRendering(source, complete)
   const frame = useDiagramFrame(source, rendering)
   const { inspection, name } = rendering
+  const label = inspection.label
 
   return <figure className="rich-diagram rich-code" data-state={diagramFrameState(rendering)} aria-label={name}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{rendering.drawing || inspection.kind ? inspection.label : 'Mermaid'}</span>
       <VisualCopyStatus frame={frame} />
-      <VisualActions frame={frame} showing={Boolean(frame.rendering.drawing)} shownTitle="Show diagram" copyLabel="Copy diagram source" expandLabel="Expand diagram" />
+      <VisualActions frame={frame} showing={Boolean(frame.rendering.drawing)} shownTitle={t`Show diagram`} copyLabel={t`Copy diagram source`} expandLabel={t`Expand diagram`} />
     </div>
-    <DiagramStage frame={frame} name={name} sourceLabel={`${inspection.label} source`} block="rich-diagram" />
+    <DiagramStage frame={frame} name={name} sourceLabel={t({ message: `${label} source`, comment: '{label} is a diagram\'s kind, such as Flowchart: its Mermaid source.' })} block="rich-diagram" />
     <DiagramExpanded frame={frame} name={name} />
   </figure>
 })
