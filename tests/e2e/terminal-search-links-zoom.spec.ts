@@ -231,11 +231,25 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       const before = await grid()
       await input.press('Control+Shift+=')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
+      const describe = () => page.evaluate(() => {
+        const at = document.activeElement
+        const w = window as typeof window & { cnbKeys?: string[] }
+        if (!w.cnbKeys) { w.cnbKeys = []; window.addEventListener('keydown', e => w.cnbKeys!.push(`${e.key}|${e.code}|c${e.ctrlKey}s${e.shiftKey}|${(e.target as Element)?.className}|dp${e.defaultPrevented}`), true) }
+        return { active: at ? `${at.tagName}.${at.className}` : null, inTerminal: Boolean(at?.closest('.terminal-view__screen')), hasFocus: document.hasFocus(),
+          ornaments: document.querySelectorAll('[data-ornament]').length, keys: w.cnbKeys }
+      })
+      const mainState = () => app.evaluate(({ BrowserWindow, webContents }) => {
+        const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+        return { focused: window.isFocused(), contentsFocused: window.webContents.isFocused(), focusedContents: webContents.getFocusedWebContents()?.getURL() ?? null, zoom: window.webContents.getZoomFactor() }
+      })
+      console.log('CNB-DIAG before', JSON.stringify(await describe()), JSON.stringify(await mainState()))
       await app.evaluate(({ BrowserWindow }) => {
         const contents = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents
         contents.sendInputEvent({ type: 'keyDown', keyCode: '+', modifiers: ['control'] })
         contents.sendInputEvent({ type: 'keyUp', keyCode: '+', modifiers: ['control'] })
       })
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      console.log('CNB-DIAG after', JSON.stringify(await describe()), JSON.stringify(await mainState()), await page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize))
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(15)
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.getZoomFactor())).toBe(1)
       await input.press('Control+-')
