@@ -586,6 +586,67 @@ describe("Watcher's room", () => {
     expect(screen.queryByRole('region', { name: 'Grok voice previews' })).toBeNull()
   })
 
+  describe('a fork made beside Watcher (#1136)', () => {
+    /** Grok voice previews as a finished Claude Code thread, with Fork from here shown (Owl), opened beside Watcher. */
+    async function forkable(answer: (request: Extract<AgentCommand, { type: 'fork-thread' }>, state: AgentState) => AgentState) {
+      const state = stateWithWatcher()
+      state.host.threads.find(thread => thread.id === 'grok-previews')!.providerId = 'claude'
+      state.host.models = state.host.models.map(model => model.id === 'claude:sonnet' ? { ...model, providerId: 'claude' as const } : model)
+      mockApp('watcher')
+      const app = vi.mocked(useOptionalApp)()!
+      vi.mocked(useOptionalApp).mockReturnValue({ ...app, update: { watcherEnabled: true, owlFeatures: { watcher: true, 'continue-agent-thread': true } } } as unknown as AppContextValue)
+      const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request => {
+        if (request.type !== 'fork-thread') return state
+        const next = answer(request, state)
+        // Main's reply reaches the window before the press hears it, as AgentContext commits it.
+        const connection = agentContextFixture(next, command, { threadDrafts: new ThreadDraftStore(command) })
+        vi.mocked(useAgents).mockReturnValue(connection)
+        vi.mocked(useOptionalAgents).mockReturnValue(connection)
+        return next
+      })
+      const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
+      vi.mocked(useAgents).mockReturnValue(connection)
+      vi.mocked(useOptionalAgents).mockReturnValue(connection)
+      const { bridge } = fakeBridge(roomState())
+      render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+      await paneReady()
+      fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }))
+      const beside = await screen.findByRole('region', { name: 'Grok voice previews' })
+      const user = userEvent.setup()
+      await user.click(within(beside).getByRole('button', { name: /^Fork from here/u }))
+      await user.click(within(beside).getByRole('button', { name: 'Fork' }))
+      return { command }
+    }
+
+    it('opens the fork beside Watcher in place of its source, with the cursor in its composer, so the next message goes to the fork', async () => {
+      const { command } = await forkable((request, state) => {
+        const next = structuredClone(state)
+        const source = next.host.threads.find(thread => thread.id === 'grok-previews')!
+        next.host.threads.push({ ...structuredClone(source), id: request.newThreadId, title: 'Fork of Grok voice previews' })
+        next.activeThreadId = request.newThreadId
+        return next
+      })
+      const fork = await screen.findByRole('region', { name: 'Fork of Grok voice previews' })
+      const forkId = (command.mock.calls.find(([request]) => request.type === 'fork-thread')![0] as Extract<AgentCommand, { type: 'fork-thread' }>).newThreadId
+      expect(fork).toHaveAttribute('id', 'watcher-beside-pane')
+      expect(fork).toHaveAttribute('data-thread-id', forkId)
+      expect(roomView.get().besideId).toBe(forkId)
+      expect(screen.queryByRole('region', { name: 'Grok voice previews' })).toBeNull()
+      await waitFor(() => expect(fork.querySelector('.thread-workspace__compose .prompt-editor')).toHaveFocus())
+      await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['watcher', forkId] }))
+    })
+
+    it('leaves the original beside Watcher when the fork fails, with the card saying why', async () => {
+      await forkable((_request, state) => ({ ...state, error: 'Sotto no longer has that reply in this thread, so nothing was made. Refresh the thread and try again.' }))
+      const beside = screen.getByRole('region', { name: 'Grok voice previews' })
+      expect(await within(beside).findByRole('alert')).toHaveTextContent('Sotto no longer has that reply in this thread, so nothing was made.')
+      expect(roomView.get().besideId).toBe('grok-previews')
+      expect(beside).toHaveAttribute('data-thread-id', 'grok-previews')
+      expect(within(beside).getByRole('region', { name: 'Fork from here' })).toBeInTheDocument()
+    })
+  })
+
   it('opens a thread at its failed turn on that turn’s line, not on its title', async () => {
     const state = stateWithWatcher()
     const stall = state.host.threads.find(thread => thread.id === 'wav-stall')!
