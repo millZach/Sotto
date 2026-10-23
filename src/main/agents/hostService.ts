@@ -309,7 +309,7 @@ export class LocalHostService implements HostService {
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
-    return this.options.projectOrigins(this.control.shell().host.projects)
+    return this.options.projectOrigins(this.view().host.projects)
   }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }

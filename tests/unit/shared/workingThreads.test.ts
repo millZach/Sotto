@@ -45,9 +45,17 @@ describe('working threads per machine (#1032)', () => {
   it('counts one machine’s own list whatever marks it, and a start that has not reached it yet once', () => {
     const own = [thread('a', { status: 'running', hostId: forge }), thread('b', { status: 'running', remoteHost: true, hostId: forge }), thread('c')]
     expect(countMachineWorkingThreads(own)).toBe(2)
-    expect(countMachineWorkingThreads(own, 'c')).toBe(3)
-    expect(countMachineWorkingThreads(own, 'a')).toBe(2)
-    expect(countMachineWorkingThreads(own, 'not-there-yet')).toBe(3)
+    expect(countMachineWorkingThreads(own, new Set(['c']))).toBe(3)
+    expect(countMachineWorkingThreads(own, new Set(['a']))).toBe(2)
+    expect(countMachineWorkingThreads(own, new Set(['not-there-yet']))).toBe(3)
+  })
+  it('counts every accepted start the list does not hold yet once, and none twice', () => {
+    const nine = Array.from({ length: 9 }, (_, index) => thread(`w${index}`, { status: 'running', remoteHost: true, hostId: forge }))
+    const count = countMachineWorkingThreads(nine, new Set(['first', 'second']))
+    expect(count).toBe(11)
+    expect(machineWorkingThreadsWarning(count, 'forge')).toBe('11 threads are working on forge. Forge may slow down.')
+    // One of them reached the list, already running: still eleven.
+    expect(countMachineWorkingThreads([...nine, thread('first', { status: 'running', remoteHost: true, hostId: forge })], new Set(['first', 'second']))).toBe(11)
   })
   it('warns for another machine above ten in its own name, never of its battery', () => {
     expect(machineWorkingThreadsWarning(10, 'forge')).toBeUndefined()

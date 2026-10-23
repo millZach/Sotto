@@ -253,7 +253,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => watcher?.branchMoveHost(hostId),
     hostName: hostId => watcher?.machineName(hostId) ?? 'That machine' })
   const placing = crossMachine && options.runsAs !== 'headless-host'
-    ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.shell().host.projects),
+    ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...branchMoves ? { branchMoves } : {} } : {}
   watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,

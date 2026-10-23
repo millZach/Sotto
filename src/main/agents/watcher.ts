@@ -288,6 +288,8 @@ export class WatcherService implements WatcherControlHooks {
   private indexed: RecordIndex | undefined
   /** The room's target keys, for the record they were built from (`roomKeys`). */
   private roomKeyed: RoomKeys | undefined
+  /** Every recorded operation's request and retry key, for the record they were read from (`recorded`). */
+  private retryKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
@@ -329,6 +331,11 @@ export class WatcherService implements WatcherControlHooks {
   private readonly roleStarts = new Map<string, RoleReceipt>()
   /** Where each recent start was placed, for its receipt (#1032). In memory only, as `roleStarts` is. */
   private readonly placements = new Map<string, WorkerPlacementReceipt>()
+  /**
+   * Recent starts another machine answered with their thread (#1032): its creation confirmed while their first prompt may
+   * still be unconfirmed. In memory only, as `placements` is; read by the working threads warning alone.
+   */
+  private readonly createdRemotely = new Set<string>()
   /**
    * Starts from a thread's branch placed but not yet run (#1033), by the move each will make: the thread whose branch it
    * carries, whether it is a test run, and the machine it goes to. Taken when the start runs, which is at once.
@@ -474,6 +481,11 @@ export class WatcherService implements WatcherControlHooks {
     if (this.roomKeyed?.record === record) return this.roomKeyed
     return this.roomKeyed = { record, participants: record.requests.map(request => request.participants.map(item => key(item.target))),
       watches: (record.watches ?? []).map(watch => key(watch.target)), hostless: new Map() }
+  }
+  /** Whether `record` holds an operation with this request and retry key: one pass per record, not one per start. */
+  private recorded(record: Readonly<WatcherRecord>, requestId: string, retryKey: string): boolean {
+    if (this.retryKeyed?.record !== record) this.retryKeyed = { record, keys: new Set(record.operations.map(item => `${item.requestId}:${item.retryKey}`)) }
+    return this.retryKeyed.keys.has(`${requestId}:${retryKey}`)
   }
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
   private target(threadId: string): WatcherThreadTarget { return { hostId: this.hostId(), threadId } }
@@ -823,12 +835,25 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * The working threads warning after a start on another machine (#1032): that machine's working threads, counted from its
-   * own list as this computer holds it, the new thread among them. Only while Work across machines is on.
+   * own list as this computer holds it, the new thread among them whatever its list says yet. Watcher's other starts there
+   * count by their own turn once the list holds them, so a finished worker kept for its background work is not working; one
+   * the list does not hold yet, or holds before its first turn shows, counts once the machine has made its thread, so
+   * starts made together still warn. A delivery that is only unconfirmed is not counted, and nothing is counted twice.
+   * Only while Work across machines is on.
    */
   private machineWorkingWarning(target: WatcherThreadTarget): { warning: string } | Record<string, never> {
     if (!this.options.workerMachine) return {}
     const name = this.remote?.hosts().find(host => host.hostId === target.hostId)?.name?.trim() || 'that machine'
-    const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(this.owningSnapshot(target.hostId)?.threads ?? [], target.threadId), name)
+    const threads = this.owningSnapshot(target.hostId)?.threads ?? [], starting = new Set([target.threadId]), record = this.view()
+    const reserved = new Set(record.reservations.flatMap(item => item.target.hostId === target.hostId && item.target.threadId !== target.threadId ? [item.operationId] : []))
+    if (reserved.size) for (const operation of record.operations) {
+      if (operation.action !== 'start' || !reserved.has(operation.id) || operation.outcome && WATCHER_FINAL_OUTCOMES.has(operation.outcome)) continue
+      // Made on the machine: its first prompt accepted, or answered with its thread while that prompt is confirmed.
+      if (operation.deliveryState !== 'accepted' && !(operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id))) continue
+      const listed = threads.find(thread => thread.id === operation.target.threadId)
+      if (!listed || !listed.lastTurn && (listed.summary?.messageCount ?? listed.messages.length) === 0) starting.add(operation.target.threadId)
+    }
+    const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(threads, starting), name)
     return warning ? { warning } : {}
   }
   /**
@@ -873,7 +898,7 @@ export class WatcherService implements WatcherControlHooks {
       refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
     }
     if (!this.options.workerMachine) return undefined
-    if (this.record().operations.some(item => item.requestId === input.requestId && item.retryKey === input.retryKey)) return undefined
+    if (this.recorded(this.view(), input.requestId, input.retryKey)) return undefined
     if (fromThread) this.checkBranchSource(fromThread, input)
     const placed = await this.placement({ machine, os }, input.project)
     if ('status' in placed) throw new Refusal(placed)
@@ -3006,6 +3031,10 @@ ${operation.draftId}`)
     this.placements.set(operationId, placement)
     for (const kept of this.placements.keys()) { if (this.placements.size <= ROLE_STARTS_KEPT) break; this.placements.delete(kept) }
   }
+  private rememberCreatedRemotely(operationId: string): void {
+    this.createdRemotely.add(operationId)
+    for (const kept of this.createdRemotely) { if (this.createdRemotely.size <= ROLE_STARTS_KEPT) break; this.createdRemotely.delete(kept) }
+  }
   private placementBlock(operationId: string): { placement: WorkerPlacementReceipt } | Record<string, never> {
     const placement = this.placements.get(operationId)
     return placement ? { placement } : {}
@@ -3098,6 +3127,8 @@ ${operation.draftId}`)
         call: { name, input } } as WatcherHostControl)
       const parsed = watcherToolSchemas[name].output.parse(result)
       const receipt = 'receipt' in parsed ? parsed.receipt : undefined
+      // The host answers a start with its thread only once it has made it.
+      if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
       if (parsed.status === 'refused' && !receipt) await this.options.control.updateWatcher(record => {
         this.recordRemoteRefusal(record, operation.id, parsed.code)
       })
