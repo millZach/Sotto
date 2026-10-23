@@ -82,6 +82,7 @@ import {
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
+  OPENROUTER_LIST_MODELS,
   SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_GET_STATUS,
@@ -111,6 +112,7 @@ import {
 import {
   dictationCommandSchema,
   openRouterKeyCheckSchema,
+  openRouterModelListSchema,
   transcriptionResultSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
@@ -555,6 +557,7 @@ export function createSottoBridge(
     chooseSpeechModel: (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
     onSpeechModelStatus,
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
+    listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
     ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),

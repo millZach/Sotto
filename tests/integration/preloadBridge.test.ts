@@ -164,6 +164,7 @@ describe('typed preload bridge', () => {
         'getDictationRecord',
         'listDictationRecords',
         'listHistory',
+        'listOpenRouterModels',
         'listRecoveryNotices',
         'listSpeechModels',
         'memory',
