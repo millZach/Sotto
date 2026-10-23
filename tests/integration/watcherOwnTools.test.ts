@@ -7,8 +7,8 @@ import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfil
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
-import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { WATCHER_ROLES_PROMPT, WATCHER_SYSTEM_PROMPT, watcherSystemPrompt } from '../../src/main/agents/watcherPrompt'
+import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
@@ -20,7 +20,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
 import { museFixture } from '../fixtures/museFixture'
-import { MUSE_WATCHER_INSTRUCTIONS } from '../../src/main/agents/muse'
+import { MUSE_WATCHER_INSTRUCTIONS, museWatcherInstructions } from '../../src/main/agents/muse'
 import { museToolName } from '../../src/main/agents/museRequests'
 import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
@@ -48,14 +48,14 @@ async function seedModels(root: string, provider: keyof typeof factories, update
     models: ids.map(model => ({ id: model, model, displayName: model, isDefault: model === ids[0], defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] })),
   } : { ...(updated ? { cliVersion: '1.0.41' } : {}), catalog: { currentModelId: ids[0], availableModels: ids.map(modelId => ({ modelId, name: modelId, _meta: { reasoningEffort: 'high', supportsReasoningEffort: true, reasoningEfforts: [{ id: 'high' }] } })) } }))
 }
-async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok' | 'muse', hostId: string = randomUUID()) {
+async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok' | 'muse', hostId: string = randomUUID(), instructions?: string) {
   const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId, provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
   const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? {
     id, hostId, projectId, providerId: provider, kind: 'watcher', title: 'Center', modelId: 'fixture-model', status: 'idle', messages: [], requests: [],
   } as AgentThread : undefined, true)
-  const tools: WatcherProfileTools = { ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn() }
+  const tools: WatcherProfileTools = { ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn(), ...(instructions !== undefined ? { instructions } : {}) }
   source.useTools(tools); host.useLaunchProfiles!(source)
   host.useThreadTools!(['sotto_visual', 'sotto_pull_requests', 'sotto_host_setup', 'sotto_browser'].map(scoped))
   host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: vi.fn(async () => { throw new Error('The center must not attach browser tools') }) })
@@ -101,11 +101,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       const given = (params?.config as { mcpServers?: Record<string, unknown> } | undefined)?.mcpServers
       if (given) expect(Object.keys(given).map(name => { expect(name).toMatch(MUSE_SUFFIX); return name.replace(MUSE_SUFFIX, '') }).sort()).toEqual([...names].sort())
     }
-    // MSP takes no instructions from a client, so they go ahead of each message to Watcher, which is shown alone.
-    for (const record of records.filter(record => record.method === 'turn/start')) {
-      expect((record.params!.input as unknown[])[0]).toEqual({ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS })
-      expect(record.params!.displayText).toEqual(expect.any(String))
-    }
+    // MSP takes no instructions from a client, so they go ahead of Watcher's first message, which is shown alone.
+    const turns = records.filter(record => record.method === 'turn/start')
+    expect((turns[0]!.params!.input as unknown[])[0]).toEqual({ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS })
+    for (const record of turns) expect(record.params!.displayText).toEqual(expect.any(String))
   } else {
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
@@ -213,6 +212,9 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
       assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(before), runtimeMode)
       if ('liveSettings' in f && f.liveSettings) expect((await f.liveSettings.effective(id)).runtimeMode).toBe(runtimeMode)
     }
+    // Muse is told Watcher's instructions once on a host (#1418): the turns after the first carry the message alone.
+    const museTurns = async () => (await f.driver.requests()).filter(record => record.method === 'turn/start').map(record => record.params!.input as unknown[])
+    if (provider === 'muse') expect((await museTurns()).map(input => input.length)).toEqual([2, ...modes.map(() => 1)])
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, providerMode: 'anything' })).rejects.toThrow('ordinary permission modes')
     const beforeModelChange = (await f.driver.requests()).length
     expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high', modelId: 'fixture-second-model' })).accepted).toBe(true)
@@ -243,6 +245,8 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     await f.host.connect(); await f.host.startThreadSession!(id)
     await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic resumed turn' })
     assertConfiguration(provider, await f.driver.requests())
+    // A cold resume is a new host, which tells the resumed session the instructions again.
+    if (provider === 'muse') expect((await museTurns()).at(-1)![0]).toEqual({ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS })
     assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(beforeResume), 'full-access')
     expect(tools.revoke).not.toHaveBeenCalled()
     if (provider === 'codex') {
@@ -257,9 +261,9 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
 })
 
 /** A Watcher thread and an ordinary thread beside it on one provider, for the request note checks. */
-async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok' | 'muse') {
+async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok' | 'muse', instructions?: string) {
   const id = randomUUID(), ordinary = randomUUID()
-  await attach(f.host, f.root, id, f.projectId, provider)
+  await attach(f.host, f.root, id, f.projectId, provider, randomUUID(), instructions)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
@@ -354,6 +358,38 @@ it('gives a Muse Watcher its instructions ahead of each message and its request 
   expect(named(1)).toContain('sotto_browser')
   expect(starts[0]!.params).toMatchObject({ permissionProfile: ':ask-me' })
   expect(starts[1]!.params).not.toHaveProperty('permissionProfile')
+})
+
+it('tells a Muse Watcher its profile’s instructions once, again after a compaction, and shows each message as typed', async () => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  // With worker roles on, the profile's instructions carry the roles lines (#1417).
+  const { id } = await watcherBesideOrdinary(f, 'muse', watcherSystemPrompt(true))
+  const send = async (text: string, note: string) => {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text, watcherRequestNote: note })).accepted).toBe(true)
+    await f.driver.completeTurn(id, 'Synthetic complete')
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  }
+  const note = () => watcherRequestNote(randomUUID(), randomUUID())
+  const instructions = { type: 'text', text: museWatcherInstructions(watcherSystemPrompt(true)) }
+  const first = note(), second = note()
+  await send('Synthetic first', first)
+  // Muse keeps no display text from here on, so the second message is shown from the wire text, with Sotto's note off.
+  await writeFile(join(f.root, 'script.json'), JSON.stringify({ dropDisplayText: true }))
+  await send('Synthetic second', second)
+  expect((await f.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })).accepted).toBe(true)
+  await send('Synthetic after compaction', note())
+  await send('Synthetic fourth', note())
+  // A note that says the conversation is new or was compacted, as after one Muse made by itself, brings them back too.
+  const compacted = watcherRequestNote(randomUUID(), randomUUID(), true)
+  expect(compacted).toContain(WATCHER_COMPACTED_NOTE)
+  await send('Synthetic after a compaction Muse made', compacted)
+  const turns = (await f.driver.requests()).filter(record => record.method === 'turn/start').map(record => record.params!.input as { type: string; text: string }[])
+  expect(turns[0]).toEqual([instructions, { type: 'text', text: 'Synthetic first' + watcherRequestLine(first) }])
+  expect(turns[0]![0]!.text).toContain(WATCHER_ROLES_PROMPT)
+  expect(turns[1]).toEqual([{ type: 'text', text: 'Synthetic second' + watcherRequestLine(second) }])
+  expect(turns.map(input => input[0]!.text === instructions.text)).toEqual([true, false, true, false, true])
+  const shown = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text)
+  expect(shown).toEqual(['Synthetic first', 'Synthetic second', 'Synthetic after compaction', 'Synthetic fourth', 'Synthetic after a compaction Muse made'])
 })
 
 it.each([

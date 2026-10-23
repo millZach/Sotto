@@ -39,7 +39,7 @@ import { markTurnActivity } from './turnActivity'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
-import { watcherRequestLine } from './watcherRequestNote'
+import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
 
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
 const THREAD_PROCESS_LOST = 'Muse stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -189,26 +189,36 @@ const MUSE_WATCHER_WITHOUT_TOOLS = 'This Muse cannot give Watcher its Sotto tool
 const MUSE_WATCHER_REVIEWED = 'This Muse would let its own reviewer decide Watcher’s approvals instead of you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 const MUSE_WATCHER_UNPROVEN = 'This Muse cannot show that Watcher’s approvals stay with you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 /**
- * Watcher's instructions on Muse. MSP takes no system prompt or instructions from a client, so they travel as a text part
- * ahead of each message Sotto sends Watcher, marked as Sotto's. The turn's `displayText` is the message alone, so Muse's
- * transcript and Sotto's show only what was sent; the model reads both (ADR-0073).
+ * Watcher's instructions on Muse: `instructions` is the profile's own, with the worker-role lines when that feature is on,
+ * or the base prompt (#1417). MSP takes no system prompt or instructions from a client, so they travel as a text part,
+ * marked as Sotto's, ahead of the first message Sotto sends Watcher's session on a host and again after its conversation
+ * was compacted (#1418). The turn's `displayText` is the message alone, so Muse's transcript and Sotto's show only what
+ * was sent; the model reads both (ADR-0073).
  */
-export const MUSE_WATCHER_INSTRUCTIONS = `[Sotto: Watcher's instructions. Muse takes no instructions from Sotto any other way, so they come ahead of each message Sotto sends you. They are not the user's words.]\n${WATCHER_SYSTEM_PROMPT}\n[End of Watcher's instructions. The message follows.]\n\n`
+export function museWatcherInstructions(instructions: string = WATCHER_SYSTEM_PROMPT): string {
+  return `[Sotto: Watcher's instructions. Muse takes no instructions from Sotto any other way, so they come with Sotto's first message to you, and again after this conversation is compacted or resumed. They are not the user's words.]\n${instructions}\n[End of Watcher's instructions. The message follows.]\n\n`
+}
+export const MUSE_WATCHER_INSTRUCTIONS = museWatcherInstructions()
+/**
+ * Watcher's instructions at the start of a message, in any wording Sotto has sent them: with or without the worker-role
+ * lines, and the opening line that said they came ahead of every message.
+ */
+const MUSE_WATCHER_BLOCK = /^\[Sotto: Watcher's instructions\.[^\n]*\]\n[\s\S]*?\n\[End of Watcher's instructions\. The message follows\.\]/u
 /** The request note's line as `watcherRequestLine` writes it, at the end of a message Sotto sent Watcher. */
 const MUSE_WATCHER_NOTE = /\n\n\[Sotto Watcher request: [^\]\n]{1,500}\]$/u
 /**
- * A message Sotto sent Watcher on Muse, as it was typed, from the wire text when Muse kept no whole display text: the
- * instructions Sotto put ahead of it and the note after it come off (ADR-0079). Only a message beginning with the exact
- * instructions is touched. The words are proved by the digest Sotto kept when it sent them; when Muse cut the message
- * short there is nothing to prove them by, and only Sotto's own parts come off.
+ * A message Sotto sent, as it was typed, from the wire text when Muse kept no whole display text: Watcher's instructions
+ * ahead of it and the note after it come off (ADR-0079). Only a message that begins with the instructions or ends with
+ * the note is touched. The words are proved by the digest Sotto kept when it sent them, so words the user typed that look
+ * like a note stay; when Muse cut the message short there is nothing to prove them by, and only Sotto's own parts come off.
  */
 function museWatcherTyped(text: string, typedDigest: string): string | undefined {
-  const marker = MUSE_WATCHER_INSTRUCTIONS.trimEnd()
-  if (!text.startsWith(marker)) return undefined
+  const block = MUSE_WATCHER_BLOCK.exec(text)
   // MSP joins a turn's text parts in order; the separator it puts between them is Muse's.
-  const body = text.slice(marker.length).replace(/^\n{1,2}/u, '')
+  const body = block ? text.slice(block[0].length).replace(/^\n{1,2}/u, '') : text
   const note = MUSE_WATCHER_NOTE.exec(body)
-  const candidates = [body, ...(note ? [body.slice(0, note.index)] : []), text.slice(MUSE_WATCHER_INSTRUCTIONS.length)]
+  if (!block && !note) return undefined
+  const candidates = [body, ...(note ? [body.slice(0, note.index)] : [])]
   return candidates.find(candidate => digest(candidate) === typedDigest) ?? (note ? body.slice(0, note.index) : body)
 }
 
@@ -227,6 +237,12 @@ interface ThreadProcess {
   sessionMcp?: boolean
   /** Started for Watcher's thread with its launch profile: its session gets Watcher's tools and instructions, never the browser. */
   watcher: boolean
+  /**
+   * Watcher's instructions are in its session's conversation: a turn Muse started on this host carried them, and nothing
+   * since says the conversation was compacted (#1418). A new host, after a restart, a lost process or an idle close,
+   * starts without, so the session it resumes is told them again.
+   */
+  instructed?: boolean
   /**
    * Set once this host has built the thread's session runtime, by a start or the first resume, with the names of the
    * Sotto tools it was given. Later resumes on the same host send no servers: Muse keeps the ones it was built with,
@@ -1301,6 +1317,8 @@ export class MuseMspHost implements AgentHost {
         case 'item/started': case 'item/updated': case 'item/completed': {
           const parsed = museItemEventSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          // A compaction's summary may have dropped Watcher's instructions, so its next message carries them again (#1418).
+          if (parsed.item.kind === 'compaction') entry.instructed = false
           this.fold(owner).viewCursor = parsed.viewCursor
           this.foldItem(owner, parsed.item)
           this.emit(true)
@@ -1648,13 +1666,12 @@ export class MuseMspHost implements AgentHost {
           if (command.type === 'steer' && !active) throw new Error('There is no running turn to steer. Queue a follow-up instead.')
           if (thread.requests.length) throw new Error('Answer the pending Muse request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
-          // Watcher's instructions go ahead of each message to it, and its request note after the words as Grok's does, the
-          // two channels MSP offers; the turn's display text is the message alone (ADR-0073). A wake-up's news for Watcher
-          // goes the same way as the note.
+          // Watcher's request note goes after the words as Grok's does, and its instructions, when its session needs them,
+          // ahead of them: the two channels MSP offers. The turn's display text is the message alone (ADR-0073). A
+          // wake-up's news for Watcher goes the same way as the note.
           const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
           const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
-          const parts: Record<string, unknown>[] = [...(watcherProfile && command.type === 'send' ? [{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }] : []),
-            { type: 'text', text: command.text + note }]
+          const parts: Record<string, unknown>[] = [{ type: 'text', text: command.text + note }]
           const display = watcherProfile && command.type === 'send' ? { displayText: command.text } : {}
           for (const attachment of attachments) {
             const bytes = await attachment.read()
@@ -1686,6 +1703,11 @@ export class MuseMspHost implements AgentHost {
             if (alias.nativeModelId && alias.nativeModelId !== alias.modelId) validatePromptAttachments(this.state, alias.nativeModelId, command.attachments)
           }
           this.assertGeneration(generation)
+          // Once per conversation, not with every message (#1418): with the first send on this host, and again when the
+          // note says the conversation is new or was compacted, which also catches a compaction Muse made by itself.
+          if (watcherProfile && watcherNote?.includes(WATCHER_COMPACTED_NOTE)) entry.instructed = false
+          const instructing = watcherProfile !== undefined && command.type === 'send' && !entry.instructed
+          if (instructing) parts.unshift({ type: 'text', text: museWatcherInstructions(watcherProfile.instructions) })
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           release()
@@ -1712,6 +1734,7 @@ export class MuseMspHost implements AgentHost {
               ? await entry.rpc.request('turn/steer', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, expectedTurnId: active!.turnId, input: parts, ...effort })
               : await entry.rpc.request('turn/start', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, input: parts, ...display, ...effort })
             const started = turnStartSchema.parse(ack)
+            if (instructing) entry.instructed = true
             if (command.type === 'send') this.activeTurns.set(command.threadId, { turnId: started.turnId, messageId: command.messageId })
             thread.status = 'running'
             thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
@@ -1810,6 +1833,8 @@ export class MuseMspHost implements AgentHost {
           watcherGuard?.()
           const before = this.thread(command.threadId).usage
           await entry.rpc.request('session/compact', { commandId: museCommandId(), sessionId: alias.museSessionId })
+          // The summary may have dropped Watcher's instructions, so its next message carries them again (#1418).
+          entry.instructed = false
           // Muse's new size comes only with its next session/contextUsage, so the figure from before the compaction would
           // outlive it: cleared, with a new time, unless a reading came in while it ran (ADR-0095).
           const thread = this.thread(command.threadId), usage = thread.usage
