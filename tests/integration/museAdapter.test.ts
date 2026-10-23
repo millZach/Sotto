@@ -7,6 +7,7 @@ import { describeAdapterContract } from './adapterContract'
 import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
@@ -585,5 +586,26 @@ it('does not start a side call when MSP cannot enforce that all tools are disabl
     expect(await readFile(join(f.root, 'oneshot.jsonl'), 'utf8')).toBe(before)
     expect((await f.host.snapshot()).threads).toHaveLength(1)
     expect(JSON.stringify(await f.driver.requests())).not.toContain('Marker material')
+  } finally { await f.cleanup() }
+})
+
+it('reports how long Muse took to its first output and from its last output to finishing the turn, to the send that started it (#1420)', async () => {
+  const f = await museFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID(), commandId = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Timed' })
+    const stages = new SendStageClock()
+    stages.mark('dispatched')
+    const giveBack = lendSendStages(commandId, stages)
+    try { await expect(f.host.execute({ type: 'send', threadId: id, commandId, messageId: randomUUID(), text: 'Synthetic prompt' })).resolves.toEqual({ accepted: true }) }
+    finally { giveBack() }
+    // Muse started the turn, so the send's record waits for its end as well as its first output.
+    expect(stages.awaitsTurnEnd()).toBe(true)
+    await f.driver.completeTurn(id, 'Synthetic reply')
+    await stages.untilTurnEnd()
+    expect(stages.turnEndTimings()).toEqual({ turnFirstOutputMs: expect.any(Number), turnFinishWaitMs: expect.any(Number) })
+    for (const value of Object.values(stages.turnEndTimings()!)) expect(Number.isInteger(value) && value! >= 0).toBe(true)
   } finally { await f.cleanup() }
 })
