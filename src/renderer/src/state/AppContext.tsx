@@ -38,8 +38,7 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
-import { playNightFalls } from '../watcher/nightFalls'
-import { watcherEnabledOf } from './watcherFeature'
+import { cancelNightFalls, playNightFalls } from '../watcher/nightFalls'
 import type { SettingsSectionId } from '../features/settings/settingsPages'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
@@ -111,6 +110,11 @@ const productionFactories: ProductionControllerFactories = {
   createRecorder: (options) => new AudioRecorder(options),
   createTranscriber: createProductionTranscriber,
   createCuePlayer: () => new SoundCuePlayer(),
+}
+
+/** Watcher's Owl gate, read as owlFeature.ts reads it; that module imports this one, so it cannot be imported here. */
+function watcherOn(update: UpdateStatus | null): boolean {
+  return update?.owlFeatures !== undefined ? update.owlFeatures.watcher === true : update?.watcherEnabled === true
 }
 
 export function createProductionDictationController(
@@ -255,6 +259,7 @@ export function AppProvider({
   const navigationRef = useRef(navigation)
   navigationRef.current = navigation
   const updateRef = useRef(update)
+  const navigationGenerationRef = useRef(0)
   updateRef.current = update
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
   const speechModelRef = useRef<SpeechModelStatus | null>(null)
@@ -681,7 +686,10 @@ export function AppProvider({
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
     navigate: (destination, settingsSection) => {
+      // Navigations apply in the order they were asked for: a run's deferred page change gives way to any newer one.
+      const generation = ++navigationGenerationRef.current
       const go = (): void => {
+        if (generation !== navigationGenerationRef.current) return
         setNavigation(destination)
         // A request is for one visit: Settings opened any other way starts on its first page again.
         setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
@@ -689,8 +697,8 @@ export function AppProvider({
       // Between Threads and Watcher's room the window plays night falls, unless the setting is off.
       const from = navigationRef.current, current = settingsRef.current
       const betweenRooms = (from === 'threads' && destination === 'watcher') || (from === 'watcher' && destination === 'threads')
-      if (betweenRooms && watcherEnabledOf(updateRef.current) && current?.roomTransition !== false) playNightFalls(go, { forward: destination === 'watcher', speed: current?.roomTransitionSpeed ?? 1 })
-      else go()
+      if (betweenRooms && watcherOn(updateRef.current) && current?.roomTransition !== false) playNightFalls(go, { forward: destination === 'watcher', speed: current?.roomTransitionSpeed ?? 1 })
+      else { cancelNightFalls(); go() }
     },
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)

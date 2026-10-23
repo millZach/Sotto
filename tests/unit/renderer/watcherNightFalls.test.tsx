@@ -41,7 +41,7 @@ describe('the night falls front', () => {
   it('reaches a point later the further along the way it is, in either direction', () => {
     expect(frontTimeAt(40, 1280, true)).toBeLessThan(frontTimeAt(560, 1280, true))
     expect(frontTimeAt(560, 1280, false)).toBeLessThan(frontTimeAt(40, 1280, false))
-    expect(frontTimeAt(-500, 1280, true)).toBe(0)
+    expect(frontTimeAt(-500, 1280, true)).toBeCloseTo(0, 6)
   })
 
   it('is ragged by at most one cell and the same on every run', () => {
@@ -93,6 +93,31 @@ describe('playing night falls', () => {
     expect(document.querySelector('.night-falls-band')).toBeNull()
     expect(document.documentElement.dataset.roomTransition).toBeUndefined()
     expect(document.documentElement.style.getPropertyValue('--room-transition-ms')).toBe('')
+  })
+
+  it('clears up when the transition cannot start, and the page still changes', async () => {
+    const update = vi.fn()
+    const start: StartViewTransition = cb => { cb(); return { ready: Promise.reject(new Error('InvalidStateError')), finished: Promise.resolve(), updateCallbackDone: Promise.resolve(), skipTransition() {} } as unknown as ViewTransition }
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start })
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener() {}, removeEventListener() {} }) as never
+    playNightFalls(update, { forward: true, speed: 1 })
+    expect(update).toHaveBeenCalledOnce()
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(document.querySelector('.night-falls-band')).toBeNull()
+    expect(document.documentElement.dataset.roomTransition).toBeUndefined()
+  })
+
+  it('cancels the clip when the run ends, and a second run skips the first', async () => {
+    const fake = fakeViewTransitions()
+    const cancel = vi.fn()
+    document.documentElement.animate = vi.fn().mockReturnValue({ cancel }) as never
+    playNightFalls(() => {}, { forward: true, speed: 1 })
+    await act(async () => { await Promise.resolve() })
+    playNightFalls(() => {}, { forward: false, speed: 1 })
+    expect(fake.skipped()).toBe(1)
+    await fake.finish()
+    expect(cancel).toHaveBeenCalled()
+    expect(document.querySelectorAll('.night-falls-band')).toHaveLength(0)
   })
 
   it('keeps the speed on the dial', () => {

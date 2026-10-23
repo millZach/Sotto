@@ -109,6 +109,11 @@ let running: ViewTransition | null = null
  * Runs `update` (the state change that swaps the page) inside the night falls transition, or plainly when it cannot
  * play. A press while a run is playing finishes that run at once and starts the next from where the window is.
  */
+/** Ends a run at once (another page was opened meanwhile); its page change still applies, then the newer one wins. */
+export function cancelNightFalls(): void {
+  running?.skipTransition()
+}
+
 export function playNightFalls(update: () => void, options: NightFallsOptions): void {
   if (!nightFallsAvailable()) { update(); return }
   running?.skipTransition()
@@ -118,6 +123,8 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   const canvas = document.createElement('canvas')
   canvas.className = 'night-falls-band'
   canvas.setAttribute('aria-hidden', 'true')
+  // The thread browser and the test iPhone are native views drawn over all DOM: this marks the run as covering them, so they step aside.
+  canvas.setAttribute('data-covers-native-view', '')
   const scale = window.devicePixelRatio || 1
   canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale)
   const ctx = canvas.getContext('2d')
@@ -129,9 +136,9 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   const owlSelector = ':is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room="watcher"]'
   const centre = (): number | null => { const owl = document.querySelector(owlSelector)?.getBoundingClientRect(); return owl && owl.width > 0 ? owl.left + owl.width / 2 : null }
   const from = centre()
+  document.body.append(canvas)
   const transition = document.startViewTransition(() => {
     flushSync(update)
-    document.body.append(canvas)
     // The owl leaves when the band reaches it and lands when the band reaches its new place.
     const to = centre()
     if (from !== null && to !== null) {
@@ -141,9 +148,12 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
     }
   })
   running = transition
+  transition.updateCallbackDone.catch(() => {})
   let frame = 0
+  let clip: Animation | null = null
   const cleanUp = (): void => {
     cancelAnimationFrame(frame)
+    clip?.cancel()
     canvas.remove()
     if (running === transition) {
       running = null
@@ -156,11 +166,15 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   transition.ready.then(() => {
     const frames = 36
     const keyframes = Array.from({ length: frames + 1 }, (_, i) => ({ clipPath: revealPolygon(easeInOut(i / frames), width, height, options.forward), offset: i / frames }))
-    root.animate(keyframes, { duration, easing: 'linear', fill: 'both', pseudoElement: '::view-transition-new(root)' })
+    try { clip = root.animate(keyframes, { duration, easing: 'linear', fill: 'both', pseudoElement: '::view-transition-new(root)' }) } catch { /* the page shows unclipped; the band still sweeps */ }
     const start = performance.now()
+    let painted = ''
     const draw = (now: number): void => {
       const elapsed = now - start
-      if (ctx) paintBand(ctx, easeInOut(Math.min(1, elapsed / duration)), elapsed, width, height, options.forward, inks)
+      const u = easeInOut(Math.min(1, elapsed / duration))
+      // Paint only when the flicker or the front's cell column has moved.
+      const key = `${Math.floor(elapsed / FLICKER_MS)}:${frontEdge(u, width, 1, options.forward)[0]! / CELL_W | 0}`
+      if (ctx && key !== painted) { painted = key; paintBand(ctx, u, elapsed, width, height, options.forward, inks) }
       if (elapsed < duration) frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)
