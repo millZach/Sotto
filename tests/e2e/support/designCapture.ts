@@ -74,6 +74,8 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
     const tolerance = 1
     const documentRoot = document.documentElement
     if (documentRoot.scrollWidth > documentRoot.clientWidth + tolerance) problems.push('document-horizontal-overflow')
+    // Only rooms and panes scroll. A document taller than the window lets a wheel lift the whole shell off its foot.
+    if (documentRoot.scrollHeight > documentRoot.clientHeight + tolerance) problems.push('document-vertical-overflow')
     if (document.body.scrollWidth > document.body.clientWidth + tolerance) problems.push('body-horizontal-overflow')
 
     for (const selector of ['.app-room', '.thread-workspace']) {
