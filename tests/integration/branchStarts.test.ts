@@ -115,6 +115,24 @@ describe('a worker started from a thread’s branch (#1033)', () => {
     expect(git(machines.laptop, 'rev-parse', 'refs/heads/feat/here')).toBe(commit)
   })
 
+  it('gives two starts beside the same branch a name each, even when both read the same free name', async () => {
+    git(machines.laptop, 'switch', '-q', '-c', 'feat/here')
+    const commit = await commitFile(machines.laptop, 'here.txt', 'here')
+    const moves = [randomUUID(), randomUUID()]
+    for (const moveId of moves) {
+      moved(await laptop({}).forStart({ from: { hostId: LAPTOP, threadId: 'laptop-thread' }, to: { hostId: LAPTOP, projectId: 'laptop-project' }, here: LAPTOP, moveId, snapshot: false }))
+    }
+    const directory = join(machines.root, 'laptop-sotto'); await mkdir(directory, { recursive: true })
+    const worktrees = new ThreadWorktrees(directory)
+    // Both allocations read feat/here-2 as free before either worktree is made.
+    const allocated = await Promise.all(moves.map(async moveId => worktrees.allocate(machines.laptop, 'independent', { incomingRef: await movedBranchRef(machines.laptop, moveId) })))
+    expect(allocated.map(record => record.branch)).toEqual(['feat/here-2', 'feat/here-2'])
+    const made = await Promise.all(allocated.map(record => worktrees.ensure(record)))
+    expect(made.map(record => record.branch).sort()).toEqual(['feat/here-2', 'feat/here-3'])
+    for (const record of made) expect(git(record.path!, 'rev-parse', 'HEAD')).toBe(commit)
+    expect(git(machines.laptop, 'rev-parse', 'refs/heads/feat/here')).toBe(commit)
+  })
+
   it('refuses uncommitted work for a start that is not a test run, either way, in the move’s words, and lands nothing', async () => {
     await writeFile(join(machines.laptop, 'app.txt'), 'half done here\n')
     await writeFile(join(machines.forge, 'app.txt'), 'half done there\n')

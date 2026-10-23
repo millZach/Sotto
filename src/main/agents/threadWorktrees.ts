@@ -12,6 +12,8 @@ import { nativeEnvironment } from './subscriptionCodex'
 const INCOMING_REF = /^refs\/sotto\/incoming\/[0-9a-f-]{36}\/(.+)$/u
 /** How far `<name>-<n>` counts before a worker started from a moved branch takes a `sotto/<token>` branch instead. */
 const MOVED_BRANCH_SUFFIXES_MAX = 99
+/** How many times a moved-branch worktree is tried again on the next free name when another process took the one it read. */
+const MOVED_BRANCH_ADD_ATTEMPTS = 3
 
 /**
  * The incoming ref one move landed in this project's repository (#1033): the only ref under `refs/sotto/incoming/<move>/`.
@@ -216,6 +218,8 @@ export async function checkoutIdentity(folder: string, git: RunGit = runWorktree
 // A host has separate thread and terminal services. They still share Git's registry,
 // including when their projects start in different linked checkouts of one repository.
 const registryOperations = new Map<string, Promise<void>>()
+/** Moved-branch worktrees being added, by repository: one at a time, so two starts never take the same `<name>-<n>`. */
+const movedBranchPicks = new Map<string, Promise<void>>()
 /** Removals of one reserved folder take turns (#1297), so a second finisher waits instead of deleting beside the first. */
 const removalOperations = new Map<string, Promise<void>>()
 interface RegistryIdentity { readonly common: string; readonly key: string }
@@ -703,6 +707,24 @@ export class ThreadWorktrees {
     }
     return `${this.home.branchPrefix}${token.slice(0, 8)}`
   }
+  /**
+   * Adds a moved-branch worktree on the first free name and answers the name it took. The free name is read and the
+   * branch made (`worktree add -b`, which refuses a branch that exists) one start at a time in this process, so two
+   * starts beside the same branch take `<name>-2` and `<name>-3`. Should another process take the name between the read
+   * and the add, `-b` refuses it and the next free name is tried; a branch is never reset.
+   */
+  private addMovedWorktree(repositoryRoot: string, path: string, name: string, baseCommit: string, identity: RegistryIdentity): Promise<string> {
+    return takeTurns(movedBranchPicks, identity.key, async () => {
+      for (let attempt = 1; ; attempt++) {
+        const branch = await this.freeBranch(repositoryRoot, name, basename(path))
+        try { await this.addWorktree(repositoryRoot, path, branch, ['worktree', 'add', '-b', branch, '--', path, baseCommit], identity); return branch }
+        catch (error) {
+          const takenMeanwhile = error instanceof Error && /already exists/u.test(error.message) && await this.git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false)
+          if (!takenMeanwhile || attempt >= MOVED_BRANCH_ADD_ATTEMPTS) throw error
+        }
+      }
+    })
+  }
   /** Removes the incoming ref a worktree was made from, once the worktree is gone (ADR-0082 decision 3). */
   private async withoutIncomingRef(record: AgentWorktree): Promise<AgentWorktree> {
     const { incomingRef: ref, ...rest } = record
@@ -805,11 +827,18 @@ export class ThreadWorktrees {
     if (!branch) throw new Error('The independent working-copy allocation is incomplete.')
     // An empty folder here, as a half-finished removal or a timed-out add on Windows leaves, is filled (ADR-0041).
     if (await reservedFolder(metadata.path) === 'occupied') throw new Error('The reserved working folder already exists but is not this thread’s Git worktree. Nothing was changed.')
-    if (entries.some(entry => entry.branch === `refs/heads/${branch}`)) throw new Error('The reserved branch is already checked out in another folder. Nothing was changed.')
+    // A worker started from a moved branch takes its name, or the next free `<name>-<n>`, only as its worktree is added:
+    // the name its allocation read may have been taken since, by another start beside it.
+    const moved = metadata.incomingRef && !metadata.checkoutBranch ? INCOMING_REF.exec(metadata.incomingRef)?.[1] : undefined
+    if (!moved && entries.some(entry => entry.branch === `refs/heads/${branch}`)) throw new Error('The reserved branch is already checked out in another folder. Nothing was changed.')
     // -b refuses any existing branch; never reset it with -B or force another checkout. A pull request's branch
     // exists already and is checked out as it stands, with no -b.
     await mkdir(allocationRoot, { recursive: true })
     if (pathKey(await realpath(allocationRoot)) !== pathKey(allocationRoot)) throw new Error('The reserved worktree parent folder was redirected. Nothing was changed.')
+    if (moved) {
+      const taken = await this.addMovedWorktree(repositoryRoot, metadata.path, moved, baseCommit, identity)
+      return (await this.inspectWithin({ ...metadata, branch: taken, status: 'ready', error: undefined }, identity)).worktree
+    }
     await this.addWorktree(repositoryRoot, metadata.path, branch, metadata.checkoutBranch ? ['worktree', 'add', '--', metadata.path, branch] : ['worktree', 'add', '-b', branch, '--', metadata.path, baseCommit], identity)
     return (await this.inspectWithin({ ...metadata, status: 'ready', error: undefined }, identity)).worktree
   }
