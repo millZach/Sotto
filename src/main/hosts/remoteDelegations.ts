@@ -23,6 +23,11 @@ export const KEPT_DELEGATION_READS = 256
 export class RemoteDelegationReads {
   /** By the window's key for each thread, oldest read first. */
   private readonly kept = new Map<string, DelegationsRead>()
+  /**
+   * Every thread the window has asked for, oldest ask first, whether or not Sotto could read it then, so a roster first
+   * opened while its host was away is told when the host connects again, as one read earlier is.
+   */
+  private readonly asked = new Set<string>()
   /** When Sotto lost each host it no longer hears, until it connects again. */
   private readonly lost = new Map<string, string>()
   private readonly listeners = new Set<(threadIds: readonly string[]) => void>()
@@ -38,6 +43,9 @@ export class RemoteDelegationReads {
   async views(threadKey: string): Promise<DelegationsRead> {
     const key = parseHostEntityKey(threadKey)
     if (!key) return none(threadKey, 'not-connected')
+    this.asked.delete(threadKey)
+    this.asked.add(threadKey)
+    if (this.asked.size > KEPT_DELEGATION_READS) this.asked.delete(this.asked.values().next().value!)
     const connection = this.hosts.connection(key.hostId)
     if (!connection || !this.hosts.connected(key.hostId)) return this.lastRead(threadKey, key.hostId)
     if (connection.service.supportsDelegationViews !== true || !connection.service.delegationViews) return none(threadKey, 'older-host')
@@ -87,7 +95,7 @@ export class RemoteDelegationReads {
   removed(hostId: string): void {
     this.lost.delete(hostId)
     const keys = this.keysOf(hostId)
-    for (const key of keys) this.kept.delete(key)
+    for (const key of keys) { this.kept.delete(key); this.asked.delete(key) }
     this.tell(keys)
   }
 
@@ -96,8 +104,9 @@ export class RemoteDelegationReads {
     if (!kept) return none(threadKey, 'not-connected')
     return { ...kept, lastRead: this.lost.get(hostId) ?? this.now().toISOString() }
   }
+  /** The threads of `hostId` the window has asked for or Sotto has kept a read of. */
   private keysOf(hostId: string): string[] {
-    return [...this.kept.keys()].filter(key => parseHostEntityKey(key)?.hostId === hostId)
+    return [...new Set([...this.asked, ...this.kept.keys()])].filter(key => parseHostEntityKey(key)?.hostId === hostId)
   }
   private tell(threadIds: readonly string[]): void {
     if (!threadIds.length) return

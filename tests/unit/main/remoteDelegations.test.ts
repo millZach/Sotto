@@ -92,6 +92,17 @@ describe('a remote host\'s delegation reads', () => {
     expect(await f.reads.brief(key('child'))).toEqual({ threadId: key('child'), text: 'Brief for child' })
   })
 
+  it('tells the window of a thread it first asked for while the host was away, once the host connects again', async () => {
+    const f = fixture()
+    f.connected = false
+    expect((await f.reads.views(key('parent'))).unread).toBe('not-connected')
+    f.connected = true
+    f.answers.set('parent', { threadId: 'parent', delegations: [view('child')], received: [] })
+    f.reads.taken(HOST)
+    expect(f.told).toEqual([[key('parent')]])
+    expect((await f.reads.views(key('parent'))).delegations).toHaveLength(1)
+  })
+
   it('names the threads a host says changed, by the window\'s keys, and hears its connection closing', () => {
     const f = fixture()
     f.reads.heard(HOST, { threadIds: ['parent', 'child'] })
