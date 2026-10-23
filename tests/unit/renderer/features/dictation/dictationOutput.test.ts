@@ -2,9 +2,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { type DictationOutputResult } from '../../../../../src/renderer/src/features/dictation/dictationController'
-import type { TranscriptionProgress } from '../../../../../src/renderer/src/transcription/localTranscriber'
+import { TranscriptionError, type TranscriptionProgress } from '../../../../../src/renderer/src/transcription/localTranscriber'
 import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
+import { tone } from '../../../../fixtures/renderer/syntheticAudio'
 
 describe('DictationController', () => {
   it('keeps text and publishes clipboard unavailability without a transcript on the widget', async () => {
@@ -450,5 +451,84 @@ describe('pipeline prewarm', () => {
     expect(harness.deliverOutput).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'streamed words only' }),
     )
+  })
+})
+
+describe('a silent tail at stop (#937)', () => {
+  it('leaves out a short tail that never rises above a pause and keeps the earlier segments', async () => {
+    const quietSegment = tone(6.5, 0.0005)
+    const heard: Float32Array[] = []
+    const harness = createHarness({
+      recorder: {
+        stop: vi.fn(async () => ({ samples: tone(0.47, 0.0005), sourceSampleRate: 48_000, durationMs: 13_470, peakChunkRms: 0.0006 })),
+      },
+      transcribe: async (options) => {
+        heard.push(options.audio)
+        return { text: heard.length === 1 ? '' : 'spoken words', language: 'en' }
+      },
+    })
+    await harness.controller.start()
+    recorderOptions(harness).onSegment?.({ samples: quietSegment, sourceSampleRate: 48_000, durationMs: 6_500, peakChunkRms: 0.0006 })
+    recorderOptions(harness).onSegment?.({ samples: tone(6.5, 0.05), sourceSampleRate: 48_000, durationMs: 6_500 })
+    await harness.controller.stop()
+
+    // The earlier segments go as they always have, the quiet one included; the silent tail does not.
+    expect(heard).toHaveLength(2)
+    expect(heard[0]).toBe(quietSegment)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'spoken words' }))
+    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ durationMs: 13_470 }))
+  })
+
+  it('sends a short tail with a brief sound above the pause level', async () => {
+    // Quiet on average, but the recorder measured one capture block above the pause level.
+    const tail = tone(0.5, 0.0005)
+    const harness = createHarness({
+      recorder: { stop: vi.fn(async () => ({ samples: tail, sourceSampleRate: 48_000, durationMs: 7_000, peakChunkRms: 0.012 })) },
+      transcribe: async (options) => ({ text: options.audio === tail ? 'no' : 'first part', language: 'en' }),
+    })
+    await harness.controller.start()
+    recorderOptions(harness).onSegment?.({ samples: tone(6.5, 0.05), sourceSampleRate: 48_000, durationMs: 6_500 })
+    await harness.controller.stop()
+
+    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(2)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'first part no' }))
+  })
+
+  it('says no speech was heard when the whole recording is one short silent tail', async () => {
+    const harness = createHarness({
+      recorder: {
+        stop: vi.fn(async () => ({ samples: tone(0.5, 0.0005), sourceSampleRate: 48_000, durationMs: 500, peakChunkRms: 0.0006 })),
+      },
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'NO_SPEECH' })
+  })
+
+  it('keeps a recording whose segment was turned away, and Try again sends that segment alone', async () => {
+    const segment = tone(6.5, 0.05)
+    let refusals = 1
+    const harness = createHarness({
+      recorder: {
+        stop: vi.fn(async () => ({ samples: tone(0.47, 0.0005), sourceSampleRate: 48_000, durationMs: 6_970, peakChunkRms: 0.0006 })),
+      },
+      transcribe: async () => {
+        if (refusals-- > 0) throw new TranscriptionError('failed')
+        return { text: 'spoken words', language: 'en' }
+      },
+    })
+    await harness.controller.start()
+    recorderOptions(harness).onSegment?.({ samples: segment, sourceSampleRate: 48_000, durationMs: 6_500 })
+    await harness.controller.stop()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true })
+
+    await harness.controller.retry()
+
+    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(2)
+    expect(harness.transcriber.transcribe.mock.calls.map(([options]) => options.audio)).toEqual([segment, segment])
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'spoken words' }))
   })
 })

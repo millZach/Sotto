@@ -504,9 +504,10 @@ async function endRecordedServer(record: OpenCodeServerRecord, rows: readonly Pr
 /**
  * End the servers a Sotto that has gone left running on these folders (ADR-0087), with what they started, and take their
  * records off. A record whose Sotto is still running is left for it, and a process that only has a recorded PID now,
- * started at another time or running something else, is never touched.
+ * started at another time or running something else, is never touched. On Windows the process table is read once, through
+ * `readTable`: PowerShell's CIM query by default, which takes seconds, and on a loaded machine up to its 15 s bound.
  */
-export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void): Promise<void> {
+export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void, readTable: () => Promise<ProcessRow[]> = processTable): Promise<void> {
   let names: string[]
   try { names = await readdir(ledger) } catch { return }
   // A record a Sotto that has gone was still writing when it went; one a running Sotto is writing is its own.
@@ -525,7 +526,7 @@ export async function endServersLeftBehind(ledger: string, log?: (event: OpenCod
   }))).flat()
   const left = records.flatMap(({ file, record }) => record && !isRunning(record.owner) ? [{ file, record }] : [])
   if (!left.length && !unread.length) return
-  const rows = process.platform === 'win32' ? await processTable() : []
+  const rows = process.platform === 'win32' ? await readTable() : []
   for (const { file, record } of left) {
     if (await endRecordedServer(record, rows)) log?.('opencode-server-left-ended')
     await rm(file, { force: true }).catch(() => undefined)

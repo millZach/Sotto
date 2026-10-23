@@ -2,7 +2,10 @@
 import { describe, expect, it } from 'vitest'
 
 
+import { calculateRms } from '../../../../src/renderer/src/audio/audioMath'
+import { SEGMENT_SILENCE_RMS } from '../../../../src/renderer/src/audio/audioRecorder'
 import { createHarness } from '../../../fixtures/renderer/audioRecorderHarness'
+import { blocks, tone } from '../../../fixtures/renderer/syntheticAudio'
 
 describe('AudioRecorder streaming segmentation', () => {
   const SAMPLE_RATE = 48_000
@@ -68,6 +71,34 @@ describe('AudioRecorder streaming segmentation', () => {
     // Nothing was lost: the entire recording is still in the final result.
     expect(result?.durationMs).toBeCloseTo(20_000, 0)
     expect(result?.samples.length).toBeGreaterThan(19 * 16_000)
+    expect(result?.peakChunkRms).toBeCloseTo(0.5)
+  })
+
+  it('reports the loudest capture block of only the tail left at stop', async () => {
+    const harness = createHarness()
+    const recorder = harness.recorder({ onSegment: () => undefined })
+    await recorder.start()
+
+    for (let second = 0; second < 6; second++) pushChunk(harness, loudChunk(1))
+    pushChunk(harness, silentChunk(1))
+    for (const block of blocks(tone(0.47, 0.0005, SAMPLE_RATE))) pushChunk(harness, block)
+    const result = await recorder.stop()
+
+    expect(result?.peakChunkRms).toBeLessThan(0.001)
+  })
+
+  it('reports a brief sound above the pause level even when the average of the tail is below it', async () => {
+    const harness = createHarness()
+    const recorder = harness.recorder({ onSegment: () => undefined })
+    await recorder.start()
+
+    const audio = tone(0.5, 0.0005, SAMPLE_RATE)
+    audio.set(tone(0.06, 0.012, SAMPLE_RATE, 100), Math.round(0.2 * SAMPLE_RATE))
+    for (const block of blocks(audio)) pushChunk(harness, block)
+    const result = await recorder.stop()
+
+    expect(calculateRms(audio)).toBeLessThan(SEGMENT_SILENCE_RMS)
+    expect(result?.peakChunkRms).toBeGreaterThanOrEqual(SEGMENT_SILENCE_RMS)
   })
 
   it('never segments without an onSegment callback', async () => {
