@@ -286,6 +286,8 @@ export class WatcherService implements WatcherControlHooks {
   private indexed: RecordIndex | undefined
   /** The room's target keys, for the record they were built from (`roomKeys`). */
   private roomKeyed: RoomKeys | undefined
+  /** Every recorded operation's request and retry key, for the record they were read from (`recorded`). */
+  private retryKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
@@ -460,6 +462,11 @@ export class WatcherService implements WatcherControlHooks {
     if (this.roomKeyed?.record === record) return this.roomKeyed
     return this.roomKeyed = { record, participants: record.requests.map(request => request.participants.map(item => key(item.target))),
       watches: (record.watches ?? []).map(watch => key(watch.target)), hostless: new Map() }
+  }
+  /** Whether `record` holds an operation with this request and retry key: one pass per record, not one per start. */
+  private recorded(record: Readonly<WatcherRecord>, requestId: string, retryKey: string): boolean {
+    if (this.retryKeyed?.record !== record) this.retryKeyed = { record, keys: new Set(record.operations.map(item => `${item.requestId}:${item.retryKey}`)) }
+    return this.retryKeyed.keys.has(`${requestId}:${retryKey}`)
   }
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
   private target(threadId: string): WatcherThreadTarget { return { hostId: this.hostId(), threadId } }
@@ -858,7 +865,7 @@ export class WatcherService implements WatcherControlHooks {
       if (machine !== undefined || os !== undefined) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
       return undefined
     }
-    if (this.record().operations.some(item => item.requestId === input.requestId && item.retryKey === input.retryKey)) return undefined
+    if (this.recorded(this.view(), input.requestId, input.retryKey)) return undefined
     const placed = await this.placement({ machine, os }, input.project)
     if ('status' in placed) throw new Refusal(placed)
     // A working copy or base branch was read for the project where it was named, and means nothing on another machine.
