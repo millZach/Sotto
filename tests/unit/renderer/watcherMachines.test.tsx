@@ -204,6 +204,28 @@ describe('The machines line in Watcher’s room', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('reads once more after a read in flight when Watcher places work meanwhile, so the new placement is read for', async () => {
+    const answers: ((read: WatcherMachinesRead) => void)[] = []
+    const readMachines = vi.fn(() => new Promise<WatcherMachinesRead>(resolve => { answers.push(resolve) }))
+    const room = (placements: readonly string[]) => ({ readMachines, state: { requests: [], receiptPlacements: placements.map(operationId =>
+      ({ operationId, placement: { hostId: FORGE, name: 'forge', awayFromDefault: false } })) } }) as unknown as ReturnType<typeof useWatcherRoom>
+    vi.mocked(useWatcherRoom).mockReturnValue(room(['first']))
+    vi.mocked(useOptionalApp).mockReturnValue(null)
+    const view = render(<WatcherMachines state={agentState([])} now={NOW} />)
+    await act(async () => undefined)
+    expect(readMachines).toHaveBeenCalledTimes(1)
+    // A second start is placed while the first read is still out, and a panel opens too: one read follows, not two.
+    vi.mocked(useWatcherRoom).mockReturnValue(room(['first', 'second']))
+    view.rerender(<WatcherMachines state={agentState([])} now={NOW} />)
+    await act(async () => { fireEvent.click(wide().getByRole('button', { name: /^This computer,/u })) })
+    expect(readMachines).toHaveBeenCalledTimes(1)
+    await act(async () => { answers[0]!({ status: 'ok', machines: [local(), forge()], observedAt: new Date(NOW).toISOString() }) })
+    expect(readMachines).toHaveBeenCalledTimes(2)
+    await act(async () => { answers[1]!({ status: 'ok', machines: [local(), forge({ cpuState: 'busy' })], observedAt: new Date(NOW).toISOString() }) })
+    expect(readMachines).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('.watcher-machines__wide')).toHaveTextContent('forge 0 working, busy')
+  })
+
   it('takes whether a machine is connected from the saved hosts, which stay current between reads', async () => {
     const hosts = hostsBridgeFixture({ initial: hostsState({ localHostId: LOCAL, hosts: [hostStatus({ id: FORGE, hostId: FORGE, name: 'forge', phase: 'connected' }),
       hostStatus({ id: STUDIO, hostId: STUDIO, name: 'studio', phase: 'disconnected' })] }) })

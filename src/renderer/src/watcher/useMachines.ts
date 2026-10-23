@@ -12,18 +12,29 @@ class MachinesStore {
   private machines: MachinesOk | null = null
   private readonly listeners = new Set<() => void>()
   private inFlight = false
+  /** A read asked for while one was in flight, run once that one ends, so a placement made meanwhile is still read for. */
+  private again: (() => Promise<WatcherMachinesRead>) | null = null
   /** The placements the line last read for, so a placement is read for once however often the room is opened. */
   placementsRead = ''
   readonly subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   readonly get = (): MachinesOk | null => this.machines
+  /**
+   * Reads the machines. A read asked for while another is in flight is not dropped: one more read follows when that one
+   * ends, however many were asked for meanwhile, since the one in flight may have been answered before what they follow.
+   */
   read(call: () => Promise<WatcherMachinesRead>): void {
-    if (this.inFlight) return
+    if (this.inFlight) { this.again = call; return }
     this.inFlight = true
     void call().then(result => { if (result.status === 'ok') { this.machines = result; for (const listener of this.listeners) listener() } }, () => undefined)
-      .finally(() => { this.inFlight = false })
+      .finally(() => {
+        this.inFlight = false
+        const next = this.again
+        this.again = null
+        if (next !== null) this.read(next)
+      })
   }
   /** For tests: forget the last read. */
-  clear(): void { this.machines = null; this.placementsRead = ''; this.inFlight = false }
+  clear(): void { this.machines = null; this.placementsRead = ''; this.inFlight = false; this.again = null }
 }
 export const machinesStore = new MachinesStore()
 
