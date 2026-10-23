@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { grokFixture, LOST_REPLY_DEADLINE_MS } from '../fixtures/fakeGrokThreadFixture'
 import type { AgentHost, AgentHostResult } from '../../src/main/agents/host'
 
 // Gate only the unrelated native history I/O; prompt transport and persistence stay real.
@@ -132,8 +132,11 @@ it('Codex rejects a stale history completion after live text and turn completion
   }
 })
 
+// Grok never answers the history read, so the send waits out its thread process's deadline. The process reads that
+// deadline when the create starts it, and the read can only be lost after the create, so this fixture takes the short
+// deadline throughout.
 it.each(['codex', 'grok'] as const)('%s treats a failed pre-dispatch authority read as an unsent prompt', async provider => {
-  const f = provider === 'codex' ? await codexFixture() : await grokFixture()
+  const f = provider === 'codex' ? await codexFixture() : await grokFixture(undefined, LOST_REPLY_DEADLINE_MS)
   const id = randomUUID()
   try {
     await f.host.connect()

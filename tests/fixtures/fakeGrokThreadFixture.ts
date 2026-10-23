@@ -24,16 +24,51 @@ async function sideCalls(root: string): Promise<{ cwd: string; model: string | u
   model: frames.filter(frame => frame.method === 'session/set_model')[index]?.params?.modelId as string | undefined,
   material: ((frames.filter(frame => frame.method === 'session/prompt')[index]?.params?.prompt as { text: string }[] | undefined) ?? []).map(part => part.text).join('') }))
 }
-// The deadline also covers the fake agent's process start; see the note on claudeFixture.
+/**
+ * How long an operation waits once a test has scripted its reply lost. Sotto finds a Grok reply lost only when its
+ * deadline passes, so the test of that waits one out. A short one is safe there: a slow runner can only delay a reply
+ * the fake is already holding back.
+ */
+export const LOST_REPLY_DEADLINE_MS = 2000
+/** What `delayNextAck` scripts for each request whose reply it can lose, given the deadline that reply must miss. */
+const lostReplies: Record<string, (deadline: number) => Record<string, unknown>> = {
+ 'session/prompt': deadline => ({ delayPrompt: deadline + 1000, suppressNotifications: true }),
+ 'session/new': deadline => ({ delayCreate: deadline + 1000 }),
+ authenticate: () => ({ ignoreAuthenticate: true }),
+}
+// The request deadline covers the fake agent's process start and every round trip on it. Grok starts a process for each
+// thread, and on a loaded run `session/new` there took longer than two seconds, so the create came back uncertain and
+// the next send found no confirmed provider session (#1021). The default is the adapter's own; a test that needs a reply
+// lost scripts it with `driver.delayNextAck` instead of shortening this.
 // A sweep leaves a session open while its history is being read (#440), and only a later sweep stops it. A poll on the
 // sweep's own period fires on the same timer tick (Windows rounds a 20 ms timer to two 15.6 ms ticks), so when the two
 // start in step every sweep finds a read under way and an idle session is never stopped. A poll several sweeps long
 // leaves most sweeps between reads. A caller that names its own interval keeps it.
-export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs?: number, session: AdapterSessionOptions = {}, options: GrokAcpOptions = {}) {
+export async function grokFixture(root?: string, requestTimeoutMs = 15_000, pollIntervalMs?: number, session: AdapterSessionOptions = {}, options: GrokAcpOptions = {}) {
  pollIntervalMs ??= session.reaperSweepMs === undefined ? 20 : session.reaperSweepMs * 5
  root ??= await mkdtemp(join(tmpdir(),'sotto-grok-thread-'))
- const adapter = new GrokAcpHost(root,{executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],requestTimeoutMs,pollIntervalMs,...session,...options})
+ const adapterOptions: GrokAcpOptions = {executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],requestTimeoutMs,pollIntervalMs,...session,...options}
+ const adapter = new GrokAcpHost(root,adapterOptions)
  const checkViolations = async () => { const text = await readLog(join(root,'violations.jsonl')); if (text) throw new Error(`Invalid Grok reply: ${text}`) }
+ let live = true
+ // How many of a method's requests the fake has received; a record still being written counts once it is whole.
+ const received = (method: string): Promise<number> => readLog(join(root,'requests.jsonl')).then(text => parseProviderRecords<RecordedRpc>(text).filter(record => record.method === method).length, () => -1)
+ const delayNextAck = async (method: string): Promise<void> => {
+  const lost = lostReplies[method]
+  if (!lost) throw new Error(`The Grok fixture cannot lose the reply to ${method}`)
+  let before = await received(method)
+  while (before < 0) before = await received(method)
+  // The adapter reads its deadline when a send sets its acknowledgement timer and when it starts a process. The short
+  // one lasts until the fake receives the request, by which time the operation waiting for the reply holds it, so
+  // everything started after keeps the generous one. A process started before the request keeps the short one for
+  // its life, which is why a create or a connect is scripted lost before it starts its process.
+  adapterOptions.requestTimeoutMs = Math.min(requestTimeoutMs, LOST_REPLY_DEADLINE_MS)
+  await script(lost(adapterOptions.requestTimeoutMs))
+  void (async () => {
+   while (live && (await received(method)) <= before) await new Promise(resolve => setTimeout(resolve, 20))
+   adapterOptions.requestTimeoutMs = requestTimeoutMs
+  })()
+ }
  const requests = async (): Promise<RecordedRpc[]> => {
   await checkViolations()
   const text = await readLog(join(root,'requests.jsonl'))
@@ -61,8 +96,8 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
    starts:async(id:string)=>{const native=await realId(id);return (await requests()).filter(record=>record.method==='session/load'&&record.params?.sessionId===native).length},
    stopped:async(id:string)=>{const native=await realId(id);return (await requests()).findLast(record=>record.method==='fixture/session-resident'&&record.params?.sessionId===native)?.params?.resident===false},
   },
-  driver:{typeInProvider:(id:string,text:string)=>action(id,{type:'takeover',text}),completeTurn:(id:string,text:string)=>action(id,{type:'complete',text}),raiseQuestion:(id:string,text:string)=>action(id,{type:'question',text}),raisePermission:(id:string,text:string)=>action(id,{type:'permission',text}),delayNextAck:async()=>script({delayPrompt:requestTimeoutMs+1000,suppressNotifications:true}),requests,
-   restart:async()=>{adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session,options)}},
-  cleanup:async()=>{adapter.disconnect();await adapter.closed();if(dirname(resolve(root))!==resolve(tmpdir())||!root.includes('sotto-grok-thread-'))throw new Error('Unexpected temporary directory');try{await checkViolations()}finally{await rm(root,{recursive:true,force:true})}}
+  driver:{typeInProvider:(id:string,text:string)=>action(id,{type:'takeover',text}),completeTurn:(id:string,text:string)=>action(id,{type:'complete',text}),raiseQuestion:(id:string,text:string)=>action(id,{type:'question',text}),raisePermission:(id:string,text:string)=>action(id,{type:'permission',text}),delayNextAck,requests,
+   restart:async()=>{live=false;adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session,options)}},
+  cleanup:async()=>{live=false;adapter.disconnect();await adapter.closed();if(dirname(resolve(root))!==resolve(tmpdir())||!root.includes('sotto-grok-thread-'))throw new Error('Unexpected temporary directory');try{await checkViolations()}finally{await rm(root,{recursive:true,force:true})}}
  }
 }
