@@ -426,7 +426,7 @@ private struct WatcherConversationPane: View {
                             ForEach(items) { item in
                                 Group {
                                     switch item {
-                                    case .message(let message): WatcherMessage(message: message)
+                                    case .message(let message): WatcherMessage(message: message).equatable()
                                     case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
                                     case .ownChange(let change): WatcherOwnChangeLine(change: change)
                                     }
@@ -691,10 +691,11 @@ private struct WatcherConversationPane: View {
 }
 
 /// A message in Watcher's conversation: the user's in a bubble at the trailing edge, Watcher's on the canvas under the
-/// owl, its name and the time.
-private struct WatcherMessage: View {
+/// owl, its name and the time. Drawn again only when the message changes, not each time Watcher's page moves.
+private struct WatcherMessage: View, Equatable {
     let message: Message
     @Environment(\.sottoDensity) private var density
+    static func == (a: Self, b: Self) -> Bool { a.message == b.message }
     var body: some View {
         if message.role == "user" {
             MarkdownText(text: message.text)

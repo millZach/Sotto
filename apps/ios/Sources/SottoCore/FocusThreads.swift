@@ -41,10 +41,7 @@ public struct FocusThreads {
         }
         for row in rows where tops[row.id] == nil {
             let delegated = below[row.id]
-            let searchable = [row.thread.title, row.project ?? "", row.computer, row.thread.providerId ?? "",
-                              row.thread.requests.map(\.text).joined(separator: " "),
-                              delegated?.thread.requests.map(\.text).joined(separator: " ") ?? ""].joined(separator: " ")
-            guard query.isEmpty || searchable.localizedStandardContains(query) else { continue }
+            guard query.isEmpty || Self.searchable(row, delegated).localizedStandardContains(query) else { continue }
             let state = ThreadState(row.thread)
             if row.reachable && state.waitsOnYou { questions.append(row) }
             else if let delegated, row.reachable { waitingIn[row.id] = delegated; questions.append(row) }
@@ -65,6 +62,14 @@ public struct FocusThreads {
 
     /// Whether a row shows the finished-unread mark: its computer says so and it is not the thread open here (ADR-0046).
     public func isUnreadFinish(_ row: HostedThread) -> Bool { row.finishedUnread && row.ref != opened }
+
+    /// The words a search finds a row by, put together only while there is a search: the list is grouped again on
+    /// every change, and nearly always with nothing typed.
+    private static func searchable(_ row: HostedThread, _ delegated: HostedThread?) -> String {
+        [row.thread.title, row.project ?? "", row.computer, row.thread.providerId ?? "",
+         row.thread.requests.map(\.text).joined(separator: " "),
+         delegated?.thread.requests.map(\.text).joined(separator: " ") ?? ""].joined(separator: " ")
+    }
 
     /// A permission holds an agent still until it is answered, so it outranks a question.
     private static func rank(_ row: HostedThread) -> Int { ThreadState(row.thread) == .needsAnswer ? 2 : 1 }

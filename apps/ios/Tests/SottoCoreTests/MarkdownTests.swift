@@ -270,4 +270,16 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(Markdown.blocks("  \n\r\n\t"), [])
         XCTAssertEqual(MarkdownInline("").attributed().characters.count, 0)
     }
+
+    /// A page reads each message once and asks again on every redraw: what it is handed again is what a fresh read gives.
+    func testAMessageReadAgainIsTheSameAsAFreshRead() {
+        for _ in 0..<2 {
+            XCTAssertEqual(Markdown.cachedBlocks(review), Markdown.blocks(review))
+            for inline in inlines(Markdown.blocks(review)) { XCTAssertEqual(inline.cachedAttributed(), inline.attributed()) }
+        }
+        // A message growing word by word is a new text each time, read as itself.
+        let longer = review + " More words."
+        XCTAssertEqual(Markdown.cachedBlocks(longer), Markdown.blocks(longer))
+        XCTAssertNotEqual(Markdown.cachedBlocks(longer), Markdown.cachedBlocks(review))
+    }
 }

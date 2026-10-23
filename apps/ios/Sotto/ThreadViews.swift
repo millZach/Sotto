@@ -796,22 +796,25 @@ private struct MessageView: View, Equatable {
 
 /// A message as blocks (headings, lists, code, quotes, paragraphs), each with its inline Markdown, as the desktop
 /// draws it. A stray backtick can't reach past its own block, and a key chord such as Ctrl+` reads as a key.
-struct MarkdownText: View {
+/// Drawn again only when its words change; a message streaming in draws again only the blocks its new words changed.
+struct MarkdownText: View, Equatable {
     let text: String
     @Environment(\.sottoDensity) private var density
+    static func == (a: Self, b: Self) -> Bool { a.text == b.text }
     var body: some View {
-        let blocks = SottoCore.Markdown.blocks(text)
+        let blocks = SottoCore.Markdown.cachedBlocks(text)
         VStack(alignment: .leading, spacing: Space.dense(Space.s3, density)) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                MarkdownBlockView(block: block, first: index == 0)
+                MarkdownBlockView(block: block, first: index == 0).equatable()
             }
         }
     }
 }
 
-private struct MarkdownBlockView: View {
+private struct MarkdownBlockView: View, Equatable {
     let block: MarkdownBlock
     let first: Bool
+    static func == (a: Self, b: Self) -> Bool { a.first == b.first && a.block == b.block }
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     var body: some View {
@@ -1107,7 +1110,7 @@ private struct CodeBlockView: View {
 /// Styles a block's inline Markdown: code spans in monospace on the code surface, key chords as keys.
 private enum InlineStyle {
     static func render(_ inline: MarkdownInline, theme: ThemeSwatch) -> AttributedString {
-        let parsed = inline.attributed()
+        let parsed = inline.cachedAttributed()
         guard !inline.keys.isEmpty || inline.source.contains("`") else { return parsed }
         var out = AttributedString()
         for run in parsed.runs {

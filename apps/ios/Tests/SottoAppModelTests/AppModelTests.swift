@@ -443,6 +443,26 @@ final class AppModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    /// The badge and the groups are kept between redraws, and every new list from the computer is grouped afresh.
+    @MainActor func testThreadsBadgeAndGroupsFollowEveryChangeToTheList() async throws {
+        let (_, ref) = try fixture()
+        let model = AppModel(keychain: TestKeychain.store)
+        model.phase(.active); await model.waitForActivation()
+        XCTAssertEqual(model.threadsBadge, 0)
+        XCTAssertTrue(model.focusThreads().questions.isEmpty)
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        try connection.push(.shell(changeShell(requests: [["id": "asked", "kind": "permission", "text": "Which branch?", "options": []]])))
+        XCTAssertEqual(model.threadsBadge, 1)
+        XCTAssertEqual(model.focusThreads().questions.map(\.ref), [ref])
+        XCTAssertEqual(model.focusThreads(query: "branch").questions.map(\.ref), [ref])
+        XCTAssertTrue(model.focusThreads(query: "nowhere").isEmpty)
+        try connection.push(.shell(changeShell()))
+        XCTAssertEqual(model.threadsBadge, 0)
+        XCTAssertTrue(model.focusThreads().questions.isEmpty)
+        XCTAssertTrue(model.focusThreads(query: "branch").isEmpty)
+        model.phase(.background)
+    }
+
     @MainActor func testDamagedComputerInReadableIndexExplainsPairingAgain() throws {
         let (_, ref) = try fixture()
         TestKeychain.items[ComputerStore.account(ref.hostID)] = Data("incompatible computer".utf8)
@@ -693,7 +713,7 @@ final class AppModelTests: XCTestCase {
         let model = try modelWithMarker(answer)
         model.phase(.active); await model.waitForActivation()
         let connection = try XCTUnwrap(HostConnection.instances.last)
-        connection.push(.shell(try changeShell()))
+        try connection.push(.shell(changeShell()))
         XCTAssertTrue(model.pending.isEmpty)
         XCTAssertEqual(model.feedback, "That request is no longer waiting.")
         HostConnection.loseAcknowledgement = true

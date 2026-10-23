@@ -52,7 +52,7 @@ public struct MarkdownListItem: Equatable, Sendable {
 /// A block's inline Markdown, with every key chord that ends in a backtick (Ctrl+`, Cmd+Shift+`) set aside first: each
 /// is replaced by one private-use character, so its backtick can never open a code span, and put back as a key once
 /// the inline Markdown has been read.
-public struct MarkdownInline: Equatable, Sendable {
+public struct MarkdownInline: Hashable, Sendable {
     /// The inline Markdown with each key chord replaced by `placeholder(index)`.
     public let source: String
     /// The key chords, in the order their placeholders appear.
@@ -96,6 +96,11 @@ public struct MarkdownInline: Equatable, Sendable {
         }
         return result
     }
+
+    /// `attributed()`, read once for each block a page shows: Foundation's Markdown reader is most of what a message
+    /// costs to draw, and a page draws its messages again whenever the thread or Watcher moves.
+    public func cachedAttributed() -> AttributedString { Self.attributedKept.value(for: self) { $0.attributed() } }
+    private static let attributedKept = RecentCache<MarkdownInline, AttributedString>(limit: 512)
 }
 
 /// Marks a key chord such as Ctrl+` in a block's inline text, so the view draws it as a key.
@@ -161,6 +166,11 @@ enum KeyChords {
 
 /// Splits a message into blocks. Line endings may be `\n`, `\r\n` or `\r`.
 public enum Markdown {
+    /// `blocks(text)`, split once for each text a page shows. A message streaming in is a new text with every word, and
+    /// is split again; the blocks it already had are the same, so their inline Markdown is still read only once.
+    public static func cachedBlocks(_ text: String) -> [MarkdownBlock] { blocksKept.value(for: text) { blocks($0) } }
+    private static let blocksKept = RecentCache<String, [MarkdownBlock]>(limit: 256)
+
     public static func blocks(_ text: String) -> [MarkdownBlock] {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
