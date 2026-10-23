@@ -57,6 +57,7 @@ describe('the idle compaction sweep', () => {
   const fixture = (threads: AgentThread[], options: { draft?: string; pending?: string; enabled?: () => boolean; fail?: boolean } = {}) => {
     const snapshot = host(threads)
     const asked: string[] = []; const guards: (() => void)[] = []
+    const clock = { now: NOW }
     let finish!: () => void
     const done = new Promise<void>(resolve => { finish = resolve })
     const control = {
@@ -65,18 +66,28 @@ describe('the idle compaction sweep', () => {
       hasPendingThreadWork: (id: string) => id === options.pending,
       compactIdleThread: async (id: string, guard: () => void) => { asked.push(id); guards.push(guard); guard(); await done; if (options.fail) throw new Error('refused') },
     }
-    const sweeper = new IdleCompaction({ control, enabled: options.enabled ?? (() => true), now: () => NOW })
-    return { snapshot, asked, guards, finish, sweeper }
+    const sweeper = new IdleCompaction({ control, enabled: options.enabled ?? (() => true), now: () => clock.now })
+    const thread = (id: string) => snapshot.threads.find(item => item.id === id)!
+    /** The provider takes the compaction, shows it running, then shows its result, as Claude does. */
+    const compacted = async (id: string, after: Partial<NonNullable<AgentThread['usage']>>): Promise<void> => {
+      thread(id).compaction = { commandId: id, status: 'running', idle: true }
+      sweeper.sweep()
+      thread(id).compaction = { commandId: id, status: 'completed', idle: true }
+      thread(id).usage = { ...thread(id).usage!, ...after }
+    }
+    const accepted = async (): Promise<void> => { finish(); await new Promise(resolve => setTimeout(resolve, 0)) }
+    return { snapshot, asked, guards, clock, sweeper, thread, compacted, accepted }
   }
 
-  it('compacts a due thread once per quiet stretch, and again after the next turn goes quiet', async () => {
+  it('compacts a due thread once per quiet stretch, and again only after the next turn', async () => {
     const f = fixture([quiet()])
     expect(f.sweeper.sweep()).toEqual(['quiet'])
     expect(f.sweeper.sweep()).toEqual([])
-    f.finish(); await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 0))
+    await f.accepted()
+    // The compaction's own result, even one that leaves 100k or more, is not a new quiet stretch.
+    await f.compacted('quiet', { contextUsed: 150_000, contextUpdatedAt: ago(IDLE_COMPACTION_AFTER_MS + 5_000) })
     expect(f.sweeper.sweep()).toEqual([])
-    // A new turn moved the context on; its own quiet stretch is due in turn.
-    f.snapshot.threads[0]!.usage = { ...f.snapshot.threads[0]!.usage!, contextUpdatedAt: ago(IDLE_COMPACTION_AFTER_MS + 1) }
+    f.thread('quiet').usage = { ...f.thread('quiet').usage!, contextUsed: 200_000, contextUpdatedAt: ago(IDLE_COMPACTION_AFTER_MS + 1) }
     expect(f.sweeper.sweep()).toEqual(['quiet'])
     expect(f.asked).toEqual(['quiet', 'quiet'])
   })
@@ -84,7 +95,7 @@ describe('the idle compaction sweep', () => {
   it('does not try a quiet stretch again after a refusal or failure', async () => {
     const f = fixture([quiet()], { fail: true })
     expect(f.sweeper.sweep()).toEqual(['quiet'])
-    f.finish(); await new Promise(resolve => setTimeout(resolve, 0))
+    await f.accepted()
     expect(f.sweeper.sweep()).toEqual([])
   })
 
@@ -98,10 +109,23 @@ describe('the idle compaction sweep', () => {
     expect(f.sweeper.sweep()).toEqual(['quiet'])
   })
 
-  it('starts at most two at once', () => {
+  it('keeps two at once until each thread shows its result, not just until Claude takes the command', async () => {
     const f = fixture([quiet({ id: 'a' }), quiet({ id: 'b' }), quiet({ id: 'c' })])
     expect(f.sweeper.sweep()).toEqual(['a', 'b'])
+    await f.accepted()
     expect(f.sweeper.sweep()).toEqual([])
+    await f.compacted('a', { contextUsed: 40_000, contextUpdatedAt: ago(0) })
+    expect(f.sweeper.sweep()).toEqual(['c'])
+  })
+
+  it('gives up the place of a compaction that never shows a result after ten minutes', async () => {
+    const f = fixture([quiet({ id: 'a' }), quiet({ id: 'b' }), quiet({ id: 'c', usage: { ...quiet().usage!, contextUpdatedAt: ago(IDLE_COMPACTION_AFTER_MS - 9 * 60_000 - 30_000) } })])
+    expect(f.sweeper.sweep()).toEqual(['a', 'b'])
+    await f.accepted()
+    f.clock.now = NOW + 10 * 60_000 - 1
+    expect(f.sweeper.sweep()).toEqual([])
+    f.clock.now = NOW + 10 * 60_000
+    expect(f.sweeper.sweep()).toEqual(['c'])
   })
 
   it('refuses at dispatch when the thread moved on, the user started typing, or the setting went off', () => {

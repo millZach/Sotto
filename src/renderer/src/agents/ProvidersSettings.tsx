@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
@@ -12,7 +12,7 @@ import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
-import { COMPACT_IDLE_SETTING, takeAimedProvider } from '../features/settings/settingsTarget'
+import { COMPACT_IDLE_SETTING, onProviderAimed, takeAimedProvider } from '../features/settings/settingsTarget'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode' }
@@ -49,6 +49,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   // A link elsewhere, such as a thread's Turn off, can open this page at one provider's setting.
   const [selected, setSelected] = useState<ProviderId>(() => takeAimedProvider() ?? 'codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
+  useEffect(() => onProviderAimed(provider => { setSelected(provider); setTab('configuration') }), [])
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
   const [errors, setErrors] = useState<Partial<Record<ProviderId, string | undefined>>>({})
   const [checkingUpdates, setCheckingUpdates] = useState(false)

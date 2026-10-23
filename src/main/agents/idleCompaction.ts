@@ -11,6 +11,8 @@ export const IDLE_COMPACTION_MIN_CONTEXT = 100_000
 const SWEEP_EVERY_MS = 30_000
 /** Compactions under way at once, so a run of threads that went quiet together starts their CLIs a few at a time. */
 const AT_ONCE = 2
+/** A compaction no result has settled in this long gives its place up, so an unconfirmed one cannot hold it for good. */
+const SETTLE_WITHIN_MS = 10 * 60_000
 
 export interface IdleCompactionOptions {
   /** The coordinator: read for its threads, and asked to compact one as Sotto's own command. */
@@ -24,7 +26,6 @@ export interface IdleCompactionOptions {
   /** The setting, read at every sweep, so turning it off stops the next compaction without a restart. */
   readonly enabled: () => boolean
   readonly now?: () => number
-  readonly sweepEveryMs?: number
 }
 
 /**
@@ -50,7 +51,7 @@ export function idleCompactionDue(host: Readonly<AgentHostSnapshot>, thread: Rea
  * Idle compaction (ADR-0123). Claude keeps a thread's prompt cache for an hour after its last request; the first
  * message after that re-sends the whole conversation at twice the input price. While the setting is on, each sweep
  * compacts a due thread once per quiet stretch, through the same native compaction the user's Compact context runs,
- * so the next message re-reads a short summary instead. It keeps no record: a thread that has moved on, or a missed
+ * so the next message re-reads a short summary instead. It saves nothing: a thread that has moved on, or a missed
  * window, is simply not due.
  */
 export class IdleCompaction {
@@ -58,7 +59,11 @@ export class IdleCompaction {
   private timer: ReturnType<typeof setInterval> | undefined
   /** The context time each thread was last compacted for, so one quiet stretch is compacted at most once. */
   private readonly tried = new Map<string, string>()
-  private readonly running = new Set<string>()
+  /**
+   * Compactions this sweep started, from the command until the thread shows its result. Claude accepts `/compact` long
+   * before it finishes, so the command returning does not free the place: the thread's own compaction record does.
+   */
+  private readonly running = new Map<string, { readonly since: number; accepted: boolean; seenRunning: boolean }>()
   private stopped = false
 
   constructor(private readonly options: IdleCompactionOptions) {
@@ -67,7 +72,7 @@ export class IdleCompaction {
 
   start(): void {
     if (this.timer || this.stopped) return
-    this.timer = setInterval(() => this.sweep(), this.options.sweepEveryMs ?? SWEEP_EVERY_MS)
+    this.timer = setInterval(() => this.sweep(), SWEEP_EVERY_MS)
     this.timer.unref?.()
   }
 
@@ -84,13 +89,15 @@ export class IdleCompaction {
     const threads = this.options.control.hostView().threads
     const live = new Set(threads.map(thread => thread.id))
     for (const id of this.tried.keys()) if (!live.has(id)) this.tried.delete(id)
+    this.settle(threads)
     for (const thread of threads) {
       if (this.running.size >= AT_ONCE) break
       if (this.running.has(thread.id) || !this.due(thread.id)) continue
       const stretch = thread.usage!.contextUpdatedAt!
       if (this.tried.get(thread.id) === stretch) continue
       this.tried.set(thread.id, stretch)
-      this.running.add(thread.id)
+      const run = { since: this.now(), accepted: false, seenRunning: false }
+      this.running.set(thread.id, run)
       started.push(thread.id)
       // Asked again as the command dispatches: the user may have typed, settled or started a turn since this sweep. Not
       // the queue, which by then holds this compaction itself; a send of the user's admitted later waits behind it.
@@ -101,9 +108,27 @@ export class IdleCompaction {
         }
       }
       // A refusal or failure is the thread's own news, shown on it; this quiet stretch is not tried again.
-      void this.options.control.compactIdleThread(thread.id, guard).catch(() => undefined).finally(() => this.running.delete(thread.id))
+      void this.options.control.compactIdleThread(thread.id, guard)
+        .then(() => { run.accepted = true }, () => { if (this.running.get(thread.id) === run) this.running.delete(thread.id) })
     }
     return started
+  }
+
+  /**
+   * Frees the place of each compaction the thread shows finished, or that has had its time. The context time it finished
+   * on is the compaction's own, not a new quiet stretch: only the next turn starts one.
+   */
+  private settle(threads: readonly Readonly<AgentThread>[]): void {
+    for (const [id, run] of this.running) {
+      if (!run.accepted) continue
+      const thread = threads.find(item => item.id === id)
+      const pending = compactionPending(thread?.compaction)
+      if (pending) run.seenRunning = true
+      if ((pending || !run.seenRunning) && this.now() - run.since < SETTLE_WITHIN_MS) continue
+      this.running.delete(id)
+      const after = thread?.usage?.contextUpdatedAt
+      if (after) this.tried.set(id, after)
+    }
   }
 
   private due(threadId: string, queue = true): boolean {

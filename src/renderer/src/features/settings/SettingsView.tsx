@@ -4,6 +4,7 @@ import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
+import { aimProviderSettings } from './settingsTarget'
 import { describeSetting, findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
@@ -490,6 +491,7 @@ export function SettingsView({
   })
   const openFound = (entry: SettingEntry): void => {
     setFindQuery('')
+    if (entry.provider) aimProviderSettings(entry.provider)
     openAt(entry.section, [entry.target ?? entry.label, ...entry.fallback ? [entry.fallback] : []])
   }
   const pageLabel = (entry: SettingEntry): string => SETTINGS_PAGES.find(page => page.id === settingsSectionHome(entry.section).page)?.label ?? ''

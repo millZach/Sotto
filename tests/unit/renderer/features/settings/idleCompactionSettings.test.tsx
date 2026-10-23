@@ -1,6 +1,6 @@
 import { baseProps } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
@@ -30,4 +30,14 @@ it('opens Claude Code’s page with the switch in focus when a thread’s Turn o
   expect(toggle).toHaveAttribute('aria-checked', String(DEFAULT_SETTINGS.compactIdleThreads))
   await userEvent.click(toggle)
   expect(onUpdateSettings).toHaveBeenCalledWith({ compactIdleThreads: false })
+})
+
+it('Find a setting shows Claude Code’s page and puts focus on the switch, from whichever provider was showing', async () => {
+  const user = userEvent.setup()
+  provideAgents()
+  render(<SettingsView {...baseProps()} />)
+  await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'compact idle')
+  const found = screen.getByRole('list', { name: 'Settings found' })
+  await user.click(within(found).getByRole('button', { name: /Compact idle threads/u }))
+  expect(screen.getByRole('switch', { name: 'Compact idle threads' })).toHaveFocus()
 })

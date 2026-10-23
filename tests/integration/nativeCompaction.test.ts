@@ -208,3 +208,15 @@ it('Claude carries Sotto’s idle mark from the request to the compaction’s re
   await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'compact_boundary', compact_metadata: { pre_tokens: 262000, post_tokens: 41000 } } })
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction).toEqual({ commandId: 'idle', status: 'completed', idle: true })
 })
+
+it('Claude asks a machine compaction’s guard again once its CLI is up, and writes nothing when it refuses (ADR-0123)', async () => {
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
+  await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  await expect(f.adapter.executeFromWatcher({ type: 'compact-thread', commandId: 'idle', threadId: 'thread', idle: true }, () => { throw new Error('This thread is no longer idle.') }))
+    .rejects.toThrow('no longer idle')
+  expect((await f.host.snapshot()).threads[0]?.compaction).toBeUndefined()
+  expect((await f.driver.requests()).filter(row => row.method === 'user')).toEqual([])
+})

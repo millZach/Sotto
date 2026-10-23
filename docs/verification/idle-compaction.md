@@ -30,3 +30,8 @@ Not checked here: 1600x1000, which this laptop's screen cannot open the window a
 `tests/unit/main/idleCompaction.test.ts` (the window, the size and model, every thread that is left alone, once per stretch, at most two at once, the switch), `tests/unit/main/idleCompactionControl.test.ts` (the sweep through the real coordinator to the provider, the idle mark, the window's error untouched, a refused guard writing nothing), `tests/integration/nativeCompaction.test.ts` (Claude carries the idle mark to the result), `tests/unit/renderer/threadCompaction.test.tsx`, `tests/unit/renderer/providersSettings.test.tsx`, `tests/unit/renderer/features/settings/idleCompactionSettings.test.tsx` and `tests/unit/shared/settings.test.ts`.
 
 The first run of the built app found a bug the unit tests had missed: the guard asked again at the provider write also asked that nothing be queued for the thread, and by then the compaction's own outbox entry was queued, so every idle compaction refused itself. The guard now leaves the queue to the sweep, and the coordinator test runs the real sweep to the provider; it fails without the fix.
+
+## After review
+
+Sol's two-axis review found four more: the guard was not asked again between the CLI starting and `/compact` (the Claude adapter now asks it there), the two-at-once limit counted commands rather than compactions (places are now held until the thread shows its result), a compaction leaving 100,000 tokens or more could start a new stretch of its own (the context time it leaves is now remembered as tried), and Find a setting landed on the provider list rather than the switch (its entry now names Claude Code, and Find shows that page first). Each has a test in the files above.
+
