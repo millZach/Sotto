@@ -4,6 +4,8 @@
 
 Accepted by Zach on October 14, 2026. It is built with #1033 (ticket E10). Zach decided on October 14 that workers can start on any machine connected to the desktop and that code moves directly over the SSH link rather than through GitHub (decision 6 of the Watcher engine ticket map, #1023). This record settles how, from a spike run the same day against forge. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
 
+Amended October 23, 2026, by [ADR-0105](0105-hosts-reach-each-other-over-host-links-the-desktop-sets-up.md) decision 8, which Zach accepted that day: decision 5 below is replaced, and decision 6 holds with the socket in place of SSH. See "Amendment: branches travel over the host socket" at the end. The Owl switch is `cross-machine-work`, this record's own entry.
+
 ## Context
 
 The laptop and forge each keep their own clone of a project. A worker on forge commits to a branch the laptop cannot see, and the only way across today is to push to GitHub and pull on the other side. That puts work in progress on GitHub, which nobody asked for, and it needs a remote the user may not want touched.
@@ -52,3 +54,14 @@ Run from the Windows laptop against forge (Omarchy, Linux 7.2.5), with throwaway
 ## Proof, when built
 
 Integration with two local repositories behind a file transport stand-in: uncommitted work refused, the checked commit moved even when the branch moves on during the transfer, a second move and a move back after a non-fast-forward both land, a checked-out branch untouched, a new worktree on the moved branch, an existing branch of the same name untouched, and the incoming ref removed with its worktree. Then a live run on forge: laptop to forge and back, Linux journeys on forge, Windows tests on the laptop.
+
+## Amendment: branches travel over the host socket (October 23, 2026)
+
+Zach accepted [ADR-0105](0105-hosts-reach-each-other-over-host-links-the-desktop-sets-up.md) on October 23, and with it its decision 8. Each move opening its own SSH session meant a move started while nobody watched could wait on Tailscale SSH's `check` mode for a browser approval nobody gave (ADR-0105, Context). So:
+
+- **Decision 5 is replaced.** A branch travels as a Git bundle over the host socket the desktop already keeps to each host it is connected to, in chunks of at most 1 MiB, with no new SSH session per move. The sender points `refs/sotto/outgoing/<move>` at the checked commit, bundles that ref against the receiver's tips that it also has, and removes the ref once the bundle is written. The receiver stages the bundle in its own data folder, checks its size, its SHA-256, `git bundle verify` and its one ref, records the move with its commit, imports the objects and creates `refs/sotto/incoming/<move>/<branch>` once, with `git update-ref <ref> <commit> ""`. A cut-off transfer lands nothing and its staged file is removed. The socket request is `branch-move`, behind the optional host feature `branch-moves` (`docs/host-protocol.md`, "Branch moves").
+- **Decision 6 holds, with the socket.** A move contacts no host the user did not add and runs only Git at each end; it needs no GitHub remote and pushes to none.
+- **Decisions 1 to 4 are unchanged.** Uncommitted work is refused with a request to commit first; the commit Sotto checked is the one that moves; a move lands in a ref of its own; nothing is forced. Decision 3's "no `--force`" is not enough on its own outside `refs/heads` and `refs/tags`, where Git does not refuse a non-fast-forward fetch, so an incoming ref is created only when it does not exist, and a move ID that comes back with another commit is refused.
+- **The cap.** One move carries at most 256 MiB (Zach, October 23). Sotto's last 40 pull request branches bundled to a median of 27 KB and at most 2.9 MB. A bigger bundle is refused in plain words on either side, and nothing moves.
+- **What is built.** The operation is defined once on the host socket, with the desktop as its only caller (`src/main/agents/branchMoves.ts`); the Git half is shared by both sides (`src/main/agents/branchBundles.ts`), and a host's side is `src/host/branchMoves.ts`. A move ends in a receipt only. Starting the receiving worker from the moved branch (decision 4's worktree), Watcher's start from a thread's branch (decision 7) and the snapshot a test run starts from come next; the sender takes a commit rather than a branch tip, which is where the snapshot's commit object goes. The worktree's removal of its incoming ref (decision 3) comes with that start.
+

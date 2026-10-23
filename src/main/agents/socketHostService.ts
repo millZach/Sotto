@@ -34,6 +34,7 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
+import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -1165,6 +1166,16 @@ export class SocketHostService implements HostService {
   async hostFacts(): Promise<HostMachineReport> {
     this.offers('host-facts')
     return this.read(hostMachineReportSchema, await this.call({ op: 'host-facts' }, undefined, undefined, 10000))
+  }
+  /** The host lists `branch-moves`: it moves branches with this desktop over this socket (ADR-0105 decision 8). */
+  get supportsBranchMoves(): boolean { return this.features.includes('branch-moves') }
+  /**
+   * One step of a branch move, answered as the host gave it for the caller to read (`branchMoves.ts`). A host that does not
+   * list `branch-moves` is refused before anything is sent.
+   */
+  async branchMove(request: HostBranchMoveRequest): Promise<unknown> {
+    this.offers('branch-moves')
+    return this.call({ op: 'branch-move', request }, undefined, undefined, 120000)
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

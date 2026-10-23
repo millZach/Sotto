@@ -1,0 +1,146 @@
+// @vitest-environment node
+import { randomUUID } from 'node:crypto'
+import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
+import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
+import { commitFile, git, incompressible, twoMachines } from '../fixtures/branchRepositories'
+
+let machines: Awaited<ReturnType<typeof twoMachines>>
+beforeEach(async () => { machines = await twoMachines() })
+afterEach(async () => { await machines.close() })
+
+const sending = (value: PreparedBundle | BranchMoveRefusal): PreparedBundle => { expect(value.type).toBe('sending'); return value as PreparedBundle }
+const incoming = (value: unknown): IncomingBundle => { expect(value).toBeInstanceOf(IncomingBundle); return value as IncomingBundle }
+
+/** Carries a staged bundle into `receiver` in chunks, as the socket would. */
+async function carry(sender: BranchBundles, prepared: PreparedBundle, receiver: IncomingBundle): Promise<void> {
+  for (let offset = 0; offset < prepared.size;) {
+    const chunk = await sender.readChunk(prepared.path, offset)
+    expect(await receiver.write(offset, chunk)).toBe(true)
+    offset += chunk.byteLength
+  }
+}
+
+/** A feature branch on the laptop with two commits, checked out there. */
+async function featureBranch(): Promise<string> {
+  git(machines.laptop, 'switch', '-q', '-c', 'feature/login')
+  await commitFile(machines.laptop, 'login.txt', 'form\n')
+  return commitFile(machines.laptop, 'login.txt', 'form\nsubmit\n')
+}
+
+describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8)', () => {
+  it('carries only what the receiver lacks and lands it in an incoming ref of its own, leaving the checked-out branch alone', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const before = machines.untouched(machines.forge)
+    const source = await laptop.branchOf(machines.laptop)
+    expect(source).toEqual({ branch: 'feature/login', commit })
+    const tips = await forge.tips(machines.forge)
+    expect(tips).toContain(git(machines.forge, 'rev-parse', 'main'))
+    const moveId = randomUUID()
+    const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: tips as string[] }))
+    // Two small commits against forge's main: far smaller than the whole history would be.
+    expect(git(machines.laptop, 'bundle', 'list-heads', prepared.path)).toBe(`${commit} refs/sotto/outgoing/${moveId}`)
+    expect(git(machines.laptop, 'rev-list', '--count', '--objects', commit, '--not', ...(tips as string[]))).not.toBe('0')
+    // The outgoing ref is gone once the bundle is written.
+    expect(git(machines.laptop, 'for-each-ref', 'refs/sotto')).toBe('')
+    const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+    await carry(laptop, prepared, receiving)
+    expect(await forge.finish(receiving)).toEqual({ type: 'moved', moveId, branch: 'feature/login', commit, ref: incomingRef(moveId, 'feature/login') })
+    expect(git(machines.forge, 'rev-parse', incomingRef(moveId, 'feature/login'))).toBe(commit)
+    expect(machines.untouched(machines.forge)).toEqual(before)
+    expect(await readdir(machines.data('forge').stagingDirectory)).toEqual([])
+    // A new worktree on the moved branch is the receiving worker's start (ADR-0082 decision 4).
+    git(machines.forge, 'worktree', 'add', '-q', '-b', 'feature/login', join(machines.root, 'forge-login'), incomingRef(moveId, 'feature/login'))
+    expect(git(join(machines.root, 'forge-login'), 'log', '-1', '--format=%H')).toBe(commit)
+  })
+
+  it('moves the commit it checked even when the receiver already has it', async () => {
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const commit = git(machines.laptop, 'rev-parse', 'main'), moveId = randomUUID()
+    const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: await forge.tips(machines.forge) as string[] }))
+    const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'main', commit, size: prepared.size, sha256: prepared.sha256 }))
+    await carry(laptop, prepared, receiving)
+    expect(await forge.finish(receiving)).toMatchObject({ type: 'moved', commit })
+  })
+
+  it('refuses uncommitted work and a working copy on no branch, and moves nothing', async () => {
+    await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop'))
+    await writeFile(join(machines.laptop, 'login.txt'), 'changed\n')
+    expect(await laptop.branchOf(machines.laptop)).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.uncommitted })
+    git(machines.laptop, 'checkout', '-q', '--', 'login.txt')
+    await writeFile(join(machines.laptop, 'notes.txt'), 'untracked\n')
+    expect(await laptop.branchOf(machines.laptop)).toMatchObject({ reason: 'uncommitted' })
+    git(machines.laptop, 'clean', '-qf')
+    git(machines.laptop, 'switch', '-q', '--detach')
+    expect(await laptop.branchOf(machines.laptop)).toEqual({ type: 'refused', reason: 'not-on-branch', message: branchMoveWords.notOnBranch })
+    expect(await laptop.branchOf(machines.root)).toMatchObject({ reason: 'not-a-repository' })
+    expect(git(machines.laptop, 'for-each-ref', 'refs/sotto')).toBe('')
+  })
+
+  it('never forces: a retry of a landed move is done and writes nothing, and another commit for it or an existing ref is refused', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const moveId = randomUUID()
+    const move = async (id: string, at: string) => {
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId: id, commit: at, bases: [] }))
+      const begun = await forge.receive({ repository: machines.forge, moveId: id, branch: 'feature/login', commit: at, size: prepared.size, sha256: prepared.sha256 })
+      if (!(begun instanceof IncomingBundle)) return begun
+      await carry(laptop, prepared, begun)
+      return forge.finish(begun)
+    }
+    expect(await move(moveId, commit)).toMatchObject({ type: 'moved', commit })
+    // The answer was lost and the same move comes again: done, from the record.
+    expect(await move(moveId, commit)).toMatchObject({ type: 'moved', commit })
+    const earlier = git(machines.laptop, 'rev-parse', 'HEAD~1')
+    expect(await move(moveId, earlier)).toEqual({ type: 'refused', reason: 'move-differs', message: branchMoveWords.moveDiffers })
+    expect(git(machines.forge, 'rev-parse', incomingRef(moveId, 'feature/login'))).toBe(commit)
+    // A ref this receiver has no record of is never overwritten either.
+    const other = randomUUID()
+    git(machines.forge, 'update-ref', incomingRef(other, 'feature/login'), git(machines.forge, 'rev-parse', 'main'))
+    expect(await move(other, commit)).toMatchObject({ reason: 'move-differs' })
+    expect(git(machines.forge, 'rev-parse', incomingRef(other, 'feature/login'))).toBe(git(machines.forge, 'rev-parse', 'main'))
+  })
+
+  it('refuses a bundle over the cap on both sides, in plain words, and keeps nothing staged', async () => {
+    git(machines.laptop, 'switch', '-q', '-c', 'big')
+    const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(64 * 1024))
+    const laptop = new BranchBundles({ ...machines.data('laptop'), maxBytes: 32 * 1024 }), forge = new BranchBundles({ ...machines.data('forge'), maxBytes: 32 * 1024 })
+    const refusal = await laptop.prepare({ repository: machines.laptop, moveId: randomUUID(), commit, bases: [] })
+    expect(refusal).toMatchObject({ type: 'refused', reason: 'too-large' })
+    expect((refusal as BranchMoveRefusal).message).toMatch(/^This branch needs 1 MiB to move, and one move carries at most 1 MiB\. Nothing was moved\.$/u)
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+    expect(await forge.receive({ repository: machines.forge, moveId: randomUUID(), branch: 'big', commit, size: 64 * 1024, sha256: '0'.repeat(64) })).toMatchObject({ reason: 'too-large' })
+    expect(branchMoveWords.tooLarge(300 * 1024 * 1024)).toBe('This branch needs 300 MiB to move, and one move carries at most 256 MiB. Nothing was moved.')
+  })
+
+  it('discards a transfer cut off, or one that did not arrive whole, and lands nothing', async () => {
+    git(machines.laptop, 'switch', '-q', '-c', 'big')
+    const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(3 * 1024 * 1024))
+    const laptop = new BranchBundles(machines.data('laptop')), forge = new BranchBundles(machines.data('forge'))
+    const moveId = randomUUID()
+    const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+    const cut = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'big', commit, size: prepared.size, sha256: prepared.sha256 }))
+    expect(await cut.write(0, await laptop.readChunk(prepared.path, 0))).toBe(true)
+    // Out of order and past the end are both refused.
+    expect(await cut.write(0, Buffer.from('again'))).toBe(false)
+    await forge.abandon(cut)
+    expect(await readdir(machines.data('forge').stagingDirectory)).toEqual([])
+    // A whole transfer whose digest is not the one named is discarded too.
+    const wrong = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'big', commit, size: prepared.size, sha256: 'f'.repeat(64) }))
+    await carry(laptop, prepared, wrong)
+    expect(await forge.finish(wrong)).toEqual({ type: 'refused', reason: 'not-whole', message: branchMoveWords.notWhole })
+    expect(await readdir(machines.data('forge').stagingDirectory)).toEqual([])
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+    // A bundle a crash left behind is cleared when the next run starts; other files stay.
+    const staging = machines.data('forge').stagingDirectory
+    await mkdir(staging, { recursive: true })
+    await writeFile(join(staging, `${randomUUID()}.in.bundle`), 'partial')
+    await writeFile(join(staging, 'keep.txt'), 'not ours')
+    await new BranchBundles(machines.data('forge')).start()
+    expect(await readdir(staging)).toEqual(['keep.txt'])
+  })
+})

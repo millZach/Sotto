@@ -29,6 +29,9 @@ import { heldProvidersOf } from '../shared/heldProviders'
 import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
+import { HostBranchMoves } from './branchMoves'
+import { BranchBundles } from '../main/agents/branchBundles'
+import { foldersOf } from '../main/agents/branchMoves'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -110,6 +113,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
   const delegation = owlFeatures['thread-delegation']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
+  // Moving branches with the desktop (ADR-0105 decision 8): only an Owl host lists `branch-moves` or takes `branch-move`.
+  const crossMachineWork = owlFeatures['cross-machine-work']
   const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -198,14 +203,19 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           ...(options.releasesUrl ? { releasesUrl: options.releasesUrl } : {}), ...(options.log ? { log: options.log } : {}) }) : undefined
         if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
         const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
+        // One for both listeners, so a move begun on one is the same move on the other. Bundles wait in the data folder.
+        const branchMoves = crossMachineWork ? new HostBranchMoves(new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
+          recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
+        await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
+        const moves = branchMoves ? { branchMoves } : {}
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, about, delegation, ...hostUpdate, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
-          watcherDesktops: desktops, delegation, ...hostUpdate,
+          watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
