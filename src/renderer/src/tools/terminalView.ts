@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -129,10 +130,10 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   const openLink = (uri: string): void => {
     if (!isTerminalLink(uri)) return
     const open = window.sotto?.openExternalLink
-    if (!open) { handlers.onNotice?.('The link could not open. Copy it into your browser.'); return }
+    if (!open) { handlers.onNotice?.(t`The link could not open. Copy it into your browser.`); return }
     void open(uri).then(result => {
-      if (!disposed) handlers.onNotice?.(result.ok ? null : 'The link could not open. Copy it into your browser.')
-    }, () => { if (!disposed) handlers.onNotice?.('The link could not open. Copy it into your browser.') })
+      if (!disposed) handlers.onNotice?.(result.ok ? null : t`The link could not open. Copy it into your browser.`)
+    }, () => { if (!disposed) handlers.onNotice?.(t`The link could not open. Copy it into your browser.`) })
   }
   const clickLink = (event: MouseEvent, uri: string): void => {
     if (event.button !== 0 || event.altKey || !(platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return
@@ -241,7 +242,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       event.stopPropagation()
       if (shortcut === 'search') { picker.close(); search.open() }
       else void zoomTerminal(shortcut).then(saved => {
-        if (!saved && !disposed) handlers.onNotice?.('The text size could not be saved. Try the shortcut again.')
+        if (!saved && !disposed) handlers.onNotice?.(t`The text size could not be saved. Try the shortcut again.`)
       })
       return true
     }
@@ -262,7 +263,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     if (ctrl && !event.shiftKey && (event.key === 'c' || event.key === 'C')) {
       if (platform !== 'darwin' && terminal.hasSelection()) {
         const selection = terminal.getSelection()
-        if (!selection.trim()) { handlers.onNotice?.('Nothing to copy. Select some text first.'); return false }
+        if (!selection.trim()) { handlers.onNotice?.(t`Nothing to copy. Select some text first.`); return false }
         const copiedRevision = selectionRevision
         const copiedRange = terminal.getSelectionPosition()
         void writeClipboard(selection).then(() => {
@@ -272,7 +273,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
             range.start.x === copiedRange.start.x && range.start.y === copiedRange.start.y &&
             range.end.x === copiedRange.end.x && range.end.y === copiedRange.end.y) terminal.clearSelection()
           handlers.onNotice?.(null)
-        }, () => { if (!disposed) handlers.onNotice?.('Could not copy. Your selection is kept. Try Ctrl+C again.') })
+        }, () => { if (!disposed) handlers.onNotice?.(t`Could not copy. Your selection is kept. Try Ctrl+C again.`) })
         return false
       }
       if (inputEnabled) handlers.onInterrupt()

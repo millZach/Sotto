@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronRight, File, FileImage, FileText, FileX, Folder, FolderOpen } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { FilesBridge } from '../../../shared/files'
 import { visibleRows, type FilesBrowserStore, type ThreadFiles, type TreeRow } from './filesBrowser'
 
@@ -28,6 +29,7 @@ export interface FileTreeProps {
 
 /** One lazily listed folder level at a time, as a keyboard treeview with a single tab stop. */
 export function FileTree({ files, store, bridge, label }: FileTreeProps): ReactNode {
+  const { t } = useLingui()
   const { threadId } = files
   const rows = useMemo(() => visibleRows(files), [files])
   const entries = useMemo(() => rows.filter(row => row.kind === 'entry'), [rows])
@@ -92,23 +94,24 @@ export function FileTree({ files, store, bridge, label }: FileTreeProps): ReactN
         const indent = { '--files-depth': row.depth } as React.CSSProperties
         if (row.kind !== 'entry') {
           return <div key={row.key} role="none" className="files-tree__status" data-kind={row.kind} style={indent}>
-            {row.kind === 'loading' ? <span className="files-tree__loading">Loading…</span>
-              : row.kind === 'empty' ? 'Empty folder'
-                : row.kind === 'truncated' ? 'Showing the first 1,000 items'
-                  : <><span>{missingFolder(row) ? 'This folder is no longer here.' : 'This folder could not be read.'}</span>
+            {row.kind === 'loading' ? <span className="files-tree__loading">{t`Loading…`}</span>
+              : row.kind === 'empty' ? t`Empty folder`
+                : row.kind === 'truncated' ? t`Showing the first 1,000 items`
+                  : <><span>{missingFolder(row) ? t`This folder is no longer here.` : t`This folder could not be read.`}</span>
                     <button type="button" className="files-link tt-focusable" onClick={() => missingFolder(row)
                       ? store.recoverMissing(bridge, threadId, row.parent)
-                      : store.reloadDirectory(bridge, threadId, row.parent)}>{missingFolder(row) ? 'Refresh' : 'Retry'}</button></>}
+                      : store.reloadDirectory(bridge, threadId, row.parent)}>{missingFolder(row) ? t`Refresh` : t`Retry`}</button></>}
           </div>
         }
         const entry = row.entry!
+        const name = entry.name
         const selected = entry.kind === 'file' && files.selectedPath === entry.path
         return <div key={row.key} ref={element => { if (element) items.current.set(entry.path, element); else items.current.delete(entry.path) }}
           role="treeitem" className="files-tree__item" style={indent} data-kind={entry.kind} data-selected={selected || undefined}
           aria-level={row.depth + 1} aria-setsize={row.setSize} aria-posinset={row.position}
           aria-expanded={entry.kind === 'directory' ? row.expanded : undefined} aria-selected={entry.kind === 'file' ? selected : undefined}
           aria-disabled={entry.kind === 'unavailable' || undefined}
-          title={entry.kind === 'unavailable' ? `${entry.name} is unavailable` : entry.path}
+          title={entry.kind === 'unavailable' ? t({ message: `${name} is unavailable`, comment: '{name} is a file or folder name.' }) : entry.path}
           tabIndex={entry.path === tabStop ? 0 : -1}
           onClick={() => open(row)} onKeyDown={event => onKeyDown(event, row)}>
           <span className="files-tree__chevron" aria-hidden="true">{entry.kind === 'directory' ? <ChevronRight size={14} /> : null}</span>

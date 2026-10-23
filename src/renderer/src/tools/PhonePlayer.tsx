@@ -1,6 +1,8 @@
 import { focusedComposerField } from '../agents/promptSelection'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { PanelRight, Pause, Play, RotateCw, Smartphone, Square, X } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import { TEST_IPHONE, type BrowserBounds, type BrowserBridge, type BrowserPage } from '../../../shared/browser'
 import { phonePage, useBrowserTasks, useThreadBrowser } from './browserStore'
@@ -41,6 +43,7 @@ export interface PhonePlayerProps {
  * thread's, never another's. The page is the user's to use too; a tap or typing here reaches it directly.
  */
 export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = true, phoneStore = phonePlayerStore, cloudStore = cloudIphoneStore, cloudBridge = bridgeCloudIphone() }: PhonePlayerProps): ReactNode {
+  const { t } = useLingui()
   const tasks = useBrowserTasks(store.browser)
   // Its own subscription, though the Browser player beside it asks for the same: neither relies on the other being drawn.
   const ids = state.host.threads.filter(item => !item.remoteHost).map(item => item.id).join(' ')
@@ -110,9 +113,9 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
   const point = phoneStore.pointFor(layout, size)
   const grant = threadBrowser?.grant ?? null
   const active = current?.status === 'working' || current?.status === 'paused'
-  const actionText = cloudLive ? cloudSession!.steps.at(-1)?.detail ?? 'Starting…'
-    : !current ? page!.status === 'loading' ? 'Loading' : 'Ready for you to use'
-      : current.pendingAction ? 'Waiting for your answer' : current.status === 'paused' ? 'Paused' : current.summary || current.description
+  const actionText = cloudLive ? cloudSession!.steps.at(-1)?.detail ?? t`Starting…`
+    : !current ? page!.status === 'loading' ? t({ message: 'Loading', comment: 'A page is loading on the test iPhone.' }) : t`Ready for you to use`
+      : current.pendingAction ? t`Waiting for your answer` : current.status === 'paused' ? t({ message: 'Paused', comment: 'The agent\'s work on the test iPhone is paused.' }) : current.summary || current.description
   const dotState = cloudLive ? cloudSession!.status === 'starting' ? 'working' : 'idle'
     : current?.pendingAction ? 'waiting' : current?.status === 'working' ? 'working' : 'idle'
   const nextSize = PHONE_SIZES[(PHONE_SIZES.findIndex(item => item.id === placement.size) + 1) % PHONE_SIZES.length]!
@@ -168,52 +171,61 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
     void cloudStore.end(cloudBridge, cloudSession).then(error => { if (error) setProblem(error) }).finally(() => setEndingSession(false))
   }
 
-  const label = cloudLive ? 'iPhone · cloud' : TEST_IPHONE.name
-  const dragLabel = cloudLive ? 'Move the cloud iPhone. Drag, or use the arrow keys; hold Shift to move further.'
-    : 'Move the test iPhone. Drag, or use the arrow keys; hold Shift to move further.'
+  const label = cloudLive ? t`iPhone · cloud` : TEST_IPHONE.name
+  const dragLabel = cloudLive ? t`Move the cloud iPhone. Drag, or use the arrow keys; hold Shift to move further.`
+    : t`Move the test iPhone. Drag, or use the arrow keys; hold Shift to move further.`
+  const title = thread.title
+  const sessionMinutes = cloudSession?.minutes ?? 0
+  const sizeLabel = PHONE_SIZES.find(item => item.id === placement.size)!.label
+  const resize = cloudLive
+    ? nextSize.id === 'small' ? t`Make the cloud iPhone small` : nextSize.id === 'medium' ? t`Make the cloud iPhone medium` : t`Make the cloud iPhone large`
+    : nextSize.id === 'small' ? t`Make the test iPhone small` : nextSize.id === 'medium' ? t`Make the test iPhone medium` : t`Make the test iPhone large`
+  const width = TEST_IPHONE.width, height = TEST_IPHONE.height
+  const pageHost = cloudLive ? '' : host(page!)
+  const steppingAside = t`The phone steps aside while a menu or dialog is open.`
 
-  return <aside ref={root} className="phone-player" aria-label={`${cloudLive ? 'Cloud iPhone' : 'Test iPhone'} for ${thread.title}`} data-covers-native-view
+  return <aside ref={root} className="phone-player" aria-label={cloudLive ? t({ message: `Cloud iPhone for ${title}`, comment: '{title} is a thread\'s title.' }) : t({ message: `Test iPhone for ${title}`, comment: '{title} is a thread\'s title.' })} data-covers-native-view
     style={{ left: point.x, top: point.y, width: layout.width }} onKeyDown={escape}>
     <div className="phone-player__label" role="group" aria-roledescription="drag handle" tabIndex={0}
-      aria-label={dragLabel} title="Drag to move" onPointerDown={startDrag} onKeyDown={labelKeyDown}>
+      aria-label={dragLabel} title={t`Drag to move`} onPointerDown={startDrag} onKeyDown={labelKeyDown}>
       <span className="phone-player__grip" aria-hidden="true" />
       <Smartphone size={14} aria-hidden="true" />
       <span className="phone-player__name">{label}</span>
-      {cloudLive ? <span className="phone-player__name" title={cloudSession!.device ?? undefined}>{cloudSession!.minutes} min</span> : null}
-      <button type="button" className="phone-player__size tt-focusable" aria-label={`Make the ${cloudLive ? 'cloud' : 'test'} iPhone ${nextSize.label.toLowerCase()}`} title={`Size: ${PHONE_SIZES.find(item => item.id === placement.size)!.label}`}
-        onClick={() => phoneStore.setSize(nextSize.id)}>{PHONE_SIZES.find(item => item.id === placement.size)!.label}</button>
-      <button type="button" className="files-icon tt-focusable" aria-label={`Show the ${cloudLive ? 'cloud' : 'test'} iPhone in Tools`} title="Show in Tools" onClick={showInTools}><PanelRight size={14} aria-hidden="true" /></button>
-      <button type="button" className="files-icon tt-focusable" aria-label={`Hide the ${cloudLive ? 'cloud' : 'test'} iPhone; the agent keeps working`} title="Hide" onClick={hide}><X size={14} aria-hidden="true" /></button>
+      {cloudLive ? <span className="phone-player__name" title={cloudSession!.device ?? undefined}>{plural(sessionMinutes, { other: '# min' })}</span> : null}
+      <button type="button" className="phone-player__size tt-focusable" aria-label={resize} title={t({ message: `Size: ${sizeLabel}`, comment: '{sizeLabel} is Small, Medium or Large.' })}
+        onClick={() => phoneStore.setSize(nextSize.id)}>{sizeLabel}</button>
+      <button type="button" className="files-icon tt-focusable" aria-label={cloudLive ? t`Show the cloud iPhone in Tools` : t`Show the test iPhone in Tools`} title={t`Show in Tools`} onClick={showInTools}><PanelRight size={14} aria-hidden="true" /></button>
+      <button type="button" className="files-icon tt-focusable" aria-label={cloudLive ? t`Hide the cloud iPhone; the agent keeps working` : t`Hide the test iPhone; the agent keeps working`} title={t({ message: 'Hide', comment: 'Hides the phone player.' })} onClick={hide}><X size={14} aria-hidden="true" /></button>
     </div>
     <div className="phone-player__phone" style={{ padding: layout.bezel, borderRadius: Math.round(layout.screen.width * 0.12) + layout.bezel }}>
-      <div ref={screen} className="phone-player__screen" title={cloudLive ? cloudSession!.device ?? 'Cloud iPhone' : `${host(page!)} at ${TEST_IPHONE.width} by ${TEST_IPHONE.height}`}
+      <div ref={screen} className="phone-player__screen" title={cloudLive ? cloudSession!.device ?? t`Cloud iPhone` : t({ message: `${pageHost} at ${width} by ${height}`, comment: '{pageHost} is a web address\'s host; {width} and {height} are sizes in pixels.' })}
         style={{ width: layout.screen.width, height: layout.screen.height, borderRadius: Math.round(layout.screen.width * 0.12) }} data-covered={covered || undefined}>
-        {cloudLive ? cloudSession!.status === 'starting' ? <p className="phone-player__note" role="status">Starting…</p> : covered ? <p className="phone-player__note">The phone steps aside while a menu or dialog is open.</p> : null
+        {cloudLive ? cloudSession!.status === 'starting' ? <p className="phone-player__note" role="status">{t`Starting…`}</p> : covered ? <p className="phone-player__note">{steppingAside}</p> : null
           : page!.status === 'unavailable' ? <div className="phone-player__note" role="status">
-            <p>This page could not load.</p>
-            <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.browser.history(bridge, threadId, page!.id, 'reload')}><RotateCw size={13} aria-hidden="true" />Try again</button>
-          </div> : covered ? <p className="phone-player__note">The phone steps aside while a menu or dialog is open.</p> : null}
+            <p>{t`This page could not load.`}</p>
+            <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.browser.history(bridge, threadId, page!.id, 'reload')}><RotateCw size={13} aria-hidden="true" />{t`Try again`}</button>
+          </div> : covered ? <p className="phone-player__note">{steppingAside}</p> : null}
       </div>
     </div>
     <div className="phone-player__status">
-      {current?.pendingAction ? <div className="phone-player__request" role="group" aria-label="Test iPhone action permission">
+      {current?.pendingAction ? <div className="phone-player__request" role="group" aria-label={t`Test iPhone action permission`}>
         <p title={current.pendingAction.description}>{current.pendingAction.description}</p>
         <div className="phone-player__request-row">
-          <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={answering || current.status === 'paused'} onClick={() => answer(true)}>Allow once</button>
-          <button type="button" className="tt-button tt-focusable" aria-label="Allow this thread to use the browser and test iPhone without asking" title="Allow this thread to use the browser and test iPhone without asking" disabled={answering || current.status === 'paused'} onClick={() => answer(true, true)}>Allow this thread</button>
-          <button type="button" className="tt-button tt-focusable" disabled={answering} onClick={() => answer(false)}>Deny</button>
+          <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={answering || current.status === 'paused'} onClick={() => answer(true)}>{t`Allow once`}</button>
+          <button type="button" className="tt-button tt-focusable" aria-label={t`Allow this thread to use the browser and test iPhone without asking`} title={t`Allow this thread to use the browser and test iPhone without asking`} disabled={answering || current.status === 'paused'} onClick={() => answer(true, true)}>{t`Allow this thread`}</button>
+          <button type="button" className="tt-button tt-focusable" disabled={answering} onClick={() => answer(false)}>{t`Deny`}</button>
         </div>
       </div> : null}
       <div className="phone-player__line">
         <span className="phone-player__dot" data-state={dotState} aria-hidden="true" /><span className="phone-player__action" title={actionText}>{actionText}</span>
         {cloudLive ? <button type="button" className="browser-review-link tt-focusable" disabled={endingSession} onClick={endSession}>
-          <Square size={13} aria-hidden="true" />End session</button> : null}
+          <Square size={13} aria-hidden="true" />{t`End session`}</button> : null}
         {current && active ? <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.browser.controlTask(bridge, current, current.status === 'paused' ? 'resume' : 'pause').then(error => setProblem(error))}>
-          {current.status === 'paused' ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}{current.status === 'paused' ? 'Resume' : 'Pause'}</button> : null}
+          {current.status === 'paused' ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}{current.status === 'paused' ? t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })}</button> : null}
       </div>
       {!current?.pendingAction && grant && current ? <div className="phone-player__grant">
-        <span>Uses the browser without asking</span>
-        <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread use the browser and test iPhone without asking" title="This thread will ask before opening, tapping or typing again" disabled={stoppingGrant} onClick={stopGrant}>Stop</button>
+        <span>{t`Uses the browser without asking`}</span>
+        <button type="button" className="browser-review-link tt-focusable" aria-label={t`Stop letting this thread use the browser and test iPhone without asking`} title={t`This thread will ask before opening, tapping or typing again`} disabled={stoppingGrant} onClick={stopGrant}>{t({ message: 'Stop', comment: 'Stops letting this thread use the browser and test iPhone without asking.' })}</button>
       </div> : null}
       {problem ? <p className="browser-review-problem" role="alert">{problem}</p> : null}
     </div>

@@ -1,4 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { isPullRequestLimited, parsePullRequestReference, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestRequest } from '../../../shared/gitPullRequests'
 import { limitedWords } from './pullRequestSurface.logic'
 import type { AgentCommand, AgentState } from '../../../shared/agents'
@@ -16,8 +19,8 @@ export function pullRequestBridge(): ((request: GitPullRequestRequest) => Promis
 
 /** T3's validation words for a reference field. */
 function referenceProblem(reference: string): string | null {
-  if (!reference.trim()) return 'Paste a pull request URL or enter 123 / #123.'
-  return parsePullRequestReference(reference) ? null : 'Use a pull request URL, 123, or #123.'
+  if (!reference.trim()) return i18n._(msg`Paste a pull request URL or enter 123 / #123.`)
+  return parsePullRequestReference(reference) ? null : i18n._(msg`Use a pull request URL, 123, or #123.`)
 }
 
 /** Sends one pull request command and answers with the refusal in the host's words, or the host's notice when it went through. */
@@ -39,6 +42,7 @@ export function LinkPullRequestDialog({ threadId, command, onClose, onLinked }: 
   readonly onClose: () => void
   readonly onLinked: (notice: string) => void
 }): ReactNode {
+  const { t } = useLingui()
   const [reference, setReference] = useState('')
   const [dirty, setDirty] = useState(false)
   const [pending, setPending] = useState(false)
@@ -51,23 +55,23 @@ export function LinkPullRequestDialog({ threadId, command, onClose, onLinked }: 
     setDirty(true)
     if (pending || referenceProblem(reference)) return
     setPending(true); setFailure(null)
-    const result = await sendCommand(command, { type: 'git-link-pull-request', threadId, reference: reference.trim() }, 'Could not link the pull request.')
+    const result = await sendCommand(command, { type: 'git-link-pull-request', threadId, reference: reference.trim() }, t`Could not link the pull request.`)
     setPending(false)
     if (result.error) { setFailure(result.error); return }
-    onLinked(result.notice ?? 'Pull request linked.')
+    onLinked(result.notice ?? t`Pull request linked.`)
   }
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog pull-request-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={pending || undefined}>
-      <h2 id={titleId}>Link pull request</h2>
-      <div id={descriptionId} className="tt-dialog__description">Attach a pull request to this thread. A full GitHub URL can point at any repository your gh sign-in can read.</div>
+      <h2 id={titleId}>{t`Link pull request`}</h2>
+      <div id={descriptionId} className="tt-dialog__description tt-paragraph">{t`Attach a pull request to this thread. A full GitHub URL can point at any repository your gh sign-in can read.`}</div>
       <form onSubmit={event => { event.preventDefault(); void submit() }}>
-        <label htmlFor={fieldId}>Pull request</label>
-        <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder="Pull request URL or #42" maxLength={2_048} autoComplete="off" spellCheck={false}
+        <label htmlFor={fieldId}>{t`Pull request`}</label>
+        <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder={t`Pull request URL or #42`} maxLength={2_048} autoComplete="off" spellCheck={false}
           aria-invalid={problem ? true : undefined} onChange={event => { setDirty(true); setReference(event.target.value); setFailure(null) }} />
         {problem ?? failure ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{problem ?? failure}</div> : null}
         <div className="tt-dialog__actions">
-          <Button variant="secondary" disabled={pending} onClick={onClose}>Cancel</Button>
-          <Button variant="primary" type="submit" disabled={pending || (dirty && problem !== null)}>{pending ? 'Linking...' : 'Link'}</Button>
+          <Button variant="secondary" disabled={pending} onClick={onClose}>{t`Cancel`}</Button>
+          <Button variant="primary" type="submit" disabled={pending || (dirty && problem !== null)}>{pending ? t`Linking...` : t({ message: 'Link', comment: 'Links a pull request to this thread.' })}</Button>
         </div>
       </form>
     </section>
@@ -90,6 +94,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
   readonly onClose: () => void
   readonly onDone: (notice: string) => void
 }): ReactNode {
+  const { t } = useLingui()
   const [reference, setReference] = useState(initialReference)
   const [resolved, setResolved] = useState<{ readonly reference: string; readonly detail: GitPullRequestDetail } | null>(null)
   const [resolveFailure, setResolveFailure] = useState<string | null>(null)
@@ -105,50 +110,58 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
     setResolveFailure(null)
     if (!parsed) { setResolving(false); return }
     const read = pullRequestBridge()
-    if (!read) { setResolveFailure('Pull requests are not available in this window.'); return }
+    if (!read) { setResolveFailure(t`Pull requests are not available in this window.`); return }
     let live = true
     setResolving(true)
     const timer = window.setTimeout(() => {
       read({ threadId, reference: parsed })
-        .then(detail => { if (!live) return; if (detail && isPullRequestLimited(detail)) setResolveFailure(limitedWords(detail.limited.retryAt, 'try-again')); else if (detail) setResolved({ reference: parsed, detail }); else setResolveFailure('No pull request answers to that reference.') },
-          () => { if (live) setResolveFailure('Could not read that pull request. Check the reference and your gh sign-in.') })
+        .then(detail => { if (!live) return; if (detail && isPullRequestLimited(detail)) setResolveFailure(limitedWords(detail.limited.retryAt, 'try-again')); else if (detail) setResolved({ reference: parsed, detail }); else setResolveFailure(t`No pull request answers to that reference.`) },
+          () => { if (live) setResolveFailure(t`Could not read that pull request. Check the reference and your gh sign-in.`) })
         .finally(() => { if (live) setResolving(false) })
     }, RESOLVE_DELAY_MS)
     return () => { live = false; window.clearTimeout(timer) }
-  }, [parsed, threadId])
+  }, [parsed, threadId, t])
   const detail = resolved && resolved.reference === parsed ? resolved.detail : null
   const problem = referenceProblem(reference)
   const confirm = async (mode: 'local' | 'worktree'): Promise<void> => {
     if (!detail || preparing) return
     setPreparing(mode); setFailure(null)
-    const result = await sendCommand(command, { type: 'git-checkout-pull-request', threadId, reference: detail.url, mode }, 'Could not check out the pull request.')
+    const result = await sendCommand(command, { type: 'git-checkout-pull-request', threadId, reference: detail.url, mode }, t`Could not check out the pull request.`)
     setPreparing(null)
     if (result.error) { setFailure(result.error); return }
-    onDone(result.notice ?? `Checked out PR #${detail.number}.`)
+    const number = detail.number
+    onDone(result.notice ?? t({ message: `Checked out PR #${number}.`, comment: '{number} is the pull request\'s number.' }))
   }
   const ready = detail !== null && !resolving && preparing === null
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog pull-request-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={preparing !== null || undefined}>
-      <h2 id={titleId}>Checkout pull request</h2>
-      <div id={descriptionId} className="tt-dialog__description">Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started.{localMovesToCheckout ? <p className="pull-request-dialog__note">Local: this thread will work in the project checkout.</p> : null}</div>
-      <label htmlFor={fieldId}>Pull request</label>
-      <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder="PR URL, checkout command, or #42" maxLength={2_048} autoComplete="off" spellCheck={false}
+      <h2 id={titleId}>{t`Checkout pull request`}</h2>
+      <div id={descriptionId} className="tt-dialog__description tt-paragraph">{t`Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started.`}{localMovesToCheckout ? <p className="pull-request-dialog__note">{t`Local: this thread will work in the project checkout.`}</p> : null}</div>
+      <label htmlFor={fieldId}>{t`Pull request`}</label>
+      <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder={t`PR URL, checkout command, or #42`} maxLength={2_048} autoComplete="off" spellCheck={false}
         aria-invalid={problem ? true : undefined}
         onChange={event => { setReference(event.target.value); setFailure(null) }}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (ready) void confirm('local') } }} />
       {detail ? <div className="pull-request-dialog__resolved">
         <p><strong>{detail.title}</strong></p>
-        <p className="pull-request-dialog__meta">#{detail.number} · <bdi>{detail.headBranch}</bdi> to <bdi>{detail.baseBranch}</bdi> <span data-state={detail.draft && detail.state === 'open' ? 'draft' : detail.state}>{stateLabel(detail)}</span></p>
+        <PullRequestMeta detail={detail} />
       </div> : null}
-      {resolving && !detail ? <div className="tt-dialog__status" role="status">Resolving pull request...</div> : null}
+      {resolving && !detail ? <div className="tt-dialog__status" role="status">{t`Resolving pull request...`}</div> : null}
       {problem && reference.trim() !== initialReference.trim() ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{problem}</div>
         : failure ?? resolveFailure ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{failure ?? resolveFailure}</div> : null}
       <div className="tt-dialog__actions">
-        <Button variant="secondary" disabled={preparing !== null} onClick={onClose}>Cancel</Button>
-        <Button variant="secondary" disabled={!ready} onClick={() => void confirm('local')}>{preparing === 'local' ? 'Preparing local...' : 'Local'}</Button>
-        <Button variant="primary" disabled={!ready || !worktreeAllowed} title={worktreeAllowed ? undefined : 'Only a thread that has not started can take a worktree of its own. Use Local, or start a new thread.'}
-          aria-description={worktreeAllowed ? undefined : 'Only a thread that has not started can take a worktree of its own.'} onClick={() => void confirm('worktree')}>{preparing === 'worktree' ? 'Preparing worktree...' : 'Worktree'}</Button>
+        <Button variant="secondary" disabled={preparing !== null} onClick={onClose}>{t`Cancel`}</Button>
+        <Button variant="secondary" disabled={!ready} onClick={() => void confirm('local')}>{preparing === 'local' ? t`Preparing local...` : t({ message: 'Local', comment: 'Checks a pull request out in the thread\'s own folder.' })}</Button>
+        <Button variant="primary" disabled={!ready || !worktreeAllowed} title={worktreeAllowed ? undefined : t`Only a thread that has not started can take a worktree of its own. Use Local, or start a new thread.`}
+          aria-description={worktreeAllowed ? undefined : t`Only a thread that has not started can take a worktree of its own.`} onClick={() => void confirm('worktree')}>{preparing === 'worktree' ? t`Preparing worktree...` : t({ message: 'Worktree', comment: 'Checks a pull request out into a worktree of its own.' })}</Button>
       </div>
     </section>
   </div>
+}
+
+/** A resolved pull request's number, its branches and its state, under its title. */
+function PullRequestMeta({ detail }: { readonly detail: GitPullRequestDetail }): ReactNode {
+  const { number, headBranch, baseBranch } = detail
+  const state = stateLabel(detail)
+  return <p className="pull-request-dialog__meta"><Trans comment="{headBranch} and {baseBranch} are Git branch names; {state} is the pull request's state, as in Open.">#{number} · <bdi>{headBranch}</bdi> to <bdi>{baseBranch}</bdi> <span data-state={detail.draft && detail.state === 'open' ? 'draft' : detail.state}>{state}</span></Trans></p>
 }

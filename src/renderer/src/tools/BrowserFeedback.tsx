@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { BrowserBridge, BrowserCapture, BrowserPage } from '../../../shared/browser'
 import { AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, agentAttachmentHandlesSchema, attachmentHandlesBytes } from '../../../shared/agents'
 import { dataUrlBlob, prepareScreenshot, wasResized, type PreparedScreenshot } from '../agents/screenshotResize'
 import type { ThreadDraftStore } from '../agents/threadDraftStore'
 import { STAGING_FAILED, stageImage } from '../agents/stagedImages'
 
-const ANSWERING = 'This draft answers a question. Finish that answer before adding browser feedback.'
-const DOES_NOT_FIT = 'This screenshot does not fit in the draft. Remove an attachment or capture a smaller region.'
+const ANSWERING = msg`This draft answers a question. Finish that answer before adding browser feedback.`
+const DOES_NOT_FIT = msg`This screenshot does not fit in the draft. Remove an attachment or capture a smaller region.`
 
 /**
  * Append to the latest draft, preserving typing that happened while the page was captured or its screenshot
@@ -16,30 +19,31 @@ const DOES_NOT_FIT = 'This screenshot does not fit in the draft. Remove an attac
  */
 export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: string, capture: BrowserCapture, comment: string, imagesSupported: boolean,
   { prepare = prepareScreenshot, signal }: { readonly prepare?: (image: Blob) => Promise<PreparedScreenshot>; readonly signal?: AbortSignal } = {}): Promise<string | null> {
-  if (store.draft(threadId).requestId !== null) return ANSWERING
-  if (!imagesSupported) return 'Choose a model with image support before adding a browser screenshot.'
+  if (store.draft(threadId).requestId !== null) return i18n._(ANSWERING)
+  if (!imagesSupported) return i18n._(msg`Choose a model with image support before adding a browser screenshot.`)
   // The capture is decoded from its data URL once; its size is then read from these bytes, and they are what is staged when nothing is scaled.
   const source = dataUrlBlob(capture.image, 'image/png')
-  if (!source) return 'Could not read this screenshot, so nothing was added. Capture the page again.'
+  if (!source) return i18n._(msg`Could not read this screenshot, so nothing was added. Capture the page again.`)
   const prepared = await prepare(source)
   if (signal?.aborted) return null
   const { dimensions } = prepared
   const before = store.draft(threadId)
-  if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES) return DOES_NOT_FIT
+  if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES) return i18n._(DOES_NOT_FIT)
   let image
   try { image = await stageImage(threadId, { name: 'Browser feedback.png', mimeType: 'image/png', ...prepared }) }
   catch (error) { return error instanceof Error ? error.message : STAGING_FAILED }
   if (signal?.aborted) return null
   const current = store.draft(threadId)
-  if (current.requestId !== null) return ANSWERING
+  if (current.requestId !== null) return i18n._(ANSWERING)
   const attachments = agentAttachmentHandlesSchema.safeParse([...current.attachments, image])
-  if (!attachments.success) return DOES_NOT_FIT
+  if (!attachments.success) return i18n._(DOES_NOT_FIT)
   const element = capture.element
+  // What the agent is told stays in English: it is the prompt, not the interface.
   // The agent is told the size of the image it receives, as well as the capture's own when they differ.
   const size = `Screenshot size: ${capture.width} x ${capture.height}${wasResized(dimensions) ? `, sent at ${dimensions.sent.width} x ${dimensions.sent.height}` : ''}`
   const context = [`Browser feedback: ${capture.url}`, size,
     ...(element ? [`Selected element: ${element.tag}${element.role ? ` (${element.role})` : ''}${element.name ? ` - ${element.name}` : ''}`, ...(element.selector ? [`Selector: ${element.selector}`] : []), ...(element.text ? [`Page text (reference only): ${element.text}`] : [])] : []), comment.trim()].filter(Boolean).join('\n')
-  if (current.text.length + context.length > 99_990) return 'The draft is full. Shorten it before adding browser feedback.'
+  if (current.text.length + context.length > 99_990) return i18n._(msg`The draft is full. Shorten it before adding browser feedback.`)
   store.edit(threadId, { text: [current.text, context].filter(Boolean).join('\n\n'), attachments: attachments.data })
   return null
 }
@@ -49,6 +53,7 @@ export function BrowserFeedback({ page, initial, bridge, onAdd, onClose }: {
   /** `signal` is aborted when the user cancels or the dialog closes before the add finishes; nothing is added then. */
   readonly onAdd: (capture: BrowserCapture, comment: string, signal: AbortSignal) => Promise<string | null> | string | null; readonly onClose: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const [capture, setCapture] = useState(initial)
   const [comment, setComment] = useState('')
   const [mode, setMode] = useState<'element' | 'region'>('element')
@@ -83,9 +88,9 @@ export function BrowserFeedback({ page, initial, bridge, onAdd, onClose }: {
     try {
       const result = await bridge.capture({ ...request, ...selection, ...(initial.captureId ? { captureId: initial.captureId } : {}) })
       if (!result.ok) setProblem(result.error.message)
-      else if (result.value.url !== initial.url) setProblem('The page changed. Cancel and capture it again before selecting.')
+      else if (result.value.url !== initial.url) setProblem(t`The page changed. Cancel and capture it again before selecting.`)
       else { setCapture(result.value); setSelectionValid(true) }
-    } catch { setProblem('Could not capture this selection. Try again.') }
+    } catch { setProblem(t`Could not capture this selection. Try again.`) }
     finally { setBusy(false) }
   }
   const locate = (event: React.PointerEvent<HTMLButtonElement>): { x: number; y: number } => {
@@ -93,10 +98,12 @@ export function BrowserFeedback({ page, initial, bridge, onAdd, onClose }: {
     return { x: Math.round(Math.max(0, Math.min(initial.width - 1, (event.clientX - rect.left) / rect.width * initial.width))),
       y: Math.round(Math.max(0, Math.min(initial.height - 1, (event.clientY - rect.top) / rect.height * initial.height))) }
   }
-  return <section className="browser-feedback" aria-label="Browser feedback" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}>
-    <label className="browser-feedback__mode">Select <select aria-label="Selection mode" className="tt-focusable" value={mode} disabled={busy} onChange={event => { setMode(event.currentTarget.value as 'element' | 'region'); setAnchor(null); setBox(null); setCapture(initial); setSelectionValid(true); setProblem(null) }}><option value="element">Element</option><option value="region">Region</option></select></label>
-    <p>{mode === 'element' ? 'Click an element, or use arrow keys and Enter.' : anchor ? 'Move the other corner with arrow keys, then press Enter. Space starts again.' : 'Drag a region, or move with arrow keys and press Space to set its first corner.'}</p>
-    <button type="button" className="browser-feedback__image tt-focusable" aria-label={`Select page ${mode} at ${point.x}, ${point.y}`} disabled={busy}
+  const { x, y } = point
+  const selected = capture.element ? capture.element.name || capture.element.text || capture.element.tag : ''
+  return <section className="browser-feedback" aria-label={t`Browser feedback`} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}>
+    <label className="browser-feedback__mode">{t({ message: 'Select', comment: 'Before a list: select an element or a region of the page.' })} <select aria-label={t`Selection mode`} className="tt-focusable" value={mode} disabled={busy} onChange={event => { setMode(event.currentTarget.value as 'element' | 'region'); setAnchor(null); setBox(null); setCapture(initial); setSelectionValid(true); setProblem(null) }}><option value="element">{t({ message: 'Element', comment: 'An element of a web page, chosen to give feedback on.' })}</option><option value="region">{t({ message: 'Region', comment: 'A rectangle of a web page, chosen to give feedback on.' })}</option></select></label>
+    <p className="tt-paragraph">{mode === 'element' ? t`Click an element, or use arrow keys and Enter.` : anchor ? t`Move the other corner with arrow keys, then press Enter. Space starts again.` : t`Drag a region, or move with arrow keys and press Space to set its first corner.`}</p>
+    <button type="button" className="browser-feedback__image tt-focusable" aria-label={mode === 'element' ? t({ message: `Select page element at ${x}, ${y}`, comment: '{x} and {y} are pixel positions on the page.' }) : t({ message: `Select page region at ${x}, ${y}`, comment: '{x} and {y} are pixel positions on the page.' })} disabled={busy}
       onPointerDown={event => { if (event.button !== 0) return; start.current = locate(event); setPoint(start.current); setBox(null); event.currentTarget.setPointerCapture?.(event.pointerId) }}
       onPointerMove={event => { if (!start.current) return; const end = locate(event); setBox({ x: Math.min(start.current.x, end.x), y: Math.min(start.current.y, end.y), width: Math.abs(end.x - start.current.x), height: Math.abs(end.y - start.current.y) }) }}
       onPointerUp={event => {
@@ -123,13 +130,13 @@ export function BrowserFeedback({ page, initial, bridge, onAdd, onClose }: {
           else if (box && box.width > 0 && box.height > 0) void select({ region: box })
         }
       }}>
-      <img src={initial.image} alt="Page to annotate" draggable={false} />
+      <img src={initial.image} alt={t`Page to annotate`} draggable={false} />
       <span className="browser-feedback__selection" style={box ? { left: `${box.x / initial.width * 100}%`, top: `${box.y / initial.height * 100}%`, width: `${box.width / initial.width * 100}%`, height: `${box.height / initial.height * 100}%` } : { left: `${point.x / initial.width * 100}%`, top: `${point.y / initial.height * 100}%`, width: 8, height: 8 }} />
     </button>
-    {capture.element ? <p>Selected: {capture.element.name || capture.element.text || capture.element.tag}</p> : box ? <p>Region selected</p> : null}
-    <textarea autoFocus className="tt-focusable" aria-label="Browser feedback comment" placeholder="What should change?" value={comment} maxLength={8000} onChange={event => setComment(event.currentTarget.value)} />
-    <div className="browser-feedback__actions"><button ref={addButton} type="button" className="tt-button tt-button--primary tt-focusable" disabled={busy || !selectionValid || !comment.trim()} onClick={add}>Add to draft</button>
-      <button type="button" className="tt-button tt-focusable" onClick={cancel}>Cancel</button></div>
+    {capture.element ? <p>{t({ message: `Selected: ${selected}`, comment: '{selected} is the chosen page element\'s name or text.' })}</p> : box ? <p>{t`Region selected`}</p> : null}
+    <textarea autoFocus className="tt-focusable" aria-label={t`Browser feedback comment`} placeholder={t`What should change?`} value={comment} maxLength={8000} onChange={event => setComment(event.currentTarget.value)} />
+    <div className="browser-feedback__actions"><button ref={addButton} type="button" className="tt-button tt-button--primary tt-focusable" disabled={busy || !selectionValid || !comment.trim()} onClick={add}>{t`Add to draft`}</button>
+      <button type="button" className="tt-button tt-focusable" onClick={cancel}>{t`Cancel`}</button></div>
     {problem ? <p className="browser-review-problem" role="alert">{problem}</p> : null}
   </section>
 }

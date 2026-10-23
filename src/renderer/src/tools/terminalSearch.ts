@@ -1,3 +1,4 @@
+import { plural, t } from '@lingui/core/macro'
 import type { IMarker, Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { terminalLineStart, terminalLineText, terminalTextPosition } from './terminalBuffer'
@@ -12,12 +13,12 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   bar.className = 'terminal-search'
   bar.hidden = true
   bar.setAttribute('role', 'search')
-  bar.setAttribute('aria-label', 'Search terminal output')
+  bar.setAttribute('aria-label', t`Search terminal output`)
   const input = document.createElement('input')
   input.type = 'text'
-  input.placeholder = 'Find'
+  input.placeholder = t({ message: 'Find', comment: 'Placeholder of the field that finds text in a terminal\'s output.' })
   input.spellcheck = false
-  input.setAttribute('aria-label', 'Find in terminal')
+  input.setAttribute('aria-label', t`Find in terminal`)
   const count = document.createElement('output')
   count.setAttribute('aria-live', 'polite')
   const button = (label: string, title: string, path: string): HTMLButtonElement => {
@@ -28,12 +29,12 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     control.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}" /></svg>`
     return control
   }
-  const previous = button('Previous match', 'Previous match (Shift+Enter)', 'm18 15-6-6-6 6')
-  const next = button('Next match', 'Next match (Enter)', 'm6 9 6 6 6-6')
-  const close = button('Close search', 'Close search (Escape)', 'M18 6 6 18M6 6l12 12')
+  const previous = button(t`Previous match`, t`Previous match (Shift+Enter)`, 'm18 15-6-6-6 6')
+  const next = button(t`Next match`, t`Next match (Enter)`, 'm6 9 6 6 6-6')
+  const close = button(t`Close search`, t`Close search (Escape)`, 'M18 6 6 18M6 6l12 12')
   bar.append(input, count, previous, next, close)
   if (onOpenLinks) {
-    const links = button('Open terminal link', 'Open terminal link', 'M15 3h6v6M10 14 21 3M21 14v7H3V3h7')
+    const links = button(t`Open terminal link`, t`Open terminal link`, 'M15 3h6v6M10 14 21 3M21 14v7H3V3h7')
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
@@ -83,8 +84,12 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()
   }
   const resultChanges = addon.onDidChangeResults(result => {
-    const total = `${result.resultCount}${result.resultCount >= HIGHLIGHT_LIMIT ? '+' : ''}`
-    count.textContent = !input.value ? '' : result.resultCount === 0 ? 'No matches' : result.resultIndex < 0 ? `${total} matches` : `${result.resultIndex + 1} of ${total}`
+    const found = result.resultCount, more = found >= HIGHLIGHT_LIMIT
+    // Written out as the count reads now, "1000+": a plural's own # would group its digits.
+    const total = `${found}${more ? '+' : ''}`, position = result.resultIndex + 1
+    count.textContent = !input.value ? '' : found === 0 ? t`No matches`
+      : result.resultIndex < 0 ? plural(found, { other: `${total} matches` })
+        : t({ message: `${position} of ${total}`, comment: 'Which match of the found ones is selected, as in "3 of 12".' })
     previous.disabled = next.disabled = result.resultCount === 0
     if (result.resultIndex >= 0) rememberSelection()
   })

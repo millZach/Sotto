@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ArrowRight, Check, ChevronDown, Cloud } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { GitRef, GitRefsPage, GitRefsRequest } from '../../../shared/gitRefs'
 
 /** How the picker reads a thread's branches: the branch picker's own host operation (ADR-0027, `git-refs`). */
@@ -51,6 +52,7 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
   readonly refs?: RefsReader | undefined
   readonly onPick: (base: string | null) => void
 }): ReactNode {
+  const { t } = useLingui()
   const read = refs ?? bridgeRefs()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -79,7 +81,8 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
   }, [open])
   const close = (): void => { setOpen(false); setQuery(''); trigger.current?.focus() }
   const pick = (base: string | null): void => { onPick(base); close() }
-  const shownBase = resolved?.base ?? (selected ?? 'Automatic')
+  const automatic = t({ message: 'Automatic', comment: 'The base branch Changes compares against, worked out by Sotto.' })
+  const shownBase = resolved?.base ?? (selected ?? automatic)
   const head = resolved?.head ?? 'HEAD'
   const needle = query.trim().toLowerCase()
   const choices = page.status === 'ready' ? page.choices.filter(choice => !needle || choice.label.toLowerCase().includes(needle)) : []
@@ -97,22 +100,25 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
     <span className="changes-base__head" title={head}><bdi>{head}</bdi></span>
     <ArrowRight size={13} aria-hidden="true" className="changes-base__arrow" />
     <button ref={trigger} type="button" className="changes-base__trigger tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-      aria-label={`Change the base. Comparing ${head} with ${shownBase}${selected === null ? ', chosen automatically' : ''}`} title={`${head} → ${shownBase}`}
+      aria-label={selected === null
+        ? t({ message: `Change the base. Comparing ${head} with ${shownBase}, chosen automatically`, comment: '{head} and {shownBase} are branch names.' })
+        : t({ message: `Change the base. Comparing ${head} with ${shownBase}`, comment: '{head} and {shownBase} are branch names.' })} title={`${head} → ${shownBase}`}
       onClick={() => open ? close() : setOpen(true)}>
       <bdi className="changes-base__value">{shownBase}</bdi><ChevronDown size={13} aria-hidden="true" />
     </button>
-    {open ? <div ref={popover} id={id} className="changes-base__popover" role="dialog" aria-label="Base to compare with" onKeyDown={onKeyDown}>
-      <input className="changes-base__search tt-focusable" type="search" placeholder="Search refs..." aria-label="Search refs" value={query} autoFocus
+    {open ? <div ref={popover} id={id} className="changes-base__popover" role="dialog" aria-label={t`Base to compare with`} onKeyDown={onKeyDown}>
+      <input className="changes-base__search tt-focusable" type="search" placeholder={t`Search refs...`} aria-label={t`Search refs`} value={query} autoFocus
         onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('.changes-base__ref')?.focus() } }} />
-      <div className="changes-base__columns" aria-hidden="true"><span>Branch</span><span>Remote</span></div>
-      <ul ref={list} className="changes-base__list" aria-label="Refs">
-        {!needle || 'automatic'.includes(needle) ? <li className="changes-base__row">
+      <div className="changes-base__columns" aria-hidden="true"><span>{t({ message: 'Branch', comment: 'Column heading in the base branch list.' })}</span><span>{t({ message: 'Remote', comment: 'Column heading in the base branch list: the remote copy of a branch.' })}</span></div>
+      <ul ref={list} className="changes-base__list" aria-label={t`Refs`}>
+        {!needle || automatic.toLowerCase().includes(needle) ? <li className="changes-base__row">
           <button type="button" className="changes-base__ref tt-focusable" aria-current={selected === null || undefined} onClick={() => pick(null)}>
-            <Check size={13} aria-hidden="true" className="changes-base__check" data-shown={selected === null || undefined} /><span className="changes-base__label">Automatic</span>
+            <Check size={13} aria-hidden="true" className="changes-base__check" data-shown={selected === null || undefined} /><span className="changes-base__label">{automatic}</span>
           </button>
         </li> : null}
         {choices.map(choice => {
           const value = choiceValue(choice, selected)
+          const branch = choice.label, remote = choice.remote
           const current = selected !== null && (selected === choice.local || selected === choice.remote)
           const both = choice.local !== null && choice.remote !== null
           return <li key={choice.id} className="changes-base__row">
@@ -120,15 +126,15 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
               <Check size={13} aria-hidden="true" className="changes-base__check" data-shown={current || undefined} /><bdi className="changes-base__label">{choice.label}</bdi>
             </button>
             {both ? <button type="button" role="switch" className="changes-base__switch tt-focusable" aria-checked={selected === choice.remote}
-              aria-label={`Use remote version of ${choice.label}`} title={`Use ${choice.remote}`}
+              aria-label={t`Use remote version of ${branch}`} title={t({ message: `Use ${remote}`, comment: '{remote} is a remote branch, as in origin/main.' })}
               onClick={() => onPick(selected === choice.remote ? choice.local : choice.remote)}><span className="changes-base__thumb" /></button>
-              : choice.remote !== null ? <span className="changes-base__remote-only" role="img" aria-label="Remote only" title="Remote only"><Cloud size={13} aria-hidden="true" /></span> : null}
+              : choice.remote !== null ? <span className="changes-base__remote-only" role="img" aria-label={t`Remote only`} title={t`Remote only`}><Cloud size={13} aria-hidden="true" /></span> : null}
           </li>
         })}
       </ul>
-      {page.status === 'loading' ? <p className="changes-base__note" role="status">Reading branches…</p>
-        : page.status === 'error' ? <p className="changes-base__note" role="status">Sotto could not read this repository’s branches.</p>
-          : choices.length === 0 && needle ? <p className="changes-base__note" role="status">No matching refs.</p> : null}
+      {page.status === 'loading' ? <p className="changes-base__note" role="status">{t`Reading branches…`}</p>
+        : page.status === 'error' ? <p className="changes-base__note" role="status">{t`Sotto could not read this repository’s branches.`}</p>
+          : choices.length === 0 && needle ? <p className="changes-base__note" role="status">{t`No matching refs.`}</p> : null}
     </div> : null}
   </div>
 }

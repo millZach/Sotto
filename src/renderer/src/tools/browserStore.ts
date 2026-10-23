@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import { safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
 import type { FileWorkspace } from '../../../shared/files'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
@@ -20,7 +21,7 @@ export interface ThreadBrowser {
   readonly grant: BrowserGrantView | null
 }
 
-const unavailable: ToolsError = { code: 'unavailable', message: 'Browser is not available in this window.' }
+const unavailable: ToolsError = { code: 'unavailable', get message() { return t`Browser is not available in this window.` } }
 
 /** Local development hosts open over plain HTTP; everything else typed without a scheme gets HTTPS. */
 const LOCAL_HOST = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)(?::\d+)?(?:[/?#]|$)/iu
@@ -28,14 +29,14 @@ const LOCAL_HOST = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)(?::\d+
 /** What the address field turns into a page URL, or why it cannot. */
 export function normalizeAddress(input: string): { readonly url: string } | { readonly error: string } {
   const value = input.trim()
-  if (!value) return { error: 'Enter a web address.' }
-  if (/\s/u.test(value)) return { error: 'Enter a web address, such as localhost:5173 or example.com.' }
+  if (!value) return { error: t`Enter a web address.` }
+  if (/\s/u.test(value)) return { error: t`Enter a web address, such as localhost:5173 or example.com.` }
   const scheme = /^([a-z][a-z\d+.-]*):/iu.exec(value)
   const hasScheme = scheme !== null && (value.slice(scheme[0].length).startsWith('//') || !/^\d/u.test(value.slice(scheme[0].length)))
-  if (hasScheme && !/^https?:$/iu.test(scheme[0])) return { error: 'The browser opens HTTP and HTTPS pages only.' }
+  if (hasScheme && !/^https?:$/iu.test(scheme[0])) return { error: t`The browser opens HTTP and HTTPS pages only.` }
   const candidate = hasScheme ? value : `${LOCAL_HOST.test(value) ? 'http' : 'https'}://${value}`
   const url = safeBrowserUrl(candidate)
-  if (url === null) return { error: 'That is not a web address the browser can open.' }
+  if (url === null) return { error: t`That is not a web address the browser can open.` }
   return { url }
 }
 
@@ -89,14 +90,14 @@ export class BrowserStore {
     }
   }
   async controlTask(bridge: BrowserBridge | undefined, task: BrowserTask, control: 'pause' | 'resume'): Promise<string | null> {
-    if (!bridge?.controlTask) return 'Browser control is unavailable.'
+    if (!bridge?.controlTask) return t`Browser control is unavailable.`
     const result = await settle(bridge.controlTask({ threadId: task.threadId, workspaceId: task.workspaceId, pageId: task.pageId, taskId: task.id, control }))
     if (result.ok) { this.receiveTask(result.value); return null }
     return result.error.message
   }
   /** `forThread` also grants the thread the browser without asking for the rest of the session (ADR-0029). */
   async answerAction(bridge: BrowserBridge | undefined, task: BrowserTask, allow: boolean, forThread = false): Promise<string | null> {
-    if (!bridge?.answerAction || !task.pendingAction) return 'This action is no longer waiting.'
+    if (!bridge?.answerAction || !task.pendingAction) return t`This action is no longer waiting.`
     const result = await settle(bridge.answerAction({ threadId: task.threadId, workspaceId: task.workspaceId, pageId: task.pageId, taskId: task.id, actionId: task.pendingAction.id, allow, ...(forThread ? { forThread: true as const } : {}) }))
     if (result.ok) { this.receiveTask(result.value); return null }
     return result.error.message
@@ -104,9 +105,12 @@ export class BrowserStore {
   /** The user's Stop on a browser grant. Main's event clears it too; clearing here keeps the line honest if that event is late. */
   async stopGrant(bridge: BrowserBridge | undefined, threadId: string): Promise<string | null> {
     const workspace = this.threads.get(threadId)?.workspace
-    if (!bridge?.stopGrant || !workspace) return 'Browser is not available in this window.'
+    if (!bridge?.stopGrant || !workspace) return t`Browser is not available in this window.`
     const result = await settle(bridge.stopGrant({ threadId, workspaceId: workspace.workspaceId }))
-    if (!result.ok) return `Could not stop this thread using the browser without asking; try Stop again. ${result.error.message}`.trim()
+    if (!result.ok) {
+      const detail = result.error.message
+      return t({ message: `Could not stop this thread using the browser without asking; try Stop again. ${detail}`, comment: '{detail} is what went wrong, in a sentence, or nothing.' }).trim()
+    }
     this.patch(threadId, { grant: null })
     return null
   }
@@ -184,18 +188,18 @@ export class BrowserStore {
     if (!bridge || !target) return false
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.create({ ...target, url, ...(device ? { device } : {}) }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, device ? 'Could not open the test iPhone.' : 'Could not open the page.'); return false }
+    if (!result.ok) { this.fail(bridge, threadId, result.error, device ? t`Could not open the test iPhone.` : t`Could not open the page.`); return false }
     this.upsert(result.value)
     this.patch(threadId, device ? { busy: false } : { busy: false, activePageId: result.value.id })
     return true
   }
 
   async navigate(bridge: BrowserBridge | undefined, threadId: string, pageId: string, url: string): Promise<boolean> {
-    return this.pageAction(bridge, threadId, pageId, target => bridge!.navigate({ ...target, pageId, url }), 'Could not open that address.')
+    return this.pageAction(bridge, threadId, pageId, target => bridge!.navigate({ ...target, pageId, url }), t`Could not open that address.`)
   }
 
   async history(bridge: BrowserBridge | undefined, threadId: string, pageId: string, action: 'back' | 'forward' | 'reload'): Promise<boolean> {
-    return this.pageAction(bridge, threadId, pageId, target => bridge![action]({ ...target, pageId }), action === 'reload' ? 'Could not reload the page.' : 'Could not go there.')
+    return this.pageAction(bridge, threadId, pageId, target => bridge![action]({ ...target, pageId }), action === 'reload' ? t`Could not reload the page.` : t`Could not go there.`)
   }
 
   async close(bridge: BrowserBridge | undefined, threadId: string, pageId: string): Promise<void> {
@@ -204,7 +208,7 @@ export class BrowserStore {
     this.forgetPlacement(pageId)
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.close({ threadId, workspaceId: workspace.workspaceId, pageId }))
-    if (!result.ok && result.error.code !== 'page-unavailable') { this.fail(bridge, threadId, result.error, 'Could not close the page.'); return }
+    if (!result.ok && result.error.code !== 'page-unavailable') { this.fail(bridge, threadId, result.error, t`Could not close the page.`); return }
     this.remove(threadId, pageId)
     this.patch(threadId, { busy: false })
   }
@@ -325,7 +329,7 @@ export class BrowserStore {
   }
 
   private fail(bridge: BrowserBridge, threadId: string, error: ToolsError, words: string): void {
-    const reason = error.code === 'busy' ? 'The browser is busy. Try again in a moment.' : `${words} ${error.message}`.trim()
+    const reason = error.code === 'busy' ? t`The browser is busy. Try again in a moment.` : `${words} ${error.message}`.trim()
     this.patch(threadId, { busy: false, notice: reason })
     if (error.code === 'workspace-changed' || error.code === 'page-unavailable') void this.activate(bridge, threadId)
   }
@@ -344,15 +348,15 @@ export class BrowserStore {
 /** Why main would not show a page, in the browser's words; main's folder messages are written for Files. */
 function placementReason(error: ToolsError): string {
   switch (error.code) {
-    case 'workspace-unavailable': return 'The working folder is not available.'
-    case 'workspace-changed': return 'The working folder changed.'
-    case 'busy': return 'The browser is busy.'
+    case 'workspace-unavailable': return t`The working folder is not available.`
+    case 'workspace-changed': return t`The working folder changed.`
+    case 'busy': return t`The browser is busy.`
     default: return error.message
   }
 }
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
-  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: 'Sotto did not answer.' } } }
+  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: t`Sotto did not answer.` } } }
 }
 
 export function useThreadBrowser(store: BrowserStore, threadId: string | null): ThreadBrowser | undefined {

@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import type { Checkpoint } from '../../../shared/checkpoints'
 import type { FileWorkspace } from '../../../shared/files'
 import type { GitChange, GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
@@ -69,7 +70,7 @@ export interface ThreadChanges {
   readonly refreshing: boolean
 }
 
-const unavailable: ToolsError = { code: 'unavailable', message: 'Changes is not available in this window.' }
+const unavailable: ToolsError = { code: 'unavailable', get message() { return t`Changes is not available in this window.` } }
 const NO_FILES: ReadonlySet<string> = new Set()
 
 /** The key a comparison is kept under: scope, base or turn, and whether whitespace is hidden. */
@@ -292,17 +293,19 @@ export class ChangesStore {
 
   /** A turn's comparison from its checkpoint; a checkpoint that cannot be read says so rather than showing nothing. */
   private async readTurn(bridge: GitChangesBridge, target: { threadId: string; workspaceId: string }, checkpointId: string | null, key: string, ignoreWhitespace: boolean): Promise<ChangesReviewState> {
-    if (!bridge.checkpoints || !bridge.inspectCheckpoint) return { status: 'error', error: { code: 'unavailable', message: 'Checkpoints are unavailable in this window.' } }
+    if (!bridge.checkpoints || !bridge.inspectCheckpoint) return { status: 'error', error: { code: 'unavailable', message: t`Checkpoints are unavailable in this window.` } }
     const listing = await settle(bridge.checkpoints(target))
     if (!listing.ok) return { status: 'error', error: listing.error }
     const turns = listing.value.checkpoints
     const latest = this.threads.get(target.threadId)
     if (latest && !sameTurns(turns, latest.turns)) this.set({ ...latest, turns })
     const checkpoint = checkpointId === null ? turns[0] : turns.find(turn => turn.id === checkpointId)
-    if (!checkpoint) return { status: 'ready', review: { key, files: [], truncated: false, notice: checkpointId === null ? 'No completed turns yet.' : 'This turn is no longer listed.' } }
+    if (!checkpoint) return { status: 'ready', review: { key, files: [], truncated: false, notice: checkpointId === null ? t`No completed turns yet.` : t`This turn is no longer listed.` } }
     const number = turnNumber(turns, checkpoint.id)
     const unavailableTurn = (reason: string | undefined): ChangesReviewState => ({ status: 'ready', review: { key, files: [], truncated: false, turn: { number, checkpoint },
-      notice: `Turn ${number}’s checkpoint is unavailable, so its changes cannot be shown.${reason ? ` ${reason}` : ''}` } })
+      notice: reason
+        ? t({ message: `Turn ${number}’s checkpoint is unavailable, so its changes cannot be shown. ${reason}`, comment: '{number} counts the thread\'s turns; {reason} says why, in a sentence.' })
+        : t({ message: `Turn ${number}’s checkpoint is unavailable, so its changes cannot be shown.`, comment: '{number} counts the thread\'s turns.' }) } })
     if (checkpoint.status === 'unavailable') return unavailableTurn(checkpoint.reason)
     const inspection = await settle(bridge.inspectCheckpoint({ ...target, checkpointId: checkpoint.id }))
     if (!inspection.ok) return unavailableTurn(inspection.error.message)
@@ -310,7 +313,7 @@ export class ChangesStore {
     const files: GitReviewFile[] = []
     for (const patch of inspection.value.patches) {
       const status = change.get(patch.path) ?? 'modified'
-      if (patch.binary) { files.push({ path: patch.path, status, additions: null, deletions: null, content: { kind: 'binary', message: 'Binary or larger than 256 KiB: no text diff.' } }); continue }
+      if (patch.binary) { files.push({ path: patch.path, status, additions: null, deletions: null, content: { kind: 'binary', message: t`Binary or larger than 256 KiB: no text diff.` } }); continue }
       const built = turnPatch(patch.path, status === 'added' ? null : patch.before ?? '', status === 'deleted' ? null : patch.after ?? '', ignoreWhitespace)
       if (!built.patch) continue
       files.push({ path: patch.path, status, additions: built.additions, deletions: built.deletions, content: { kind: 'text', patch: built.patch } })
@@ -346,7 +349,7 @@ export class ChangesStore {
 }
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
-  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: 'Sotto did not answer.' } } }
+  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: t`Sotto did not answer.` } } }
 }
 
 export function useThreadChanges(store: ChangesStore, threadId: string | null): ThreadChanges | undefined {
@@ -390,8 +393,13 @@ export function parseUnifiedDiff(patch: string): DiffLine[] {
   return lines
 }
 
+/** Git's own status letter, which stays as Git writes it, and the status in words. */
 export const CHANGE_STATUS: Record<GitChange['status'], { readonly letter: string; readonly label: string }> = {
-  modified: { letter: 'M', label: 'Modified' }, added: { letter: 'A', label: 'Added' }, deleted: { letter: 'D', label: 'Deleted' },
-  renamed: { letter: 'R', label: 'Renamed' }, untracked: { letter: 'U', label: 'Untracked' }, conflicted: { letter: 'C', label: 'Conflicted' },
-  'type-changed': { letter: 'T', label: 'Type changed' },
+  modified: { letter: 'M', get label() { return t({ message: 'Modified', comment: 'A changed file\'s Git status.' }) } },
+  added: { letter: 'A', get label() { return t({ message: 'Added', comment: 'A changed file\'s Git status.' }) } },
+  deleted: { letter: 'D', get label() { return t({ message: 'Deleted', comment: 'A changed file\'s Git status.' }) } },
+  renamed: { letter: 'R', get label() { return t({ message: 'Renamed', comment: 'A changed file\'s Git status.' }) } },
+  untracked: { letter: 'U', get label() { return t({ message: 'Untracked', comment: 'A changed file\'s Git status.' }) } },
+  conflicted: { letter: 'C', get label() { return t({ message: 'Conflicted', comment: 'A changed file\'s Git status.' }) } },
+  'type-changed': { letter: 'T', get label() { return t({ message: 'Type changed', comment: 'A changed file\'s Git status.' }) } },
 }

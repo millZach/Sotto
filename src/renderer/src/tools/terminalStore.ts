@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import type { FileWorkspace } from '../../../shared/files'
 import type { TerminalBridge, TerminalEvent, TerminalPlace, TerminalSession, TerminalSnapshot } from '../../../shared/terminal'
 import { terminalImageSizeError } from '../../../shared/terminal'
@@ -70,7 +71,7 @@ interface SessionRecord {
   closing: boolean
 }
 
-const unavailable: ToolsError = { code: 'unavailable', message: 'Terminal is not available in this window.' }
+const unavailable: ToolsError = { code: 'unavailable', get message() { return t`Terminal is not available in this window.` } }
 const ORPHAN_LIMIT = 256
 
 /**
@@ -140,7 +141,7 @@ export class TerminalStore {
     this.listen(bridge)
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}) }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, 'Could not start a terminal.'); return }
+    if (!result.ok) { this.fail(bridge, threadId, result.error, t`Could not start a terminal.`); return }
     this.adopt(threadId, result.value)
     this.patch(threadId, { busy: false, activeSessionId: result.value.session.id })
   }
@@ -158,7 +159,7 @@ export class TerminalStore {
     const result = await settle(bridge.reopen({ ...target, sessionId }))
     if (!result.ok) {
       record.replaying = false
-      this.fail(bridge, threadId, result.error, 'Could not reopen this terminal.')
+      this.fail(bridge, threadId, result.error, t`Could not reopen this terminal.`)
       return
     }
     if (result.value.session.id !== sessionId) this.release(sessionId)
@@ -175,7 +176,7 @@ export class TerminalStore {
     const result = await settle(bridge.close({ ...target, sessionId }))
     if (!result.ok && result.error.code !== 'session-unavailable') {
       if (record && this.records.get(sessionId) === record) { record.closing = false; record.view?.setInputEnabled(this.running(threadId, sessionId)) }
-      this.fail(bridge, threadId, result.error, 'Could not end this terminal.'); return
+      this.fail(bridge, threadId, result.error, t`Could not end this terminal.`); return
     }
     this.removeSession(threadId, sessionId)
     this.patch(threadId, { busy: false })
@@ -197,7 +198,7 @@ export class TerminalStore {
         if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
         if (!result.ok) {
           record.inputVersion++
-          this.fail(bridge, threadId, result.error, 'Terminal input stopped. Check the command before trying again.')
+          this.fail(bridge, threadId, result.error, t`Terminal input stopped. Check the command before trying again.`)
           return
         }
       }
@@ -239,13 +240,14 @@ export class TerminalStore {
           record.inputTail = record.inputTail.then(async () => {
             const image = await Promise.resolve(dataUrl).catch(() => null)
             if (this.records.get(sessionId) !== record || record.inputVersion !== version || record.replaying || record.closing || !this.running(threadId, sessionId) || this.target(threadId)?.workspaceId !== target.workspaceId) return
-            const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' }
+            const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: t`The clipboard image could not be read.` }
             const result = error ? { ok: false as const, error } : await settle(Promise.resolve().then(() => bridge.pasteImage({ ...target, sessionId, dataUrl: image! })))
             if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
             if (!result.ok) {
               record.inputVersion++
-              const discarded = record.inputSequence > sequence ? ' Later queued input was discarded.' : ''
-              this.fail(bridge, threadId, result.error, `The image could not be pasted.${discarded} Check the command before trying again.`)
+              this.fail(bridge, threadId, result.error, record.inputSequence > sequence
+                ? t`The image could not be pasted. Later queued input was discarded. Check the command before trying again.`
+                : t`The image could not be pasted. Check the command before trying again.`)
             }
           })
         },
@@ -288,7 +290,7 @@ export class TerminalStore {
     if (this.records.get(sessionId) !== record) return
     if (!result.ok) {
       record.replaying = false
-      record.loadError = result.error.code === 'session-unavailable' ? 'This terminal is no longer available.' : 'The terminal output could not load.'
+      record.loadError = result.error.code === 'session-unavailable' ? t`This terminal is no longer available.` : t`The terminal output could not load.`
       if (result.error.code === 'session-unavailable') void this.activate(bridge, threadId)
       this.emit()
       return
@@ -444,7 +446,7 @@ export class TerminalStore {
 }
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
-  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: 'Sotto did not answer.' } } }
+  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: t`Sotto did not answer.` } } }
 }
 
 export function useThreadTerminals(store: TerminalStore, threadId: string | null): ThreadTerminals | undefined {
@@ -455,10 +457,13 @@ export function useThreadTerminals(store: TerminalStore, threadId: string | null
 /** How a session reads in its tab and status line. */
 export function sessionStatusText(session: TerminalSession): string {
   switch (session.status) {
-    case 'running': return 'Running'
-    case 'exited': return session.exitCode === null ? 'Exited' : `Exited with code ${session.exitCode}`
-    case 'interrupted': return 'Ended when Sotto closed'
-    default: return 'Could not start'
+    case 'running': return t({ message: 'Running', comment: 'A terminal\'s shell is running.' })
+    case 'exited': {
+      const code = session.exitCode
+      return code === null ? t({ message: 'Exited', comment: 'A terminal\'s shell has exited.' }) : t({ message: `Exited with code ${code}`, comment: '{code} is the shell\'s exit code, a number.' })
+    }
+    case 'interrupted': return t`Ended when Sotto closed`
+    default: return t({ message: 'Could not start', comment: 'A terminal\'s shell could not start.' })
   }
 }
 
