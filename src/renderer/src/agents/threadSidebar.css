@@ -185,7 +185,16 @@
 .thread-nav__collapse { flex: none; -webkit-app-region: no-drag; }
 .thread-nav[data-mode='threads'] .thread-folder__toggle { font-size: 14px; font-weight: 500; }
 .thread-nav[data-mode='threads'] .thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: block; }
+/* Here the room for the actions is the toggle's own padding, the width of two actions and the usual 8px, and the actions lie over it. A
+   folder offers two actions, one or none, so reserving their width beside the toggle put the counts on different edges and left a strip of
+   the row that opened nothing. The actions stay in the row's flow, taking no width, so it is as tall as their buttons, as it was. */
+.thread-nav[data-mode='threads'] { --thread-folder-actions: 48px; }
+.thread-nav[data-mode='threads'] .thread-folder__toggle { padding-right: calc(var(--thread-folder-actions) + 8px); }
+.thread-nav[data-mode='threads'] .thread-folder__actions { width: var(--thread-folder-actions); margin-left: calc(-1 * var(--thread-folder-actions)); justify-content: flex-end; pointer-events: none; }
+.thread-nav[data-mode='threads'] .thread-folder__actions > * { pointer-events: auto; }
 .thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+/* A closed folder's dots sit just before the count, which stays last and so keeps the column's edge. */
+.thread-nav__indicators + .thread-folder__count { margin-left: 0; }
 .thread-folder__head:is(:hover, :focus-within) .thread-folder__count { visibility: hidden; }
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
 .thread-nav__row--details .thread-nav__title { font-size: 14px; line-height: 1.4; }

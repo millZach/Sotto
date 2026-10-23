@@ -232,8 +232,9 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
       <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))}
         aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={project?.path}>
         <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
-        <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}<span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
+        <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}
         {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} /> : null}
+        <span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
         {section === 'open' ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`New thread in ${folder.title}`}
