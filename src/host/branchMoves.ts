@@ -36,9 +36,15 @@ export class HostBranchMoves {
         const folder = this.folders.projectFolder(request.projectId)
         if (!folder) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
         if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
-        const begun = await this.bundles.receive({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, size: request.size, sha256: request.sha256 })
-        if (!(begun instanceof IncomingBundle)) return begun
-        if (gone.aborted || this.transfers.has(request.moveId)) { await this.bundles.abandon(begun); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
+        // Held before anything is awaited, so begins that arrive together count against the limit as they are taken.
+        const holding: Transfer = { owner }
+        this.transfers.set(request.moveId, holding)
+        let begun: Awaited<ReturnType<BranchBundles['receive']>>
+        try {
+          begun = await this.bundles.receive({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, size: request.size, sha256: request.sha256 })
+        } catch (error) { this.release(request.moveId, holding); throw error }
+        if (!(begun instanceof IncomingBundle)) { this.release(request.moveId, holding); return begun }
+        if (gone.aborted || this.transfers.get(request.moveId) !== holding) { this.release(request.moveId, holding); await this.bundles.abandon(begun); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
         this.transfers.set(request.moveId, { owner, incoming: begun })
         return { type: 'receiving' }
       }
@@ -86,6 +92,10 @@ export class HostBranchMoves {
   private own(moveId: string, owner: object): Transfer | undefined {
     const transfer = this.transfers.get(moveId)
     return transfer?.owner === owner ? transfer : undefined
+  }
+  /** Lets go of `moveId` only while `transfer` still holds it, so a later attempt's entry is never removed. */
+  private release(moveId: string, transfer: Transfer): void {
+    if (this.transfers.get(moveId) === transfer) this.transfers.delete(moveId)
   }
   private async drop(moveId: string): Promise<void> {
     const transfer = this.transfers.get(moveId)
