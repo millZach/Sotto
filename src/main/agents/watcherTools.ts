@@ -41,6 +41,18 @@ const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
 }
 
 /**
+ * The results as offered while Work across machines is off (#1032): without the start's placement and without where new
+ * workers start, so Stable advertises none of it. Only the answer carries them; the refusal is the same.
+ */
+const { start_thread: startOutput } = watcherToolSchemas
+const MACHINELESS_OUTPUTS: Partial<Record<WatcherToolName, z.ZodType>> = {
+  start_thread: z.union([startOutput.output.options[0].omit({ placement: true }), startOutput.output.options[1]]),
+  // Without Work across machines, list_machines shows neither where new workers start nor any machine's live load (#1311).
+  list_machines: watcherMachinesWithoutLoadOutput,
+}
+const offeredOutput = (name: WatcherToolName, machines: boolean): z.ZodType => (machines ? undefined : MACHINELESS_OUTPUTS[name]) ?? watcherToolSchemas[name].output
+
+/**
  * The tools Watcher is offered: with worker roles on, start_thread takes a role and its model is optional; with Work across
  * machines on (#1032, #1311), it takes a machine or a system, and list_machines shows each machine's live load and where
  * new workers start.
@@ -49,8 +61,7 @@ export function watcherToolDefinitions(roles: boolean, machines = false): readon
   return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
     description: name === 'start_thread' ? `${roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE}` : ''}`
       : name === 'list_machines' && machines ? LIST_MACHINES_WITH_LOAD + MACHINES_WHERE : descriptions[name],
-    inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines) : watcherToolSchemas[name].input),
-    outputSchema: z.toJSONSchema(name === 'list_machines' && !machines ? watcherMachinesWithoutLoadOutput : watcherToolSchemas[name].output),
+    inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines) : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(offeredOutput(name, machines)),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,
       idempotentHint: true, openWorldHint: false } })))
 }

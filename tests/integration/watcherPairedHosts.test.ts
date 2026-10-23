@@ -1566,6 +1566,25 @@ it('starts a worker that names a system on a machine of it, and refuses one no c
   expect(f.control.watcherRecord().operations).toHaveLength(before)
 })
 
+it('warns when starts the paired machine answered before its list holds them leave more than ten working there (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  // The paired machine's list as this computer holds it: nine threads working, and none of the starts below yet.
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const nine = Array.from({ length: 9 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => {
+    const snapshot = real(id)
+    return snapshot && id === hostId ? { ...snapshot, threads: [...snapshot.threads.filter(thread => thread.title !== 'Synthetic held worker'), ...nine] } : snapshot
+  })
+  const held = () => ({ ...f.start(), machine: hostId, title: 'Synthetic held worker' })
+  // The first start makes ten: no warning.
+  const first = await f.call('start_thread', held())
+  expect(first).toMatchObject({ status: 'ok', target: { hostId } })
+  expect(first).not.toHaveProperty('warning')
+  // The second counts the first, which the host answered but the list does not hold yet, and itself, once each: eleven.
+  expect(await f.call('start_thread', held())).toMatchObject({ status: 'ok', warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
+})
+
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
