@@ -379,6 +379,14 @@ in time" / "Claude did not acknowledge the request" on a loaded runner. That was
 *Gates (Windows)* runs on PRs #100 and #103: `claudeFixture` defaulted to 150 ms and several Codex and
 Grok tests passed 150–500 ms.
 
+Even 2000 ms is not always enough. With the runner's other worker busy, a Codex test's first app-server
+start took more than 2000 ms to answer `initialize`, and "still holds a send behind a permission change
+Codex did not confirm" failed in its setup (#1307). The Codex adapter also waits that same deadline for
+Codex to confirm a settings change, so that test could not simply raise it. It now passes the adapter's
+own 15 s, and the fake loses the confirmation on cue: `script({ stopBeforeSettingsConfirmation: true })`
+acknowledges the change and stops the app-server before confirming it, so the change is unconfirmed
+immediately instead of after a deadline.
+
 To reproduce runner load locally, pin the run to two cores and give it a competitor on the same cores:
 
 ```powershell
