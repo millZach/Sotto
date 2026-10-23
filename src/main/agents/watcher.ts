@@ -816,12 +816,19 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * The working threads warning after a start on another machine (#1032): that machine's working threads, counted from its
-   * own list as this computer holds it, the new thread among them. Only while Work across machines is on.
+   * own list as this computer holds it, the new thread among them, and every other start that machine answered whose thread
+   * its list does not hold yet, so starts made together still warn. Only while Work across machines is on.
    */
   private machineWorkingWarning(target: WatcherThreadTarget): { warning: string } | Record<string, never> {
     if (!this.options.workerMachine) return {}
     const name = this.remote?.hosts().find(host => host.hostId === target.hostId)?.name?.trim() || 'that machine'
-    const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(this.owningSnapshot(target.hostId)?.threads ?? [], target.threadId), name)
+    const starting = new Set([target.threadId]), record = this.view()
+    const reserved = new Set(record.reservations.flatMap(item => item.target.hostId === target.hostId ? [item.operationId] : []))
+    if (reserved.size) for (const operation of record.operations) {
+      // Answered by the host: accepted, or uncertain while its first prompt is confirmed. Not yet sent, or failed, is not counted.
+      if (operation.action === 'start' && (operation.deliveryState === 'accepted' || operation.deliveryState === 'uncertain') && reserved.has(operation.id)) starting.add(operation.target.threadId)
+    }
+    const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(this.owningSnapshot(target.hostId)?.threads ?? [], starting), name)
     return warning ? { warning } : {}
   }
   /**
