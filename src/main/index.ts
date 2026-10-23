@@ -663,7 +663,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
   mainActivity?.start()
   app.on('will-quit', () => mainActivity?.dispose())
-  // Notifications when a thread has finished everything or needs the user (ADR-0114): an Owl feature, on a Mac that can
+  // Notifications when a thread has finished everything or needs the user (ADR-0117): an Owl feature, on a Mac that can
   // show them. Anywhere else main builds nothing, passes no renderer argument and registers no channel.
   const desktopNotificationsEnabled = owlFeatures['desktop-notifications'] && profile.desktopNotifications && Notification.isSupported()
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
@@ -1544,7 +1544,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
   saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
-  // Notifications (ADR-0114): the tracker reads each state the router publishes, which joins every host's threads, and the
+  // Notifications (ADR-0117): the tracker reads each state the router publishes, which joins every host's threads, and the
   // notifier shows what it finds. A press brings the window forward, selects the thread and shows Threads. An end-to-end
   // run shows a stand-in, never the system's.
   const desktopNotifier = desktopNotificationsEnabled ? createDesktopNotifier({
@@ -1562,7 +1562,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (desktopNotifier !== null) {
     const alerts = new ThreadAlerts({
       shows: threadId => hostRouter.windowShows(threadId),
-      // Watcher keeps a thread it watches going and settles it when done, so that thread's finish is not told (ADR-0114).
+      // Watcher keeps a thread it watches going and settles it when done, so that thread's finish is not told (ADR-0117).
       ...(localRuntime.watcher ? { watched: (threadId: string) => {
         const key = parseHostEntityKey(threadId)
         return key !== null && localRuntime.watcher?.watches({ hostId: key.hostId, threadId: key.id }) === true

@@ -8,10 +8,10 @@ import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support
 import { textContrast } from './support/textContrast'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// Desktop notifications (ADR-0114): Sotto tells the user when a thread needs them or has finished everything, while the
+// Desktop notifications (ADR-0117): Sotto tells the user when a thread needs them or has finished everything, while the
 // window does not show it. The app is real end to end; only the system notification is a stand-in (fakeNotification),
 // which records each one shown on `globalThis.sottoNotifications` and can be pressed as the user would.
-test.skip(process.platform !== 'darwin', 'Notifications are macOS only (ADR-0114).')
+test.skip(process.platform !== 'darwin', 'Notifications are macOS only (ADR-0117).')
 
 const evidence = evidenceDirectory('artifacts/desktop-notifications')
 const HELP_LINE = 'If nothing appears, allow Sotto in System Settings → Notifications.'

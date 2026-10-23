@@ -8,7 +8,7 @@ interface ShownNotification {
 }
 
 /**
- * The notification an end-to-end run shows instead of the system's (ADR-0114): nothing reaches the operating system, so
+ * The notification an end-to-end run shows instead of the system's (ADR-0117): nothing reaches the operating system, so
  * no test run pops a banner or asks macOS for permission. Each one shown is kept on `globalThis.sottoNotifications`, for a
  * spec to read with `app.evaluate` and to press.
  */

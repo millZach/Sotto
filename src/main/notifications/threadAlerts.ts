@@ -5,7 +5,7 @@ import { isThreadTurnRunning } from '../../shared/threadActivity'
 import { settledIn } from '../agents/finishedUnread'
 import { watcherBackgroundWorkCount } from '../agents/watcherWakeUp'
 
-/** What the tracker is told and tells (ADR-0114). */
+/** What the tracker is told and tells (ADR-0117). */
 export interface ThreadAlertsOptions {
   readonly shows: (threadId: string) => boolean
   /** Watcher keeps this thread going: it never alerts as finished. Absent where Watcher is off. */
@@ -78,7 +78,7 @@ function alertOf(kind: ThreadAlert['kind'], thread: AgentThread, title: string, 
 }
 
 /**
- * Decides when a thread's desktop notification is due (ADR-0114), from each state the router publishes. Needs you is the
+ * Decides when a thread's desktop notification is due (ADR-0117), from each state the router publishes. Needs you is the
  * iPhone's rule (ADR-0051): once per request ID, never for the thread the window shows. Finished follows the host's
  * Finished unread mark (ADR-0046), held while anything the thread started still runs, waits or is queued, and told once
  * per mark after `ALERT_SETTLE_MS` of quiet. A thread first seen is a baseline: what it already has is not news.

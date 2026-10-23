@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { NotificationsBridge } from '../../../shared/desktopNotifications'
 import { useOwlFeature } from './owlFeature'
 
-/** The notifications bridge while the window shows notifications (ADR-0114): the Owl list turns it on and main offered it. */
+/** The notifications bridge while the window shows notifications (ADR-0117): the Owl list turns it on and main offered it. */
 export function useDesktopNotifications(): NotificationsBridge | undefined {
   const on = useOwlFeature('desktop-notifications')
   return on && typeof window !== 'undefined' ? window.sotto?.notifications : undefined

@@ -4,7 +4,7 @@ import { NOTIFICATION_TEST, notificationTestResultSchema, type NotificationTestR
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /**
- * The notification bridge's handler (ADR-0114). Where notifications are off, main builds no notifier, so nothing is
+ * The notification bridge's handler (ADR-0117). Where notifications are off, main builds no notifier, so nothing is
  * registered and no window can ask for a test. Only the main window may ask.
  */
 export function registerNotificationIpc(ipc: IpcMainAdapter, notifier: { test(): Promise<NotificationTestResult> } | null,

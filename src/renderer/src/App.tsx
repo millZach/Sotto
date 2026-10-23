@@ -250,7 +250,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
 
-  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0114).
+  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0117).
   const showThreads = useCallback(() => app.actions.navigate('threads'), [app.actions])
   useOpenThreadsOnNotification(showThreads)
 
