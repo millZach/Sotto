@@ -865,23 +865,32 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * The working threads warning after a start on another machine (#1032): that machine's working threads, counted from its
-   * own list as this computer holds it, the new thread among them whatever its list says yet. Watcher's other starts there
-   * count by their own turn once the list holds them, so a finished worker kept for its background work is not working; one
-   * the list does not hold yet, or holds before its first turn shows, counts once the machine has made its thread, so
-   * starts made together still warn. A delivery that is only unconfirmed is not counted, and nothing is counted twice.
-   * Only while Work across machines is on.
+   * own list as this computer holds it. Every start there, the new one included, counts by its own turn once the list
+   * shows it, so a fast worker that finished before its answer came back, or one finished and kept for its background
+   * work, is not working; one the list does not hold yet, or holds before its first turn shows, counts as starting. The
+   * new start is made by now; Watcher's other starts count so once the machine has made their thread, so starts made
+   * together still warn. A delivery that is only unconfirmed is not counted, and nothing is counted twice. Only while
+   * Work across machines is on.
    */
   private machineWorkingWarning(target: WatcherThreadTarget): { warning: string } | Record<string, never> {
     if (!this.options.workerMachine) return {}
     const name = this.remote?.hosts().find(host => host.hostId === target.hostId)?.name?.trim() || 'that machine'
-    const threads = this.owningSnapshot(target.hostId)?.threads ?? [], starting = new Set([target.threadId]), record = this.view()
+    const threads = this.owningSnapshot(target.hostId)?.threads ?? [], starting = new Set<string>(), record = this.view()
+    // One lookup for every start, rather than a search of the machine's list for each.
+    const listed = new Map(threads.map(thread => [thread.id, thread]))
+    const beforeFirstTurn = (threadId: string) => {
+      const thread = listed.get(threadId)
+      return !thread || !thread.lastTurn && (thread.summary?.messageCount ?? thread.messages.length) === 0
+    }
+    if (beforeFirstTurn(target.threadId)) starting.add(target.threadId)
     const reserved = new Set(record.reservations.flatMap(item => item.target.hostId === target.hostId && item.target.threadId !== target.threadId ? [item.operationId] : []))
-    if (reserved.size) for (const operation of record.operations) {
-      if (operation.action !== 'start' || !reserved.has(operation.id) || operation.outcome && WATCHER_FINAL_OUTCOMES.has(operation.outcome)) continue
-      // Made on the machine: its first prompt accepted, or answered with its thread while that prompt is confirmed.
-      if (operation.deliveryState !== 'accepted' && !(operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id))) continue
-      const listed = threads.find(thread => thread.id === operation.target.threadId)
-      if (!listed || !listed.lastTurn && (listed.summary?.messageCount ?? listed.messages.length) === 0) starting.add(operation.target.threadId)
+    if (reserved.size) {
+      for (const operation of record.operations) {
+        if (operation.action !== 'start' || !reserved.has(operation.id) || operation.outcome && WATCHER_FINAL_OUTCOMES.has(operation.outcome)) continue
+        // Made on the machine: its first prompt accepted, or answered with its thread while that prompt is confirmed.
+        if (operation.deliveryState !== 'accepted' && !(operation.deliveryState === 'uncertain' && this.createdRemotely.has(operation.id))) continue
+        if (beforeFirstTurn(operation.target.threadId)) starting.add(operation.target.threadId)
+      }
     }
     const warning = machineWorkingThreadsWarning(countMachineWorkingThreads(threads, starting), name)
     return warning ? { warning } : {}
@@ -3117,8 +3126,6 @@ ${operation.draftId}`)
         call: { name, input } } as WatcherHostControl)
       const parsed = watcherToolSchemas[name].output.parse(result)
       const receipt = 'receipt' in parsed ? parsed.receipt : undefined
-      // The host answers a start with its thread only once it has made it.
-      if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
       if (parsed.status === 'refused' && !receipt) await this.options.control.updateWatcher(record => {
         this.recordRemoteRefusal(record, operation.id, parsed.code)
       })
@@ -3126,6 +3133,8 @@ ${operation.draftId}`)
         // Control may already have reached the host; an unverified reply cannot prove that it failed.
         if (!receipt || receipt.operationId !== operation.id || receipt.requestId !== operation.requestId
           || key(receipt.target) !== key(operation.target)) throw new Error('The host returned another operation receipt. Nothing was reconciled.')
+        // The host answers a start with its thread only once it has made it, and only an answer about this start says so.
+        if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
         await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!,
           { ...receipt, ...(parsed.status === 'refused' && receipt.deliveryState === 'failed' ? { refusalCode: parsed.code } : {}), updatedAt: now() }))
         await this.reconcileRemote(operation.target.hostId).catch(() => {
