@@ -1300,6 +1300,10 @@ test.describe("Watcher's room on the built app", () => {
           await resizeContentWindow(launched, width, height)
           await settle(page)
           await expect.poll(() => pageBoundProblems(page), { message: `forge's panel at ${width}x${height}` }).toEqual([])
+          // The panel ends inside the room under its name, so its foot is always in reach; the rest scrolls inside it.
+          await expect(panel.getByRole('button', { name: 'Change where new workers start' })).toBeInViewport()
+          expect(await panel.evaluate(element => element.getBoundingClientRect().bottom <= element.closest('.thread-pane')!.getBoundingClientRect().bottom + 1),
+            `forge's panel ends inside the room at ${width}x${height}`).toBe(true)
           await captureInto(machinesEvidence, launched, `machines-panel-${appearance}-${width}x${height}.png`)
           await contrastHolds(page, `machines-panel-${appearance}-${width}x${height}`)
         }
@@ -1351,6 +1355,32 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('ArrowUp')
         await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).newWorkerMachine)).toBe(STUDIO)
         await page.evaluate(async () => window.sotto!.updateSettings({ newWorkerMachine: 'this-computer' }))
+
+        // A long saved name gives way to an ellipsis inside the line at the minimum window, and its warning words stay
+        // clear of its count.
+        if (appearance === 'dark') {
+          const long = 'The build server under the stairs in the second-floor office'
+          await seedRoom(page, { current: true, more, machines: hostId => {
+            const read = machines(hostId)
+            return { ...read, machines: read.machines.map(item => item.hostId === STUDIO ? { ...item, name: long, factsState: 'reported' as const, facts: facts('Omarchy', 'linux', 8, 16),
+              note: undefined, runningThreads: 0, load: load(96, 0.5), placedNotStarted: 0, memoryState: 'short' as const, cpuState: 'busy' as const } : item) }
+          } })
+          await resizeContentWindow(launched, 820, 560)
+          await openRoom(page)
+          const entry = wide.locator(`[data-host="${STUDIO}"]`)
+          await expect(entry.getByRole('button', { name: `${long}, 0 working, busy, short on memory. Show ${long}’s load and what runs there.` })).toBeVisible()
+          await settle(page)
+          const boxes = await entry.evaluate(element => {
+            const line = element.closest('.watcher-machines')!.getBoundingClientRect(), name = element.querySelector('.watcher-machines__name > span')!
+            const count = element.querySelector('.watcher-machines__count')!.getBoundingClientRect(), words = element.querySelector('.watcher-machines__words')!.getBoundingClientRect()
+            return { inside: element.getBoundingClientRect().right <= line.right + 1, cut: name.scrollWidth > name.clientWidth,
+              apart: count.right <= words.left + 1 || words.top >= count.bottom - 1 }
+          })
+          expect(boxes).toEqual({ inside: true, cut: true, apart: true })
+          await expect.poll(() => pageBoundProblems(page), { message: 'a long machine name at 820x560' }).toEqual([])
+          await captureInto(machinesEvidence, launched, 'machines-long-name-dark-820x560.png')
+          await contrastHolds(page, 'machines-long-name-dark-820x560')
+        }
       })
     })
   })
