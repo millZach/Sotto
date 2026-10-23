@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
-import { i18n, type Messages } from '@lingui/core'
+import { i18n } from '@lingui/core'
+
+import { interfaceCatalogs, type CompiledCatalog } from '../shared/interfaceCatalogLoader'
 
 import {
   ENGLISH_INTERFACE,
@@ -17,19 +19,11 @@ import type { AppSettings } from '../shared/settings'
  * loads its own catalog and the shared one; each window loads the renderer's. English is in the bundle and active before
  * anything asks for a word; another language's catalogs are read the first time it is shown.
  */
-interface Catalog { readonly messages: Messages }
-
-const english = import.meta.glob<Catalog>(['../locales/main/en.po', '../locales/shared/en.po'], { eager: true })
-const catalogs = import.meta.glob<Catalog>(['../locales/main/*.po', '../locales/shared/*.po', '!../locales/*/en.po'])
-
-const merged = (loaded: readonly Catalog[]): Messages => Object.assign({}, ...loaded.map(catalog => catalog.messages)) as Messages
-i18n.loadAndActivate({ locale: SOURCE_INTERFACE_LANGUAGE, messages: merged(Object.values(english)) })
-
-async function messagesOf(language: ShownInterfaceLanguage): Promise<Messages> {
-  if (language === SOURCE_INTERFACE_LANGUAGE) return merged(Object.values(english))
-  const loads = Object.entries(catalogs).filter(([path]) => path.endsWith(`/${language}.po`)).map(([, load]) => load())
-  return merged(await Promise.all(loads))
-}
+const { english, messagesOf } = interfaceCatalogs(
+  import.meta.glob<CompiledCatalog>(['../locales/main/en.po', '../locales/shared/en.po'], { eager: true }),
+  import.meta.glob<CompiledCatalog>(['../locales/main/*.po', '../locales/shared/*.po', '!../locales/*/en.po']),
+)
+i18n.loadAndActivate({ locale: SOURCE_INTERFACE_LANGUAGE, messages: english })
 
 export interface InterfaceLanguageOptions {
   /** The `interface-language` Owl answer read at start. Off, Sotto is English whatever the setting says. */

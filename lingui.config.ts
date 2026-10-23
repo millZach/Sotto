@@ -16,6 +16,9 @@ import { INTERFACE_LANGUAGE_CODES, INTERFACE_PSEUDO_LANGUAGES, SOURCE_INTERFACE_
  * - `main`      src/main, the tray, the application menu and main's own dialogs
  * - `shared`    src/shared, words both processes show
  *
+ * How a message is written in the code, the `tt-paragraph` class a translated paragraph carries among it, is in
+ * docs/translation-glossary.md.
+ *
  * Both windows load every renderer area and main loads `main` and `shared`, so a component may move between
  * areas without its words going missing. src/shared is also built into the headless host, whose two builds
  * (electron.vite.config.ts and scripts/build-host.mjs) have no macro transform yet: a shared module the host imports

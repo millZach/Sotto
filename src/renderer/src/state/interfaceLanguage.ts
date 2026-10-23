@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react'
-import { i18n, setupI18n, type MessageDescriptor, type Messages } from '@lingui/core'
+import { i18n, setupI18n, type MessageDescriptor } from '@lingui/core'
 
-import type { InterfaceLanguageBridge } from '../../../shared/interfaceLanguageBridge'
+import { interfaceCatalogs, type CompiledCatalog } from '../../../shared/interfaceCatalogLoader'
+import { interfaceLanguageStateSchema, type InterfaceLanguageBridge } from '../../../shared/interfaceLanguageBridge'
 import {
   ENGLISH_INTERFACE,
   SOURCE_INTERFACE_LANGUAGE,
@@ -14,18 +15,29 @@ import {
  * words whichever area it was extracted into; main's catalog stays in main. English is in the bundle and active before
  * the first frame. Another language is read from the bundle the first time it is shown: no request leaves the computer.
  */
-interface Catalog { readonly messages: Messages }
+const { english: englishMessages, messagesOf } = interfaceCatalogs(
+  import.meta.glob<CompiledCatalog>(['../../../locales/*/en.po', '!../../../locales/main/en.po'], { eager: true }),
+  import.meta.glob<CompiledCatalog>(['../../../locales/*/*.po', '!../../../locales/main/*.po', '!../../../locales/*/en.po']),
+)
 
-const english = import.meta.glob<Catalog>(['../../../locales/*/en.po', '!../../../locales/main/en.po'], { eager: true })
-const catalogs = import.meta.glob<Catalog>(['../../../locales/*/*.po', '!../../../locales/main/*.po', '!../../../locales/*/en.po'])
+/**
+ * Where a window remembers the language it shows. Session storage outlives a reload of the window, which keeps the
+ * arguments the window was made with, and starts empty in a new window, which main gives today's language.
+ */
+const SHOWN_KEY = 'sotto:interface-language'
 
-const merged = (loaded: readonly Catalog[]): Messages => Object.assign({}, ...loaded.map(catalog => catalog.messages)) as Messages
-const englishMessages = merged(Object.values(english))
+function rememberedLanguage(): InterfaceLanguageState | null {
+  try {
+    const parsed = interfaceLanguageStateSchema.safeParse(JSON.parse(sessionStorage.getItem(SHOWN_KEY) ?? 'null'))
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
 
-async function messagesOf(language: ShownInterfaceLanguage): Promise<Messages> {
-  if (language === SOURCE_INTERFACE_LANGUAGE) return englishMessages
-  const loads = Object.entries(catalogs).filter(([path]) => path.endsWith(`/${language}.po`)).map(([, load]) => load())
-  return merged(await Promise.all(loads))
+/** The language a window's first frame is in: the one it showed before a reload, else the one main made it with. */
+export function firstInterfaceLanguage(bridge: Pick<InterfaceLanguageBridge, 'startup'>): InterfaceLanguageState {
+  return rememberedLanguage() ?? bridge.startup
 }
 
 /**
@@ -51,17 +63,18 @@ export async function showInterfaceLanguage(next: InterfaceLanguageState, root: 
   root.lang = next.language
   // ADR-0123 keeps the English layout in every language: only text inside its own box runs right to left.
   root.dir = 'ltr'
+  try { sessionStorage.setItem(SHOWN_KEY, JSON.stringify(next)) } catch { /* A window without storage asks main after a reload. */ }
   for (const listener of [...listeners]) listener()
 }
 
 /**
- * Shows the window's language before its first frame, from what main gave the window as it made it, and follows every
- * change after it. A window without the bridge (the Owl feature off, a test, a preview) stays in English.
+ * Shows the window's language before its first frame, from what main gave the window as it made it or, after a reload,
+ * what it showed last, and follows every change after it. A window without the bridge (the Owl feature off, a test, a preview) stays in English.
  */
 export async function startInterfaceLanguage(bridge: InterfaceLanguageBridge | undefined): Promise<void> {
   if (bridge === undefined) return
   bridge.onChanged(next => { void showInterfaceLanguage(next).catch(() => undefined) })
-  await showInterfaceLanguage(bridge.startup).catch(() => undefined)
+  await showInterfaceLanguage(firstInterfaceLanguage(bridge)).catch(() => undefined)
   void confirmInterfaceLanguage(bridge)
 }
 

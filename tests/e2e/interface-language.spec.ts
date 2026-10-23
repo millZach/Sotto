@@ -53,7 +53,8 @@ async function choose(page: Page, appearance: Locator, letters: string, code: st
   await expect(page.locator('html')).toHaveAttribute('lang', code)
 }
 
-const SIZES = [[1280, 800], [820, 560]] as const
+const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
+const LIST_SIZES = [[1280, 800], [820, 560]] as const
 
 async function capture(launched: LaunchedSotto, appearance: Locator, name: string, open = false, sizes: readonly (readonly [number, number])[] = SIZES): Promise<void> {
   for (const [width, height] of sizes) {
@@ -83,23 +84,57 @@ test('Appearance chooses the interface language, and the window follows at once 
     await expect(launched.page.locator('html')).toHaveAttribute('lang', 'en')
     await expect(picker(appearance)).toHaveAccessibleName('Language Same as this computer (English)')
     await capture(launched, appearance, 'english')
-    await capture(launched, appearance, 'english-list', true)
+    await capture(launched, appearance, 'english-list', true, LIST_SIZES)
 
     await choose(launched.page, appearance, 'ja', 'ja')
     await expect(appearance.getByRole('heading', { level: 2, name: '外観' })).toBeVisible()
     await expect(appearance.locator('.language-picker__anchor')).toHaveText('Language')
     await expect(launched.page.locator('html')).toHaveAttribute('dir', 'ltr')
     await capture(launched, appearance, 'japanese')
-    await capture(launched, appearance, 'japanese-list', true)
-    // The light room too: the row takes its colours from the theme like the rest of the page.
-    await launched.page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
-    await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'light')
-    await capture(launched, appearance, 'japanese-light-list', true, [[1280, 800]])
-    await launched.page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await capture(launched, appearance, 'japanese-list', true, LIST_SIZES)
+
+    // A reload keeps the window's first arguments, which said English; its first drawn frame is still Japanese.
+    await launched.page.addInitScript(() => {
+      new MutationObserver((_records, observer) => {
+        const root = document.getElementById('root')
+        if (!root?.firstChild) return
+        ;(window as unknown as { firstFrameLanguage?: string }).firstFrameLanguage = document.documentElement.lang
+        observer.disconnect()
+      }).observe(document, { childList: true, subtree: true })
+    })
+    await launched.page.reload()
+    await expect.poll(() => launched.page.evaluate(() => (window as unknown as { firstFrameLanguage?: string }).firstFrameLanguage)).toBe('ja')
+    await openPage(launched.page, 'Settings')
+    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+    await expect(appearance.getByRole('heading', { level: 2, name: '外観' })).toBeVisible()
+
+    // Reduced motion, in the light room and the dark: the field changes and the list opens at once, with the colours
+    // of the theme like the rest of the page.
+    await launched.page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect(launched.page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    for (const scheme of ['light', 'dark'] as const) {
+      await launched.page.evaluate(scheme => window.sotto!.updateSettings({ appearance: scheme }), scheme)
+      await expect(launched.page.locator('html')).toHaveAttribute('data-theme', scheme)
+      expect(await picker(appearance).evaluate(element => parseFloat(getComputedStyle(element).transitionDuration))).toBeLessThanOrEqual(0.001)
+      if (scheme === 'light') await capture(launched, appearance, 'japanese-light-reduced-motion-list', true, [[1280, 800]])
+      else {
+        await picker(appearance).click()
+        await expect(launched.page.getByRole('listbox')).toBeVisible()
+        await launched.page.keyboard.press('Escape')
+      }
+    }
+    await launched.page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'system' }))
 
     await choose(launched.page, appearance, 'ar', 'ar')
     await expect(appearance.getByRole('heading', { level: 2, name: 'المظهر' })).toBeVisible()
     await expect(launched.page.locator('html')).toHaveAttribute('dir', 'ltr')
+    // Paragraphs run right to left from the right edge of their box; the heading and the label keep the English place.
+    const direction = (locator: Locator): Promise<string> => locator.evaluate(element => getComputedStyle(element).direction)
+    for (const paragraph of await appearance.locator('.tt-paragraph').all()) {
+      if (await paragraph.isVisible()) expect(await direction(paragraph)).toBe('rtl')
+    }
+    expect(await direction(appearance.getByRole('heading', { level: 2 }))).toBe('ltr')
+    expect(await direction(appearance.locator('.language-picker .tt-field__label'))).toBe('ltr')
     await capture(launched, appearance, 'arabic')
 
     // The way back: the first entry follows the computer again.

@@ -16,7 +16,6 @@ type Catalog = Awaited<ReturnType<typeof getCatalogs>>[number]
 type Entries = Awaited<ReturnType<Catalog['read']>>
 
 const config = getConfig({ cwd: process.cwd() })
-const translatedLocales = INTERFACE_LANGUAGE_CODES.filter(code => code !== SOURCE_INTERFACE_LANGUAGE)
 let catalogs: Catalog[] = []
 const areaOf = (catalog: Catalog): string => catalog.path.replaceAll('\\', '/').split('/').at(-2) ?? catalog.path
 
@@ -46,6 +45,11 @@ function problemsOf(locale: string, source: NonNullable<Entries>, entries: Entri
     const entry = entries[id]
     if (entry === undefined) { problems.push(`${locale}: "${english.message}" is missing; run npm run i18n:extract`); continue }
     if (!entry.translation) continue
+    // English's own catalog repeats each message or leaves it empty; anything else would be shown in place of the code's.
+    if (locale === SOURCE_INTERFACE_LANGUAGE && entry.translation !== english.message) {
+      problems.push(`${locale}: "${english.message}" is written as "${entry.translation}"; English's catalog repeats the message`)
+      continue
+    }
     try {
       const expected = placeholdersOf(english.message ?? '')
       const written = placeholdersOf(entry.translation)
@@ -84,14 +88,14 @@ describe('interface catalogs', () => {
     expect(problems).toEqual([])
   })
 
-  it('parses every message, with the same placeholders as English and nothing missing or left over', async () => {
+  it('parses every message in every catalog, English and the pseudo-languages included, with the placeholders English has and nothing missing or left over', async () => {
     const problems: string[] = []
     for (const catalog of catalogs) {
       const source = await catalog.read(SOURCE_INTERFACE_LANGUAGE) ?? {}
       for (const [id, entry] of Object.entries(source)) {
         try { parse(entry.message ?? id) } catch { problems.push(`${areaOf(catalog)}: English "${entry.message}" does not parse as an ICU message`) }
       }
-      for (const locale of translatedLocales) problems.push(...problemsOf(locale, source, await catalog.read(locale)).map(problem => `${areaOf(catalog)}: ${problem}`))
+      for (const locale of config.locales) problems.push(...problemsOf(locale, source, await catalog.read(locale)).map(problem => `${areaOf(catalog)}: ${problem}`))
     }
     expect(problems).toEqual([])
   })
@@ -108,5 +112,10 @@ describe('interface catalogs', () => {
       `xx: "${source.b.message}" does not parse as an ICU message: {count, plural, one {Design entfernt.} other {# Designs entfernt.}`,
     ])
     expect(problemsOf('xx', source, { a: { message: source.a.message, translation: '' } })).toEqual([`xx: "${source.b.message}" is missing; run npm run i18n:extract`])
+    // English's catalog may only repeat a message: one that drops a placeholder would compile and show.
+    expect(problemsOf('en', source, {
+      a: { message: source.a.message, translation: 'Reset contrast' },
+      b: { message: source.b.message, translation: '' },
+    })).toEqual([`en: "Reset contrast to {amount}" is written as "Reset contrast"; English's catalog repeats the message`])
   })
 })

@@ -124,8 +124,7 @@ export function LanguagePicker({ value, onChoose }: {
         {locale === SOURCE_INTERFACE_LANGUAGE ? null : <span className="language-picker__anchor" lang="en" dir="ltr" aria-hidden="true">Language</span>}
         <span className="language-picker__badge">{t`Preview`}</span>
       </div>
-      {/* A sentence runs in its own language's direction, from the right edge in Arabic and Urdu (ADR-0123). */}
-      <p className="tt-field__description" id={descriptionId} dir="auto">{t`Menus, buttons and messages. What you dictate and what agents write stay as they are.`}</p>
+      <p className="tt-field__description tt-paragraph" id={descriptionId}>{t`Menus, buttons and messages. What you dictate and what agents write stay as they are.`}</p>
       <button type="button" role="combobox" className="language-picker__button tt-focusable"
         aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${labelId} ${valueId}`} aria-describedby={descriptionId}
         aria-activedescendant={open ? optionId(active) : undefined}
@@ -140,7 +139,7 @@ export function LanguagePicker({ value, onChoose }: {
       </button>
       {/* Pressing inside the list keeps focus on the button, which owns the keyboard. */}
       <div className="language-picker__popup" hidden={!open} onMouseDown={event => event.preventDefault()}>
-        <p className="language-picker__note" dir="auto"><span className="language-picker__badge">{t`Preview`}</span> {t`Translations are new and ship on Owl first. Some words may still be in English.`}</p>
+        <p className="language-picker__note tt-paragraph"><span className="language-picker__badge">{t`Preview`}</span> {t`Translations are new and ship on Owl first. Some words may still be in English.`}</p>
         <ul className="language-picker__list" id={listId} role="listbox" aria-labelledby={labelId}>
           {choices.map((choice, index) => (
             <li key={choice.value} id={optionId(index)} role="option" aria-selected={index === chosen}

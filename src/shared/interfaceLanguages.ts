@@ -87,10 +87,10 @@ export function interfaceLanguageDirection(code: ShownInterfaceLanguage): 'ltr' 
   return [...INTERFACE_LANGUAGES, ...INTERFACE_PSEUDO_LANGUAGES].find(language => language.code === code)?.direction ?? 'ltr'
 }
 
-// Spanish as written in Spain: Spain, its North African cities and the Canaries, Andorra, Equatorial Guinea, and the rest
-// of Europe. Every other region, and Spanish with none, reads the Mexican catalog.
+// Spanish as written in Spain: Spain, with its North African cities and the Canaries, Andorra and the rest of Europe.
+// Every region outside Europe, Equatorial Guinea among them, and Spanish with none, reads the Mexican catalog (ADR-0123).
 const SPAIN_SPANISH_REGIONS = new Set([
-  'ES', 'EA', 'IC', 'AD', 'GQ', '150', 'AL', 'AT', 'BA', 'BE', 'BG', 'BY', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'FI', 'FR', 'GB', 'GI', 'GR',
+  'ES', 'EA', 'IC', 'AD', '150', 'AL', 'AT', 'BA', 'BE', 'BG', 'BY', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'FI', 'FR', 'GB', 'GI', 'GR',
   'HR', 'HU', 'IE', 'IS', 'IT', 'LI', 'LT', 'LU', 'LV', 'MC', 'MD', 'ME', 'MK', 'MT', 'NL', 'NO', 'PL', 'PT', 'RO', 'RS', 'SE', 'SI', 'SK',
   'SM', 'UA', 'VA', 'XK',
 ])
@@ -110,6 +110,7 @@ export function interfaceLanguageOfTag(tag: string): InterfaceLanguageCode | nul
     case 'pt': return region === undefined || region === 'BR' ? 'pt-BR' : 'pt-PT'
     // The script decides, and a region implies one: zh-TW, zh-HK and zh-MO are Traditional, zh-CN and zh-SG Simplified.
     case 'zh': return (locale.script ?? maximizedScript(locale)) === 'Hant' ? 'zh-Hant' : 'zh-Hans'
+    // Nynorsk too: its readers read Bokmål more easily than the next language on their list.
     case 'no': case 'nb': case 'nn': return 'nb'
     default: return INTERFACE_LANGUAGE_CODES.find(code => code === locale.language) ?? null
   }

@@ -32,7 +32,8 @@ describe('interface languages', () => {
     ['en-US', 'en'], ['en-GB', 'en'], ['en', 'en'],
     // Spanish: Mexico's for Latin America, the United States and Spanish with no region; Spain's for Spain and Europe.
     ['es', 'es-MX'], ['es-MX', 'es-MX'], ['es-AR', 'es-MX'], ['es-419', 'es-MX'], ['es-US', 'es-MX'], ['es-CO', 'es-MX'],
-    ['es-ES', 'es-ES'], ['es-AD', 'es-ES'], ['es-GQ', 'es-ES'], ['es-DE', 'es-ES'], ['es_ES', 'es-ES'],
+    ['es-GQ', 'es-MX'], ['es-PH', 'es-MX'],
+    ['es-ES', 'es-ES'], ['es-AD', 'es-ES'], ['es-IC', 'es-ES'], ['es-DE', 'es-ES'], ['es_ES', 'es-ES'],
     // Portuguese: Brazil's for Brazil and Portuguese with no region; Portugal's everywhere else.
     ['pt', 'pt-BR'], ['pt-BR', 'pt-BR'], ['pt-PT', 'pt-PT'], ['pt-AO', 'pt-PT'], ['pt-MZ', 'pt-PT'],
     // Chinese by script, which a region implies.
@@ -53,6 +54,8 @@ describe('interface languages', () => {
     expect(systemInterfaceLanguage(['ko-KR', 'ja-JP', 'en-US'])).toBe('ja')
     expect(systemInterfaceLanguage(['es-AR', 'en-US'])).toBe('es-MX')
     expect(systemInterfaceLanguage(['ru-RU', 'ko-KR'])).toBe('en')
+    // A Nynorsk reader gets Bokmål before the next language on their list.
+    expect(systemInterfaceLanguage(['nn-NO', 'de-DE'])).toBe('nb')
     expect(systemInterfaceLanguage([])).toBe('en')
   })
 

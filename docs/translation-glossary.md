@@ -2,6 +2,12 @@
 
 What a translation of Sotto's interface follows (ADR-0123). The catalogs are `src/locales/<area>/<language>.po`, one per area of the tree (`lingui.config.ts` lists them); English is the source and `npm run i18n:extract` writes every catalog. A draft is a model's until a native speaker reviews it, so keep drafts plain enough to review.
 
+## In the code
+
+- A paragraph or description whose words are a message carries the `tt-paragraph` class (`src/renderer/src/styles/global.css`). In Arabic and Urdu it then runs right to left from the right edge of its box; a heading, label or button keeps the English place and gets nothing (ADR-0123). Code, paths, branch names and terminal text inside a message stay left to right in their own element.
+- Components write `t` and `<Trans>` from `@lingui/react/macro`, which need no provider; main and module-level text use `@lingui/core/macro`, and a message kept for later is a `msg` descriptor read with `i18n._` when it is shown.
+- A message that reads a number writes it as a placeholder and lets `Intl` format it in the reader's language.
+
 ## How Sotto sounds
 
 - Short sentences in the glossary's nouns, no marketing. A control's name says what a press does. An error says what happened, whether anything was lost and what to do next.

@@ -104,7 +104,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
     <Card className="settings-section theme-settings" id="settings-appearance">
       <div className="settings-section__heading">
         <h2><Trans>Appearance</Trans></h2>
-        <p><Trans>Themes, contrast &amp; motion</Trans></p>
+        <p className="tt-paragraph"><Trans>Themes, contrast &amp; motion</Trans></p>
       </div>
 
       <div className="theme-settings__layout">
@@ -212,7 +212,7 @@ function AppearanceSlider({ label, resetLabel, description, bounds, value, onPre
           <output htmlFor={id}>{percentOf(value)}</output>
         </span>
       </div>
-      <p className="tt-field__description" id={`${id}-description`}>{description}</p>
+      <p className="tt-field__description tt-paragraph" id={`${id}-description`}>{description}</p>
       <input
         id={id}
         className="theme-slider__input tt-focusable"

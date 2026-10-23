@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AppearanceSettings } from '../../../../../src/renderer/src/features/settings/AppearanceSettings'
 import { LanguagePicker } from '../../../../../src/renderer/src/features/settings/LanguagePicker'
-import { showInterfaceLanguage, startInterfaceLanguage } from '../../../../../src/renderer/src/state/interfaceLanguage'
+import { firstInterfaceLanguage, showInterfaceLanguage, startInterfaceLanguage } from '../../../../../src/renderer/src/state/interfaceLanguage'
 import type { InterfaceLanguageState } from '../../../../../src/shared/interfaceLanguages'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../../../src/shared/settings'
 
@@ -140,6 +140,20 @@ describe('a window\'s interface language', () => {
     await startInterfaceLanguage({ startup: { language: 'en', system: 'en' }, current, onChanged: () => () => undefined })
     await waitFor(() => expect(document.documentElement.lang).toBe('nl'))
     expect(current).toHaveBeenCalledTimes(2)
+  })
+
+  it('draws the first frame after a reload in the language it showed last, not the one the window was made with', async () => {
+    await act(() => showInterfaceLanguage({ language: 'ja', system: 'en' }))
+    // A reload keeps the window's arguments, which still say English; main has not answered yet.
+    const madeWith: InterfaceLanguageState = { language: 'en', system: 'en' }
+    expect(firstInterfaceLanguage({ startup: madeWith })).toEqual({ language: 'ja', system: 'en' })
+    await startInterfaceLanguage({ startup: madeWith, current: () => new Promise(() => undefined), onChanged: () => () => undefined })
+    expect(document.documentElement.lang).toBe('ja')
+    // A new window remembers nothing and starts in what main made it with.
+    sessionStorage.clear()
+    expect(firstInterfaceLanguage({ startup: madeWith })).toEqual(madeWith)
+    sessionStorage.setItem('sotto:interface-language', '{"language":"klingon","system":"en"}')
+    expect(firstInterfaceLanguage({ startup: madeWith })).toEqual(madeWith)
   })
 
   it('stays English without a bridge', async () => {
