@@ -1641,7 +1641,7 @@ it('counts the new start by its own turn once the paired machine lists it, so a 
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
   const ten = Array.from({ length: 10 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
   const fast = { ...shape, id: started.target.threadId, kind: undefined, title: 'Synthetic fast worker' }
-  let list: typeof ten = []
+  let list: AgentState['host']['threads'] = []
   vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => { const snapshot = real(id); return snapshot && id === hostId ? { ...snapshot, threads: list } : snapshot })
   const warning = () => (f.watcher as unknown as { machineWorkingWarning(target: WatcherThreadTarget): object }).machineWorkingWarning(started.target)
   // Ten working, and the new worker's turn already over before its answer came back: ten, not eleven.
