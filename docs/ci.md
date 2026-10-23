@@ -346,6 +346,12 @@ the child and drains that owned child on completion. A failure reports only fixe
 facts; no command arguments or output are logged. The exact-string assertion and the
 global deadline are unchanged. See [the shell fixture evidence](verification/terminal-clipboard-shell-budget.md).
 
+The host self-update test's clean-up has 120 s rather than the 15 s hook default (#1247). It finds the
+restart and the host it starts by their command lines, because the test never starts them itself, and on
+Windows that is a PowerShell CIM query. A busy runner kept that query for most of 15 s, and the folder's
+removal then retries for up to 11 s while a killed host lets go of its files. On a developer machine the
+whole clean-up takes about 1.5 s.
+
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
 `tests/setup.ts` gives Testing Library's `findBy` and `waitFor`, and vitest's own `vi.waitFor` and
 `vi.waitUntil`, the same 5 s rather than their 1 s. No vitest setting raises `vi.waitFor` or `vi.waitUntil`,
