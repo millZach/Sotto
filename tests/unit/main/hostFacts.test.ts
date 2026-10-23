@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { HostFactsSource, hostMachineReport, parseMemAvailable, parseMemoryPressure, parseOsRelease, readHostFacts, type HostFactsSystem, type MachineWork } from '../../../src/main/agents/hostFacts'
-import { HOST_FACTS_REFRESH_MS, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS } from '../../../src/shared/hostFacts'
+import { HOST_FACTS_REFRESH_MS, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS, machineLoadStates } from '../../../src/shared/hostFacts'
 
 const NOW = new Date('2026-10-14T12:00:00.000Z')
 const GIB = 1024 ** 3
@@ -207,7 +207,7 @@ describe('live load', () => {
   /** A machine whose CPU counters, memory and clock the test moves. Each CPU's counters are given as busy and idle time. */
   function loaded(platform: 'win32' | 'linux' | 'darwin', files: Readonly<Record<string, string>> = {}, { meminfo: meminfoText }: { meminfo?: string | null } = {}) {
     let at = NOW.getTime(), busy = 0, idle = 0, free = 11 * GIB, available = 9 * GIB, cpuReads = 0
-    const sleeps: number[] = []
+    const sleeps: number[] = [], waits: (() => void)[] = []
     const os = system({
       platform: () => platform,
       freemem: () => free,
@@ -226,10 +226,10 @@ describe('live load', () => {
         if (content === undefined) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
         return content
       },
-      // Waiting moves the clock.
-      sleep: async ms => { sleeps.push(ms); at += ms },
+      // Waiting moves the clock, after whatever the test has happen during that wait.
+      sleep: async ms => { sleeps.push(ms); waits.shift()?.(); at += ms },
     })
-    return { source, sleeps, cpuReads: () => cpuReads,
+    return { source, sleeps, cpuReads: () => cpuReads, during: (...steps: (() => void)[]) => { waits.push(...steps) },
       advance: (ms: number) => { at += ms },
       work: (busyMs: number, idleMs: number) => { busy += busyMs; idle += idleMs },
       setFree: (bytes: number) => { free = bytes }, setAvailable: (bytes: number) => { available = bytes } }
@@ -269,6 +269,26 @@ describe('live load', () => {
     m.advance(HOST_LOAD_WINDOW_MAX_MS + 1)
     expect(await m.source.load()).toMatchObject({ windowMs: HOST_LOAD_SAMPLE_MS })
     expect(m.sleeps).toEqual([HOST_LOAD_SAMPLE_MS - 500, HOST_LOAD_SAMPLE_MS])
+  })
+
+  it('samples afresh when the machine slept through the sample gap, rather than read an hour as now', async () => {
+    const m = loaded('win32')
+    await m.source.primeLoad()
+    // The laptop sleeps through the first wait: an hour the counters call busy, waking with 5 GiB free. Once awake it is idle.
+    m.during(() => { m.work(3_600_000, 0); m.setFree(5 * GIB); m.advance(60 * 60_000) }, () => { m.work(0, 2_000) })
+    const load = m.source.load()
+    expect(await load).toMatchObject({ windowMs: HOST_LOAD_SAMPLE_MS, cpuBusyPercent: 0, windowStartAvailableMemoryBytes: 5 * GIB })
+    expect(m.sleeps).toEqual([HOST_LOAD_SAMPLE_MS, HOST_LOAD_SAMPLE_MS])
+  })
+
+  it('reads CPU busy and the starting memory as unknown when the machine slept through both tries', async () => {
+    const m = loaded('win32')
+    const nap = () => { m.work(1_000, 1_000); m.advance(60 * 60_000) }
+    m.during(nap, nap)
+    const load = await m.source.load()
+    expect(load).toMatchObject({ cpuBusyPercent: null, windowStartAvailableMemoryBytes: null, availableMemoryBytes: 11 * GIB })
+    expect(load.windowMs).toBeGreaterThan(HOST_LOAD_WINDOW_MAX_MS)
+    expect(machineLoadStates(load, 32 * GIB, Date.parse(load.observedAt)).cpu).toBe('unknown')
   })
 
   it('answers several asks at once with one reading', async () => {
